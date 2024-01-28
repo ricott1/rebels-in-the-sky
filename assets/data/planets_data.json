@@ -1,0 +1,247 @@
+[
+    {
+        "id": "71a43700-0000-0000-0000-000000000000",
+        "version": 0,
+        "name": "Sagittarius",
+        "populations": [],
+        "filename": "blackhole",
+        "rotation_period": 300,
+        "revolution_period": 1,
+        "gravity": 1000,
+        "planet_type": 0,
+        "satellites": ["71a43700-0000-0000-0001-000000000000", "71a43700-0000-0000-0001-000000000001"],
+        "satellite_of": null,
+        "axis": [0.0, 0.0],
+        "teams": []
+    },
+    {
+        "id": "71a43700-0000-0000-0001-000000000000",
+        "version": 0,
+        "name": "Sol",
+        "populations": [],
+        "filename": "sol",
+        "rotation_period": 12,
+        "revolution_period": 180,
+        "gravity": 100,
+        "planet_type": 1,
+        "satellites": [
+            "71a43700-0000-0000-0002-000000000000",
+            "71a43700-0000-0000-0002-000000000001",
+            "71a43700-0000-0000-0002-000000000002",
+            "71a43700-0000-0000-0002-000000000003",
+            "71a43700-0000-0000-0002-000000000004"
+        ],
+        "satellite_of": "71a43700-0000-0000-0000-000000000000",
+        "axis": [30.0, 20.0],
+        "teams": []
+    },
+    {
+        "id": "71a43700-0000-0000-0001-000000000001",
+        "version": 0,
+        "name": "Proxima Centauri",
+        "populations": [],
+        "filename": "proxima",
+        "rotation_period": 9,
+        "revolution_period": 120,
+        "gravity": 80,
+        "planet_type": 1,
+        "satellites": ["71a43700-0000-0000-0002-000000000005", "71a43700-0000-0000-0002-000000000006"],
+        "satellite_of": "71a43700-0000-0000-0000-000000000000",
+        "axis": [45.0, 35.0],
+        "teams": []
+    },
+    {
+        "id": "71a43700-0000-0000-0002-000000000005",
+        "version": 0,
+        "name": "Proxima Centauri b",
+        "populations": [
+            [6, 60],
+            [7, 50]
+        ],
+        "filename": "weird",
+        "rotation_period": 18,
+        "revolution_period": 180,
+        "gravity": 2,
+        "planet_type": 8,
+        "satellites": [],
+        "satellite_of": "71a43700-0000-0000-0001-000000000001",
+        "axis": [31.0, 69.0],
+        "teams": []
+    },
+    {
+        "id": "71a43700-0000-0000-0002-000000000006",
+        "version": 0,
+        "name": "Proxima Centauri d",
+        "populations": [
+            [7, 60],
+            [8, 50]
+        ],
+        "filename": "redgreen",
+        "rotation_period": 18,
+        "revolution_period": 360,
+        "gravity": 3,
+        "planet_type": 8,
+        "satellites": ["71a43700-0000-0000-0003-000000000003"],
+        "satellite_of": "71a43700-0000-0000-0001-000000000001",
+        "axis": [68.0, 24.0],
+        "teams": []
+    },
+    {
+        "id": "71a43700-0000-0000-0003-000000000003",
+        "version": 0,
+        "name": "Frittura",
+        "populations": [[9, 110]],
+        "filename": "venom",
+        "rotation_period": 6,
+        "revolution_period": 360,
+        "gravity": 3,
+        "planet_type": 8,
+        "satellites": [],
+        "satellite_of": "71a43700-0000-0000-0002-000000000006",
+        "axis": [44.0, 44.0],
+        "teams": []
+    },
+    {
+        "id": "71a43700-0000-0000-0002-000000000000",
+        "version": 0,
+        "name": "Earth",
+        "populations": [
+            [0, 20],
+            [1, 20],
+            [2, 25],
+            [3, 25],
+            [4, 20],
+            [5, 20]
+        ],
+        "filename": "earth",
+        "rotation_period": 12,
+        "revolution_period": 120,
+        "gravity": 10,
+        "planet_type": 2,
+        "satellites": ["71a43700-0000-0000-0003-000000000000"],
+        "satellite_of": "71a43700-0000-0000-0001-000000000000",
+        "axis": [22.0, 24.0],
+        "teams": []
+    },
+    {
+        "id": "71a43700-0000-0000-0002-000000000001",
+        "version": 0,
+        "name": "Mars",
+        "populations": [
+            [7, 90],
+            [2, 30]
+        ],
+        "filename": "lava",
+        "rotation_period": 12,
+        "revolution_period": 180,
+        "gravity": 8,
+        "planet_type": 3,
+        "satellites": ["71a43700-0000-0000-0003-000000000001", "71a43700-0000-0000-0003-000000000002"],
+        "satellite_of": "71a43700-0000-0000-0001-000000000000",
+        "axis": [38.0, 33.0],
+        "teams": []
+    },
+    {
+        "id": "71a43700-0000-0000-0002-000000000002",
+        "version": 0,
+        "name": "Jupiter",
+        "populations": [[6, 110]],
+        "filename": "gas",
+        "rotation_period": 18,
+        "revolution_period": 360,
+        "gravity": 25,
+        "planet_type": 5,
+        "satellites": [],
+        "satellite_of": "71a43700-0000-0000-0001-000000000000",
+        "axis": [46.0, 44.0],
+        "teams": []
+    },
+    {
+        "id": "71a43700-0000-0000-0002-000000000003",
+        "version": 0,
+        "name": "Saturn",
+        "populations": [
+            [6, 60],
+            [8, 30],
+            [2, 20]
+        ],
+        "filename": "ring",
+        "rotation_period": 18,
+        "revolution_period": 360,
+        "gravity": 20,
+        "planet_type": 7,
+        "satellites": [],
+        "satellite_of": "71a43700-0000-0000-0001-000000000000",
+        "axis": [54.0, 42.0],
+        "teams": []
+    },
+    {
+        "id": "71a43700-0000-0000-0002-000000000004",
+        "version": 0,
+        "name": "Uranus",
+        "populations": [[8, 90]],
+        "filename": "ice",
+        "rotation_period": 18,
+        "revolution_period": 360,
+        "gravity": 16,
+        "planet_type": 4,
+        "satellites": [],
+        "satellite_of": "71a43700-0000-0000-0001-000000000000",
+        "axis": [61.0, 51.0],
+        "teams": []
+    },
+    {
+        "id": "71a43700-0000-0000-0003-000000000000",
+        "version": 0,
+        "name": "Moon",
+        "populations": [
+            [1, 60],
+            [6, 50]
+        ],
+        "filename": "rocky",
+        "rotation_period": 18,
+        "revolution_period": 90,
+        "gravity": 2,
+        "planet_type": 8,
+        "satellites": [],
+        "satellite_of": "71a43700-0000-0000-0002-000000000000",
+        "axis": [35.0, 34.0],
+        "teams": []
+    },
+    {
+        "id": "71a43700-0000-0000-0003-000000000001",
+        "version": 0,
+        "name": "Phobos",
+        "populations": [
+            [2, 20],
+            [7, 40]
+        ],
+        "filename": "phobos",
+        "rotation_period": 12,
+        "revolution_period": 120,
+        "gravity": 2,
+        "planet_type": 8,
+        "satellites": [],
+        "satellite_of": "71a43700-0000-0000-0002-000000000001",
+        "axis": [35.0, 34.0],
+        "teams": []
+    },
+    {
+        "id": "71a43700-0000-0000-0003-000000000002",
+        "version": 0,
+        "name": "Deimos",
+        "populations": [
+            [6, 10],
+            [7, 70]
+        ],
+        "filename": "deimos",
+        "rotation_period": 12,
+        "revolution_period": 180,
+        "gravity": 2,
+        "planet_type": 8,
+        "satellites": [],
+        "satellite_of": "71a43700-0000-0000-0002-000000000001",
+        "axis": [55.0, 64.0],
+        "teams": []
+    }
+]
