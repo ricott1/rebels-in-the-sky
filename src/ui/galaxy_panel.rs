@@ -22,7 +22,7 @@ use ratatui::layout::Constraint;
 use ratatui::widgets::{List, ListItem};
 use ratatui::{
     layout::{Alignment, Layout},
-    prelude::{CrosstermBackend, Rect},
+    prelude::Rect,
     style::{Color, Style},
     text::Span,
     widgets::{Clear, Paragraph},
@@ -84,12 +84,7 @@ impl GalaxyPanel {
         }
     }
 
-    fn render_planet_gif(
-        &self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn render_planet_gif(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let planet = world.get_planet_or_err(self.planet_id)?;
         let mut lines = match self.zoom_level {
             ZoomLevel::In => self.gif_map.borrow_mut().planet_zoom_in_frame_lines(
@@ -135,7 +130,7 @@ impl GalaxyPanel {
 
     fn render_team_list(
         &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
+        frame: &mut Frame,
         planet: &Planet,
         world: &World,
         area: Rect,
@@ -218,7 +213,7 @@ impl GalaxyPanel {
 
         let width = (LEFT_PANEL_WIDTH).min(area.width);
         let height = (3 * buttons.len() as u16 + target.teams.len() as u16 + 2)
-            .max(20)
+            .max(14)
             .min(area.height);
 
         let rect = Rect {
@@ -378,12 +373,7 @@ impl Screen for GalaxyPanel {
         }
         Ok(())
     }
-    fn render(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let planet = world.get_planet_or_err(self.planet_id)?;
         // Ensure that rendering area has even width and odd height for correct rect centering
         let area = Rect {

@@ -236,7 +236,7 @@ impl<'a> StatefulWidget for ClickableList<'a> {
         let blank_symbol = " ".repeat(highlight_symbol.width());
 
         let mut current_height = 0;
-        let selection_spacing = self.highlight_spacing.should_add(state.selected.is_some());
+        let selection_spacing = state.selected.is_some();
 
         let mut selected_element: Option<(Rect, usize)> = None;
         for (i, item) in self

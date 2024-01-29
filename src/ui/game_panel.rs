@@ -35,7 +35,7 @@ use itertools::Itertools;
 use ratatui::layout::Margin;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
-    prelude::{CrosstermBackend, Rect},
+    prelude::Rect,
     style::{Color, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, Wrap},
@@ -87,12 +87,7 @@ impl GamePanel {
         world.get_game(self.games[self.index].clone())
     }
 
-    fn build_top_panel(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn build_top_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         // Split into left and right panels
         let split = Layout::default()
             .direction(Direction::Horizontal)
@@ -113,12 +108,7 @@ impl GamePanel {
         Ok(())
     }
 
-    fn build_game_list(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) {
+    fn build_game_list(&mut self, frame: &mut Frame, world: &World, area: Rect) {
         let options = self
             .games
             .iter()
@@ -161,7 +151,7 @@ impl GamePanel {
 
     fn build_score_panel(
         &self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
+        frame: &mut Frame,
         world: &World,
         game: &Game,
         area: Rect,
@@ -347,13 +337,7 @@ impl GamePanel {
         Ok(())
     }
 
-    fn build_pitch_panel(
-        &self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        game: &Game,
-        area: Rect,
-    ) {
+    fn build_pitch_panel(&self, frame: &mut Frame, world: &World, game: &Game, area: Rect) {
         let split = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -458,12 +442,7 @@ impl GamePanel {
         frame.render_widget(score, split[2]);
     }
 
-    fn build_bottom_panel(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) {
+    fn build_bottom_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
         let split = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Min(8), Constraint::Length(73)])
@@ -498,11 +477,7 @@ impl GamePanel {
         Line::from(vec![timer, text, arrow])
     }
 
-    fn build_commentary(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        area: Rect,
-    ) {
+    fn build_commentary(&mut self, frame: &mut Frame, area: Rect) {
         let mut commentary = vec![];
         let max_index = self.action_results.len() - self.commentary_index;
 
@@ -590,7 +565,7 @@ impl GamePanel {
                 Span::styled(
                     format!(
                         "{}.{}",
-                        player.info.first_name.chars().next().unwrap(),
+                        player.info.first_name.chars().next().unwrap_or_default(),
                         player.info.last_name,
                     ),
                     style,
@@ -650,15 +625,26 @@ impl GamePanel {
 
         rows.push(Row::new(totals).cyan());
 
-        Table::new(rows)
+        Table::new(
+            rows,
+            [
+                Constraint::Length(2),
+                Constraint::Length(14),
+                Constraint::Length(3),
+                Constraint::Length(4),
+                Constraint::Length(6),
+                Constraint::Length(5),
+                Constraint::Length(6),
+                Constraint::Length(7),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(2),
+                Constraint::Length(3),
+            ],
+        )
     }
 
-    fn build_statbox(
-        &self,
-        game: &Game,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        area: Rect,
-    ) {
+    fn build_statbox(&self, game: &Game, frame: &mut Frame, area: Rect) {
         let header_cells_home = [
             "  ",
             game.home_team_in_game.name.as_str(),
@@ -828,12 +814,7 @@ impl Screen for GamePanel {
         Ok(())
     }
 
-    fn render(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         if self.games.len() == 0 {
             frame.render_widget(
                 Paragraph::new(" No games today!"),

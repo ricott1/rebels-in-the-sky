@@ -200,7 +200,7 @@
         ],
         "filename": "rocky",
         "rotation_period": 18,
-        "revolution_period": 90,
+        "revolution_period": 120,
         "gravity": 2,
         "planet_type": 8,
         "satellites": [],

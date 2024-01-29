@@ -1,4 +1,4 @@
-use super::color_map::ColorMap;
+use super::color_map::{ColorMap, ColorPreset};
 use super::components::*;
 use super::types::Gif;
 use super::utils::{read_image, ExtraImageUtils};
@@ -26,23 +26,41 @@ impl SpaceshipImage {
     }
 
     pub fn compose(&self, hull: Hull, engine: Engine) -> AppResult<Gif> {
-        let mut base = RgbaImage::new(SPACESHIP_IMAGE_WIDTH, SPACESHIP_IMAGE_HEIGHT);
         let mut gif = Gif::new();
 
         let mut hull = read_image(hull.select_file(0).as_str())?;
         hull.apply_color_map(self.color_map);
-        let hull_x = (base.width() - hull.width()) / 2;
-        let hull_y = (base.height() - hull.height()) / 2;
+        let hull_x = (SPACESHIP_IMAGE_WIDTH - hull.width()) / 2;
+        let hull_y = (SPACESHIP_IMAGE_HEIGHT - hull.height()) / 2;
 
-        let engine = read_image(engine.select_file(0).as_str())?;
-        let eng_x = (base.width() - engine.width()) / 2;
-        let eng_y = 20;
+        let engine_color_presets: Vec<[ColorPreset; 3]> = vec![
+            [ColorPreset::Red, ColorPreset::Red, ColorPreset::Orange],
+            [ColorPreset::Red, ColorPreset::Orange, ColorPreset::Yellow],
+            [ColorPreset::Red, ColorPreset::Yellow, ColorPreset::Gold],
+            [ColorPreset::Orange, ColorPreset::Yellow, ColorPreset::Red],
+            [ColorPreset::Red, ColorPreset::Gold, ColorPreset::Yellow],
+            [ColorPreset::Red, ColorPreset::Gold, ColorPreset::Yellow],
+            [ColorPreset::Red, ColorPreset::Gold, ColorPreset::Red],
+            [ColorPreset::Orange, ColorPreset::Red, ColorPreset::Orange],
+        ];
 
-        base.copy_non_trasparent_from(&engine, eng_x, eng_y)?;
-        base.copy_non_trasparent_from(&hull, hull_x, hull_y)?;
+        for tick in 0..32 {
+            let color_presets = engine_color_presets[tick / 4].clone();
+            let color_map = ColorMap {
+                red: color_presets[0].to_rgb(),
+                green: color_presets[1].to_rgb(),
+                blue: color_presets[2].to_rgb(),
+            };
 
-        for _ in 0..16 {
-            gif.push(base.clone());
+            // let color_map = ColorMap::random();
+            let mut engine = read_image(engine.select_file(0).as_str())?;
+            let eng_x = (SPACESHIP_IMAGE_WIDTH - engine.width()) / 2;
+            let eng_y = 20;
+            engine.apply_color_map(color_map);
+            let mut base = RgbaImage::new(SPACESHIP_IMAGE_WIDTH, SPACESHIP_IMAGE_HEIGHT);
+            base.copy_non_trasparent_from(&engine, eng_x, eng_y)?;
+            base.copy_non_trasparent_from(&hull, hull_x, hull_y)?;
+            gif.push(base);
         }
         Ok(gif)
     }

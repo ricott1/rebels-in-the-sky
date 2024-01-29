@@ -191,6 +191,7 @@ pub enum HatImage {
     Straw,
     MaskLow,
     MaskHigh,
+    MaskPolpett,
 }
 
 impl ImageComponent for HatImage {

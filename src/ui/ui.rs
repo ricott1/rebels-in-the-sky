@@ -17,7 +17,7 @@ use crate::world::world::World;
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use ratatui::layout::{Margin, Rect};
-use ratatui::prelude::{Alignment, CrosstermBackend};
+use ratatui::prelude::Alignment;
 use ratatui::style::{Color, Style, Styled};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph, Wrap};
@@ -303,7 +303,7 @@ impl Ui {
     }
 
     /// Renders the user interface widgets.
-    pub fn render(&mut self, frame: &mut Frame<CrosstermBackend<std::io::Stdout>>, world: &World) {
+    pub fn render(&mut self, frame: &mut Frame, world: &World) {
         self.callback_registry.borrow_mut().clear();
         let area = frame.size();
         let split = Layout::default()
@@ -376,7 +376,7 @@ impl Ui {
         self.last_update = Instant::now();
     }
 
-    fn render_popup(&mut self, frame: &mut Frame<CrosstermBackend<std::io::Stdout>>, area: Rect) {
+    fn render_popup(&mut self, frame: &mut Frame, area: Rect) {
         // Render popup message
         if self.popup_messages.len() > 0 {
             let popup_rect = popup_rect(area);

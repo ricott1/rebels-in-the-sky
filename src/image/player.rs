@@ -196,8 +196,11 @@ impl PlayerImage {
             self.set_hat(Some(HatImage::Bandana));
         } else if info.crew_role == CrewRole::Pilot {
             match info.population {
-                Population::Polpett | Population::Yardalaim | Population::Galdari => {
+                Population::Yardalaim | Population::Galdari => {
                     self.set_hat(Some(HatImage::MaskLow));
+                }
+                Population::Polpett => {
+                    self.set_hat(Some(HatImage::MaskPolpett));
                 }
                 _ => {
                     self.set_hat(Some(HatImage::MaskHigh));

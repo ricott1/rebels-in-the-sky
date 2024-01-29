@@ -35,7 +35,7 @@ use rand_chacha::ChaCha8Rng;
 use ratatui::style::Styled;
 use ratatui::text::Line;
 use ratatui::{
-    prelude::{Alignment, Constraint, CrosstermBackend, Direction, Layout, Margin, Rect},
+    prelude::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Style},
     text::Span,
     widgets::{Clear, Paragraph, Wrap},
@@ -48,6 +48,8 @@ use strum::IntoEnumIterator;
 use tui_textarea::{CursorMove, TextArea};
 
 const INITIAL_TEAM_SIZE: usize = 6;
+const MIN_NAME_LENGTH: usize = 3;
+const MAX_NAME_LENGTH: usize = 12;
 
 #[derive(Debug, Default, PartialOrd, PartialEq)]
 pub enum CreationState {
@@ -124,17 +126,17 @@ impl NewTeamScreen {
         gif_map: Rc<RefCell<GifMap>>,
     ) -> Self {
         let mut team_name_textarea = TextArea::default();
-        team_name_textarea.set_placeholder_text("Team name");
+        team_name_textarea.set_cursor_style(UiStyle::SELECTED);
         team_name_textarea.set_block(
             default_block()
                 .border_style(UiStyle::DEFAULT)
                 .title("Team name"),
         );
         let mut ship_name_textarea = TextArea::default();
-        ship_name_textarea.set_placeholder_text("Ship name");
+        ship_name_textarea.set_cursor_style(UiStyle::DEFAULT);
         ship_name_textarea.set_block(
             default_block()
-                .border_style(UiStyle::DEFAULT)
+                .border_style(UiStyle::UNSELECTABLE)
                 .title("Ship name"),
         );
         let rng = &mut ChaCha8Rng::from_entropy();
@@ -195,7 +197,7 @@ impl NewTeamScreen {
         self.set_index(0);
     }
 
-    fn render_intro(&mut self, frame: &mut Frame<CrosstermBackend<std::io::Stdout>>, area: Rect) {
+    fn render_intro(&mut self, frame: &mut Frame, area: Rect) {
         let text = format!(
             "
         It's the year 2077. Corporations have taken over the world. 
@@ -222,11 +224,7 @@ impl NewTeamScreen {
         frame.render_widget(default_block(), area);
     }
 
-    fn render_spaceship(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        area: Rect,
-    ) {
+    fn render_spaceship(&mut self, frame: &mut Frame, area: Rect) {
         let split = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -239,7 +237,7 @@ impl NewTeamScreen {
             }));
 
         if let Ok(gif) = self.selected_ship().compose_image() {
-            let img = gif[(self.tick / 8) % gif.len()].clone();
+            let img = gif[(self.tick) % gif.len()].clone();
             let paragraph = Paragraph::new(img_to_lines(&img));
             frame.render_widget(
                 paragraph.alignment(Alignment::Center),
@@ -285,11 +283,7 @@ impl NewTeamScreen {
         frame.render_widget(default_block(), area);
     }
 
-    fn render_spaceship_selection(
-        &self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        area: Rect,
-    ) {
+    fn render_spaceship_selection(&self, frame: &mut Frame, area: Rect) {
         if self.state > CreationState::ShipModel {
             let selected_ship = self.spaceship_models[self.spaceship_model_index];
             frame.render_widget(
@@ -300,7 +294,7 @@ impl NewTeamScreen {
                 ),
                 area,
             );
-        } else {
+        } else if self.state == CreationState::ShipModel {
             let options = SpaceshipPrefab::iter()
                 .map(|ship| {
                     (
@@ -312,18 +306,25 @@ impl NewTeamScreen {
 
             let list = selectable_list(options, &self.callback_registry);
             frame.render_stateful_widget(
-                list.block(default_block().title("Choose spaceship model ↓/↑")),
+                list.block(
+                    default_block()
+                        .border_style(UiStyle::DEFAULT)
+                        .title("Choose spaceship model ↓/↑"),
+                ),
                 area,
                 &mut ClickableListState::default().with_selected(Some(self.spaceship_model_index)),
+            );
+        } else {
+            frame.render_widget(
+                default_block()
+                    .border_style(UiStyle::UNSELECTABLE)
+                    .title("Choose spaceship model ↓/↑"),
+                area,
             );
         }
     }
 
-    fn render_jersey_selection(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        area: Rect,
-    ) {
+    fn render_jersey_selection(&mut self, frame: &mut Frame, area: Rect) {
         if self.state > CreationState::Jersey {
             let selected_jersey_style = self.jersey_styles[self.jersey_style_index];
             frame.render_widget(
@@ -334,7 +335,7 @@ impl NewTeamScreen {
                 ),
                 area,
             );
-        } else {
+        } else if self.state == CreationState::Jersey {
             let options = self
                 .jersey_styles
                 .iter()
@@ -343,19 +344,25 @@ impl NewTeamScreen {
 
             let list = selectable_list(options, &self.callback_registry);
             frame.render_stateful_widget(
-                list.block(default_block().title("Choose jersey style ↓/↑")),
+                list.block(
+                    default_block()
+                        .border_style(UiStyle::DEFAULT)
+                        .title("Choose jersey style ↓/↑"),
+                ),
                 area,
                 &mut ClickableListState::default().with_selected(Some(self.jersey_style_index)),
+            );
+        } else {
+            frame.render_widget(
+                default_block()
+                    .border_style(UiStyle::UNSELECTABLE)
+                    .title("Choose jersey style ↓/↑"),
+                area,
             );
         }
     }
 
-    fn render_jersey(
-        &self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) {
+    fn render_jersey(&self, frame: &mut Frame, world: &World, area: Rect) {
         let style = self.jersey_styles[self.jersey_style_index];
         let planet_id = self.planet_ids[self.planet_index];
         let planet_players = &self
@@ -386,81 +393,14 @@ impl NewTeamScreen {
         frame.render_widget(default_block(), area);
     }
 
-    fn render_colors_selection(
-        &self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        area: Rect,
-    ) {
-        let style = if self.state > CreationState::ShipModel {
+    fn render_colors_selection(&self, frame: &mut Frame, area: Rect) {
+        let border_style = if self.state > CreationState::ShipModel {
             UiStyle::OK
-        } else {
+        } else if self.state >= CreationState::Jersey {
             UiStyle::DEFAULT
+        } else {
+            UiStyle::UNSELECTABLE
         };
-
-        let red_style = Style::default().bg(Color::Rgb(
-            self.get_team_colors().red[0],
-            self.get_team_colors().red[1],
-            self.get_team_colors().red[2],
-        ));
-        let red = Button::text(
-            vec![
-                Line::from(Span::styled(" ".repeat(area.width as usize / 3), red_style)),
-                Line::from(Span::styled(" ".repeat(area.width as usize / 3), red_style)),
-            ]
-            .into(),
-            UiCallbackPreset::SetTeamColors {
-                color: self.red_color_preset.next(),
-                channel: 0,
-            },
-            Rc::clone(&self.callback_registry),
-        );
-        let green_style = Style::default().bg(Color::Rgb(
-            self.get_team_colors().green[0],
-            self.get_team_colors().green[1],
-            self.get_team_colors().green[2],
-        ));
-        let green = Button::text(
-            vec![
-                Line::from(Span::styled(
-                    " ".repeat(area.width as usize / 3),
-                    green_style,
-                )),
-                Line::from(Span::styled(
-                    " ".repeat(area.width as usize / 3),
-                    green_style,
-                )),
-            ]
-            .into(),
-            UiCallbackPreset::SetTeamColors {
-                color: self.green_color_preset.next(),
-                channel: 1,
-            },
-            Rc::clone(&self.callback_registry),
-        );
-
-        let blue_style = Style::default().bg(Color::Rgb(
-            self.get_team_colors().blue[0],
-            self.get_team_colors().blue[1],
-            self.get_team_colors().blue[2],
-        ));
-        let blue = Button::text(
-            vec![
-                Line::from(Span::styled(
-                    " ".repeat(area.width as usize / 3),
-                    blue_style,
-                )),
-                Line::from(Span::styled(
-                    " ".repeat(area.width as usize / 3),
-                    blue_style,
-                )),
-            ]
-            .into(),
-            UiCallbackPreset::SetTeamColors {
-                color: self.blue_color_preset.next(),
-                channel: 2,
-            },
-            Rc::clone(&self.callback_registry),
-        );
 
         let color_split = Layout::default()
             .direction(Direction::Horizontal)
@@ -471,47 +411,116 @@ impl NewTeamScreen {
             ])
             .split(area);
 
+        if self.state >= CreationState::Jersey {
+            let red_style = Style::default().bg(Color::Rgb(
+                self.get_team_colors().red[0],
+                self.get_team_colors().red[1],
+                self.get_team_colors().red[2],
+            ));
+            let red = Button::text(
+                vec![
+                    Line::from(Span::styled(" ".repeat(area.width as usize / 3), red_style)),
+                    Line::from(Span::styled(" ".repeat(area.width as usize / 3), red_style)),
+                ]
+                .into(),
+                UiCallbackPreset::SetTeamColors {
+                    color: self.red_color_preset.next(),
+                    channel: 0,
+                },
+                Rc::clone(&self.callback_registry),
+            );
+            let green_style = Style::default().bg(Color::Rgb(
+                self.get_team_colors().green[0],
+                self.get_team_colors().green[1],
+                self.get_team_colors().green[2],
+            ));
+            let green = Button::text(
+                vec![
+                    Line::from(Span::styled(
+                        " ".repeat(area.width as usize / 3),
+                        green_style,
+                    )),
+                    Line::from(Span::styled(
+                        " ".repeat(area.width as usize / 3),
+                        green_style,
+                    )),
+                ]
+                .into(),
+                UiCallbackPreset::SetTeamColors {
+                    color: self.green_color_preset.next(),
+                    channel: 1,
+                },
+                Rc::clone(&self.callback_registry),
+            );
+
+            let blue_style = Style::default().bg(Color::Rgb(
+                self.get_team_colors().blue[0],
+                self.get_team_colors().blue[1],
+                self.get_team_colors().blue[2],
+            ));
+            let blue = Button::text(
+                vec![
+                    Line::from(Span::styled(
+                        " ".repeat(area.width as usize / 3),
+                        blue_style,
+                    )),
+                    Line::from(Span::styled(
+                        " ".repeat(area.width as usize / 3),
+                        blue_style,
+                    )),
+                ]
+                .into(),
+                UiCallbackPreset::SetTeamColors {
+                    color: self.blue_color_preset.next(),
+                    channel: 2,
+                },
+                Rc::clone(&self.callback_registry),
+            );
+
+            frame.render_widget(
+                red,
+                color_split[0].inner(&Margin {
+                    horizontal: 1,
+                    vertical: 1,
+                }),
+            );
+            frame.render_widget(
+                green,
+                color_split[1].inner(&Margin {
+                    horizontal: 1,
+                    vertical: 1,
+                }),
+            );
+            frame.render_widget(
+                blue,
+                color_split[2].inner(&Margin {
+                    horizontal: 1,
+                    vertical: 1,
+                }),
+            );
+        }
+
         frame.render_widget(
-            red,
-            color_split[0].inner(&Margin {
-                horizontal: 1,
-                vertical: 1,
-            }),
-        );
-        frame.render_widget(
-            green,
-            color_split[1].inner(&Margin {
-                horizontal: 1,
-                vertical: 1,
-            }),
-        );
-        frame.render_widget(
-            blue,
-            color_split[2].inner(&Margin {
-                horizontal: 1,
-                vertical: 1,
-            }),
-        );
-        frame.render_widget(
-            default_block().border_style(style).title("Choose 'r'"),
+            default_block()
+                .border_style(border_style)
+                .title("Choose 'r'"),
             color_split[0],
         );
         frame.render_widget(
-            default_block().border_style(style).title("Choose 'g'"),
+            default_block()
+                .border_style(border_style)
+                .title("Choose 'g'"),
             color_split[1],
         );
         frame.render_widget(
-            default_block().border_style(style).title("Choose 'b'"),
+            default_block()
+                .border_style(border_style)
+                .title("Choose 'b'"),
             color_split[2],
         );
     }
 
-    fn render_planet_selection(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) {
+    fn render_planet_selection(&mut self, frame: &mut Frame, world: &World, area: Rect) {
         if self.state > CreationState::Planet {
             let selected_planet = world
                 .get_planet_or_err(self.planet_ids[self.planet_index])
@@ -524,7 +533,7 @@ impl NewTeamScreen {
                 ),
                 area,
             );
-        } else {
+        } else if self.state == CreationState::Planet {
             let options = self
                 .planet_ids
                 .iter()
@@ -536,19 +545,25 @@ impl NewTeamScreen {
 
             let list = selectable_list(options, &self.callback_registry);
             frame.render_stateful_widget(
-                list.block(default_block().title("Choose planet ↓/↑")),
+                list.block(
+                    default_block()
+                        .border_style(UiStyle::DEFAULT)
+                        .title("Choose planet ↓/↑"),
+                ),
                 area,
                 &mut ClickableListState::default().with_selected(Some(self.planet_index)),
+            );
+        } else {
+            frame.render_widget(
+                default_block()
+                    .border_style(UiStyle::UNSELECTABLE)
+                    .title("Choose planet ↓/↑"),
+                area,
             );
         }
     }
 
-    fn render_planet(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) {
+    fn render_planet(&mut self, frame: &mut Frame, world: &World, area: Rect) {
         let planet_id = self.planet_ids[self.planet_index];
         let planet = world.get_planet_or_err(planet_id).unwrap();
 
@@ -607,11 +622,7 @@ impl NewTeamScreen {
         let ship_cost = self.selected_ship().cost();
         INITIAL_TEAM_BALANCE as i32 - hiring_costs - ship_cost as i32
     }
-    fn render_remaining_balance(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        area: Rect,
-    ) {
+    fn render_remaining_balance(&mut self, frame: &mut Frame, area: Rect) {
         let text = format!(
             " Remaining balance: {:>}{}",
             self.get_remaining_balance(),
@@ -629,12 +640,20 @@ impl NewTeamScreen {
         );
     }
 
-    fn render_player_list(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) {
+    fn render_player_list(&mut self, frame: &mut Frame, world: &World, area: Rect) {
+        if self.state < CreationState::Players {
+            frame.render_widget(
+                default_block()
+                    .title(format!(
+                        "Select {} players",
+                        self.max_players_selected() - self.selected_players.len(),
+                    ))
+                    .style(UiStyle::UNSELECTABLE),
+                area,
+            );
+            return;
+        }
+
         let planet_id = self.planet_ids[self.planet_index];
         let planet_players = &self.planet_players.get(&planet_id).unwrap();
         let options = planet_players
@@ -694,12 +713,7 @@ impl NewTeamScreen {
         );
     }
 
-    fn render_player(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) {
+    fn render_player(&mut self, frame: &mut Frame, world: &World, area: Rect) {
         let planet_id = self.planet_ids[self.planet_index];
         let planet_players = &self.planet_players.get(&planet_id).unwrap();
         let player = world
@@ -708,12 +722,7 @@ impl NewTeamScreen {
         render_player_description(player, &self.gif_map, self.tick, frame, world, area);
     }
 
-    fn render_confirm_box(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) {
+    fn render_confirm_box(&mut self, frame: &mut Frame, world: &World, area: Rect) {
         let split = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -831,12 +840,7 @@ impl Screen for NewTeamScreen {
 
         Ok(())
     }
-    fn render(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let v_split = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -847,82 +851,78 @@ impl Screen for NewTeamScreen {
             ])
             .split(area);
 
-        let planet_split_height = if self.state > CreationState::Planet {
-            3
-        } else {
+        let planet_split_height = if self.state == CreationState::Planet {
             self.planet_ids.len() as u16 + 2
+        } else {
+            3
         };
 
-        let jersey_split_height = if self.state > CreationState::Jersey {
-            3
-        } else {
+        let jersey_split_height = if self.state == CreationState::Jersey {
             self.jersey_styles.len() as u16 + 2
+        } else {
+            3
         };
 
-        let ship_split_height = if self.state > CreationState::ShipModel {
-            3
-        } else {
+        let ship_split_height = if self.state == CreationState::ShipModel {
             self.spaceship_models.len() as u16 + 2
+        } else {
+            3
+        };
+
+        let player_split_height = if self.state >= CreationState::Players {
+            self.planet_players[&self.planet_ids[self.planet_index]].len() as u16 + 2
+        } else {
+            3
         };
 
         let h_split = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),                                    // team name
-                Constraint::Length(3),                                    // ship name
-                Constraint::Length(planet_split_height),                  // planet
-                Constraint::Length(4),                                    // colors
-                Constraint::Length(jersey_split_height),                  // jersey style
-                Constraint::Length(3),                                    // remaining balance
-                Constraint::Length(ship_split_height),                    // ship
-                Constraint::Length(self.planet_players.len() as u16 + 2), // player_list
+                Constraint::Length(3),                   // remaining balance
+                Constraint::Length(3),                   // team name
+                Constraint::Length(3),                   // ship name
+                Constraint::Length(planet_split_height), // planet
+                Constraint::Length(4),                   // colors
+                Constraint::Length(jersey_split_height), // jersey style
+                Constraint::Length(ship_split_height),   // ship
+                Constraint::Length(player_split_height), // player_list
+                Constraint::Min(0),                      // filler
             ])
             .split(v_split[1]);
 
-        if self.state >= CreationState::TeamName {
-            frame.render_widget(self.team_name_textarea.widget(), h_split[0]);
-            if self.state == CreationState::TeamName {
-                self.render_intro(frame, v_split[2]);
-            }
+        self.render_remaining_balance(frame, h_split[0]);
+
+        frame.render_widget(self.team_name_textarea.widget(), h_split[1]);
+        if self.state == CreationState::TeamName {
+            self.render_intro(frame, v_split[2]);
         }
 
-        if self.state >= CreationState::ShipName {
-            frame.render_widget(self.ship_name_textarea.widget(), h_split[1]);
-            if self.state == CreationState::ShipName {
-                self.render_intro(frame, v_split[2]);
-            }
+        frame.render_widget(self.ship_name_textarea.widget(), h_split[2]);
+        if self.state == CreationState::ShipName {
+            self.render_intro(frame, v_split[2]);
         }
 
-        if self.state >= CreationState::Planet {
-            self.render_planet_selection(frame, world, h_split[2]);
-            if self.state == CreationState::Planet {
-                self.render_planet(frame, world, v_split[2]);
-            }
+        self.render_planet_selection(frame, world, h_split[3]);
+        if self.state == CreationState::Planet {
+            self.render_planet(frame, world, v_split[2]);
         }
 
-        if self.state >= CreationState::Jersey {
-            self.render_colors_selection(frame, h_split[3]);
-            self.render_jersey_selection(frame, h_split[4]);
-            if self.state == CreationState::Jersey {
-                self.render_jersey(frame, world, v_split[2]);
-            }
+        self.render_colors_selection(frame, h_split[4]);
+        self.render_jersey_selection(frame, h_split[5]);
+        if self.state == CreationState::Jersey {
+            self.render_jersey(frame, world, v_split[2]);
         }
 
-        if self.state >= CreationState::ShipModel {
-            // self.render_cost(frame, world, h_split[5]);
-            self.render_remaining_balance(frame, h_split[5]);
-            self.render_spaceship_selection(frame, h_split[6]);
-            if self.state == CreationState::ShipModel {
-                self.render_spaceship(frame, v_split[2]);
-            }
+        self.render_spaceship_selection(frame, h_split[6]);
+        if self.state == CreationState::ShipModel {
+            self.render_spaceship(frame, v_split[2]);
         }
 
-        if self.state >= CreationState::Players {
-            self.render_player_list(frame, world, h_split[7]);
-            if self.state == CreationState::Players {
-                self.render_player(frame, world, v_split[2]);
-            }
+        self.render_player_list(frame, world, h_split[7]);
+        if self.state == CreationState::Players {
+            self.render_player(frame, world, v_split[2]);
         }
+
         if self.state >= CreationState::Done {
             let width = 50;
             let height = 12;
@@ -967,12 +967,19 @@ impl Screen for NewTeamScreen {
                             self.team_name_textarea.delete_line_by_head();
                             self.team_name_textarea.set_yank_text(name);
                             self.team_name_textarea.paste();
-                            self.team_name_textarea
-                                .set_cursor_style(Style::default().fg(Color::Black));
+                            self.team_name_textarea.set_cursor_style(UiStyle::DEFAULT);
 
                             self.team_name_textarea.set_block(
                                 default_block().border_style(UiStyle::OK).title("Team name"),
                             );
+                            self.ship_name_textarea.set_block(
+                                default_block()
+                                    .border_style(UiStyle::DEFAULT)
+                                    .title("Ship name"),
+                            );
+
+                            self.ship_name_textarea.set_cursor_style(UiStyle::SELECTED);
+
                             self.set_state(self.state.next());
                         }
                         _ => {
@@ -998,8 +1005,7 @@ impl Screen for NewTeamScreen {
                             self.ship_name_textarea.delete_line_by_head();
                             self.ship_name_textarea.set_yank_text(name);
                             self.ship_name_textarea.paste();
-                            self.ship_name_textarea
-                                .set_cursor_style(Style::default().fg(Color::Black));
+                            self.ship_name_textarea.set_cursor_style(UiStyle::DEFAULT);
 
                             self.ship_name_textarea.set_block(
                                 default_block().border_style(UiStyle::OK).title("Ship name"),
@@ -1013,7 +1019,14 @@ impl Screen for NewTeamScreen {
                                         .border_style(UiStyle::DEFAULT)
                                         .title("Team name"),
                                 );
-                                self.team_name_textarea.set_cursor_style(UiStyle::DEFAULT);
+                                self.ship_name_textarea.set_block(
+                                    default_block()
+                                        .border_style(UiStyle::UNSELECTABLE)
+                                        .title("Ship name"),
+                                );
+                                self.team_name_textarea.set_cursor_style(UiStyle::SELECTED);
+                                self.ship_name_textarea.set_cursor_style(UiStyle::DEFAULT);
+
                                 self.set_state(self.state.previous());
                             } else {
                                 self.ship_name_textarea
@@ -1035,7 +1048,7 @@ impl Screen for NewTeamScreen {
                                     .border_style(UiStyle::DEFAULT)
                                     .title("Ship name"),
                             );
-                            self.ship_name_textarea.set_cursor_style(UiStyle::DEFAULT);
+                            self.ship_name_textarea.set_cursor_style(UiStyle::SELECTED);
                             self.set_state(self.state.previous());
                         }
 
@@ -1194,10 +1207,10 @@ impl SplitPanel for NewTeamScreen {
 
 fn validate_textarea_input(textarea: &mut TextArea<'_>) -> bool {
     let text = textarea.lines()[0].trim();
-    if text.len() < 3 {
+    if text.len() < MIN_NAME_LENGTH {
         textarea.set_style(UiStyle::ERROR);
         false
-    } else if text.len() > 12 {
+    } else if text.len() > MAX_NAME_LENGTH {
         textarea.set_style(UiStyle::ERROR);
         false
     } else {

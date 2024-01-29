@@ -9,7 +9,7 @@ Now it's your turn to go out there and make a name for yourself. Create your cre
 
 `cargo build --release`
 
-This game runs as a terminal application, meaning that you just need to run the executable from your temrinal. Suggested minimal terminal size: 152x48. Not all terminals support the game nicely, so you might need to try different ones. Here is a list of tested terminals:
+This game runs as a terminal application, meaning that you just need to run the executable from your temrinal. Suggested minimal terminal size: 162x48. Not all terminals support the game nicely, so you might need to try different ones. Here is a list of tested terminals:
 
 -   Linux: whatever the default terminal is, it should work
 -   MacOs: [iTerm2](https://iterm2.com/)

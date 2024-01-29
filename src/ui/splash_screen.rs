@@ -17,7 +17,7 @@ use crossterm::event::KeyCode;
 use rand::seq::SliceRandom;
 use ratatui::{
     layout::Alignment,
-    prelude::{Constraint, CrosstermBackend, Direction, Layout, Rect},
+    prelude::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::Span,
     widgets::{Paragraph, Wrap},
@@ -144,12 +144,7 @@ impl Screen for SplashScreen {
         };
         Ok(())
     }
-    fn render(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let split = Layout::default()
             .direction(Direction::Vertical)
             .constraints([

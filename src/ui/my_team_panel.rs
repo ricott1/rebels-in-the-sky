@@ -29,7 +29,7 @@ use crate::{
 use core::fmt::Debug;
 use ratatui::{
     layout::Margin,
-    prelude::{Constraint, CrosstermBackend, Direction, Layout, Rect},
+    prelude::{Constraint, Direction, Layout, Rect},
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
@@ -60,7 +60,7 @@ impl MyTeamPanel {
 
     fn build_players_table(
         &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
+        frame: &mut Frame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
@@ -184,12 +184,7 @@ impl Screen for MyTeamPanel {
         self.index = self.index % self.players.len();
         Ok(())
     }
-    fn render(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let team = world.get_own_team()?;
 
         let split = Layout::default()

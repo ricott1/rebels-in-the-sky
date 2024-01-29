@@ -21,7 +21,7 @@ use crossterm::event::KeyCode;
 use ratatui::layout::Margin;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    prelude::{CrosstermBackend, Rect},
+    prelude::Rect,
     style::{Color, Style},
     text::Span,
     widgets::Paragraph,
@@ -93,12 +93,7 @@ impl PlayerListPanel {
         }
     }
 
-    fn build_left_panel(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) {
+    fn build_left_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
         let split = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -174,12 +169,7 @@ impl PlayerListPanel {
         }
     }
 
-    fn build_right_panel(
-        &self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn build_right_panel(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let v_split = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(24), Constraint::Min(1)])
@@ -248,7 +238,7 @@ impl PlayerListPanel {
     fn render_buttons(
         &self,
         player: &Player,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
+        frame: &mut Frame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
@@ -411,12 +401,7 @@ impl Screen for PlayerListPanel {
         }
         Ok(())
     }
-    fn render(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         if self.all_players.len() == 0 {
             frame.render_widget(
                 Paragraph::new(" No player yet!"),

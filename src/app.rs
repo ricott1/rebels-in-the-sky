@@ -11,7 +11,6 @@ use crate::world::world::World;
 use crossterm::event::{KeyCode, KeyModifiers};
 use futures::StreamExt;
 use libp2p::{gossipsub, swarm::SwarmEvent};
-use ratatui::prelude::CrosstermBackend;
 use tokio::select;
 use void::Void;
 
@@ -136,7 +135,7 @@ impl App {
         Ok(())
     }
 
-    pub fn render(&mut self, frame: &mut ratatui::Frame<CrosstermBackend<std::io::Stdout>>) {
+    pub fn render(&mut self, frame: &mut ratatui::Frame) {
         self.ui.render(frame, &mut self.world);
     }
 

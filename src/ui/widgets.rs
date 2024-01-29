@@ -21,7 +21,7 @@ use once_cell::sync::Lazy;
 use ratatui::{
     prelude::*,
     text::Span,
-    widgets::{Block, BorderType, Borders, List, Paragraph},
+    widgets::{block::Block, BorderType, Borders, List, Paragraph},
     Frame,
 };
 use std::{cell::RefCell, rc::Rc};
@@ -40,7 +40,7 @@ pub fn default_block() -> Block<'static> {
 }
 
 pub fn default_list() -> List<'static> {
-    List::new(vec![])
+    List::new::<Vec<String>>(vec![])
 }
 
 pub fn popup_rect(area: Rect) -> Rect {
@@ -92,7 +92,7 @@ pub fn render_spaceship_description(
     gif_map: &Rc<RefCell<GifMap>>,
     tick: usize,
     world: &World,
-    frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
+    frame: &mut Frame,
     area: Rect,
 ) {
     let spaceship_split = Layout::default()
@@ -169,7 +169,7 @@ pub fn render_player_description(
     player: &Player,
     gif_map: &Rc<RefCell<GifMap>>,
     tick: usize,
-    frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
+    frame: &mut Frame,
     world: &World,
     area: Rect,
 ) {

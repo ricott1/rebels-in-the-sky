@@ -450,7 +450,7 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
             None => area,
         };
 
-        let selection_width = if self.highlight_spacing.should_add(state.selected.is_some()) {
+        let selection_width = if state.selected.is_some() {
             self.highlight_symbol.map_or(0, |s| s.width() as u16)
         } else {
             0

@@ -20,7 +20,7 @@ use ratatui::text::Span;
 use ratatui::widgets::{List, ListItem};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    prelude::{CrosstermBackend, Rect},
+    prelude::Rect,
     text::Line,
     widgets::{Paragraph, Wrap},
     Frame,
@@ -108,12 +108,7 @@ impl SwarmPanel {
         self.peer_to_challenge.clear();
     }
 
-    fn build_left_panel(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) {
+    fn build_left_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
         let split = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -201,11 +196,7 @@ impl SwarmPanel {
         frame.render_widget(dial_button, split[4]);
     }
 
-    fn build_challenge_list(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        area: Rect,
-    ) {
+    fn build_challenge_list(&mut self, frame: &mut Frame, area: Rect) {
         let mut constraints = [Constraint::Length(3)].repeat(self.peer_to_challenge.len());
         constraints.push(Constraint::Min(0));
         let split = Layout::default()
@@ -267,12 +258,7 @@ impl SwarmPanel {
         // frame.render_widget(list, area);
     }
 
-    fn build_right_panel(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) {
+    fn build_right_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
         let split = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(1), Constraint::Length(3)])
@@ -350,12 +336,7 @@ impl Screen for SwarmPanel {
         Ok(())
     }
 
-    fn render(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let split = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Min(1)])

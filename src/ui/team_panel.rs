@@ -30,7 +30,7 @@ use crossterm::event::KeyCode;
 use ratatui::layout::Margin;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
-    prelude::{CrosstermBackend, Rect},
+    prelude::Rect,
     style::{Color, Style},
     text::Span,
     widgets::{Borders, Paragraph},
@@ -130,12 +130,7 @@ impl TeamListPanel {
         self.set_filter(TeamFilter::All);
     }
 
-    fn build_left_panel(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) {
+    fn build_left_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
         let split = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -208,12 +203,7 @@ impl TeamListPanel {
         }
     }
 
-    fn build_right_panel(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn build_right_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         if self.index >= self.teams.len() {
             return Ok(());
         }
@@ -230,7 +220,7 @@ impl TeamListPanel {
             ])
             .split(area.inner(&Margin {
                 horizontal: 1,
-                vertical: 1,
+                vertical: 0,
             }));
 
         let floor = floor_from_size(area.width as u32, 2);
@@ -281,9 +271,9 @@ impl TeamListPanel {
             // we add an extra row to top and bottom
             let button_area = Rect {
                 x: player_img_split[i + 1].x,
-                y: player_img_split[i + 1].y - 1,
+                y: player_img_split[i + 1].y,
                 width: player_img_split[i + 1].width,
-                height: player_img_split[i + 1].height + 2,
+                height: player_img_split[i + 1].height + 1,
             };
 
             let button = RadioButton::no_box(
@@ -562,12 +552,7 @@ impl Screen for TeamListPanel {
         }
         Ok(())
     }
-    fn render(
-        &mut self,
-        frame: &mut Frame<CrosstermBackend<std::io::Stdout>>,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         if self.all_teams.len() == 0 {
             frame.render_widget(
                 Paragraph::new(" No team yet!"),

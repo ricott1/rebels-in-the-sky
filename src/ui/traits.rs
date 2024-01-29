@@ -2,23 +2,13 @@ use super::ui_callback::UiCallbackPreset;
 use crate::types::AppResult;
 use crate::world::world::World;
 use core::fmt::Debug;
-use ratatui::{
-    prelude::{CrosstermBackend, Rect},
-    text::Span,
-    Frame,
-};
-use std::io::Stdout;
+use ratatui::{prelude::Rect, text::Span, Frame};
 
 pub trait Screen {
     fn name(&self) -> &str;
 
     fn update(&mut self, _world: &World) -> AppResult<()>;
-    fn render(
-        &mut self,
-        _frame: &mut Frame<CrosstermBackend<Stdout>>,
-        _world: &World,
-        _area: Rect,
-    ) -> AppResult<()>;
+    fn render(&mut self, _frame: &mut Frame, _world: &World, _area: Rect) -> AppResult<()>;
 
     fn handle_key_events(
         &mut self,

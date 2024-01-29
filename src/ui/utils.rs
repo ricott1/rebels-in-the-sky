@@ -21,6 +21,7 @@ pub struct SwarmPanelEvent {
 pub fn input_from_key_event(key: KeyEvent) -> Input {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
+    let shift = key.modifiers.contains(KeyModifiers::SHIFT);
     let key = match key.code {
         KeyCode::Char(c) => Key::Char(c),
         KeyCode::Backspace => Key::Backspace,
@@ -39,7 +40,12 @@ pub fn input_from_key_event(key: KeyEvent) -> Input {
         KeyCode::F(x) => Key::F(x),
         _ => Key::Null,
     };
-    Input { key, ctrl, alt }
+    Input {
+        key,
+        ctrl,
+        alt,
+        shift,
+    }
 }
 
 pub fn img_to_lines<'a>(img: &RgbaImage) -> Vec<Line<'a>> {

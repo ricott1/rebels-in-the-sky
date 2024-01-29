@@ -1,6 +1,6 @@
 [package]
 name = "rebels"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 
 [profile.release]
@@ -25,12 +25,12 @@ uuid = { version = "1.4.1", features = [
 ] }
 crossterm = "0.26.1"
 rand = "0.8.5"
-ratatui = { version = "0.23.0", features = ["all-widgets"] }
+ratatui = { version = "0.25.0", features = ["all-widgets"] }
 strum = { version = "0.21", features = ["derive"] }
 image = "0.24.7"
 gif = "0.12.0"
 serde_json = "1.0.106"
-serde = { version = "1.0.188", features = ["derive", "default"] }
+serde = { version = "1.0.196", features = ["derive", "default"] }
 rand_distr = "0.4.3"
 strum_macros = "0.25.2"
 itertools = "0.11.0"
@@ -46,11 +46,9 @@ libp2p = { version = "0.52.3", features = [
     "macros",
     "serde",
 ] }
-tokio = { version = "1.34.0", features = ["full"] }
+tokio = { version = "1.35.1", features = ["full"] }
 env_logger = "0.10.0"
-tui-textarea = { version = "0.2.2", features = [
-    "ratatui-crossterm",
-], default-features = false }
+tui-textarea = "0.4.0"
 void = "1.0.2"
 directories = "5.0.1"
 rand_chacha = "0.3.1"
