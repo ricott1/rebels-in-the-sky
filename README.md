@@ -1,4 +1,4 @@
-# Rebels of the Sky
+# Rebels in the Sky
 
 It's the year 2077. Corporations have taken over the world.
 The only way to be free is to join a pirate crew and start plundering the galaxy. The only mean of survival is to play basketball.
