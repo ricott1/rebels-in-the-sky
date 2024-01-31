@@ -289,7 +289,7 @@ impl SwarmPanel {
                             "Unknown".to_string()
                         }
                     } else {
-                        "Unknown".to_string()
+                        "SEED".to_string()
                     };
 
                     items.push(Line::from(vec![
@@ -302,12 +302,17 @@ impl SwarmPanel {
                     ]));
                 }
                 None => {
+                    let own_message = if self.current_topic == EventTopic::Log {
+                        "System"
+                    } else {
+                        "You"
+                    };
                     items.push(Line::from(vec![
                         Span::styled(
                             format!("[{}] ", event.timestamp.formatted_as_time()),
                             UiStyle::HIGHLIGHT,
                         ),
-                        Span::styled(format!("You: "), UiStyle::OWN_TEAM),
+                        Span::styled(format!("{own_message}: "), UiStyle::OWN_TEAM),
                         Span::raw(event.text.clone()),
                     ]));
                 }

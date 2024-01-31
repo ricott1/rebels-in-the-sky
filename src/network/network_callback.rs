@@ -1,6 +1,6 @@
 use super::constants::*;
 use super::handler::NetworkHandler;
-use super::types::{Challenge, ChallengeState, NetworkTeam};
+use super::types::{Challenge, ChallengeState, NetworkGame, NetworkTeam};
 use crate::types::{AppResult, SystemTimeTick, Tick, MINUTES};
 use crate::types::{GameId, IdSystem};
 use crate::ui::utils::SwarmPanelEvent;
@@ -42,6 +42,9 @@ pub enum NetworkCallbackPreset {
     HandleChallengeTopic {
         message: Message,
     },
+    HandleGameTopic {
+        message: Message,
+    },
 }
 impl NetworkCallbackPreset {
     fn push_swarm_panel_message(timestamp: Tick, peer_id: PeerId, text: String) -> AppCallback {
@@ -77,9 +80,9 @@ impl NetworkCallbackPreset {
             };
             app.ui.swarm_panel.push_log_event(event);
             app.network_handler.as_mut().unwrap().address = address.clone();
-            if address != SEED.parse()? {
-                app.network_handler.as_mut().unwrap().dial(SEED)?;
-            }
+
+            let multiaddr = app.network_handler.as_ref().unwrap().seed_address.clone();
+            app.network_handler.as_mut().unwrap().dial(multiaddr)?;
             Ok(None)
         })
     }
@@ -92,6 +95,7 @@ impl NetworkCallbackPreset {
                 text: format!("Subscribed to topic: {}", topic),
             };
             app.ui.swarm_panel.push_log_event(event);
+
             if topic == IdentTopic::new(TEAM_TOPIC).hash() {
                 if app.world.has_own_team() {
                     app.network_handler
@@ -152,21 +156,60 @@ impl NetworkCallbackPreset {
 
             let try_deserialize_team = serde_json::from_slice::<NetworkTeam>(data);
             if let Ok(network_team) = try_deserialize_team {
-                let team = network_team.team;
                 let event = SwarmPanelEvent {
                     timestamp,
                     peer_id,
-                    text: format!("Deserialized team: {} {}", team.name, team.version),
+                    text: format!(
+                        "Deserialized team: {} {}",
+                        network_team.team.name, network_team.team.version
+                    ),
                 };
                 app.ui.swarm_panel.push_log_event(event);
                 if let Some(id) = peer_id {
-                    app.ui.swarm_panel.add_peer_id(id, team.id);
+                    app.ui.swarm_panel.add_peer_id(id, network_team.team.id);
                 }
-                app.world.add_network_team(team, network_team.players)?;
+                app.world.add_network_team(network_team)?;
             } else {
                 let text = format!(
                     "Failed to deserialize network team {}",
                     try_deserialize_team.unwrap_err()
+                );
+                let event = SwarmPanelEvent {
+                    timestamp,
+                    peer_id,
+                    text: text.clone(),
+                };
+                app.ui.swarm_panel.push_log_event(event);
+                return Err(text)?;
+            }
+            Ok(None)
+        })
+    }
+
+    fn handle_game_topic(message: Message) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let (timestamp, data) = split_message(&message);
+            let peer_id = message.source.clone();
+            let event = SwarmPanelEvent {
+                timestamp,
+                peer_id,
+                text: format!("Got a game from peer: {:?}", peer_id),
+            };
+            app.ui.swarm_panel.push_log_event(event);
+
+            let try_deserialize_game = serde_json::from_slice::<NetworkGame>(data);
+            if let Ok(game) = try_deserialize_game {
+                let event = SwarmPanelEvent {
+                    timestamp,
+                    peer_id,
+                    text: format!("Deserialized game: {}", game.id),
+                };
+                app.ui.swarm_panel.push_log_event(event);
+                app.world.add_network_game(game)?;
+            } else {
+                let text = format!(
+                    "Failed to deserialize game {}",
+                    try_deserialize_game.unwrap_err()
                 );
                 let event = SwarmPanelEvent {
                     timestamp,
@@ -366,6 +409,7 @@ impl NetworkCallbackPreset {
             Self::HandleChallengeTopic { message } => {
                 Self::handle_challenge_topic(message.clone())(app)
             }
+            Self::HandleGameTopic { message } => Self::handle_game_topic(message.clone())(app),
         }
     }
 }

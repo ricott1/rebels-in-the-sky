@@ -13,6 +13,7 @@ use crate::engine::constants::RECOVERING_TIREDNESS_PER_SHORT_TICK;
 use crate::engine::game::{Game, GameSummary};
 use crate::engine::types::TeamInGame;
 use crate::image::color_map::ColorMap;
+use crate::network::types::{NetworkGame, NetworkTeam};
 use crate::store::{
     load_from_json, save_to_json, PERSISTED_GAMES_PREFIX, PERSISTED_WORLD_FILENAME,
 };
@@ -489,7 +490,41 @@ impl World {
         Ok(())
     }
 
-    pub fn add_network_team(&mut self, team: Team, players: Vec<Player>) -> AppResult<()> {
+    pub fn add_network_game(&mut self, network_game: NetworkGame) -> AppResult<()> {
+        // Check that the game does not involve the own team (otherwise we would have generated it).
+        if network_game.home_team_in_game.team_id == self.own_team_id
+            || network_game.away_team_in_game.team_id == self.own_team_id
+        {
+            return Err("Cannot receive game involving own team over the network.".into());
+        }
+
+        if network_game.timer.has_ended() {
+            return Err("Cannot receive game that has ended over the network.".into());
+        }
+
+        let db_game = self.get_game(network_game.id);
+        if db_game.is_none() {
+            let mut game = Game::new(
+                network_game.id,
+                network_game.home_team_in_game,
+                network_game.away_team_in_game,
+                network_game.starting_at,
+                self.get_planet_or_err(network_game.location)?,
+            );
+
+            while game.timer < network_game.timer {
+                game.tick();
+            }
+
+            self.games.insert(game.id, game);
+            self.dirty_ui = true;
+        }
+
+        Ok(())
+    }
+
+    pub fn add_network_team(&mut self, network_team: NetworkTeam) -> AppResult<()> {
+        let NetworkTeam { team, players } = network_team;
         if team.peer_id.is_none() {
             return Err("Cannot receive team without peer_id over the network.".into());
         }
@@ -522,7 +557,10 @@ impl World {
                 if player.peer_id.is_none() {
                     return Err("Cannot receive player without peer_id over the network.".into());
                 }
-                self.players.insert(player.id, player);
+                let db_player = self.get_player(player.id);
+                if db_player.is_none() || db_player.unwrap().version < player.version {
+                    self.players.insert(player.id, player);
+                }
             }
             self.dirty_ui = true;
         }
@@ -680,14 +718,11 @@ impl World {
         for (_, game) in self.games.iter() {
             if game.timer.has_ended() {
                 for team in [&game.home_team_in_game, &game.away_team_in_game] {
+                    //we do not apply end of game logic to peer teams
+                    if team.peer_id.is_some() && team.team_id != self.own_team_id {
+                        continue;
+                    }
                     for player in team.players.values() {
-                        // TODO: check that players cannot be changed during games
-
-                        //we do not apply end of game logic to peer players
-                        if player.peer_id.is_some() {
-                            continue;
-                        }
-
                         let mut player = player.clone();
                         let stats = team
                             .stats
@@ -702,7 +737,6 @@ impl World {
                 }
 
                 // Past games of the own team are persisted in the store.
-
                 if game.home_team_in_game.team_id == self.own_team_id
                     || game.away_team_in_game.team_id == self.own_team_id
                 {

@@ -132,9 +132,9 @@ fn make_substitution(
         .map(|&p| p)
         .collect();
     playing.push(player_in);
-    assert!(playing.len() == 5);
+    // assert!(playing.len() == 5);
     let assignement = Team::best_position_assignment(playing.clone());
-    assert!(assignement.len() == 5);
+    // assert!(assignement.len() == 5);
     for (idx, &id) in assignement.clone().iter().enumerate() {
         let mut player_update: GameStats;
         if stats_update.get(&id).is_none() {

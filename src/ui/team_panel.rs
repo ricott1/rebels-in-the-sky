@@ -142,7 +142,7 @@ impl TeamListPanel {
             .split(area);
 
         let mut filter_all_button = Button::new(
-            "Filter: All".to_string(),
+            format!("Filter: {}", TeamFilter::All.to_string()),
             UiCallbackPreset::SetTeamPanelFilter {
                 filter: TeamFilter::All,
             },
@@ -150,7 +150,7 @@ impl TeamListPanel {
         );
 
         let mut filter_challenge_button = Button::new(
-            "Filter: Challenge".to_string(),
+            format!("Filter: {}", TeamFilter::OpenToChallenge.to_string()),
             UiCallbackPreset::SetTeamPanelFilter {
                 filter: TeamFilter::OpenToChallenge,
             },
@@ -158,7 +158,7 @@ impl TeamListPanel {
         );
 
         let mut filter_peers_button = Button::new(
-            format!("Filter: Network"),
+            format!("Filter: {}", TeamFilter::Peers.to_string()),
             UiCallbackPreset::SetTeamPanelFilter {
                 filter: TeamFilter::Peers,
             },

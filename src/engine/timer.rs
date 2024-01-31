@@ -79,7 +79,7 @@ impl Period {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Clone, Copy, Serialize, Deserialize)]
 pub struct Timer {
     pub value: u16,
 }

@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     types::{GameId, PlanetId, SortablePlayerMap, SystemTimeTick, TeamId, Tick},
-    world::{planet::Planet, player::Player},
+    world::{planet::Planet, player::Player, position::MAX_POSITION},
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -221,7 +221,7 @@ impl<'game> Game {
                 .players
                 .by_position(&self.home_team_in_game.stats)
                 .iter()
-                .take(5)
+                .take(MAX_POSITION as usize)
                 .map(|&p| p)
                 .collect::<Vec<&Player>>(),
             Possession::Away => self
@@ -229,7 +229,7 @@ impl<'game> Game {
                 .players
                 .by_position(&self.away_team_in_game.stats)
                 .iter()
-                .take(5)
+                .take(MAX_POSITION as usize)
                 .map(|&p| p)
                 .collect::<Vec<&Player>>(),
         }
@@ -385,7 +385,7 @@ mod tests {
     use crate::engine::types::TeamInGame;
     use crate::types::{GameId, IdSystem};
     use crate::types::{SystemTimeTick, Tick};
-    use crate::world::planet::Planet;
+    use crate::world::constants::DEFAULT_PLANET_ID;
     use crate::world::world::World;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
@@ -394,11 +394,14 @@ mod tests {
     fn test_game() {
         let mut world = World::new(None);
         let rng = &mut ChaCha8Rng::seed_from_u64(world.seed);
-        let home_planet = Planet::default();
+
+        // world.initialize(true);
+
+        // let home_planet = world.planets.get(&DEFAULT_PLANET_ID).unwrap();
         let id0 = world
             .generate_random_team(
                 rng,
-                home_planet.id,
+                DEFAULT_PLANET_ID.clone(),
                 "Testen".to_string(),
                 "Tosten".to_string(),
             )
@@ -406,7 +409,7 @@ mod tests {
         let id1 = world
             .generate_random_team(
                 rng,
-                home_planet.id,
+                DEFAULT_PLANET_ID.clone(),
                 "Holalo".to_string(),
                 "Halley".to_string(),
             )
@@ -425,13 +428,35 @@ mod tests {
         let home_team_in_game = TeamInGame::from_team_id(id0, &world.teams, &world.players);
         let away_team_in_game = TeamInGame::from_team_id(id1, &world.teams, &world.players);
 
-        let game = Game::new(
+        let mut game = Game::new(
             GameId::new(),
             home_team_in_game.unwrap(),
             away_team_in_game.unwrap(),
             Tick::now(),
-            &home_planet,
+            &world.get_planet(DEFAULT_PLANET_ID.clone()).unwrap(),
         );
+
+        game.home_team_in_game
+            .players
+            .remove(&home_team.player_ids[1]);
+        game.home_team_in_game
+            .players
+            .remove(&home_team.player_ids[2]);
+        game.home_team_in_game
+            .players
+            .remove(&home_team.player_ids[3]);
+
+        game.home_team_in_game
+            .stats
+            .remove(&home_team.player_ids[1]);
+        game.home_team_in_game
+            .stats
+            .remove(&home_team.player_ids[2]);
+        game.home_team_in_game
+            .stats
+            .remove(&home_team.player_ids[3]);
+
+        println!("{:?}", game.home_team_in_game.players.len());
 
         world.games.insert(game.id, game);
         while world.games.len() > 0 {

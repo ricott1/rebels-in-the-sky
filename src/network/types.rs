@@ -1,4 +1,9 @@
-use crate::types::Tick;
+use std::collections::HashMap;
+
+use crate::engine::timer::Timer;
+use crate::engine::types::GameStats;
+use crate::types::{PlanetId, Tick};
+use crate::world::position::{Position, MAX_POSITION};
 use crate::{
     engine::types::TeamInGame,
     types::{AppResult, GameId, TeamId},
@@ -102,5 +107,66 @@ impl NetworkTeam {
         for player in self.players.iter_mut() {
             player.peer_id = Some(peer_id.clone());
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct NetworkGame {
+    pub id: GameId,
+    pub home_team_in_game: TeamInGame,
+    pub away_team_in_game: TeamInGame,
+    pub location: PlanetId,
+    pub attendance: u32,
+    pub starting_at: Tick,
+    pub timer: Timer,
+}
+
+impl NetworkGame {
+    pub fn from_game_id(world: &World, game_id: GameId) -> AppResult<Self> {
+        let game = world.get_game_or_err(game_id)?.clone();
+
+        let mut home_team_in_game = game.home_team_in_game.clone();
+        let mut stats = HashMap::new();
+        for (idx, player_id) in home_team_in_game.players.keys().enumerate() {
+            let mut player_stats = GameStats::default();
+            if (idx as Position) < MAX_POSITION {
+                player_stats.position = Some(idx as Position);
+            }
+            let player_stat = home_team_in_game
+                .stats
+                .get(player_id)
+                .ok_or("Cannot get player stats for home team in game".to_string())?;
+            player_stats.initial_tiredness = player_stat.initial_tiredness;
+            player_stats.tiredness = player_stat.tiredness;
+            stats.insert(player_id.clone(), player_stats.clone());
+        }
+        home_team_in_game.stats = stats;
+
+        let mut away_team_in_game = game.away_team_in_game.clone();
+        let mut stats = HashMap::new();
+        for (idx, player_id) in away_team_in_game.players.keys().enumerate() {
+            let mut player_stats = GameStats::default();
+            if (idx as Position) < MAX_POSITION {
+                player_stats.position = Some(idx as Position);
+            }
+            let player_stat = away_team_in_game
+                .stats
+                .get(player_id)
+                .ok_or("Cannot get player stats for away team in game".to_string())?;
+            player_stats.initial_tiredness = player_stat.initial_tiredness;
+            player_stats.tiredness = player_stat.tiredness;
+            stats.insert(player_id.clone(), player_stats.clone());
+        }
+        away_team_in_game.stats = stats;
+
+        Ok(Self {
+            id: game.id,
+            home_team_in_game,
+            away_team_in_game,
+            location: game.location,
+            attendance: game.attendance,
+            starting_at: game.starting_at,
+            timer: game.timer,
+        })
     }
 }

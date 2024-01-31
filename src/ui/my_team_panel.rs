@@ -3,7 +3,7 @@ use super::{
     clickable_table::{ClickableCell, ClickableRow, ClickableTable, ClickableTableState},
     constants::{PrintableKeyCode, UiKey, UiStyle},
     gif_map::GifMap,
-    traits::{Screen, SplitPanel},
+    traits::{Screen, SplitPanel, StyledRating},
     ui_callback::{CallbackRegistry, UiCallbackPreset},
     widgets::{default_block, render_player_description, render_spaceship_description},
 };

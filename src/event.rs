@@ -7,7 +7,7 @@ use std::task::{Context, Poll};
 use std::thread;
 use std::time::Duration;
 
-const TICK_RATE: f64 = 25.0; //ticks per milliseconds
+const TICK_RATE: f64 = 20.0; //ticks per milliseconds
 const TIME_STEP: Duration = Duration::from_millis((1000.0 / TICK_RATE) as u64);
 const TIME_STEP_MILLIS: Tick = (1000.0 / TICK_RATE) as Tick;
 

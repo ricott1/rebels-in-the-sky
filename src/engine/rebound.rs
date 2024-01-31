@@ -41,19 +41,10 @@ impl Rebound {
         assert!(input.attackers.len() == 1);
         attack_rebounds[input.attackers[0]] = attack_rebounds[input.attackers[0]] * 2 / 3;
 
-        // apply bonus based on position
-        for idx in 0..5 {
-            // apply reduction for defender rebounding.
-            // FIXME: should be based on defence tactics
-            if input.defenders.contains(&idx) {
-                defense_rebounds[idx] = defense_rebounds[idx] * 3 / 4;
-            }
+        for idx in 0..attacking_players.len() {
+            // apply bonus based on position
             attack_rebounds[idx] = attack_rebounds[idx] * (10 + idx as u16) / 10;
-            defense_rebounds[idx] = defense_rebounds[idx] * (10 + idx as u16) / 10;
-        }
-
-        //add random roll
-        for idx in 0..5 {
+            //add random roll
             let atk_stats = attacking_stats.get(&attacking_players[idx].id)?;
             match input.advantage {
                 Advantage::Attack => {
@@ -72,6 +63,14 @@ impl Rebound {
                     );
                 }
             }
+        }
+        for idx in 0..defending_players.len() {
+            // apply reduction for defender rebounding.
+            if input.defenders.contains(&idx) {
+                defense_rebounds[idx] = defense_rebounds[idx] * 3 / 4;
+            }
+
+            defense_rebounds[idx] = defense_rebounds[idx] * (10 + idx as u16) / 10;
             let def_stats = defending_stats.get(&defending_players[idx].id)?;
             defense_rebounds[idx] += roll(rng, def_stats.tiredness) as u16;
         }

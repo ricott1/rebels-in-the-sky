@@ -11,6 +11,7 @@ use super::{
 };
 use crate::types::AppResult;
 use crate::world::constants::CURRENCY_SYMBOL;
+use crate::world::team::Team;
 use crate::world::types::PlayerLocation;
 use crate::{
     types::{PlayerId, TeamId},
@@ -48,18 +49,20 @@ impl PlayerFilter {
         }
     }
 
-    fn rule(&self, player: &Player, own_team_id: TeamId) -> bool {
+    fn rule(&self, player: &Player, own_team: &Team) -> bool {
         match self {
             PlayerFilter::All => true,
-            PlayerFilter::FreeAgents => player.team.is_none(),
-            PlayerFilter::OwnTeam => player.team.is_some() && player.team.unwrap() == own_team_id,
+            PlayerFilter::FreeAgents => {
+                player.team.is_none() && own_team.can_hire_player(player).is_ok()
+            }
+            PlayerFilter::OwnTeam => player.team.is_some() && player.team.unwrap() == own_team.id,
         }
     }
 
     fn to_string(&self) -> String {
         match self {
             PlayerFilter::All => "All".to_string(),
-            PlayerFilter::FreeAgents => "Free agents".to_string(),
+            PlayerFilter::FreeAgents => "Hirable Free agents".to_string(),
             PlayerFilter::OwnTeam => "Own team".to_string(),
         }
     }
@@ -105,7 +108,7 @@ impl PlayerListPanel {
             .split(area);
 
         let mut filter_all_button = Button::new(
-            "Filter: All".to_string(),
+            format!("Filter: {}", PlayerFilter::All.to_string()),
             UiCallbackPreset::SetPlayerPanelFilter {
                 filter: PlayerFilter::All,
             },
@@ -113,7 +116,7 @@ impl PlayerListPanel {
         );
 
         let mut filter_free_agents_button = Button::new(
-            "Filter: Free agents".to_string(),
+            format!("Filter: {}", PlayerFilter::FreeAgents.to_string()),
             UiCallbackPreset::SetPlayerPanelFilter {
                 filter: PlayerFilter::FreeAgents,
             },
@@ -121,7 +124,7 @@ impl PlayerListPanel {
         );
 
         let mut filter_own_team_button = Button::new(
-            "Filter: Own team".to_string(),
+            format!("Filter: {}", PlayerFilter::OwnTeam.to_string()),
             UiCallbackPreset::SetPlayerPanelFilter {
                 filter: PlayerFilter::OwnTeam,
             },
@@ -379,12 +382,13 @@ impl Screen for PlayerListPanel {
             self.update_filter = true;
         }
         if self.update_filter {
+            let own_team = world.get_own_team()?;
             self.players = self
                 .all_players
                 .iter()
                 .filter(|&&player_id| {
                     let player = world.get_player(player_id).unwrap();
-                    self.filter.rule(player, self.own_team_id)
+                    self.filter.rule(player, own_team)
                 })
                 .map(|&player_id| player_id)
                 .collect();

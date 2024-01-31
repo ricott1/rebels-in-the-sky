@@ -23,6 +23,8 @@ struct Args {
     generate_local_world: bool,
     #[clap(long, short='n', action=ArgAction::SetTrue, help = "Run in network relayer mode (no game)")]
     relayer_mode: bool,
+    #[clap(long, short = 'i', action=ArgAction::Set, help = "Set ip of seed node")]
+    seed_ip: Option<String>,
 }
 
 #[tokio::main]
@@ -44,6 +46,7 @@ async fn main() -> AppResult<()> {
             args.disable_audio,
             args.generate_local_world,
             args.reset_world,
+            args.seed_ip,
         );
 
         app.run(ratatui).await?;

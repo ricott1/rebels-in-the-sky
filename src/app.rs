@@ -20,6 +20,7 @@ pub struct App {
     pub ui: Ui,
     generate_local_world: bool,
     pub network_handler: Option<NetworkHandler>,
+    seed_ip: Option<String>,
 }
 
 impl App {
@@ -29,6 +30,7 @@ impl App {
         disable_audio: bool,
         generate_local_world: bool,
         reset_world: bool,
+        seed_ip: Option<String>,
     ) -> Self {
         // If the reset_world flag is set, reset the world.
         if reset_world {
@@ -41,6 +43,7 @@ impl App {
             ui,
             generate_local_world,
             network_handler: None,
+            seed_ip,
         }
     }
 
@@ -48,7 +51,7 @@ impl App {
         ratatui.init()?;
         while self.running {
             if self.network_handler.is_none() && (self.world.has_own_team()) {
-                self.initialize_network_handler();
+                self.initialize_network_handler(self.seed_ip.clone());
             }
             //FIXME consolidate this into a single select! macro
             if self.network_handler.is_some() {
@@ -83,8 +86,8 @@ impl App {
         Ok(())
     }
 
-    pub fn initialize_network_handler(&mut self) {
-        let handler = NetworkHandler::new();
+    pub fn initialize_network_handler(&mut self, seed_ip: Option<String>) {
+        let handler = NetworkHandler::new(seed_ip);
         if handler.is_err() {
             eprintln!("Failed to initialize network handler");
         } else {

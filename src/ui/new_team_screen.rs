@@ -200,7 +200,7 @@ impl NewTeamScreen {
     fn render_intro(&mut self, frame: &mut Frame, area: Rect) {
         let text = format!(
             "
-        It's the year 2077. Corporations have taken over the world. 
+        It's the year 2101. Corporations have taken over the world. 
         The only way to be free is to join a pirate crew and start plundering the galaxy.
         The only mean of survival is to play basketball.
 

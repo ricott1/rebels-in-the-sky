@@ -1,19 +1,37 @@
 # Rebels in the Sky
 
-It's the year 2077. Corporations have taken over the world.
+![Splash screen](demo/splash.png)
+
+It's the year 2101. Corporations have taken over the world.
 The only way to be free is to join a pirate crew and start plundering the galaxy. The only mean of survival is to play basketball.
 
 Now it's your turn to go out there and make a name for yourself. Create your crew and start wondering the galaxy in search of worthy basketball opponents.
 
+## Download
+
+Compiled binaries of the last release can be downloaded at https://rebels.frittura.org.
+
 ## Build
+
+You need to have the rust toolchain installed --> https://www.rust-lang.org/tools/install. Then you can build the game with
 
 `cargo build --release`
 
-This game runs as a terminal application, meaning that you just need to run the executable from your temrinal. Suggested minimal terminal size: 162x48. Not all terminals support the game nicely, so you might need to try different ones. Here is a list of tested terminals:
+## Run
+
+This game runs as a terminal application, meaning that you just need to run the executable from your terminal with
+
+`./rebels`
+
+If you downloaded the binaries, you will first need to give execution permissions to the executable with
+
+`chmod +x rebels`
+
+Suggested minimal terminal size: 162x48. Not all terminals support the game colors nicely, so you might need to try different ones. Here is a list of tested terminals:
 
 -   Linux: whatever the default terminal is, it should work
 -   MacOs: [iTerm2](https://iterm2.com/)
--   Windows: need a tester :)
+-   Windows: need a someone to test it :)
 
 ## Credits
 
@@ -21,13 +39,9 @@ This game runs as a terminal application, meaning that you just need to run the 
 -   Music of the songs "Rebels in the sky", "Spacepirates", and "Rap the kasta" were generated with [Suno](https://app.suno.ai/).
 -   Special thanks to [Il Deposito](https://www.ildeposito.org)
 
-## Download
-
-The last releases can be downloaded at https://rebels.frittura.org.
-
 ## Contribution
 
-Found a problem or have a suggestion? Feel free to open an issue.
+It is almost guaranteed that you will encounter bugs along your journey. If you do, please open an issue and describe what happened. If you are a developer and want to contribute, feel free to open a pull request.
 
 ## License
 

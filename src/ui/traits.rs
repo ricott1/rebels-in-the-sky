@@ -1,8 +1,13 @@
 use super::ui_callback::UiCallbackPreset;
-use crate::types::AppResult;
 use crate::world::world::World;
+use crate::{types::AppResult, world::skill::Rated};
 use core::fmt::Debug;
-use ratatui::{prelude::Rect, text::Span, Frame};
+use ratatui::{
+    prelude::Rect,
+    style::{Color, Style},
+    text::Span,
+    Frame,
+};
 
 pub trait Screen {
     fn name(&self) -> &str;
@@ -49,3 +54,23 @@ impl Debug for dyn SplitPanel {
         write!(f, "SplitPanel{{{:?}}}", self)
     }
 }
+
+pub trait StyledRating: Rated {
+    fn style(&self) -> Style {
+        match self.rating() {
+            1..=2 => Style::default().fg(Color::Red),
+            3..=4 => Style::default().fg(Color::LightRed),
+            5..=6 => Style::default().fg(Color::Yellow),
+            7..=8 => Style::default().fg(Color::LightYellow),
+            9..=10 => Style::default().fg(Color::White),
+            11..=12 => Style::default().fg(Color::White),
+            13..=14 => Style::default().fg(Color::LightGreen),
+            15..=16 => Style::default().fg(Color::Green),
+            17..=18 => Style::default().fg(Color::Cyan),
+            19..=20 => Style::default().fg(Color::LightBlue),
+            _ => panic!("Invalid rating"),
+        }
+    }
+}
+
+impl StyledRating for f32 {}

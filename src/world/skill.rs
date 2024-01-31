@@ -4,7 +4,6 @@ use super::position::{GamePosition, Position};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
-use ratatui::style::{Color, Style};
 use serde::{Deserialize, Serialize};
 
 const NORMAL_AVG: f32 = 0.6;
@@ -51,21 +50,6 @@ pub trait Rated {
             15..=16 => "★★★★☆".to_string(),
             17..=18 => "★★★★½".to_string(),
             19..=20 => "★★★★★".to_string(),
-            _ => panic!("Invalid rating"),
-        }
-    }
-    fn style(&self) -> Style {
-        match self.rating() {
-            1..=2 => Style::default().fg(Color::Red),
-            3..=4 => Style::default().fg(Color::LightRed),
-            5..=6 => Style::default().fg(Color::Yellow),
-            7..=8 => Style::default().fg(Color::LightYellow),
-            9..=10 => Style::default().fg(Color::White),
-            11..=12 => Style::default().fg(Color::White),
-            13..=14 => Style::default().fg(Color::LightGreen),
-            15..=16 => Style::default().fg(Color::Green),
-            17..=18 => Style::default().fg(Color::Cyan),
-            19..=20 => Style::default().fg(Color::LightBlue),
             _ => panic!("Invalid rating"),
         }
     }

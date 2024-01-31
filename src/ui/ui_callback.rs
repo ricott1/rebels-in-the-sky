@@ -11,7 +11,7 @@ use crate::{
     app::App,
     engine::{tactic::OffenseTactic, types::TeamInGame},
     image::color_map::{ColorMap, ColorPreset},
-    network::types::Challenge,
+    network::{constants::DEFAULT_PORT, types::Challenge},
     types::{
         AppCallback, AppResult, GameId, IdSystem, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick,
         SECONDS,
@@ -592,10 +592,18 @@ impl UiCallbackPreset {
 
     fn dial(address: String) -> AppCallback {
         Box::new(move |app: &mut App| {
+            let multiaddr = match address.clone() {
+                x if x == "seed".to_string() => {
+                    app.network_handler.as_ref().unwrap().seed_address.clone()
+                }
+                _ => format!("/ip4/{address}/tcp/{DEFAULT_PORT}")
+                    .as_str()
+                    .parse()?,
+            };
             app.network_handler
                 .as_mut()
                 .unwrap()
-                .dial(&address)
+                .dial(multiaddr)
                 .map_err(|e| e.to_string())?;
             app.world.dirty_network = true;
             Ok(None)

@@ -80,9 +80,13 @@ pub struct GameStats {
     pub morale: u8,
     #[serde(skip_serializing_if = "is_zero")]
     #[serde(default)]
+    pub initial_tiredness: f32,
+    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(default)]
     pub tiredness: f32,
     pub shot_positions: Vec<(u8, u8, bool)>, //x, y, is_made
     pub experience_at_position: [u16; 5],
+    pub knocked_out_by: Option<PlayerId>,
 }
 
 impl GameStats {
@@ -112,10 +116,15 @@ impl GameStats {
         for (idx, exp) in stats.experience_at_position.iter().enumerate() {
             self.experience_at_position[idx] += exp;
         }
+        self.knocked_out_by = stats.knocked_out_by.clone();
     }
 
     pub fn is_playing(&self) -> bool {
-        self.position.is_some() //&& self.position.unwrap() < MAX_POSITION
+        self.position.is_some()
+    }
+
+    pub fn is_knocked_out(&self) -> bool {
+        self.knocked_out_by.is_some()
     }
 
     pub fn add_tiredness(&mut self, tiredness: f32, stamina: f32) {
@@ -147,6 +156,7 @@ impl<'game> TeamInGame {
             if (idx as Position) < MAX_POSITION {
                 player_stats.position = Some(idx as Position);
             }
+            player_stats.initial_tiredness = players[player_id].tiredness;
             player_stats.tiredness = players[player_id].tiredness;
             stats.insert(player_id.clone(), player_stats.clone());
         }

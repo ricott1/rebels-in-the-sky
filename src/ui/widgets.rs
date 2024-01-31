@@ -2,6 +2,7 @@ use super::{
     clickable_list::{ClickableList, ClickableListItem},
     constants::UiStyle,
     gif_map::GifMap,
+    traits::StyledRating,
     ui_callback::CallbackRegistry,
 };
 use crate::{

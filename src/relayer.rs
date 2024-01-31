@@ -14,7 +14,8 @@ impl Relayer {
     pub fn new() -> Self {
         Self {
             running: true,
-            network_handler: NetworkHandler::new().expect("Failed to initialize network handler"),
+            network_handler: NetworkHandler::new(None)
+                .expect("Failed to initialize network handler"),
         }
     }
 

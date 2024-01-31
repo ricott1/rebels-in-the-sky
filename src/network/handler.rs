@@ -1,9 +1,9 @@
 use super::constants::*;
 use super::network_callback::{split_message, NetworkCallbackPreset};
-use super::types::{Challenge, ChallengeState, NetworkTeam};
+use super::types::{Challenge, ChallengeState, NetworkGame, NetworkTeam};
 use crate::engine::types::TeamInGame;
-use crate::types::AppResult;
 use crate::types::TeamId;
+use crate::types::{AppResult, GameId};
 use crate::types::{SystemTimeTick, Tick};
 use crate::world::world::World;
 use libp2p::core::upgrade::Version;
@@ -23,12 +23,12 @@ pub struct NetworkHandler {
     pub swarm: Swarm<gossipsub::Behaviour>,
     pub address: Multiaddr,
     challenges: HashMap<PeerId, Challenge>,
+    pub seed_address: Multiaddr,
 }
 
 impl Debug for NetworkHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NetworkHandler")
-            // .field("swarm", &self.swarm)
             .field("address", &self.address)
             .field("challenges", &self.challenges)
             .finish()
@@ -36,7 +36,7 @@ impl Debug for NetworkHandler {
 }
 
 impl NetworkHandler {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
+    pub fn new(seed_ip: Option<String>) -> Result<Self, Box<dyn Error>> {
         env_logger::init();
         let local_key = identity::Keypair::generate_ed25519();
         let local_peer_id = PeerId::from(local_key.public());
@@ -80,14 +80,8 @@ impl NetworkHandler {
 
         gossipsub.subscribe(&IdentTopic::new(TEAM_TOPIC))?;
         gossipsub.subscribe(&IdentTopic::new(MSG_TOPIC))?;
+        gossipsub.subscribe(&IdentTopic::new(GAME_TOPIC))?;
         gossipsub.subscribe(&IdentTopic::new(CHALLENGE_TOPIC))?;
-
-        // Create a Swarm to manage peers and events
-        // let mut swarm = {
-        //     SwarmBuilder::with_tokio_executor(tcp_transport, gossipsub, local_peer_id)
-        //         .idle_connection_timeout(Duration::from_secs(60))
-        //         .build()
-        // };
 
         let mut swarm = Swarm::new(
             tcp_transport,
@@ -104,10 +98,18 @@ impl NetworkHandler {
             swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{DEFAULT_PORT_BACKUP}").parse()?)?;
         }
 
+        let seed_address = match seed_ip {
+            Some(ip) => format!("/ip4/{}/tcp/{DEFAULT_PORT}", ip)
+                .parse()
+                .expect("Invalid provided seed ip."),
+            None => SEED_ADDRESS.parse()?,
+        };
+
         Ok(Self {
             swarm,
             address: Multiaddr::empty(),
             challenges: HashMap::new(),
+            seed_address,
         })
     }
 
@@ -125,17 +127,9 @@ impl NetworkHandler {
             .insert(challenge.home_peer_id.clone(), challenge);
     }
 
-    pub fn dial(&mut self, address: &str) -> AppResult<()> {
-        let remote_address: Multiaddr = match address {
-            "local" => format!("/ip4/127.0.0.1/tcp/{DEFAULT_PORT}")
-                .as_str()
-                .parse()?,
-            "seed" => SEED.parse()?,
-            _ => address.parse()?,
-        };
-
-        if remote_address != self.address {
-            self.swarm.dial(remote_address)?;
+    pub fn dial(&mut self, address: Multiaddr) -> AppResult<()> {
+        if address != self.address {
+            self.swarm.dial(address)?;
         }
         Ok(())
     }
@@ -145,11 +139,28 @@ impl NetworkHandler {
     }
 
     pub fn send_own_team(&mut self, world: &World) -> AppResult<MessageId> {
-        if world.has_own_team() {
-            self.send_team(world, world.own_team_id)
+        let message_id = if world.has_own_team() {
+            self.send_team(world, world.own_team_id)?
         } else {
-            Err("No own team".into())
+            return Err("No own team".into());
+        };
+
+        //If own team is playing with network peer, send the game.
+        if let Some(game_id) = world.get_own_team()?.current_game {
+            let game = world.get_game_or_err(game_id)?;
+            if game.home_team_in_game.peer_id.is_some() && game.away_team_in_game.peer_id.is_some()
+            {
+                return self.send_game(world, game_id);
+            }
         }
+
+        Ok(message_id)
+    }
+
+    fn send_game(&mut self, world: &World, game_id: GameId) -> AppResult<MessageId> {
+        let network_game = NetworkGame::from_game_id(&world, game_id)?;
+        let serialized_game = serde_json::to_string(&network_game)?.as_bytes().to_vec();
+        self._send(serialized_game, GAME_TOPIC)
     }
 
     fn send_team(&mut self, world: &World, team_id: TeamId) -> AppResult<MessageId> {
@@ -268,6 +279,9 @@ impl NetworkHandler {
                 }
                 x if x == IdentTopic::new(CHALLENGE_TOPIC).hash() => {
                     Some(NetworkCallbackPreset::HandleChallengeTopic { message })
+                }
+                x if x == IdentTopic::new(GAME_TOPIC).hash() => {
+                    Some(NetworkCallbackPreset::HandleGameTopic { message })
                 }
                 _ => None,
             },
