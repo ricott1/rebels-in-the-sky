@@ -26,7 +26,7 @@ fn get_subs<'a>(players: Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a 
         .skip(5)
         .filter(|&p| {
             let stats = team_stats.get(&p.id).unwrap();
-            return stats.is_playing() == false && stats.tiredness < MIN_TIREDNESS_FOR_SUB;
+            return stats.is_playing() == false && stats.tiredness <= MIN_TIREDNESS_FOR_SUB;
         })
         //Sort from most to less skilled*tired
         .sorted_by(|&a, &b| {

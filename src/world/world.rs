@@ -512,7 +512,7 @@ impl World {
                 self.get_planet_or_err(network_game.location)?,
             );
 
-            while game.timer < network_game.timer {
+            while game.timer.value < network_game.timer.value && !game.timer.has_ended() {
                 game.tick();
             }
 

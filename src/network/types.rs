@@ -127,7 +127,7 @@ impl NetworkGame {
 
         let mut home_team_in_game = game.home_team_in_game.clone();
         let mut stats = HashMap::new();
-        for (idx, player_id) in home_team_in_game.players.keys().enumerate() {
+        for (idx, player_id) in home_team_in_game.initial_positions.iter().enumerate() {
             let mut player_stats = GameStats::default();
             if (idx as Position) < MAX_POSITION {
                 player_stats.position = Some(idx as Position);
@@ -144,7 +144,7 @@ impl NetworkGame {
 
         let mut away_team_in_game = game.away_team_in_game.clone();
         let mut stats = HashMap::new();
-        for (idx, player_id) in away_team_in_game.players.keys().enumerate() {
+        for (idx, player_id) in away_team_in_game.initial_positions.iter().enumerate() {
             let mut player_stats = GameStats::default();
             if (idx as Position) < MAX_POSITION {
                 player_stats.position = Some(idx as Position);

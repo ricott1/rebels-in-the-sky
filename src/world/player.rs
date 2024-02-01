@@ -22,13 +22,13 @@ use libp2p::PeerId;
 use rand::{seq::SliceRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
-use serde::{Deserialize, Serialize};
+use serde::{de::Visitor, ser::SerializeStruct, Deserialize, Serialize};
 
 const HOOK_MAX_BALL_HANDLING: f32 = 4.0;
 const EYE_PATCH_MAX_VISION: f32 = 4.0;
 const WOODEN_LEG_MAX_QUICKNESS: f32 = 4.0;
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Player {
     pub id: PlayerId,
     pub peer_id: Option<PeerId>,
@@ -40,8 +40,8 @@ pub struct Player {
     pub playing_style: PlayingStyle,
     pub athleticism: Athleticism,
     pub offense: Offense,
-    pub technical: Technical,
     pub defense: Defense,
+    pub technical: Technical,
     pub mental: Mental,
     pub image: PlayerImage,
     pub current_location: PlayerLocation,
@@ -50,13 +50,450 @@ pub struct Player {
     pub tiredness: f32,
 }
 
-impl Player {
-    pub fn load(data: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut player = serde_json::from_slice::<Player>(&data)?;
-        player.compose_image()?;
-        player.previous_skills = player.current_skill_array();
-        Ok(player)
+impl Serialize for Player {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Don't serialize athleticism, offense, technical, defense, mental
+        // and serialize them in a vector which is then deserialized
+        // into the corresponding fields
+        let compact_skills = self.current_skill_array().to_vec();
+        let mut state = serializer.serialize_struct("Player", 14)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("peer_id", &self.peer_id)?;
+        state.serialize_field("version", &self.version)?;
+        state.serialize_field("info", &self.info)?;
+        state.serialize_field("team", &self.team)?;
+        state.serialize_field("jersey_number", &self.jersey_number)?;
+        state.serialize_field("reputation", &self.reputation)?;
+        state.serialize_field("playing_style", &self.playing_style)?;
+        state.serialize_field("image", &self.image)?;
+        state.serialize_field("current_location", &self.current_location)?;
+        state.serialize_field("previous_skills", &self.previous_skills)?;
+        state.serialize_field("training_focus", &self.training_focus)?;
+        state.serialize_field("tiredness", &self.tiredness)?;
+        state.serialize_field("compact_skills", &compact_skills)?;
+        state.end()
     }
+}
+
+impl<'de> Deserialize<'de> for Player {
+    // Deserialize compact_skills into the corresponding fields.
+    // compact_skills is a vector of 20 skills.
+    // The first 4 skills are athleticism, the next 4 are offense, etc.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        enum Field {
+            Id,
+            PeerId,
+            Version,
+            Info,
+            Team,
+            JerseyNumber,
+            Reputation,
+            PlayingStyle,
+            Image,
+            CurrentLocation,
+            PreviousSkills,
+            TrainingFocus,
+            Tiredness,
+            CompactSkills,
+        }
+
+        impl<'de> Deserialize<'de> for Field {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                struct FieldVisitor;
+
+                impl<'de> Visitor<'de> for FieldVisitor {
+                    type Value = Field;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                        formatter.write_str("field name")
+                    }
+
+                    fn visit_str<E>(self, value: &str) -> Result<Field, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "id" => Ok(Field::Id),
+                            "peer_id" => Ok(Field::PeerId),
+                            "version" => Ok(Field::Version),
+                            "info" => Ok(Field::Info),
+                            "team" => Ok(Field::Team),
+                            "jersey_number" => Ok(Field::JerseyNumber),
+                            "reputation" => Ok(Field::Reputation),
+                            "playing_style" => Ok(Field::PlayingStyle),
+                            "image" => Ok(Field::Image),
+                            "current_location" => Ok(Field::CurrentLocation),
+                            "previous_skills" => Ok(Field::PreviousSkills),
+                            "training_focus" => Ok(Field::TrainingFocus),
+                            "tiredness" => Ok(Field::Tiredness),
+                            "compact_skills" => Ok(Field::CompactSkills),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+
+                deserializer.deserialize_identifier(FieldVisitor)
+            }
+        }
+
+        struct PlayerVisitor;
+
+        impl<'de> Visitor<'de> for PlayerVisitor {
+            type Value = Player;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("struct Player")
+            }
+
+            fn visit_seq<V>(self, mut seq: V) -> Result<Player, V::Error>
+            where
+                V: serde::de::SeqAccess<'de>,
+            {
+                let id = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let peer_id = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                let version = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(2, &self))?;
+                let info = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(3, &self))?;
+                let team = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(4, &self))?;
+                let jersey_number = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(5, &self))?;
+                let reputation = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(6, &self))?;
+                let playing_style = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(7, &self))?;
+                let image = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(8, &self))?;
+                let current_location = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(9, &self))?;
+                let previous_skills = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(10, &self))?;
+                let training_focus = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(11, &self))?;
+                let tiredness = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(12, &self))?;
+                let compact_skills: Vec<Skill> = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(13, &self))?;
+
+                let mut player = Player {
+                    id,
+                    peer_id,
+                    version,
+                    info,
+                    team,
+                    jersey_number,
+                    reputation,
+                    playing_style,
+                    athleticism: Athleticism::default(),
+                    offense: Offense::default(),
+                    defense: Defense::default(),
+                    technical: Technical::default(),
+                    mental: Mental::default(),
+                    image,
+                    current_location,
+                    previous_skills,
+
+                    training_focus,
+                    tiredness,
+                };
+
+                player.athleticism = Athleticism {
+                    quickness: compact_skills[0],
+                    vertical: compact_skills[1],
+                    strength: compact_skills[2],
+                    stamina: compact_skills[3],
+                };
+                player.offense = Offense {
+                    dunk: compact_skills[4],
+                    close_range: compact_skills[5],
+                    medium_range: compact_skills[6],
+                    long_range: compact_skills[7],
+                };
+                player.defense = Defense {
+                    steal: compact_skills[8],
+                    block: compact_skills[9],
+                    perimeter_defense: compact_skills[10],
+                    interior_defense: compact_skills[11],
+                };
+                player.technical = Technical {
+                    passing: compact_skills[12],
+                    ball_handling: compact_skills[13],
+                    post_moves: compact_skills[14],
+                    rebounding: compact_skills[15],
+                };
+                player.mental = Mental {
+                    vision: compact_skills[16],
+                    positioning: compact_skills[17],
+                    off_ball_movement: compact_skills[18],
+                    charisma: compact_skills[19],
+                };
+
+                Ok(player)
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Player, V::Error>
+            where
+                V: serde::de::MapAccess<'de>,
+            {
+                let mut id = None;
+                let mut peer_id = None;
+                let mut version = None;
+                let mut info = None;
+                let mut team = None;
+                let mut jersey_number = None;
+                let mut reputation = None;
+                let mut playing_style = None;
+                let mut image = None;
+                let mut current_location = None;
+                let mut previous_skills = None;
+                let mut training_focus = None;
+                let mut tiredness = None;
+                let mut compact_skills: Option<Vec<Skill>> = None;
+
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Id => {
+                            if id.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id = Some(map.next_value()?);
+                        }
+                        Field::PeerId => {
+                            if peer_id.is_some() {
+                                return Err(serde::de::Error::duplicate_field("peer_id"));
+                            }
+                            peer_id = Some(map.next_value()?);
+                        }
+                        Field::Version => {
+                            if version.is_some() {
+                                return Err(serde::de::Error::duplicate_field("version"));
+                            }
+                            version = Some(map.next_value()?);
+                        }
+                        Field::Info => {
+                            if info.is_some() {
+                                return Err(serde::de::Error::duplicate_field("info"));
+                            }
+                            info = Some(map.next_value()?);
+                        }
+                        Field::Team => {
+                            if team.is_some() {
+                                return Err(serde::de::Error::duplicate_field("team"));
+                            }
+                            team = Some(map.next_value()?);
+                        }
+                        Field::JerseyNumber => {
+                            if jersey_number.is_some() {
+                                return Err(serde::de::Error::duplicate_field("jersey_number"));
+                            }
+                            jersey_number = Some(map.next_value()?);
+                        }
+                        Field::Reputation => {
+                            if reputation.is_some() {
+                                return Err(serde::de::Error::duplicate_field("reputation"));
+                            }
+                            reputation = Some(map.next_value()?);
+                        }
+                        Field::PlayingStyle => {
+                            if playing_style.is_some() {
+                                return Err(serde::de::Error::duplicate_field("playing_style"));
+                            }
+                            playing_style = Some(map.next_value()?);
+                        }
+                        Field::Image => {
+                            if image.is_some() {
+                                return Err(serde::de::Error::duplicate_field("image"));
+                            }
+                            image = Some(map.next_value()?);
+                        }
+                        Field::CurrentLocation => {
+                            if current_location.is_some() {
+                                return Err(serde::de::Error::duplicate_field("current_location"));
+                            }
+                            current_location = Some(map.next_value()?);
+                        }
+                        Field::PreviousSkills => {
+                            if previous_skills.is_some() {
+                                return Err(serde::de::Error::duplicate_field("previous_skills"));
+                            }
+                            previous_skills = Some(map.next_value()?);
+                        }
+                        Field::TrainingFocus => {
+                            if training_focus.is_some() {
+                                return Err(serde::de::Error::duplicate_field("training_focus"));
+                            }
+                            training_focus = Some(map.next_value()?);
+                        }
+                        Field::Tiredness => {
+                            if tiredness.is_some() {
+                                return Err(serde::de::Error::duplicate_field("tiredness"));
+                            }
+                            tiredness = Some(map.next_value()?);
+                        }
+                        Field::CompactSkills => {
+                            if compact_skills.is_some() {
+                                return Err(serde::de::Error::duplicate_field("compact_skills"));
+                            }
+                            compact_skills = Some(map.next_value()?);
+                        }
+                    }
+                }
+
+                let id = id.ok_or_else(|| serde::de::Error::missing_field("id"))?;
+                let peer_id = peer_id.ok_or_else(|| serde::de::Error::missing_field("peer_id"))?;
+                let version = version.ok_or_else(|| serde::de::Error::missing_field("version"))?;
+                let info = info.ok_or_else(|| serde::de::Error::missing_field("info"))?;
+                let team = team.ok_or_else(|| serde::de::Error::missing_field("team"))?;
+                let jersey_number = jersey_number
+                    .ok_or_else(|| serde::de::Error::missing_field("jersey_number"))?;
+                let reputation =
+                    reputation.ok_or_else(|| serde::de::Error::missing_field("reputation"))?;
+                let playing_style = playing_style
+                    .ok_or_else(|| serde::de::Error::missing_field("playing_style"))?;
+                let image = image.ok_or_else(|| serde::de::Error::missing_field("image"))?;
+                let current_location = current_location
+                    .ok_or_else(|| serde::de::Error::missing_field("current_location"))?;
+                let previous_skills = previous_skills
+                    .ok_or_else(|| serde::de::Error::missing_field("previous_skills"))?;
+                let training_focus = training_focus
+                    .ok_or_else(|| serde::de::Error::missing_field("training_focus"))?;
+                let tiredness =
+                    tiredness.ok_or_else(|| serde::de::Error::missing_field("tiredness"))?;
+                let compact_skills = compact_skills
+                    .ok_or_else(|| serde::de::Error::missing_field("compact_skills"))?;
+
+                let mut player = Player {
+                    id,
+                    peer_id,
+                    version,
+                    info,
+                    team,
+                    jersey_number,
+                    reputation,
+                    playing_style,
+                    athleticism: Athleticism::default(),
+                    offense: Offense::default(),
+                    defense: Defense::default(),
+                    technical: Technical::default(),
+                    mental: Mental::default(),
+                    image,
+                    current_location,
+                    previous_skills,
+                    training_focus,
+                    tiredness,
+                };
+
+                player.athleticism = Athleticism {
+                    quickness: compact_skills[0],
+                    vertical: compact_skills[1],
+                    strength: compact_skills[2],
+                    stamina: compact_skills[3],
+                };
+                player.offense = Offense {
+                    dunk: compact_skills[4],
+                    close_range: compact_skills[5],
+                    medium_range: compact_skills[6],
+                    long_range: compact_skills[7],
+                };
+                player.defense = Defense {
+                    steal: compact_skills[8],
+                    block: compact_skills[9],
+                    perimeter_defense: compact_skills[10],
+                    interior_defense: compact_skills[11],
+                };
+                player.technical = Technical {
+                    passing: compact_skills[12],
+                    ball_handling: compact_skills[13],
+                    post_moves: compact_skills[14],
+                    rebounding: compact_skills[15],
+                };
+                player.mental = Mental {
+                    vision: compact_skills[16],
+                    positioning: compact_skills[17],
+                    off_ball_movement: compact_skills[18],
+                    charisma: compact_skills[19],
+                };
+
+                Ok(player)
+            }
+        }
+
+        const FIELDS: &'static [&'static str] = &[
+            "id",
+            "peer_id",
+            "version",
+            "info",
+            "team",
+            "jersey_number",
+            "reputation",
+            "playing_style",
+            "image",
+            "current_location",
+            "previous_skills",
+            "training_focus",
+            "tiredness",
+            "compact_skills",
+        ];
+        deserializer.deserialize_struct("Player", FIELDS, PlayerVisitor)
+    }
+}
+
+impl Player {
+    // pub fn load(data: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
+    //     let mut player = serde_json::from_slice::<Player>(&data)?;
+    //     player.compose_image()?;
+    //     // player.previous_skills = player.current_skill_array();
+    //     player.athleticism = Athleticism {
+    //         quickness: player.compact_skills[0],
+    //         vertical: player.compact_skills[1],
+    //         strength: player.compact_skills[2],
+    //         stamina: player.compact_skills[3],
+    //     };
+    //     player.offense = Offense {
+    //         dunk: player.compact_skills[4],
+    //         close_range: player.compact_skills[5],
+    //         medium_range: player.compact_skills[6],
+    //         long_range: player.compact_skills[7],
+    //     };
+    //     player.defense = Defense {
+    //         steal: player.compact_skills[8],
+    //         block: player.compact_skills[9],
+    //         perimeter_defense: player.compact_skills[10],
+    //         interior_defense: player.compact_skills[11],
+    //     };
+    //     player.technical = Technical {
+    //         passing: player.compact_skills[12],
+    //         ball_handling: player.compact_skills[13],
+    //         post_moves: player.compact_skills[14],
+    //         rebounding: player.compact_skills[15],
+    //     };
+    //     player.mental = Mental {
+    //         vision: player.compact_skills[16],
+    //         positioning: player.compact_skills[17],
+    //         off_ball_movement: player.compact_skills[18],
+    //         charisma: player.compact_skills[19],
+    //     };
+    //     player.compact_skills = vec![];
+
+    //     Ok(player)
+    // }
 
     pub fn current_skill_array(&self) -> [Skill; 20] {
         // assert!(self.previous_skills.len() == 20);

@@ -255,19 +255,19 @@ impl GamePanel {
             .max_by(|&a, &b| a.total_skills().cmp(&b.total_skills()))
             .unwrap();
 
-        if let Ok(mut lines) =
-            self.gif_map
-                .borrow_mut()
-                .player_frame_lines(base_home_player.id, self.tick, world)
+        if let Ok(mut lines) = self
+            .gif_map
+            .borrow_mut()
+            .player_frame_lines(&base_home_player, self.tick)
         {
             lines.remove(0);
             let paragraph = Paragraph::new(lines).alignment(Alignment::Center);
             frame.render_widget(paragraph, top_split[1]);
         }
-        if let Ok(mut lines) =
-            self.gif_map
-                .borrow_mut()
-                .player_frame_lines(base_away_player.id, self.tick, world)
+        if let Ok(mut lines) = self
+            .gif_map
+            .borrow_mut()
+            .player_frame_lines(&base_away_player, self.tick)
         {
             lines.remove(0);
             let paragraph = Paragraph::new(lines).alignment(Alignment::Center);

@@ -33,6 +33,8 @@ Suggested minimal terminal size: 162x48. Not all terminals support the game colo
 -   MacOs: [iTerm2](https://iterm2.com/)
 -   Windows: need a someone to test it :)
 
+**Important**: currently the game generates local teams by defalt. This behaviour can be disabled by passing the `-f` flag to the executable. In the future, when more players will be available, the game will default to online teams only.
+
 ## Credits
 
 -   Planet gifs were generated using the [pixel planet generator](https://deep-fold.itch.io/pixel-planet-generator) by [Deep Fold](https://deep-fold.itch.io/).

@@ -46,6 +46,7 @@ pub enum ActionSituation {
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct ActionOutput {
+    pub random_seed: [u8; 32],
     pub advantage: Advantage,
     pub attackers: Vec<usize>,
     pub defenders: Vec<usize>,
@@ -105,7 +106,7 @@ impl Action {
         game: &Game,
         rng: &mut ChaCha8Rng,
     ) -> Option<ActionOutput> {
-        match self {
+        let mut output = match self {
             Action::JumpBall => JumpBall.execute(input, game, rng),
             Action::StartOfQuarter => StartOfQuarter.execute(input, game, rng),
             Action::EndOfQuarter => EndOfQuarter.execute(input, game, rng),
@@ -118,6 +119,10 @@ impl Action {
             Action::MediumShot => MediumShot.execute(input, game, rng),
             Action::LongShot => LongShot.execute(input, game, rng),
             Action::Substitution => Substitution.execute(input, game, rng),
+        };
+        if output.is_some() {
+            output.as_mut().unwrap().random_seed = rng.get_seed();
         }
+        output
     }
 }

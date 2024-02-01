@@ -1,13 +1,13 @@
 use super::{
     action::{Action, ActionOutput, ActionSituation},
-    constants::{TirednessCost, RECOVERING_TIREDNESS_PER_SHORT_TICK},
+    constants::*,
     end_of_quarter::EndOfQuarter,
     substitution::Substitution,
     timer::Timer,
     types::{GameStatsMap, Possession, TeamInGame},
 };
 use crate::{
-    types::{GameId, PlanetId, SortablePlayerMap, SystemTimeTick, TeamId, Tick},
+    types::{GameId, PlanetId, SortablePlayerMap, TeamId, Tick, SECONDS},
     world::{planet::Planet, player::Player, position::MAX_POSITION},
 };
 use rand::SeedableRng;
@@ -87,7 +87,7 @@ impl<'game> Game {
             .map(|(_, population)| population)
             .sum::<u32>();
 
-        let attendance = total_reputation as u32 * total_population;
+        let attendance = BASE_ATTENDANCE + total_reputation as u32 * total_population;
 
         let mut default_output = ActionOutput::default();
         default_output.description = format!(
@@ -95,7 +95,7 @@ impl<'game> Game {
             home_team_in_game.name, away_team_in_game.name, planet.name, attendance
         );
 
-        Self {
+        let mut game = Self {
             id,
             home_team_in_game,
             away_team_in_game,
@@ -109,7 +109,9 @@ impl<'game> Game {
             timer: Timer::default(),
             next_step: 0,
             current_action: Action::JumpBall,
-        }
+        };
+        game.action_results[0].random_seed = game.get_rng_seed();
+        game
     }
 
     fn pick_action(&self, rng: &mut ChaCha8Rng) -> Action {
@@ -295,7 +297,7 @@ impl<'game> Game {
 
         if self.timer.has_ended() {
             if self.ended_at.is_none() {
-                self.ended_at = Some(Tick::now());
+                self.ended_at = Some(self.starting_at + self.timer.value as Tick * SECONDS);
             }
             return;
         }

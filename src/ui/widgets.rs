@@ -200,10 +200,7 @@ pub fn render_player_description(
         ])
         .split(h_split[1]);
 
-    if let Ok(lines) = gif_map
-        .borrow_mut()
-        .player_frame_lines(player.id, tick, world)
-    {
+    if let Ok(lines) = gif_map.borrow_mut().player_frame_lines(&player, tick) {
         let paragraph = Paragraph::new(lines);
         frame.render_widget(paragraph, header_body_img[1]);
     }

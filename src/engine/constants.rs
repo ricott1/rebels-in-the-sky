@@ -20,3 +20,5 @@ impl TirednessCost {
 pub const MAX_TIREDNESS: f32 = 100.0;
 pub const RECOVERING_TIREDNESS_PER_SHORT_TICK: f32 = 0.05;
 pub const MIN_TIREDNESS_FOR_SUB: f32 = 50.0;
+
+pub const BASE_ATTENDANCE: u32 = 60;

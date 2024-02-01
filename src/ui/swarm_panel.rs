@@ -179,15 +179,7 @@ impl SwarmPanel {
         frame.render_widget(list.block(default_block().title("Peers")), split[3]);
 
         let dial_button = Button::new(
-            format!(
-                "Connect ({} peer{})",
-                self.connected_peers.len(),
-                if self.connected_peers.len() == 1 {
-                    ""
-                } else {
-                    "s"
-                }
-            ),
+            "Ping".to_string(),
             UiCallbackPreset::Dial {
                 address: "seed".to_string(),
             },

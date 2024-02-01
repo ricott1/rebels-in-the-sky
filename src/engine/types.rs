@@ -17,75 +17,83 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, ops::Not};
 
-fn is_zero<T: Default + PartialOrd>(v: &T) -> bool {
+fn is_default<T: Default + PartialOrd>(v: &T) -> bool {
     *v == T::default()
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GameStats {
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub position: Option<Position>,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub seconds_played: u16,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub fouls: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub technical_fouls: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub points: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub attempted_ft: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub made_ft: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub attempted_2pt: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub made_2pt: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub attempted_3pt: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub made_3pt: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub offensive_rebounds: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub defensive_rebounds: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub assists: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub steals: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub blocks: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub turnovers: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub plus_minus: i16,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub morale: u8,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub initial_tiredness: f32,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub tiredness: f32,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub shot_positions: Vec<(u8, u8, bool)>, //x, y, is_made
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub experience_at_position: [u16; 5],
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub knocked_out_by: Option<PlayerId>,
 }
 

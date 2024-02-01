@@ -265,7 +265,6 @@ impl TeamListPanel {
             if i >= team.player_ids.len() {
                 break;
             }
-            let player = world.get_player_or_err(team.player_ids[i])?;
 
             // recalculate button area: to offset the missing box of the radiobutton
             // we add an extra row to top and bottom
@@ -287,10 +286,12 @@ impl TeamListPanel {
             );
             frame.render_widget(button, button_area);
 
-            if let Ok(lines) =
-                self.gif_map
-                    .borrow_mut()
-                    .player_frame_lines(team.player_ids[i], self.tick, world)
+            let player = world.get_player_or_err(team.player_ids[i])?;
+
+            if let Ok(lines) = self
+                .gif_map
+                .borrow_mut()
+                .player_frame_lines(player, self.tick)
             {
                 frame.render_widget(
                     Paragraph::new(lines).alignment(Alignment::Center),

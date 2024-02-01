@@ -2,7 +2,7 @@
 
 use crate::event::TerminalEvent;
 use crate::network::handler::NetworkHandler;
-use crate::store::{reset, save_world};
+use crate::store::{get_world_size, reset, save_world};
 use crate::tui::Tui;
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::ui::ui::Ui;
@@ -100,6 +100,7 @@ impl App {
         if initialize.is_err() {
             panic!("Failed to initialize world: {}", initialize.err().unwrap());
         }
+        self.world.serialized_size = get_world_size().expect("Failed to get world size");
     }
 
     pub fn load_world(&mut self) {
@@ -126,6 +127,7 @@ impl App {
                 panic!("Failed to simulate world");
             }
         }
+        self.world.serialized_size = get_world_size().expect("Failed to get world size");
     }
 
     /// Set running to false to quit the application.
@@ -181,8 +183,8 @@ impl App {
             let mut own_team = self.world.get_own_team()?.clone();
             own_team.version += 1;
             self.world.teams.insert(own_team.id, own_team);
-            self.world.serialized_size =
-                save_world(&self.world, false).expect("Failed to save world");
+            save_world(&self.world, false).expect("Failed to save world");
+            self.world.serialized_size = get_world_size().expect("Failed to get world size");
 
             self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
                 timestamp: Tick::now(),

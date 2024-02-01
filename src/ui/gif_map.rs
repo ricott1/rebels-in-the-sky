@@ -98,16 +98,7 @@ impl GifMap {
         Ok(gif)
     }
 
-    pub fn player_frame_lines(
-        &mut self,
-        player_id: PlayerId,
-        tick: usize,
-        world: &World,
-    ) -> AppResult<FrameLines> {
-        let player = world
-            .get_player(player_id)
-            .ok_or("World: Player not found.")?;
-
+    pub fn player_frame_lines(&mut self, player: &Player, tick: usize) -> AppResult<FrameLines> {
         if let Some((version, lines)) = self.players_lines.get(&player.id) {
             if player.version == *version {
                 return Ok(lines[(tick / 8) % lines.len()].clone());

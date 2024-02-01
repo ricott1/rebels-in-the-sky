@@ -237,7 +237,7 @@ impl Screen for MyTeamPanel {
         for idx in 0..MAX_POSITION as usize {
             let position = idx as Position;
             let rect = position_button_splits[idx];
-            let button = Button::new(
+            let mut button = Button::new(
                 format!(
                     "{}:{:>2}",
                     (idx + 1).to_string(),
@@ -249,6 +249,10 @@ impl Screen for MyTeamPanel {
                 },
                 Rc::clone(&self.callback_registry),
             );
+            let position = team.player_ids.iter().position(|id| *id == player.id);
+            if position.is_some() && position.unwrap() == idx {
+                button.disable(None);
+            }
             frame.render_widget(button, rect);
         }
         let auto_assign_button = Button::new(
