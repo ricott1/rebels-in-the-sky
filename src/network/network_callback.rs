@@ -1,6 +1,6 @@
 use super::constants::*;
 use super::handler::NetworkHandler;
-use super::types::{Challenge, ChallengeState, NetworkGame, NetworkTeam};
+use super::types::{Challenge, ChallengeState, NetworkGame, NetworkTeam, SeedInfo};
 use crate::types::{AppResult, SystemTimeTick, Tick, MINUTES};
 use crate::types::{GameId, IdSystem};
 use crate::ui::utils::SwarmPanelEvent;
@@ -39,10 +39,16 @@ pub enum NetworkCallbackPreset {
     HandleTeamTopic {
         message: Message,
     },
+    HandleMsgTopic {
+        message: Message,
+    },
     HandleChallengeTopic {
         message: Message,
     },
     HandleGameTopic {
+        message: Message,
+    },
+    HandleSeedTopic {
         message: Message,
     },
 }
@@ -96,7 +102,7 @@ impl NetworkCallbackPreset {
             };
             app.ui.swarm_panel.push_log_event(event);
 
-            if topic == IdentTopic::new(TEAM_TOPIC).hash() {
+            if topic == IdentTopic::new(SubscriptionTopic::TEAM).hash() {
                 if app.world.has_own_team() {
                     app.network_handler
                         .as_mut()
@@ -186,6 +192,20 @@ impl NetworkCallbackPreset {
         })
     }
 
+    fn handle_msg_topic(message: Message) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let (timestamp, data) = split_message(&message);
+            let text = std::str::from_utf8(data)?.to_string();
+            let event = SwarmPanelEvent {
+                timestamp,
+                peer_id: message.source,
+                text: text.clone(),
+            };
+            app.ui.swarm_panel.push_chat_event(event);
+            Ok(None)
+        })
+    }
+
     fn handle_game_topic(message: Message) -> AppCallback {
         Box::new(move |app: &mut App| {
             let (timestamp, data) = split_message(&message);
@@ -218,6 +238,47 @@ impl NetworkCallbackPreset {
                 };
                 app.ui.swarm_panel.push_log_event(event);
                 return Err(text)?;
+            }
+            Ok(None)
+        })
+    }
+
+    pub fn handle_seed_topic(message: Message) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let (timestamp, data) = split_message(&message);
+            let info = serde_json::from_slice::<SeedInfo>(data)?;
+
+            let event = SwarmPanelEvent {
+                timestamp,
+                peer_id: message.source,
+                text: format!("Total peers: {}", info.connected_peers_count),
+            };
+            app.ui.swarm_panel.push_log_event(event);
+
+            if info.message.is_some() {
+                app.ui.set_popup(crate::ui::ui::PopupMessage::Ok(
+                    info.message.unwrap(),
+                    timestamp,
+                ));
+            }
+
+            let own_version_major = env!("CARGO_PKG_VERSION_MAJOR").parse()?;
+            let own_version_minor = env!("CARGO_PKG_VERSION_MINOR").parse()?;
+            let own_version_patch = env!("CARGO_PKG_VERSION_PATCH").parse()?;
+
+            if info.version_major > own_version_major
+                || (info.version_major == own_version_major
+                    && info.version_minor > own_version_minor)
+                || (info.version_major == own_version_major
+                    && info.version_minor == own_version_minor
+                    && info.version_patch > own_version_patch)
+            {
+                let text = format!(
+                    "New version {}.{}.{} available. Download at https://rebels.frittura.org",
+                    info.version_major, info.version_minor, info.version_patch,
+                );
+                app.ui
+                    .set_popup(crate::ui::ui::PopupMessage::Ok(text, timestamp));
             }
             Ok(None)
         })
@@ -406,10 +467,12 @@ impl NetworkCallbackPreset {
                 Ok(None)
             }
             Self::HandleTeamTopic { message } => Self::handle_team_topic(message.clone())(app),
+            Self::HandleMsgTopic { message } => Self::handle_msg_topic(message.clone())(app),
             Self::HandleChallengeTopic { message } => {
                 Self::handle_challenge_topic(message.clone())(app)
             }
             Self::HandleGameTopic { message } => Self::handle_game_topic(message.clone())(app),
+            Self::HandleSeedTopic { message } => Self::handle_seed_topic(message.clone())(app),
         }
     }
 }

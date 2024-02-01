@@ -170,3 +170,24 @@ impl NetworkGame {
         })
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SeedInfo {
+    pub connected_peers_count: usize,
+    pub version_major: usize,
+    pub version_minor: usize,
+    pub version_patch: usize,
+    pub message: Option<String>,
+}
+
+impl SeedInfo {
+    pub fn new(connected_peers_count: usize, message: Option<String>) -> Self {
+        Self {
+            connected_peers_count,
+            version_major: env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap(),
+            version_minor: env!("CARGO_PKG_VERSION_MINOR").parse().unwrap(),
+            version_patch: env!("CARGO_PKG_VERSION_PATCH").parse().unwrap(),
+            message,
+        }
+    }
+}

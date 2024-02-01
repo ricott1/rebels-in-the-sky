@@ -15,6 +15,7 @@ use crate::{
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use rand::seq::SliceRandom;
+use ratatui::layout::Margin;
 use ratatui::{
     layout::Alignment,
     prelude::{Constraint, Direction, Layout, Rect},
@@ -72,6 +73,7 @@ const TITLE: [&'static str; 13] = [
     "██║██║ ╚████║       ██║   ██║  ██║███████╗    ███████║██║  ██╗   ██║   ",
     "╚═╝╚═╝  ╚═══╝       ╚═╝   ╚═╝  ╚═╝╚══════╝    ╚══════╝╚═╝  ╚═╝   ╚═╝   ",
 ];
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 impl SplashScreen {
     pub fn new(
@@ -150,7 +152,7 @@ impl Screen for SplashScreen {
             .constraints([
                 Constraint::Length(2),                  //margin
                 Constraint::Length(TITLE.len() as u16), //title
-                Constraint::Length(2),                  //margin
+                Constraint::Length(3),                  //version
                 Constraint::Min(5),                     //body
                 Constraint::Length(4),                  // quote
             ])
@@ -171,6 +173,13 @@ impl Screen for SplashScreen {
             .split(split[1]);
 
         frame.render_widget(self.title.clone(), title[1]);
+        frame.render_widget(
+            Paragraph::new(format!("Version {VERSION}")).alignment(Alignment::Center),
+            split[2].inner(&Margin {
+                vertical: 1,
+                horizontal: 0,
+            }),
+        );
 
         let side_width = if area.width > BUTTON_WIDTH {
             (area.width - BUTTON_WIDTH) / 2

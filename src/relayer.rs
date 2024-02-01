@@ -1,6 +1,8 @@
-use crate::network::handler::NetworkHandler;
+use crate::network::constants::SubscriptionTopic;
+use crate::network::{handler::NetworkHandler, types::SeedInfo};
 use crate::types::AppResult;
 use futures::StreamExt;
+use libp2p::gossipsub::IdentTopic;
 use libp2p::{gossipsub, swarm::SwarmEvent};
 use tokio::select;
 use void::Void;
@@ -23,7 +25,12 @@ impl Relayer {
         println!("Starting relayer. Press Ctrl-C to exit.");
         while self.running {
             select! {
-                swarm_event = self.network_handler.swarm.select_next_some() =>  self.handle_network_events(swarm_event)?,
+                    swarm_event = self.network_handler.swarm.select_next_some() =>  {
+                        let result = self.handle_network_events(swarm_event);
+                        if result.is_err() {
+                            println!("Error handling network event: {:?}", result);
+                        }
+                }
             }
         }
         Ok(())
@@ -34,6 +41,18 @@ impl Relayer {
         network_event: SwarmEvent<gossipsub::Event, Void>,
     ) -> AppResult<()> {
         println!("Received network event: {:?}", network_event);
+        match network_event {
+            SwarmEvent::Behaviour(gossipsub::Event::Subscribed { peer_id, topic }) => {
+                if topic == IdentTopic::new(SubscriptionTopic::SEED_INFO).hash() {
+                    println!("Sending info to {}", peer_id);
+                    self.network_handler.send_seed_info(SeedInfo::new(
+                        self.network_handler.swarm.connected_peers().count(),
+                        None,
+                    ))?;
+                }
+            }
+            _ => {}
+        }
         Ok(())
     }
 }

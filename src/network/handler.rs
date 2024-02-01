@@ -1,6 +1,6 @@
 use super::constants::*;
-use super::network_callback::{split_message, NetworkCallbackPreset};
-use super::types::{Challenge, ChallengeState, NetworkGame, NetworkTeam};
+use super::network_callback::NetworkCallbackPreset;
+use super::types::{Challenge, ChallengeState, NetworkGame, NetworkTeam, SeedInfo};
 use crate::engine::types::TeamInGame;
 use crate::types::TeamId;
 use crate::types::{AppResult, GameId};
@@ -78,10 +78,11 @@ impl NetworkHandler {
         )
         .expect("Correct configuration");
 
-        gossipsub.subscribe(&IdentTopic::new(TEAM_TOPIC))?;
-        gossipsub.subscribe(&IdentTopic::new(MSG_TOPIC))?;
-        gossipsub.subscribe(&IdentTopic::new(GAME_TOPIC))?;
-        gossipsub.subscribe(&IdentTopic::new(CHALLENGE_TOPIC))?;
+        gossipsub.subscribe(&IdentTopic::new(SubscriptionTopic::SEED_INFO))?;
+        gossipsub.subscribe(&IdentTopic::new(SubscriptionTopic::TEAM))?;
+        gossipsub.subscribe(&IdentTopic::new(SubscriptionTopic::MSG))?;
+        gossipsub.subscribe(&IdentTopic::new(SubscriptionTopic::GAME))?;
+        gossipsub.subscribe(&IdentTopic::new(SubscriptionTopic::CHALLENGE))?;
 
         let mut swarm = Swarm::new(
             tcp_transport,
@@ -99,7 +100,7 @@ impl NetworkHandler {
         }
 
         let seed_address = match seed_ip {
-            Some(ip) => format!("/ip4/{}/tcp/{DEFAULT_PORT}", ip)
+            Some(ip) => format!("/ip4/{ip}/tcp/{DEFAULT_PORT}")
                 .parse()
                 .expect("Invalid provided seed ip."),
             None => SEED_ADDRESS.parse()?,
@@ -135,7 +136,12 @@ impl NetworkHandler {
     }
 
     pub fn send_msg(&mut self, msg: String) -> AppResult<MessageId> {
-        self._send(msg.as_bytes().to_vec(), MSG_TOPIC)
+        self._send(msg.as_bytes().to_vec(), SubscriptionTopic::MSG)
+    }
+
+    pub fn send_seed_info(&mut self, info: SeedInfo) -> AppResult<MessageId> {
+        let serialized_info = serde_json::to_string(&info)?.as_bytes().to_vec();
+        self._send(serialized_info, SubscriptionTopic::SEED_INFO)
     }
 
     pub fn send_own_team(&mut self, world: &World) -> AppResult<MessageId> {
@@ -160,7 +166,7 @@ impl NetworkHandler {
     fn send_game(&mut self, world: &World, game_id: GameId) -> AppResult<MessageId> {
         let network_game = NetworkGame::from_game_id(&world, game_id)?;
         let serialized_game = serde_json::to_string(&network_game)?.as_bytes().to_vec();
-        self._send(serialized_game, GAME_TOPIC)
+        self._send(serialized_game, SubscriptionTopic::GAME)
     }
 
     fn send_team(&mut self, world: &World, team_id: TeamId) -> AppResult<MessageId> {
@@ -170,12 +176,12 @@ impl NetworkHandler {
         network_team.set_peer_id(self.swarm.local_peer_id().clone());
 
         let serialized_team = serde_json::to_string(&network_team)?.as_bytes().to_vec();
-        self._send(serialized_team, TEAM_TOPIC)
+        self._send(serialized_team, SubscriptionTopic::TEAM)
     }
 
     pub fn send_challenge(&mut self, challenge: &Challenge) -> AppResult<MessageId> {
         let serialized_challenge = serde_json::to_vec(challenge)?;
-        self._send(serialized_challenge, CHALLENGE_TOPIC)
+        self._send(serialized_challenge, SubscriptionTopic::CHALLENGE)
     }
 
     pub fn can_handle_challenge(world: &World) -> AppResult<()> {
@@ -261,27 +267,24 @@ impl NetworkHandler {
                 Some(NetworkCallbackPreset::BindAddress { address })
             }
             SwarmEvent::Behaviour(gossipsub::Event::Message {
-                propagation_source,
-                message_id: _id,
+                propagation_source: _,
+                message_id: _,
                 message,
             }) => match message.topic.clone() {
-                x if x == IdentTopic::new(TEAM_TOPIC).hash() => {
+                x if x == IdentTopic::new(SubscriptionTopic::TEAM).hash() => {
                     Some(NetworkCallbackPreset::HandleTeamTopic { message })
                 }
-                x if x == IdentTopic::new(MSG_TOPIC).hash() => {
-                    let (timestamp, data) = split_message(&message);
-                    let text = std::str::from_utf8(data).ok()?.to_string();
-                    Some(NetworkCallbackPreset::PushSwarmPanelChat {
-                        timestamp,
-                        peer_id: message.source.unwrap_or(propagation_source),
-                        text,
-                    })
+                x if x == IdentTopic::new(SubscriptionTopic::MSG).hash() => {
+                    Some(NetworkCallbackPreset::HandleMsgTopic { message })
                 }
-                x if x == IdentTopic::new(CHALLENGE_TOPIC).hash() => {
+                x if x == IdentTopic::new(SubscriptionTopic::CHALLENGE).hash() => {
                     Some(NetworkCallbackPreset::HandleChallengeTopic { message })
                 }
-                x if x == IdentTopic::new(GAME_TOPIC).hash() => {
+                x if x == IdentTopic::new(SubscriptionTopic::GAME).hash() => {
                     Some(NetworkCallbackPreset::HandleGameTopic { message })
+                }
+                x if x == IdentTopic::new(SubscriptionTopic::SEED_INFO).hash() => {
+                    Some(NetworkCallbackPreset::HandleSeedTopic { message })
                 }
                 _ => None,
             },
