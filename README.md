@@ -1,6 +1,6 @@
 # Rebels in the Sky
 
-![Splash screen](demo/splash.png)
+![Splash screen](demo/demo.gif)
 
 It's the year 2101. Corporations have taken over the world.
 The only way to be free is to join a pirate crew and start plundering the galaxy. The only mean of survival is to play basketball.
