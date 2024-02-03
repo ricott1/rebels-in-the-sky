@@ -43,6 +43,8 @@ Suggested minimal terminal size: 162x48. Not all terminals support the game colo
 
 ## Contribution
 
+Join the [discord](https://discord.gg/ebjp33UrrV)! There is no fixed roadmap for the game yet, anyone is welcome to participate with ideas.
+
 It is almost guaranteed that you will encounter bugs along your journey. If you do, please open an issue and describe what happened. If you are a developer and want to contribute, feel free to open a pull request.
 
 ## License
