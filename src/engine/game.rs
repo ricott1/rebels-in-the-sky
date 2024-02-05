@@ -204,12 +204,14 @@ impl<'game> Game {
     fn apply_tiredness_recovery(&mut self) {
         for team in [&mut self.home_team_in_game, &mut self.away_team_in_game] {
             for (id, stats) in team.stats.iter_mut() {
-                if stats.is_playing() && !self.timer.is_break() {
+                if stats.is_playing() && !stats.is_knocked_out() && !self.timer.is_break() {
                     stats.seconds_played += 1;
                     stats.experience_at_position[stats.position.unwrap() as usize] += 1;
                     let stamina = team.players.get(&id).unwrap().athleticism.stamina;
                     stats.add_tiredness(TirednessCost::LOW, stamina);
-                } else if stats.tiredness > RECOVERING_TIREDNESS_PER_SHORT_TICK {
+                } else if stats.tiredness > RECOVERING_TIREDNESS_PER_SHORT_TICK
+                    && !stats.is_knocked_out()
+                {
                     stats.tiredness -= RECOVERING_TIREDNESS_PER_SHORT_TICK;
                 }
             }

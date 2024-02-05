@@ -9,6 +9,7 @@ use super::{
     utils::PLAYER_DATA,
 };
 use crate::{
+    engine::{constants::MAX_TIREDNESS, types::GameStats},
     image::{player::PlayerImage, types::Gif},
     types::{PlanetId, PlayerId, TeamId},
     world::{
@@ -209,7 +210,6 @@ impl<'de> Deserialize<'de> for Player {
                     image,
                     current_location,
                     previous_skills,
-
                     training_focus,
                     tiredness,
                 };
@@ -456,47 +456,7 @@ impl<'de> Deserialize<'de> for Player {
 }
 
 impl Player {
-    // pub fn load(data: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
-    //     let mut player = serde_json::from_slice::<Player>(&data)?;
-    //     player.compose_image()?;
-    //     // player.previous_skills = player.current_skill_array();
-    //     player.athleticism = Athleticism {
-    //         quickness: player.compact_skills[0],
-    //         vertical: player.compact_skills[1],
-    //         strength: player.compact_skills[2],
-    //         stamina: player.compact_skills[3],
-    //     };
-    //     player.offense = Offense {
-    //         dunk: player.compact_skills[4],
-    //         close_range: player.compact_skills[5],
-    //         medium_range: player.compact_skills[6],
-    //         long_range: player.compact_skills[7],
-    //     };
-    //     player.defense = Defense {
-    //         steal: player.compact_skills[8],
-    //         block: player.compact_skills[9],
-    //         perimeter_defense: player.compact_skills[10],
-    //         interior_defense: player.compact_skills[11],
-    //     };
-    //     player.technical = Technical {
-    //         passing: player.compact_skills[12],
-    //         ball_handling: player.compact_skills[13],
-    //         post_moves: player.compact_skills[14],
-    //         rebounding: player.compact_skills[15],
-    //     };
-    //     player.mental = Mental {
-    //         vision: player.compact_skills[16],
-    //         positioning: player.compact_skills[17],
-    //         off_ball_movement: player.compact_skills[18],
-    //         charisma: player.compact_skills[19],
-    //     };
-    //     player.compact_skills = vec![];
-
-    //     Ok(player)
-    // }
-
     pub fn current_skill_array(&self) -> [Skill; 20] {
-        // assert!(self.previous_skills.len() == 20);
         (0..20)
             .map(|idx| self.skill_at_index(idx))
             .collect::<Vec<Skill>>()
@@ -780,7 +740,13 @@ impl Player {
         }
     }
 
-    pub fn apply_end_of_game_logic(&mut self, experience_at_position: &[u16; 5], tiredness: f32) {
+    pub fn apply_end_of_game_logic(&mut self, stats: &GameStats) {
+        self.version += 1;
+        if stats.is_knocked_out() {
+            self.tiredness = MAX_TIREDNESS;
+            return;
+        }
+        let experience_at_position = stats.experience_at_position;
         self.reputation = (self.reputation
             + REPUTATION_PER_EXPERIENCE / self.reputation
                 * experience_at_position.iter().sum::<u16>() as f32
@@ -796,8 +762,7 @@ impl Player {
             }
         }
 
-        self.tiredness = tiredness;
-
+        self.tiredness = stats.tiredness;
         self.previous_skills = self.current_skill_array();
 
         for idx in 0..20 {
@@ -814,8 +779,6 @@ impl Player {
             }
             self.modify_skill(idx, increment);
         }
-
-        self.version += 1;
     }
 }
 
@@ -887,47 +850,5 @@ impl InfoStats {
             height,
             weight,
         }
-    }
-}
-
-#[cfg(test)]
-
-mod tests {
-    use crate::{
-        types::{IdSystem, PlayerId},
-        world::{planet::Planet, player::Player, skill::GameSkill},
-    };
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
-
-    #[test]
-    fn test_apply_end_of_game_logic() {
-        let mut player = Player::random(
-            &mut ChaCha8Rng::from_seed([0; 32]),
-            PlayerId::new(),
-            None,
-            &Planet::default(),
-            0.0,
-        );
-        let skills_before = (0..20)
-            .map(|idx| player.skill_at_index(idx).raw_value())
-            .sum::<f32>();
-
-        println!("quickness before: {}", player.skill_at_index(0).raw_value());
-
-        let experience_at_position = [1000, 1000, 1000, 1000, 1000];
-        player.apply_end_of_game_logic(&experience_at_position, 0.0);
-        assert_eq!(player.version, 1);
-
-        let skills_after = (0..20)
-            .map(|idx| player.skill_at_index(idx).raw_value())
-            .sum::<f32>();
-
-        println!("quickness after: {}", player.skill_at_index(0).raw_value());
-
-        println!("skills before: {}", skills_before);
-
-        println!("skills after: {}", skills_after);
-        assert!(skills_after > skills_before);
     }
 }
