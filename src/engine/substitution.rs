@@ -26,7 +26,9 @@ fn get_subs<'a>(players: Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a 
         .skip(5)
         .filter(|&p| {
             let stats = team_stats.get(&p.id).unwrap();
-            return stats.is_playing() == false && stats.tiredness <= MIN_TIREDNESS_FOR_SUB;
+            return stats.is_playing() == false
+                && !stats.is_knocked_out()
+                && stats.tiredness <= MIN_TIREDNESS_FOR_SUB;
         })
         //Sort from most to less skilled*tired
         .sorted_by(|&a, &b| {
@@ -52,10 +54,18 @@ fn get_subs<'a>(players: Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a 
         })
         //Sort from less to most skilled*tired
         .sorted_by(|&a, &b| {
-            let t1 = team_stats.get(&a.id).unwrap().tiredness;
-            let v1 = a.total_skills() * (MAX_TIREDNESS - t1 / 2.0) as u16;
-            let t2 = team_stats.get(&b.id).unwrap().tiredness;
-            let v2 = b.total_skills() * (MAX_TIREDNESS - t2 / 2.0) as u16;
+            let v1 = if team_stats.get(&a.id).unwrap().is_knocked_out() {
+                0
+            } else {
+                let t1 = team_stats.get(&a.id).unwrap().tiredness;
+                a.total_skills() * (MAX_TIREDNESS - t1 / 2.0) as u16
+            };
+            let v2 = if team_stats.get(&b.id).unwrap().is_knocked_out() {
+                0
+            } else {
+                let t2 = team_stats.get(&b.id).unwrap().tiredness;
+                b.total_skills() * (MAX_TIREDNESS - t2 / 2.0) as u16
+            };
             v1.cmp(&v2)
         })
         .map(|&p| p)

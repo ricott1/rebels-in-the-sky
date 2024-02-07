@@ -10,7 +10,7 @@ use crate::{
     types::{GameId, PlanetId, SortablePlayerMap, TeamId, Tick, SECONDS},
     world::{planet::Planet, player::Player, position::MAX_POSITION},
 };
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -87,30 +87,36 @@ impl<'game> Game {
             .map(|(_, population)| population)
             .sum::<u32>();
 
-        let attendance = BASE_ATTENDANCE + total_reputation as u32 * total_population;
-
-        let mut default_output = ActionOutput::default();
-        default_output.description = format!(
-            "{} vs {}. Game is about to start here on {}! There are {} people in the stadium.",
-            home_team_in_game.name, away_team_in_game.name, planet.name, attendance
-        );
+        let home_name = home_team_in_game.name.clone();
+        let away_name = away_team_in_game.name.clone();
 
         let mut game = Self {
             id,
             home_team_in_game,
             away_team_in_game,
             location: planet.id,
-            attendance,
+            attendance: 0,
             starting_at,
             ended_at: None,
-            action_results: vec![default_output], // We start from default empty output
+            action_results: vec![], // We start from default empty output
             won_jump_ball: Possession::default(),
             possession: Possession::default(),
             timer: Timer::default(),
             next_step: 0,
             current_action: Action::JumpBall,
         };
-        game.action_results[0].random_seed = game.get_rng_seed();
+        let seed = game.get_rng_seed();
+        let mut rng = ChaCha8Rng::from_seed(seed);
+        let attendance = (BASE_ATTENDANCE + total_reputation as u32 * total_population) as f32
+            * rng.gen_range(0.5..1.5);
+        game.attendance = attendance as u32;
+        let mut default_output = ActionOutput::default();
+        default_output.description = format!(
+            "{} vs {}. Game is about to start here on {}! There are {} people in the stadium.",
+            home_name, away_name, planet.name, game.attendance
+        );
+        default_output.random_seed = seed;
+        game.action_results.push(default_output);
         game
     }
 
@@ -204,12 +210,14 @@ impl<'game> Game {
     fn apply_tiredness_recovery(&mut self) {
         for team in [&mut self.home_team_in_game, &mut self.away_team_in_game] {
             for (id, stats) in team.stats.iter_mut() {
-                if stats.is_playing() && !self.timer.is_break() {
+                if stats.is_playing() && !stats.is_knocked_out() && !self.timer.is_break() {
                     stats.seconds_played += 1;
                     stats.experience_at_position[stats.position.unwrap() as usize] += 1;
                     let stamina = team.players.get(&id).unwrap().athleticism.stamina;
                     stats.add_tiredness(TirednessCost::LOW, stamina);
-                } else if stats.tiredness > RECOVERING_TIREDNESS_PER_SHORT_TICK {
+                } else if stats.tiredness > RECOVERING_TIREDNESS_PER_SHORT_TICK
+                    && !stats.is_knocked_out()
+                {
                     stats.tiredness -= RECOVERING_TIREDNESS_PER_SHORT_TICK;
                 }
             }

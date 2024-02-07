@@ -1,9 +1,8 @@
+use crate::{types::AppResult, world::world::World};
 use directories;
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fs::File, path::PathBuf};
-
-use crate::{types::AppResult, world::world::World};
 
 pub static ASSETS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/assets/");
 pub static PERSISTED_WORLD_FILENAME: &str = "world.json";

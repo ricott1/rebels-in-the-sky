@@ -1,12 +1,7 @@
 use clap::{ArgAction, Parser};
-use ratatui::backend::CrosstermBackend;
-use ratatui::Terminal;
 use rebels::app::App;
-use rebels::event::EventHandler;
 use rebels::relayer::Relayer;
-use rebels::tui::Tui;
 use rebels::types::AppResult;
-use std::io;
 
 #[derive(Parser, Debug)]
 #[clap(name="B2Ball", about = "P(lanet)2P(lanet) basketball", author, version, long_about = None)]
@@ -30,26 +25,19 @@ struct Args {
 #[tokio::main]
 async fn main() -> AppResult<()> {
     let args = Args::parse();
-
     if args.relayer_mode {
-        let mut relayer = Relayer::new();
-        relayer.run().await?;
+        Relayer::new().run().await?;
     } else {
-        // Initialize the terminal user interface.
-        let backend = CrosstermBackend::new(io::stdout());
-        let terminal = Terminal::new(backend)?;
-        let events = EventHandler::new();
-        let ratatui = Tui::new(terminal, events);
-        let mut app = App::new(
+        App::new(
             args.seed,
             args.disable_network,
             args.disable_audio,
             args.generate_local_world,
             args.reset_world,
             args.seed_ip,
-        );
-
-        app.run(ratatui).await?;
+        )
+        .run()
+        .await?;
     }
 
     Ok(())

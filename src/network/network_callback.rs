@@ -104,10 +104,7 @@ impl NetworkCallbackPreset {
 
             if topic == IdentTopic::new(SubscriptionTopic::TEAM).hash() {
                 if app.world.has_own_team() {
-                    app.network_handler
-                        .as_mut()
-                        .unwrap()
-                        .send_own_team(&app.world)?;
+                    app.world.dirty_network = true;
                 }
             }
             Ok(None)
@@ -123,6 +120,7 @@ impl NetworkCallbackPreset {
             };
             app.ui.swarm_panel.push_log_event(event);
             app.world.filter_peer_data(Some(peer_id));
+            app.ui.swarm_panel.remove_peer_id(&peer_id);
             Ok(None)
         })
     }
@@ -142,7 +140,7 @@ impl NetworkCallbackPreset {
                     text: format!("Closing connection: {}", peer_id),
                 };
                 app.ui.swarm_panel.push_log_event(event);
-                app.ui.swarm_panel.remove_peer_id(&peer_id);
+                // app.ui.swarm_panel.remove_peer_id(&peer_id);
                 app.world.filter_peer_data(Some(peer_id));
             }
             Ok(None)

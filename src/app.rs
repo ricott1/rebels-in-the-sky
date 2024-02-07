@@ -1,6 +1,8 @@
 // use core::panic;
 
-use crate::event::TerminalEvent;
+use std::io;
+
+use crate::event::{EventHandler, TerminalEvent};
 use crate::network::handler::NetworkHandler;
 use crate::store::{get_world_size, reset, save_world};
 use crate::tui::Tui;
@@ -11,6 +13,8 @@ use crate::world::world::World;
 use crossterm::event::{KeyCode, KeyModifiers};
 use futures::StreamExt;
 use libp2p::{gossipsub, swarm::SwarmEvent};
+use ratatui::backend::CrosstermBackend;
+use ratatui::Terminal;
 use tokio::select;
 use void::Void;
 
@@ -47,7 +51,12 @@ impl App {
         }
     }
 
-    pub async fn run(&mut self, mut ratatui: Tui) -> AppResult<()> {
+    pub async fn run(&mut self) -> AppResult<()> {
+        // Initialize the terminal user interface.
+        let backend = CrosstermBackend::new(io::stdout());
+        let terminal = Terminal::new(backend)?;
+        let events = EventHandler::new();
+        let mut ratatui = Tui::new(terminal, events);
         ratatui.init()?;
         while self.running {
             if self.network_handler.is_none() && (self.world.has_own_team()) {
@@ -100,7 +109,6 @@ impl App {
         if initialize.is_err() {
             panic!("Failed to initialize world: {}", initialize.err().unwrap());
         }
-        self.world.serialized_size = get_world_size().expect("Failed to get world size");
     }
 
     pub fn load_world(&mut self) {

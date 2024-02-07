@@ -506,7 +506,7 @@ impl GamePanel {
         frame.render_widget(
             Paragraph::new(commentary).wrap(Wrap { trim: false }).block(
                 Block::new()
-                    .title(" Commentary ")
+                    .title(" Commentary ←/→")
                     .title_alignment(Alignment::Left)
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded),
@@ -716,9 +716,9 @@ impl GamePanel {
         let box_area = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Max(game.home_team_in_game.players.len() as u16 + 2),
+                Constraint::Length(game.home_team_in_game.players.len() as u16 + 2),
                 Constraint::Max(1),
-                Constraint::Max(game.away_team_in_game.players.len() as u16 + 2),
+                Constraint::Length(game.away_team_in_game.players.len() as u16 + 2),
                 Constraint::Min(0),
             ])
             .split(area.inner(&Margin {
@@ -891,16 +891,6 @@ impl Screen for GamePanel {
     fn footer_spans(&self) -> Vec<Span> {
         let next_view = if self.pitch_view { "Score" } else { "Pitch" };
         vec![
-            Span::styled(
-                " ↑/↓ ",
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(" Select game ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                " ←/→ ",
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(" Scroll commentary ", Style::default().fg(Color::DarkGray)),
             Span::styled(
                 " Enter ",
                 Style::default().bg(Color::Gray).fg(Color::DarkGray),

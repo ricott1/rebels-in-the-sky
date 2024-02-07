@@ -9,7 +9,7 @@ use super::spaceship::Spaceship;
 use super::team::Team;
 use super::types::TeamLocation;
 use super::utils::{PLANET_DATA, TEAM_DATA};
-use crate::engine::constants::RECOVERING_TIREDNESS_PER_SHORT_TICK;
+use crate::engine::constants::{MAX_TIREDNESS, RECOVERING_TIREDNESS_PER_SHORT_TICK};
 use crate::engine::game::{Game, GameSummary};
 use crate::engine::types::TeamInGame;
 use crate::image::color_map::ColorMap;
@@ -728,10 +728,7 @@ impl World {
                             .stats
                             .get(&player.id)
                             .ok_or(format!("Player {:?} not found in team stats", player.id))?;
-                        player.apply_end_of_game_logic(
-                            &stats.experience_at_position,
-                            stats.tiredness,
-                        );
+                        player.apply_end_of_game_logic(stats);
                         self.players.insert(player.id, player);
                     }
                 }
@@ -856,7 +853,7 @@ impl World {
                 let db_player = self
                     .get_player(*player_id)
                     .ok_or(format!("Player {:?} not found", player_id))?;
-                if db_player.tiredness > 0.0 {
+                if db_player.tiredness > 0.0 && db_player.tiredness <= MAX_TIREDNESS {
                     let mut player = db_player.clone();
                     // Recovery outside of games is slower by a factor TICK_SHORT_INTERVAL/TICK_MEDIUM_INTERVAL
                     // so that it takes 1 minute * 10 * 100 ~ 18 hours to recover from 100% tiredness.
@@ -946,17 +943,23 @@ impl World {
             if team.peer_id.is_some() {
                 continue;
             }
+            let bonus = self.team_reputation_bonus(team)?;
             let players_reputation = team
                 .player_ids
                 .iter()
                 .map(|id| self.players.get(id).unwrap().reputation)
                 .sum::<f32>()
-                / team.player_ids.len() as f32;
+                / MAX_POSITION as f32
+                / 100.0
+                * bonus;
 
-            let bonus = self.team_reputation_bonus(team)?;
-            let new_reputation = (team.reputation + bonus * players_reputation / 100.0)
-                .min(players_reputation)
-                .bound();
+            let new_reputation = if team.reputation > players_reputation {
+                (team.reputation - players_reputation).bound()
+            } else if team.reputation < players_reputation {
+                (team.reputation + players_reputation).bound()
+            } else {
+                team.reputation
+            };
             reputation_update.push((team.id, new_reputation));
         }
 

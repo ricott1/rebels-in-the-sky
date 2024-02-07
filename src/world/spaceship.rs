@@ -91,9 +91,9 @@ impl SpaceshipComponent for Hull {
         match self {
             Self::ShuttleSmall => MIN_PLAYERS_PER_TEAM as u8 + 1,
             Self::ShuttleStandard => MIN_PLAYERS_PER_TEAM as u8 + 2,
-            Self::ShuttleLarge => MIN_PLAYERS_PER_TEAM as u8 + 4,
-            Self::PincherStandard => MIN_PLAYERS_PER_TEAM as u8 + 3,
-            Self::PincherLarge => MIN_PLAYERS_PER_TEAM as u8 + 5,
+            Self::ShuttleLarge => MIN_PLAYERS_PER_TEAM as u8 + 3,
+            Self::PincherStandard => MIN_PLAYERS_PER_TEAM as u8 + 2,
+            Self::PincherLarge => MIN_PLAYERS_PER_TEAM as u8 + 4,
         }
     }
 
