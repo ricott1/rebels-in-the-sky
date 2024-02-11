@@ -4,7 +4,7 @@ use rebels::relayer::Relayer;
 use rebels::types::AppResult;
 
 #[derive(Parser, Debug)]
-#[clap(name="B2Ball", about = "P(lanet)2P(lanet) basketball", author, version, long_about = None)]
+#[clap(name="Rebels in the Sky", about = "P(lanet)2P(lanet) basketball", author, version, long_about = None)]
 struct Args {
     #[clap(long, short = 's', action=ArgAction::Set, help = "Set random seed for team generation")]
     seed: Option<u64>,
