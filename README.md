@@ -7,6 +7,12 @@ The only way to be free is to join a pirate crew and start plundering the galaxy
 
 Now it's your turn to go out there and make a name for yourself. Create your crew and start wondering the galaxy in search of worthy basketball opponents.
 
+## Just try it out!
+
+`ssh rebels.frittura.org -p 2222`
+
+Connect via SSH to try the game. Only local game is available and there is no mouse support nor music :(
+
 ## Download
 
 Compiled binaries of the last release can be downloaded at https://rebels.frittura.org.
@@ -27,7 +33,7 @@ If you downloaded the binaries, you will first need to give execution permission
 
 `chmod +x rebels`
 
-Suggested minimal terminal size: 162x48. Not all terminals support the game colors nicely, so you might need to try different ones. Here is a list of tested terminals:
+Suggested minimal terminal size: 160x48. Not all terminals support the game colors nicely, so you might need to try different ones. Here is a list of tested terminals:
 
 -   Linux: whatever the default terminal is, it should work
 -   MacOs: [iTerm2](https://iterm2.com/)
