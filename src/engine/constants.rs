@@ -24,4 +24,4 @@ pub const MIN_TIREDNESS_FOR_SUB: f32 = 50.0;
 
 pub const BASE_ATTENDANCE: u32 = 60;
 
-pub const BRAWL_ACTION_PROBABILITY: usize = 5;
+pub const BRAWL_ACTION_PROBABILITY: f32 = 4.0;

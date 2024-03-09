@@ -62,9 +62,9 @@ impl Tactic {
 
     pub fn brawl_probability(&self) -> f32 {
         match self {
-            Self::Balanced => 0.1,
-            Self::BigPirates => 0.2,
-            Self::Arrembaggio => 0.3,
+            Self::Balanced => 1.0,
+            Self::BigPirates => 1.25,
+            Self::Arrembaggio => 2.0,
         }
     }
 }

@@ -28,10 +28,11 @@ impl SpaceshipImage {
     pub fn compose(&self, hull: Hull, engine: Engine) -> AppResult<Gif> {
         let mut gif = Gif::new();
 
-        let mut hull = read_image(hull.select_file(0).as_str())?;
-        hull.apply_color_map(self.color_map);
-        let hull_x = (SPACESHIP_IMAGE_WIDTH - hull.width()) / 2;
-        let hull_y = (SPACESHIP_IMAGE_HEIGHT - hull.height()) / 2;
+        let mut hull_img = read_image(hull.select_file(0).as_str())?;
+        let mask = read_image(hull.select_mask_file(0).as_str())?;
+        hull_img.apply_color_map_with_shadow_mask(self.color_map, &mask);
+        let hull_x = (SPACESHIP_IMAGE_WIDTH - hull_img.width()) / 2;
+        let hull_y = (SPACESHIP_IMAGE_HEIGHT - hull_img.height()) / 2;
 
         let engine_color_presets: Vec<[ColorPreset; 3]> = vec![
             [ColorPreset::Red, ColorPreset::Red, ColorPreset::Orange],
@@ -59,7 +60,7 @@ impl SpaceshipImage {
             engine.apply_color_map(color_map);
             let mut base = RgbaImage::new(SPACESHIP_IMAGE_WIDTH, SPACESHIP_IMAGE_HEIGHT);
             base.copy_non_trasparent_from(&engine, eng_x, eng_y)?;
-            base.copy_non_trasparent_from(&hull, hull_x, hull_y)?;
+            base.copy_non_trasparent_from(&hull_img, hull_x, hull_y)?;
             gif.push(base);
         }
         Ok(gif)

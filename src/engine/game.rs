@@ -143,9 +143,10 @@ impl<'game> Game {
             ActionSituation::MissedShot => Action::Rebound,
             ActionSituation::EndOfQuarter => Action::StartOfQuarter,
             ActionSituation::BallInBackcourt => {
-                let r = rng.gen_range(1..=100);
-                // FIXME: should depend on tactic and team a
-                if r < BRAWL_ACTION_PROBABILITY {
+                let r = rng.gen_range(1..=100) as f32;
+                let extra_brawl_probability = self.home_team_in_game.tactic.brawl_probability()
+                    + self.away_team_in_game.tactic.brawl_probability();
+                if r < BRAWL_ACTION_PROBABILITY * extra_brawl_probability {
                     Action::Brawl
                 } else {
                     match self.possession {

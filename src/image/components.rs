@@ -6,6 +6,9 @@ use crate::world::spaceship::{Engine, Hull};
 
 pub trait ImageComponent {
     fn select_file(&self, size: u8) -> String;
+    fn select_mask_file(&self, size: u8) -> String {
+        self.select_file(size)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Display, Serialize_repr, Deserialize_repr, PartialEq)]
@@ -58,6 +61,7 @@ pub enum HeadImage {
     Orc2,
     Gald1,
     Gald2,
+    Pupparoll,
 }
 
 impl ImageComponent for HeadImage {
@@ -123,7 +127,6 @@ pub enum ShirtImage {
     Stripe,
     Pirate,
     PirateAlt,
-    Mask,
 }
 
 impl ImageComponent for ShirtImage {
@@ -139,6 +142,18 @@ impl ImageComponent for ShirtImage {
 
         format!("shirt/{}{}.png", self.to_string().to_lowercase(), number)
     }
+    fn select_mask_file(&self, size: u8) -> String {
+        let number = match size {
+            x if x <= 2 => 0,
+            x if x <= 4 => 3,
+            x if x <= 6 => 5,
+            x if x <= 9 => 7,
+            x if x <= 11 => 10,
+            _ => 12,
+        };
+
+        format!("shirt/mask{}.png", number)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Display, Serialize_repr, Deserialize_repr, PartialEq)]
@@ -150,7 +165,6 @@ pub enum ShortsImage {
     Stripe,
     Pirate,
     PirateAlt,
-    Mask,
 }
 
 impl ImageComponent for ShortsImage {
@@ -164,6 +178,12 @@ impl ImageComponent for ShortsImage {
         };
 
         format!("shorts/{}{}.png", self.to_string().to_lowercase(), number)
+    }
+    fn select_mask_file(&self, size: u8) -> String {
+        match size {
+            x if x <= 7 => format!("shorts/mask_slim.png"),
+            _ => format!("shorts/mask_large.png"),
+        }
     }
 }
 
@@ -265,6 +285,16 @@ impl ImageComponent for Hull {
             Hull::ShuttleLarge => "hull/shuttle_large.png".into(),
             Hull::PincherStandard => "hull/pincher_standard.png".into(),
             Hull::PincherLarge => "hull/pincher_large.png".into(),
+        }
+    }
+
+    fn select_mask_file(&self, _size: u8) -> String {
+        match self {
+            Hull::ShuttleSmall => "hull/mask_shuttle_small.png".into(),
+            Hull::ShuttleStandard => "hull/mask_shuttle_standard.png".into(),
+            Hull::ShuttleLarge => "hull/mask_shuttle_large.png".into(),
+            Hull::PincherStandard => "hull/mask_pincher_standard.png".into(),
+            Hull::PincherLarge => "hull/mask_pincher_large.png".into(),
         }
     }
 }

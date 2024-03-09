@@ -96,8 +96,8 @@ impl ExtraImageUtils for ImageBuffer<Rgba<u8>, Vec<u8>> {
         for k in 0..self.height() {
             for i in 0..self.width() {
                 let p = self.get_pixel(i, k);
-                let mask_p = mask.get_pixel(i, k);
                 if p[3] > 0 {
+                    let mask_p = mask.get_pixel(i, k);
                     let mapped_pixel = match *p {
                         _ if p[0] == 255 && p[1] == 0 && p[2] == 0 => {
                             let [r, g, b] = color_map.red.0;

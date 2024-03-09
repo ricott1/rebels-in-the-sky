@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use super::{
     constants::DEFAULT_PLANET_ID,
     player::{InfoStats, Player},
@@ -35,9 +37,7 @@ pub fn size_from_info(info: &InfoStats) -> Size {
     size as Size
 }
 
-#[derive(
-    Debug, Default, PartialEq, Clone, Copy, Display, EnumIter, Serialize_repr, Deserialize_repr,
-)]
+#[derive(Debug, Default, PartialEq, Clone, Copy, EnumIter, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum Population {
     #[default]
@@ -51,6 +51,25 @@ pub enum Population {
     Polpett,
     Juppa,
     Galdari,
+    Pupparoll,
+}
+
+impl Display for Population {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Italy
+            | Self::Germany
+            | Self::Spain
+            | Self::Greece
+            | Self::Nigeria
+            | Self::India => write!(f, "Human"),
+            Self::Yardalaim => write!(f, "Yardalaim"),
+            Self::Polpett => write!(f, "Polpett"),
+            Self::Juppa => write!(f, "Juppa"),
+            Self::Galdari => write!(f, "Galdari"),
+            Self::Pupparoll => write!(f, "Pupparoll"),
+        }
+    }
 }
 
 impl Population {
@@ -126,6 +145,7 @@ impl Population {
                 (SkinColorMap::Yellow, 0.43),
                 (SkinColorMap::Orange, 0.02),
             ],
+            Self::Pupparoll => vec![(SkinColorMap::Pale, 0.5)], //FIXME:add rainbow colormaps
         };
 
         let dist = WeightedIndex::new(weights.iter().map(|(_, w)| w)).unwrap();

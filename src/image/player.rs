@@ -55,6 +55,7 @@ impl PlayerImage {
                 Population::Galdari => HeadImage::Gald1,
                 Population::Yardalaim => HeadImage::Orc1,
                 Population::Juppa => HeadImage::Elf1,
+                Population::Pupparoll => HeadImage::Pupparoll,
                 _ => HeadImage::Human1,
             },
             _ => match info.population {
@@ -62,6 +63,7 @@ impl PlayerImage {
                 Population::Galdari => HeadImage::Gald2,
                 Population::Yardalaim => HeadImage::Orc2,
                 Population::Juppa => HeadImage::Elf2,
+                Population::Pupparoll => HeadImage::Pupparoll,
                 _ => HeadImage::Human2,
             },
         };
@@ -70,6 +72,12 @@ impl PlayerImage {
             match rng.gen_range(0..=4) {
                 0 => Some(HairImage::Hair1),
                 1 => Some(HairImage::Hair3),
+                _ => None,
+            }
+        } else if info.population == Population::Pupparoll {
+            match rng.gen_range(0..=4) {
+                0 => Some(HairImage::Hair5),
+                1 => Some(HairImage::Hair8),
                 _ => None,
             }
         } else {
@@ -337,7 +345,7 @@ impl PlayerImage {
             let mut other = read_image(shorts.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
             if let Some(color_map) = jersey_color_map {
-                let mask = read_image(ShortsImage::Mask.select_file(size).as_str())?;
+                let mask = read_image(shorts.select_mask_file(size).as_str())?;
                 other.apply_color_map_with_shadow_mask(color_map, &mask);
             }
             base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
@@ -381,7 +389,7 @@ impl PlayerImage {
             let mut other = read_image(shirt.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
             if let Some(color_map) = jersey_color_map {
-                let mask = read_image(ShirtImage::Mask.select_file(size).as_str())?;
+                let mask = read_image(shirt.select_mask_file(size).as_str())?;
                 other.apply_color_map_with_shadow_mask(color_map, &mask);
             }
             base.copy_non_trasparent_from(&other, x, img_height - body_offset_y + 1)?;
