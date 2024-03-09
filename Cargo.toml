@@ -16,10 +16,6 @@ opt-level = 1
 [profile.dev.package."*"]
 opt-level = 3
 
-[target.x86_64-pc-windows-gnu]
-linker = "x86_64-w64-mingw32-gcc"
-ar = "x86_64-w64-mingw32-gcc-ar"
-
 [dependencies]
 uuid = { version = "1.7.0", features = [
     "v4",
