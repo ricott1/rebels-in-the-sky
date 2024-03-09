@@ -37,7 +37,7 @@ use ratatui::{
     Frame,
 };
 use std::vec;
-use std::{cell::RefCell, rc::Rc};
+use std::{sync::Arc, sync::Mutex};
 use strum_macros::Display;
 
 const IMG_FRAME_WIDTH: u16 = 80;
@@ -88,14 +88,14 @@ pub struct TeamListPanel {
     update_filter: bool,
     current_team_players_length: usize,
     tick: usize,
-    callback_registry: Rc<RefCell<CallbackRegistry>>,
-    gif_map: Rc<RefCell<GifMap>>,
+    callback_registry: Arc<Mutex<CallbackRegistry>>,
+    gif_map: Arc<Mutex<GifMap>>,
 }
 
 impl TeamListPanel {
     pub fn new(
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
-        gif_map: Rc<RefCell<GifMap>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
+        gif_map: Arc<Mutex<GifMap>>,
     ) -> Self {
         Self {
             callback_registry,
@@ -146,7 +146,7 @@ impl TeamListPanel {
             UiCallbackPreset::SetTeamPanelFilter {
                 filter: TeamFilter::All,
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
 
         let mut filter_challenge_button = Button::new(
@@ -154,7 +154,7 @@ impl TeamListPanel {
             UiCallbackPreset::SetTeamPanelFilter {
                 filter: TeamFilter::OpenToChallenge,
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
 
         let mut filter_peers_button = Button::new(
@@ -162,7 +162,7 @@ impl TeamListPanel {
             UiCallbackPreset::SetTeamPanelFilter {
                 filter: TeamFilter::Peers,
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
         match self.filter {
             TeamFilter::All => filter_all_button.disable(None),
@@ -280,7 +280,7 @@ impl TeamListPanel {
                 UiCallbackPreset::GoToPlayer {
                     player_id: team.player_ids[i],
                 },
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
                 &mut self.player_index,
                 i,
             );
@@ -290,7 +290,8 @@ impl TeamListPanel {
 
             if let Ok(lines) = self
                 .gif_map
-                .borrow_mut()
+                .lock()
+                .unwrap()
                 .player_frame_lines(player, self.tick)
             {
                 frame.render_widget(
@@ -368,7 +369,7 @@ impl TeamListPanel {
                         UiCallbackPreset::GoToPlayer {
                             player_id: team.player_ids[i + 5],
                         },
-                        Rc::clone(&self.callback_registry),
+                        Arc::clone(&self.callback_registry),
                         &mut self.player_index,
                         i + 5,
                     );
@@ -421,7 +422,7 @@ impl TeamListPanel {
                             location.name
                         ),
                         UiCallbackPreset::GoToCurrentTeamPlanet { team_id: team.id },
-                        Rc::clone(&self.callback_registry),
+                        Arc::clone(&self.callback_registry),
                     );
                     if can_travel.is_err() {
                         button.disable(Some(format!(
@@ -449,7 +450,7 @@ impl TeamListPanel {
                     let mut button = Button::new(
                         format!("Travelling to {} {}", to, duration),
                         UiCallbackPreset::None,
-                        Rc::clone(&self.callback_registry),
+                        Arc::clone(&self.callback_registry),
                     );
                     button.disable(None);
                     frame.render_widget(button, button_split[0]);
@@ -461,7 +462,7 @@ impl TeamListPanel {
             let mut button = Button::new(
                 format!("{}: Challenge", UiKey::CHALLENGE_TEAM.to_string()),
                 UiCallbackPreset::ChallengeTeam { team_id: team.id },
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
             );
             if can_challenge.is_err() {
                 button.disable(Some(format!(

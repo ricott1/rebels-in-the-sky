@@ -29,6 +29,10 @@ pub const LANDING_TIME_OVERHEAD: Tick = 5 * MINUTES / DEBUG_TIME_MULTIPLIER;
 pub const BASE_BONUS: f32 = 0.5;
 pub const BONUS_PER_SKILL: f32 = 0.1;
 
+pub const REPUTATION_BONUS_WINNER: f32 = 0.5;
+pub const REPUTATION_BONUS_LOSER: f32 = -0.2;
+pub const REPUTATION_BONUS_DRAW: f32 = 0.25;
+
 pub struct TickInterval;
 impl TickInterval {
     pub const SHORT: Tick = 1 * SECONDS / DEBUG_TIME_MULTIPLIER;

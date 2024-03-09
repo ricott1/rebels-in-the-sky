@@ -2,10 +2,10 @@ use crate::app::App;
 use crate::event::EventHandler;
 use crate::types::AppResult;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
-use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen, SetSize};
-use ratatui::prelude::CrosstermBackend;
+use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+use ratatui::layout::Rect;
 use ratatui::Terminal;
-use std::io;
+use std::io::{self};
 use std::panic;
 
 /// Representation of a terminal user interface.
@@ -13,17 +13,32 @@ use std::panic;
 /// It is responsible for setting up the terminal,
 /// initializing the interface and handling the draw events.
 #[derive(Debug)]
-pub struct Tui {
+pub struct Tui<B>
+where
+    B: ratatui::backend::Backend,
+{
     /// Interface to the Terminal.
-    terminal: Terminal<CrosstermBackend<io::Stdout>>,
+    pub terminal: Terminal<B>,
     /// Terminal event handler.
     pub events: EventHandler,
 }
 
-impl Tui {
+impl<B> Tui<B>
+where
+    B: ratatui::backend::Backend,
+{
     /// Constructs a new instance of [`Tui`].
-    pub fn new(terminal: Terminal<CrosstermBackend<io::Stdout>>, events: EventHandler) -> Self {
-        Self { terminal, events }
+    pub fn new(backend: B, events: EventHandler) -> AppResult<Self> {
+        let terminal = Terminal::new(backend)?;
+        let mut tui = Self { terminal, events };
+        tui.init()?;
+        Ok(tui)
+    }
+
+    pub fn new_over_ssh(backend: B, events: EventHandler) -> AppResult<Self> {
+        let terminal = Terminal::new(backend)?;
+        let tui = Self { terminal, events };
+        Ok(tui)
     }
 
     /// Initializes the terminal interface.
@@ -32,7 +47,6 @@ impl Tui {
     pub fn init(&mut self) -> AppResult<()> {
         terminal::enable_raw_mode()?;
         crossterm::execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?; //EnableMouseCapture
-        crossterm::execute!(io::stdout(), SetSize(180, 60)).unwrap();
 
         // Define a custom panic hook to reset the terminal properties.
         // This way, you won't have your terminal messed up if an unexpected error happens.
@@ -66,12 +80,18 @@ impl Tui {
         Ok(())
     }
 
+    pub fn resize(&mut self, rect: Rect) -> AppResult<()> {
+        self.terminal.resize(rect)?;
+        Ok(())
+    }
+
     /// Exits the terminal interface.
     ///
     /// It disables the raw mode and reverts back the terminal properties.
     pub fn exit(&mut self) -> AppResult<()> {
-        Self::reset()?;
         self.terminal.show_cursor()?;
+        Self::reset()?;
+        self.terminal.clear()?;
         Ok(())
     }
 }

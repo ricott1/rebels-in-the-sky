@@ -14,6 +14,11 @@ pub trait ExtraImageUtils {
         y: u32,
     ) -> ImageResult<()>;
     fn apply_color_map(&mut self, color_map: ColorMap) -> &ImageBuffer<Rgba<u8>, Vec<u8>>;
+    fn apply_color_map_with_shadow_mask(
+        &mut self,
+        color_map: ColorMap,
+        mask: &ImageBuffer<Rgba<u8>, Vec<u8>>,
+    ) -> &ImageBuffer<Rgba<u8>, Vec<u8>>;
 }
 
 impl ExtraImageUtils for ImageBuffer<Rgba<u8>, Vec<u8>> {
@@ -61,7 +66,7 @@ impl ExtraImageUtils for ImageBuffer<Rgba<u8>, Vec<u8>> {
             for i in 0..self.width() {
                 let p = self.get_pixel(i, k);
                 if p[3] > 0 {
-                    let mapped_pixel = match p {
+                    let mapped_pixel = match *p {
                         _ if p[0] == 255 && p[1] == 0 && p[2] == 0 => {
                             let [r, g, b] = color_map.red.0;
                             Rgba([r, g, b, p[3]])
@@ -74,9 +79,54 @@ impl ExtraImageUtils for ImageBuffer<Rgba<u8>, Vec<u8>> {
                             let [r, g, b] = color_map.blue.0;
                             Rgba([r, g, b, p[3]])
                         }
-                        _ => *p,
+                        _ => continue,
                     };
                     self.put_pixel(i, k, mapped_pixel);
+                }
+            }
+        }
+        self
+    }
+
+    fn apply_color_map_with_shadow_mask(
+        &mut self,
+        color_map: ColorMap,
+        mask: &ImageBuffer<Rgba<u8>, Vec<u8>>,
+    ) -> &ImageBuffer<Rgba<u8>, Vec<u8>> {
+        for k in 0..self.height() {
+            for i in 0..self.width() {
+                let p = self.get_pixel(i, k);
+                let mask_p = mask.get_pixel(i, k);
+                if p[3] > 0 {
+                    let mapped_pixel = match *p {
+                        _ if p[0] == 255 && p[1] == 0 && p[2] == 0 => {
+                            let [r, g, b] = color_map.red.0;
+                            Rgba([r, g, b, p[3]])
+                        }
+                        _ if p[0] == 0 && p[1] == 255 && p[2] == 0 => {
+                            let [r, g, b] = color_map.green.0;
+                            Rgba([r, g, b, p[3]])
+                        }
+                        _ if p[0] == 0 && p[1] == 0 && p[2] == 255 => {
+                            let [r, g, b] = color_map.blue.0;
+                            Rgba([r, g, b, p[3]])
+                        }
+                        _ => continue,
+                    };
+
+                    let masked_mapped_pixel =
+                        if mask_p[0] == 255 && mask_p[1] == 0 && mask_p[2] == 0 {
+                            Rgba([
+                                (0.7 * mapped_pixel[0] as f32) as u8,
+                                (0.7 * mapped_pixel[1] as f32) as u8,
+                                (0.7 * mapped_pixel[2] as f32) as u8,
+                                p[3],
+                            ])
+                        } else {
+                            mapped_pixel
+                        };
+
+                    self.put_pixel(i, k, masked_mapped_pixel);
                 }
             }
         }

@@ -1,5 +1,5 @@
 use super::{
-    action::{Action, ActionOutput, ActionSituation},
+    action::{Action, ActionOutput, ActionSituation, EngineAction},
     constants::*,
     end_of_quarter::EndOfQuarter,
     substitution::Substitution,
@@ -7,7 +7,7 @@ use super::{
     types::{GameStatsMap, Possession, TeamInGame},
 };
 use crate::{
-    types::{GameId, PlanetId, SortablePlayerMap, TeamId, Tick, SECONDS},
+    types::{GameId, PlanetId, SortablePlayerMap, TeamId, Tick},
     world::{planet::Planet, player::Player, position::MAX_POSITION},
 };
 use rand::{Rng, SeedableRng};
@@ -26,6 +26,9 @@ pub struct GameSummary {
     pub away_score: u16,
     pub location: PlanetId,
     pub attendance: u32,
+    pub starting_at: Tick,
+    pub ended_at: Option<Tick>,
+    pub winner: Option<TeamId>,
 }
 
 impl GameSummary {
@@ -51,6 +54,9 @@ impl GameSummary {
             away_score,
             location: game.location,
             attendance: game.attendance,
+            starting_at: game.starting_at,
+            ended_at: game.ended_at,
+            winner: game.winner,
         }
     }
 }
@@ -70,6 +76,7 @@ pub struct Game {
     pub timer: Timer,
     pub next_step: u16,
     pub current_action: Action,
+    pub winner: Option<TeamId>,
 }
 
 impl<'game> Game {
@@ -104,6 +111,7 @@ impl<'game> Game {
             timer: Timer::default(),
             next_step: 0,
             current_action: Action::JumpBall,
+            winner: None,
         };
         let seed = game.get_rng_seed();
         let mut rng = ChaCha8Rng::from_seed(seed);
@@ -134,18 +142,35 @@ impl<'game> Game {
             ActionSituation::LongShot => Action::LongShot,
             ActionSituation::MissedShot => Action::Rebound,
             ActionSituation::EndOfQuarter => Action::StartOfQuarter,
-            ActionSituation::BallInBackcourt
-            | ActionSituation::BallInMidcourt
+            ActionSituation::BallInBackcourt => {
+                let r = rng.gen_range(1..=100);
+                // FIXME: should depend on tactic and team a
+                if r < BRAWL_ACTION_PROBABILITY {
+                    Action::Brawl
+                } else {
+                    match self.possession {
+                        Possession::Home => self
+                            .home_team_in_game
+                            .tactic
+                            .pick_action(rng)
+                            .unwrap_or(Action::Isolation),
+                        Possession::Away => self
+                            .away_team_in_game
+                            .tactic
+                            .pick_action(rng)
+                            .unwrap_or(Action::Isolation),
+                    }
+                }
+            }
+            ActionSituation::BallInMidcourt
             | ActionSituation::AfterDefensiveRebound
             | ActionSituation::Turnover => match self.possession {
                 Possession::Home => self
                     .home_team_in_game
-                    .offense_tactic
                     .pick_action(rng)
                     .unwrap_or(Action::Isolation),
                 Possession::Away => self
                     .away_team_in_game
-                    .offense_tactic
                     .pick_action(rng)
                     .unwrap_or(Action::Isolation),
             },
@@ -207,14 +232,16 @@ impl<'game> Game {
         assert!(self.home_team_in_game.stats.len() == self.home_team_in_game.players.len());
     }
 
-    fn apply_tiredness_recovery(&mut self) {
+    fn apply_tiredness_update(&mut self) {
         for team in [&mut self.home_team_in_game, &mut self.away_team_in_game] {
             for (id, stats) in team.stats.iter_mut() {
-                if stats.is_playing() && !stats.is_knocked_out() && !self.timer.is_break() {
+                if stats.is_playing() && !self.timer.is_break() {
                     stats.seconds_played += 1;
-                    stats.experience_at_position[stats.position.unwrap() as usize] += 1;
-                    let stamina = team.players.get(&id).unwrap().athleticism.stamina;
-                    stats.add_tiredness(TirednessCost::LOW, stamina);
+                    if !stats.is_knocked_out() {
+                        stats.experience_at_position[stats.position.unwrap() as usize] += 1;
+                        let stamina = team.players.get(&id).unwrap().athleticism.stamina;
+                        stats.add_tiredness(TirednessCost::LOW, stamina);
+                    }
                 } else if stats.tiredness > RECOVERING_TIREDNESS_PER_SHORT_TICK
                     && !stats.is_knocked_out()
                 {
@@ -298,32 +325,88 @@ impl<'game> Game {
         }
     }
 
-    pub fn tick(&mut self) {
-        if !self.timer.has_ended() {
-            self.timer.tick();
+    fn game_end_description(&self, winner: Option<&str>) -> String {
+        let (home, away) = self.get_score();
+        if winner.is_none() {
+            return format!(
+                "It's a tie! The final score is {} {}-{} {}.",
+                self.home_team_in_game.name, home, away, self.away_team_in_game.name
+            );
         }
+        format!(
+            "{} won this nice game over {}. The final score is {} {}-{} {}.",
+            winner.unwrap(),
+            self.away_team_in_game.name,
+            self.home_team_in_game.name,
+            home,
+            away,
+            self.away_team_in_game.name,
+        )
+    }
 
-        if self.timer.has_ended() {
-            if self.ended_at.is_none() {
-                self.ended_at = Some(self.starting_at + self.timer.value as Tick * SECONDS);
-            }
+    pub fn has_started(&self, timestamp: Tick) -> bool {
+        self.starting_at <= timestamp
+    }
+
+    pub fn has_ended(&self) -> bool {
+        self.ended_at.is_some()
+    }
+
+    pub fn tick(&mut self, current_timestamp: Tick) {
+        if self.has_ended() {
             return;
         }
 
-        self.apply_tiredness_recovery();
+        self.timer.tick();
+
+        if self.timer.has_ended() {
+            self.ended_at = Some(current_timestamp);
+            let description = match self.get_score() {
+                (home, away) if home > away => {
+                    self.winner = Some(self.home_team_in_game.team_id);
+                    self.game_end_description(Some(&self.home_team_in_game.name))
+                }
+                (home, away) if home < away => {
+                    self.winner = Some(self.away_team_in_game.team_id);
+                    self.game_end_description(Some(&self.away_team_in_game.name))
+                }
+                _ => {
+                    self.winner = None;
+                    self.game_end_description(None)
+                }
+            };
+
+            self.action_results.push(ActionOutput {
+                description,
+                start_at: self.timer,
+                end_at: self.timer,
+                home_score: self.get_score().0,
+                away_score: self.get_score().1,
+                ..Default::default()
+            });
+
+            return;
+        }
+
+        self.apply_tiredness_update();
+
+        let seed = self.get_rng_seed();
+        let rng = &mut ChaCha8Rng::from_seed(seed);
+        let action_input = &self.action_results[self.action_results.len() - 1];
 
         if !self.timer.reached(self.next_step) {
             return;
         }
 
-        if self.action_results.len() == 0 {
-            panic!("No action results")
+        // If next tick is at a break, we are at the end of the quarter and should stop.
+        if self.timer.is_break() {
+            if let Some(eoq) = EndOfQuarter::execute(action_input, self, rng) {
+                self.next_step = eoq.end_at.value;
+                self.action_results.push(eoq);
+                return;
+            }
         }
 
-        let seed = self.get_rng_seed();
-        let rng = &mut ChaCha8Rng::from_seed(seed);
-
-        let action_input = &self.action_results[self.action_results.len() - 1];
         self.current_action = self.pick_action(rng);
 
         if let Some(mut result) = self.current_action.execute(action_input, self, rng) {
@@ -356,33 +439,107 @@ impl<'game> Game {
                 );
             }
 
-            self.possession = result.possession.clone();
+            self.possession = result.possession;
 
             // If this was the first action (JumpBall),
             // assigns the value of won_jump_ball to possession
             if self.next_step == 0 {
-                self.won_jump_ball = self.possession.clone();
+                self.won_jump_ball = self.possession;
             }
-            self.next_step = result.end_at.value;
-            let end_at = result.end_at.clone();
+            self.next_step = result.end_at.value.min(self.timer.period().next().start());
 
             self.action_results.push(result);
 
             let action_input = &self.action_results[self.action_results.len() - 1];
-            if end_at.is_break() {
-                if let Some(eoq) = EndOfQuarter.execute(action_input, self, rng) {
-                    self.next_step = eoq.end_at.value;
-                    self.action_results.push(eoq);
-                }
-            } else if action_input.situation == ActionSituation::BallInBackcourt {
-                // Check if teams make substitutions. Only if ball is out
-                if let Some(sub) = Substitution.execute(action_input, self, rng) {
-                    self.apply_sub_update(
-                        sub.attack_stats_update.clone(),
-                        sub.defense_stats_update.clone(),
-                    );
-                    self.next_step = sub.end_at.value;
-                    self.action_results.push(sub);
+            if action_input.situation == ActionSituation::BallInBackcourt {
+                // If home team is completely knocked out, end the game.
+                // Check that each player is knocked out
+                let home_knocked_out = self
+                    .home_team_in_game
+                    .stats
+                    .iter()
+                    .all(|(_, stats)| stats.is_knocked_out());
+                let away_knocked_out = self
+                    .away_team_in_game
+                    .stats
+                    .iter()
+                    .all(|(_, stats)| stats.is_knocked_out());
+
+                match (home_knocked_out, away_knocked_out) {
+                    (true, true) => {
+                        self.ended_at = Some(current_timestamp);
+                        let description = match self.get_score() {
+                            (home, away) if home > away => {
+                                self.winner = Some(self.home_team_in_game.team_id);
+                                self.game_end_description(Some(&self.home_team_in_game.name))
+                            }
+                            (home, away) if home < away => {
+                                self.winner = Some(self.away_team_in_game.team_id);
+                                self.game_end_description(Some(&self.away_team_in_game.name))
+                            }
+                            _ => {
+                                self.winner = None;
+                                self.game_end_description(None)
+                            }
+                        };
+
+                        self.action_results.push(ActionOutput {
+                            description: format!(
+                    "Both team are completely done! {} They should get some rest now...",
+                    description
+                ),
+                            start_at: self.timer,
+                            end_at: self.timer,
+                            home_score: self.get_score().0,
+                            away_score: self.get_score().1,
+                            ..Default::default()
+                        });
+                    }
+                    (true, false) => {
+                        self.ended_at = Some(current_timestamp);
+                        self.winner = Some(self.away_team_in_game.team_id);
+                        let description = format!(
+                            "The home team is completely wasted and lost! {}",
+                            self.game_end_description(Some(&self.away_team_in_game.name))
+                        );
+
+                        self.action_results.push(ActionOutput {
+                            description,
+                            start_at: self.timer,
+                            end_at: self.timer,
+                            home_score: self.get_score().0,
+                            away_score: self.get_score().1,
+                            ..Default::default()
+                        });
+                    }
+                    (false, true) => {
+                        self.ended_at = Some(current_timestamp);
+                        self.winner = Some(self.home_team_in_game.team_id);
+                        let description = format!(
+                            "The away team is completely wasted and lost! {}",
+                            self.game_end_description(Some(&self.away_team_in_game.name))
+                        );
+
+                        self.action_results.push(ActionOutput {
+                            description,
+                            start_at: self.timer,
+                            end_at: self.timer,
+                            home_score: self.get_score().0,
+                            away_score: self.get_score().1,
+                            ..Default::default()
+                        });
+                    }
+                    _ =>
+                    // Check if teams make substitutions. Only if ball is out
+                    {
+                        if let Some(sub) = Substitution::execute(action_input, self, rng) {
+                            self.apply_sub_update(
+                                sub.attack_stats_update.clone(),
+                                sub.defense_stats_update.clone(),
+                            );
+                            self.action_results.push(sub);
+                        }
+                    }
                 }
             }
         }

@@ -1,4 +1,5 @@
 use super::{
+    brawl::Brawl,
     end_of_quarter::EndOfQuarter,
     game::Game,
     isolation::Isolation,
@@ -15,6 +16,7 @@ use super::{
 };
 use core::fmt::Debug;
 use rand_chacha::ChaCha8Rng;
+use rand_distr::{Distribution, WeightedIndex};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
@@ -26,7 +28,7 @@ pub enum Advantage {
     Defense,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum ActionSituation {
     #[default]
     JumpBall,
@@ -81,25 +83,10 @@ pub enum Action {
     MediumShot,
     LongShot,
     Substitution,
+    Brawl,
 }
 
 impl Action {
-    fn _name(&self) -> String {
-        match self {
-            Action::JumpBall => "Jump Ball".into(),
-            Action::StartOfQuarter => "Start of Quarter".into(),
-            Action::EndOfQuarter => "End of Quarter".into(),
-            Action::Isolation => "Isolation".into(),
-            Action::PickAndRoll => "Pick and Roll".into(),
-            Action::OffTheScreen => "Off the Screen".into(),
-            Action::Post => "Post".into(),
-            Action::Rebound => "Rebound".into(),
-            Action::CloseShot => "Close Shot".into(),
-            Action::MediumShot => "Medium Shot".into(),
-            Action::LongShot => "Long Shot".into(),
-            Action::Substitution => "Substitution".into(),
-        }
-    }
     pub fn execute(
         &self,
         input: &ActionOutput,
@@ -107,22 +94,30 @@ impl Action {
         rng: &mut ChaCha8Rng,
     ) -> Option<ActionOutput> {
         let mut output = match self {
-            Action::JumpBall => JumpBall.execute(input, game, rng),
-            Action::StartOfQuarter => StartOfQuarter.execute(input, game, rng),
-            Action::EndOfQuarter => EndOfQuarter.execute(input, game, rng),
-            Action::Isolation => Isolation.execute(input, game, rng),
-            Action::PickAndRoll => PickAndRoll.execute(input, game, rng),
-            Action::OffTheScreen => OffTheScreen.execute(input, game, rng),
-            Action::Post => Post.execute(input, game, rng),
-            Action::Rebound => Rebound.execute(input, game, rng),
-            Action::CloseShot => CloseShot.execute(input, game, rng),
-            Action::MediumShot => MediumShot.execute(input, game, rng),
-            Action::LongShot => LongShot.execute(input, game, rng),
-            Action::Substitution => Substitution.execute(input, game, rng),
+            Action::JumpBall => JumpBall::execute(input, game, rng),
+            Action::StartOfQuarter => StartOfQuarter::execute(input, game, rng),
+            Action::EndOfQuarter => EndOfQuarter::execute(input, game, rng),
+            Action::Isolation => Isolation::execute(input, game, rng),
+            Action::PickAndRoll => PickAndRoll::execute(input, game, rng),
+            Action::OffTheScreen => OffTheScreen::execute(input, game, rng),
+            Action::Post => Post::execute(input, game, rng),
+            Action::Rebound => Rebound::execute(input, game, rng),
+            Action::CloseShot => CloseShot::execute(input, game, rng),
+            Action::MediumShot => MediumShot::execute(input, game, rng),
+            Action::LongShot => LongShot::execute(input, game, rng),
+            Action::Substitution => Substitution::execute(input, game, rng),
+            Action::Brawl => Brawl::execute(input, game, rng),
         };
         if output.is_some() {
             output.as_mut().unwrap().random_seed = rng.get_seed();
         }
         output
+    }
+}
+
+pub trait EngineAction {
+    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput>;
+    fn sample(rng: &mut ChaCha8Rng, weights: [u8; 5]) -> Option<usize> {
+        Some(WeightedIndex::new(&weights).ok()?.sample(rng))
     }
 }

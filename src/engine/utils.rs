@@ -5,6 +5,9 @@ use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 
 pub fn roll(rng: &mut ChaCha8Rng, tiredness: f32) -> u8 {
+    if tiredness == MAX_TIREDNESS {
+        return 0;
+    }
     min(
         ((MAX_TIREDNESS - tiredness / 2.0) / 2.0).round() as u8,
         rng.gen_range(1..=50),

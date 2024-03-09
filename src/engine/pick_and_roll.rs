@@ -1,49 +1,36 @@
 use super::{
-    action::{ActionOutput, ActionSituation, Advantage},
+    action::{ActionOutput, ActionSituation, Advantage, EngineAction},
     constants::{TirednessCost, ADV_ATTACK_LIMIT, ADV_DEFENSE_LIMIT, ADV_NEUTRAL_LIMIT},
     game::Game,
     types::{GameStats, GameStatsMap},
     utils::roll,
 };
-use crate::world::{player::Player, skill::GameSkill};
+use crate::world::skill::GameSkill;
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
-use rand_distr::{Distribution, WeightedIndex};
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
 pub struct PickAndRoll;
 
-impl PickAndRoll {
-    pub fn execute(
-        &self,
-        input: &ActionOutput,
-        game: &Game,
-        rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
+impl EngineAction for PickAndRoll {
+    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
         let attacking_stats = game.attacking_stats();
         let defending_stats = game.defending_stats();
 
-        let play_idx: usize;
-        let target_idx: usize;
-        match input.attackers.len() {
-            0 => {
-                play_idx = WeightedIndex::new(&[6, 1, 2, 0, 0]).ok()?.sample(rng);
-                target_idx = WeightedIndex::new(&[1, 2, 3, 3, 2]).ok()?.sample(rng);
-            }
-            1 => {
-                play_idx = input.attackers[0];
-                target_idx = WeightedIndex::new(&[1, 2, 3, 3, 2]).ok()?.sample(rng);
-            }
-            _ => {
-                play_idx = input.attackers[0];
-                target_idx = input.attackers[1];
-            }
-        }
+        let play_idx = match input.attackers.len() {
+            0 => Self::sample(rng, [6, 1, 2, 0, 0])?,
+            _ => input.attackers[0],
+        };
 
-        let playmaker: &Player = attacking_players[play_idx];
+        let target_idx = match input.attackers.len() {
+            0 | 1 => Self::sample(rng, [1, 2, 3, 3, 2])?,
+            _ => input.attackers[1],
+        };
+
+        let playmaker = attacking_players[play_idx];
         let playmaker_defender = defending_players[play_idx];
         let play_stats = attacking_stats.get(&playmaker.id)?;
         let defender_stats = defending_stats.get(&playmaker_defender.id)?;
@@ -81,7 +68,7 @@ impl PickAndRoll {
 
             result = match atk_result as i16 - def_result as i16 {
                 x if x > ADV_ATTACK_LIMIT => ActionOutput {
-                    possession: input.possession.clone(),
+                    possession: input.possession,
                     advantage: Advantage::Attack,
                     attackers: vec![play_idx],
                     defenders: vec![play_idx],
@@ -97,7 +84,7 @@ impl PickAndRoll {
                     ..Default::default()
                 },
                 x if x > ADV_NEUTRAL_LIMIT => ActionOutput {
-                    possession: input.possession.clone(),
+                    possession: input.possession,
                     advantage: Advantage::Neutral,
                     attackers: vec![play_idx],
                     defenders: vec![play_idx],
@@ -113,7 +100,7 @@ impl PickAndRoll {
                     ..Default::default()
                 },
                 x if x > ADV_DEFENSE_LIMIT => ActionOutput {
-                    possession: input.possession.clone(),
+                    possession: input.possession,
                     advantage: Advantage::Defense,
                     attackers: vec![play_idx],
                     defenders: vec![play_idx],
@@ -133,7 +120,7 @@ impl PickAndRoll {
                     target_defender_update.steals = 1;
                     ActionOutput {
                         situation: ActionSituation::Turnover,
-                        possession: !input.possession.clone(),
+                        possession: !input.possession,
                         description: format!(
                             "{} tries to use the screen but {} snatches the ball from {} hands.",
                             playmaker.info.last_name, target_defender.info.last_name, playmaker.info.pronouns.as_possessive()
@@ -158,7 +145,7 @@ impl PickAndRoll {
 
             result = match atk_result as i16 - def_result as i16 {
             x if x > ADV_ATTACK_LIMIT => ActionOutput {
-                possession: input.possession.clone(),
+                possession: input.possession,
                 advantage: Advantage::Attack,
                 attackers: vec![target_idx],
                 defenders: vec![play_idx], //got the switch
@@ -175,7 +162,7 @@ impl PickAndRoll {
                 ..Default::default()
             },
             x if x > 0 => ActionOutput {
-                possession: input.possession.clone(),
+                possession: input.possession,
                 advantage: Advantage::Neutral,
                 attackers: vec![target_idx],
                 defenders: vec![play_idx], //got the switch
@@ -192,7 +179,7 @@ impl PickAndRoll {
                 ..Default::default()
             },
             x if x > ADV_DEFENSE_LIMIT => ActionOutput {
-                possession: input.possession.clone(),
+                possession: input.possession,
                 advantage: Advantage::Defense,
                 attackers: vec![target_idx],
                 defenders: vec![target_idx], //no switch
@@ -214,7 +201,7 @@ impl PickAndRoll {
 
                 ActionOutput {
                     situation: ActionSituation::Turnover,
-                    possession: !input.possession.clone(),
+                    possession: !input.possession,
                     description:format!(
                         "They go for the pick'n'roll but the defender reads that perfectly. {} tries to pass to {} but {} blocks the pass.",
                         playmaker.info.last_name, target.info.last_name, playmaker_defender.info.last_name

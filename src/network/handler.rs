@@ -37,7 +37,6 @@ impl Debug for NetworkHandler {
 
 impl NetworkHandler {
     pub fn new(seed_ip: Option<String>) -> Result<Self, Box<dyn Error>> {
-        env_logger::init();
         let local_key = identity::Keypair::generate_ed25519();
         let local_peer_id = PeerId::from(local_key.public());
 

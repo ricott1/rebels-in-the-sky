@@ -25,9 +25,9 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
     Frame,
 };
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+
 use strum_macros::Display;
 use tui_textarea::{CursorMove, TextArea};
 
@@ -48,11 +48,11 @@ pub struct SwarmPanel {
     connected_peers: Vec<PeerId>,
     peer_to_team_id: HashMap<PeerId, TeamId>,
     peer_to_challenge: HashMap<PeerId, Challenge>,
-    callback_registry: Rc<RefCell<CallbackRegistry>>,
+    callback_registry: Arc<Mutex<CallbackRegistry>>,
 }
 
 impl SwarmPanel {
-    pub fn new(callback_registry: Rc<RefCell<CallbackRegistry>>) -> Self {
+    pub fn new(callback_registry: Arc<Mutex<CallbackRegistry>>) -> Self {
         let mut events = HashMap::new();
         events.insert(EventTopic::Log, vec![]);
         events.insert(EventTopic::Challenges, vec![]);
@@ -125,7 +125,7 @@ impl SwarmPanel {
             UiCallbackPreset::SetSwarmPanelTopic {
                 topic: EventTopic::Chat,
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
 
         let mut challenges_button = Button::new(
@@ -133,7 +133,7 @@ impl SwarmPanel {
             UiCallbackPreset::SetSwarmPanelTopic {
                 topic: EventTopic::Challenges,
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
 
         let mut log_button = Button::new(
@@ -141,7 +141,7 @@ impl SwarmPanel {
             UiCallbackPreset::SetSwarmPanelTopic {
                 topic: EventTopic::Log,
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
         match self.current_topic {
             EventTopic::Log => {
@@ -183,7 +183,7 @@ impl SwarmPanel {
             UiCallbackPreset::Dial {
                 address: "seed".to_string(),
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
         frame.render_widget(dial_button, split[4]);
     }
@@ -229,7 +229,7 @@ impl SwarmPanel {
                     UiCallbackPreset::AcceptChallenge {
                         challenge: challenge.clone(),
                     },
-                    Rc::clone(&self.callback_registry),
+                    Arc::clone(&self.callback_registry),
                 )
                 .set_box_style(UiStyle::OK);
                 frame.render_widget(accept_button, line_split[1]);
@@ -238,7 +238,7 @@ impl SwarmPanel {
                     UiCallbackPreset::DeclineChallenge {
                         challenge: challenge.clone(),
                     },
-                    Rc::clone(&self.callback_registry),
+                    Arc::clone(&self.callback_registry),
                 )
                 .set_box_style(UiStyle::ERROR);
                 frame.render_widget(decline_button, line_split[2]);

@@ -196,14 +196,17 @@ impl PlayerImage {
             self.set_hat(Some(HatImage::Bandana));
         } else if info.crew_role == CrewRole::Pilot {
             match info.population {
-                Population::Yardalaim | Population::Galdari => {
-                    self.set_hat(Some(HatImage::MaskLow));
+                Population::Yardalaim => {
+                    self.set_hat(Some(HatImage::MaskYardalaim));
                 }
                 Population::Polpett => {
                     self.set_hat(Some(HatImage::MaskPolpett));
                 }
+                Population::Galdari => {
+                    self.set_hat(Some(HatImage::MaskGaldari));
+                }
                 _ => {
-                    self.set_hat(Some(HatImage::MaskHigh));
+                    self.set_hat(Some(HatImage::Mask));
                 }
             }
         } else {
@@ -334,7 +337,8 @@ impl PlayerImage {
             let mut other = read_image(shorts.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
             if let Some(color_map) = jersey_color_map {
-                other.apply_color_map(color_map);
+                let mask = read_image(ShortsImage::Mask.select_file(size).as_str())?;
+                other.apply_color_map_with_shadow_mask(color_map, &mask);
             }
             base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
             blinking_base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
@@ -377,7 +381,8 @@ impl PlayerImage {
             let mut other = read_image(shirt.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
             if let Some(color_map) = jersey_color_map {
-                other.apply_color_map(color_map);
+                let mask = read_image(ShirtImage::Mask.select_file(size).as_str())?;
+                other.apply_color_map_with_shadow_mask(color_map, &mask);
             }
             base.copy_non_trasparent_from(&other, x, img_height - body_offset_y + 1)?;
             blinking_base.copy_non_trasparent_from(&other, x, img_height - body_offset_y + 1)?;

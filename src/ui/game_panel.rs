@@ -41,7 +41,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, Wrap},
     Frame,
 };
-use std::{cell::RefCell, rc::Rc};
+use std::{sync::Arc, sync::Mutex};
 use strum_macros::Display;
 
 #[derive(Default, Debug, Clone, PartialEq, Display)]
@@ -64,14 +64,14 @@ pub struct GamePanel {
     debug_mode: bool,
     action_results: Vec<ActionOutput>,
     tick: usize,
-    callback_registry: Rc<RefCell<CallbackRegistry>>,
-    gif_map: Rc<RefCell<GifMap>>,
+    callback_registry: Arc<Mutex<CallbackRegistry>>,
+    gif_map: Arc<Mutex<GifMap>>,
 }
 
 impl GamePanel {
     pub fn new(
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
-        gif_map: Rc<RefCell<GifMap>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
+        gif_map: Arc<Mutex<GifMap>>,
     ) -> Self {
         Self {
             callback_registry,
@@ -257,7 +257,8 @@ impl GamePanel {
 
         if let Ok(mut lines) = self
             .gif_map
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .player_frame_lines(&base_home_player, self.tick)
         {
             lines.remove(0);
@@ -266,7 +267,8 @@ impl GamePanel {
         }
         if let Ok(mut lines) = self
             .gif_map
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .player_frame_lines(&base_away_player, self.tick)
         {
             lines.remove(0);
@@ -417,12 +419,8 @@ impl GamePanel {
             )),
             Line::from(""),
             Line::from(format!(
-                "{:>18}-->{:<}",
-                game.home_team_in_game.offense_tactic, game.away_team_in_game.defense_tactic
-            )),
-            Line::from(format!(
-                "{:>18}<--{:<}",
-                game.home_team_in_game.defense_tactic, game.away_team_in_game.offense_tactic
+                "{:>18} vs {:<}",
+                game.home_team_in_game.tactic, game.away_team_in_game.tactic
             )),
         ];
 
@@ -739,9 +737,7 @@ impl GamePanel {
         };
         let mut timer_lines: Vec<Line> = vec![];
         if !timer.has_started() {
-            timer_lines.push(Line::from(
-                Timer::from(timer.period().next().start()).format(),
-            ));
+            timer_lines.push(Line::from(Timer::from(timer.period().start()).format()));
             let starting_in_seconds = (game.starting_at - world.last_tick_short_interval) / 1000;
             timer_lines.push(Line::from(format!(
                 "Starting in {:02}:{:02}",
@@ -762,6 +758,7 @@ impl GamePanel {
                 timer.seconds()
             )));
         } else {
+            //FIXME
             timer_lines.push(Line::from(timer.format()));
         }
         timer_lines
@@ -931,5 +928,60 @@ impl SplitPanel for GamePanel {
     fn set_index(&mut self, index: usize) {
         self.index = index;
         self.commentary_index = 0;
+    }
+}
+
+// Add test for timer formatting only
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        engine::timer::Timer,
+        types::{SystemTimeTick, Tick, SECONDS},
+    };
+    use std::{io::Write, thread, time::Duration};
+
+    #[test]
+    fn test_timer_formatting() {
+        let mut stdout = std::io::stdout();
+        let mut timer = Timer::new();
+
+        let mut current_time = Tick::now();
+        let starting_at = current_time + 5 * SECONDS;
+
+        loop {
+            current_time = Tick::now();
+            if current_time > starting_at {
+                timer.tick();
+            }
+
+            if !timer.has_started() {
+                let starting_in_seconds = (starting_at - current_time) / SECONDS;
+                print!(
+                    "{} -- Starting in {:02}:{:02}\r",
+                    Timer::from(timer.period().start()).format(),
+                    starting_in_seconds / 60,
+                    starting_in_seconds % 60
+                );
+            } else if timer.has_ended() {
+                print!("{}\r", Timer::from(timer.period().next().start()).format());
+            } else if timer.is_break() {
+                print!(
+                    "{} -- Resuming in {:02}:{:02}\r",
+                    Timer::from(timer.period().next().start()).format(),
+                    timer.minutes(),
+                    timer.seconds()
+                );
+            } else {
+                //FIXME
+                print!("{}                       \r", timer.format());
+            }
+            stdout.flush().unwrap();
+            thread::sleep(Duration::from_millis(100));
+
+            if timer.has_ended() {
+                break;
+            }
+        }
     }
 }

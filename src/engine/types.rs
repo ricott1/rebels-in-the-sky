@@ -1,10 +1,7 @@
-use super::{
-    constants::MAX_TIREDNESS,
-    tactic::{DefenseTactic, OffenseTactic},
-};
+use super::{action::Action, constants::MAX_TIREDNESS, tactic::Tactic};
 use crate::{
     image::pitch::PitchStyle,
-    types::{GameId, PlayerId, PlayerMap, TeamId, TeamMap},
+    types::{AppResult, GameId, PlayerId, PlayerMap, TeamId, TeamMap},
     world::{
         player::{InfoStats, Player},
         position::{Position, MAX_POSITION},
@@ -14,6 +11,7 @@ use crate::{
 };
 use libp2p::PeerId;
 use once_cell::sync::Lazy;
+use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, ops::Not};
 
@@ -92,9 +90,6 @@ pub struct GameStats {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub experience_at_position: [u16; 5],
-    #[serde(skip_serializing_if = "is_default")]
-    #[serde(default)]
-    pub knocked_out_by: Option<PlayerId>,
 }
 
 impl GameStats {
@@ -124,7 +119,6 @@ impl GameStats {
         for (idx, exp) in stats.experience_at_position.iter().enumerate() {
             self.experience_at_position[idx] += exp;
         }
-        self.knocked_out_by = stats.knocked_out_by.clone();
     }
 
     pub fn is_playing(&self) -> bool {
@@ -132,7 +126,7 @@ impl GameStats {
     }
 
     pub fn is_knocked_out(&self) -> bool {
-        self.knocked_out_by.is_some()
+        self.tiredness == MAX_TIREDNESS
     }
 
     pub fn add_tiredness(&mut self, tiredness: f32, stamina: f32) {
@@ -150,10 +144,8 @@ pub struct TeamInGame {
     pub initial_positions: Vec<PlayerId>,
     pub players: PlayerMap,
     pub stats: GameStatsMap,
-    pub offense_tactic: OffenseTactic,
-    pub defense_tactic: DefenseTactic,
-    pub defensive_momentum: u8,
-    pub offensive_momentum: u8,
+    pub tactic: Tactic,
+    pub momentum: u8,
 }
 
 impl<'game> TeamInGame {
@@ -177,8 +169,7 @@ impl<'game> TeamInGame {
             version: team.version,
             players,
             stats,
-            offense_tactic: team.game_offense_tactic,
-            defense_tactic: team.game_defense_tactic,
+            tactic: team.game_tactic,
             ..Default::default()
         }
     }
@@ -193,6 +184,10 @@ impl<'game> TeamInGame {
 
         Some(TeamInGame::new(team, team_players))
     }
+
+    pub fn pick_action(&self, rng: &mut ChaCha8Rng) -> AppResult<Action> {
+        self.tactic.pick_action(rng)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -203,8 +198,7 @@ pub struct PersistedTeamInGame {
     pub initial_positions: Vec<PlayerId>,
     pub players: PersistedPlayerMap,
     pub stats: GameStatsMap,
-    pub offense_tactic: OffenseTactic,
-    pub defense_tactic: DefenseTactic,
+    pub tactic: Tactic,
 }
 
 impl PersistedTeamInGame {
@@ -220,8 +214,7 @@ impl PersistedTeamInGame {
             initial_positions: team_in_game.initial_positions.clone(),
             players,
             stats: team_in_game.stats.clone(),
-            offense_tactic: team_in_game.offense_tactic,
-            defense_tactic: team_in_game.defense_tactic,
+            tactic: team_in_game.tactic,
         }
     }
 }
@@ -255,7 +248,7 @@ impl PersistedPlayer {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum Possession {
     #[default]
     Home,

@@ -11,7 +11,6 @@ pub struct StartOfQuarter;
 
 impl StartOfQuarter {
     pub fn execute(
-        &self,
         input: &ActionOutput,
         game: &Game,
         rng: &mut ChaCha8Rng,

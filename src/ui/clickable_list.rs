@@ -6,7 +6,7 @@ use ratatui::{
     text::Text,
     widgets::{Block, HighlightSpacing, StatefulWidget, Widget},
 };
-use std::{cell::RefCell, rc::Rc};
+use std::{sync::Arc, sync::Mutex};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
@@ -77,11 +77,11 @@ impl<'a> ClickableListItem<'a> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct ClickableList<'a> {
     block: Option<Block<'a>>,
     items: Vec<ClickableListItem<'a>>,
-    callback_registry: Rc<RefCell<CallbackRegistry>>,
+    callback_registry: Arc<Mutex<CallbackRegistry>>,
     /// Style used as a base style for the widget
     style: Style,
     start_corner: Corner,
@@ -98,7 +98,7 @@ pub struct ClickableList<'a> {
 }
 
 impl<'a> ClickableList<'a> {
-    pub fn new<T>(items: T, callback_registry: Rc<RefCell<CallbackRegistry>>) -> ClickableList<'a>
+    pub fn new<T>(items: T, callback_registry: Arc<Mutex<CallbackRegistry>>) -> ClickableList<'a>
     where
         T: Into<Vec<ClickableListItem<'a>>>,
     {
@@ -288,7 +288,7 @@ impl<'a> StatefulWidget for ClickableList<'a> {
                 };
                 buf.set_line(elem_x, y + j as u16, line, max_element_width);
             }
-            if self.callback_registry.borrow().is_hovering(area) {
+            if self.callback_registry.lock().unwrap().is_hovering(area) {
                 selected_element = Some((area, i));
                 buf.set_style(area, self.hovering_style);
             }
@@ -297,20 +297,20 @@ impl<'a> StatefulWidget for ClickableList<'a> {
             }
         }
         if let Some((area, index)) = selected_element {
-            self.callback_registry.borrow_mut().register_callback(
+            self.callback_registry.lock().unwrap().register_callback(
                 crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
                 Some(area),
                 UiCallbackPreset::SetPanelIndex { index },
             );
         }
 
-        self.callback_registry.borrow_mut().register_callback(
+        self.callback_registry.lock().unwrap().register_callback(
             crossterm::event::MouseEventKind::ScrollDown,
             None,
             UiCallbackPreset::NextPanelIndex,
         );
 
-        self.callback_registry.borrow_mut().register_callback(
+        self.callback_registry.lock().unwrap().register_callback(
             crossterm::event::MouseEventKind::ScrollUp,
             None,
             UiCallbackPreset::PreviousPanelIndex,
@@ -332,7 +332,7 @@ impl<'a> Styled for ClickableList<'a> {
         self.style
     }
 
-    fn set_style(self, style: Style) -> Self::Item {
-        self.style(style)
+    fn set_style<S: Into<Style>>(self, style: S) -> Self::Item {
+        self.style(style.into())
     }
 }

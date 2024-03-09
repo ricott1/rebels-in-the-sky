@@ -1,5 +1,5 @@
 use super::{
-    action::{ActionOutput, ActionSituation},
+    action::{ActionOutput, ActionSituation, EngineAction},
     game::Game,
     types::GameStats,
     utils::roll,
@@ -15,13 +15,8 @@ use std::{
 #[derive(Debug, Default)]
 pub struct Rebound;
 
-impl Rebound {
-    pub fn execute(
-        &self,
-        input: &ActionOutput,
-        game: &Game,
-        rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
+impl EngineAction for Rebound {
+    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
         let attacking_stats = game.attacking_stats();
@@ -105,7 +100,7 @@ impl Rebound {
                     )
                 }
                 ActionOutput {
-                    possession: input.possession.clone(),
+                    possession: input.possession,
                     situation: ActionSituation::AfterOffensiveRebound,
                     description,
                     attackers: vec![attack_rebounder_idx],
@@ -124,7 +119,7 @@ impl Rebound {
                 defence_stats_update.insert(defence_rebounder.id, rebounder_update);
 
                 ActionOutput {
-                    possession: !input.possession.clone(),
+                    possession: !input.possession,
                     situation: ActionSituation::AfterDefensiveRebound,
                     description: format!(
                         "{} jumps high and gets the defensive rebound.",

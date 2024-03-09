@@ -9,7 +9,7 @@ use super::{
     utils::PLAYER_DATA,
 };
 use crate::{
-    engine::{constants::MAX_TIREDNESS, types::GameStats},
+    engine::types::GameStats,
     image::{player::PlayerImage, types::Gif},
     types::{PlanetId, PlayerId, TeamId},
     world::{
@@ -240,7 +240,7 @@ impl<'de> Deserialize<'de> for Player {
                 };
                 player.mental = Mental {
                     vision: compact_skills[16],
-                    positioning: compact_skills[17],
+                    aggression: compact_skills[17],
                     off_ball_movement: compact_skills[18],
                     charisma: compact_skills[19],
                 };
@@ -426,7 +426,7 @@ impl<'de> Deserialize<'de> for Player {
                 };
                 player.mental = Mental {
                     vision: compact_skills[16],
-                    positioning: compact_skills[17],
+                    aggression: compact_skills[17],
                     off_ball_movement: compact_skills[18],
                     charisma: compact_skills[19],
                 };
@@ -659,7 +659,7 @@ impl Player {
             14 => self.technical.post_moves,
             15 => self.technical.rebounding,
             16 => self.mental.vision,
-            17 => self.mental.positioning,
+            17 => self.mental.aggression,
             18 => self.mental.off_ball_movement,
             19 => self.mental.charisma,
             _ => panic!("Invalid skill index"),
@@ -733,7 +733,7 @@ impl Player {
             14 => self.technical.post_moves = new_value,
             15 => self.technical.rebounding = new_value,
             16 => self.mental.vision = new_value,
-            17 => self.mental.positioning = new_value,
+            17 => self.mental.aggression = new_value,
             18 => self.mental.off_ball_movement = new_value,
             19 => self.mental.charisma = new_value,
             _ => panic!("Invalid skill index {}", idx),
@@ -742,10 +742,6 @@ impl Player {
 
     pub fn apply_end_of_game_logic(&mut self, stats: &GameStats) {
         self.version += 1;
-        if stats.is_knocked_out() {
-            self.tiredness = MAX_TIREDNESS;
-            return;
-        }
         let experience_at_position = stats.experience_at_position;
         self.reputation = (self.reputation
             + REPUTATION_PER_EXPERIENCE / self.reputation

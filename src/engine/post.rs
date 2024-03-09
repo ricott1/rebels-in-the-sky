@@ -1,5 +1,5 @@
 use super::{
-    action::{ActionOutput, ActionSituation, Advantage},
+    action::{ActionOutput, ActionSituation, Advantage, EngineAction},
     constants::{TirednessCost, ADV_ATTACK_LIMIT, ADV_DEFENSE_LIMIT, ADV_NEUTRAL_LIMIT},
     game::Game,
     types::GameStats,
@@ -14,36 +14,24 @@ use std::collections::HashMap;
 #[derive(Debug, Default)]
 pub struct Post;
 
-impl Post {
-    pub fn execute(
-        &self,
-        input: &ActionOutput,
-        game: &Game,
-        rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
+impl EngineAction for Post {
+    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
         let attacking_stats = game.attacking_stats();
         let defending_stats = game.defending_stats();
 
-        let post_idx: usize;
-        match input.attackers.len() {
-            0 => {
-                post_idx = WeightedIndex::new(&[0, 0, 1, 2, 3]).ok()?.sample(rng);
-            }
-            _ => {
-                post_idx = input.attackers[0];
-            }
-        }
+        let post_idx = match input.attackers.len() {
+            0 => Self::sample(rng, [0, 0, 1, 2, 3])?,
+            _ => input.attackers[0],
+        };
 
-        let poster: &Player = attacking_players[post_idx];
+        let poster = attacking_players[post_idx];
         let post_stats = attacking_stats.get(&poster.id)?;
         let defender = defending_players[post_idx];
         let defender_stats = defending_stats.get(&defender.id)?;
 
         let timer_increase = 4 + rng.gen_range(0..=5);
-        let atk_result: u8;
-        let def_result: u8;
 
         let mut attack_stats_update = HashMap::new();
         let mut post_update = GameStats::default();
@@ -53,17 +41,17 @@ impl Post {
         let mut defender_update = GameStats::default();
         defender_update.add_tiredness(TirednessCost::MEDIUM, defender.athleticism.stamina);
 
-        atk_result = roll(rng, post_stats.tiredness)
+        let atk_result = roll(rng, post_stats.tiredness)
             + poster.technical.post_moves.value()
             + poster.athleticism.strength.value();
 
-        def_result = roll(rng, defender_stats.tiredness)
+        let def_result = roll(rng, defender_stats.tiredness)
             + defender.defense.interior_defense.value()
             + defender.athleticism.strength.value();
 
         let mut result = match atk_result as i16 - def_result as i16 {
             x if x > ADV_ATTACK_LIMIT => ActionOutput {
-                possession: input.possession.clone(),
+                possession: input.possession,
                 advantage: Advantage::Attack,
                 attackers: vec![post_idx],
                 defenders: vec![post_idx],
@@ -79,7 +67,7 @@ impl Post {
                 ..Default::default()
             },
             x if x > ADV_NEUTRAL_LIMIT => ActionOutput {
-                possession: input.possession.clone(),
+                possession: input.possession,
                 advantage: Advantage::Neutral,
                 attackers: vec![post_idx],
                 defenders: vec![post_idx],
@@ -101,7 +89,7 @@ impl Post {
                     let target_idx = WeightedIndex::new(&weights).ok()?.sample(rng);
                     let target: &Player = attacking_players[target_idx];
                     ActionOutput {
-                        possession: input.possession.clone(),
+                        possession: input.possession,
                         advantage: Advantage::Neutral,
                         attackers: vec![target_idx],
                         defenders: vec![],
@@ -118,7 +106,7 @@ impl Post {
                     }
                 } else {
                     ActionOutput {
-                        possession: input.possession.clone(),
+                        possession: input.possession,
                         advantage: Advantage::Defense,
                         attackers: vec![post_idx],
                         defenders: vec![post_idx],
@@ -141,7 +129,7 @@ impl Post {
 
                 ActionOutput {
                     situation: ActionSituation::Turnover,
-                    possession: !input.possession.clone(),
+                    possession: !input.possession,
                     description: format!(
                         "{} steals the ball from {} on the post.",
                         defender.info.last_name, poster.info.last_name,

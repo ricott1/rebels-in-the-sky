@@ -1,5 +1,3 @@
-use std::{cell::RefCell, rc::Rc};
-
 use super::{
     constants::UiStyle,
     ui_callback::{CallbackRegistry, UiCallbackPreset},
@@ -11,12 +9,13 @@ use ratatui::{
     text::Text,
     widgets::{Paragraph, Widget},
 };
+use std::{sync::Arc, sync::Mutex};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Button<'a> {
     text: Text<'a>,
     on_click: UiCallbackPreset,
-    callback_registry: Rc<RefCell<CallbackRegistry>>,
+    callback_registry: Arc<Mutex<CallbackRegistry>>,
     disabled: bool,
     disabled_text: Option<String>,
     text_alignemnt: ratatui::layout::Alignment,
@@ -36,7 +35,7 @@ impl<'a> Button<'a> {
     pub fn new(
         text: String,
         on_click: UiCallbackPreset,
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
     ) -> Self {
         Self {
             text: text.into(),
@@ -55,7 +54,7 @@ impl<'a> Button<'a> {
     pub fn box_on_hover(
         text: String,
         on_click: UiCallbackPreset,
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
     ) -> Self {
         Self {
             text: text.into(),
@@ -74,7 +73,7 @@ impl<'a> Button<'a> {
     pub fn no_box(
         text: String,
         on_click: UiCallbackPreset,
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
     ) -> Self {
         Self {
             text: text.into(),
@@ -93,7 +92,7 @@ impl<'a> Button<'a> {
     pub fn paragraph(
         text: String,
         on_click: UiCallbackPreset,
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
     ) -> Self {
         Self {
             text: text.into(),
@@ -112,7 +111,7 @@ impl<'a> Button<'a> {
     pub fn text(
         text: Text<'a>,
         on_click: UiCallbackPreset,
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
     ) -> Self {
         Self {
             text,
@@ -154,8 +153,11 @@ impl<'a> Styled for Button<'a> {
     fn style(&self) -> Style {
         self.style
     }
-    fn set_style(self, style: Style) -> Self::Item {
-        Self { style, ..self }
+    fn set_style<S: Into<Style>>(self, style: S) -> Self::Item {
+        Self {
+            style: style.into(),
+            ..self
+        }
     }
 }
 
@@ -170,7 +172,7 @@ impl<'a> Widget for Button<'a> {
             area
         };
         if self.disabled == false {
-            self.callback_registry.borrow_mut().register_callback(
+            self.callback_registry.lock().unwrap().register_callback(
                 crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
                 Some(inner),
                 self.on_click,
@@ -187,7 +189,7 @@ impl<'a> Widget for Button<'a> {
                 .alignment(self.text_alignemnt)
                 .style(UiStyle::UNSELECTABLE)
         } else {
-            if self.callback_registry.borrow().is_hovering(inner) {
+            if self.callback_registry.lock().unwrap().is_hovering(inner) {
                 Paragraph::new(self.text)
                     .alignment(self.text_alignemnt)
                     .style(self.hover_style)
@@ -201,7 +203,7 @@ impl<'a> Widget for Button<'a> {
         if area.height < 3 {
             paragraph.render(area, buf);
         } else {
-            if self.callback_registry.borrow().is_hovering(inner) {
+            if self.callback_registry.lock().unwrap().is_hovering(inner) {
                 if let Some(box_hover_style) = self.box_hover_style {
                     paragraph
                         .block(default_block().border_style(box_hover_style))
@@ -222,11 +224,11 @@ impl<'a> Widget for Button<'a> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct RadioButton<'a> {
     pub text: Text<'a>,
     on_click: UiCallbackPreset,
-    callback_registry: Rc<RefCell<CallbackRegistry>>,
+    callback_registry: Arc<Mutex<CallbackRegistry>>,
     disabled: bool,
     linked_index: &'a mut usize,
     index: usize,
@@ -263,8 +265,11 @@ impl<'a> Styled for RadioButton<'a> {
     fn style(&self) -> Style {
         self.style
     }
-    fn set_style(self, style: Style) -> Self::Item {
-        Self { style, ..self }
+    fn set_style<S: Into<Style>>(self, style: S) -> Self::Item {
+        Self {
+            style: style.into(),
+            ..self
+        }
     }
 }
 
@@ -272,7 +277,7 @@ impl<'a> RadioButton<'a> {
     pub fn new(
         text: String,
         on_click: UiCallbackPreset,
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
         linked_index: &'a mut usize,
         index: usize,
     ) -> Self {
@@ -292,7 +297,7 @@ impl<'a> RadioButton<'a> {
     pub fn box_on_hover(
         text: String,
         on_click: UiCallbackPreset,
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
         linked_index: &'a mut usize,
         index: usize,
     ) -> Self {
@@ -313,7 +318,7 @@ impl<'a> RadioButton<'a> {
     pub fn no_box(
         text: String,
         on_click: UiCallbackPreset,
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
         linked_index: &'a mut usize,
         index: usize,
     ) -> Self {
@@ -362,10 +367,10 @@ impl<'a> Widget for RadioButton<'a> {
         };
 
         if self.disabled == false {
-            if self.callback_registry.borrow().is_hovering(inner) {
+            if self.callback_registry.lock().unwrap().is_hovering(inner) {
                 *self.linked_index = self.index;
             }
-            self.callback_registry.borrow_mut().register_callback(
+            self.callback_registry.lock().unwrap().register_callback(
                 crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
                 Some(inner),
                 self.on_click,

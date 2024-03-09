@@ -43,7 +43,7 @@ use ratatui::{
 };
 use std::cmp::min;
 use std::collections::HashMap;
-use std::{cell::RefCell, rc::Rc};
+use std::{sync::Arc, sync::Mutex};
 use strum::IntoEnumIterator;
 use tui_textarea::{CursorMove, TextArea};
 
@@ -116,14 +116,14 @@ pub struct NewTeamScreen {
     planet_players: HashMap<PlanetId, Vec<(PlayerId, u32)>>,
     selected_players: Vec<PlayerId>,
     confirm: ConfirmChoice,
-    callback_registry: Rc<RefCell<CallbackRegistry>>,
-    gif_map: Rc<RefCell<GifMap>>,
+    callback_registry: Arc<Mutex<CallbackRegistry>>,
+    gif_map: Arc<Mutex<GifMap>>,
 }
 
 impl NewTeamScreen {
     pub fn new(
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
-        gif_map: Rc<RefCell<GifMap>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
+        gif_map: Arc<Mutex<GifMap>>,
     ) -> Self {
         let mut team_name_textarea = TextArea::default();
         team_name_textarea.set_cursor_style(UiStyle::SELECTED);
@@ -427,7 +427,7 @@ impl NewTeamScreen {
                     color: self.red_color_preset.next(),
                     channel: 0,
                 },
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
             );
             let green_style = Style::default().bg(Color::Rgb(
                 self.get_team_colors().green[0],
@@ -450,7 +450,7 @@ impl NewTeamScreen {
                     color: self.green_color_preset.next(),
                     channel: 1,
                 },
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
             );
 
             let blue_style = Style::default().bg(Color::Rgb(
@@ -474,7 +474,7 @@ impl NewTeamScreen {
                     color: self.blue_color_preset.next(),
                     channel: 2,
                 },
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
             );
 
             frame.render_widget(
@@ -567,7 +567,7 @@ impl NewTeamScreen {
         let planet_id = self.planet_ids[self.planet_index];
         let planet = world.get_planet_or_err(planet_id).unwrap();
 
-        let frame_lines = self.gif_map.borrow_mut().planet_zoom_in_frame_lines(
+        let frame_lines = self.gif_map.lock().unwrap().planet_zoom_in_frame_lines(
             planet_id,
             self.tick / planet.rotation_period,
             world,
@@ -775,7 +775,7 @@ impl NewTeamScreen {
                 balance: self.get_remaining_balance() as u32,
                 spaceship: self.selected_ship(),
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         )
         .set_style(UiStyle::OK);
         frame.render_widget(yes_button, button_split[1]);
@@ -783,7 +783,7 @@ impl NewTeamScreen {
         let no_button = Button::new(
             UiText::NO.into(),
             UiCallbackPreset::CancelGeneratePlayerTeam,
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         )
         .set_style(UiStyle::ERROR);
 

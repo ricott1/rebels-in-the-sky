@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{sync::Arc, sync::Mutex};
 
 use ratatui::{
     buffer::Buffer,
@@ -68,8 +68,8 @@ impl<'a> Styled for ClickableCell<'a> {
         self.style
     }
 
-    fn set_style(self, style: Style) -> Self::Item {
-        self.style(style)
+    fn set_style<S: Into<Style>>(self, style: S) -> Self::Item {
+        self.style(style.into())
     }
 }
 
@@ -158,8 +158,8 @@ impl<'a> Styled for ClickableRow<'a> {
         self.style
     }
 
-    fn set_style(self, style: Style) -> Self::Item {
-        self.style(style)
+    fn set_style<S: Into<Style>>(self, style: S) -> Self::Item {
+        self.style(style.into())
     }
 }
 
@@ -214,7 +214,8 @@ impl<'a> Styled for ClickableRow<'a> {
 /// // ...and potentially show a symbol in front of the selection.
 /// .highlight_symbol(">>");
 /// ```
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone)]
+#[allow(dead_code)]
 pub struct ClickableTable<'a> {
     /// A block to wrap the widget in
     block: Option<Block<'a>>,
@@ -236,11 +237,11 @@ pub struct ClickableTable<'a> {
     rows: Vec<ClickableRow<'a>>,
     /// Decides when to allocate spacing for the row selection
     highlight_spacing: HighlightSpacing,
-    callback_registry: Rc<RefCell<CallbackRegistry>>,
+    callback_registry: Arc<Mutex<CallbackRegistry>>,
 }
 
 impl<'a> ClickableTable<'a> {
-    pub fn new<T>(rows: T, callback_registry: Rc<RefCell<CallbackRegistry>>) -> Self
+    pub fn new<T>(rows: T, callback_registry: Arc<Mutex<CallbackRegistry>>) -> Self
     where
         T: IntoIterator<Item = ClickableRow<'a>>,
     {
@@ -391,8 +392,8 @@ impl<'a> Styled for ClickableTable<'a> {
         self.style
     }
 
-    fn set_style(self, style: Style) -> Self::Item {
-        self.style(style)
+    fn set_style<S: Into<Style>>(self, style: S) -> Self::Item {
+        self.style(style.into())
     }
 }
 
@@ -537,7 +538,12 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
                     },
                 );
             }
-            if self.callback_registry.borrow().is_hovering(table_row_area) {
+            if self
+                .callback_registry
+                .lock()
+                .unwrap()
+                .is_hovering(table_row_area)
+            {
                 selected_element = Some((table_row_area, i));
                 buf.set_style(table_row_area, self.hovering_style);
             }
@@ -546,20 +552,20 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
             }
         }
         if let Some((area, index)) = selected_element {
-            self.callback_registry.borrow_mut().register_callback(
+            self.callback_registry.lock().unwrap().register_callback(
                 crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
                 Some(area),
                 UiCallbackPreset::SetPanelIndex { index },
             );
         }
 
-        self.callback_registry.borrow_mut().register_callback(
+        self.callback_registry.lock().unwrap().register_callback(
             crossterm::event::MouseEventKind::ScrollDown,
             None,
             UiCallbackPreset::NextPanelIndex,
         );
 
-        self.callback_registry.borrow_mut().register_callback(
+        self.callback_registry.lock().unwrap().register_callback(
             crossterm::event::MouseEventKind::ScrollUp,
             None,
             UiCallbackPreset::PreviousPanelIndex,

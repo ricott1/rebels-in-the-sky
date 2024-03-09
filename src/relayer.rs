@@ -28,7 +28,7 @@ impl Relayer {
                     swarm_event = self.network_handler.swarm.select_next_some() =>  {
                         let result = self.handle_network_events(swarm_event);
                         if result.is_err() {
-                            println!("Error handling network event: {:?}", result);
+                            log::error!("Error handling network event: {:?}", result);
                         }
                 }
             }

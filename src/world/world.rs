@@ -513,7 +513,7 @@ impl World {
             );
 
             while game.timer.value < network_game.timer.value && !game.timer.has_ended() {
-                game.tick();
+                game.tick(Tick::now());
             }
 
             self.games.insert(game.id, game);
@@ -675,7 +675,7 @@ impl World {
         if current_timestamp >= self.last_tick_short_interval + TickInterval::SHORT {
             if self.games.len() > 0 {
                 self.tick_games(current_timestamp)?;
-                self.cleanup_games()?;
+                self.cleanup_games(current_timestamp)?;
             }
 
             if !is_simulating && self.games.len() < AUTO_GENERATE_GAMES_NUMBER {
@@ -714,9 +714,22 @@ impl World {
         Ok(messages)
     }
 
-    fn cleanup_games(&mut self) -> AppResult<()> {
+    fn cleanup_games(&mut self, current_timestamp: Tick) -> AppResult<()> {
+        log::info!(
+            "Cleaning up games: {}",
+            current_timestamp.formatted_as_time()
+        );
         for (_, game) in self.games.iter() {
-            if game.timer.has_ended() {
+            if game.ended_at.is_some() && current_timestamp > game.ended_at.unwrap() + 10 * SECONDS
+            {
+                log::info!(
+                    "Game {} vs {}: started at {}, ended at {} and is being removed at {}",
+                    game.home_team_in_game.name,
+                    game.away_team_in_game.name,
+                    game.starting_at.formatted_as_time(),
+                    game.ended_at.unwrap().formatted_as_time(),
+                    current_timestamp.formatted_as_time()
+                );
                 for team in [&game.home_team_in_game, &game.away_team_in_game] {
                     //we do not apply end of game logic to peer teams
                     if team.peer_id.is_some() && team.team_id != self.own_team_id {
@@ -752,21 +765,16 @@ impl World {
                 let home_team_income = 100 + game.attendance * INCOME_PER_ATTENDEE_HOME;
                 let away_team_income = 100 + game.attendance * INCOME_PER_ATTENDEE_AWAY;
                 // Winner team gets reputation bonus
-                let score = game.get_score();
-                let home_team_reputation = if score.0 > score.1 {
-                    0.5
-                } else if score.0 < score.1 {
-                    -0.25
-                } else {
-                    0.2
-                };
 
-                let away_team_reputation = if score.0 < score.1 {
-                    0.5
-                } else if score.0 > score.1 {
-                    -0.25
-                } else {
-                    0.2
+                let (home_team_reputation, away_team_reputation) = match game.winner {
+                    Some(winner) => {
+                        if winner == game.home_team_in_game.team_id {
+                            (REPUTATION_BONUS_WINNER, REPUTATION_BONUS_LOSER)
+                        } else {
+                            (REPUTATION_BONUS_LOSER, REPUTATION_BONUS_WINNER)
+                        }
+                    }
+                    None => (REPUTATION_BONUS_DRAW, REPUTATION_BONUS_DRAW),
                 };
 
                 // Set playing teams current game to None
@@ -790,7 +798,11 @@ impl World {
                 self.dirty_ui = true;
             }
         }
-        self.games.retain(|_, game| !game.timer.has_ended());
+        self.games.retain(|_, game| {
+            game.ended_at.is_none()
+                || (game.ended_at.is_some()
+                    && current_timestamp <= game.ended_at.unwrap() + 10 * SECONDS)
+        });
         Ok(())
     }
 
@@ -799,8 +811,8 @@ impl World {
         //         the idea is that the game is completely determined at the beginning,
         //         so we can similuate it through.
         for (_, game) in self.games.iter_mut() {
-            if current_timestamp >= game.starting_at && !game.timer.has_ended() {
-                game.tick();
+            if game.has_started(current_timestamp) && !game.has_ended() {
+                game.tick(current_timestamp);
             }
         }
         Ok(())
@@ -897,7 +909,7 @@ impl World {
     pub fn spaceship_speed_bonus(&self, team: &Team) -> AppResult<f32> {
         let role_fitness = if let Some(pilot_id) = team.crew_roles.pilot {
             let pilot = self.get_player_or_err(pilot_id)?;
-            pilot.athleticism.quickness
+            0.75 * pilot.athleticism.quickness + 0.25 * pilot.mental.vision
         } else {
             0.0
         };
@@ -907,7 +919,7 @@ impl World {
     pub fn team_reputation_bonus(&self, team: &Team) -> AppResult<f32> {
         let role_fitness = if let Some(captain_id) = team.crew_roles.captain {
             let captain = self.get_player_or_err(captain_id)?;
-            captain.mental.charisma
+            0.75 * captain.mental.charisma + 0.25 * captain.mental.aggression
         } else {
             0.0
         };

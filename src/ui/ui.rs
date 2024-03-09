@@ -2,7 +2,7 @@ use super::button::Button;
 use super::constants::{PrintableKeyCode, UiKey, UiStyle, UiText};
 use super::galaxy_panel::GalaxyPanel;
 use super::gif_map::GifMap;
-use super::splash_screen::SplashScreen;
+use super::splash_screen::{AudioPlayerState, SplashScreen};
 use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
 use super::widgets::{default_block, popup_rect};
@@ -25,8 +25,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     Frame,
 };
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use std::vec;
 use strum_macros::Display;
@@ -74,7 +73,7 @@ pub struct Ui {
     pub my_team_panel: MyTeamPanel,
     pub galaxy_panel: GalaxyPanel,
     popup_messages: Vec<PopupMessage>,
-    callback_registry: Rc<RefCell<CallbackRegistry>>,
+    callback_registry: Arc<Mutex<CallbackRegistry>>,
 }
 
 impl Default for Ui {
@@ -82,21 +81,23 @@ impl Default for Ui {
         Self::new(false, false)
     }
 }
+unsafe impl Send for audio::MusicPlayer {}
 
 impl Ui {
     pub fn new(disable_network: bool, disable_audio: bool) -> Self {
-        let gif_map = Rc::new(RefCell::new(GifMap::new()));
-        let callback_registry = Rc::new(RefCell::new(CallbackRegistry::new()));
+        let gif_map = Arc::new(Mutex::new(GifMap::new()));
+        let callback_registry = Arc::new(Mutex::new(CallbackRegistry::new()));
 
-        let splash_screen = SplashScreen::new(Rc::clone(&callback_registry), Rc::clone(&gif_map));
-        let player_panel = PlayerListPanel::new(Rc::clone(&callback_registry), Rc::clone(&gif_map));
-        let team_panel = TeamListPanel::new(Rc::clone(&callback_registry), Rc::clone(&gif_map));
-        let game_panel = GamePanel::new(Rc::clone(&callback_registry), Rc::clone(&gif_map));
-        let swarm_panel = SwarmPanel::new(Rc::clone(&callback_registry));
-        let my_team_panel = MyTeamPanel::new(Rc::clone(&callback_registry), Rc::clone(&gif_map));
+        let splash_screen = SplashScreen::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
+        let player_panel =
+            PlayerListPanel::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
+        let team_panel = TeamListPanel::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
+        let game_panel = GamePanel::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
+        let swarm_panel = SwarmPanel::new(Arc::clone(&callback_registry));
+        let my_team_panel = MyTeamPanel::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
         let new_team_screen =
-            NewTeamScreen::new(Rc::clone(&callback_registry), Rc::clone(&gif_map));
-        let galaxy_panel = GalaxyPanel::new(Rc::clone(&callback_registry), Rc::clone(&gif_map));
+            NewTeamScreen::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
+        let galaxy_panel = GalaxyPanel::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
 
         let mut ui_tabs = vec![];
 
@@ -262,9 +263,13 @@ impl Ui {
         mouse_event: crossterm::event::MouseEvent,
     ) -> Option<UiCallbackPreset> {
         self.callback_registry
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .set_hovering(mouse_event);
-        self.callback_registry.borrow().handle_event(mouse_event)
+        self.callback_registry
+            .lock()
+            .unwrap()
+            .handle_event(mouse_event)
     }
 
     pub(super) fn next_tab(&mut self) {
@@ -276,13 +281,20 @@ impl Ui {
     }
 
     pub fn update(&mut self, world: &World) -> AppResult<()> {
-        // self.callback_registry.borrow_mut().clear();
+        self.callback_registry.lock().unwrap().clear();
         match self.state {
             UiState::Splash => {
                 // This is only to get a nice view in the splash screen
-                self.splash_screen.set_audio_player_is_playing(
-                    self.audio_player.is_some() && self.audio_player.as_ref().unwrap().is_playing,
-                );
+                let audio_state = if self.audio_player.is_some()
+                    && self.audio_player.as_ref().unwrap().is_playing
+                {
+                    AudioPlayerState::Playing
+                } else if self.audio_player.is_some() {
+                    AudioPlayerState::Paused
+                } else {
+                    AudioPlayerState::Disabled
+                };
+                self.splash_screen.set_audio_player_state(audio_state);
                 self.splash_screen.update(world)?
             }
             UiState::NewTeam => self.new_team_screen.update(world)?,
@@ -304,7 +316,7 @@ impl Ui {
 
     /// Renders the user interface widgets.
     pub fn render(&mut self, frame: &mut Frame, world: &World) {
-        self.callback_registry.borrow_mut().clear();
+        self.callback_registry.lock().unwrap().clear();
         let area = frame.size();
         let split = Layout::default()
             .direction(Direction::Vertical)
@@ -345,7 +357,7 @@ impl Ui {
                         UiCallbackPreset::SetUiTab {
                             ui_tab: self.ui_tabs[idx],
                         },
-                        Rc::clone(&self.callback_registry),
+                        Arc::clone(&self.callback_registry),
                     )
                     .set_hover_style(UiStyle::HIGHLIGHT);
 
@@ -398,7 +410,7 @@ impl Ui {
             let button = Button::new(
                 UiText::YES.into(),
                 UiCallbackPreset::CloseUiPopup,
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
             );
 
             frame.render_widget(
@@ -459,8 +471,21 @@ impl Ui {
 
     fn footer(&mut self, world: &World) -> Paragraph {
         let mut spans = vec![
-            Span::styled("Esc", Style::default().bg(Color::Gray).fg(Color::DarkGray)),
+            Span::styled(
+                " Esc ",
+                Style::default().bg(Color::Gray).fg(Color::DarkGray),
+            ),
             Span::styled(" Quit ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!(" {} ", UiKey::PREVIOUS_TAB.to_string()),
+                Style::default().bg(Color::Gray).fg(Color::DarkGray),
+            ),
+            Span::styled(" Previous tab ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!(" {} ", UiKey::NEXT_TAB.to_string()),
+                Style::default().bg(Color::Gray).fg(Color::DarkGray),
+            ),
+            Span::styled(" Next tab ", Style::default().fg(Color::DarkGray)),
         ];
 
         if self.audio_player.is_some() {

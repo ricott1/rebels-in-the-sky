@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     app::App,
-    engine::{tactic::OffenseTactic, types::TeamInGame},
+    engine::{tactic::Tactic, types::TeamInGame},
     image::color_map::{ColorMap, ColorPreset},
     network::{constants::DEFAULT_PORT, types::Challenge},
     types::{
@@ -72,10 +72,10 @@ pub enum UiCallbackPreset {
         color: ColorPreset,
         channel: usize,
     },
-    SetTeamOffenseTactic {
-        tactic: OffenseTactic,
+    SetTeamTactic {
+        tactic: Tactic,
     },
-    SetNextTeamOffenseTactic,
+    SetNextTeamTactic,
     NextUiTab,
     PreviousUiTab,
     SetUiTab {
@@ -662,20 +662,20 @@ impl UiCallbackPreset {
                     .set_team_colors(color.clone(), channel.clone());
                 Ok(None)
             }
-            UiCallbackPreset::SetTeamOffenseTactic { tactic } => {
+            UiCallbackPreset::SetTeamTactic { tactic } => {
                 let own_team = app.world.get_own_team()?;
                 let mut team = own_team.clone();
-                team.game_offense_tactic = tactic.clone();
+                team.game_tactic = tactic.clone();
                 app.world.teams.insert(team.id, team);
                 app.world.dirty = true;
                 app.world.dirty_ui = true;
                 app.world.dirty_network = true;
                 Ok(None)
             }
-            UiCallbackPreset::SetNextTeamOffenseTactic => {
+            UiCallbackPreset::SetNextTeamTactic => {
                 let own_team = app.world.get_own_team()?;
                 let mut team = own_team.clone();
-                team.game_offense_tactic = team.game_offense_tactic.next();
+                team.game_tactic = team.game_tactic.next();
                 app.world.teams.insert(team.id, team);
                 app.world.dirty = true;
                 app.world.dirty_ui = true;

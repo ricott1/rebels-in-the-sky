@@ -25,7 +25,7 @@ use ratatui::{
     widgets::{block::Block, BorderType, Borders, List, Paragraph},
     Frame,
 };
-use std::{cell::RefCell, rc::Rc};
+use std::{sync::Arc, sync::Mutex};
 
 const POPUP_WIDTH: u16 = 42;
 const POPUP_HEIGHT: u16 = 15;
@@ -73,7 +73,7 @@ pub fn popup_rect(area: Rect) -> Rect {
 
 pub fn selectable_list<'a>(
     options: Vec<(String, Style)>,
-    callback_registry: &Rc<RefCell<CallbackRegistry>>,
+    callback_registry: &Arc<Mutex<CallbackRegistry>>,
 ) -> ClickableList<'a> {
     let items: Vec<ClickableListItem> = options
         .iter()
@@ -83,14 +83,14 @@ pub fn selectable_list<'a>(
         })
         .collect();
 
-    ClickableList::new(items, Rc::clone(&callback_registry))
+    ClickableList::new(items, Arc::clone(&callback_registry))
         .highlight_style(UiStyle::SELECTED)
         .hovering_style(UiStyle::HIGHLIGHT)
 }
 
 pub fn render_spaceship_description(
     team: &Team,
-    gif_map: &Rc<RefCell<GifMap>>,
+    gif_map: &Arc<Mutex<GifMap>>,
     tick: usize,
     world: &World,
     frame: &mut Frame,
@@ -107,7 +107,11 @@ pub fn render_spaceship_description(
             vertical: 1,
         }));
 
-    if let Ok(lines) = gif_map.borrow_mut().spaceship_lines(team.id, tick, world) {
+    if let Ok(lines) = gif_map
+        .lock()
+        .unwrap()
+        .spaceship_lines(team.id, tick, world)
+    {
         let paragraph = Paragraph::new(lines);
         frame.render_widget(
             paragraph.alignment(ratatui::layout::Alignment::Center),
@@ -168,39 +172,36 @@ pub fn render_spaceship_description(
 
 pub fn render_player_description(
     player: &Player,
-    gif_map: &Rc<RefCell<GifMap>>,
+    gif_map: &Arc<Mutex<GifMap>>,
     tick: usize,
     frame: &mut Frame,
     world: &World,
     area: Rect,
 ) {
-    let h_split = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(PLAYER_IMAGE_WIDTH as u16 + 4),
-            Constraint::Min(2),
-        ])
-        .split(area);
+    let h_split = Layout::horizontal([
+        Constraint::Length(PLAYER_IMAGE_WIDTH as u16 + 4),
+        Constraint::Min(2),
+    ])
+    .split(area);
 
-    let header_body_img = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(2)])
-        .split(h_split[0].inner(&Margin {
+    let header_body_img = Layout::vertical([Constraint::Length(2), Constraint::Min(2)]).split(
+        h_split[0].inner(&Margin {
             horizontal: 2,
             vertical: 1,
-        }));
+        }),
+    );
 
-    let header_body_stats = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(2),  //margin
-            Constraint::Length(3),  //header
-            Constraint::Length(1),  //margin
-            Constraint::Length(20), //stats
-        ])
-        .split(h_split[1]);
+    let header_body_stats = Layout::vertical([
+        Constraint::Length(2),  //margin
+        Constraint::Length(1),  //header
+        Constraint::Length(1),  //header
+        Constraint::Length(1),  //header
+        Constraint::Length(1),  //margin
+        Constraint::Length(20), //stats
+    ])
+    .split(h_split[1]);
 
-    if let Ok(lines) = gif_map.borrow_mut().player_frame_lines(&player, tick) {
+    if let Ok(lines) = gif_map.lock().unwrap().player_frame_lines(&player, tick) {
         let paragraph = Paragraph::new(lines);
         frame.render_widget(paragraph, header_body_img[1]);
     }
@@ -239,29 +240,39 @@ pub fn render_player_description(
         x if x < MAX_TIREDNESS => UiStyle::ERROR,
         _ => UiStyle::DEFAULT.bg(Color::DarkGray),
     };
-    let player_info = Paragraph::new(vec![
-        Line::from(format!(
+
+    frame.render_widget(
+        Paragraph::new(format!(
             "Reputation {} Style {}",
             player.reputation.stars(),
             player.playing_style.as_str()
         )),
-        Line::from(vec![
+        header_body_stats[1],
+    );
+
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
             Span::raw("Energy ".to_string()),
             Span::styled(format!("{}", energy_string), energy_style),
-        ]),
-        Line::from(format!(
+        ])),
+        header_body_stats[2],
+    );
+
+    frame.render_widget(
+        Paragraph::new(format!(
             "{} yo, {} cm, {} kg, {}",
-            player.info.age.floor() as u8,
-            player.info.height.round() as u8,
-            player.info.weight.round() as u8,
+            player.info.age as u8,
+            player.info.height as u8,
+            player.info.weight as u8,
             player.info.population,
         )),
-    ]);
+        header_body_stats[3],
+    );
 
-    frame.render_widget(player_info, header_body_stats[1]);
-
-    let stats = Paragraph::new(format_player_data(player));
-    frame.render_widget(stats, header_body_stats[3]);
+    frame.render_widget(
+        Paragraph::new(format_player_data(player)),
+        header_body_stats[5],
+    );
 
     // Render main block
     let block = default_block()

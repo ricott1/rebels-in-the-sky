@@ -41,7 +41,7 @@ pub struct EventHandler {
 
 impl EventHandler {
     /// Constructs a new instance of [`EventHandler`].
-    pub fn new() -> Self {
+    pub fn crossterm_handler() -> Self {
         let (sender, receiver) = mpsc::channel();
         let handler = {
             let sender = sender.clone();
@@ -57,6 +57,30 @@ impl EventHandler {
                     .expect("failed to send terminal event")
                 }
 
+                let now = Tick::now();
+                if now - last_tick >= TIME_STEP_MILLIS {
+                    if let Err(_) = sender.send(TerminalEvent::Tick { tick: now }) {
+                        // eprintln!("Failed to send tick event: {}", err);
+                        break;
+                    }
+                    last_tick = now;
+                }
+            })
+        };
+        Self {
+            sender,
+            receiver,
+            handler,
+        }
+    }
+
+    pub fn system_time_handler() -> Self {
+        let (sender, receiver) = mpsc::channel();
+        let handler = {
+            let sender = sender.clone();
+            let mut last_tick = Tick::now();
+            thread::spawn(move || loop {
+                thread::sleep(Duration::from_millis(TIME_STEP_MILLIS as u64));
                 let now = Tick::now();
                 if now - last_tick >= TIME_STEP_MILLIS {
                     if let Err(_) = sender.send(TerminalEvent::Tick { tick: now }) {

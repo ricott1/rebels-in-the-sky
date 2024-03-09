@@ -24,11 +24,18 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
     Frame,
 };
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+
 use std::vec;
 const TITLE_WIDTH: u16 = 71;
 const BUTTON_WIDTH: u16 = 36;
+
+#[derive(Debug, PartialEq)]
+pub enum AudioPlayerState {
+    Playing,
+    Paused,
+    Disabled,
+}
 
 #[derive(Debug)]
 pub struct SplashScreen {
@@ -38,9 +45,9 @@ pub struct SplashScreen {
     selection_text: Vec<String>,
     tick: usize,
     can_load_world: bool,
-    audio_player_is_playing: bool,
-    callback_registry: Rc<RefCell<CallbackRegistry>>,
-    gif_map: Rc<RefCell<GifMap>>,
+    audio_player_state: AudioPlayerState,
+    callback_registry: Arc<Mutex<CallbackRegistry>>,
+    gif_map: Arc<Mutex<GifMap>>,
 }
 
 const QUOTES: [&'static str;11] = [
@@ -77,8 +84,8 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 impl SplashScreen {
     pub fn new(
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
-        gif_map: Rc<RefCell<GifMap>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
+        gif_map: Arc<Mutex<GifMap>>,
     ) -> Self {
         let mut selection_text = vec![];
         let can_load_world: bool;
@@ -112,7 +119,7 @@ impl SplashScreen {
             selection_text,
             tick: 0,
             can_load_world,
-            audio_player_is_playing: true,
+            audio_player_state: AudioPlayerState::Disabled,
             callback_registry,
             gif_map,
         }
@@ -127,8 +134,8 @@ impl SplashScreen {
         }
     }
 
-    pub fn set_audio_player_is_playing(&mut self, is_playing: bool) {
-        self.audio_player_is_playing = is_playing;
+    pub fn set_audio_player_state(&mut self, state: AudioPlayerState) {
+        self.audio_player_state = state;
     }
 }
 
@@ -139,7 +146,7 @@ impl Screen for SplashScreen {
 
     fn update(&mut self, _world: &World) -> AppResult<()> {
         self.tick += 1;
-        self.selection_text[2] = if self.audio_player_is_playing {
+        self.selection_text[2] = if self.audio_player_state == AudioPlayerState::Playing {
             "Music: On ".to_string()
         } else {
             "Music: Off".to_string()
@@ -196,7 +203,7 @@ impl Screen for SplashScreen {
             ])
             .split(split[3]);
 
-        if let Ok(mut lines) = self.gif_map.borrow_mut().planet_zoom_in_frame_lines(
+        if let Ok(mut lines) = self.gif_map.lock().unwrap().planet_zoom_in_frame_lines(
             SOL_ID.clone(),
             self.tick / 3,
             world,
@@ -232,13 +239,17 @@ impl Screen for SplashScreen {
             let mut button = RadioButton::box_on_hover(
                 self.selection_text[i].clone(),
                 self.get_ui_preset_at_index(i),
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
                 &mut self.index,
                 i,
             );
 
             // Disable continue button if no world exists
             if i == 0 && self.can_load_world == false {
+                button.disable();
+            }
+            // Disable music button if audio is not supported
+            if i == 2 && self.audio_player_state == AudioPlayerState::Disabled {
                 button.disable();
             }
             frame.render_widget(button, selection_split[i]);

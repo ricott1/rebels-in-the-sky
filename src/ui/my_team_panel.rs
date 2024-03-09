@@ -34,7 +34,7 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
-use std::{cell::RefCell, rc::Rc};
+use std::{sync::Arc, sync::Mutex};
 
 #[derive(Debug, Default)]
 pub struct MyTeamPanel {
@@ -42,14 +42,14 @@ pub struct MyTeamPanel {
     players: Vec<PlayerId>,
     own_team_id: TeamId,
     tick: usize,
-    callback_registry: Rc<RefCell<CallbackRegistry>>,
-    gif_map: Rc<RefCell<GifMap>>,
+    callback_registry: Arc<Mutex<CallbackRegistry>>,
+    gif_map: Arc<Mutex<GifMap>>,
 }
 
 impl MyTeamPanel {
     pub fn new(
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
-        gif_map: Rc<RefCell<GifMap>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
+        gif_map: Arc<Mutex<GifMap>>,
     ) -> Self {
         Self {
             callback_registry,
@@ -137,7 +137,7 @@ impl MyTeamPanel {
                 Ok(ClickableRow::new(cells))
             })
             .collect::<AppResult<Vec<ClickableRow>>>();
-        let table = ClickableTable::new(rows?, Rc::clone(&self.callback_registry))
+        let table = ClickableTable::new(rows?, Arc::clone(&self.callback_registry))
             .header(header)
             .hovering_style(UiStyle::HIGHLIGHT)
             .highlight_style(UiStyle::SELECTED)
@@ -247,31 +247,30 @@ impl Screen for MyTeamPanel {
                     player_id,
                     position: idx,
                 },
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
             );
             let position = team.player_ids.iter().position(|id| *id == player.id);
             if position.is_some() && position.unwrap() == idx {
                 button.disable(None);
+                button = button
+                    .set_box_style(UiStyle::OK)
+                    .set_hover_style(UiStyle::OK);
             }
             frame.render_widget(button, rect);
         }
         let auto_assign_button = Button::new(
             format!("{}: Auto-assign positions", UiKey::AUTO_ASSIGN.to_string()),
             UiCallbackPreset::AssignBestTeamPositions,
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
         frame.render_widget(auto_assign_button, position_button_splits[6]);
 
         let offense_tactic_button = Button::new(
-            format!(
-                "{}: {}",
-                UiKey::SET_OFFENSE_TACTIC.to_string(),
-                team.game_offense_tactic
-            ),
-            UiCallbackPreset::SetTeamOffenseTactic {
-                tactic: team.game_offense_tactic.next(),
+            format!("{}: {}", UiKey::SET_TACTIC.to_string(), team.game_tactic),
+            UiCallbackPreset::SetTeamTactic {
+                tactic: team.game_tactic.next(),
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
         frame.render_widget(offense_tactic_button, position_button_splits[7]);
 
@@ -297,7 +296,7 @@ impl Screen for MyTeamPanel {
                 player_id,
                 role: CrewRole::Captain,
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
         if can_set_as_captain.is_err() {
             captain_button.disable(None);
@@ -311,7 +310,7 @@ impl Screen for MyTeamPanel {
                 player_id,
                 role: CrewRole::Pilot,
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
         if can_set_as_pilot.is_err() {
             pilot_button.disable(None);
@@ -325,7 +324,7 @@ impl Screen for MyTeamPanel {
                 player_id,
                 role: CrewRole::Doctor,
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
         if can_set_as_doctor.is_err() {
             doctor_button.disable(None);
@@ -341,7 +340,7 @@ impl Screen for MyTeamPanel {
                 player.info.last_name
             ),
             UiCallbackPreset::ReleasePlayer { player_id },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
         if can_release.is_err() {
             release_button.disable(Some(format!(
@@ -357,7 +356,7 @@ impl Screen for MyTeamPanel {
         let mut training_button = Button::new(
             format!("{}: Set training focus", UiKey::TRAINING_FOCUS.to_string()),
             UiCallbackPreset::NextTrainingFocus { player_id },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
         if can_change_training_focus.is_err() {
             training_button.disable(Some(format!(
@@ -403,7 +402,7 @@ impl Screen for MyTeamPanel {
                     world.get_planet_or_err(planet_id)?.name
                 ),
                 UiCallbackPreset::GoToCurrentTeamPlanet { team_id: team.id },
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
             ),
             TeamLocation::Travelling {
                 from: _from,
@@ -420,7 +419,7 @@ impl Screen for MyTeamPanel {
                 let mut button = Button::new(
                     format!("Travelling to {} {}", to, text,),
                     UiCallbackPreset::None,
-                    Rc::clone(&self.callback_registry),
+                    Arc::clone(&self.callback_registry),
                 );
                 button.disable(None);
                 button
@@ -489,8 +488,8 @@ impl Screen for MyTeamPanel {
                 return Some(UiCallbackPreset::AssignBestTeamPositions);
             }
 
-            UiKey::SET_OFFENSE_TACTIC => {
-                return Some(UiCallbackPreset::SetNextTeamOffenseTactic);
+            UiKey::SET_TACTIC => {
+                return Some(UiCallbackPreset::SetNextTeamTactic);
             }
 
             UiKey::HIRE_FIRE => {

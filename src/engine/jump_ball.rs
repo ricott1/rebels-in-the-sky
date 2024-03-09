@@ -1,5 +1,5 @@
 use super::{
-    action::{ActionOutput, ActionSituation},
+    action::{ActionOutput, ActionSituation, EngineAction},
     game::Game,
     types::Possession,
     utils::roll,
@@ -11,9 +11,8 @@ use rand_chacha::ChaCha8Rng;
 #[derive(Debug, Default)]
 pub struct JumpBall;
 
-impl JumpBall {
-    pub fn execute(
-        &self,
+impl EngineAction for JumpBall {
+     fn execute(
         input: &ActionOutput,
         game: &Game,
         rng: &mut ChaCha8Rng,
@@ -39,7 +38,7 @@ impl JumpBall {
             x if x > 0 => {
                 ActionOutput {
                     //default possession is home team
-                    possession: input.possession.clone(),
+                    possession: input.possession,
                     situation: ActionSituation::AfterDefensiveRebound,
                     description: format!(
                         "{} and {} prepare for the jump ball. {} wins the jump ball. {} will have the first possession.",
@@ -54,7 +53,7 @@ impl JumpBall {
                 }
             }
             x if x < 0 => ActionOutput {
-                possession: !input.possession.clone(),
+                possession: !input.possession,
                 situation: ActionSituation::AfterDefensiveRebound,
                 description: format!(
                     "{} and {} prepare for the jump ball. {} wins the jump ball. {} will have the first possession.",

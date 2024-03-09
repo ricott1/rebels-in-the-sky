@@ -123,6 +123,7 @@ pub enum ShirtImage {
     Stripe,
     Pirate,
     PirateAlt,
+    Mask,
 }
 
 impl ImageComponent for ShirtImage {
@@ -149,6 +150,7 @@ pub enum ShortsImage {
     Stripe,
     Pirate,
     PirateAlt,
+    Mask,
 }
 
 impl ImageComponent for ShortsImage {
@@ -189,9 +191,10 @@ pub enum HatImage {
     Infernal,
     Classic,
     Straw,
-    MaskLow,
-    MaskHigh,
+    Mask,
+    MaskYardalaim,
     MaskPolpett,
+    MaskGaldari,
 }
 
 impl ImageComponent for HatImage {

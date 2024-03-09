@@ -29,7 +29,7 @@ use ratatui::{
     Frame,
 };
 use std::vec;
-use std::{cell::RefCell, rc::Rc};
+use std::{sync::Arc, sync::Mutex};
 use strum_macros::Display;
 
 #[derive(Debug, Clone, Copy, Display, Default, PartialEq, Eq, Hash)]
@@ -80,14 +80,14 @@ pub struct PlayerListPanel {
     filter: PlayerFilter,
     update_filter: bool,
     tick: usize,
-    callback_registry: Rc<RefCell<CallbackRegistry>>,
-    gif_map: Rc<RefCell<GifMap>>,
+    callback_registry: Arc<Mutex<CallbackRegistry>>,
+    gif_map: Arc<Mutex<GifMap>>,
 }
 
 impl PlayerListPanel {
     pub fn new(
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
-        gif_map: Rc<RefCell<GifMap>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
+        gif_map: Arc<Mutex<GifMap>>,
     ) -> Self {
         Self {
             callback_registry,
@@ -112,7 +112,7 @@ impl PlayerListPanel {
             UiCallbackPreset::SetPlayerPanelFilter {
                 filter: PlayerFilter::All,
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
 
         let mut filter_free_agents_button = Button::new(
@@ -120,7 +120,7 @@ impl PlayerListPanel {
             UiCallbackPreset::SetPlayerPanelFilter {
                 filter: PlayerFilter::FreeAgents,
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
 
         let mut filter_own_team_button = Button::new(
@@ -128,7 +128,7 @@ impl PlayerListPanel {
             UiCallbackPreset::SetPlayerPanelFilter {
                 filter: PlayerFilter::OwnTeam,
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
         match self.filter {
             PlayerFilter::All => filter_all_button.disable(None),
@@ -263,7 +263,7 @@ impl PlayerListPanel {
                 let button = Button::new(
                     format!("{}: FA on {}", UiKey::GO_TO_PLANET.to_string(), planet.name),
                     UiCallbackPreset::GoToPlanetZoomIn { planet_id },
-                    Rc::clone(&self.callback_registry),
+                    Arc::clone(&self.callback_registry),
                 );
                 frame.render_widget(button, buttons_split[0]);
             }
@@ -279,7 +279,7 @@ impl PlayerListPanel {
                     UiCallbackPreset::GoToPlayerTeam {
                         player_id: player.id,
                     },
-                    Rc::clone(&self.callback_registry),
+                    Arc::clone(&self.callback_registry),
                 );
                 frame.render_widget(button, buttons_split[0]);
             }
@@ -295,7 +295,7 @@ impl PlayerListPanel {
             UiCallbackPreset::LockPlayerPanel {
                 player_id: self.selected_player_id,
             },
-            Rc::clone(&self.callback_registry),
+            Arc::clone(&self.callback_registry),
         );
         frame.render_widget(lock_button, buttons_split[1]);
 
@@ -314,7 +314,7 @@ impl PlayerListPanel {
                 UiCallbackPreset::HirePlayer {
                     player_id: player.id,
                 },
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
             );
             if can_hire.is_err() {
                 button.disable(Some(format!(
@@ -335,7 +335,7 @@ impl PlayerListPanel {
                 UiCallbackPreset::ReleasePlayer {
                     player_id: player.id,
                 },
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
             );
             if can_release.is_err() {
                 button.disable(Some(format!(
@@ -417,13 +417,13 @@ impl Screen for PlayerListPanel {
             return Ok(());
         }
 
-        self.callback_registry.borrow_mut().register_callback(
+        self.callback_registry.lock().unwrap().register_callback(
             crossterm::event::MouseEventKind::ScrollDown,
             None,
             UiCallbackPreset::NextPanelIndex,
         );
 
-        self.callback_registry.borrow_mut().register_callback(
+        self.callback_registry.lock().unwrap().register_callback(
             crossterm::event::MouseEventKind::ScrollUp,
             None,
             UiCallbackPreset::PreviousPanelIndex,

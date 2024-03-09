@@ -53,7 +53,7 @@ impl Period {
     pub fn start(&self) -> u16 {
         match self {
             Self::NotStarted => 0,
-            Self::Q1 => 0,
+            Self::Q1 => 1,
             Self::B1 => &self.previous().start() + SECONDS_PER_MINUTE * MINUTES_PER_QUARTER,
             Self::Q2 => &self.previous().start() + SECONDS_PER_MINUTE * MINUTES_PER_BREAK,
             Self::B2 => &self.previous().start() + SECONDS_PER_MINUTE * MINUTES_PER_QUARTER,
@@ -162,12 +162,29 @@ impl Timer {
             return "Q1 10:00".to_string();
         }
 
-        format!(
-            "{:2} {:02}:{:02}",
-            self.period(),
-            self.minutes(),
-            self.seconds(),
-        )
+        match self.value {
+            x if x == Period::Q1.end() => "Q1 00:00".to_string(),
+            x if x == Period::B1.start() => "B1 02:00".to_string(),
+            x if x == Period::B1.end() => "B1 00:00".to_string(),
+            x if x == Period::Q2.start() => "Q2 10:00".to_string(),
+            x if x == Period::Q2.end() => "Q2 00:00".to_string(),
+            x if x == Period::B2.start() => "B2 02:00".to_string(),
+            x if x == Period::B2.end() => "B2 00:00".to_string(),
+            x if x == Period::Q3.start() => "Q3 10:00".to_string(),
+            x if x == Period::Q3.end() => "Q3 00:00".to_string(),
+            x if x == Period::B3.start() => "B3 02:00".to_string(),
+            x if x == Period::B3.end() => "B3 00:00".to_string(),
+            x if x == Period::Q4.start() => "Q4 10:00".to_string(),
+            x if x == Period::Q4.end() => "Q4 00:00".to_string(),
+            x if x == Period::B4.start() => "B4 02:00".to_string(),
+            x if x == Period::B4.end() => "B4 00:00".to_string(),
+            _ => format!(
+                "{:2} {:02}:{:02}",
+                self.period(),
+                self.minutes(),
+                self.seconds(),
+            ),
+        }
     }
 
     pub fn tick(&mut self) {
@@ -194,7 +211,7 @@ impl Timer {
 mod tests {
     use std::io::{stdout, Write};
 
-    use crate::engine::timer;
+    use crate::engine::timer::{self, Period, Timer};
 
     #[test]
     fn test_timer() {
@@ -315,5 +332,25 @@ mod tests {
         timer.tick_by(1);
         assert_eq!(timer.period(), super::Period::B4);
         assert_eq!(timer.has_ended(), true);
+    }
+
+    //FIXME: add test for end of period and timer format
+
+    #[test]
+    fn test_end_period() {
+        assert_eq!(Timer::from(Period::Q1.end()).format(), "Q1 00:00");
+        assert_eq!(Timer::from(Period::B1.start()).format(), "B1 02:00");
+        assert_eq!(Timer::from(Period::B1.end()).format(), "B1 00:00");
+        assert_eq!(Timer::from(Period::Q2.start()).format(), "Q2 10:00");
+        assert_eq!(Timer::from(Period::Q2.end()).format(), "Q2 00:00");
+        assert_eq!(Timer::from(Period::B2.start()).format(), "B2 02:00");
+        assert_eq!(Timer::from(Period::B2.end()).format(), "B2 00:00");
+        assert_eq!(Timer::from(Period::Q3.start()).format(), "Q3 10:00");
+        assert_eq!(Timer::from(Period::Q3.end()).format(), "Q3 00:00");
+        assert_eq!(Timer::from(Period::B3.start()).format(), "B3 02:00");
+        assert_eq!(Timer::from(Period::B3.end()).format(), "B3 00:00");
+        assert_eq!(Timer::from(Period::Q4.start()).format(), "Q4 10:00");
+        assert_eq!(Timer::from(Period::Q4.end()).format(), "Q4 00:00");
+        assert_eq!(Timer::from(Period::B4.start()).format(), "Q4 00:00");
     }
 }

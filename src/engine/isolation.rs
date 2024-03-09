@@ -1,49 +1,33 @@
 use super::{
-    action::{ActionOutput, ActionSituation, Advantage},
+    action::{ActionOutput, ActionSituation, Advantage, EngineAction},
     constants::{TirednessCost, ADV_ATTACK_LIMIT, ADV_DEFENSE_LIMIT, ADV_NEUTRAL_LIMIT},
     game::Game,
     types::GameStats,
     utils::roll,
 };
-use crate::world::{player::Player, skill::GameSkill};
+use crate::world::skill::GameSkill;
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
-use rand_distr::{Distribution, WeightedIndex};
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
 pub struct Isolation;
 
-impl Isolation {
-    pub fn execute(
-        &self,
-        input: &ActionOutput,
-        game: &Game,
-        rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
+impl EngineAction for Isolation {
+    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
         let attacking_stats = game.attacking_stats();
         let defending_stats = game.defending_stats();
 
-        let iso_idx: usize;
-        match input.attackers.len() {
-            0 => {
-                iso_idx = WeightedIndex::new(&[2, 3, 2, 1, 0]).ok()?.sample(rng);
-            }
-            _ => {
-                iso_idx = input.attackers[0];
-            }
-        }
+        let iso_idx = Self::sample(rng, [2, 3, 2, 1, 0])?;
 
-        let iso: &Player = attacking_players[iso_idx];
+        let iso = attacking_players[iso_idx];
         let iso_stats = attacking_stats.get(&iso.id)?;
         let defender = defending_players[iso_idx];
         let defender_stats = defending_stats.get(&defender.id)?;
 
         let timer_increase = 2 + rng.gen_range(0..=3);
-        let atk_result: u8;
-        let def_result: u8;
 
         let mut attack_stats_update = HashMap::new();
         let mut iso_update = GameStats::default();
@@ -53,17 +37,17 @@ impl Isolation {
         let mut defender_update = GameStats::default();
         defender_update.add_tiredness(TirednessCost::MEDIUM, defender.athleticism.stamina);
 
-        atk_result = roll(rng, iso_stats.tiredness)
+        let atk_result = roll(rng, iso_stats.tiredness)
             + iso.technical.ball_handling.value()
             + iso.athleticism.quickness.value();
 
-        def_result = roll(rng, defender_stats.tiredness)
+        let def_result = roll(rng, defender_stats.tiredness)
             + defender.defense.perimeter_defense.value()
             + defender.athleticism.quickness.value();
 
         let mut result = match atk_result as i16 - def_result as i16 {
             x if x > ADV_ATTACK_LIMIT => ActionOutput {
-                possession: input.possession.clone(),
+                possession: input.possession,
                 advantage: Advantage::Attack,
                 attackers: vec![iso_idx],
                 defenders: vec![iso_idx],
@@ -79,7 +63,7 @@ impl Isolation {
                 ..Default::default()
             },
             x if x > ADV_NEUTRAL_LIMIT => ActionOutput {
-                possession: input.possession.clone(),
+                possession: input.possession,
                 advantage: Advantage::Neutral,
                 attackers: vec![iso_idx],
                 defenders: vec![iso_idx], //got the switch
@@ -95,7 +79,7 @@ impl Isolation {
                 ..Default::default()
             },
             x if x > ADV_DEFENSE_LIMIT => ActionOutput {
-                possession: input.possession.clone(),
+                possession: input.possession,
                 advantage: Advantage::Defense,
                 attackers: vec![iso_idx],
                 defenders: vec![iso_idx], //no switch
@@ -116,7 +100,7 @@ impl Isolation {
 
                 ActionOutput {
                     situation: ActionSituation::Turnover,
-                    possession: !input.possession.clone(),
+                    possession: !input.possession,
                     description: format!(
                         "{} tries to dribble past {} but {} steals the ball. Terrible choice.",
                         iso.info.last_name, defender.info.last_name, defender.info.last_name

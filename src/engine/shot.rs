@@ -4,7 +4,7 @@ use crate::{
 };
 
 use super::{
-    action::{ActionOutput, ActionSituation, Advantage},
+    action::{ActionOutput, ActionSituation, Advantage, EngineAction},
     constants::ShotDifficulty,
     game::Game,
     types::GameStats,
@@ -23,35 +23,20 @@ pub struct MediumShot;
 #[derive(Debug, Default)]
 pub struct LongShot;
 
-impl CloseShot {
-    pub fn execute(
-        &self,
-        input: &ActionOutput,
-        game: &Game,
-        rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
+impl EngineAction for CloseShot {
+    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         return execute_shot(input, game, rng, ShotDifficulty::Close);
     }
 }
 
-impl MediumShot {
-    pub fn execute(
-        &self,
-        input: &ActionOutput,
-        game: &Game,
-        rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
+impl EngineAction for MediumShot {
+    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         return execute_shot(input, game, rng, ShotDifficulty::Medium);
     }
 }
 
-impl LongShot {
-    pub fn execute(
-        &self,
-        input: &ActionOutput,
-        game: &Game,
-        rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
+impl EngineAction for LongShot {
+    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         return execute_shot(input, game, rng, ShotDifficulty::Long);
     }
 }
@@ -226,7 +211,7 @@ fn execute_shot(
             };
             ActionOutput {
                 advantage,
-                possession: input.possession.clone(),
+                possession: input.possession,
                 attackers: vec![shooter_idx],
                 defenders: input.defenders.clone(),
                 situation: ActionSituation::MissedShot,
@@ -267,7 +252,7 @@ fn execute_shot(
                     Possession::Home => input.away_score,
                     Possession::Away => input.away_score + score_change as u16,
                 },
-                possession: !input.possession.clone(),
+                possession: !input.possession,
                 situation: ActionSituation::BallInBackcourt,
                 description: description(
                     rng,

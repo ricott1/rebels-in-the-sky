@@ -19,7 +19,8 @@ pub struct SampleData {
 }
 
 pub struct MusicPlayer {
-    _streamhandle: (OutputStream, OutputStreamHandle),
+    _stream: OutputStream,
+    _stream_handle: OutputStreamHandle,
     sink: Sink,
     pub is_playing: bool,
     sources: Vec<rodio::source::Buffered<Decoder<Cursor<Vec<u8>>>>>,
@@ -27,10 +28,11 @@ pub struct MusicPlayer {
 }
 impl MusicPlayer {
     pub fn new() -> AppResult<MusicPlayer> {
-        let (stream, stream_handle) = OutputStream::try_default()?;
+        let (_stream, _stream_handle) = OutputStream::try_default()?;
         let mut player = MusicPlayer {
-            sink: Sink::try_new(&stream_handle)?,
-            _streamhandle: (stream, stream_handle),
+            sink: Sink::try_new(&_stream_handle)?,
+            _stream,
+            _stream_handle,
             is_playing: true,
             sources: vec![],
             source_index: None,

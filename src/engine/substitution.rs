@@ -26,9 +26,7 @@ fn get_subs<'a>(players: Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a 
         .skip(5)
         .filter(|&p| {
             let stats = team_stats.get(&p.id).unwrap();
-            return stats.is_playing() == false
-                && !stats.is_knocked_out()
-                && stats.tiredness <= MIN_TIREDNESS_FOR_SUB;
+            !stats.is_playing() && !stats.is_knocked_out()
         })
         //Sort from most to less skilled*tired
         .sorted_by(|&a, &b| {
@@ -161,7 +159,6 @@ fn make_substitution(
 
 impl Substitution {
     pub fn execute(
-        &self,
         input: &ActionOutput,
         game: &Game,
         _rng: &mut ChaCha8Rng,
@@ -170,7 +167,7 @@ impl Substitution {
         let away_players = &game.away_team_in_game.players;
         let mut result = ActionOutput {
             advantage: input.advantage,
-            possession: input.possession.clone(),
+            possession: input.possession,
             attackers: input.attackers.clone(),
             defenders: input.defenders.clone(),
             situation: input.situation.clone(),

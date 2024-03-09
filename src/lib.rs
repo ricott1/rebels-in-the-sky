@@ -5,6 +5,8 @@ pub mod event;
 pub mod image;
 pub mod network;
 pub mod relayer;
+pub mod ssh_backend;
+pub mod ssh_server;
 pub mod store;
 pub mod tui;
 pub mod types;

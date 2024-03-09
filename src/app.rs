@@ -1,7 +1,3 @@
-// use core::panic;
-
-use std::io;
-
 use crate::event::{EventHandler, TerminalEvent};
 use crate::network::handler::NetworkHandler;
 use crate::store::{get_world_size, reset, save_world};
@@ -14,7 +10,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use futures::StreamExt;
 use libp2p::{gossipsub, swarm::SwarmEvent};
 use ratatui::backend::CrosstermBackend;
-use ratatui::Terminal;
+use std::io::{self};
 use tokio::select;
 use void::Void;
 
@@ -24,7 +20,7 @@ pub struct App {
     pub ui: Ui,
     generate_local_world: bool,
     pub network_handler: Option<NetworkHandler>,
-    seed_ip: Option<String>,
+    pub seed_ip: Option<String>,
 }
 
 impl App {
@@ -53,11 +49,11 @@ impl App {
 
     pub async fn run(&mut self) -> AppResult<()> {
         // Initialize the terminal user interface.
-        let backend = CrosstermBackend::new(io::stdout());
-        let terminal = Terminal::new(backend)?;
-        let events = EventHandler::new();
-        let mut ratatui = Tui::new(terminal, events);
-        ratatui.init()?;
+        let writer = io::stdout();
+        let events = EventHandler::crossterm_handler();
+        let backend = CrosstermBackend::new(writer);
+        let mut tui = Tui::new(backend, events)?;
+
         while self.running {
             if self.network_handler.is_none() && (self.world.has_own_team()) {
                 self.initialize_network_handler(self.seed_ip.clone());
@@ -67,10 +63,10 @@ impl App {
                 select! {
                     //TODO: world_event = app.world_handler
                     swarm_event = self.network_handler.as_mut().unwrap().swarm.select_next_some() =>  self.handle_network_events(swarm_event)?,
-                    app_event = ratatui.events.next()? => match app_event{
+                    app_event = tui.events.next()? => match app_event{
                         TerminalEvent::Tick {tick} => {
                                 self.handle_tick_events(tick)?;
-                                ratatui.draw(self)?;
+                                tui.draw(self)?;
                         }
                         TerminalEvent::Key(key_event) => self.handle_key_events(key_event)?,
                         TerminalEvent::Mouse(mouse_event) => self.handle_mouse_events(mouse_event)?,
@@ -79,10 +75,10 @@ impl App {
                 }
             } else {
                 select! {
-                    app_event = ratatui.events.next()? => match app_event{
+                    app_event = tui.events.next()? => match app_event{
                         TerminalEvent::Tick {tick} => {
                                 self.handle_tick_events(tick)?;
-                                ratatui.draw(self)?;
+                                tui.draw(self)?;
                         }
                         TerminalEvent::Key(key_event) => self.handle_key_events(key_event)?,
                         TerminalEvent::Mouse(mouse_event) => self.handle_mouse_events(mouse_event)?,
@@ -91,7 +87,7 @@ impl App {
                 }
             }
         }
-        ratatui.exit()?;
+        tui.exit()?;
         Ok(())
     }
 

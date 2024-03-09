@@ -17,9 +17,9 @@ impl UiKey {
     pub const GO_TO_TEAM_ALTERNATIVE: KeyCode = KeyCode::Char('t');
     pub const GO_TO_PLANET: KeyCode = KeyCode::Char('p');
     pub const CHALLENGE_TEAM: KeyCode = KeyCode::Char('c');
-    pub const TRAINING_FOCUS: KeyCode = KeyCode::Char('t');
+    pub const TRAINING_FOCUS: KeyCode = KeyCode::Char('f');
     pub const AUTO_ASSIGN: KeyCode = KeyCode::Char('a');
-    pub const SET_OFFENSE_TACTIC: KeyCode = KeyCode::Char('o');
+    pub const SET_TACTIC: KeyCode = KeyCode::Char('t');
     pub const CYCLE_FILTER: KeyCode = KeyCode::Char('=');
     pub const HIRE_FIRE: KeyCode = KeyCode::Char('s');
     pub const LOCK_PLAYER: KeyCode = KeyCode::Char('l');
@@ -82,7 +82,7 @@ impl UiStyle {
     pub const DEFAULT: Style = DEFAULT_STYLE;
     pub const UNSELECTED: Style = DEFAULT_STYLE;
     pub const SELECTED: Style = DEFAULT_STYLE.fg(Color::Black).bg(Color::Rgb(244, 255, 232));
-    pub const UNSELECTABLE: Style = DEFAULT_STYLE.fg(Color::DarkGray).bg(Color::Black);
+    pub const UNSELECTABLE: Style = DEFAULT_STYLE.fg(Color::DarkGray);
     pub const ERROR: Style = DEFAULT_STYLE.fg(Color::Red);
     pub const OWN_TEAM: Style = DEFAULT_STYLE.fg(Color::Green);
     pub const HEADER: Style = DEFAULT_STYLE.fg(Color::LightBlue);

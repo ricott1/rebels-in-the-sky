@@ -9,7 +9,7 @@ use super::{
     types::{PlayerLocation, TeamLocation},
 };
 use crate::{
-    engine::tactic::{DefenseTactic, OffenseTactic},
+    engine::tactic::Tactic,
     types::{AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick},
 };
 use itertools::Itertools;
@@ -41,8 +41,7 @@ pub struct Team {
     pub current_location: TeamLocation,
     pub peer_id: Option<PeerId>,
     pub current_game: Option<GameId>,
-    pub game_offense_tactic: OffenseTactic,
-    pub game_defense_tactic: DefenseTactic,
+    pub game_tactic: Tactic,
 }
 
 impl Team {
@@ -59,8 +58,7 @@ impl Team {
                 planet_id: home_planet,
             },
             spaceship: Spaceship::random(ship_name, ship_color),
-            game_offense_tactic: OffenseTactic::random(),
-            game_defense_tactic: DefenseTactic::random(),
+            game_tactic: Tactic::random(),
             ..Default::default()
         }
     }

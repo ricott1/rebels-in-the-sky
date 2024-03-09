@@ -215,7 +215,7 @@ impl Rated for Technical {
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct Mental {
     pub vision: Skill,
-    pub positioning: Skill,
+    pub aggression: Skill,
     pub off_ball_movement: Skill,
     pub charisma: Skill,
 }
@@ -225,12 +225,12 @@ impl Mental {
         let weights = position.weights();
         let level = base_level + rng.gen_range(0..=LEVEL_BONUS) as f32;
         let vision = (level + WEIGHT_MOD * weights[16] as f32).normal_sample(rng);
-        let positioning = (level + WEIGHT_MOD * weights[17] as f32).normal_sample(rng);
+        let aggression = (level + WEIGHT_MOD * weights[17] as f32).normal_sample(rng);
         let off_ball_movement = (level + WEIGHT_MOD * weights[18] as f32).normal_sample(rng);
         let charisma = (level + WEIGHT_MOD * weights[19] as f32).normal_sample(rng);
         Self {
             vision,
-            positioning,
+            aggression,
             off_ball_movement,
             charisma,
         }
@@ -239,6 +239,6 @@ impl Mental {
 
 impl Rated for Mental {
     fn rating(&self) -> u8 {
-        (self.vision + self.positioning + self.off_ball_movement + self.charisma) as u8 / 4
+        (self.vision + self.aggression + self.off_ball_movement + self.charisma) as u8 / 4
     }
 }

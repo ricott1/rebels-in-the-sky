@@ -28,8 +28,7 @@ use ratatui::{
     widgets::{Clear, Paragraph},
     Frame,
 };
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::{cmp::min, vec};
 
 const TICKS_PER_REVOLUTION: usize = 2;
@@ -49,14 +48,14 @@ pub struct GalaxyPanel {
     pub team_index: Option<usize>,
     tick: usize,
     pub zoom_level: ZoomLevel,
-    callback_registry: Rc<RefCell<CallbackRegistry>>,
-    gif_map: Rc<RefCell<GifMap>>,
+    callback_registry: Arc<Mutex<CallbackRegistry>>,
+    gif_map: Arc<Mutex<GifMap>>,
 }
 
 impl GalaxyPanel {
     pub fn new(
-        callback_registry: Rc<RefCell<CallbackRegistry>>,
-        gif_map: Rc<RefCell<GifMap>>,
+        callback_registry: Arc<Mutex<CallbackRegistry>>,
+        gif_map: Arc<Mutex<GifMap>>,
     ) -> Self {
         Self {
             planet_id: GALAXY_ROOT_ID.clone(),
@@ -87,12 +86,12 @@ impl GalaxyPanel {
     fn render_planet_gif(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let planet = world.get_planet_or_err(self.planet_id)?;
         let mut lines = match self.zoom_level {
-            ZoomLevel::In => self.gif_map.borrow_mut().planet_zoom_in_frame_lines(
+            ZoomLevel::In => self.gif_map.lock().unwrap().planet_zoom_in_frame_lines(
                 self.planet_id,
                 self.tick / planet.rotation_period,
                 world,
             ),
-            ZoomLevel::Out => self.gif_map.borrow_mut().planet_zoom_out_frame_lines(
+            ZoomLevel::Out => self.gif_map.lock().unwrap().planet_zoom_out_frame_lines(
                 self.planet_id,
                 self.tick / TICKS_PER_REVOLUTION,
                 world,
@@ -151,7 +150,7 @@ impl GalaxyPanel {
                 UiCallbackPreset::GoToPlanetZoomOut {
                     planet_id: parent_id,
                 },
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
             );
             buttons.push(button);
             current_id = parent_id;
@@ -166,7 +165,7 @@ impl GalaxyPanel {
                 UiCallbackPreset::GoToPlanetZoomOut {
                     planet_id: target.id,
                 },
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
             )
         } else if let Some(parent_id) = target.satellite_of {
             Button::new(
@@ -174,7 +173,7 @@ impl GalaxyPanel {
                 UiCallbackPreset::GoToPlanetZoomOut {
                     planet_id: parent_id,
                 },
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
             )
         } else {
             panic!("There should be no planet with no satellites and no parent");
@@ -198,7 +197,7 @@ impl GalaxyPanel {
                 UiCallbackPreset::TravelToPlanet {
                     planet_id: planet.id,
                 },
-                Rc::clone(&self.callback_registry),
+                Arc::clone(&self.callback_registry),
             );
             if can_travel.is_err() {
                 travel_button.disable(Some(can_travel.unwrap_err().to_string()));
@@ -397,7 +396,7 @@ impl Screen for GalaxyPanel {
                     UiCallbackPreset::ZoomInToPlanet {
                         planet_id: self.planet_id,
                     },
-                    Rc::clone(&self.callback_registry),
+                    Arc::clone(&self.callback_registry),
                     &mut self.planet_index,
                     idx,
                 )

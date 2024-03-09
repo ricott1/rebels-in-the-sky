@@ -1,6 +1,5 @@
-use ratatui::widgets::Paragraph;
-
 use super::utils::big_text;
+use ratatui::widgets::Paragraph;
 
 pub fn dots() -> Paragraph<'static> {
     big_text(&["   ", "██╗", "╚═╝", "██╗", "╚═╝", "   "])
