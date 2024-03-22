@@ -3,7 +3,6 @@ use super::{
     constants::{TirednessCost, ADV_ATTACK_LIMIT, ADV_DEFENSE_LIMIT, ADV_NEUTRAL_LIMIT},
     game::Game,
     types::GameStats,
-    utils::roll,
 };
 use crate::world::skill::GameSkill;
 use rand::Rng;
@@ -17,31 +16,25 @@ impl EngineAction for Isolation {
     fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
-        let attacking_stats = game.attacking_stats();
-        let defending_stats = game.defending_stats();
 
         let iso_idx = Self::sample(rng, [2, 3, 2, 1, 0])?;
-
         let iso = attacking_players[iso_idx];
-        let iso_stats = attacking_stats.get(&iso.id)?;
         let defender = defending_players[iso_idx];
-        let defender_stats = defending_stats.get(&defender.id)?;
 
         let timer_increase = 2 + rng.gen_range(0..=3);
 
         let mut attack_stats_update = HashMap::new();
         let mut iso_update = GameStats::default();
-        iso_update.add_tiredness(TirednessCost::MEDIUM, iso.athleticism.stamina);
+        iso_update.extra_tiredness = TirednessCost::MEDIUM;
 
         let mut defense_stats_update = HashMap::new();
         let mut defender_update = GameStats::default();
-        defender_update.add_tiredness(TirednessCost::MEDIUM, defender.athleticism.stamina);
+        defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
-        let atk_result = roll(rng, iso_stats.tiredness)
-            + iso.technical.ball_handling.value()
-            + iso.athleticism.quickness.value();
+        let atk_result =
+            iso.roll(rng) + iso.technical.ball_handling.value() + iso.athleticism.quickness.value();
 
-        let def_result = roll(rng, defender_stats.tiredness)
+        let def_result = defender.roll(rng)
             + defender.defense.perimeter_defense.value()
             + defender.athleticism.quickness.value();
 

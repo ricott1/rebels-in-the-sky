@@ -232,7 +232,7 @@ impl App {
                 self.quit()?;
             }
             _ => {
-                if let Some(callback) = self.ui.handle_key_events(key_event) {
+                if let Some(callback) = self.ui.handle_key_events(key_event, &self.world) {
                     match callback.call(self) {
                         Ok(Some(cb)) => {
                             self.ui

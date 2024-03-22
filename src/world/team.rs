@@ -4,6 +4,7 @@ use super::{
     planet::Planet,
     player::Player,
     position::{GamePosition, MAX_POSITION},
+    resources::Resource,
     role::CrewRole,
     spaceship::Spaceship,
     types::{PlayerLocation, TeamLocation},
@@ -15,7 +16,7 @@ use crate::{
 use itertools::Itertools;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
-use std::cmp::min;
+use std::{cmp::min, collections::HashMap};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
 pub struct CrewRoles {
@@ -34,8 +35,7 @@ pub struct Team {
     pub player_ids: Vec<PlayerId>,
     pub crew_roles: CrewRoles,
     pub jersey: Jersey,
-    pub balance: u32,
-    pub max_jersey_number: u8,
+    pub resources: HashMap<Resource, u32>,
     pub spaceship: Spaceship,
     pub home_planet: PlanetId,
     pub current_location: TeamLocation,
@@ -63,14 +63,77 @@ impl Team {
         }
     }
 
+    pub fn balance(&self) -> u32 {
+        self.resources.get(&Resource::SATOSHI).copied().unwrap_or(0)
+    }
+
+    pub fn fuel(&self) -> u32 {
+        self.resources.get(&Resource::FUEL).copied().unwrap_or(0)
+    }
+
+    pub fn used_storage_capacity(&self) -> u32 {
+        Resource::used_storage_capacity(&self.resources)
+    }
+
+    pub fn max_storage_capacity(&self) -> u32 {
+        self.spaceship.storage_capacity()
+    }
+
+    pub fn add_resource(&mut self, resource: Resource, amount: u32) {
+        let max_amount = if resource == Resource::FUEL {
+            let current = self.fuel();
+            let max_storage_capacity = self.spaceship.fuel_capacity();
+            amount.min(max_storage_capacity - current)
+        } else {
+            if resource.to_storing_space() == 0 {
+                amount
+            } else {
+                let current = Resource::used_storage_capacity(&self.resources);
+                let max_storage_capacity = self.spaceship.storage_capacity();
+                amount.min((max_storage_capacity - current) / resource.to_storing_space())
+            }
+        };
+
+        self.resources
+            .entry(resource)
+            .and_modify(|e| {
+                *e = e.saturating_add(max_amount);
+            })
+            .or_insert(max_amount);
+    }
+
+    pub fn add_resource_checked(&mut self, resource: Resource, amount: u32) -> AppResult<()> {
+        self.can_trade_resource(resource, amount as i32, 0)?;
+        self.resources
+            .entry(resource)
+            .and_modify(|e| {
+                *e = e.saturating_add(amount);
+            })
+            .or_insert(amount);
+        Ok(())
+    }
+
+    pub fn remove_resource(&mut self, resource: Resource, amount: u32) -> AppResult<()> {
+        self.can_trade_resource(resource, -(amount as i32), 0)?;
+        self.resources
+            .entry(resource)
+            .and_modify(|e| {
+                *e = e.saturating_sub(amount);
+            })
+            .or_insert(0);
+        Ok(())
+    }
+
     pub fn can_hire_player(&self, player: &Player) -> AppResult<()> {
         if player.team.is_some() {
             return Err("Already in a team".into());
         }
-        if self.balance < player.hire_cost(self.reputation) {
-            return Err("Not enough money".into());
+
+        let hiring_cost = player.hire_cost(self.reputation);
+        if self.balance() < hiring_cost {
+            return Err(format!("Not enough money {}", hiring_cost).into());
         }
-        if self.player_ids.len() >= self.spaceship.capacity() as usize {
+        if self.player_ids.len() >= self.spaceship.crew_capacity() as usize {
             return Err("Team is full".into());
         }
 
@@ -90,6 +153,9 @@ impl Team {
             },
             TeamLocation::Travelling { .. } => {
                 return Err("Team is travelling".into());
+            }
+            TeamLocation::Exploring { .. } => {
+                return Err("Team is exploring".into());
             }
         }
         Ok(())
@@ -183,7 +249,12 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_travel_to_planet(&self, planet: &Planet, travel_time: Tick) -> AppResult<()> {
+    pub fn can_travel_to_planet(
+        &self,
+        planet: &Planet,
+        travel_time: Tick,
+        current_fuel: u32,
+    ) -> AppResult<()> {
         match self.current_location {
             TeamLocation::OnPlanet {
                 planet_id: current_planet_id,
@@ -209,6 +280,9 @@ impl Team {
                     return Err("Landing...".into());
                 };
             }
+            TeamLocation::Exploring { .. } => {
+                return Err("Exploring".into());
+            }
         }
 
         if self.current_game.is_some() {
@@ -219,9 +293,47 @@ impl Team {
             return Err("This place is inhabitable".into());
         }
 
-        let autonomy = self.spaceship.max_travel_time();
+        let autonomy = self.spaceship.max_travel_time(current_fuel);
         if travel_time > autonomy {
             return Err("This planet is too far".into());
+        }
+
+        Ok(())
+    }
+
+    pub fn can_explore_around_planet(&self, planet: &Planet) -> AppResult<()> {
+        match self.current_location {
+            TeamLocation::OnPlanet {
+                planet_id: current_planet_id,
+            } => {
+                if planet.id != current_planet_id {
+                    return Err("Not on this planet".into());
+                }
+            }
+            TeamLocation::Travelling {
+                from: _from,
+                to: _to,
+                started,
+                duration,
+            } => {
+                let current = Tick::now();
+                if started + duration > current {
+                    return Err(format!(
+                        "Travelling ({})",
+                        (started + duration - current).formatted()
+                    )
+                    .into());
+                } else {
+                    return Err("Landing...".into());
+                };
+            }
+            TeamLocation::Exploring { .. } => {
+                return Err("Exploring".into());
+            }
+        }
+
+        if self.current_game.is_some() {
+            return Err("Team is currently playing".into());
         }
 
         Ok(())
@@ -230,6 +342,42 @@ impl Team {
     pub fn can_change_training_focus(&self) -> AppResult<()> {
         if self.current_game.is_some() {
             return Err("Team is currently playing".into());
+        }
+        Ok(())
+    }
+
+    pub fn can_trade_resource(
+        &self,
+        resource: Resource,
+        amount: i32,
+        unit_cost: u32,
+    ) -> AppResult<()> {
+        // Buying. Check if enough satoshi and if enough storing space
+        if amount > 0 {
+            let total_cost = amount as u32 * unit_cost;
+            if self.balance() < total_cost {
+                return Err("Not enough satoshi".into());
+            }
+
+            if resource == Resource::FUEL {
+                let current = self.fuel();
+                let max_storage_capacity = self.spaceship.fuel_capacity();
+                if current + amount as u32 > max_storage_capacity {
+                    return Err("Not enough storage capacity".into());
+                }
+            } else {
+                let current = Resource::used_storage_capacity(&self.resources);
+                let max_storage_capacity = self.spaceship.storage_capacity();
+                if current + resource.to_storing_space() * amount as u32 > max_storage_capacity {
+                    return Err("Not enough storage capacity".into());
+                }
+            }
+        } else {
+            // Selling. Check if enough resource
+            let current = self.resources.get(&resource).copied().unwrap_or(0);
+            if current < amount.abs() as u32 {
+                return Err("Not enough resource".into());
+            }
         }
         Ok(())
     }
@@ -245,8 +393,6 @@ impl Team {
         player.team = Some(self.id);
         player.current_location = PlayerLocation::WithTeam;
         self.player_ids.push(player.id);
-        player.jersey_number = Some(self.max_jersey_number as usize);
-        self.max_jersey_number += 1;
         player.set_jersey(&self.jersey);
         player.version += 1;
     }
@@ -257,7 +403,6 @@ impl Team {
         }
         player.team = None;
         self.player_ids.retain(|&p| p != player.id);
-        player.jersey_number = None;
         player.image.remove_jersey();
         player.compose_image()?;
         match self.current_location {
@@ -331,8 +476,7 @@ mod tests {
 
     #[test]
     fn test_team_random() {
-        let data = TEAM_DATA.as_ref().unwrap();
-        let (name, _) = data.names[0].clone();
+        let (name, _) = TEAM_DATA[0].clone();
         let team = super::Team::random(TeamId::new(), Planet::default().id, name);
         println!("{:?}", team);
     }

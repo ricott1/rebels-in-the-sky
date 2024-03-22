@@ -6,6 +6,8 @@ mod constants;
 mod galaxy_panel;
 mod game_panel;
 mod gif_map;
+mod hover_text_line;
+mod hover_text_span;
 mod my_team_panel;
 mod new_team_screen;
 mod player_panel;

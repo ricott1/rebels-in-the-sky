@@ -1,9 +1,11 @@
 [
     {
         "id": "71a43700-0000-0000-0000-000000000000",
+        "peer_id": null,
         "version": 0,
         "name": "Sagittarius",
         "populations": [],
+        "base_resources": [],
         "filename": "blackhole",
         "rotation_period": 300,
         "revolution_period": 1,
@@ -16,9 +18,11 @@
     },
     {
         "id": "71a43700-0000-0000-0001-000000000000",
+        "peer_id": null,
         "version": 0,
         "name": "Sol",
         "populations": [],
+        "base_resources": [],
         "filename": "sol",
         "rotation_period": 12,
         "revolution_period": 180,
@@ -37,9 +41,11 @@
     },
     {
         "id": "71a43700-0000-0000-0001-000000000001",
+        "peer_id": null,
         "version": 0,
         "name": "Proxima Centauri",
         "populations": [],
+        "base_resources": [],
         "filename": "proxima",
         "rotation_period": 9,
         "revolution_period": 120,
@@ -52,12 +58,14 @@
     },
     {
         "id": "71a43700-0000-0000-0002-000000000005",
+        "peer_id": null,
         "version": 0,
         "name": "Proxima Centauri b",
         "populations": [
-            [6, 60],
-            [7, 50]
+            [1, 60],
+            [2, 50]
         ],
+        "base_resources": [],
         "filename": "weird",
         "rotation_period": 18,
         "revolution_period": 180,
@@ -70,12 +78,14 @@
     },
     {
         "id": "71a43700-0000-0000-0002-000000000006",
+        "peer_id": null,
         "version": 0,
         "name": "Proxima Centauri d",
         "populations": [
-            [7, 60],
-            [8, 50]
+            [2, 60],
+            [3, 50]
         ],
+        "base_resources": [],
         "filename": "redgreen",
         "rotation_period": 18,
         "revolution_period": 360,
@@ -88,9 +98,16 @@
     },
     {
         "id": "71a43700-0000-0000-0003-000000000003",
+        "peer_id": null,
         "version": 0,
         "name": "Frittura",
-        "populations": [[9, 110]],
+        "populations": [[4, 110]],
+        "base_resources": [
+            [1, 4],
+            [2, 4],
+            [3, 1],
+            [4, 10]
+        ],
         "filename": "venom",
         "rotation_period": 6,
         "revolution_period": 360,
@@ -103,15 +120,22 @@
     },
     {
         "id": "71a43700-0000-0000-0002-000000000000",
+        "peer_id": null,
         "version": 0,
         "name": "Earth",
         "populations": [
-            [0, 20],
-            [1, 20],
-            [2, 25],
-            [3, 25],
-            [4, 20],
-            [5, 20]
+            [100, 10],
+            [101, 15],
+            [102, 25],
+            [103, 25],
+            [104, 15],
+            [105, 20],
+            [106, 10]
+        ],
+        "base_resources": [
+            [1, 10],
+            [2, 10],
+            [4, 4]
         ],
         "filename": "earth",
         "rotation_period": 12,
@@ -125,11 +149,17 @@
     },
     {
         "id": "71a43700-0000-0000-0002-000000000001",
+        "peer_id": null,
         "version": 0,
         "name": "Mars",
         "populations": [
-            [7, 90],
-            [2, 30]
+            [2, 90],
+            [102, 30]
+        ],
+        "base_resources": [
+            [1, 2],
+            [2, 4],
+            [4, 4]
         ],
         "filename": "lava",
         "rotation_period": 12,
@@ -143,9 +173,14 @@
     },
     {
         "id": "71a43700-0000-0000-0002-000000000002",
+        "peer_id": null,
         "version": 0,
         "name": "Jupiter",
-        "populations": [[6, 110]],
+        "populations": [[1, 110]],
+        "base_resources": [
+            [2, 6],
+            [3, 8]
+        ],
         "filename": "gas",
         "rotation_period": 18,
         "revolution_period": 360,
@@ -158,12 +193,17 @@
     },
     {
         "id": "71a43700-0000-0000-0002-000000000003",
+        "peer_id": null,
         "version": 0,
         "name": "Saturn",
         "populations": [
-            [6, 60],
-            [8, 30],
-            [2, 20]
+            [1, 60],
+            [3, 30],
+            [102, 20]
+        ],
+        "base_resources": [
+            [2, 6],
+            [3, 8]
         ],
         "filename": "ring",
         "rotation_period": 18,
@@ -177,9 +217,15 @@
     },
     {
         "id": "71a43700-0000-0000-0002-000000000004",
+        "peer_id": null,
         "version": 0,
         "name": "Uranus",
-        "populations": [[8, 90]],
+        "populations": [[3, 90]],
+        "base_resources": [
+            [1, 3],
+            [2, 3],
+            [3, 3]
+        ],
         "filename": "ice",
         "rotation_period": 18,
         "revolution_period": 360,
@@ -192,11 +238,19 @@
     },
     {
         "id": "71a43700-0000-0000-0003-000000000000",
+        "peer_id": null,
         "version": 0,
         "name": "Moon",
         "populations": [
-            [1, 60],
-            [6, 50]
+            [101, 60],
+            [1, 50],
+            [5, 30]
+        ],
+        "base_resources": [
+            [1, 4],
+            [2, 4],
+            [3, 1],
+            [4, 1]
         ],
         "filename": "rocky",
         "rotation_period": 18,
@@ -210,12 +264,16 @@
     },
     {
         "id": "71a43700-0000-0000-0003-000000000001",
+        "peer_id": null,
         "version": 0,
         "name": "Phobos",
         "populations": [
-            [2, 20],
-            [7, 40]
+            [107, 20],
+            [108, 20],
+            [2, 40],
+            [5, 10]
         ],
+        "base_resources": [],
         "filename": "phobos",
         "rotation_period": 12,
         "revolution_period": 120,
@@ -228,12 +286,15 @@
     },
     {
         "id": "71a43700-0000-0000-0003-000000000002",
+        "peer_id": null,
         "version": 0,
         "name": "Deimos",
         "populations": [
-            [6, 10],
-            [7, 70]
+            [1, 10],
+            [2, 70],
+            [5, 10]
         ],
+        "base_resources": [],
         "filename": "deimos",
         "rotation_period": 12,
         "revolution_period": 180,

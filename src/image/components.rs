@@ -51,34 +51,46 @@ impl ImageComponent for HairImage {
 #[derive(Debug, Clone, Copy, Display, Serialize_repr, Deserialize_repr, PartialEq)]
 #[repr(u8)]
 pub enum HeadImage {
-    Devil1,
-    Devil2,
-    Elf1,
-    Elf2,
+    Polpett1,
+    Polpett2,
+    Juppa1,
+    Juppa2,
     Human1,
     Human2,
-    Orc1,
-    Orc2,
+    Yardalaim1,
+    Yardalaim2,
     Gald1,
     Gald2,
-    Pupparoll,
+    Pupparoll1,
+    Pupparoll2,
 }
 
 impl ImageComponent for HeadImage {
     fn select_file(&self, _size: u8) -> String {
         format!("head/{}.png", self.to_string().to_lowercase())
     }
+
+    fn select_mask_file(&self, _size: u8) -> String {
+        format!("head/mask_{}.png", self.to_string().to_lowercase())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Display, Serialize_repr, Deserialize_repr, PartialEq)]
 #[repr(u8)]
 pub enum BodyImage {
-    Devil,
+    Polpett,
+    Pupparoll,
+    Yardalaim,
     Normal,
 }
 
 impl ImageComponent for BodyImage {
     fn select_file(&self, size: u8) -> String {
+        let name = match self {
+            Self::Pupparoll => "pupparoll",
+            Self::Yardalaim => "yardalaim",
+            _ => "normal",
+        };
         let number = match size {
             x if x <= 2 => 0,
             x if x <= 4 => 3,
@@ -88,14 +100,33 @@ impl ImageComponent for BodyImage {
             _ => 12,
         };
 
-        format!("body/{}{}.png", self.to_string().to_lowercase(), number)
+        format!("body/{}{}.png", name, number)
+    }
+
+    fn select_mask_file(&self, size: u8) -> String {
+        let name = match self {
+            Self::Pupparoll => "pupparoll",
+            Self::Polpett => "polpett",
+            _ => "normal",
+        };
+        let number = match size {
+            x if x <= 2 => 0,
+            x if x <= 4 => 3,
+            x if x <= 6 => 5,
+            x if x <= 9 => 7,
+            x if x <= 11 => 10,
+            _ => 12,
+        };
+
+        format!("body/mask_{}{}.png", name, number)
     }
 }
 
 #[derive(Debug, Clone, Copy, Display, Serialize_repr, Deserialize_repr, PartialEq)]
 #[repr(u8)]
 pub enum LegsImage {
-    Devil,
+    Polpett,
+    Pupparoll,
     Normal,
 }
 
@@ -115,6 +146,27 @@ impl ImageComponent for LegsImage {
         };
 
         format!("legs/{}{}.png", self.to_string().to_lowercase(), number)
+    }
+
+    fn select_mask_file(&self, size: u8) -> String {
+        let number = match size {
+            0 => 0,
+            1 => 1,
+            x if x <= 3 => 2,
+            x if x <= 5 => 4,
+            6 => 6,
+            7 => 7,
+            8 => 8,
+            x if x <= 10 => 9,
+            x if x <= 12 => 11,
+            _ => 13,
+        };
+
+        format!(
+            "legs/mask_{}{}.png",
+            self.to_string().to_lowercase(),
+            number
+        )
     }
 }
 
@@ -165,10 +217,14 @@ pub enum ShortsImage {
     Stripe,
     Pirate,
     PirateAlt,
+    Pupparoll,
 }
 
 impl ImageComponent for ShortsImage {
     fn select_file(&self, size: u8) -> String {
+        if self == &ShortsImage::Pupparoll {
+            return "shorts/pupparoll.png".into();
+        }
         let number = match size {
             x if x <= 2 => 0,
             x if x <= 6 => 3,
@@ -180,8 +236,11 @@ impl ImageComponent for ShortsImage {
         format!("shorts/{}{}.png", self.to_string().to_lowercase(), number)
     }
     fn select_mask_file(&self, size: u8) -> String {
+        if self == &ShortsImage::Pupparoll {
+            return "shorts/mask_pupparoll.png".into();
+        }
         match size {
-            x if x <= 7 => format!("shorts/mask_slim.png"),
+            x if x < 7 => format!("shorts/mask_slim.png"),
             _ => format!("shorts/mask_large.png"),
         }
     }
@@ -215,6 +274,7 @@ pub enum HatImage {
     MaskYardalaim,
     MaskPolpett,
     MaskGaldari,
+    MaskPupparoll,
 }
 
 impl ImageComponent for HatImage {
@@ -247,6 +307,7 @@ pub enum EyePatchImage {
     LeftHigh,
     RightHigh,
     Central,
+    Pupparoll,
 }
 
 impl ImageComponent for EyePatchImage {
@@ -257,6 +318,7 @@ impl ImageComponent for EyePatchImage {
             EyePatchImage::LeftHigh => "accessories/eye_patch_left_high.png".into(),
             EyePatchImage::RightHigh => "accessories/eye_patch_right_high.png".into(),
             EyePatchImage::Central => "accessories/eye_patch_central.png".into(),
+            EyePatchImage::Pupparoll => "accessories/eye_patch_pupparoll.png".into(),
         }
     }
 }
@@ -266,6 +328,8 @@ impl ImageComponent for EyePatchImage {
 pub enum HookImage {
     Left,
     Right,
+    LeftPupparoll,
+    RightPupparoll,
 }
 
 impl ImageComponent for HookImage {
@@ -273,6 +337,8 @@ impl ImageComponent for HookImage {
         match self {
             HookImage::Left => "accessories/hook_left.png".into(),
             HookImage::Right => "accessories/hook_right.png".into(),
+            HookImage::LeftPupparoll => "accessories/hook_left_pupparoll.png".into(),
+            HookImage::RightPupparoll => "accessories/hook_right_pupparoll.png".into(),
         }
     }
 }

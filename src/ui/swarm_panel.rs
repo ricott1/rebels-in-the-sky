@@ -16,13 +16,11 @@ use crossterm::event::{KeyCode, KeyEvent};
 use libp2p::PeerId;
 use ratatui::layout::Margin;
 use ratatui::style::{Color, Style};
-use ratatui::text::Span;
-use ratatui::widgets::{List, ListItem};
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Layout},
     prelude::Rect,
-    text::Line,
-    widgets::{Paragraph, Wrap},
+    text::{Line, Span},
+    widgets::{List, ListItem, Paragraph, Wrap},
     Frame,
 };
 use std::collections::HashMap;
@@ -109,16 +107,14 @@ impl SwarmPanel {
     }
 
     fn build_left_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
-        let split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Min(1),
-                Constraint::Length(3),
-            ])
-            .split(area);
+        let split = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(1),
+            Constraint::Length(3),
+        ])
+        .split(area);
 
         let mut chat_button = Button::new(
             "Chat".to_string(),
@@ -191,23 +187,18 @@ impl SwarmPanel {
     fn build_challenge_list(&mut self, frame: &mut Frame, area: Rect) {
         let mut constraints = [Constraint::Length(3)].repeat(self.peer_to_challenge.len());
         constraints.push(Constraint::Min(0));
-        let split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(constraints)
-            .split(area);
+        let split = Layout::vertical(constraints).split(area);
 
         // let mut items = vec![];
 
         for (idx, (peer_id, challenge)) in self.peer_to_challenge.iter().enumerate() {
-            let line_split = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Length(24),
-                    Constraint::Length(8),
-                    Constraint::Length(8),
-                    Constraint::Min(0),
-                ])
-                .split(split[idx]);
+            let line_split = Layout::horizontal([
+                Constraint::Length(24),
+                Constraint::Length(8),
+                Constraint::Length(8),
+                Constraint::Min(0),
+            ])
+            .split(split[idx]);
 
             if let Some(team) = challenge.home_team.clone() {
                 frame.render_widget(
@@ -251,10 +242,7 @@ impl SwarmPanel {
     }
 
     fn build_right_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
-        let split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(3)])
-            .split(area);
+        let split = Layout::vertical([Constraint::Min(1), Constraint::Length(3)]).split(area);
 
         self.textarea.set_block(default_block());
         frame.render_widget(self.textarea.widget(), split[1]);
@@ -334,9 +322,7 @@ impl Screen for SwarmPanel {
     }
 
     fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
-        let split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Min(1)])
+        let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Min(1)])
             .split(area);
 
         self.build_left_panel(frame, world, split[0]);
@@ -344,7 +330,11 @@ impl Screen for SwarmPanel {
         Ok(())
     }
 
-    fn handle_key_events(&mut self, key_event: KeyEvent) -> Option<UiCallbackPreset> {
+    fn handle_key_events(
+        &mut self,
+        key_event: KeyEvent,
+        _world: &World,
+    ) -> Option<UiCallbackPreset> {
         match key_event.code {
             KeyCode::Up => self.previous_index(),
             KeyCode::Down => self.next_index(),

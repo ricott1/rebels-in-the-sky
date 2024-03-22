@@ -227,6 +227,21 @@ impl<'a> StatefulWidget for ClickableList<'a> {
         if self.items.is_empty() {
             return;
         }
+
+        if self.callback_registry.lock().unwrap().is_hovering(area) {
+            self.callback_registry.lock().unwrap().register_callback(
+                crossterm::event::MouseEventKind::ScrollDown,
+                None,
+                UiCallbackPreset::NextPanelIndex,
+            );
+
+            self.callback_registry.lock().unwrap().register_callback(
+                crossterm::event::MouseEventKind::ScrollUp,
+                None,
+                UiCallbackPreset::PreviousPanelIndex,
+            );
+        }
+
         let list_height = list_area.height as usize;
 
         let (start, end) = self.get_items_bounds(state.selected, state.offset, list_height);
@@ -303,18 +318,6 @@ impl<'a> StatefulWidget for ClickableList<'a> {
                 UiCallbackPreset::SetPanelIndex { index },
             );
         }
-
-        self.callback_registry.lock().unwrap().register_callback(
-            crossterm::event::MouseEventKind::ScrollDown,
-            None,
-            UiCallbackPreset::NextPanelIndex,
-        );
-
-        self.callback_registry.lock().unwrap().register_callback(
-            crossterm::event::MouseEventKind::ScrollUp,
-            None,
-            UiCallbackPreset::PreviousPanelIndex,
-        );
     }
 }
 

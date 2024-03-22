@@ -2,7 +2,8 @@ use super::button::{Button, RadioButton};
 use super::clickable_list::ClickableListState;
 use super::gif_map::GifMap;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
-use super::widgets::render_spaceship_description;
+use super::utils::hover_text_target;
+use super::widgets::{go_to_team_planet_button, render_spaceship_description};
 use super::{
     constants::{UiKey, UiStyle, LEFT_PANEL_WIDTH},
     traits::{Screen, SplitPanel},
@@ -10,10 +11,9 @@ use super::{
     widgets::{default_block, selectable_list},
 };
 use crate::image::spaceship::{SPACESHIP_IMAGE_HEIGHT, SPACESHIP_IMAGE_WIDTH};
-use crate::types::{AppResult, SystemTimeTick};
+use crate::types::AppResult;
 use crate::world::position::MAX_POSITION;
 use crate::world::team::Team;
-use crate::world::types::TeamLocation;
 use crate::{
     image::pitch::floor_from_size,
     image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
@@ -29,7 +29,7 @@ use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use ratatui::layout::Margin;
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Layout},
     prelude::Rect,
     style::{Color, Style},
     text::Span,
@@ -131,15 +131,13 @@ impl TeamListPanel {
     }
 
     fn build_left_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
-        let split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Min(1),
-            ])
-            .split(area);
+        let split = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(1),
+        ])
+        .split(area);
 
         let mut filter_all_button = Button::new(
             format!("Filter: {}", TeamFilter::All.to_string()),
@@ -209,19 +207,17 @@ impl TeamListPanel {
         }
         let team = world.get_team_or_err(self.teams[self.index]).unwrap();
         self.current_team_players_length = team.player_ids.len();
-        let vertical_split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2), //players
-                Constraint::Length(1),                              //floor
-                Constraint::Length(1),                              //name
-                Constraint::Length(2),                              //rating
-                Constraint::Min(1),                                 //bottom
-            ])
-            .split(area.inner(&Margin {
-                horizontal: 1,
-                vertical: 0,
-            }));
+        let vertical_split = Layout::vertical([
+            Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2), //players
+            Constraint::Length(1),                              //floor
+            Constraint::Length(1),                              //name
+            Constraint::Length(2),                              //rating
+            Constraint::Min(1),                                 //bottom
+        ])
+        .split(area.inner(&Margin {
+            horizontal: 1,
+            vertical: 0,
+        }));
 
         let floor = floor_from_size(area.width as u32, 2);
         frame.render_widget(
@@ -246,20 +242,11 @@ impl TeamListPanel {
             Constraint::Min(side_length),
         ];
 
-        let player_img_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(constraints)
-            .split(vertical_split[0]);
+        let player_img_split = Layout::horizontal(constraints).split(vertical_split[0]);
 
-        let player_name_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(constraints)
-            .split(vertical_split[2]);
+        let player_name_split = Layout::horizontal(constraints).split(vertical_split[2]);
 
-        let player_rating_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(constraints)
-            .split(vertical_split[3]);
+        let player_rating_split = Layout::horizontal(constraints).split(vertical_split[3]);
 
         for i in 0..MAX_POSITION as usize {
             if i >= team.player_ids.len() {
@@ -301,10 +288,9 @@ impl TeamListPanel {
             }
 
             let name = format!(
-                "{}. {} #{} ",
+                "{}. {} ",
                 player.info.first_name.chars().next().unwrap_or_default(),
                 player.info.last_name,
-                player.jersey_number.unwrap()
             );
             frame.render_widget(
                 Paragraph::new(name).alignment(Alignment::Center),
@@ -324,37 +310,32 @@ impl TeamListPanel {
             );
         }
 
-        let bottom_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(44),
-                Constraint::Length(SPACESHIP_IMAGE_WIDTH as u16 + 2 + 34),
-            ])
-            .split(vertical_split[4]);
+        let bottom_split = Layout::horizontal([
+            Constraint::Length(44),
+            Constraint::Length(SPACESHIP_IMAGE_WIDTH as u16 + 2 + 34),
+        ])
+        .split(vertical_split[4]);
 
         frame.render_widget(default_block().title("Bench"), bottom_split[0]);
 
         if team.player_ids.len() > 5 {
-            let bench_row_split = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(4),
-                    Constraint::Length(4),
-                    Constraint::Length(4),
-                    Constraint::Min(0),
-                ])
-                .split(bottom_split[0].inner(&Margin {
-                    horizontal: 1,
-                    vertical: 1,
-                }));
+            let bench_row_split = Layout::vertical([
+                Constraint::Length(4),
+                Constraint::Length(4),
+                Constraint::Length(4),
+                Constraint::Min(0),
+            ])
+            .split(bottom_split[0].inner(&Margin {
+                horizontal: 1,
+                vertical: 1,
+            }));
 
             for (i, &player_id) in team.player_ids.iter().skip(5).enumerate() {
                 if let Some(player) = world.get_player(player_id) {
                     let info = format!(
-                        "{}. {} #{}\n",
+                        "{}. {}\n",
                         player.info.first_name.chars().next().unwrap_or_default(),
                         player.info.last_name,
-                        player.jersey_number.unwrap()
                     );
                     let skills = player.current_skill_array();
                     let best_role = Position::best(skills);
@@ -375,86 +356,35 @@ impl TeamListPanel {
                     );
                     let row = i / 2;
 
-                    let bench_column_split = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints([Constraint::Length(20), Constraint::Length(20)])
-                        .split(bench_row_split[row]);
+                    let bench_column_split =
+                        Layout::horizontal([Constraint::Length(20), Constraint::Length(20)])
+                            .split(bench_row_split[row]);
                     let column = i % 2;
                     frame.render_widget(button, bench_column_split[column]);
                 }
             }
         }
 
-        let ship_buttons_split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(SPACESHIP_IMAGE_HEIGHT as u16 / 2 + 2), // ship
-                Constraint::Length(3),                                     //button
-                Constraint::Min(0),
-            ])
-            .split(bottom_split[1]);
+        let ship_buttons_split = Layout::vertical([
+            Constraint::Length(SPACESHIP_IMAGE_HEIGHT as u16 / 2 + 2), // ship
+            Constraint::Length(3),                                     //button
+            Constraint::Min(0),
+        ])
+        .split(bottom_split[1]);
 
-        let button_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+        let button_split = Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
             .split(ship_buttons_split[1].inner(&Margin {
                 horizontal: 1,
                 vertical: 0,
             }));
 
         let own_team = world.get_own_team()?;
+        let hover_text_target = hover_text_target(frame);
         if team.id != world.own_team_id {
-            match team.current_location {
-                TeamLocation::OnPlanet { planet_id } => {
-                    let location = world.get_planet_or_err(planet_id)?;
-                    let planet = world.get_planet_or_err(planet_id)?;
-
-                    let travel_time = world.travel_time_to_planet(own_team.id, planet.id);
-                    let can_travel = match travel_time {
-                        Ok(time) => own_team.can_travel_to_planet(&planet, time),
-                        Err(e) => Err(e),
-                    };
-
-                    let mut button = Button::new(
-                        format!(
-                            "{}: On planet {} ",
-                            UiKey::GO_TO_PLANET.to_string(),
-                            location.name
-                        ),
-                        UiCallbackPreset::GoToCurrentTeamPlanet { team_id: team.id },
-                        Arc::clone(&self.callback_registry),
-                    );
-                    if can_travel.is_err() {
-                        button.disable(Some(format!(
-                            "{}: {}",
-                            UiKey::GO_TO_PLANET.to_string(),
-                            can_travel.unwrap_err().to_string()
-                        )));
-                    }
-
-                    frame.render_widget(button, button_split[0]);
-                }
-                TeamLocation::Travelling {
-                    from: _from,
-                    to,
-                    started,
-                    duration,
-                } => {
-                    let to = world.get_planet_or_err(to)?.name.to_string();
-                    let duration = if started + duration > world.last_tick_short_interval {
-                        (started + duration - world.last_tick_short_interval).formatted()
-                    } else {
-                        "landing".into()
-                    };
-
-                    let mut button = Button::new(
-                        format!("Travelling to {} {}", to, duration),
-                        UiCallbackPreset::None,
-                        Arc::clone(&self.callback_registry),
-                    );
-                    button.disable(None);
-                    frame.render_widget(button, button_split[0]);
-                }
+            if let Ok(go_to_team_planet_button) =
+                go_to_team_planet_button(world, team, &self.callback_registry, hover_text_target)
+            {
+                frame.render_widget(go_to_team_planet_button, button_split[0]);
             }
 
             let can_challenge = own_team.can_challenge_team(team);
@@ -486,13 +416,11 @@ impl TeamListPanel {
             bottom_split[1],
         );
 
-        let box_split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2 + 1),
-                Constraint::Min(0),
-            ])
-            .split(area);
+        let box_split = Layout::vertical([
+            Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2 + 1),
+            Constraint::Min(0),
+        ])
+        .split(area);
 
         frame.render_widget(
             default_block()
@@ -567,13 +495,11 @@ impl Screen for TeamListPanel {
         }
 
         // Split into left and right panels
-        let left_right_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(LEFT_PANEL_WIDTH),
-                Constraint::Min(IMG_FRAME_WIDTH),
-            ])
-            .split(area);
+        let left_right_split = Layout::horizontal([
+            Constraint::Length(LEFT_PANEL_WIDTH),
+            Constraint::Min(IMG_FRAME_WIDTH),
+        ])
+        .split(area);
         self.build_left_panel(frame, world, left_right_split[0]);
         self.build_right_panel(frame, world, left_right_split[1])?;
         Ok(())
@@ -582,6 +508,7 @@ impl Screen for TeamListPanel {
     fn handle_key_events(
         &mut self,
         key_event: crossterm::event::KeyEvent,
+        _world: &World,
     ) -> Option<UiCallbackPreset> {
         match key_event.code {
             KeyCode::Up => self.next_index(),

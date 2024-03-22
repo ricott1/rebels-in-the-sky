@@ -8,7 +8,12 @@ use super::{
 };
 use crate::{
     types::{GameId, PlanetId, SortablePlayerMap, TeamId, Tick},
-    world::{planet::Planet, player::Player, position::MAX_POSITION},
+    world::{
+        planet::Planet,
+        player::{Player, Trait},
+        position::MAX_POSITION,
+        skill::GameSkill,
+    },
 };
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -97,6 +102,31 @@ impl<'game> Game {
         let home_name = home_team_in_game.name.clone();
         let away_name = away_team_in_game.name.clone();
 
+        let bonus_attendance = home_team_in_game
+            .players
+            .iter()
+            .map(|(_, player)| {
+                if player.special_trait == Some(Trait::Showpirate) {
+                    player.reputation.value()
+                } else {
+                    0
+                }
+            })
+            .sum::<u8>() as f32
+            / 100.0
+            + away_team_in_game
+                .players
+                .iter()
+                .map(|(_, player)| {
+                    if player.special_trait == Some(Trait::Showpirate) {
+                        player.reputation.value()
+                    } else {
+                        0
+                    }
+                })
+                .sum::<u8>() as f32
+                / 100.0;
+
         let mut game = Self {
             id,
             home_team_in_game,
@@ -115,8 +145,10 @@ impl<'game> Game {
         };
         let seed = game.get_rng_seed();
         let mut rng = ChaCha8Rng::from_seed(seed);
+
         let attendance = (BASE_ATTENDANCE + total_reputation as u32 * total_population) as f32
-            * rng.gen_range(0.5..1.5);
+            * rng.gen_range(0.5..1.5)
+            * (1.0 + bonus_attendance);
         game.attendance = attendance as u32;
         let mut default_output = ActionOutput::default();
         default_output.description = format!(
@@ -193,6 +225,8 @@ impl<'game> Game {
             for (id, player_stats) in self.home_team_in_game.stats.iter_mut() {
                 if let Some(update) = updates.get(&id) {
                     player_stats.update(update);
+                    let player = self.home_team_in_game.players.get_mut(&id).unwrap();
+                    player.add_tiredness(update.extra_tiredness);
                 }
             }
         }
@@ -200,6 +234,8 @@ impl<'game> Game {
             for (id, player_stats) in self.away_team_in_game.stats.iter_mut() {
                 if let Some(update) = updates.get(&id) {
                     player_stats.update(update);
+                    let player = self.away_team_in_game.players.get_mut(&id).unwrap();
+                    player.add_tiredness(update.extra_tiredness);
                 }
             }
         }
@@ -235,18 +271,18 @@ impl<'game> Game {
 
     fn apply_tiredness_update(&mut self) {
         for team in [&mut self.home_team_in_game, &mut self.away_team_in_game] {
-            for (id, stats) in team.stats.iter_mut() {
+            for (id, player) in team.players.iter_mut() {
+                let stats = team.stats.get_mut(&id).unwrap();
                 if stats.is_playing() && !self.timer.is_break() {
                     stats.seconds_played += 1;
-                    if !stats.is_knocked_out() {
+                    if !player.is_knocked_out() {
                         stats.experience_at_position[stats.position.unwrap() as usize] += 1;
-                        let stamina = team.players.get(&id).unwrap().athleticism.stamina;
-                        stats.add_tiredness(TirednessCost::LOW, stamina);
+                        player.add_tiredness(TirednessCost::LOW);
                     }
-                } else if stats.tiredness > RECOVERING_TIREDNESS_PER_SHORT_TICK
-                    && !stats.is_knocked_out()
+                } else if player.tiredness > RECOVERING_TIREDNESS_PER_SHORT_TICK
+                    && !player.is_knocked_out()
                 {
-                    stats.tiredness -= RECOVERING_TIREDNESS_PER_SHORT_TICK;
+                    player.tiredness -= RECOVERING_TIREDNESS_PER_SHORT_TICK;
                 }
             }
         }
@@ -457,14 +493,14 @@ impl<'game> Game {
                 // Check that each player is knocked out
                 let home_knocked_out = self
                     .home_team_in_game
-                    .stats
+                    .players
                     .iter()
-                    .all(|(_, stats)| stats.is_knocked_out());
+                    .all(|(_, p)| p.is_knocked_out());
                 let away_knocked_out = self
                     .away_team_in_game
-                    .stats
+                    .players
                     .iter()
-                    .all(|(_, stats)| stats.is_knocked_out());
+                    .all(|(_, p)| p.is_knocked_out());
 
                 match (home_knocked_out, away_knocked_out) {
                     (true, true) => {

@@ -29,6 +29,15 @@ impl UiKey {
     pub const SET_PILOT: KeyCode = KeyCode::Char('e');
     pub const PITCH_VIEW: KeyCode = KeyCode::Char('v');
     pub const TRAVEL: KeyCode = KeyCode::Char('t');
+    pub const EXPLORE: KeyCode = KeyCode::Char('x');
+    pub const BUY_FOOD: KeyCode = KeyCode::Char('o');
+    pub const BUY_FUEL: KeyCode = KeyCode::Char('u');
+    pub const BUY_GOLD: KeyCode = KeyCode::Char('g');
+    pub const BUY_RUM: KeyCode = KeyCode::Char('r');
+    pub const SELL_FOOD: KeyCode = KeyCode::Char('O');
+    pub const SELL_FUEL: KeyCode = KeyCode::Char('U');
+    pub const SELL_GOLD: KeyCode = KeyCode::Char('G');
+    pub const SELL_RUM: KeyCode = KeyCode::Char('R');
 }
 pub trait PrintableKeyCode {
     fn to_string(&self) -> String;

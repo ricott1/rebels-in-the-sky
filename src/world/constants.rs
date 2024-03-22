@@ -12,18 +12,18 @@ pub const AGE_INCREASE_PER_LONG_TICK: f32 = 0.025;
 pub const INCOME_PER_ATTENDEE_HOME: u32 = 12;
 pub const INCOME_PER_ATTENDEE_AWAY: u32 = 12;
 
-pub const INITIAL_TEAM_BALANCE: u32 = 150_000;
+pub const INITIAL_TEAM_BALANCE: u32 = 180_000;
 pub const CURRENCY_SYMBOL: &str = "sat";
-pub const COST_PER_VALUE: u32 = 34;
+pub const COST_PER_VALUE: u32 = 22;
 
 pub const AUTO_GENERATE_GAMES_NUMBER: usize = 3;
 
 const DEBUG_TIME_MULTIPLIER: Tick = 1;
-pub const BASE_DISTANCES: [u128; 3] = [1 * LIGHT_YEAR, 1 * AU, 300_000 * KILOMETERS];
+pub const BASE_DISTANCES: [u128; 3] = [1 * LIGHT_YEAR, 1 * AU, 400_000 * KILOMETERS];
 pub const BASE_TANK_CAPACITY: u32 = 50;
 pub const BASE_SPEED: f32 =
     2_500_000_000.0 * KILOMETERS as f32 / HOURS as f32 * DEBUG_TIME_MULTIPLIER as f32; // Very fast ;)
-pub const BASE_FUEL_CONSUMPTION: f32 = 1.0 / HOURS as f32 * DEBUG_TIME_MULTIPLIER as f32; // 1 TONNES per HOURS
+pub const BASE_FUEL_CONSUMPTION: f32 = 25.0 / HOURS as f32 * DEBUG_TIME_MULTIPLIER as f32; // 1 TONNES per HOURS
 pub const LANDING_TIME_OVERHEAD: Tick = 5 * MINUTES / DEBUG_TIME_MULTIPLIER;
 
 pub const BASE_BONUS: f32 = 0.5;
@@ -32,6 +32,8 @@ pub const BONUS_PER_SKILL: f32 = 0.1;
 pub const REPUTATION_BONUS_WINNER: f32 = 0.5;
 pub const REPUTATION_BONUS_LOSER: f32 = -0.2;
 pub const REPUTATION_BONUS_DRAW: f32 = 0.25;
+
+pub const BASE_EXPLORATION_TIME: Tick = 10 * SECONDS;
 
 pub struct TickInterval;
 impl TickInterval {

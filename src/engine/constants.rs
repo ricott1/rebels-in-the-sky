@@ -15,7 +15,9 @@ impl TirednessCost {
     pub const LOW: f32 = 0.025;
     pub const MEDIUM: f32 = 1.0;
     pub const HIGH: f32 = 2.5;
-    pub const CRITICAL: f32 = 10.0;
+    pub const SEVERE: f32 = 10.0;
+    pub const CRITICAL: f32 = 20.0;
+    pub const MAX: f32 = 100.0;
 }
 
 pub const MAX_TIREDNESS: f32 = 100.0;

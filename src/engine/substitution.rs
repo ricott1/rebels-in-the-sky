@@ -26,13 +26,13 @@ fn get_subs<'a>(players: Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a 
         .skip(5)
         .filter(|&p| {
             let stats = team_stats.get(&p.id).unwrap();
-            !stats.is_playing() && !stats.is_knocked_out()
+            !stats.is_playing() && !p.is_knocked_out()
         })
         //Sort from most to less skilled*tired
         .sorted_by(|&a, &b| {
-            let t1 = team_stats.get(&a.id).unwrap().tiredness;
+            let t1 = a.tiredness;
             let v1: u16 = a.total_skills() * (MAX_TIREDNESS - t1 / 2.0) as u16;
-            let t2 = team_stats.get(&b.id).unwrap().tiredness;
+            let t2 = b.tiredness;
             let v2 = b.total_skills() * (MAX_TIREDNESS - t2 / 2.0) as u16;
             v2.cmp(&v1)
         })
@@ -48,20 +48,20 @@ fn get_subs<'a>(players: Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a 
         .take(5)
         .filter(|&p| {
             let stats = team_stats.get(&p.id).unwrap();
-            return stats.is_playing() == true && stats.tiredness > MIN_TIREDNESS_FOR_SUB;
+            return stats.is_playing() == true && p.tiredness > MIN_TIREDNESS_FOR_SUB;
         })
         //Sort from less to most skilled*tired
         .sorted_by(|&a, &b| {
-            let v1 = if team_stats.get(&a.id).unwrap().is_knocked_out() {
+            let v1 = if a.is_knocked_out() {
                 0
             } else {
-                let t1 = team_stats.get(&a.id).unwrap().tiredness;
+                let t1 = a.tiredness;
                 a.total_skills() * (MAX_TIREDNESS - t1 / 2.0) as u16
             };
-            let v2 = if team_stats.get(&b.id).unwrap().is_knocked_out() {
+            let v2 = if b.is_knocked_out() {
                 0
             } else {
-                let t2 = team_stats.get(&b.id).unwrap().tiredness;
+                let t2 = b.tiredness;
                 b.total_skills() * (MAX_TIREDNESS - t2 / 2.0) as u16
             };
             v1.cmp(&v2)
@@ -86,7 +86,7 @@ fn make_substitution(
     }
     let player_in = subs[0];
     let player_out = subs[1];
-    let tiredness = stats.get(&player_out.id)?.tiredness;
+    let tiredness = player_out.tiredness;
     let position = stats.get(&player_out.id)?.position?;
 
     let mut description = format!(

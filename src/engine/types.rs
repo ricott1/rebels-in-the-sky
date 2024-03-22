@@ -1,4 +1,4 @@
-use super::{action::Action, constants::MAX_TIREDNESS, tactic::Tactic};
+use super::{action::Action, tactic::Tactic};
 use crate::{
     image::pitch::PitchStyle,
     types::{AppResult, GameId, PlayerId, PlayerMap, TeamId, TeamMap},
@@ -80,10 +80,7 @@ pub struct GameStats {
     pub morale: u8,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub initial_tiredness: f32,
-    #[serde(skip_serializing_if = "is_default")]
-    #[serde(default)]
-    pub tiredness: f32,
+    pub extra_tiredness: f32,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub shot_positions: Vec<(u8, u8, bool)>, //x, y, is_made
@@ -113,7 +110,6 @@ impl GameStats {
         self.blocks += stats.blocks;
         self.turnovers += stats.turnovers;
         self.morale += stats.morale;
-        self.tiredness = (self.tiredness + stats.tiredness).min(MAX_TIREDNESS);
         self.shot_positions
             .append(&mut stats.shot_positions.clone());
         for (idx, exp) in stats.experience_at_position.iter().enumerate() {
@@ -125,13 +121,13 @@ impl GameStats {
         self.position.is_some()
     }
 
-    pub fn is_knocked_out(&self) -> bool {
-        self.tiredness == MAX_TIREDNESS
-    }
+    // pub fn is_knocked_out(&self) -> bool {
+    //     self.tiredness == MAX_TIREDNESS
+    // }
 
-    pub fn add_tiredness(&mut self, tiredness: f32, stamina: f32) {
-        self.tiredness = (self.tiredness + tiredness / (1.0 + stamina / 20.0)).min(MAX_TIREDNESS);
-    }
+    // pub fn add_tiredness(&mut self, tiredness: f32, stamina: f32) {
+    //     self.tiredness = (self.tiredness + tiredness / (1.0 + stamina / 20.0)).min(MAX_TIREDNESS);
+    // }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -142,6 +138,10 @@ pub struct TeamInGame {
     pub version: u64,
     pub name: String,
     pub initial_positions: Vec<PlayerId>,
+    // this is necessary for NetworkGame and in general to be able to simulate a game from the start
+    // because the player tiredness is updated during the game.
+    // The order is the same as initial_positions
+    pub initial_tiredness: Vec<f32>,
     pub players: PlayerMap,
     pub stats: GameStatsMap,
     pub tactic: Tactic,
@@ -151,21 +151,27 @@ pub struct TeamInGame {
 impl<'game> TeamInGame {
     pub fn new(team: &Team, players: PlayerMap) -> Self {
         let mut stats = HashMap::new();
+
         for (idx, player_id) in team.player_ids.iter().enumerate() {
             let mut player_stats = GameStats::default();
             if (idx as Position) < MAX_POSITION {
                 player_stats.position = Some(idx as Position);
             }
-            player_stats.initial_tiredness = players[player_id].tiredness;
-            player_stats.tiredness = players[player_id].tiredness;
             stats.insert(player_id.clone(), player_stats.clone());
         }
+
+        let initial_tiredness = team
+            .player_ids
+            .iter()
+            .map(|id| players.get(id).unwrap().tiredness)
+            .collect();
         Self {
             team_id: team.id,
             peer_id: team.peer_id,
             reputation: team.reputation,
             name: team.name.clone(),
             initial_positions: team.player_ids.clone(),
+            initial_tiredness,
             version: team.version,
             players,
             stats,
@@ -323,7 +329,7 @@ fn test_gamestats_serde() {
     stats.turnovers = 0;
     stats.plus_minus = 17;
     stats.morale = 18;
-    stats.tiredness = 19.0;
+    stats.extra_tiredness = 19.0;
     stats.shot_positions = vec![(1, 2, true), (3, 4, false)];
     stats.experience_at_position = [1, 2, 3, 4, 5];
 

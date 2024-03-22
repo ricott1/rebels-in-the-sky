@@ -4,10 +4,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use image::{Pixel, RgbaImage};
 use libp2p::PeerId;
 use ratatui::{
-    layout::Alignment,
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
+    Frame,
 };
 use tui_textarea::{Input, Key};
 
@@ -120,4 +121,13 @@ pub fn big_text<'a>(text: &'a [&str]) -> Paragraph<'a> {
         })
         .collect::<Vec<Line>>();
     Paragraph::new(lines).alignment(Alignment::Center)
+}
+
+pub fn hover_text_target(frame: &Frame) -> Rect {
+    let split = Layout::vertical([
+        Constraint::Min(0),
+        Constraint::Length(1), //bottom margin
+    ])
+    .split(frame.size());
+    split[1]
 }

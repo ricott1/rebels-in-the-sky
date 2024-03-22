@@ -3,7 +3,6 @@ use super::{
     constants::{TirednessCost, ADV_ATTACK_LIMIT, ADV_DEFENSE_LIMIT, ADV_NEUTRAL_LIMIT},
     game::Game,
     types::GameStats,
-    utils::roll,
 };
 use crate::world::{player::Player, skill::GameSkill};
 use rand::Rng;
@@ -18,8 +17,6 @@ impl EngineAction for Post {
     fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
-        let attacking_stats = game.attacking_stats();
-        let defending_stats = game.defending_stats();
 
         let post_idx = match input.attackers.len() {
             0 => Self::sample(rng, [0, 0, 1, 2, 3])?,
@@ -27,25 +24,23 @@ impl EngineAction for Post {
         };
 
         let poster = attacking_players[post_idx];
-        let post_stats = attacking_stats.get(&poster.id)?;
         let defender = defending_players[post_idx];
-        let defender_stats = defending_stats.get(&defender.id)?;
 
         let timer_increase = 4 + rng.gen_range(0..=5);
 
         let mut attack_stats_update = HashMap::new();
         let mut post_update = GameStats::default();
-        post_update.add_tiredness(TirednessCost::HIGH, poster.athleticism.stamina);
+        post_update.extra_tiredness = TirednessCost::HIGH;
 
         let mut defense_stats_update = HashMap::new();
         let mut defender_update = GameStats::default();
-        defender_update.add_tiredness(TirednessCost::MEDIUM, defender.athleticism.stamina);
+        defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
-        let atk_result = roll(rng, post_stats.tiredness)
+        let atk_result = poster.roll(rng)
             + poster.technical.post_moves.value()
             + poster.athleticism.strength.value();
 
-        let def_result = roll(rng, defender_stats.tiredness)
+        let def_result = defender.roll(rng)
             + defender.defense.interior_defense.value()
             + defender.athleticism.strength.value();
 

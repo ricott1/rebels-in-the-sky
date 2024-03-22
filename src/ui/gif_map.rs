@@ -14,6 +14,7 @@ use crate::{
     },
 };
 use image::{imageops::resize, GenericImageView, ImageBuffer, Rgba, RgbaImage};
+use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use once_cell::sync::Lazy;
 use ratatui::text::Line;
 use std::{collections::HashMap, error::Error};
@@ -27,6 +28,8 @@ const MAX_GIF_HEIGHT: u32 = 140;
 pub const FRAMES_PER_REVOLUTION: usize = 360;
 pub static UNIVERSE_BACKGROUND: Lazy<RgbaImage> =
     Lazy::new(|| read_image("planets/background.png").unwrap());
+pub static TRAVELLING_BACKGROUND: Lazy<RgbaImage> =
+    Lazy::new(|| read_image("planets/travelling_background.png").unwrap());
 
 pub enum ImageResizeInGalaxyGif {
     ZoomOutCentral { planet_type: PlanetType },
@@ -58,6 +61,8 @@ impl ImageResizeInGalaxyGif {
 pub struct GifMap {
     players_lines: HashMap<PlayerId, (u64, GifLines)>,
     spaceship_lines: HashMap<TeamId, GifLines>,
+    travelling_spaceship_lines: HashMap<TeamId, GifLines>,
+    exploring_spaceship_lines: HashMap<TeamId, GifLines>,
     planets_zoom_in_lines: HashMap<PlanetId, GifLines>,
     planets_zoom_out_lines: HashMap<PlanetId, GifLines>,
 }
@@ -71,8 +76,19 @@ impl GifMap {
         let mut decoder = gif::DecodeOptions::new();
         // Configure the decoder such that it will expand the image to RGBA.
         decoder.set_color_output(gif::ColorOutput::RGBA);
-        let file = ASSETS_DIR.get_file(filename).unwrap().contents();
-        let mut decoder = decoder.read_info(file).unwrap();
+        let file = ASSETS_DIR
+            .get_file(filename.clone())
+            .expect(
+                format!(
+                    "GifMap: Could not find file {} in assets directory.",
+                    filename
+                )
+                .as_str(),
+            )
+            .contents();
+        let mut decoder = decoder
+            .read_info(file)
+            .expect(format!("GifMap: Could not read gif info from file {}.", filename).as_str());
         let mut gif: Gif = vec![];
         while let Some(frame) = decoder.read_next_frame().unwrap() {
             let img = ImageBuffer::from_raw(
@@ -159,7 +175,7 @@ impl GifMap {
     }
 
     fn planet_zoom_out(&mut self, planet_id: PlanetId, world: &World) -> AppResult<Gif> {
-        let planet = world.planets.get(&planet_id).unwrap();
+        let planet = world.get_planet_or_err(planet_id)?;
         let base_images = if planet.satellite_of.is_none() {
             let galaxy_gif = Self::open_gif("planets/galaxy.gif".to_string());
             let mut base_gif = vec![];
@@ -230,8 +246,7 @@ impl GifMap {
             // Blit star on base
             let x = x_origin - center_img.width() / 2;
             let y = y_origin - center_img.height() / 2;
-            base.copy_non_trasparent_from(&mut center_img, x, y)
-                .unwrap();
+            base.copy_non_trasparent_from(&mut center_img, x, y)?;
 
             //blit planet imgs on base
             for idx in 0..planet.satellites.len() {
@@ -256,8 +271,7 @@ impl GifMap {
                         &mut satellite_img,
                         x_planet.round() as u32,
                         y_planet.round() as u32,
-                    )
-                    .unwrap();
+                    )?;
                 }
             }
             // take subimage around center of base
@@ -325,7 +339,105 @@ impl GifMap {
         let team = world.get_team_or_err(team_id)?;
         let gif = team.spaceship.compose_image()?;
         let lines = Self::gif_to_lines(&gif);
-        self.planets_zoom_out_lines.insert(team_id, lines.clone());
+        self.spaceship_lines.insert(team_id, lines.clone());
+        Ok(lines[tick % lines.len()].clone())
+    }
+
+    pub fn travelling_spaceship_lines(
+        &mut self,
+        team_id: TeamId,
+        tick: usize,
+        world: &World,
+    ) -> AppResult<FrameLines> {
+        if let Some(lines) = self.travelling_spaceship_lines.get(&team_id) {
+            return Ok(lines[tick % lines.len()].clone());
+        }
+
+        let team = world.get_team_or_err(team_id)?;
+        let ship_gif = team.spaceship.compose_image()?;
+        let base = TRAVELLING_BACKGROUND.clone();
+        let mut gif: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> = vec![];
+        // 160 frames
+        let mut idx = 0;
+        loop {
+            let img = ship_gif[idx % ship_gif.len()].clone();
+            let bg_left = base.clone();
+            let bg_right = base.clone();
+            let mut base = RgbaImage::new(bg_left.width() * 2, bg_left.height());
+
+            if idx >= base.width() as usize / 2 {
+                break;
+            }
+
+            base.copy_non_trasparent_from(&bg_left, 0, 0)?;
+            base.copy_non_trasparent_from(&bg_right, base.width() / 2, 0)?;
+
+            let rotated_img = rotate_about_center(
+                &img,
+                std::f32::consts::PI / 2.0,
+                Interpolation::Nearest,
+                Rgba([255, 0, 0, 0]),
+            );
+            let y = ((base.height() - rotated_img.height()) as f32 / 2.0
+                + (std::f32::consts::PI * idx as f32 / 17.0).cos()
+                + (std::f32::consts::PI * idx as f32 / 333.0).sin()) as u32;
+            base.copy_non_trasparent_from(&rotated_img, idx as u32, y)?;
+            let view = base.view(idx as u32, 0, base.width() - idx as u32, base.height());
+            gif.push(view.to_image());
+            idx += 1;
+        }
+
+        let lines = Self::gif_to_lines(&gif);
+        self.travelling_spaceship_lines
+            .insert(team_id, lines.clone());
+        Ok(lines[tick % lines.len()].clone())
+    }
+
+    pub fn exploring_spaceship_lines(
+        &mut self,
+        team_id: TeamId,
+        tick: usize,
+        world: &World,
+    ) -> AppResult<FrameLines> {
+        if let Some(lines) = self.exploring_spaceship_lines.get(&team_id) {
+            return Ok(lines[tick % lines.len()].clone());
+        }
+
+        let team = world.get_team_or_err(team_id)?;
+        let ship_gif = team.spaceship.compose_image()?;
+        let base = TRAVELLING_BACKGROUND.clone();
+        let mut gif: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> = vec![];
+        // 160 frames
+        let mut idx = 0;
+        loop {
+            let img = ship_gif[idx % ship_gif.len()].clone();
+            let mut base = base.clone();
+            let rotated_img = rotate_about_center(
+                &img,
+                std::f32::consts::PI / 2.0,
+                Interpolation::Nearest,
+                Rgba([255, 0, 0, 0]),
+            );
+
+            if idx >= (base.width() - rotated_img.width()) as usize {
+                break;
+            }
+
+            let y = (base.height() - rotated_img.height()) / 2;
+            base.copy_non_trasparent_from(&rotated_img, idx as u32, y)?;
+            let view = base.view(
+                rotated_img.width(),
+                0,
+                base.width() - rotated_img.width(),
+                base.height(),
+            );
+            gif.push(view.to_image());
+            idx += 1;
+        }
+
+        let lines = Self::gif_to_lines(&gif);
+        self.exploring_spaceship_lines
+            .insert(team_id, lines.clone());
         Ok(lines[tick % lines.len()].clone())
     }
 }

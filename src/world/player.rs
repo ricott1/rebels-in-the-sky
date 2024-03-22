@@ -1,3 +1,5 @@
+use std::cmp::min;
+
 use super::{
     constants::{COST_PER_VALUE, EXPERIENCE_PER_SKILL_MULTIPLIER, REPUTATION_PER_EXPERIENCE},
     jersey::Jersey,
@@ -9,7 +11,7 @@ use super::{
     utils::PLAYER_DATA,
 };
 use crate::{
-    engine::types::GameStats,
+    engine::constants::MAX_TIREDNESS,
     image::{player::PlayerImage, types::Gif},
     types::{PlanetId, PlayerId, TeamId},
     world::{
@@ -24,6 +26,7 @@ use rand::{seq::SliceRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
 use serde::{de::Visitor, ser::SerializeStruct, Deserialize, Serialize};
+use strum_macros::Display;
 
 const HOOK_MAX_BALL_HANDLING: f32 = 4.0;
 const EYE_PATCH_MAX_VISION: f32 = 4.0;
@@ -36,7 +39,7 @@ pub struct Player {
     pub version: u64,
     pub info: InfoStats,
     pub team: Option<TeamId>,
-    pub jersey_number: Option<usize>,
+    pub special_trait: Option<Trait>,
     pub reputation: f32,
     pub playing_style: PlayingStyle,
     pub athleticism: Athleticism,
@@ -63,7 +66,7 @@ impl Serialize for Player {
         state.serialize_field("version", &self.version)?;
         state.serialize_field("info", &self.info)?;
         state.serialize_field("team", &self.team)?;
-        state.serialize_field("jersey_number", &self.jersey_number)?;
+        state.serialize_field("special_trait", &self.special_trait)?;
         state.serialize_field("reputation", &self.reputation)?;
         state.serialize_field("playing_style", &self.playing_style)?;
         state.serialize_field("image", &self.image)?;
@@ -87,7 +90,7 @@ impl<'de> Deserialize<'de> for Player {
             Version,
             Info,
             Team,
-            JerseyNumber,
+            SpecialTrait,
             Reputation,
             PlayingStyle,
             Image,
@@ -119,7 +122,7 @@ impl<'de> Deserialize<'de> for Player {
                             "version" => Ok(Field::Version),
                             "info" => Ok(Field::Info),
                             "team" => Ok(Field::Team),
-                            "jersey_number" => Ok(Field::JerseyNumber),
+                            "special_trait" => Ok(Field::SpecialTrait),
                             "reputation" => Ok(Field::Reputation),
                             "playing_style" => Ok(Field::PlayingStyle),
                             "image" => Ok(Field::Image),
@@ -165,7 +168,7 @@ impl<'de> Deserialize<'de> for Player {
                 let team = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(4, &self))?;
-                let jersey_number = seq
+                let special_trait = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(5, &self))?;
                 let reputation = seq
@@ -199,7 +202,7 @@ impl<'de> Deserialize<'de> for Player {
                     version,
                     info,
                     team,
-                    jersey_number,
+                    special_trait,
                     reputation,
                     playing_style,
                     athleticism: Athleticism::default(),
@@ -257,7 +260,7 @@ impl<'de> Deserialize<'de> for Player {
                 let mut version = None;
                 let mut info = None;
                 let mut team = None;
-                let mut jersey_number = None;
+                let mut special_trait = None;
                 let mut reputation = None;
                 let mut playing_style = None;
                 let mut image = None;
@@ -299,11 +302,11 @@ impl<'de> Deserialize<'de> for Player {
                             }
                             team = Some(map.next_value()?);
                         }
-                        Field::JerseyNumber => {
-                            if jersey_number.is_some() {
-                                return Err(serde::de::Error::duplicate_field("jersey_number"));
+                        Field::SpecialTrait => {
+                            if special_trait.is_some() {
+                                return Err(serde::de::Error::duplicate_field("special_trait"));
                             }
-                            jersey_number = Some(map.next_value()?);
+                            special_trait = Some(map.next_value()?);
                         }
                         Field::Reputation => {
                             if reputation.is_some() {
@@ -361,8 +364,8 @@ impl<'de> Deserialize<'de> for Player {
                 let version = version.ok_or_else(|| serde::de::Error::missing_field("version"))?;
                 let info = info.ok_or_else(|| serde::de::Error::missing_field("info"))?;
                 let team = team.ok_or_else(|| serde::de::Error::missing_field("team"))?;
-                let jersey_number = jersey_number
-                    .ok_or_else(|| serde::de::Error::missing_field("jersey_number"))?;
+                let special_trait = special_trait
+                    .ok_or_else(|| serde::de::Error::missing_field("special_trait"))?;
                 let reputation =
                     reputation.ok_or_else(|| serde::de::Error::missing_field("reputation"))?;
                 let playing_style = playing_style
@@ -385,7 +388,7 @@ impl<'de> Deserialize<'de> for Player {
                     version,
                     info,
                     team,
-                    jersey_number,
+                    special_trait,
                     reputation,
                     playing_style,
                     athleticism: Athleticism::default(),
@@ -474,15 +477,19 @@ impl Player {
     }
 
     pub fn hire_cost(&self, team_reputation: f32) -> u32 {
-        if self.reputation <= team_reputation {
+        if 2.0 * self.reputation <= team_reputation {
             return 0;
         }
 
-        COST_PER_VALUE * self.player_value() * (self.reputation - team_reputation) as u32
+        let special_trait_extra = if self.special_trait.is_some() { 2 } else { 1 };
+
+        COST_PER_VALUE
+            * special_trait_extra
+            * self.player_value()
+            * (2.0 * self.reputation - team_reputation) as u32
     }
 
     pub fn release_cost(&self) -> u32 {
-        // COST_PER_VALUE * self.player_value() / 2
         0
     }
 
@@ -498,7 +505,7 @@ impl Player {
             return Self::random(rng, id, Some(position), home_planet, base_level);
         }
 
-        let info = InfoStats::for_position(position, rng, home_planet);
+        let info = InfoStats::for_position(position, None, rng, home_planet);
         let population = info.population;
 
         if base_level > info.age as f32 / 8.0 {
@@ -519,7 +526,7 @@ impl Player {
             version: 0,
             info,
             team: None,
-            jersey_number: None,
+            special_trait: None,
             reputation: 0.0,
             playing_style: PlayingStyle::random(rng),
             athleticism,
@@ -536,25 +543,35 @@ impl Player {
             tiredness: 0.0,
         };
 
+        player.apply_info_modifiers();
+
         player
             .info
             .population
             .apply_skill_modifiers(&mut player.clone());
-
-        player.apply_info_modifiers();
 
         if athleticism.quickness < WOODEN_LEG_MAX_QUICKNESS {
             player.image.set_wooden_leg(rng);
             player.mental.charisma = (player.mental.charisma + 1.0).bound();
         }
         if mental.vision < EYE_PATCH_MAX_VISION {
-            player.image.set_eye_patch(rng, &population);
+            player.image.set_eye_patch(rng, population);
             player.mental.charisma = (player.mental.charisma + 1.0).bound();
         }
 
         if technical.ball_handling < HOOK_MAX_BALL_HANDLING {
-            player.image.set_hook(rng);
+            player.image.set_hook(rng, population);
             player.mental.charisma = (player.mental.charisma + 1.0).bound();
+        }
+
+        if athleticism.strength > 15.0 && rng.gen_range(0..10) < 2 {
+            player.special_trait = Some(Trait::Killer);
+        } else if mental.charisma > 15.0 && rng.gen_range(0..10) < 2 {
+            player.special_trait = Some(Trait::Showpirate);
+        } else if mental.vision > 15.0 && rng.gen_range(0..10) < 2 {
+            player.special_trait = Some(Trait::Merchant);
+        } else if athleticism.stamina > 15.0 && rng.gen_range(0..10) < 2 {
+            player.special_trait = Some(Trait::Relentless);
         }
 
         player.previous_skills = player.current_skill_array();
@@ -688,6 +705,30 @@ impl Player {
         self.image.hook.is_some()
     }
 
+    pub fn is_knocked_out(&self) -> bool {
+        self.tiredness == MAX_TIREDNESS
+    }
+
+    pub fn add_tiredness(&mut self, tiredness: f32) {
+        let max_tiredness = if self.special_trait == Some(Trait::Relentless) {
+            MAX_TIREDNESS - 1.0
+        } else {
+            MAX_TIREDNESS
+        };
+        self.tiredness = (self.tiredness + tiredness / (1.0 + self.athleticism.stamina / 20.0))
+            .min(max_tiredness);
+    }
+
+    pub fn roll(&self, rng: &mut ChaCha8Rng) -> u8 {
+        if self.tiredness == MAX_TIREDNESS {
+            return 0;
+        }
+        min(
+            ((MAX_TIREDNESS - self.tiredness / 2.0) / 2.0).round() as u8,
+            rng.gen_range(1..=50),
+        )
+    }
+
     fn modify_skill(&mut self, idx: usize, mut value: f32) {
         // Quickness cannot improve beyond WOODEN_LEG_MAX_QUICKNESS if player has a wooden leg
         if self.has_wooden_leg()
@@ -740,9 +781,11 @@ impl Player {
         }
     }
 
-    pub fn apply_end_of_game_logic(&mut self, stats: &GameStats) {
+    pub fn apply_end_of_game_logic(
+        &mut self,
+        experience_at_position: [u16; MAX_POSITION as usize],
+    ) {
         self.version += 1;
-        let experience_at_position = stats.experience_at_position;
         self.reputation = (self.reputation
             + REPUTATION_PER_EXPERIENCE / self.reputation
                 * experience_at_position.iter().sum::<u16>() as f32
@@ -758,7 +801,6 @@ impl Player {
             }
         }
 
-        self.tiredness = stats.tiredness;
         self.previous_skills = self.current_skill_array();
 
         for idx in 0..20 {
@@ -789,7 +831,7 @@ impl Rated for Player {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct InfoStats {
     pub first_name: String,
     pub last_name: String,
@@ -805,26 +847,29 @@ pub struct InfoStats {
 impl InfoStats {
     pub fn for_position(
         position: Option<Position>,
+        population: Option<Population>,
         rng: &mut ChaCha8Rng,
         home_planet: &Planet,
     ) -> Self {
-        let p_data = PLAYER_DATA.as_ref().unwrap();
-        let population = home_planet.random_population(rng).unwrap_or_default();
+        let population = match population {
+            Some(p) => p,
+            None => home_planet.random_population(rng).unwrap(),
+        };
+        let p_data = PLAYER_DATA.get(&population).unwrap();
         let pronouns = if population == Population::Polpett {
             Pronoun::They
         } else {
             Pronoun::random()
         };
-        let idx = population as usize;
         let first_name = match pronouns {
-            Pronoun::He => p_data.first_names_he[idx].choose(rng).unwrap().to_string(),
-            Pronoun::She => p_data.first_names_she[idx].choose(rng).unwrap().to_string(),
+            Pronoun::He => p_data.first_names_he.choose(rng).unwrap().to_string(),
+            Pronoun::She => p_data.first_names_she.choose(rng).unwrap().to_string(),
             Pronoun::They => match rng.gen_range(0..2) {
-                0 => p_data.first_names_he[idx].choose(rng).unwrap().to_string(),
-                _ => p_data.first_names_she[idx].choose(rng).unwrap().to_string(),
+                0 => p_data.first_names_he.choose(rng).unwrap().to_string(),
+                _ => p_data.first_names_she.choose(rng).unwrap().to_string(),
             },
         };
-        let last_name = p_data.last_names[idx].choose(rng).unwrap().to_string();
+        let last_name = p_data.last_names.choose(rng).unwrap().to_string();
         let age = rng.gen_range(16..=38) as f32;
         let height = match position {
             Some(x) => Normal::new(192.0 + 3.5 * x as f32, 5.0)
@@ -845,6 +890,41 @@ impl InfoStats {
             pronouns,
             height,
             weight,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Display)]
+pub enum Trait {
+    Killer,
+    Merchant,
+    Relentless,
+    Showpirate,
+    Explorator,
+}
+
+impl Trait {
+    pub fn description(&self, player: &Player) -> String {
+        match self {
+            Trait::Killer => format!(
+                "Bonus when brawling in a match based on reputation (+{}).",
+                player.reputation.value()
+            ),
+            Trait::Merchant => format!(
+                "Cheaper ship upgrades based on reputation (-{}%)",
+                player.reputation.value()
+            ),
+            Trait::Relentless => format!("Cannot get exhausted"),
+            Trait::Showpirate => {
+                format!(
+                    "Increase games attendance based on reputation (+{}%)",
+                    player.reputation.value()
+                )
+            }
+            Trait::Explorator => format!(
+                "Higher chance of finding something during exploration based on reputation (+{}%)",
+                player.reputation.value()
+            ),
         }
     }
 }

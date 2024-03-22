@@ -15,4 +15,3 @@ mod substitution;
 pub mod tactic;
 pub mod timer;
 pub mod types;
-mod utils;

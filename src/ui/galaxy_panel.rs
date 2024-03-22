@@ -5,13 +5,15 @@ use super::gif_map::{GifMap, ImageResizeInGalaxyGif};
 use super::traits::SplitPanel;
 
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::utils::hover_text_target;
 use super::{
     traits::Screen,
     widgets::{default_block, selectable_list},
 };
-use crate::types::{AppResult, SystemTimeTick};
+use crate::types::{AppResult, SystemTimeTick, SECONDS};
 use crate::ui::constants::{PrintableKeyCode, UiKey};
 use crate::world::skill::Rated;
+use crate::world::types::TeamLocation;
 use crate::{
     types::{PlanetId, PlanetMap},
     world::{constants::GALAXY_ROOT_ID, planet::Planet, utils::ellipse_coords, world::World},
@@ -183,29 +185,69 @@ impl GalaxyPanel {
         if self.zoom_level == ZoomLevel::In {
             let own_team = world.get_own_team()?;
 
-            let travel_time = world.travel_time_to_planet(own_team.id, planet.id);
-            let (can_travel, button_text) = match travel_time {
-                Ok(time) => (
-                    own_team.can_travel_to_planet(&planet, time),
-                    time.formatted(),
-                ),
-                Err(e) => (Err(e), "".to_string()),
-            };
+            match own_team.current_location {
+                x if x
+                    == TeamLocation::OnPlanet {
+                        planet_id: planet.id,
+                    } =>
+                {
+                    let can_explore = own_team.can_explore_around_planet(&planet);
+                    let explore_time = 10 * SECONDS;
+                    let mut explore_button = Button::new(
+                        format!(
+                            "{}: Explore ({})",
+                            UiKey::EXPLORE.to_string(),
+                            explore_time.formatted()
+                        ),
+                        UiCallbackPreset::ExploreAroundPlanet,
+                        Arc::clone(&self.callback_registry),
+                    );
+                    if can_explore.is_err() {
+                        explore_button.disable(Some(can_explore.unwrap_err().to_string()));
+                    }
+                    buttons.push(explore_button);
+                }
+                _ => {
+                    let travel_time = world.travel_time_to_planet(own_team.id, planet.id);
 
-            let mut travel_button = Button::new(
-                format!("{}: Travel ({})", UiKey::TRAVEL.to_string(), button_text),
-                UiCallbackPreset::TravelToPlanet {
-                    planet_id: planet.id,
-                },
-                Arc::clone(&self.callback_registry),
-            );
-            if can_travel.is_err() {
-                travel_button.disable(Some(can_travel.unwrap_err().to_string()));
+                    let (can_travel, button_text, hover_text) = match travel_time {
+                        Ok(time) => (
+                            own_team.can_travel_to_planet(&planet, time, own_team.fuel()),
+                            time.formatted(),
+                            format!(
+                                "Travel to {}: Time {}, Fuel {}",
+                                planet.name,
+                                time.formatted(),
+                                (time as f32 * own_team.spaceship.fuel_consumption()) as u32,
+                            ),
+                        ),
+                        Err(e) => {
+                            let err_string = e.to_string();
+                            (
+                                Err(e),
+                                "".to_string(),
+                                format!("Travel to {}: {}", planet.name, err_string),
+                            )
+                        }
+                    };
+                    let hover_text_target = hover_text_target(frame);
+                    let mut go_to_planet_button = Button::new(
+                        format!("{}: Travel ({})", UiKey::TRAVEL.to_string(), button_text),
+                        UiCallbackPreset::TravelToPlanet {
+                            planet_id: planet.id,
+                        },
+                        Arc::clone(&self.callback_registry),
+                    )
+                    .set_hover_text(hover_text, hover_text_target);
+
+                    if can_travel.is_err() {
+                        go_to_planet_button.disable(Some(can_travel.unwrap_err().to_string()));
+                    }
+
+                    buttons.push(go_to_planet_button);
+                }
             }
-
-            buttons.push(travel_button);
         }
-
         let mut constraints = vec![Constraint::Length(3)].repeat(buttons.len());
         constraints.push(Constraint::Length(target.teams.len() as u16 + 2));
         constraints.push(Constraint::Min(0));
@@ -222,10 +264,7 @@ impl GalaxyPanel {
             height,
         };
 
-        let split = Layout::default()
-            .direction(ratatui::layout::Direction::Vertical)
-            .constraints(constraints)
-            .split(rect);
+        let split = Layout::vertical(constraints).split(rect);
 
         frame.render_widget(Clear, rect);
 
@@ -391,6 +430,14 @@ impl Screen for GalaxyPanel {
                 .collect::<Vec<Rect>>();
 
             for idx in 0..rects.len() {
+                let planet_name = if idx == 0 {
+                    planet.name.clone()
+                } else {
+                    world
+                        .get_planet_or_err(planet.satellites[idx - 1])?
+                        .name
+                        .clone()
+                };
                 let button = RadioButton::box_on_hover(
                     "".to_string(),
                     UiCallbackPreset::ZoomInToPlanet {
@@ -400,7 +447,8 @@ impl Screen for GalaxyPanel {
                     &mut self.planet_index,
                     idx,
                 )
-                .set_box_hover_style(UiStyle::ERROR);
+                .set_box_hover_style(UiStyle::NETWORK)
+                .set_box_hover_title(planet_name);
                 let rect = rects[idx];
                 let frame_rect = frame.size();
                 if rect.x + rect.width <= frame_rect.width
@@ -413,7 +461,11 @@ impl Screen for GalaxyPanel {
         Ok(())
     }
 
-    fn handle_key_events(&mut self, key_event: KeyEvent) -> Option<UiCallbackPreset> {
+    fn handle_key_events(
+        &mut self,
+        key_event: KeyEvent,
+        _world: &World,
+    ) -> Option<UiCallbackPreset> {
         let target = self.planets.get(&self.planet_id);
         if target.is_none() {
             return None;
@@ -453,6 +505,11 @@ impl Screen for GalaxyPanel {
                 if self.zoom_level == ZoomLevel::In {
                     let planet_id = target.id;
                     return Some(UiCallbackPreset::TravelToPlanet { planet_id });
+                }
+            }
+            UiKey::EXPLORE => {
+                if self.zoom_level == ZoomLevel::In {
+                    return Some(UiCallbackPreset::ExploreAroundPlanet);
                 }
             }
             KeyCode::Enter => {

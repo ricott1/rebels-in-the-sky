@@ -3,7 +3,6 @@ use super::{
     constants::{TirednessCost, ADV_ATTACK_LIMIT, ADV_DEFENSE_LIMIT},
     game::Game,
     types::{GameStats, GameStatsMap},
-    utils::roll,
 };
 use crate::world::skill::GameSkill;
 use rand::Rng;
@@ -17,8 +16,6 @@ impl EngineAction for OffTheScreen {
     fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
-        let attacking_stats = game.attacking_stats();
-        let defending_stats = game.defending_stats();
 
         let play_idx = match input.attackers.len() {
             0 => Self::sample(rng, [6, 1, 2, 0, 0])?,
@@ -36,29 +33,26 @@ impl EngineAction for OffTheScreen {
 
         let playmaker = attacking_players[play_idx];
         let playmaker_defender = defending_players[play_idx];
-        let play_stats = attacking_stats.get(&playmaker.id)?;
-        let defender_stats = defending_stats.get(&playmaker_defender.id)?;
 
         let target = attacking_players[target_idx];
         let target_defender = defending_players[target_idx];
 
         let mut attack_stats_update: GameStatsMap = HashMap::new();
         let mut playmaker_update = GameStats::default();
-        playmaker_update.add_tiredness(TirednessCost::MEDIUM, playmaker.athleticism.stamina);
+        playmaker_update.extra_tiredness = TirednessCost::MEDIUM;
 
         let mut defense_stats_update: GameStatsMap = HashMap::new();
         let mut target_defender_update = GameStats::default();
-        target_defender_update
-            .add_tiredness(TirednessCost::MEDIUM, target_defender.athleticism.stamina);
+        target_defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
         let timer_increase = 3 + rng.gen_range(0..=1);
 
-        let atk_result = roll(rng, play_stats.tiredness)
+        let atk_result = playmaker.roll(rng)
             + playmaker.mental.vision.value()
             + playmaker.technical.passing.value()
             + target.mental.off_ball_movement.value();
 
-        let def_result = roll(rng, defender_stats.tiredness)
+        let def_result = playmaker_defender.roll(rng)
             + target_defender.defense.perimeter_defense.value()
             + target_defender.athleticism.quickness.value();
 

@@ -3,6 +3,7 @@ pub mod jersey;
 pub mod planet;
 pub mod player;
 pub mod position;
+pub mod resources;
 pub mod role;
 pub mod skill;
 pub mod spaceship;

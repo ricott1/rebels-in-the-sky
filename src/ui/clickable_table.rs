@@ -2,7 +2,7 @@ use std::{sync::Arc, sync::Mutex};
 
 use ratatui::{
     buffer::Buffer,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Style, Styled},
     text::Text,
     widgets::{Block, HighlightSpacing, StatefulWidget, Widget},
@@ -328,9 +328,7 @@ impl<'a> ClickableTable<'a> {
         if !self.widths.is_empty() {
             constraints.pop();
         }
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(constraints)
+        let chunks = Layout::horizontal(constraints)
             // .segment_size(SegmentSize::None)
             .split(Rect {
                 x: 0,
@@ -494,6 +492,21 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
         if self.rows.is_empty() {
             return;
         }
+
+        if self.callback_registry.lock().unwrap().is_hovering(area) {
+            self.callback_registry.lock().unwrap().register_callback(
+                crossterm::event::MouseEventKind::ScrollDown,
+                None,
+                UiCallbackPreset::NextPanelIndex,
+            );
+
+            self.callback_registry.lock().unwrap().register_callback(
+                crossterm::event::MouseEventKind::ScrollUp,
+                None,
+                UiCallbackPreset::PreviousPanelIndex,
+            );
+        }
+
         let (start, end) = self.get_row_bounds(state.selected, state.offset, rows_height);
         state.offset = start;
         let mut selected_element: Option<(Rect, usize)> = None;
@@ -558,18 +571,6 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
                 UiCallbackPreset::SetPanelIndex { index },
             );
         }
-
-        self.callback_registry.lock().unwrap().register_callback(
-            crossterm::event::MouseEventKind::ScrollDown,
-            None,
-            UiCallbackPreset::NextPanelIndex,
-        );
-
-        self.callback_registry.lock().unwrap().register_callback(
-            crossterm::event::MouseEventKind::ScrollUp,
-            None,
-            UiCallbackPreset::PreviousPanelIndex,
-        );
     }
 }
 

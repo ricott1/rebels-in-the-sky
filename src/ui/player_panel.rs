@@ -4,6 +4,7 @@ use super::constants::*;
 use super::gif_map::GifMap;
 
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::utils::hover_text_target;
 use super::{
     constants::{PrintableKeyCode, UiKey, IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
     traits::{Screen, SplitPanel},
@@ -21,7 +22,7 @@ use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use ratatui::layout::Margin;
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Layout},
     prelude::Rect,
     style::{Color, Style},
     text::Span,
@@ -97,15 +98,13 @@ impl PlayerListPanel {
     }
 
     fn build_left_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
-        let split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Min(1),
-            ])
-            .split(area);
+        let split = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(1),
+        ])
+        .split(area);
 
         let mut filter_all_button = Button::new(
             format!("Filter: {}", PlayerFilter::All.to_string()),
@@ -173,33 +172,34 @@ impl PlayerListPanel {
     }
 
     fn build_right_panel(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
-        let v_split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(24), Constraint::Min(1)])
-            .split(area);
+        let v_split = Layout::vertical([Constraint::Length(24), Constraint::Min(1)]).split(area);
 
-        let h_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(60),
-                Constraint::Length(60),
-                Constraint::Min(1),
-            ])
-            .split(v_split[0]);
+        let h_split = Layout::horizontal([
+            Constraint::Length(60),
+            Constraint::Length(60),
+            Constraint::Min(1),
+        ])
+        .split(v_split[0]);
 
-        let button_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(60),
-                Constraint::Length(60),
-                Constraint::Min(1),
-            ])
-            .split(v_split[1]);
+        let button_split = Layout::horizontal([
+            Constraint::Length(60),
+            Constraint::Length(60),
+            Constraint::Min(1),
+        ])
+        .split(v_split[1]);
 
         if let Some(player) = world.get_player(self.selected_player_id) {
             // NOTE: here it is okay if the search fails. This is a hack to handle
             //       the FA refresh that could happen while the player panel is locked.
-            render_player_description(player, &self.gif_map, self.tick, frame, world, h_split[0]);
+            render_player_description(
+                player,
+                &self.gif_map,
+                &self.callback_registry,
+                self.tick,
+                frame,
+                world,
+                h_split[0],
+            );
             self.render_buttons(
                 player,
                 frame,
@@ -218,6 +218,7 @@ impl PlayerListPanel {
                 render_player_description(
                     locked_player,
                     &self.gif_map,
+                    &self.callback_registry,
                     self.tick,
                     frame,
                     world,
@@ -247,23 +248,27 @@ impl PlayerListPanel {
     ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
 
-        let buttons_split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3), //location
-                Constraint::Length(3), //hire/release button
-                Constraint::Length(3), //refresh info for FA
-                Constraint::Min(1),
-            ])
-            .split(area);
+        let buttons_split = Layout::vertical([
+            Constraint::Length(3), //location
+            Constraint::Length(3), //hire/release button
+            Constraint::Length(3), //refresh info for FA
+            Constraint::Min(1),
+        ])
+        .split(area);
+
+        let hover_text_target = hover_text_target(frame);
 
         match player.current_location {
             PlayerLocation::OnPlanet { planet_id } => {
-                let planet = world.get_planet_or_err(planet_id).unwrap();
+                let planet = world.get_planet_or_err(planet_id)?;
                 let button = Button::new(
                     format!("{}: FA on {}", UiKey::GO_TO_PLANET.to_string(), planet.name),
                     UiCallbackPreset::GoToPlanetZoomIn { planet_id },
                     Arc::clone(&self.callback_registry),
+                )
+                .set_hover_text(
+                    format!("Go to {}, the free agent's current location", planet.name),
+                    hover_text_target,
                 );
                 frame.render_widget(button, buttons_split[0]);
             }
@@ -271,16 +276,16 @@ impl PlayerListPanel {
                 let team = world.get_team_or_err(player.team.unwrap())?;
                 let button = Button::new(
                     format!(
-                        "{}: #{} Team {}",
+                        "{}: Team {}",
                         UiKey::GO_TO_TEAM_ALTERNATIVE.to_string(),
-                        player.jersey_number.unwrap(),
                         team.name
                     ),
                     UiCallbackPreset::GoToPlayerTeam {
                         player_id: player.id,
                     },
                     Arc::clone(&self.callback_registry),
-                );
+                )
+                .set_hover_text(format!("Go to team {}", team.name), hover_text_target);
                 frame.render_widget(button, buttons_split[0]);
             }
         }
@@ -296,6 +301,14 @@ impl PlayerListPanel {
                 player_id: self.selected_player_id,
             },
             Arc::clone(&self.callback_registry),
+        )
+        .set_hover_text(
+            if self.locked_player_id.is_some() && self.locked_player_id.unwrap() == player.id {
+                format!("Lock the player panel to keep the info while browsing")
+            } else {
+                format!("Unlock the player panel to allow browsing other players")
+            },
+            hover_text_target,
         );
         frame.render_widget(lock_button, buttons_split[1]);
 
@@ -315,6 +328,10 @@ impl PlayerListPanel {
                     player_id: player.id,
                 },
                 Arc::clone(&self.callback_registry),
+            )
+            .set_hover_text(
+                format!("Hire the free agent for {} {}", hire_cost, CURRENCY_SYMBOL),
+                hover_text_target,
             );
             if can_hire.is_err() {
                 button.disable(Some(format!(
@@ -336,6 +353,10 @@ impl PlayerListPanel {
                     player_id: player.id,
                 },
                 Arc::clone(&self.callback_registry),
+            )
+            .set_hover_text(
+                format!("Release the player from the team"),
+                hover_text_target,
             );
             if can_release.is_err() {
                 button.disable(Some(format!(
@@ -430,13 +451,11 @@ impl Screen for PlayerListPanel {
         );
 
         // Split into left and right panels
-        let left_right_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(LEFT_PANEL_WIDTH),
-                Constraint::Min(IMG_FRAME_WIDTH),
-            ])
-            .split(area);
+        let left_right_split = Layout::horizontal([
+            Constraint::Length(LEFT_PANEL_WIDTH),
+            Constraint::Min(IMG_FRAME_WIDTH),
+        ])
+        .split(area);
         self.build_left_panel(frame, world, left_right_split[0]);
         self.build_right_panel(frame, world, left_right_split[1])?;
         Ok(())
@@ -445,6 +464,7 @@ impl Screen for PlayerListPanel {
     fn handle_key_events(
         &mut self,
         key_event: crossterm::event::KeyEvent,
+        _world: &World,
     ) -> Option<UiCallbackPreset> {
         match key_event.code {
             KeyCode::Up => self.next_index(),

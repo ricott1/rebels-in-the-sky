@@ -5,13 +5,18 @@ use super::{
     gif_map::GifMap,
     traits::{Screen, SplitPanel, StyledRating},
     ui_callback::{CallbackRegistry, UiCallbackPreset},
-    widgets::{default_block, render_player_description, render_spaceship_description},
+    utils::hover_text_target,
+    widgets::{
+        default_block, explore_button, go_to_team_planet_button, render_player_description,
+        render_spaceship_description, trade_button,
+    },
 };
 use crate::{
     image::spaceship::SPACESHIP_IMAGE_HEIGHT,
-    types::{SystemTimeTick, TeamId},
+    types::{PlanetId, TeamId},
     world::{
         constants::{BASE_BONUS, BONUS_PER_SKILL},
+        resources::Resource,
         role::CrewRole,
         skill::GameSkill,
     },
@@ -29,7 +34,7 @@ use crate::{
 use core::fmt::Debug;
 use ratatui::{
     layout::Margin,
-    prelude::{Constraint, Direction, Layout, Rect},
+    prelude::{Constraint, Layout, Rect},
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
@@ -41,6 +46,7 @@ pub struct MyTeamPanel {
     pub index: usize,
     players: Vec<PlayerId>,
     own_team_id: TeamId,
+    current_planet_id: Option<PlanetId>,
     tick: usize,
     callback_registry: Arc<Mutex<CallbackRegistry>>,
     gif_map: Arc<Mutex<GifMap>>,
@@ -168,6 +174,11 @@ impl Screen for MyTeamPanel {
         self.tick += 1;
         self.own_team_id = world.own_team_id;
 
+        self.current_planet_id = match world.get_own_team()?.current_location {
+            TeamLocation::OnPlanet { planet_id } => Some(planet_id),
+            _ => None,
+        };
+
         if self.players.len() < world.players.len() || world.dirty_ui {
             let own_team = world.get_own_team().unwrap();
             self.players = own_team.player_ids.clone();
@@ -187,15 +198,10 @@ impl Screen for MyTeamPanel {
     fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let team = world.get_own_team()?;
 
-        let split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(24), Constraint::Min(8)])
-            .split(area);
+        let split = Layout::vertical([Constraint::Length(24), Constraint::Min(8)]).split(area);
 
-        let top_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(10), Constraint::Length(60)])
-            .split(split[0]);
+        let top_split =
+            Layout::horizontal([Constraint::Min(10), Constraint::Length(60)]).split(split[0]);
 
         self.build_players_table(frame, world, top_split[0])?;
 
@@ -204,35 +210,39 @@ impl Screen for MyTeamPanel {
             .get_player(player_id)
             .ok_or(format!("Player {:?} not found", player_id).to_string())?;
 
-        render_player_description(player, &self.gif_map, self.tick, frame, world, top_split[1]);
+        render_player_description(
+            player,
+            &self.gif_map,
+            &self.callback_registry,
+            self.tick,
+            frame,
+            world,
+            top_split[1],
+        );
 
-        let table_bottom = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(10),
-                Constraint::Length(3), //role buttons
-                Constraint::Length(3), //buttons
-                Constraint::Length(1), //margin box
-            ])
-            .split(split[0]);
+        let table_bottom = Layout::vertical([
+            Constraint::Min(10),
+            Constraint::Length(3), //role buttons
+            Constraint::Length(3), //buttons
+            Constraint::Length(1), //margin box
+        ])
+        .split(split[0]);
 
-        let position_button_splits = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(6),
-                Constraint::Length(6),
-                Constraint::Length(6),
-                Constraint::Length(6),
-                Constraint::Length(6),
-                Constraint::Length(3),  //margin
-                Constraint::Length(32), //auto-assign
-                Constraint::Length(32), //tactic
-                Constraint::Min(0),
-            ])
-            .split(table_bottom[1].inner(&Margin {
-                vertical: 0,
-                horizontal: 1,
-            }));
+        let position_button_splits = Layout::horizontal([
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(3),  //margin
+            Constraint::Length(32), //auto-assign
+            Constraint::Length(32), //tactic
+            Constraint::Min(0),
+        ])
+        .split(table_bottom[1].inner(&Margin {
+            vertical: 0,
+            horizontal: 1,
+        }));
 
         for idx in 0..MAX_POSITION as usize {
             let position = idx as Position;
@@ -252,9 +262,6 @@ impl Screen for MyTeamPanel {
             let position = team.player_ids.iter().position(|id| *id == player.id);
             if position.is_some() && position.unwrap() == idx {
                 button.disable(None);
-                button = button
-                    .set_box_style(UiStyle::OK)
-                    .set_hover_style(UiStyle::OK);
             }
             frame.render_widget(button, rect);
         }
@@ -274,20 +281,18 @@ impl Screen for MyTeamPanel {
         );
         frame.render_widget(offense_tactic_button, position_button_splits[7]);
 
-        let button_splits = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(11),
-                Constraint::Length(11),
-                Constraint::Length(11),
-                Constraint::Length(32),
-                Constraint::Length(32),
-                Constraint::Min(1),
-            ])
-            .split(table_bottom[2].inner(&Margin {
-                vertical: 0,
-                horizontal: 1,
-            }));
+        let button_splits = Layout::horizontal([
+            Constraint::Length(11),
+            Constraint::Length(11),
+            Constraint::Length(11),
+            Constraint::Length(32),
+            Constraint::Length(32),
+            Constraint::Min(1),
+        ])
+        .split(table_bottom[2].inner(&Margin {
+            vertical: 0,
+            horizontal: 1,
+        }));
 
         let can_set_as_captain = team.can_set_crew_role(&player, CrewRole::Captain);
         let mut captain_button = Button::new(
@@ -367,14 +372,12 @@ impl Screen for MyTeamPanel {
         }
         frame.render_widget(training_button, button_splits[4]);
 
-        let bottom_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(SPACESHIP_IMAGE_WIDTH as u16 + 2 + 30),
-                Constraint::Length(48),
-                Constraint::Min(0),
-            ])
-            .split(split[1]);
+        let bottom_split = Layout::horizontal([
+            Constraint::Length(SPACESHIP_IMAGE_WIDTH as u16 + 2 + 28),
+            Constraint::Length(44),
+            Constraint::Min(0),
+        ])
+        .split(split[1]);
 
         render_spaceship_description(
             &team,
@@ -385,53 +388,68 @@ impl Screen for MyTeamPanel {
             bottom_split[0],
         );
 
-        let travel_button_split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(SPACESHIP_IMAGE_HEIGHT as u16 / 2 + 2),
-                Constraint::Length(3),
-                Constraint::Min(0),
-            ])
-            .split(bottom_split[0]);
+        let right_split = Layout::vertical([
+            Constraint::Length(SPACESHIP_IMAGE_HEIGHT as u16 / 2 + 2),
+            Constraint::Length(3),
+            Constraint::Min(0),
+        ])
+        .split(bottom_split[0]);
+        let hover_text_target = hover_text_target(frame);
+        match team.current_location {
+            TeamLocation::OnPlanet { .. } => {
+                let button_split =
+                    Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(
+                        right_split[1].inner(&Margin {
+                            vertical: 0,
+                            horizontal: 1,
+                        }),
+                    );
 
-        let travel_button = match team.current_location {
-            TeamLocation::OnPlanet { planet_id } => Button::new(
-                format!(
-                    "{}: On planet {}",
-                    UiKey::GO_TO_PLANET.to_string(),
-                    world.get_planet_or_err(planet_id)?.name
-                ),
-                UiCallbackPreset::GoToCurrentTeamPlanet { team_id: team.id },
-                Arc::clone(&self.callback_registry),
-            ),
-            TeamLocation::Travelling {
-                from: _from,
-                to,
-                started,
-                duration,
-            } => {
-                let to = world.get_planet_or_err(to)?.name.to_string();
-                let text = if started + duration > world.last_tick_short_interval {
-                    (started + duration - world.last_tick_short_interval).formatted()
-                } else {
-                    "landing".into()
-                };
-                let mut button = Button::new(
-                    format!("Travelling to {} {}", to, text,),
-                    UiCallbackPreset::None,
-                    Arc::clone(&self.callback_registry),
-                );
-                button.disable(None);
-                button
+                if let Ok(go_to_team_planet_button) = go_to_team_planet_button(
+                    world,
+                    team,
+                    &self.callback_registry,
+                    hover_text_target,
+                ) {
+                    frame.render_widget(go_to_team_planet_button, button_split[0]);
+                }
+
+                if let Ok(explore_button) =
+                    explore_button(world, team, &self.callback_registry, hover_text_target)
+                {
+                    frame.render_widget(explore_button, button_split[1]);
+                }
             }
-        };
-        frame.render_widget(
-            travel_button,
-            travel_button_split[1].inner(&Margin {
-                vertical: 0,
-                horizontal: 1,
-            }),
-        );
+            TeamLocation::Travelling { .. } => {
+                if let Ok(go_to_team_planet_button) = go_to_team_planet_button(
+                    world,
+                    team,
+                    &self.callback_registry,
+                    hover_text_target,
+                ) {
+                    frame.render_widget(
+                        go_to_team_planet_button,
+                        right_split[1].inner(&Margin {
+                            vertical: 0,
+                            horizontal: 1,
+                        }),
+                    );
+                }
+            }
+            TeamLocation::Exploring { .. } => {
+                if let Ok(explore_button) =
+                    explore_button(world, team, &self.callback_registry, hover_text_target)
+                {
+                    frame.render_widget(
+                        explore_button,
+                        right_split[1].inner(&Margin {
+                            vertical: 0,
+                            horizontal: 1,
+                        }),
+                    );
+                }
+            }
+        }
 
         let mut lines = vec![];
         if team.current_game.is_some() {
@@ -460,10 +478,153 @@ impl Screen for MyTeamPanel {
             bottom_split[1],
         );
 
-        frame.render_widget(
-            default_block().title("Future stuff".to_string()),
-            bottom_split[2],
-        );
+        match team.current_location {
+            TeamLocation::OnPlanet { planet_id } => {
+                let planet = world.get_planet_or_err(planet_id)?;
+                frame.render_widget(
+                    default_block().title(format!("Planet {}", planet.name)),
+                    bottom_split[2],
+                );
+
+                let button_split = Layout::vertical([
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                ])
+                .split(bottom_split[2].inner(&Margin {
+                    horizontal: 1,
+                    vertical: 1,
+                }));
+
+                let buy_ui_keys = [
+                    UiKey::BUY_FOOD,
+                    UiKey::BUY_GOLD,
+                    UiKey::BUY_FUEL,
+                    UiKey::BUY_RUM,
+                ];
+                let sell_ui_keys = [
+                    UiKey::SELL_FOOD,
+                    UiKey::SELL_GOLD,
+                    UiKey::SELL_FUEL,
+                    UiKey::SELL_RUM,
+                ];
+
+                for (button_split_idx, resource) in [
+                    Resource::FOOD,
+                    Resource::GOLD,
+                    Resource::FUEL,
+                    Resource::RUM,
+                ]
+                .iter()
+                .enumerate()
+                {
+                    let resource_split = Layout::horizontal([
+                        Constraint::Length(10), // name
+                        Constraint::Max(6),     // buy 1
+                        Constraint::Max(6),     // buy 10
+                        Constraint::Max(6),     // buy 100
+                        Constraint::Max(6),     // sell 1
+                        Constraint::Max(6),     // sell 10
+                        Constraint::Max(6),     // sell 100
+                        Constraint::Min(0),     // shortcut
+                    ])
+                    .split(button_split[button_split_idx]);
+
+                    let buy_unit_cost = planet.resource_buy_price(*resource);
+                    let sell_unit_cost = planet.resource_sell_price(*resource);
+                    frame.render_widget(
+                        Paragraph::new(format!(
+                            "{} {}/{}",
+                            resource,
+                            buy_ui_keys[button_split_idx].to_string(),
+                            sell_ui_keys[button_split_idx].to_string(),
+                        )),
+                        resource_split[0].inner(&Margin {
+                            horizontal: 1,
+                            vertical: 1,
+                        }),
+                    );
+                    frame.render_widget(
+                        Paragraph::new(Line::from(vec![
+                            Span::styled(format!("{}", buy_unit_cost), UiStyle::OK),
+                            Span::raw(format!("/")),
+                            Span::styled(format!("{}", sell_unit_cost), UiStyle::ERROR),
+                        ])),
+                        resource_split[7].inner(&Margin {
+                            horizontal: 1,
+                            vertical: 1,
+                        }),
+                    );
+                    for (idx, amount) in [1, 10, 100].iter().enumerate() {
+                        if let Ok(btn) = trade_button(
+                            &world,
+                            resource.clone(),
+                            amount.clone(),
+                            buy_unit_cost,
+                            &self.callback_registry,
+                            hover_text_target,
+                        ) {
+                            frame.render_widget(btn, resource_split[idx + 1]);
+                        }
+                        if let Ok(btn) = trade_button(
+                            &world,
+                            resource.clone(),
+                            -amount.clone(),
+                            buy_unit_cost,
+                            &self.callback_registry,
+                            hover_text_target,
+                        ) {
+                            frame.render_widget(btn, resource_split[idx + 4]);
+                        }
+                    }
+                }
+            }
+            TeamLocation::Travelling { to, .. } => {
+                if let Ok(lines) = self
+                    .gif_map
+                    .lock()
+                    .unwrap()
+                    .travelling_spaceship_lines(team.id, self.tick, world)
+                {
+                    let paragraph = Paragraph::new(lines);
+                    frame.render_widget(
+                        paragraph.centered(),
+                        bottom_split[2].inner(&Margin {
+                            horizontal: 1,
+                            vertical: 1,
+                        }),
+                    );
+                }
+                let planet = world.get_planet_or_err(to)?;
+                frame.render_widget(
+                    default_block().title(format!("Travelling to {}", planet.name)),
+                    bottom_split[2],
+                );
+            }
+            TeamLocation::Exploring { around, .. } => {
+                if let Ok(lines) = self
+                    .gif_map
+                    .lock()
+                    .unwrap()
+                    .exploring_spaceship_lines(team.id, self.tick, world)
+                {
+                    let paragraph = Paragraph::new(lines);
+                    frame.render_widget(
+                        paragraph.centered(),
+                        bottom_split[2].inner(&Margin {
+                            horizontal: 1,
+                            vertical: 1,
+                        }),
+                    );
+                }
+                let planet = world.get_planet_or_err(around)?;
+                frame.render_widget(
+                    default_block().title(format!("Exploring around {}", planet.name)),
+                    bottom_split[2],
+                );
+            }
+        }
 
         Ok(())
     }
@@ -471,6 +632,7 @@ impl Screen for MyTeamPanel {
     fn handle_key_events(
         &mut self,
         key_event: crossterm::event::KeyEvent,
+        world: &World,
     ) -> Option<UiCallbackPreset> {
         if self.players.is_empty() {
             return None;
@@ -521,6 +683,100 @@ impl Screen for MyTeamPanel {
                 return Some(UiCallbackPreset::GoToCurrentTeamPlanet {
                     team_id: self.own_team_id,
                 });
+            }
+
+            UiKey::EXPLORE => {
+                return Some(UiCallbackPreset::ExploreAroundPlanet);
+            }
+
+            UiKey::BUY_FOOD => {
+                if let Some(planet_id) = self.current_planet_id {
+                    if let Ok(buy_price) = world
+                        .get_planet_or_err(planet_id)
+                        .map(|p| p.resource_buy_price(Resource::FOOD))
+                    {
+                        return Some(UiCallbackPreset::TradeResource {
+                            resource: Resource::FOOD,
+                            amount: 1,
+                            unit_cost: buy_price,
+                        });
+                    }
+                }
+            }
+
+            UiKey::BUY_GOLD => {
+                if let Some(planet_id) = self.current_planet_id {
+                    if let Ok(buy_price) = world
+                        .get_planet_or_err(planet_id)
+                        .map(|p| p.resource_buy_price(Resource::GOLD))
+                    {
+                        return Some(UiCallbackPreset::TradeResource {
+                            resource: Resource::FOOD,
+                            amount: 1,
+                            unit_cost: buy_price,
+                        });
+                    }
+                }
+            }
+
+            UiKey::BUY_FUEL => {
+                if let Some(planet_id) = self.current_planet_id {
+                    if let Ok(buy_price) = world
+                        .get_planet_or_err(planet_id)
+                        .map(|p| p.resource_buy_price(Resource::FUEL))
+                    {
+                        return Some(UiCallbackPreset::TradeResource {
+                            resource: Resource::FUEL,
+                            amount: 1,
+                            unit_cost: buy_price,
+                        });
+                    }
+                }
+            }
+
+            UiKey::SELL_FOOD => {
+                if let Some(planet_id) = self.current_planet_id {
+                    if let Ok(sell_price) = world
+                        .get_planet_or_err(planet_id)
+                        .map(|p| p.resource_sell_price(Resource::FOOD))
+                    {
+                        return Some(UiCallbackPreset::TradeResource {
+                            resource: Resource::FOOD,
+                            amount: -1,
+                            unit_cost: sell_price,
+                        });
+                    }
+                }
+            }
+
+            UiKey::SELL_GOLD => {
+                if let Some(planet_id) = self.current_planet_id {
+                    if let Ok(sell_price) = world
+                        .get_planet_or_err(planet_id)
+                        .map(|p| p.resource_sell_price(Resource::GOLD))
+                    {
+                        return Some(UiCallbackPreset::TradeResource {
+                            resource: Resource::GOLD,
+                            amount: -1,
+                            unit_cost: sell_price,
+                        });
+                    }
+                }
+            }
+
+            UiKey::SELL_FUEL => {
+                if let Some(planet_id) = self.current_planet_id {
+                    if let Ok(sell_price) = world
+                        .get_planet_or_err(planet_id)
+                        .map(|p| p.resource_sell_price(Resource::FUEL))
+                    {
+                        return Some(UiCallbackPreset::TradeResource {
+                            resource: Resource::FUEL,
+                            amount: -1,
+                            unit_cost: sell_price,
+                        });
+                    }
+                }
             }
 
             crossterm::event::KeyCode::Char('1') => {

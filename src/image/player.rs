@@ -1,4 +1,4 @@
-use super::color_map::{ColorMap, HairColorMap, SkinColorMap};
+use super::color_map::{ColorMap, HairColorMap};
 use super::components::*;
 use super::types::Gif;
 use super::utils::{read_image, ExtraImageUtils};
@@ -31,8 +31,8 @@ pub struct PlayerImage {
     pub wooden_leg: Option<WoodenLegImage>,
     pub eye_patch: Option<EyePatchImage>,
     pub hook: Option<HookImage>,
-    skin_color_map: SkinColorMap,
-    hair_color_map: HairColorMap,
+    skin_color_map: ColorMap,
+    hair_color_map: ColorMap,
     jersey_color_map: Option<ColorMap>,
     pub blinking_bitmap: u16,
 }
@@ -40,30 +40,33 @@ pub struct PlayerImage {
 impl PlayerImage {
     pub fn from_info(info: &InfoStats, rng: &mut ChaCha8Rng) -> Self {
         let body = match info.population {
-            Population::Polpett => BodyImage::Devil,
+            Population::Polpett => BodyImage::Polpett,
+            Population::Pupparoll => BodyImage::Pupparoll,
+            Population::Yardalaim => BodyImage::Yardalaim,
             _ => BodyImage::Normal,
         };
 
         let legs = match info.population {
-            Population::Polpett => LegsImage::Devil,
+            Population::Polpett => LegsImage::Polpett,
+            Population::Pupparoll => LegsImage::Pupparoll,
             _ => LegsImage::Normal,
         };
 
         let head = match rng.gen_range(0..=1) {
             0 => match info.population {
-                Population::Polpett => HeadImage::Devil1,
+                Population::Polpett => HeadImage::Polpett1,
                 Population::Galdari => HeadImage::Gald1,
-                Population::Yardalaim => HeadImage::Orc1,
-                Population::Juppa => HeadImage::Elf1,
-                Population::Pupparoll => HeadImage::Pupparoll,
+                Population::Yardalaim => HeadImage::Yardalaim1,
+                Population::Juppa => HeadImage::Juppa1,
+                Population::Pupparoll => HeadImage::Pupparoll1,
                 _ => HeadImage::Human1,
             },
             _ => match info.population {
-                Population::Polpett => HeadImage::Devil2,
+                Population::Polpett => HeadImage::Polpett2,
                 Population::Galdari => HeadImage::Gald2,
-                Population::Yardalaim => HeadImage::Orc2,
-                Population::Juppa => HeadImage::Elf2,
-                Population::Pupparoll => HeadImage::Pupparoll,
+                Population::Yardalaim => HeadImage::Yardalaim2,
+                Population::Juppa => HeadImage::Juppa2,
+                Population::Pupparoll => HeadImage::Pupparoll2,
                 _ => HeadImage::Human2,
             },
         };
@@ -75,9 +78,8 @@ impl PlayerImage {
                 _ => None,
             }
         } else if info.population == Population::Pupparoll {
-            match rng.gen_range(0..=4) {
-                0 => Some(HairImage::Hair5),
-                1 => Some(HairImage::Hair8),
+            match rng.gen_range(0..=1) {
+                0 => Some(HairImage::Hair8),
                 _ => None,
             }
         } else {
@@ -112,10 +114,19 @@ impl PlayerImage {
             6 => HairColorMap::White,
             7 => HairColorMap::Brizzolato,
             _ => HairColorMap::Blue,
-        };
+        }
+        .color_map();
 
-        let beard = if info.pronouns == Pronoun::She {
+        let beard = if info.pronouns == Pronoun::She || info.population == Population::Pupparoll {
             None
+        } else if info.population == Population::Galdari {
+            match rng.gen_range(1..=4) {
+                0 => Some(BeardImage::Beard1),
+                1 => Some(BeardImage::Beard3),
+                2 => Some(BeardImage::Beard4),
+                3 => Some(BeardImage::Beard5),
+                _ => None,
+            }
         } else {
             match rng.gen_range(1..=6) {
                 0 => Some(BeardImage::Beard1),
@@ -144,7 +155,7 @@ impl PlayerImage {
             wooden_leg: None,
             eye_patch: None,
             hook: None,
-            skin_color_map: info.population.random_skin_map(rng),
+            skin_color_map: info.population.random_skin_map(rng).color_map(),
             hair_color_map,
             jersey_color_map: None,
             blinking_bitmap,
@@ -161,6 +172,7 @@ impl PlayerImage {
         }
         let mut rng = ChaCha8Rng::seed_from_u64(u64::from_le_bytes(seed));
         let r = rng.gen_range(0..=1);
+
         self.shirt = match jersey.style {
             JerseyStyle::Classic => Some(ShirtImage::Classic),
             JerseyStyle::Fancy => Some(ShirtImage::Fancy),
@@ -175,25 +187,28 @@ impl PlayerImage {
             }
         };
 
-        self.shorts = match jersey.style {
-            JerseyStyle::Classic => Some(ShortsImage::Classic),
-            JerseyStyle::Fancy => Some(ShortsImage::Fancy),
-            JerseyStyle::Gilet => Some(ShortsImage::Gilet),
-            JerseyStyle::Stripe => Some(ShortsImage::Stripe),
-            JerseyStyle::Pirate => {
-                if r == 0 {
-                    Some(ShortsImage::PirateAlt)
-                } else {
-                    Some(ShortsImage::Pirate)
+        self.shorts = if info.population == Population::Pupparoll {
+            Some(ShortsImage::Pupparoll)
+        } else {
+            match jersey.style {
+                JerseyStyle::Classic => Some(ShortsImage::Classic),
+                JerseyStyle::Fancy => Some(ShortsImage::Fancy),
+                JerseyStyle::Gilet => Some(ShortsImage::Gilet),
+                JerseyStyle::Stripe => Some(ShortsImage::Stripe),
+                JerseyStyle::Pirate => {
+                    if r == 0 {
+                        Some(ShortsImage::PirateAlt)
+                    } else {
+                        Some(ShortsImage::Pirate)
+                    }
                 }
             }
         };
 
-        if info.population != Population::Polpett {
+        if info.population != Population::Polpett && info.population != Population::Pupparoll {
             self.shoes = Some(ShoesImage::Classic);
         }
 
-        // if jersey.style == JerseyStyle::Pirate {
         if info.crew_role == CrewRole::Captain {
             if r == 0 {
                 self.set_hat(Some(HatImage::Classic));
@@ -212,6 +227,9 @@ impl PlayerImage {
                 }
                 Population::Galdari => {
                     self.set_hat(Some(HatImage::MaskGaldari));
+                }
+                Population::Pupparoll => {
+                    self.set_hat(Some(HatImage::MaskPupparoll));
                 }
                 _ => {
                     self.set_hat(Some(HatImage::Mask));
@@ -242,7 +260,7 @@ impl PlayerImage {
         };
     }
 
-    pub fn set_eye_patch(&mut self, rng: &mut ChaCha8Rng, population: &Population) {
+    pub fn set_eye_patch(&mut self, rng: &mut ChaCha8Rng, population: Population) {
         self.eye_patch = match population {
             Population::Galdari => match rng.gen_range(0..=2) {
                 0 => Some(EyePatchImage::LeftLow),
@@ -253,6 +271,7 @@ impl PlayerImage {
                 0 => Some(EyePatchImage::LeftLow),
                 _ => Some(EyePatchImage::RightLow),
             },
+            Population::Pupparoll => Some(EyePatchImage::Pupparoll),
             _ => match rng.gen_range(0..=1) {
                 0 => Some(EyePatchImage::LeftLow),
                 _ => Some(EyePatchImage::RightLow),
@@ -260,10 +279,17 @@ impl PlayerImage {
         };
     }
 
-    pub fn set_hook(&mut self, rng: &mut ChaCha8Rng) {
-        self.hook = match rng.gen_range(0..=1) {
-            0 => Some(HookImage::Left),
-            _ => Some(HookImage::Right),
+    pub fn set_hook(&mut self, rng: &mut ChaCha8Rng, population: Population) {
+        self.hook = if population == Population::Pupparoll {
+            match rng.gen_range(0..=1) {
+                0 => Some(HookImage::LeftPupparoll),
+                _ => Some(HookImage::RightPupparoll),
+            }
+        } else {
+            match rng.gen_range(0..=1) {
+                0 => Some(HookImage::Left),
+                _ => Some(HookImage::Right),
+            }
         };
     }
 
@@ -272,17 +298,19 @@ impl PlayerImage {
         let mut base = RgbaImage::new(PLAYER_IMAGE_WIDTH, PLAYER_IMAGE_HEIGHT);
         let mut blinking_base = RgbaImage::new(PLAYER_IMAGE_WIDTH, PLAYER_IMAGE_HEIGHT);
         let img_height = base.height();
-        let mut body_offset_y = 0;
+        let mut offset_y = 0;
         let skin_color_map = self.skin_color_map;
         let hair_color_map = self.hair_color_map;
         let jersey_color_map = self.jersey_color_map;
 
         let mut other = read_image(self.legs.select_file(size).as_str())?;
-        body_offset_y += other.height();
+        let mask = read_image(self.legs.select_mask_file(size).as_str())?;
+        offset_y += other.height();
         let x = (base.width() - other.width()) / 2;
-        other.apply_color_map(skin_color_map.color_map());
-        base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
-        blinking_base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
+        other.apply_color_map_with_shadow_mask(skin_color_map, &mask);
+
+        base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
+        blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
 
         if let Some(shoes) = self.shoes.clone() {
             let mut other = read_image(shoes.select_file(size).as_str())?;
@@ -296,7 +324,9 @@ impl PlayerImage {
 
         if let Some(wooden_leg) = self.wooden_leg.clone() {
             //Polpett have small legs regardless of size
-            let leg_size = if info.population == Population::Polpett {
+            let leg_size = if info.population == Population::Polpett
+                || info.population == Population::Pupparoll
+            {
                 0
             } else {
                 size
@@ -309,6 +339,8 @@ impl PlayerImage {
                 } else {
                     1
                 }
+            } else if info.population == Population::Pupparoll {
+                1
             } else {
                 0
             };
@@ -348,16 +380,17 @@ impl PlayerImage {
                 let mask = read_image(shorts.select_mask_file(size).as_str())?;
                 other.apply_color_map_with_shadow_mask(color_map, &mask);
             }
-            base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
-            blinking_base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
+            base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
+            blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
         }
 
         let mut other = read_image(self.body.select_file(size).as_str())?;
-        body_offset_y += other.height() - 1;
+        let mask = read_image(self.body.select_mask_file(size).as_str())?;
+        offset_y += other.height() - 1;
         let body_x = (base.width() - other.width()) / 2;
-        other.apply_color_map(skin_color_map.color_map());
-        base.copy_non_trasparent_from(&other, body_x, img_height - body_offset_y)?;
-        blinking_base.copy_non_trasparent_from(&other, body_x, img_height - body_offset_y)?;
+        other.apply_color_map_with_shadow_mask(skin_color_map, &mask);
+        base.copy_non_trasparent_from(&other, body_x, img_height - offset_y)?;
+        blinking_base.copy_non_trasparent_from(&other, body_x, img_height - offset_y)?;
 
         if let Some(hook) = self.hook.clone() {
             let mut hook_img = read_image(hook.select_file(size).as_str())?;
@@ -367,11 +400,13 @@ impl PlayerImage {
             }
 
             let x = match hook {
-                HookImage::Left => body_x - 1,
-                HookImage::Right => body_x + other.width() - hook_img.width() + 1,
+                HookImage::Left | HookImage::LeftPupparoll => body_x - 1,
+                HookImage::Right | HookImage::RightPupparoll => {
+                    body_x + other.width() - hook_img.width() + 1
+                }
             };
 
-            let y = img_height - body_offset_y + other.height() - 4;
+            let y = img_height - offset_y + other.height() - 4;
 
             // Clear the arm on the base
             for cx in x + 1..x + hook_img.width() {
@@ -392,49 +427,63 @@ impl PlayerImage {
                 let mask = read_image(shirt.select_mask_file(size).as_str())?;
                 other.apply_color_map_with_shadow_mask(color_map, &mask);
             }
-            base.copy_non_trasparent_from(&other, x, img_height - body_offset_y + 1)?;
-            blinking_base.copy_non_trasparent_from(&other, x, img_height - body_offset_y + 1)?;
+            base.copy_non_trasparent_from(&other, x, img_height - offset_y + 1)?;
+            blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y + 1)?;
         }
 
         let mut other = read_image(self.head.select_file(size).as_str())?;
         let mut blinking = read_image(self.head.select_file(size).as_str())?;
-        body_offset_y += other.height() - 5;
+        let mask = read_image(self.head.select_mask_file(size).as_str())?;
+        offset_y += other.height() - 5;
         let x = (base.width() - other.width()) / 2;
-        let mut cm = skin_color_map.color_map();
-        other.apply_color_map(cm);
-        base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
+        let mut cm = skin_color_map;
+        other.apply_color_map_with_shadow_mask(cm, &mask);
+        base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
         cm.blue = cm.red;
-        blinking.apply_color_map(cm);
-        blinking_base.copy_non_trasparent_from(&blinking, x, img_height - body_offset_y)?;
+        blinking.apply_color_map_with_shadow_mask(cm, &mask);
+        blinking_base.copy_non_trasparent_from(&blinking, x, img_height - offset_y)?;
 
         if let Some(eye_patch) = self.eye_patch.clone() {
             let other = read_image(eye_patch.select_file(size).as_str())?;
-            base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
-            blinking_base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
+            let x = (base.width() - other.width()) / 2;
+            base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
+            blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
         }
 
         if let Some(hair) = self.hair.clone() {
             let mut other = read_image(hair.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
-            other.apply_color_map(hair_color_map.color_map());
-            base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
-            blinking_base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
+            other.apply_color_map(hair_color_map);
+
+            let y = if info.population == Population::Pupparoll {
+                img_height - offset_y - 1
+            } else {
+                img_height - offset_y
+            };
+
+            base.copy_non_trasparent_from(&other, x, y)?;
+            blinking_base.copy_non_trasparent_from(&other, x, y)?;
         }
 
         if let Some(beard) = self.beard.clone() {
             let mut other = read_image(beard.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
-            other.apply_color_map(hair_color_map.color_map());
-            base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
-            blinking_base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
+            other.apply_color_map(hair_color_map);
+            base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
+            blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
         }
 
         if let Some(hat) = self.hat.clone() {
             let other = read_image(hat.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
-            body_offset_y += 2;
-            base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
-            blinking_base.copy_non_trasparent_from(&other, x, img_height - body_offset_y)?;
+            offset_y += 2;
+            let y = if info.population == Population::Pupparoll {
+                img_height - offset_y - 1
+            } else {
+                img_height - offset_y
+            };
+            base.copy_non_trasparent_from(&other, x, y)?;
+            blinking_base.copy_non_trasparent_from(&other, x, y)?;
         }
 
         let mut gif = Gif::new();
@@ -446,5 +495,54 @@ impl PlayerImage {
             }
         }
         Ok(gif)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use crate::{
+        image::player::PlayerImage,
+        world::{player::InfoStats, types::Population},
+    };
+    use image::{self, GenericImage, RgbaImage};
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+    use strum::IntoEnumIterator;
+
+    use super::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH};
+
+    #[test]
+    fn generate_player_image() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let n = 5;
+        for population in Population::iter() {
+            let mut base = RgbaImage::new(PLAYER_IMAGE_WIDTH * n, PLAYER_IMAGE_HEIGHT);
+
+            for i in 0..n {
+                let info = InfoStats {
+                    population,
+                    height: 190.0 + 5.0 * i as f32,
+                    weight: 100.0,
+                    ..Default::default()
+                };
+                let player_image = PlayerImage::from_info(&info, &mut rng);
+                base.copy_from(
+                    &player_image.compose(&info).unwrap()[0],
+                    (PLAYER_IMAGE_WIDTH * i) as u32,
+                    0,
+                )
+                .unwrap();
+            }
+            image::save_buffer(
+                &Path::new(format!("tests/image_{}.png", population).as_str()),
+                &base,
+                PLAYER_IMAGE_WIDTH * n,
+                PLAYER_IMAGE_HEIGHT,
+                image::ColorType::Rgba8,
+            )
+            .unwrap();
+        }
     }
 }

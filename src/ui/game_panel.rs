@@ -34,7 +34,7 @@ use crossterm::event::KeyCode;
 use itertools::Itertools;
 use ratatui::layout::Margin;
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Layout},
     prelude::Rect,
     style::{Color, Style, Stylize},
     text::{Line, Span},
@@ -89,13 +89,11 @@ impl GamePanel {
 
     fn build_top_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         // Split into left and right panels
-        let split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(LEFT_PANEL_WIDTH),
-                Constraint::Min(IMG_FRAME_WIDTH),
-            ])
-            .split(area);
+        let split = Layout::horizontal([
+            Constraint::Length(LEFT_PANEL_WIDTH),
+            Constraint::Min(IMG_FRAME_WIDTH),
+        ])
+        .split(area);
         self.build_game_list(frame, world, split[0]);
 
         if let Some(game) = self.selected_game(world) {
@@ -156,13 +154,11 @@ impl GamePanel {
         game: &Game,
         area: Rect,
     ) -> AppResult<()> {
-        let split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2), // Score Plus images
-                                                                    // Constraint::Length(2),                              //floor
-            ])
-            .split(area);
+        let split = Layout::vertical([
+            Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2), // Score Plus images
+                                                                // Constraint::Length(2),                              //floor
+        ])
+        .split(area);
 
         let side_length: u16;
         let score_panel_width = 59;
@@ -171,16 +167,14 @@ impl GamePanel {
         } else {
             side_length = 0;
         }
-        let top_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(side_length),
-                Constraint::Length(PLAYER_IMAGE_WIDTH as u16),
-                Constraint::Length(score_panel_width),
-                Constraint::Length(PLAYER_IMAGE_WIDTH as u16),
-                Constraint::Length(side_length),
-            ])
-            .split(split[0]);
+        let top_split = Layout::horizontal([
+            Constraint::Length(side_length),
+            Constraint::Length(PLAYER_IMAGE_WIDTH as u16),
+            Constraint::Length(score_panel_width),
+            Constraint::Length(PLAYER_IMAGE_WIDTH as u16),
+            Constraint::Length(side_length),
+        ])
+        .split(split[0]);
 
         let margin_height: u16;
         if top_split[2].height > 12 {
@@ -188,16 +182,14 @@ impl GamePanel {
         } else {
             margin_height = 0;
         }
-        let central_split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(margin_height),
-                Constraint::Length(2),
-                Constraint::Length(2),
-                Constraint::Length(8),
-                Constraint::Length(margin_height),
-            ])
-            .split(top_split[2]);
+        let central_split = Layout::vertical([
+            Constraint::Length(margin_height),
+            Constraint::Length(2),
+            Constraint::Length(2),
+            Constraint::Length(8),
+            Constraint::Length(margin_height),
+        ])
+        .split(top_split[2]);
 
         frame.render_widget(
             Paragraph::new(format!(
@@ -208,24 +200,22 @@ impl GamePanel {
             central_split[2],
         );
 
-        let digit_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(8),
-                Constraint::Length(1),
-                Constraint::Length(8),
-                Constraint::Length(1),
-                Constraint::Length(8),
-                Constraint::Length(1),
-                Constraint::Length(5),
-                Constraint::Length(1),
-                Constraint::Length(8),
-                Constraint::Length(1),
-                Constraint::Length(8),
-                Constraint::Length(1),
-                Constraint::Length(8),
-            ])
-            .split(central_split[3]);
+        let digit_split = Layout::horizontal([
+            Constraint::Length(8),
+            Constraint::Length(1),
+            Constraint::Length(8),
+            Constraint::Length(1),
+            Constraint::Length(8),
+            Constraint::Length(1),
+            Constraint::Length(5),
+            Constraint::Length(1),
+            Constraint::Length(8),
+            Constraint::Length(1),
+            Constraint::Length(8),
+            Constraint::Length(1),
+            Constraint::Length(8),
+        ])
+        .split(central_split[3]);
 
         let action = if self.commentary_index == 0 {
             &game.action_results[game.action_results.len() - 1]
@@ -340,14 +330,12 @@ impl GamePanel {
     }
 
     fn build_pitch_panel(&self, frame: &mut Frame, world: &World, game: &Game, area: Rect) {
-        let split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(2),           // border
-                Constraint::Length(PITCH_WIDTH), // pitch
-                Constraint::Min(1),              // score
-            ])
-            .split(area);
+        let split = Layout::horizontal([
+            Constraint::Length(2),           // border
+            Constraint::Length(PITCH_WIDTH), // pitch
+            Constraint::Min(1),              // score
+        ])
+        .split(area);
 
         let action = if self.commentary_index == 0 {
             &game.action_results[game.action_results.len() - 1]
@@ -441,10 +429,7 @@ impl GamePanel {
     }
 
     fn build_bottom_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
-        let split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(8), Constraint::Length(73)])
-            .split(area);
+        let split = Layout::horizontal([Constraint::Min(8), Constraint::Length(73)]).split(area);
         self.build_commentary(frame, split[0]);
         let game = self.selected_game(world);
         if game.is_none() {
@@ -552,9 +537,9 @@ impl GamePanel {
             };
 
             let name_span = if self.debug_mode {
-                Span::raw(format!("Tds: {}", player_data.tiredness))
+                Span::raw(format!("Tds: {}", player.tiredness))
             } else {
-                let style = match player_data.tiredness {
+                let style = match player.tiredness {
                     x if x < MAX_TIREDNESS / 4.0 => Style::default().fg(Color::White),
                     x if x < MAX_TIREDNESS / 2.0 => Style::default().fg(Color::Yellow),
                     x if x < MAX_TIREDNESS => Style::default().fg(Color::Red),
@@ -711,18 +696,16 @@ impl GamePanel {
             .header(Row::new(header_cells_away).style(UiStyle::HEADER).height(1))
             .widths(constraint);
 
-        let box_area = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(game.home_team_in_game.players.len() as u16 + 2),
-                Constraint::Max(1),
-                Constraint::Length(game.away_team_in_game.players.len() as u16 + 2),
-                Constraint::Min(0),
-            ])
-            .split(area.inner(&Margin {
-                horizontal: 1,
-                vertical: 1,
-            }));
+        let box_area = Layout::vertical([
+            Constraint::Length(game.home_team_in_game.players.len() as u16 + 2),
+            Constraint::Max(1),
+            Constraint::Length(game.away_team_in_game.players.len() as u16 + 2),
+            Constraint::Min(0),
+        ])
+        .split(area.inner(&Margin {
+            horizontal: 1,
+            vertical: 1,
+        }));
 
         frame.render_widget(home_table, box_area[0]);
         frame.render_widget(away_table, box_area[2]);
@@ -758,7 +741,6 @@ impl GamePanel {
                 timer.seconds()
             )));
         } else {
-            //FIXME
             timer_lines.push(Line::from(timer.format()));
         }
         timer_lines
@@ -824,13 +806,11 @@ impl Screen for GamePanel {
         }
 
         // Split into top and bottom panels
-        let split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2 - 1),
-                Constraint::Min(4),
-            ])
-            .split(area);
+        let split = Layout::vertical([
+            Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2 - 1),
+            Constraint::Min(4),
+        ])
+        .split(area);
         self.build_top_panel(frame, world, split[0])?;
         self.build_bottom_panel(frame, world, split[1]);
         Ok(())
@@ -839,6 +819,7 @@ impl Screen for GamePanel {
     fn handle_key_events(
         &mut self,
         key_event: crossterm::event::KeyEvent,
+        _world: &World,
     ) -> Option<UiCallbackPreset> {
         match key_event.code {
             KeyCode::Up => self.next_index(),
@@ -973,7 +954,6 @@ mod tests {
                     timer.seconds()
                 );
             } else {
-                //FIXME
                 print!("{}                       \r", timer.format());
             }
             stdout.flush().unwrap();

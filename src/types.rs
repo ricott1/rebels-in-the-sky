@@ -164,7 +164,7 @@ impl SystemTimeTick for Tick {
 // Write tests here
 #[cfg(test)]
 mod tests {
-    use crate::types::{SystemTimeTick, Tick};
+    use crate::types::{SystemTimeTick, Tick, SECONDS};
 
     #[test]
     fn test_system_time_conversion() {
@@ -173,5 +173,12 @@ mod tests {
         let now_as_tick = Tick::from_system_time(now_as_system_time);
         assert_eq!(now, now_as_tick);
         // assert_eq!(SystemTime::now(), Tick::now().as_system_time());
+    }
+
+    #[test]
+    fn test_formatted_as_time() {
+        let time = 10 * SECONDS;
+        let formatted = time.formatted();
+        assert_eq!(formatted, "00:00:10");
     }
 }

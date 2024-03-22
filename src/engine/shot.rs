@@ -8,7 +8,6 @@ use super::{
     constants::ShotDifficulty,
     game::Game,
     types::GameStats,
-    utils::roll,
 };
 use rand::{seq::SliceRandom, Rng};
 use rand_chacha::ChaCha8Rng;
@@ -157,13 +156,10 @@ fn execute_shot(
 ) -> Option<ActionOutput> {
     let attacking_players = game.attacking_players();
     let defending_players = game.defending_players();
-    let attacking_stats = game.attacking_stats();
-    let defending_stats = game.defending_stats();
 
     assert!(input.attackers.len() == 1);
     let shooter_idx = input.attackers[0];
     let shooter = attacking_players[shooter_idx];
-    let shooter_stats = attacking_stats.get(&shooter.id)?;
 
     if input.advantage == Advantage::Defense {
         assert!(input.defenders.len() > 0);
@@ -181,23 +177,16 @@ fn execute_shot(
     };
     let def_skill = defenders
         .iter()
-        .map(|&p| {
-            let defender_stats = defending_stats.get(&p.id).unwrap();
-            roll(rng, defender_stats.tiredness) / defenders.len() as u8 + p.defense.block.value()
-        })
+        .map(|&p| p.roll(rng) / defenders.len() as u8 + p.defense.block.value())
         .sum::<u8>();
 
     let roll = match input.advantage {
-        Advantage::Attack => {
-            (roll(rng, shooter_stats.tiredness) + atk_skill) as i16 - (shot as u8) as i16
-        }
+        Advantage::Attack => (shooter.roll(rng) + atk_skill) as i16 - (shot as u8) as i16,
         Advantage::Neutral => {
-            (roll(rng, shooter_stats.tiredness) + atk_skill) as i16
-                - (shot as u8 + def_skill / 2) as i16
+            (shooter.roll(rng) + atk_skill) as i16 - (shot as u8 + def_skill / 2) as i16
         }
         Advantage::Defense => {
-            (roll(rng, shooter_stats.tiredness) + atk_skill) as i16
-                - (shot as u8 + def_skill) as i16
+            (shooter.roll(rng) + atk_skill) as i16 - (shot as u8 + def_skill) as i16
         }
     };
 
@@ -211,7 +200,7 @@ fn execute_shot(
             };
             ActionOutput {
                 advantage,
-                possession: input.possession,
+                possession: input.possession.clone(),
                 attackers: vec![shooter_idx],
                 defenders: input.defenders.clone(),
                 situation: ActionSituation::MissedShot,
@@ -252,7 +241,7 @@ fn execute_shot(
                     Possession::Home => input.away_score,
                     Possession::Away => input.away_score + score_change as u16,
                 },
-                possession: !input.possession,
+                possession: !input.possession.clone(),
                 situation: ActionSituation::BallInBackcourt,
                 description: description(
                     rng,
@@ -278,7 +267,7 @@ fn execute_shot(
     match shot {
         ShotDifficulty::Close => {
             shooter_update.attempted_2pt = 1;
-            shooter_update.add_tiredness(TirednessCost::MEDIUM, shooter.athleticism.stamina);
+            shooter_update.extra_tiredness = TirednessCost::MEDIUM;
             shooter_update.shot_positions = match game.possession {
                 Possession::Home => {
                     let (x, y) = HOME_CLOSE_SHOT_POSITIONS.choose(rng)?.clone();
@@ -292,7 +281,7 @@ fn execute_shot(
         }
         ShotDifficulty::Medium => {
             shooter_update.attempted_2pt = 1;
-            shooter_update.add_tiredness(TirednessCost::MEDIUM, shooter.athleticism.stamina);
+            shooter_update.extra_tiredness = TirednessCost::MEDIUM;
             shooter_update.shot_positions = match game.possession {
                 Possession::Home => {
                     let (x, y) = HOME_MEDIUM_SHOT_POSITIONS.choose(rng)?.clone();
@@ -306,7 +295,7 @@ fn execute_shot(
         }
         ShotDifficulty::Long => {
             shooter_update.attempted_3pt = 1;
-            shooter_update.add_tiredness(TirednessCost::MEDIUM, shooter.athleticism.stamina);
+            shooter_update.extra_tiredness = TirednessCost::MEDIUM;
             shooter_update.shot_positions = match input.advantage {
                 Advantage::Defense => match game.possession {
                     Possession::Home => {
@@ -355,14 +344,14 @@ fn execute_shot(
         let mut defender_update = GameStats::default();
         match input.advantage {
             Advantage::Defense => {
-                defender_update.add_tiredness(TirednessCost::MEDIUM, defender.athleticism.stamina);
+                defender_update.extra_tiredness = TirednessCost::MEDIUM;
                 // Only the first defender gets the block
                 if !success && idx == 0 {
                     defender_update.blocks = 1;
                 }
             }
             Advantage::Neutral => {
-                defender_update.add_tiredness(TirednessCost::MEDIUM, defender.athleticism.stamina);
+                defender_update.extra_tiredness = TirednessCost::MEDIUM;
             }
             _ => {}
         }

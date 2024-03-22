@@ -5,9 +5,7 @@ use crate::{
     types::{AppResult, Tick},
 };
 
-use super::constants::{
-    BASE_FUEL_CONSUMPTION, BASE_SPEED, BASE_TANK_CAPACITY, MIN_PLAYERS_PER_TEAM,
-};
+use super::constants::{BASE_FUEL_CONSUMPTION, BASE_SPEED, MIN_PLAYERS_PER_TEAM};
 use rand::{seq::IteratorRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -23,9 +21,10 @@ pub enum SpaceshipStyle {
 
 pub trait SpaceshipComponent {
     fn style(&self) -> SpaceshipStyle;
-    fn capacity(&self) -> u8;
+    fn crew_capacity(&self) -> u8;
+    fn storage_capacity(&self) -> u32;
+    fn fuel_capacity(&self) -> u32;
     fn fuel_consumption(&self) -> f32;
-    fn tank(&self) -> u32;
     fn speed(&self) -> f32;
     fn cost(&self) -> u32;
 }
@@ -87,13 +86,33 @@ impl SpaceshipComponent for Hull {
             Self::PincherLarge => SpaceshipStyle::Pincher,
         }
     }
-    fn capacity(&self) -> u8 {
+    fn crew_capacity(&self) -> u8 {
         match self {
             Self::ShuttleSmall => MIN_PLAYERS_PER_TEAM as u8 + 1,
             Self::ShuttleStandard => MIN_PLAYERS_PER_TEAM as u8 + 2,
             Self::ShuttleLarge => MIN_PLAYERS_PER_TEAM as u8 + 3,
             Self::PincherStandard => MIN_PLAYERS_PER_TEAM as u8 + 2,
             Self::PincherLarge => MIN_PLAYERS_PER_TEAM as u8 + 4,
+        }
+    }
+
+    fn storage_capacity(&self) -> u32 {
+        match self {
+            Self::ShuttleSmall => 1000,
+            Self::ShuttleStandard => 2000,
+            Self::ShuttleLarge => 4000,
+            Self::PincherStandard => 3000,
+            Self::PincherLarge => 5000,
+        }
+    }
+
+    fn fuel_capacity(&self) -> u32 {
+        match self {
+            Self::ShuttleSmall => 100,
+            Self::ShuttleStandard => 200,
+            Self::ShuttleLarge => 400,
+            Self::PincherStandard => 300,
+            Self::PincherLarge => 500,
         }
     }
 
@@ -104,16 +123,6 @@ impl SpaceshipComponent for Hull {
             Self::ShuttleLarge => 1.5,
             Self::PincherStandard => 1.25,
             Self::PincherLarge => 1.75,
-        }
-    }
-
-    fn tank(&self) -> u32 {
-        match self {
-            Self::ShuttleSmall => 1000,
-            Self::ShuttleStandard => 2000,
-            Self::ShuttleLarge => 4000,
-            Self::PincherStandard => 3000,
-            Self::PincherLarge => 5000,
         }
     }
 
@@ -129,11 +138,11 @@ impl SpaceshipComponent for Hull {
 
     fn cost(&self) -> u32 {
         match self {
-            Self::ShuttleSmall => 5000,
-            Self::ShuttleStandard => 8000,
-            Self::ShuttleLarge => 15000,
-            Self::PincherStandard => 15000,
-            Self::PincherLarge => 20000,
+            Self::ShuttleSmall => 15000,
+            Self::ShuttleStandard => 18000,
+            Self::ShuttleLarge => 25000,
+            Self::PincherStandard => 25000,
+            Self::PincherLarge => 35000,
         }
     }
 }
@@ -200,7 +209,15 @@ impl SpaceshipComponent for Engine {
             Self::PincherTriple => SpaceshipStyle::Pincher,
         }
     }
-    fn capacity(&self) -> u8 {
+    fn crew_capacity(&self) -> u8 {
+        0
+    }
+
+    fn storage_capacity(&self) -> u32 {
+        0
+    }
+
+    fn fuel_capacity(&self) -> u32 {
         0
     }
 
@@ -215,10 +232,6 @@ impl SpaceshipComponent for Engine {
         }
     }
 
-    fn tank(&self) -> u32 {
-        0
-    }
-
     fn speed(&self) -> f32 {
         match self {
             Self::ShuttleSingle => 1.0,
@@ -231,12 +244,12 @@ impl SpaceshipComponent for Engine {
     }
     fn cost(&self) -> u32 {
         match self {
-            Self::ShuttleSingle => 3000,
-            Self::ShuttleDouble => 6000,
-            Self::ShuttleTriple => 12000,
-            Self::PincherSingle => 4000,
-            Self::PincherDouble => 8000,
-            Self::PincherTriple => 14000,
+            Self::ShuttleSingle => 5000,
+            Self::ShuttleDouble => 8000,
+            Self::ShuttleTriple => 15000,
+            Self::PincherSingle => 8000,
+            Self::PincherDouble => 12000,
+            Self::PincherTriple => 19000,
         }
     }
 }
@@ -286,13 +299,16 @@ impl Spaceship {
         BASE_SPEED * self.hull.speed() * self.engine.speed()
     }
 
-    pub fn capacity(&self) -> u8 {
-        self.hull.capacity() + self.engine.capacity()
+    pub fn crew_capacity(&self) -> u8 {
+        self.hull.crew_capacity() + self.engine.crew_capacity()
     }
 
-    pub fn tank(&self) -> u32 {
-        // Returns the tank capacity in tonnes
-        BASE_TANK_CAPACITY * (self.hull.tank() + self.engine.tank())
+    pub fn storage_capacity(&self) -> u32 {
+        self.hull.storage_capacity() + self.engine.storage_capacity()
+    }
+
+    pub fn fuel_capacity(&self) -> u32 {
+        self.hull.fuel_capacity() + self.engine.fuel_capacity()
     }
 
     pub fn fuel_consumption(&self) -> f32 {
@@ -304,14 +320,14 @@ impl Spaceship {
         self.hull.cost() + self.engine.cost()
     }
 
-    pub fn max_distance(&self) -> f32 {
+    pub fn max_distance(&self, current_fuel: u32) -> f32 {
         // Return the max distance in kilometers.
-        self.speed() / self.fuel_consumption() * self.tank() as f32
+        self.speed() / self.fuel_consumption() * current_fuel as f32
     }
 
-    pub fn max_travel_time(&self) -> Tick {
+    pub fn max_travel_time(&self, current_fuel: u32) -> Tick {
         // Return the max travel time in milliseconds (Ticks)
-        (self.tank() as f32 / self.fuel_consumption()) as Tick
+        (current_fuel as f32 / self.fuel_consumption()) as Tick
     }
 }
 

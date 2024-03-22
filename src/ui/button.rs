@@ -4,7 +4,7 @@ use super::{
     widgets::default_block,
 };
 use ratatui::{
-    layout::Margin,
+    layout::{Margin, Rect},
     style::{Style, Styled},
     text::Text,
     widgets::{Paragraph, Widget},
@@ -23,6 +23,8 @@ pub struct Button<'a> {
     hover_style: Style,
     box_style: Option<Style>,
     box_hover_style: Option<Style>,
+    hover_text: Option<String>,
+    hover_text_target: Option<Rect>,
 }
 
 impl<'a> From<Button<'a>> for Text<'a> {
@@ -48,6 +50,8 @@ impl<'a> Button<'a> {
             hover_style: UiStyle::SELECTED,
             box_style: Some(Style::default()),
             box_hover_style: Some(Style::default()),
+            hover_text: None,
+            hover_text_target: None,
         }
     }
 
@@ -67,6 +71,8 @@ impl<'a> Button<'a> {
             hover_style: UiStyle::UNSELECTED,
             box_style: None,
             box_hover_style: Some(Style::default()),
+            hover_text: None,
+            hover_text_target: None,
         }
     }
 
@@ -86,6 +92,8 @@ impl<'a> Button<'a> {
             hover_style: UiStyle::SELECTED,
             box_style: None,
             box_hover_style: None,
+            hover_text: None,
+            hover_text_target: None,
         }
     }
 
@@ -105,6 +113,8 @@ impl<'a> Button<'a> {
             hover_style: UiStyle::SELECTED,
             box_style: None,
             box_hover_style: None,
+            hover_text: None,
+            hover_text_target: None,
         }
     }
 
@@ -124,6 +134,8 @@ impl<'a> Button<'a> {
             hover_style: UiStyle::SELECTED,
             box_style: None,
             box_hover_style: None,
+            hover_text: None,
+            hover_text_target: None,
         }
     }
 
@@ -143,6 +155,12 @@ impl<'a> Button<'a> {
 
     pub fn set_box_style(mut self, style: Style) -> Self {
         self.box_style = Some(style);
+        self
+    }
+
+    pub fn set_hover_text(mut self, text: String, target: Rect) -> Self {
+        self.hover_text = Some(text);
+        self.hover_text_target = Some(target);
         self
     }
 }
@@ -221,6 +239,14 @@ impl<'a> Widget for Button<'a> {
                 }
             }
         }
+
+        if self.hover_text.is_some()
+            && self.hover_text_target.is_some()
+            && self.callback_registry.lock().unwrap().is_hovering(area)
+        {
+            let hover_text = Paragraph::new(self.hover_text.unwrap()).centered();
+            hover_text.render(self.hover_text_target.unwrap(), buf);
+        }
     }
 }
 
@@ -236,6 +262,7 @@ pub struct RadioButton<'a> {
     hover_style: Style,
     box_style: Option<Style>,
     box_hover_style: Option<Style>,
+    box_hover_title: Option<String>,
 }
 
 impl<'a> From<RadioButton<'a>> for Text<'a> {
@@ -243,21 +270,6 @@ impl<'a> From<RadioButton<'a>> for Text<'a> {
         button.text
     }
 }
-
-// impl<'a> From<RadioButton<'a>> for Span<'a> {
-//     fn from(button: RadioButton) -> Span<'a> {
-//         Span::raw(button.text)
-//     }
-// }
-
-// impl<'a> From<RadioButton<'a>> for Line<'a> {
-//     fn from(button: RadioButton<'a>) -> Self {
-//         Self {
-//             spans: vec![Span::from(button)],
-//             ..Default::default()
-//         }
-//     }
-// }
 
 impl<'a> Styled for RadioButton<'a> {
     type Item = RadioButton<'a>;
@@ -292,6 +304,7 @@ impl<'a> RadioButton<'a> {
             hover_style: UiStyle::SELECTED,
             box_style: Some(Style::default()),
             box_hover_style: Some(Style::default()),
+            box_hover_title: None,
         }
     }
     pub fn box_on_hover(
@@ -312,6 +325,7 @@ impl<'a> RadioButton<'a> {
             hover_style: UiStyle::UNSELECTED,
             box_style: None,
             box_hover_style: Some(Style::default()),
+            box_hover_title: None,
         }
     }
 
@@ -333,6 +347,7 @@ impl<'a> RadioButton<'a> {
             hover_style: UiStyle::SELECTED,
             box_style: None,
             box_hover_style: None,
+            box_hover_title: None,
         }
     }
 
@@ -351,6 +366,11 @@ impl<'a> RadioButton<'a> {
 
     pub fn set_box_hover_style(mut self, style: Style) -> Self {
         self.box_hover_style = Some(style);
+        self
+    }
+
+    pub fn set_box_hover_title(mut self, title: String) -> Self {
+        self.box_hover_title = Some(title);
         self
     }
 }
@@ -379,17 +399,13 @@ impl<'a> Widget for RadioButton<'a> {
 
         let paragraph = if self.disabled {
             Paragraph::new(self.text)
-                .alignment(ratatui::layout::Alignment::Center)
+                .centered()
                 .style(UiStyle::UNSELECTABLE)
         } else {
             if *self.linked_index == self.index {
-                Paragraph::new(self.text)
-                    .alignment(ratatui::layout::Alignment::Center)
-                    .style(self.hover_style)
+                Paragraph::new(self.text).centered().style(self.hover_style)
             } else {
-                Paragraph::new(self.text)
-                    .alignment(ratatui::layout::Alignment::Center)
-                    .style(self.style)
+                Paragraph::new(self.text).centered().style(self.style)
             }
         };
 
@@ -398,9 +414,14 @@ impl<'a> Widget for RadioButton<'a> {
         } else {
             if *self.linked_index == self.index {
                 if let Some(box_hover_style) = self.box_hover_style {
-                    paragraph
-                        .block(default_block().border_style(box_hover_style))
-                        .render(area, buf);
+                    let block = if let Some(box_hover_title) = self.box_hover_title {
+                        default_block()
+                            .border_style(box_hover_style)
+                            .title(box_hover_title)
+                    } else {
+                        default_block().border_style(box_hover_style)
+                    };
+                    paragraph.block(block).render(area, buf);
                 } else {
                     paragraph.render(inner, buf);
                 }

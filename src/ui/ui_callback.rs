@@ -17,7 +17,9 @@ use crate::{
         SECONDS,
     },
     world::{
+        constants::*,
         jersey::{Jersey, JerseyStyle},
+        resources::Resource,
         role::CrewRole,
         spaceship::Spaceship,
         team::Team,
@@ -58,6 +60,11 @@ pub enum UiCallbackPreset {
     },
     GoToPlanetZoomOut {
         planet_id: PlanetId,
+    },
+    TradeResource {
+        resource: Resource,
+        amount: i32,
+        unit_cost: u32,
     },
     ChallengeTeam {
         team_id: TeamId,
@@ -131,6 +138,7 @@ pub enum UiCallbackPreset {
     TravelToPlanet {
         planet_id: PlanetId,
     },
+    ExploreAroundPlanet,
     ZoomInToPlanet {
         planet_id: PlanetId,
     },
@@ -156,7 +164,7 @@ impl UiCallbackPreset {
             {
                 app.ui.team_panel.set_index(index);
                 app.ui.team_panel.player_index = 0;
-                app.ui.switch_to(super::ui::UiTab::Team);
+                app.ui.switch_to(super::ui::UiTab::Teams);
             }
             Ok(None)
         })
@@ -165,7 +173,6 @@ impl UiCallbackPreset {
     fn go_to_player(player_id: PlayerId) -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.player_panel.reset_filter();
-            //FIXME: sometimes this search fails
             if let Some(index) = app
                 .ui
                 .player_panel
@@ -174,7 +181,7 @@ impl UiCallbackPreset {
                 .position(|&x| x == player_id)
             {
                 app.ui.player_panel.set_index(index);
-                app.ui.switch_to(super::ui::UiTab::Player);
+                app.ui.switch_to(super::ui::UiTab::Players);
             }
 
             Ok(None)
@@ -199,7 +206,7 @@ impl UiCallbackPreset {
                     .position(|&x| x == player_id)
                     .unwrap_or_default();
                 app.ui.team_panel.player_index = player_index;
-                app.ui.switch_to(super::ui::UiTab::Team);
+                app.ui.switch_to(super::ui::UiTab::Teams);
             }
 
             Ok(None)
@@ -233,6 +240,9 @@ impl UiCallbackPreset {
                 } => app.world.get_planet_or_err(current_planet_id)?,
                 TeamLocation::Travelling { .. } => {
                     return Err("Team is travelling".into());
+                }
+                TeamLocation::Exploring { .. } => {
+                    return Err("Team is exploring".into());
                 }
             };
 
@@ -290,15 +300,29 @@ impl UiCallbackPreset {
         })
     }
 
+    fn trade_resource(resource: Resource, amount: i32, unit_cost: u32) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let mut own_team = app.world.get_own_team()?.clone();
+            if amount > 0 {
+                own_team.add_resource(resource, amount as u32);
+                own_team.remove_resource(Resource::SATOSHI, unit_cost * amount as u32)?;
+            } else if amount < 0 {
+                own_team.remove_resource(resource, -amount as u32)?;
+                own_team.add_resource(Resource::SATOSHI, unit_cost * -amount as u32);
+            }
+            app.world.teams.insert(own_team.id, own_team);
+            app.world.dirty = true;
+            app.world.dirty_ui = true;
+            Ok(None)
+        })
+    }
+
     fn zoom_in_to_planet(planet_id: PlanetId) -> AppCallback {
         Box::new(move |app: &mut App| {
             let target = app.world.get_planet_or_err(planet_id)?;
             let panel = &mut app.ui.galaxy_panel;
 
             if panel.planet_index == 0 {
-                // return Err(
-                //     format!("SIAMO QUI caso su {} {} ", panel.planet_index, planet_id).into(),
-                // );
                 panel.zoom_level = ZoomLevel::In;
 
                 if target.teams.len() == 0 {
@@ -395,7 +419,7 @@ impl UiCallbackPreset {
                 .ok_or::<String>(format!("Game {:?} not found", game_id).into())?;
 
             app.ui.game_panel.set_index(index);
-            app.ui.switch_to(super::ui::UiTab::Game);
+            app.ui.switch_to(super::ui::UiTab::Games);
             // if let Some(network_handler) = app.network_handler.as_mut() {
             //     network_handler.decline_all_challenges()?;
             //     app.ui.swarm_panel.remove_all_challenges();
@@ -552,13 +576,14 @@ impl UiCallbackPreset {
                     }
                     app.world.get_planet_or_err(current_planet_id)?.clone()
                 }
-                _ => return Err("Team is travelling".into()),
+                TeamLocation::Travelling { .. } => return Err("Team is travelling".into()),
+                TeamLocation::Exploring { .. } => return Err("Team is exploring".into()),
             };
 
             let travel_time = app
                 .world
                 .travel_time_to_planet(own_team.id, target_planet.id)?;
-            own_team.can_travel_to_planet(&target_planet, travel_time)?;
+            own_team.can_travel_to_planet(&target_planet, travel_time, own_team.fuel())?;
 
             own_team.current_location = TeamLocation::Travelling {
                 from: current_planet.id,
@@ -567,8 +592,75 @@ impl UiCallbackPreset {
                 duration: travel_time,
             };
 
+            // For simplicity we just subtract the fuel upfront, maybe would be nicer on UI to
+            // show the fuel consumption as the team travels in world.tick_travel,
+            // but this would require more operations and checks in the tick function.
+            own_team.remove_resource(
+                Resource::FUEL,
+                (travel_time as f32 * own_team.spaceship.fuel_consumption()) as u32,
+            )?;
+
+            log::info!(
+                "Team {:?} is travelling from {:?} to {:?}, consuming {:.2} fuel",
+                own_team.id,
+                current_planet.id,
+                target_planet.id,
+                travel_time as f32 * own_team.spaceship.fuel_consumption()
+            );
+
             current_planet.teams.retain(|&x| x != own_team.id);
             app.world.planets.insert(current_planet.id, current_planet);
+
+            let pirate_jersey = Jersey {
+                style: JerseyStyle::Pirate,
+                color: own_team.jersey.color.clone(),
+            };
+
+            for player in own_team.player_ids.iter() {
+                let mut player = app.world.get_player_or_err(*player)?.clone();
+                player.set_jersey(&pirate_jersey);
+                app.world.players.insert(player.id, player);
+            }
+
+            app.world.teams.insert(own_team.id, own_team);
+            app.world.dirty = true;
+            app.world.dirty_network = true;
+            app.world.dirty_ui = true;
+
+            Ok(None)
+        })
+    }
+
+    fn explore_around_planet() -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let mut own_team = app.world.get_own_team()?.clone();
+
+            let planet_id = match own_team.current_location {
+                TeamLocation::OnPlanet { planet_id } => planet_id,
+                TeamLocation::Travelling { .. } => return Err("Team is travelling".into()),
+                TeamLocation::Exploring { .. } => return Err("Team is already exploring".into()),
+            };
+
+            let mut around_planet = app.world.get_planet_or_err(planet_id)?.clone();
+            own_team.can_explore_around_planet(&around_planet)?;
+            let exploration_time = BASE_EXPLORATION_TIME;
+
+            own_team.current_location = TeamLocation::Exploring {
+                around: planet_id,
+                started: Tick::now(),
+                duration: exploration_time,
+            };
+
+            // For simplicity we just subtract the fuel upfront, maybe would be nicer on UI to
+            // show the fuel consumption as the team travels in world.tick_travel,
+            // but this would require more operations and checks in the tick function.
+            own_team.remove_resource(
+                Resource::FUEL,
+                (exploration_time as f32 * own_team.spaceship.fuel_consumption()) as u32,
+            )?;
+
+            around_planet.teams.retain(|&x| x != own_team.id);
+            app.world.planets.insert(around_planet.id, around_planet);
 
             let pirate_jersey = Jersey {
                 style: JerseyStyle::Pirate,
@@ -656,6 +748,11 @@ impl UiCallbackPreset {
             UiCallbackPreset::GoToPlanetZoomOut { planet_id } => {
                 Self::go_to_planet_zoom_out(*planet_id)(app)
             }
+            UiCallbackPreset::TradeResource {
+                resource,
+                amount,
+                unit_cost,
+            } => Self::trade_resource(*resource, *amount, *unit_cost)(app),
             UiCallbackPreset::SetTeamColors { color, channel } => {
                 app.ui
                     .new_team_screen
@@ -802,6 +899,7 @@ impl UiCallbackPreset {
             UiCallbackPreset::TravelToPlanet { planet_id } => {
                 Self::travel_to_planet(*planet_id)(app)
             }
+            UiCallbackPreset::ExploreAroundPlanet => Self::explore_around_planet()(app),
             UiCallbackPreset::ZoomInToPlanet { planet_id } => {
                 Self::zoom_in_to_planet(*planet_id)(app)
             }

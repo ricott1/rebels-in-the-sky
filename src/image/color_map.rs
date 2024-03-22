@@ -206,6 +206,7 @@ pub enum SkinColorMap {
     LightYellow,
     Yellow,
     Orange,
+    Rainbow,
 }
 
 impl SkinColorMap {
@@ -234,12 +235,12 @@ impl SkinColorMap {
             Self::LightGreen => ColorMap {
                 red: Rgb([29, 178, 5]),
                 green: Rgb([139, 216, 109]),
-                blue: Rgb([10, 10, 205]),
+                blue: Rgb([30, 90, 125]),
             },
             Self::Green => ColorMap {
                 red: Rgb([31, 84, 41]),
                 green: Rgb([124, 167, 65]),
-                blue: Rgb([0, 0, 0]),
+                blue: Rgb([30, 70, 105]),
             },
             Self::Red => ColorMap {
                 red: Rgb([135, 8, 0]),
@@ -280,6 +281,11 @@ impl SkinColorMap {
                 red: Rgb([255, 194, 38]),
                 green: Rgb([240, 227, 105]),
                 blue: Rgb([88, 88, 88]),
+            },
+            Self::Rainbow => ColorMap {
+                red: Rgb([245, 131, 48]),
+                green: Rgb([48, 245, 209]),
+                blue: Rgb([231, 189, 255]),
             },
         }
     }
@@ -322,7 +328,7 @@ impl HairColorMap {
             },
             Self::Blonde => ColorMap {
                 red: Rgb([184, 151, 120]),
-                green: Rgb([220, 208, 186]),
+                green: Rgb([230, 228, 196]),
                 blue: Rgb([120, 80, 110]),
             },
             Self::BlondeInverted => ColorMap {

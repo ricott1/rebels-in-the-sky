@@ -3,6 +3,7 @@ use super::jersey::{Jersey, JerseyStyle};
 use super::planet::Planet;
 use super::player::Player;
 use super::position::Position;
+use super::resources::Resource;
 use super::role::CrewRole;
 use super::skill::{GameSkill, Rated};
 use super::spaceship::Spaceship;
@@ -49,13 +50,7 @@ pub struct World {
 impl World {
     pub fn new(seed: Option<u64>) -> Self {
         let mut planets = HashMap::new();
-        let data_planets: Vec<Planet> = PLANET_DATA
-            .as_ref()
-            .unwrap()
-            .iter()
-            .map(|p| p.clone())
-            .collect();
-
+        let data_planets: Vec<Planet> = PLANET_DATA.iter().map(|p| p.clone()).collect();
         for planet in data_planets.iter() {
             planets.insert(planet.id, planet.clone());
         }
@@ -77,8 +72,7 @@ impl World {
     }
     pub fn initialize(&mut self, generate_local_world: bool) -> AppResult<()> {
         let rng = &mut ChaCha8Rng::seed_from_u64(self.seed);
-        let data_planets = PLANET_DATA.as_ref().unwrap();
-        for planet in data_planets.iter() {
+        for planet in PLANET_DATA.iter() {
             self.populate_planet(rng, planet);
         }
         if generate_local_world {
@@ -116,8 +110,7 @@ impl World {
     }
 
     pub fn generate_local_world(&mut self, rng: &mut ChaCha8Rng) -> AppResult<()> {
-        let t_data = TEAM_DATA.as_ref().unwrap();
-        for (team_name, ship_name) in t_data.names.iter() {
+        for (team_name, ship_name) in TEAM_DATA.iter() {
             let home_planet = self.planets.values().choose(rng).unwrap();
             if home_planet.total_population() < 10 {
                 continue;
@@ -148,7 +141,7 @@ impl World {
                 team_base_level,
             );
         }
-        while team.player_ids.len() < team.spaceship.capacity() as usize {
+        while team.player_ids.len() < team.spaceship.crew_capacity() as usize {
             self.generate_random_player(rng, Some(&mut team), None, home_planet, team_base_level);
         }
 
@@ -184,6 +177,11 @@ impl World {
         let current_location = TeamLocation::OnPlanet {
             planet_id: home_planet,
         };
+
+        let mut resources = HashMap::default();
+        // resources.satoshi = balance;
+        resources.insert(Resource::SATOSHI, balance);
+        resources.insert(Resource::FUEL, spaceship.fuel_capacity());
         let mut team = Team {
             id: team_id,
             name,
@@ -194,6 +192,7 @@ impl World {
             home_planet,
             current_location,
             spaceship,
+            resources,
             ..Default::default()
         };
 
@@ -210,7 +209,6 @@ impl World {
                 .collect(),
         );
 
-        team.balance = balance;
         self.own_team_id = team.id;
         self.teams.insert(team.id, team.clone());
         self.auto_set_team_roles(&mut team)?;
@@ -380,7 +378,7 @@ impl World {
         let mut team = self.get_team_or_err(team_id)?.clone();
         team.can_hire_player(&player)?;
 
-        team.balance -= player.hire_cost(team.reputation);
+        team.remove_resource(Resource::SATOSHI, player.hire_cost(team.reputation))?;
         team.add_player(&mut player);
         team.player_ids = Team::best_position_assignment(
             team.player_ids
@@ -412,7 +410,6 @@ impl World {
         team.can_release_player(&player)?;
 
         team.remove_player(&mut player)?;
-        team.balance += player.release_cost();
         team.player_ids = Team::best_position_assignment(
             team.player_ids
                 .iter()
@@ -424,10 +421,6 @@ impl World {
         self.players.insert(player.id, player.clone());
         team.version += 1;
         self.teams.insert(team.id, team.clone());
-
-        // if team.crew_roles.captain == Some(player.id) {
-        //     self.auto_set_team_captain(&mut team)?;
-        // }
 
         self.dirty = true;
         if team.id == self.own_team_id {
@@ -452,7 +445,7 @@ impl World {
 
         let location = match home_team.current_location {
             TeamLocation::OnPlanet { planet_id } => planet_id,
-            TeamLocation::Travelling { .. } => {
+            _ => {
                 panic!("Should have failed in can_challenge_team")
             }
         };
@@ -665,6 +658,59 @@ impl World {
         Ok(messages)
     }
 
+    fn resources_found_after_exploration(
+        &self,
+        team: &Team,
+        planet: &Planet,
+        duration: u128,
+    ) -> HashMap<Resource, u32> {
+        let mut rng = ChaCha8Rng::from_entropy();
+        let mut resources = HashMap::new();
+        let from = (duration / SECONDS) as u32;
+        let to = from + (2 + team.reputation as u32) * from;
+
+        let mut base_gold = 0;
+        let mut base_food = 0;
+        let mut base_rum = 0;
+
+        for (resource, amount) in planet.base_resources.iter() {
+            match resource {
+                Resource::GOLD => base_gold = *amount,
+                Resource::FOOD => base_food = *amount,
+                Resource::RUM => base_rum = *amount,
+                _ => {}
+            }
+        }
+
+        resources.insert(Resource::GOLD, rng.gen_range(from..to) + base_gold);
+        resources.insert(Resource::FOOD, rng.gen_range(from..to) + base_food);
+        resources.insert(Resource::RUM, rng.gen_range(from..to) + base_rum);
+        resources
+    }
+
+    fn free_agents_found_after_exploration(
+        &self,
+        _team: &Team,
+        planet: &Planet,
+        _duration: u128,
+    ) -> Vec<Player> {
+        let mut rng = ChaCha8Rng::from_entropy();
+        let mut free_agents = vec![];
+
+        let amount = rng.gen_range(-50..3).max(0);
+
+        if amount > 0 {
+            for _ in 0..amount {
+                let base_level = rng.gen_range(0.0..5.0);
+                let player_id = PlayerId::new();
+                let player = Player::random(&mut rng, player_id, None, planet, base_level);
+                free_agents.push(player);
+            }
+        }
+
+        free_agents
+    }
+
     pub fn handle_tick_events(
         &mut self,
         current_timestamp: Tick,
@@ -682,7 +728,9 @@ impl World {
                 self.generate_random_game()?;
             }
 
-            self.tick_travel(current_timestamp)?;
+            if let Some(message) = self.tick_travel(current_timestamp, is_simulating)? {
+                messages.push(message);
+            }
             self.last_tick_short_interval += TickInterval::SHORT;
             // Round up to the TickInterval::SHORT
             self.last_tick_short_interval -= self.last_tick_short_interval % TickInterval::SHORT;
@@ -715,10 +763,6 @@ impl World {
     }
 
     fn cleanup_games(&mut self, current_timestamp: Tick) -> AppResult<()> {
-        log::info!(
-            "Cleaning up games: {}",
-            current_timestamp.formatted_as_time()
-        );
         for (_, game) in self.games.iter() {
             if game.ended_at.is_some() && current_timestamp > game.ended_at.unwrap() + 10 * SECONDS
             {
@@ -735,13 +779,14 @@ impl World {
                     if team.peer_id.is_some() && team.team_id != self.own_team_id {
                         continue;
                     }
-                    for player in team.players.values() {
-                        let mut player = player.clone();
+                    for game_player in team.players.values() {
+                        // Cloning sets the tiredness to the value in game as well
+                        let mut player = game_player.clone();
                         let stats = team
                             .stats
                             .get(&player.id)
                             .ok_or(format!("Player {:?} not found in team stats", player.id))?;
-                        player.apply_end_of_game_logic(stats);
+                        player.apply_end_of_game_logic(stats.experience_at_position);
                         self.players.insert(player.id, player);
                     }
                 }
@@ -781,7 +826,7 @@ impl World {
                 if let Ok(res) = self.get_team_or_err(game.home_team_in_game.team_id) {
                     let mut home_team = res.clone();
                     home_team.current_game = None;
-                    home_team.balance += home_team_income;
+                    home_team.add_resource(Resource::SATOSHI, home_team_income);
                     home_team.reputation = (home_team.reputation + home_team_reputation).bound();
                     self.teams.insert(home_team.id, home_team.clone());
                 }
@@ -789,7 +834,7 @@ impl World {
                 if let Ok(res) = self.get_team_or_err(game.away_team_in_game.team_id) {
                     let mut away_team = res.clone();
                     away_team.current_game = None;
-                    away_team.balance += away_team_income;
+                    away_team.add_resource(Resource::SATOSHI, away_team_income);
                     away_team.reputation = (away_team.reputation + away_team_reputation).bound();
                     self.teams.insert(away_team.id, away_team.clone());
                 }
@@ -818,7 +863,11 @@ impl World {
         Ok(())
     }
 
-    fn tick_travel(&mut self, current_timestamp: Tick) -> AppResult<()> {
+    fn tick_travel(
+        &mut self,
+        current_timestamp: Tick,
+        _is_simulating: bool,
+    ) -> AppResult<Option<String>> {
         let own_team = self.get_own_team()?;
 
         match own_team.current_location {
@@ -828,11 +877,13 @@ impl World {
                 started,
                 duration,
             } => {
-                if current_timestamp >= started + duration {
+                if current_timestamp > started + duration {
                     let mut team = own_team.clone();
                     team.current_location = TeamLocation::OnPlanet { planet_id: to };
                     let mut planet = self.get_planet_or_err(to)?.clone();
+                    let planet_name = planet.name.clone();
                     planet.teams.push(team.id);
+                    let team_name = team.name.clone();
 
                     for player in team.player_ids.iter() {
                         let mut player = self.get_player_or_err(*player)?.clone();
@@ -845,11 +896,83 @@ impl World {
                     self.dirty = true;
                     self.dirty_network = true;
                     self.dirty_ui = true;
+                    return Ok(Some(format!(
+                        "{} has landed on planet {}",
+                        team_name, planet_name
+                    )));
+                }
+            }
+            TeamLocation::Exploring {
+                around,
+                started,
+                duration,
+            } => {
+                if current_timestamp > started + duration {
+                    let mut team = own_team.clone();
+                    team.current_location = TeamLocation::OnPlanet { planet_id: around };
+                    let mut planet = self.get_planet_or_err(around)?.clone();
+                    planet.teams.push(team.id);
+
+                    for player in team.player_ids.iter() {
+                        let mut player = self.get_player_or_err(*player)?.clone();
+                        player.set_jersey(&team.jersey);
+                        self.players.insert(player.id, player);
+                    }
+
+                    let found_resources =
+                        self.resources_found_after_exploration(&team, &planet, duration);
+                    for (resource, &amount) in found_resources.iter() {
+                        team.add_resource(resource.clone(), amount);
+                    }
+
+                    let found_free_agents =
+                        self.free_agents_found_after_exploration(&team, &planet, duration);
+
+                    for player in found_free_agents.iter() {
+                        self.players.insert(player.id, player.clone());
+                    }
+
+                    self.teams.insert(team.id, team);
+                    self.planets.insert(planet.id, planet);
+                    self.dirty = true;
+                    self.dirty_network = true;
+                    self.dirty_ui = true;
+
+                    let mut resource_text = "".to_string();
+                    for (resource, &amount) in found_resources.iter() {
+                        if amount > 0 {
+                            resource_text.push_str(
+                                format!("  {} {}\n", amount, resource.to_string().to_lowercase())
+                                    .as_str(),
+                            );
+                        }
+                    }
+
+                    if found_free_agents.len() > 0 {
+                        resource_text.push_str(
+                            format! {"\nFound {} free agents\n", found_free_agents.len()}.as_str(),
+                        );
+                        for player in found_free_agents.iter() {
+                            resource_text.push_str(
+                                format!(
+                                    "  {}.{}\n",
+                                    player.info.first_name.chars().next().unwrap_or_default(),
+                                    player.info.last_name
+                                )
+                                .as_str(),
+                            );
+                        }
+                    }
+
+                    return Ok(Some(format!(
+                        "Team has returned from exploration.\n{}",
+                        resource_text
+                    )));
                 }
             }
             _ => {}
         }
-        Ok(())
+        Ok(None)
     }
 
     fn tick_tiredness_recovery(&mut self) -> AppResult<()> {
@@ -883,8 +1006,7 @@ impl World {
         self.players.retain(|_, player| player.team.is_some());
 
         let rng = &mut ChaCha8Rng::seed_from_u64(rand::random());
-        let data_planets = PLANET_DATA.as_ref().unwrap();
-        for planet in data_planets.iter() {
+        for planet in PLANET_DATA.iter() {
             self.populate_planet(rng, planet);
         }
         Ok("Free agents refreshed".to_string())
@@ -1022,14 +1144,19 @@ impl World {
 
     pub fn filter_peer_data(&mut self, peer_id: Option<PeerId>) {
         if peer_id.is_none() {
+            // Filter all data that has a peer_id (i.e. keep only local data)
             self.teams.retain(|_, team| team.peer_id.is_none());
             self.players.retain(|_, player| player.peer_id.is_none());
+            self.planets.retain(|_, planet| planet.peer_id.is_none());
         } else {
+            // Filter all data that has a specific peer_id
             let peer_id = peer_id.unwrap();
             self.teams
                 .retain(|_, team| team.peer_id.is_none() || team.peer_id.unwrap() != peer_id);
             self.players
                 .retain(|_, player| player.peer_id.is_none() || player.peer_id.unwrap() != peer_id);
+            self.planets
+                .retain(|_, planet| planet.peer_id.is_none() || planet.peer_id.unwrap() != peer_id);
         }
         // Remove teams from planet teams vector.
         for (_, planet) in self.planets.iter_mut() {
@@ -1057,7 +1184,12 @@ impl World {
         let team = self.get_team_or_err(team_id)?;
         let from = match team.current_location {
             TeamLocation::OnPlanet { planet_id } => planet_id,
-            _ => return Err(format!("Team {} is travelling", team.name).into()),
+            TeamLocation::Travelling { .. } => {
+                return Err(format!("Team {} is travelling", team.name).into())
+            }
+            TeamLocation::Exploring { .. } => {
+                return Err(format!("Team {} is exploring", team.name).into())
+            }
         };
 
         let distance = self.distance_between_planets(from, to)?;
@@ -1080,7 +1212,7 @@ impl World {
         Ok(height)
     }
 
-    fn distance_between_planets(&self, from_id: PlanetId, to_id: PlanetId) -> AppResult<u128> {
+    pub fn distance_between_planets(&self, from_id: PlanetId, to_id: PlanetId) -> AppResult<u128> {
         // We calculate the distance. 5 cases:
 
         // 1: from and to are the same planet -> 0
@@ -1169,6 +1301,7 @@ impl World {
             planets: self.planets.clone(),
             games: self.games.clone(),
             past_games: self.past_games.clone(),
+            serialized_size: self.serialized_size,
             ..Default::default()
         };
         w.filter_peer_data(None);

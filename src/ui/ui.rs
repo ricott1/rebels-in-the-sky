@@ -22,7 +22,7 @@ use ratatui::style::{Color, Style, Styled};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph, Wrap};
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Layout},
     Frame,
 };
 use std::sync::{Arc, Mutex};
@@ -43,10 +43,10 @@ pub enum UiState {
 #[derive(Debug, Clone, Copy, Eq, Hash, Display, PartialEq)]
 pub enum UiTab {
     MyTeam,
-    Team,
-    Player,
+    Teams,
+    Players,
     Galaxy,
-    Game,
+    Games,
     Swarm,
 }
 
@@ -102,10 +102,10 @@ impl Ui {
         let mut ui_tabs = vec![];
 
         ui_tabs.push(UiTab::MyTeam);
-        ui_tabs.push(UiTab::Team);
-        ui_tabs.push(UiTab::Player);
+        ui_tabs.push(UiTab::Teams);
+        ui_tabs.push(UiTab::Players);
         ui_tabs.push(UiTab::Galaxy);
-        ui_tabs.push(UiTab::Game);
+        ui_tabs.push(UiTab::Games);
 
         if !disable_network {
             ui_tabs.push(UiTab::Swarm);
@@ -177,10 +177,10 @@ impl Ui {
             UiState::NewTeam => &self.new_team_screen,
             _ => match self.ui_tabs[self.tab_index] {
                 UiTab::MyTeam => &self.my_team_panel,
-                UiTab::Team => &self.team_panel,
-                UiTab::Player => &self.player_panel,
+                UiTab::Teams => &self.team_panel,
+                UiTab::Players => &self.player_panel,
                 UiTab::Galaxy => &self.galaxy_panel,
-                UiTab::Game => &self.game_panel,
+                UiTab::Games => &self.game_panel,
                 UiTab::Swarm => &self.swarm_panel,
             },
         }
@@ -192,10 +192,10 @@ impl Ui {
             UiState::NewTeam => Some(&mut self.new_team_screen),
             _ => match self.ui_tabs[self.tab_index] {
                 UiTab::MyTeam => Some(&mut self.my_team_panel),
-                UiTab::Team => Some(&mut self.team_panel),
-                UiTab::Player => Some(&mut self.player_panel),
+                UiTab::Teams => Some(&mut self.team_panel),
+                UiTab::Players => Some(&mut self.player_panel),
                 UiTab::Galaxy => Some(&mut self.galaxy_panel),
-                UiTab::Game => Some(&mut self.game_panel),
+                UiTab::Games => Some(&mut self.game_panel),
                 UiTab::Swarm => Some(&mut self.swarm_panel),
             },
         }
@@ -207,10 +207,10 @@ impl Ui {
             UiState::NewTeam => &mut self.new_team_screen,
             _ => match self.ui_tabs[self.tab_index] {
                 UiTab::MyTeam => &mut self.my_team_panel,
-                UiTab::Team => &mut self.team_panel,
-                UiTab::Player => &mut self.player_panel,
+                UiTab::Teams => &mut self.team_panel,
+                UiTab::Players => &mut self.player_panel,
                 UiTab::Galaxy => &mut self.galaxy_panel,
-                UiTab::Game => &mut self.game_panel,
+                UiTab::Games => &mut self.game_panel,
                 UiTab::Swarm => &mut self.swarm_panel,
             },
         }
@@ -219,6 +219,7 @@ impl Ui {
     pub fn handle_key_events(
         &mut self,
         key_event: crossterm::event::KeyEvent,
+        world: &World,
     ) -> Option<UiCallbackPreset> {
         match key_event.code {
             UiKey::DATA_VIEW => {
@@ -253,7 +254,8 @@ impl Ui {
                     }
                     return None;
                 }
-                self.get_active_screen_mut().handle_key_events(key_event)
+                self.get_active_screen_mut()
+                    .handle_key_events(key_event, world)
             }
         }
     }
@@ -318,13 +320,15 @@ impl Ui {
     pub fn render(&mut self, frame: &mut Frame, world: &World) {
         self.callback_registry.lock().unwrap().clear();
         let area = frame.size();
-        let split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(6),    // body
-                Constraint::Length(2), //footer
-            ])
-            .split(area);
+        let split = Layout::vertical([
+            Constraint::Min(6),    // body
+            Constraint::Length(2), //footer
+        ])
+        .split(area);
+
+        // Render footer
+        // We render the footer first because hover text is displayed in the footer (and thus must overwrite it)
+        frame.render_widget(self.footer(world), split[1]);
 
         // render selected tab
         let render_result = match self.state {
@@ -332,13 +336,11 @@ impl Ui {
             UiState::NewTeam => self.new_team_screen.render(frame, world, split[0]),
             _ => {
                 // Render tabs at top
-                let tab_main_split = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Length(3), // tabs
-                        Constraint::Min(3),    // panel
-                    ])
-                    .split(split[0]);
+                let tab_main_split = Layout::vertical([
+                    Constraint::Length(3), // tabs
+                    Constraint::Min(3),    // panel
+                ])
+                .split(split[0]);
 
                 let active_render =
                     self.get_active_screen_mut()
@@ -346,10 +348,7 @@ impl Ui {
 
                 let mut constraints = [Constraint::Length(12)].repeat(self.ui_tabs.len());
                 constraints.push(Constraint::Min(1));
-                let tab_split = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints(constraints)
-                    .split(tab_main_split[0]);
+                let tab_split = Layout::horizontal(constraints).split(tab_main_split[0]);
 
                 for idx in 0..self.ui_tabs.len() {
                     let mut button = Button::no_box(
@@ -382,8 +381,6 @@ impl Ui {
             ));
         }
 
-        // Render footer
-        frame.render_widget(self.footer(world), split[1]);
         self.render_popup(frame, area);
         self.last_update = Instant::now();
     }
@@ -392,17 +389,15 @@ impl Ui {
         // Render popup message
         if self.popup_messages.len() > 0 {
             let popup_rect = popup_rect(area);
-            let split = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3), //header
-                    Constraint::Min(3),    //message
-                    Constraint::Length(3), //button
-                ])
-                .split(popup_rect.inner(&Margin {
-                    vertical: 1,
-                    horizontal: 1,
-                }));
+            let split = Layout::vertical([
+                Constraint::Length(3), //header
+                Constraint::Min(3),    //message
+                Constraint::Length(3), //button
+            ])
+            .split(popup_rect.inner(&Margin {
+                vertical: 1,
+                horizontal: 1,
+            }));
 
             frame.render_widget(Clear, popup_rect);
             frame.render_widget(default_block(), popup_rect);

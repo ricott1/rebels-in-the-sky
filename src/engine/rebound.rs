@@ -2,7 +2,6 @@ use super::{
     action::{ActionOutput, ActionSituation, EngineAction},
     game::Game,
     types::GameStats,
-    utils::roll,
 };
 use crate::engine::{action::Advantage, types::GameStatsMap};
 use rand::Rng;
@@ -19,8 +18,6 @@ impl EngineAction for Rebound {
     fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
-        let attacking_stats = game.attacking_stats();
-        let defending_stats = game.defending_stats();
 
         // let rebound = |player: &Player| player.technical.rebounding;
         let mut attack_rebounds: Vec<u16> = attacking_players
@@ -40,21 +37,20 @@ impl EngineAction for Rebound {
             // apply bonus based on position
             attack_rebounds[idx] = attack_rebounds[idx] * (10 + idx as u16) / 10;
             //add random roll
-            let atk_stats = attacking_stats.get(&attacking_players[idx].id)?;
             match input.advantage {
                 Advantage::Attack => {
                     attack_rebounds[idx] += max(
-                        roll(rng, atk_stats.tiredness) as u16,
-                        roll(rng, atk_stats.tiredness) as u16,
+                        attacking_players[idx].roll(rng) as u16,
+                        attacking_players[idx].roll(rng) as u16,
                     );
                 }
                 Advantage::Neutral => {
-                    attack_rebounds[idx] += roll(rng, atk_stats.tiredness) as u16;
+                    attack_rebounds[idx] += attacking_players[idx].roll(rng) as u16;
                 }
                 Advantage::Defense => {
                     attack_rebounds[idx] += min(
-                        roll(rng, atk_stats.tiredness) as u16,
-                        roll(rng, atk_stats.tiredness) as u16,
+                        attacking_players[idx].roll(rng) as u16,
+                        attacking_players[idx].roll(rng) as u16,
                     );
                 }
             }
@@ -66,8 +62,7 @@ impl EngineAction for Rebound {
             }
 
             defense_rebounds[idx] = defense_rebounds[idx] * (10 + idx as u16) / 10;
-            let def_stats = defending_stats.get(&defending_players[idx].id)?;
-            defense_rebounds[idx] += roll(rng, def_stats.tiredness) as u16;
+            defense_rebounds[idx] += defending_players[idx].roll(rng) as u16;
         }
 
         let attack_result = *attack_rebounds.iter().max().unwrap();

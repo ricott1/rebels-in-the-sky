@@ -3,9 +3,8 @@ use super::{
     constants::TirednessCost,
     game::Game,
     types::GameStats,
-    utils::roll,
 };
-use crate::world::skill::GameSkill;
+use crate::world::{player::Trait, skill::GameSkill};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
@@ -17,15 +16,15 @@ impl EngineAction for Brawl {
     fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         let (attacking_players, defending_players) =
             (game.attacking_players(), game.defending_players());
-        let (attacking_stats, defending_stats) = (game.attacking_stats(), game.defending_stats());
         let weights = attacking_players
             .iter()
             .map(|p| {
-                let stats = attacking_stats.get(&p.id).unwrap();
-                if stats.is_knocked_out() {
+                if p.is_knocked_out() {
                     0
+                } else if p.special_trait == Some(Trait::Killer) {
+                    p.mental.aggression.value() * 2
                 } else {
-                    1
+                    p.mental.aggression.value()
                 }
             })
             .collect::<Vec<u8>>()
@@ -38,11 +37,12 @@ impl EngineAction for Brawl {
         let weights = defending_players
             .iter()
             .map(|p| {
-                let stats = defending_stats.get(&p.id).unwrap();
-                if stats.is_knocked_out() {
+                if p.is_knocked_out() {
                     0
+                } else if p.special_trait == Some(Trait::Killer) {
+                    p.mental.aggression.value() * 2
                 } else {
-                    1
+                    p.mental.aggression.value()
                 }
             })
             .collect::<Vec<u8>>()
@@ -55,48 +55,72 @@ impl EngineAction for Brawl {
         let attacker = attacking_players[attacker_idx];
         let defender = defending_players[defender_idx];
 
-        let attacker_stats = attacking_stats.get(&attacker.id)?;
-        let defender_stats = defending_stats.get(&defender.id)?;
-
         let mut attack_stats_update = HashMap::new();
         let mut attacker_update = GameStats::default();
-        attacker_update.add_tiredness(TirednessCost::HIGH, attacker.athleticism.stamina);
+        attacker_update.extra_tiredness = TirednessCost::HIGH;
 
         let mut defense_stats_update = HashMap::new();
         let mut defender_update = GameStats::default();
-        defender_update.add_tiredness(TirednessCost::MEDIUM, defender.athleticism.stamina);
+        defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
-        let atk_result = roll(rng, attacker_stats.tiredness)
+        let mut atk_result = attacker.roll(rng)
             + attacker.athleticism.strength.value()
             + attacker.mental.aggression.value();
-        let def_result = roll(rng, defender_stats.tiredness)
+        if attacker.special_trait == Some(Trait::Killer) {
+            atk_result += attacker.reputation as u8;
+        }
+
+        let mut def_result = defender.roll(rng)
             + defender.athleticism.strength.value()
             + defender.mental.aggression.value();
+        if defender.special_trait == Some(Trait::Killer) {
+            def_result += defender.reputation as u8;
+        }
 
         let description = match atk_result as i16 - def_result as i16 {
             x if x > 0 => {
-                defender_update
-                    .add_tiredness(TirednessCost::CRITICAL, defender.athleticism.stamina);
-                format!(
-                    "A brawl between {} and {}! {} seems to have gotten the upper hand.",
-                    attacker.info.last_name, defender.info.last_name, attacker.info.last_name
-                )
+                if attacker.has_hook() {
+                    defender_update.extra_tiredness += TirednessCost::CRITICAL;
+                    format!(
+                        "A brawl between {} and {}! {} seems to have gotten the upper hand.",
+                        defender.info.last_name, attacker.info.last_name, attacker.info.last_name
+                    )
+                } else {
+                    defender_update.extra_tiredness += TirednessCost::SEVERE;
+                    format!(
+                        "A brawl between {} and {}! {} got {} good with the hook! That'll be an ugly scar.",
+                        defender.info.last_name, attacker.info.last_name, attacker.info.last_name, defender.info.pronouns.as_object()
+                    )
+                }
             }
             x if x == 0 => {
-                attacker_update.add_tiredness(TirednessCost::HIGH, attacker.athleticism.stamina);
-                defender_update.add_tiredness(TirednessCost::HIGH, defender.athleticism.stamina);
-                format!(
-                    "A brawl between {} and {}! They both got some damage.",
-                    attacker.info.last_name, defender.info.last_name
-                )
+                attacker_update.extra_tiredness += TirednessCost::HIGH;
+                defender_update.extra_tiredness += TirednessCost::HIGH;
+                match rng.gen_range(0..=1) {
+                    0 => format!(
+                        "A brawl between {} and {}! They both got some damage.",
+                        attacker.info.last_name, defender.info.last_name
+                    ),
+                    _ => format!(
+                        "A brawl between {} and {}! An even match.",
+                        defender.info.last_name, attacker.info.last_name
+                    ),
+                }
             }
             _ => {
-                attacker_update
-                    .add_tiredness(TirednessCost::CRITICAL, attacker.athleticism.stamina);
-                format!(
-                    "A brawl between {} and {}! {} seems to have gotten the upper hand.",
-                    attacker.info.last_name, defender.info.last_name, defender.info.last_name
-                )
+                if defender.has_hook() {
+                    attacker_update.extra_tiredness += TirednessCost::CRITICAL;
+                    format!(
+                        "A brawl between {} and {}! {} seems to have gotten the upper hand.",
+                        attacker.info.last_name, defender.info.last_name, defender.info.last_name
+                    )
+                } else {
+                    attacker_update.extra_tiredness += TirednessCost::SEVERE;
+                    format!(
+                        "A brawl between {} and {}! {} got {} good with the hook! That'll be an ugly scar.",
+                        attacker.info.last_name, defender.info.last_name, defender.info.last_name, attacker.info.pronouns.as_object()
+                    )
+                }
             }
         };
 

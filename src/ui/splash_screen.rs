@@ -18,7 +18,7 @@ use rand::seq::SliceRandom;
 use ratatui::layout::Margin;
 use ratatui::{
     layout::Alignment,
-    prelude::{Constraint, Direction, Layout, Rect},
+    prelude::{Constraint, Layout, Rect},
     style::{Color, Style},
     text::Span,
     widgets::{Paragraph, Wrap},
@@ -50,7 +50,7 @@ pub struct SplashScreen {
     gif_map: Arc<Mutex<GifMap>>,
 }
 
-const QUOTES: [&'static str;11] = [
+const QUOTES: [&'static str;13] = [
     " “What cannot be destroyed can, nonetheless, be diverted, frozen, transformed, and gradually deprived of its substance - which in the case of states, is ultimately their capacity to inspire terror.” - D. Graeber",
     " “Aber der Staat lügt in allen Zungen des Guten und Bösen; und was er auch redet, er lügt—und was er auch hat, gestohlen hat er's.” - F. Nietzsche",
     " “That is what I have always understood to be the essence of anarchism: the conviction that the burden of proof has to be placed on authority, and that it should be dismantled if that burden cannot be met.” - N. Chomsky",
@@ -63,6 +63,8 @@ const QUOTES: [&'static str;11] = [
     " “The state is a condition, a certain relationship between human beings, a mode of behaviour; we destroy it by contracting other relationships, by behaving differently toward one another…” - G. Orwell",
     " “Underneath the gaze of Orion's belt, where the Sea of Tranquility meets the edge of twilight, lies a hidden trove of wisdom, forgotten by many, coveted by those in the know. It holds the keys to untold power.” - Anonymous",
     " “Dilige, et quod vis fac.” - Aurelius Augustinus Hipponensis",
+    " “The only way to deal with an unfree world is to become so absolutely free that your very existence is an act of rebellion.” - A. Camus",
+    " “He who can destroy a thing, controls a thing.” - F. Herbert",
     ];
 
 const TITLE: [&'static str; 13] = [
@@ -154,30 +156,26 @@ impl Screen for SplashScreen {
         Ok(())
     }
     fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
-        let split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(2),                  //margin
-                Constraint::Length(TITLE.len() as u16), //title
-                Constraint::Length(3),                  //version
-                Constraint::Min(5),                     //body
-                Constraint::Length(4),                  // quote
-            ])
-            .split(area);
+        let split = Layout::vertical([
+            Constraint::Length(2),                  //margin
+            Constraint::Length(TITLE.len() as u16), //title
+            Constraint::Length(3),                  //version
+            Constraint::Min(5),                     //body
+            Constraint::Length(4),                  // quote
+        ])
+        .split(area);
 
         let side_length = if area.width > TITLE_WIDTH {
             (area.width - TITLE_WIDTH) / 2
         } else {
             0
         };
-        let title = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(side_length),
-                Constraint::Length(TITLE_WIDTH),
-                Constraint::Length(side_length),
-            ])
-            .split(split[1]);
+        let title = Layout::horizontal([
+            Constraint::Length(side_length),
+            Constraint::Length(TITLE_WIDTH),
+            Constraint::Length(side_length),
+        ])
+        .split(split[1]);
 
         frame.render_widget(self.title.clone(), title[1]);
         frame.render_widget(
@@ -194,14 +192,12 @@ impl Screen for SplashScreen {
             0
         };
 
-        let body = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(side_width),
-                Constraint::Min(12),
-                Constraint::Length(side_width),
-            ])
-            .split(split[3]);
+        let body = Layout::horizontal([
+            Constraint::Length(side_width),
+            Constraint::Min(12),
+            Constraint::Length(side_width),
+        ])
+        .split(split[3]);
 
         if let Ok(mut lines) = self.gif_map.lock().unwrap().planet_zoom_in_frame_lines(
             SOL_ID.clone(),
@@ -226,14 +222,12 @@ impl Screen for SplashScreen {
             frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), split[3]);
         }
 
-        let selection_split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints::<Vec<Constraint>>(
-                (0..=self.max_index())
-                    .map(|_| Constraint::Length(3))
-                    .collect::<Vec<Constraint>>(),
-            )
-            .split(body[1]);
+        let selection_split = Layout::vertical::<Vec<Constraint>>(
+            (0..=self.max_index())
+                .map(|_| Constraint::Length(3))
+                .collect::<Vec<Constraint>>(),
+        )
+        .split(body[1]);
 
         for i in 0..selection_split.len() - 1 {
             let mut button = RadioButton::box_on_hover(
@@ -267,6 +261,7 @@ impl Screen for SplashScreen {
     fn handle_key_events(
         &mut self,
         key_event: crossterm::event::KeyEvent,
+        _world: &World,
     ) -> Option<UiCallbackPreset> {
         match key_event.code {
             KeyCode::Up => self.next_index(),

@@ -35,7 +35,7 @@ use rand_chacha::ChaCha8Rng;
 use ratatui::style::Styled;
 use ratatui::text::Line;
 use ratatui::{
-    prelude::{Alignment, Constraint, Direction, Layout, Margin, Rect},
+    prelude::{Alignment, Constraint, Layout, Margin, Rect},
     style::{Color, Style},
     text::Span,
     widgets::{Clear, Paragraph, Wrap},
@@ -225,16 +225,14 @@ impl NewTeamScreen {
     }
 
     fn render_spaceship(&mut self, frame: &mut Frame, area: Rect) {
-        let split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(SPACESHIP_IMAGE_WIDTH as u16 + 2),
-                Constraint::Min(1),
-            ])
-            .split(area.inner(&Margin {
-                horizontal: 1,
-                vertical: 1,
-            }));
+        let split = Layout::horizontal([
+            Constraint::Length(SPACESHIP_IMAGE_WIDTH as u16 + 2),
+            Constraint::Min(1),
+        ])
+        .split(area.inner(&Margin {
+            horizontal: 1,
+            vertical: 1,
+        }));
 
         if let Ok(gif) = self.selected_ship().compose_image() {
             let img = gif[(self.tick) % gif.len()].clone();
@@ -254,20 +252,21 @@ impl NewTeamScreen {
                 "Speed: {:.3} AU/h",
                 spaceship.speed() * HOURS as f32 / AU as f32
             )),
-            Line::from(format!("Capacity: {}", spaceship.capacity())),
+            Line::from(format!("Crew: {}", spaceship.crew_capacity())),
+            Line::from(format!("Storage: {}/{}", 0, spaceship.storage_capacity())),
+            Line::from(format!(
+                "Tank: {}/{} t",
+                spaceship.fuel_capacity(),
+                spaceship.fuel_capacity()
+            )),
             Line::from(format!(
                 "Consumption: {:.2} t/h",
                 spaceship.fuel_consumption() * HOURS as f32
             )),
-            Line::from(format!("Tank: {} t", spaceship.tank())),
             Line::from(format!(
                 "Max distance: {:.0} AU",
-                spaceship.max_distance() / AU as f32
+                spaceship.max_distance(spaceship.fuel_capacity()) / AU as f32
             )),
-            // Line::from(format!(
-            //     "Autonomy: {}",
-            //     spaceship.max_travel_time().formatted()
-            // )),
             Line::from(format!("Cost: {} {}", spaceship.cost(), CURRENCY_SYMBOL)),
         ]);
 
@@ -402,14 +401,12 @@ impl NewTeamScreen {
             UiStyle::UNSELECTABLE
         };
 
-        let color_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Ratio(1, 3),
-                Constraint::Ratio(1, 3),
-                Constraint::Ratio(1, 3),
-            ])
-            .split(area);
+        let color_split = Layout::horizontal([
+            Constraint::Ratio(1, 3),
+            Constraint::Ratio(1, 3),
+            Constraint::Ratio(1, 3),
+        ])
+        .split(area);
 
         if self.state >= CreationState::Jersey {
             let red_style = Style::default().bg(Color::Rgb(
@@ -719,19 +716,25 @@ impl NewTeamScreen {
         let player = world
             .get_player(planet_players[self.player_index].0)
             .unwrap();
-        render_player_description(player, &self.gif_map, self.tick, frame, world, area);
+        render_player_description(
+            player,
+            &self.gif_map,
+            &self.callback_registry,
+            self.tick,
+            frame,
+            world,
+            area,
+        );
     }
 
     fn render_confirm_box(&mut self, frame: &mut Frame, world: &World, area: Rect) {
-        let split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(1),
-                Constraint::Length(4),
-                Constraint::Length(3),
-                Constraint::Min(1),
-            ])
-            .split(area);
+        let split = Layout::vertical([
+            Constraint::Min(1),
+            Constraint::Length(4),
+            Constraint::Length(3),
+            Constraint::Min(1),
+        ])
+        .split(area);
         let name = self.team_name_textarea.lines()[0].clone();
         let planet = world
             .get_planet_or_err(self.planet_ids[self.planet_index])
@@ -754,15 +757,13 @@ impl NewTeamScreen {
         } else {
             0
         };
-        let button_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(side_width),
-                Constraint::Length(12),
-                Constraint::Length(12),
-                Constraint::Length(side_width),
-            ])
-            .split(split[2]);
+        let button_split = Layout::horizontal([
+            Constraint::Length(side_width),
+            Constraint::Length(12),
+            Constraint::Length(12),
+            Constraint::Length(side_width),
+        ])
+        .split(split[2]);
 
         let yes_button = Button::new(
             UiText::YES.into(),
@@ -791,7 +792,7 @@ impl NewTeamScreen {
     }
 
     fn max_players_selected(&self) -> usize {
-        // self.selected_players.len() >= self.selected_ship().capacity() as usize
+        // self.selected_players.len() >= self.selected_ship().crew_capacity() as usize
         let planet_id = self.planet_ids[self.planet_index];
         let planet_players = &self.planet_players.get(&planet_id).unwrap();
         min(INITIAL_TEAM_SIZE, planet_players.len())
@@ -841,15 +842,13 @@ impl Screen for NewTeamScreen {
         Ok(())
     }
     fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
-        let v_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(1),
-                Constraint::Length(LEFT_PANEL_WIDTH), //selections
-                Constraint::Min(10),                  //planet_players
-                Constraint::Length(1),
-            ])
-            .split(area);
+        let v_split = Layout::horizontal([
+            Constraint::Length(1),
+            Constraint::Length(LEFT_PANEL_WIDTH), //selections
+            Constraint::Min(10),                  //planet_players
+            Constraint::Length(1),
+        ])
+        .split(area);
 
         let planet_split_height = if self.state == CreationState::Planet {
             self.planet_ids.len() as u16 + 2
@@ -875,20 +874,18 @@ impl Screen for NewTeamScreen {
             3
         };
 
-        let h_split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),                   // remaining balance
-                Constraint::Length(3),                   // team name
-                Constraint::Length(3),                   // ship name
-                Constraint::Length(planet_split_height), // planet
-                Constraint::Length(4),                   // colors
-                Constraint::Length(jersey_split_height), // jersey style
-                Constraint::Length(ship_split_height),   // ship
-                Constraint::Length(player_split_height), // player_list
-                Constraint::Min(0),                      // filler
-            ])
-            .split(v_split[1]);
+        let h_split = Layout::vertical([
+            Constraint::Length(3),                   // remaining balance
+            Constraint::Length(3),                   // team name
+            Constraint::Length(3),                   // ship name
+            Constraint::Length(planet_split_height), // planet
+            Constraint::Length(4),                   // colors
+            Constraint::Length(jersey_split_height), // jersey style
+            Constraint::Length(ship_split_height),   // ship
+            Constraint::Length(player_split_height), // player_list
+            Constraint::Min(0),                      // filler
+        ])
+        .split(v_split[1]);
 
         self.render_remaining_balance(frame, h_split[0]);
 
@@ -944,7 +941,11 @@ impl Screen for NewTeamScreen {
         Ok(())
     }
 
-    fn handle_key_events(&mut self, key_event: KeyEvent) -> Option<UiCallbackPreset> {
+    fn handle_key_events(
+        &mut self,
+        key_event: KeyEvent,
+        _world: &World,
+    ) -> Option<UiCallbackPreset> {
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
@@ -952,7 +953,10 @@ impl Screen for NewTeamScreen {
                 match self.state {
                     CreationState::TeamName => match key_event.code {
                         KeyCode::Enter => {
-                            if !validate_textarea_input(&mut self.team_name_textarea) {
+                            if !validate_textarea_input(
+                                &mut self.team_name_textarea,
+                                "Team name".into(),
+                            ) {
                                 return None;
                             }
                             let mut name = self.team_name_textarea.lines()[0].trim().to_string();
@@ -985,12 +989,18 @@ impl Screen for NewTeamScreen {
                         _ => {
                             self.team_name_textarea
                                 .input(input_from_key_event(key_event));
-                            validate_textarea_input(&mut self.team_name_textarea);
+                            validate_textarea_input(
+                                &mut self.team_name_textarea,
+                                "Team name".into(),
+                            );
                         }
                     },
                     CreationState::ShipName => match key_event.code {
                         KeyCode::Enter => {
-                            if !validate_textarea_input(&mut self.ship_name_textarea) {
+                            if !validate_textarea_input(
+                                &mut self.ship_name_textarea,
+                                "Ship name".into(),
+                            ) {
                                 return None;
                             }
                             let mut name = self.ship_name_textarea.lines()[0].trim().to_string();
@@ -1031,13 +1041,19 @@ impl Screen for NewTeamScreen {
                             } else {
                                 self.ship_name_textarea
                                     .input(input_from_key_event(key_event));
-                                validate_textarea_input(&mut self.ship_name_textarea);
+                                validate_textarea_input(
+                                    &mut self.ship_name_textarea,
+                                    "Ship name".into(),
+                                );
                             }
                         }
                         _ => {
                             self.ship_name_textarea
                                 .input(input_from_key_event(key_event));
-                            validate_textarea_input(&mut self.ship_name_textarea);
+                            validate_textarea_input(
+                                &mut self.ship_name_textarea,
+                                "Ship name".into(),
+                            );
                         }
                     },
                     CreationState::Planet => match key_event.code {
@@ -1205,16 +1221,20 @@ impl SplitPanel for NewTeamScreen {
     }
 }
 
-fn validate_textarea_input(textarea: &mut TextArea<'_>) -> bool {
+fn validate_textarea_input(textarea: &mut TextArea<'_>, title: String) -> bool {
     let text = textarea.lines()[0].trim();
+    // let current_block_title = textarea.block().unwrap().title().clone();
     if text.len() < MIN_NAME_LENGTH {
         textarea.set_style(UiStyle::ERROR);
+        textarea.set_block(default_block().title(title).title("(too short)"));
         false
     } else if text.len() > MAX_NAME_LENGTH {
         textarea.set_style(UiStyle::ERROR);
+        textarea.set_block(default_block().title(title).title("(too long)"));
         false
     } else {
         textarea.set_style(UiStyle::DEFAULT);
+        textarea.set_block(default_block().title(title));
         true
     }
 }

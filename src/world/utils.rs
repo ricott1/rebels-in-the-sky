@@ -1,23 +1,18 @@
-use super::{planet::Planet, skill::GameSkill};
+use std::collections::HashMap;
+
+use super::{planet::Planet, skill::GameSkill, types::Population};
 use crate::store::ASSETS_DIR;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
-pub struct TeamData {
-    pub names: Vec<(String, String)>,
-}
-
-#[derive(Deserialize)]
 pub struct PlayerData {
-    pub first_names_he: Vec<Vec<String>>,
-    pub first_names_she: Vec<Vec<String>>,
-    pub last_names: Vec<Vec<String>>,
+    pub first_names_he: Vec<String>,
+    pub first_names_she: Vec<String>,
+    pub last_names: Vec<String>,
 }
 
 pub fn linear_interpolation(x: f32, coords: [f32; 4]) -> f32 {
-    // coords = (x1, y1, x2, y2)
-    // y = y1 + (y2 - y1) / (x2 - x1) * (x - x1)
     coords[1] + (coords[3] - coords[1]) / (coords[2] - coords[0]) * (x - coords[0])
 }
 
@@ -33,22 +28,38 @@ pub fn skill_linear_interpolation(base_skill: f32, mod_skill: f32, coords: [f32;
     (base_skill * modifier).bound()
 }
 
-pub static PLAYER_DATA: Lazy<Option<PlayerData>> = Lazy::new(|| {
-    let file = ASSETS_DIR.get_file("data/players_data.json")?;
-    let data = file.contents_utf8()?;
-    serde_json::from_str(&data).ok()
+pub static PLAYER_DATA: Lazy<HashMap<Population, PlayerData>> = Lazy::new(|| {
+    let file = ASSETS_DIR
+        .get_file("data/players_data.json")
+        .expect("Could not find players_data.json");
+    let data = file
+        .contents_utf8()
+        .expect("Could not read players_data.json");
+    serde_json::from_str(&data)
+        .unwrap_or_else(|e| panic!("Could not parse players_data.json: {}", e))
 });
 
-pub static TEAM_DATA: Lazy<Option<TeamData>> = Lazy::new(|| {
-    let file = ASSETS_DIR.get_file("data/teams_data.json")?;
-    let data = file.contents_utf8()?;
-    serde_json::from_str(&data).ok()
+pub static TEAM_DATA: Lazy<Vec<(String, String)>> = Lazy::new(|| {
+    let file = ASSETS_DIR
+        .get_file("data/teams_data.json")
+        .expect("Could not find teams_data.json");
+
+    let data = file
+        .contents_utf8()
+        .expect("Could not read teams_data.json");
+    serde_json::from_str(&data).unwrap_or_else(|e| panic!("Could not parse teams_data.json: {}", e))
 });
 
-pub static PLANET_DATA: Lazy<Option<Vec<Planet>>> = Lazy::new(|| {
-    let file = ASSETS_DIR.get_file("data/planets_data.json")?;
-    let data = file.contents_utf8()?;
-    serde_json::from_str(&data).ok()
+pub static PLANET_DATA: Lazy<Vec<Planet>> = Lazy::new(|| {
+    let file = ASSETS_DIR
+        .get_file("data/planets_data.json")
+        .expect("Could not find planets_data.json");
+    let data = file
+        .contents_utf8()
+        .expect("Could not read planets_data.json");
+    serde_json::from_str(&data).unwrap_or_else(|e| {
+        panic!("Could not parse planets_data.json: {}", e);
+    })
 });
 
 pub fn ellipse_coords(axis: (f32, f32), theta: f32) -> (f32, f32) {
