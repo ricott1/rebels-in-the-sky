@@ -581,20 +581,28 @@ impl Screen for MyTeamPanel {
                 }
             }
             TeamLocation::Travelling { to, .. } => {
-                if let Ok(lines) = self
+                if let Ok(mut lines) = self
                     .gif_map
                     .lock()
                     .unwrap()
                     .travelling_spaceship_lines(team.id, self.tick, world)
                 {
+                    let area = bottom_split[2].inner(&Margin {
+                        horizontal: 1,
+                        vertical: 1,
+                    });
+                    // Apply y-centering
+                    let min_offset = if lines.len() > area.height as usize {
+                        (lines.len() - area.height as usize) / 2
+                    } else {
+                        0
+                    };
+                    let max_offset = lines.len().min(min_offset + area.height as usize);
+                    if min_offset > 0 || max_offset < lines.len() {
+                        lines = lines[min_offset..max_offset].to_vec();
+                    }
                     let paragraph = Paragraph::new(lines);
-                    frame.render_widget(
-                        paragraph.centered(),
-                        bottom_split[2].inner(&Margin {
-                            horizontal: 1,
-                            vertical: 1,
-                        }),
-                    );
+                    frame.render_widget(paragraph.centered(), area);
                 }
                 let planet = world.get_planet_or_err(to)?;
                 frame.render_widget(
@@ -603,20 +611,28 @@ impl Screen for MyTeamPanel {
                 );
             }
             TeamLocation::Exploring { around, .. } => {
-                if let Ok(lines) = self
+                if let Ok(mut lines) = self
                     .gif_map
                     .lock()
                     .unwrap()
                     .exploring_spaceship_lines(team.id, self.tick, world)
                 {
+                    let area = bottom_split[2].inner(&Margin {
+                        horizontal: 1,
+                        vertical: 1,
+                    });
+                    // Apply y-centering
+                    let min_offset = if lines.len() > area.height as usize {
+                        (lines.len() - area.height as usize) / 2
+                    } else {
+                        0
+                    };
+                    let max_offset = lines.len().min(min_offset + area.height as usize);
+                    if min_offset > 0 || max_offset < lines.len() {
+                        lines = lines[min_offset..max_offset].to_vec();
+                    }
                     let paragraph = Paragraph::new(lines);
-                    frame.render_widget(
-                        paragraph.centered(),
-                        bottom_split[2].inner(&Margin {
-                            horizontal: 1,
-                            vertical: 1,
-                        }),
-                    );
+                    frame.render_widget(paragraph.centered(), area);
                 }
                 let planet = world.get_planet_or_err(around)?;
                 frame.render_widget(
