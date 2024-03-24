@@ -10,13 +10,14 @@ use super::{
     traits::Screen,
     widgets::{default_block, selectable_list},
 };
-use crate::types::{AppResult, SystemTimeTick, SECONDS};
+use crate::types::{AppResult, SystemTimeTick};
 use crate::ui::constants::{PrintableKeyCode, UiKey};
 use crate::world::skill::Rated;
-use crate::world::types::TeamLocation;
 use crate::{
     types::{PlanetId, PlanetMap},
-    world::{constants::GALAXY_ROOT_ID, planet::Planet, utils::ellipse_coords, world::World},
+    world::{
+        constants::*, planet::Planet, types::TeamLocation, utils::ellipse_coords, world::World,
+    },
 };
 use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -192,7 +193,7 @@ impl GalaxyPanel {
                     } =>
                 {
                     let can_explore = own_team.can_explore_around_planet(&planet);
-                    let explore_time = 10 * SECONDS;
+                    let explore_time = BASE_EXPLORATION_TIME;
                     let mut explore_button = Button::new(
                         format!(
                             "{}: Explore ({})",

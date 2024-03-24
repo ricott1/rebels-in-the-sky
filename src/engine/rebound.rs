@@ -3,7 +3,7 @@ use super::{
     game::Game,
     types::GameStats,
 };
-use crate::engine::{action::Advantage, types::GameStatsMap};
+use crate::engine::{action::Advantage, constants::ADV_ATTACK_LIMIT, types::GameStatsMap};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use std::{
@@ -76,7 +76,7 @@ impl EngineAction for Rebound {
 
         //FIXME: add more random situations
         let result = match attack_result as i16 - defence_result as i16 {
-            x if x > 0 => {
+            x if x > ADV_ATTACK_LIMIT || attack_rebounder_idx == input.attackers[0] => {
                 let mut attack_stats_update: GameStatsMap = HashMap::new();
                 let mut rebounder_update = GameStats::default();
                 rebounder_update.offensive_rebounds = 1;
@@ -101,7 +101,31 @@ impl EngineAction for Rebound {
                     attackers: vec![attack_rebounder_idx],
                     attack_stats_update: Some(attack_stats_update),
                     start_at: input.end_at,
-                    end_at: input.end_at.plus(1 + rng.gen_range(0..=2)),
+                    end_at: input.end_at.plus(1 + rng.gen_range(0..=1)),
+                    home_score: input.home_score,
+                    away_score: input.away_score,
+                    ..Default::default()
+                }
+            }
+
+            x if x > 0 => {
+                let mut attack_stats_update: GameStatsMap = HashMap::new();
+                let mut rebounder_update = GameStats::default();
+                rebounder_update.offensive_rebounds = 1;
+                attack_stats_update.insert(attack_rebounder.id, rebounder_update);
+                let description: String;
+                description = format!(
+                    "The ball got to {} that can restart the offensive action.",
+                    attack_rebounder.info.last_name,
+                );
+                ActionOutput {
+                    possession: input.possession,
+                    situation: ActionSituation::AfterLongOffensiveRebound,
+                    description,
+                    attackers: vec![attack_rebounder_idx],
+                    attack_stats_update: Some(attack_stats_update),
+                    start_at: input.end_at,
+                    end_at: input.end_at.plus(3 + rng.gen_range(0..=4)),
                     home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()

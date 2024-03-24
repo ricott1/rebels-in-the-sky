@@ -481,10 +481,7 @@ impl Screen for MyTeamPanel {
         match team.current_location {
             TeamLocation::OnPlanet { planet_id } => {
                 let planet = world.get_planet_or_err(planet_id)?;
-                frame.render_widget(
-                    default_block().title(format!("Planet {}", planet.name)),
-                    bottom_split[2],
-                );
+                frame.render_widget(default_block().title("Market"), bottom_split[2]);
 
                 let button_split = Layout::vertical([
                     Constraint::Length(3),
@@ -535,7 +532,7 @@ impl Screen for MyTeamPanel {
                     let sell_unit_cost = planet.resource_sell_price(*resource);
                     frame.render_widget(
                         Paragraph::new(format!(
-                            "{} {}/{}",
+                            "{:<4} {}/{}",
                             resource,
                             buy_ui_keys[button_split_idx].to_string(),
                             sell_ui_keys[button_split_idx].to_string(),
@@ -750,6 +747,21 @@ impl Screen for MyTeamPanel {
                 }
             }
 
+            UiKey::BUY_RUM => {
+                if let Some(planet_id) = self.current_planet_id {
+                    if let Ok(buy_price) = world
+                        .get_planet_or_err(planet_id)
+                        .map(|p| p.resource_buy_price(Resource::RUM))
+                    {
+                        return Some(UiCallbackPreset::TradeResource {
+                            resource: Resource::RUM,
+                            amount: 1,
+                            unit_cost: buy_price,
+                        });
+                    }
+                }
+            }
+
             UiKey::SELL_FOOD => {
                 if let Some(planet_id) = self.current_planet_id {
                     if let Ok(sell_price) = world
@@ -788,6 +800,21 @@ impl Screen for MyTeamPanel {
                     {
                         return Some(UiCallbackPreset::TradeResource {
                             resource: Resource::FUEL,
+                            amount: -1,
+                            unit_cost: sell_price,
+                        });
+                    }
+                }
+            }
+
+            UiKey::SELL_RUM => {
+                if let Some(planet_id) = self.current_planet_id {
+                    if let Ok(sell_price) = world
+                        .get_planet_or_err(planet_id)
+                        .map(|p| p.resource_sell_price(Resource::RUM))
+                    {
+                        return Some(UiCallbackPreset::TradeResource {
+                            resource: Resource::RUM,
                             amount: -1,
                             unit_cost: sell_price,
                         });

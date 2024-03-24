@@ -197,6 +197,7 @@ impl<'game> Game {
             }
             ActionSituation::BallInMidcourt
             | ActionSituation::AfterDefensiveRebound
+            | ActionSituation::AfterLongOffensiveRebound
             | ActionSituation::Turnover => match self.possession {
                 Possession::Home => self
                     .home_team_in_game
@@ -207,7 +208,6 @@ impl<'game> Game {
                     .pick_action(rng)
                     .unwrap_or(Action::Isolation),
             },
-            _ => panic!("Unknown situation: {:?}", situation),
         }
     }
 
@@ -362,6 +362,21 @@ impl<'game> Game {
         }
     }
 
+    pub fn is_team_knocked_out(&self, side: Possession) -> bool {
+        match side {
+            Possession::Home => self
+                .home_team_in_game
+                .players
+                .iter()
+                .all(|(_, p)| p.is_knocked_out()),
+            Possession::Away => self
+                .away_team_in_game
+                .players
+                .iter()
+                .all(|(_, p)| p.is_knocked_out()),
+        }
+    }
+
     fn game_end_description(&self, winner: Option<&str>) -> String {
         let (home, away) = self.get_score();
         if winner.is_none() {
@@ -491,16 +506,8 @@ impl<'game> Game {
             if action_input.situation == ActionSituation::BallInBackcourt {
                 // If home team is completely knocked out, end the game.
                 // Check that each player is knocked out
-                let home_knocked_out = self
-                    .home_team_in_game
-                    .players
-                    .iter()
-                    .all(|(_, p)| p.is_knocked_out());
-                let away_knocked_out = self
-                    .away_team_in_game
-                    .players
-                    .iter()
-                    .all(|(_, p)| p.is_knocked_out());
+                let home_knocked_out = self.is_team_knocked_out(Possession::Home);
+                let away_knocked_out = self.is_team_knocked_out(Possession::Away);
 
                 match (home_knocked_out, away_knocked_out) {
                     (true, true) => {

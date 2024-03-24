@@ -264,7 +264,7 @@ impl NewTeamScreen {
                 spaceship.fuel_consumption() * HOURS as f32
             )),
             Line::from(format!(
-                "Max distance: {:.0} AU",
+                "Max distance: {:.2} AU",
                 spaceship.max_distance(spaceship.fuel_capacity()) / AU as f32
             )),
             Line::from(format!("Cost: {} {}", spaceship.cost(), CURRENCY_SYMBOL)),

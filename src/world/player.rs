@@ -52,6 +52,7 @@ pub struct Player {
     pub previous_skills: [Skill; 20], // This is for displaying purposes to show the skills that were recently modified
     pub training_focus: Option<TrainingFocus>,
     pub tiredness: f32,
+    pub drunkness: f32,
 }
 
 impl Serialize for Player {
@@ -98,6 +99,7 @@ impl<'de> Deserialize<'de> for Player {
             PreviousSkills,
             TrainingFocus,
             Tiredness,
+            Drunkness,
             CompactSkills,
         }
 
@@ -130,6 +132,7 @@ impl<'de> Deserialize<'de> for Player {
                             "previous_skills" => Ok(Field::PreviousSkills),
                             "training_focus" => Ok(Field::TrainingFocus),
                             "tiredness" => Ok(Field::Tiredness),
+                            "drunkness" => Ok(Field::Drunkness),
                             "compact_skills" => Ok(Field::CompactSkills),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
@@ -192,6 +195,9 @@ impl<'de> Deserialize<'de> for Player {
                 let tiredness = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(12, &self))?;
+                let drunkness = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(13, &self))?;
                 let compact_skills: Vec<Skill> = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(13, &self))?;
@@ -215,6 +221,7 @@ impl<'de> Deserialize<'de> for Player {
                     previous_skills,
                     training_focus,
                     tiredness,
+                    drunkness,
                 };
 
                 player.athleticism = Athleticism {
@@ -268,6 +275,7 @@ impl<'de> Deserialize<'de> for Player {
                 let mut previous_skills = None;
                 let mut training_focus = None;
                 let mut tiredness = None;
+                let mut drunkness = None;
                 let mut compact_skills: Option<Vec<Skill>> = None;
 
                 while let Some(key) = map.next_key()? {
@@ -350,6 +358,12 @@ impl<'de> Deserialize<'de> for Player {
                             }
                             tiredness = Some(map.next_value()?);
                         }
+                        Field::Drunkness => {
+                            if drunkness.is_some() {
+                                return Err(serde::de::Error::duplicate_field("drunkness"));
+                            }
+                            drunkness = Some(map.next_value()?);
+                        }
                         Field::CompactSkills => {
                             if compact_skills.is_some() {
                                 return Err(serde::de::Error::duplicate_field("compact_skills"));
@@ -379,6 +393,8 @@ impl<'de> Deserialize<'de> for Player {
                     .ok_or_else(|| serde::de::Error::missing_field("training_focus"))?;
                 let tiredness =
                     tiredness.ok_or_else(|| serde::de::Error::missing_field("tiredness"))?;
+                let drunkness =
+                    drunkness.ok_or_else(|| serde::de::Error::missing_field("drunkness"))?;
                 let compact_skills = compact_skills
                     .ok_or_else(|| serde::de::Error::missing_field("compact_skills"))?;
 
@@ -401,6 +417,7 @@ impl<'de> Deserialize<'de> for Player {
                     previous_skills,
                     training_focus,
                     tiredness,
+                    drunkness,
                 };
 
                 player.athleticism = Athleticism {
@@ -452,6 +469,7 @@ impl<'de> Deserialize<'de> for Player {
             "previous_skills",
             "training_focus",
             "tiredness",
+            "drunkness",
             "compact_skills",
         ];
         deserializer.deserialize_struct("Player", FIELDS, PlayerVisitor)
@@ -541,6 +559,7 @@ impl Player {
             previous_skills: [Skill::default(); 20],
             training_focus: None,
             tiredness: 0.0,
+            drunkness: 0.0,
         };
 
         player.apply_info_modifiers();
@@ -901,6 +920,7 @@ pub enum Trait {
     Relentless,
     Showpirate,
     Explorator,
+    Spugna,
 }
 
 impl Trait {
@@ -925,6 +945,7 @@ impl Trait {
                 "Higher chance of finding something during exploration based on reputation (+{}%)",
                 player.reputation.value()
             ),
+            Trait::Spugna => format!("Cannot get drunk.",),
         }
     }
 }

@@ -33,7 +33,7 @@ pub const REPUTATION_BONUS_WINNER: f32 = 0.5;
 pub const REPUTATION_BONUS_LOSER: f32 = -0.2;
 pub const REPUTATION_BONUS_DRAW: f32 = 0.25;
 
-pub const BASE_EXPLORATION_TIME: Tick = 10 * SECONDS;
+pub const BASE_EXPLORATION_TIME: Tick = 10 * MINUTES / DEBUG_TIME_MULTIPLIER;
 
 pub struct TickInterval;
 impl TickInterval {
@@ -43,6 +43,7 @@ impl TickInterval {
 }
 
 pub const BASE_GAME_START_DELAY: Tick = 10 * SECONDS;
+pub const GAME_CLEANUP_TIME: Tick = 10 * SECONDS;
 
 static GALAXY_ROOT_STR: &str = "71a43700-0000-0000-0000-000000000000";
 static DEFAULT_PLANET_STR: &str = "71a43700-0000-0000-0002-000000000000";

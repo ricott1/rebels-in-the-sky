@@ -28,19 +28,19 @@ pub enum Advantage {
     Defense,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq)]
+#[repr(u8)]
 pub enum ActionSituation {
     #[default]
     JumpBall,
     EndOfQuarter,
     BallInBackcourt,
     BallInMidcourt,
-    BallInFrontcourt,
     AfterOffensiveRebound,
+    AfterLongOffensiveRebound,
     AfterDefensiveRebound,
     MissedShot,
     Turnover,
-    FreeThrow,
     CloseShot,
     MediumShot,
     LongShot,

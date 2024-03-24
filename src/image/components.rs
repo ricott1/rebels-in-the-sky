@@ -2,7 +2,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::EnumIter;
 use strum_macros::Display;
 
-use crate::world::spaceship::{Engine, Hull};
+use crate::world::spaceship::{Engine, Hull, Storage};
 
 pub trait ImageComponent {
     fn select_file(&self, size: u8) -> String;
@@ -374,6 +374,40 @@ impl ImageComponent for Engine {
             Engine::PincherSingle => "engine/pincher_single.png".into(),
             Engine::PincherDouble => "engine/pincher_double.png".into(),
             Engine::PincherTriple => "engine/pincher_triple.png".into(),
+        }
+    }
+}
+
+impl ImageComponent for Storage {
+    fn select_file(&self, size: u8) -> String {
+        match self {
+            Storage::ShuttleSingle => match size {
+                0 => "storage/shuttle_single0.png".into(),
+                1 => "storage/shuttle_single1.png".into(),
+                _ => "storage/shuttle_single2.png".into(),
+            },
+            Storage::ShuttleDouble => match size {
+                0 => "storage/shuttle_double0.png".into(),
+                1 => "storage/shuttle_double1.png".into(),
+                _ => "storage/shuttle_double2.png".into(),
+            },
+            Storage::PincherSingle => "storage/pincher_single.png".into(),
+        }
+    }
+
+    fn select_mask_file(&self, size: u8) -> String {
+        match self {
+            Storage::ShuttleSingle => match size {
+                0 => "storage/mask_shuttle_single0.png".into(),
+                1 => "storage/mask_shuttle_single1.png".into(),
+                _ => "storage/mask_shuttle_single2.png".into(),
+            },
+            Storage::ShuttleDouble => match size {
+                0 => "storage/mask_shuttle_double0.png".into(),
+                1 => "storage/mask_shuttle_double1.png".into(),
+                _ => "storage/mask_shuttle_double2.png".into(),
+            },
+            Storage::PincherSingle => format!("storage/mask_pincher_single.png"),
         }
     }
 }

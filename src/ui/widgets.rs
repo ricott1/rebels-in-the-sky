@@ -14,7 +14,7 @@ use crate::{
     image::{player::PLAYER_IMAGE_WIDTH, spaceship::SPACESHIP_IMAGE_WIDTH},
     types::{AppResult, SystemTimeTick, Tick, AU, HOURS, SECONDS},
     world::{
-        constants::CURRENCY_SYMBOL,
+        constants::*,
         player::Player,
         position::{GamePosition, Position, MAX_POSITION},
         resources::Resource,
@@ -232,7 +232,7 @@ pub fn explore_button<'a>(
         TeamLocation::OnPlanet { planet_id } => {
             let planet = world.get_planet_or_err(planet_id)?;
             team.can_explore_around_planet(&planet)?;
-            let explore_time = 10 * SECONDS;
+            let explore_time = BASE_EXPLORATION_TIME;
             Button::new(
                 format!(
                     "{}: Explore ({})",
@@ -375,7 +375,7 @@ pub fn render_spaceship_description(
                 team.spaceship.fuel_consumption() * HOURS as f32
             )),
             Line::from(format!(
-                "Max distance: {:.0} AU",
+                "Max distance: {:.2} AU",
                 team.spaceship.max_distance(team.fuel()) / AU as f32
             )),
             Line::from(format!(

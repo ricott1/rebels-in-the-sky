@@ -6,7 +6,7 @@ use crate::{
 };
 
 use super::constants::{BASE_FUEL_CONSUMPTION, BASE_SPEED, MIN_PLAYERS_PER_TEAM};
-use rand::{seq::IteratorRandom, SeedableRng};
+use rand::{seq::IteratorRandom, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -234,12 +234,12 @@ impl SpaceshipComponent for Engine {
 
     fn speed(&self) -> f32 {
         match self {
-            Self::ShuttleSingle => 1.0,
-            Self::ShuttleDouble => 1.5,
-            Self::ShuttleTriple => 2.0,
-            Self::PincherSingle => 1.0,
-            Self::PincherDouble => 1.55,
-            Self::PincherTriple => 2.05,
+            Self::ShuttleSingle => 1.2,
+            Self::ShuttleDouble => 1.7,
+            Self::ShuttleTriple => 2.2,
+            Self::PincherSingle => 1.1,
+            Self::PincherDouble => 1.65,
+            Self::PincherTriple => 2.25,
         }
     }
     fn cost(&self) -> u32 {
@@ -254,21 +254,130 @@ impl SpaceshipComponent for Engine {
     }
 }
 
+#[derive(
+    Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Default, EnumIter, Eq, Hash,
+)]
+#[repr(u8)]
+pub enum Storage {
+    #[default]
+    ShuttleSingle,
+    ShuttleDouble,
+    PincherSingle,
+}
+
+impl Display for Storage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Storage::ShuttleSingle => write!(f, "Single"),
+            Storage::ShuttleDouble => write!(f, "Double"),
+            Storage::PincherSingle => write!(f, "Single"),
+        }
+    }
+}
+
+impl Storage {
+    pub fn next(&self) -> Self {
+        match self {
+            Self::ShuttleSingle => Self::ShuttleDouble,
+            Self::ShuttleDouble => Self::ShuttleSingle,
+            Self::PincherSingle => Self::PincherSingle,
+        }
+    }
+
+    pub fn previous(&self) -> Self {
+        match self {
+            Self::ShuttleSingle => Self::ShuttleDouble,
+            Self::ShuttleDouble => Self::ShuttleSingle,
+            Self::PincherSingle => Self::PincherSingle,
+        }
+    }
+}
+
+impl SpaceshipComponent for Storage {
+    fn style(&self) -> SpaceshipStyle {
+        match self {
+            Self::ShuttleSingle => SpaceshipStyle::Shuttle,
+            Self::ShuttleDouble => SpaceshipStyle::Shuttle,
+            Self::PincherSingle => SpaceshipStyle::Pincher,
+        }
+    }
+    fn crew_capacity(&self) -> u8 {
+        0
+    }
+
+    fn storage_capacity(&self) -> u32 {
+        match self {
+            Self::ShuttleSingle => 1000,
+            Self::ShuttleDouble => 3000,
+            Self::PincherSingle => 4000,
+        }
+    }
+
+    fn fuel_capacity(&self) -> u32 {
+        match self {
+            Self::ShuttleSingle => 30,
+            Self::ShuttleDouble => 60,
+            Self::PincherSingle => 20,
+        }
+    }
+
+    fn fuel_consumption(&self) -> f32 {
+        match self {
+            Self::ShuttleSingle => 1.02,
+            Self::ShuttleDouble => 1.03,
+            Self::PincherSingle => 1.03,
+        }
+    }
+
+    fn speed(&self) -> f32 {
+        match self {
+            Self::ShuttleSingle => 0.96,
+            Self::ShuttleDouble => 0.93,
+            Self::PincherSingle => 0.97,
+        }
+    }
+    fn cost(&self) -> u32 {
+        match self {
+            Self::ShuttleSingle => 5000,
+            Self::ShuttleDouble => 6000,
+            Self::PincherSingle => 6000,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub struct Spaceship {
     pub name: String,
     pub hull: Hull,
     pub engine: Engine,
+    pub storage: Option<Storage>,
     pub image: SpaceshipImage,
 }
 
 impl Spaceship {
-    pub fn new(name: String, hull: Hull, engine: Engine, color_map: ColorMap) -> Self {
+    pub fn new(
+        name: String,
+        hull: Hull,
+        engine: Engine,
+        storage: Option<Storage>,
+        color_map: ColorMap,
+    ) -> Self {
         Self {
             name,
             hull,
             engine,
+            storage,
             image: SpaceshipImage::new(color_map),
+        }
+    }
+
+    pub fn size(&self) -> u8 {
+        match self.hull {
+            Hull::ShuttleSmall => 0,
+            Hull::ShuttleStandard => 1,
+            Hull::ShuttleLarge => 2,
+            Hull::PincherStandard => 1,
+            Hull::PincherLarge => 2,
         }
     }
 
@@ -283,7 +392,18 @@ impl Spaceship {
             .filter(|e| e.style() == style)
             .choose(rng)
             .unwrap();
-        Self::new(name, hull, engine, color_map)
+        let storage = match rng.gen_bool(0.5) {
+            true => Some(
+                Storage::iter()
+                    .filter(|s| s.style() == style)
+                    .choose(rng)
+                    .unwrap(),
+            ),
+            false => None,
+        };
+
+        Storage::iter().filter(|s| s.style() == style).choose(rng);
+        Self::new(name, hull, engine, storage, color_map)
     }
 
     pub fn set_color_map(&mut self, color_map: ColorMap) {
@@ -291,29 +411,53 @@ impl Spaceship {
     }
 
     pub fn compose_image(&self) -> AppResult<Gif> {
-        self.image.compose(self.hull, self.engine)
+        self.image
+            .compose(self.size(), self.hull, self.engine, self.storage)
     }
 
     pub fn speed(&self) -> f32 {
         // Returns the speed in Km/ms (Kilometers per Tick)
-        BASE_SPEED * self.hull.speed() * self.engine.speed()
+        let storage_speed = match self.storage {
+            Some(storage) => storage.speed(),
+            None => 1.0,
+        };
+        BASE_SPEED * self.hull.speed() * self.engine.speed() * storage_speed
     }
 
     pub fn crew_capacity(&self) -> u8 {
-        self.hull.crew_capacity() + self.engine.crew_capacity()
+        let storage_crew_capacity = match self.storage {
+            Some(storage) => storage.crew_capacity(),
+            None => 0,
+        };
+        self.hull.crew_capacity() + self.engine.crew_capacity() + storage_crew_capacity
     }
 
     pub fn storage_capacity(&self) -> u32 {
-        self.hull.storage_capacity() + self.engine.storage_capacity()
+        let storage_capacity = match self.storage {
+            Some(storage) => storage.storage_capacity(),
+            None => 0,
+        };
+        self.hull.storage_capacity() + self.engine.storage_capacity() + storage_capacity
     }
 
     pub fn fuel_capacity(&self) -> u32 {
-        self.hull.fuel_capacity() + self.engine.fuel_capacity()
+        let storage_fuel_capacity = match self.storage {
+            Some(storage) => storage.fuel_capacity(),
+            None => 0,
+        };
+        self.hull.fuel_capacity() + self.engine.fuel_capacity() + storage_fuel_capacity
     }
 
     pub fn fuel_consumption(&self) -> f32 {
         // Returns the fuel consumption in t/ms (tonnes per Tick)
-        BASE_FUEL_CONSUMPTION * self.hull.fuel_consumption() * self.engine.fuel_consumption()
+        let storage_fuel_consumption = match self.storage {
+            Some(storage) => storage.fuel_consumption(),
+            None => 1.0,
+        };
+        BASE_FUEL_CONSUMPTION
+            * self.hull.fuel_consumption()
+            * self.engine.fuel_consumption()
+            * storage_fuel_consumption
     }
 
     pub fn cost(&self) -> u32 {
@@ -373,33 +517,49 @@ impl SpaceshipPrefab {
                 name,
                 Hull::ShuttleStandard,
                 Engine::ShuttleDouble,
+                None,
                 color_map,
             ),
-            Self::Milwaukee => {
-                Spaceship::new(name, Hull::ShuttleLarge, Engine::ShuttleTriple, color_map)
-            }
+            Self::Milwaukee => Spaceship::new(
+                name,
+                Hull::ShuttleLarge,
+                Engine::ShuttleTriple,
+                None,
+                color_map,
+            ),
             Self::Cafiero => Spaceship::new(
                 name,
                 Hull::ShuttleStandard,
                 Engine::ShuttleSingle,
+                Some(Storage::ShuttleSingle),
                 color_map,
             ),
-            Self::Bresci => {
-                Spaceship::new(name, Hull::ShuttleSmall, Engine::ShuttleTriple, color_map)
-            }
+            Self::Bresci => Spaceship::new(
+                name,
+                Hull::ShuttleSmall,
+                Engine::ShuttleTriple,
+                None,
+                color_map,
+            ),
             Self::Pincher => Spaceship::new(
                 name,
                 Hull::PincherStandard,
                 Engine::PincherSingle,
+                None,
                 color_map,
             ),
-            Self::Ragnarok => {
-                Spaceship::new(name, Hull::PincherLarge, Engine::PincherDouble, color_map)
-            }
+            Self::Ragnarok => Spaceship::new(
+                name,
+                Hull::PincherLarge,
+                Engine::PincherDouble,
+                None,
+                color_map,
+            ),
             Self::Orwell => Spaceship::new(
                 name,
                 Hull::PincherStandard,
                 Engine::PincherTriple,
+                Some(Storage::PincherSingle),
                 color_map,
             ),
         }
@@ -407,5 +567,55 @@ impl SpaceshipPrefab {
 
     pub fn cost(&self) -> u32 {
         self.specs("".to_string(), ColorMap::default()).cost()
+    }
+}
+
+#[cfg(test)]
+
+mod tests {
+    use crate::types::{SystemTimeTick, AU, HOURS};
+
+    use super::*;
+
+    #[test]
+    fn spaceship_prefab_data() {
+        let color_map = ColorMap::random();
+        let name = "test".to_string();
+        let spaceship = SpaceshipPrefab::Yukawa.specs(name, color_map);
+        let speed = spaceship.speed();
+        let crew_capacity = spaceship.crew_capacity();
+        let storage_capacity = spaceship.storage_capacity();
+        let fuel_capacity = spaceship.fuel_capacity();
+        let fuel_consumption = spaceship.fuel_consumption();
+        let cost = spaceship.cost();
+        let max_distance = spaceship.max_distance(fuel_capacity);
+        let max_travel_time = spaceship.max_travel_time(fuel_capacity);
+
+        //log the spaceship data
+        println!(
+            "Speed: {} Km/ms = {:.2} Km/h = {:.2} AU/h",
+            speed,
+            speed * HOURS as f32,
+            speed * HOURS as f32 / AU as f32
+        );
+        println!("Crew Capacity: {}", crew_capacity);
+        println!("Storage Capacity: {}", storage_capacity);
+        println!("Fuel Capacity: {} t", fuel_capacity);
+        println!(
+            "Fuel Consumption: {} t/ms = {:.2} t/h",
+            fuel_consumption,
+            fuel_consumption * HOURS as f32
+        );
+        println!("Cost: {}", cost);
+        println!(
+            "Max Distance: {} Km = {:.2} AU",
+            max_distance,
+            max_distance / AU as f32
+        );
+        println!(
+            "Max Travel Time: {} ms = {}",
+            max_travel_time,
+            max_travel_time.formatted()
+        );
     }
 }

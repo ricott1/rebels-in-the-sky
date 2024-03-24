@@ -1,12 +1,11 @@
 [package]
 name = "rebels"
-version = "1.0.7"
+version = "1.0.8"
 edition = "2021"
 
 [profile.release]
 strip = true
-# lto = true
-# opt-level = 3
+opt-level = 3
 
 # Enable a small amount of optimization in debug mode
 [profile.dev]

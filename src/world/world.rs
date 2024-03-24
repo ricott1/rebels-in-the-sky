@@ -1,7 +1,7 @@
 use super::constants::*;
 use super::jersey::{Jersey, JerseyStyle};
 use super::planet::Planet;
-use super::player::Player;
+use super::player::{Player, Trait};
 use super::position::Position;
 use super::resources::Resource;
 use super::role::CrewRole;
@@ -12,7 +12,7 @@ use super::types::TeamLocation;
 use super::utils::{PLANET_DATA, TEAM_DATA};
 use crate::engine::constants::{MAX_TIREDNESS, RECOVERING_TIREDNESS_PER_SHORT_TICK};
 use crate::engine::game::{Game, GameSummary};
-use crate::engine::types::TeamInGame;
+use crate::engine::types::{Possession, TeamInGame};
 use crate::image::color_map::ColorMap;
 use crate::network::types::{NetworkGame, NetworkTeam};
 use crate::store::{
@@ -663,29 +663,47 @@ impl World {
         team: &Team,
         planet: &Planet,
         duration: u128,
-    ) -> HashMap<Resource, u32> {
+    ) -> AppResult<HashMap<Resource, u32>> {
         let mut rng = ChaCha8Rng::from_entropy();
         let mut resources = HashMap::new();
-        let from = (duration / SECONDS) as u32;
-        let to = from + (2 + team.reputation as u32) * from;
+        let mut duration_bonus = (duration / HOURS) as f32;
 
-        let mut base_gold = 0;
-        let mut base_food = 0;
-        let mut base_rum = 0;
+        // For each pirate in the team with the special trait Explorator,
+        // the duration bonus is increased by 50%.
+        for player_id in team.player_ids.iter() {
+            let player = self.get_player_or_err(*player_id)?;
+            if player.special_trait == Some(Trait::Explorator) {
+                duration_bonus += duration_bonus / 2.0;
+            }
+        }
+
+        let mut base_gold = duration_bonus;
+        let mut base_food = duration_bonus;
+        let mut base_rum = duration_bonus;
 
         for (resource, amount) in planet.base_resources.iter() {
             match resource {
-                Resource::GOLD => base_gold = *amount,
-                Resource::FOOD => base_food = *amount,
-                Resource::RUM => base_rum = *amount,
+                Resource::GOLD => base_gold = *amount as f32,
+                Resource::FOOD => base_food = *amount as f32,
+                Resource::RUM => base_rum = *amount as f32,
                 _ => {}
             }
         }
 
-        resources.insert(Resource::GOLD, rng.gen_range(from..to) + base_gold);
-        resources.insert(Resource::FOOD, rng.gen_range(from..to) + base_food);
-        resources.insert(Resource::RUM, rng.gen_range(from..to) + base_rum);
-        resources
+        resources.insert(
+            Resource::GOLD,
+            rng.gen_range(-50 + base_gold as i32..3).max(0) as u32,
+        );
+        resources.insert(
+            Resource::FOOD,
+            rng.gen_range(-5 + base_food as i32..12).max(0) as u32,
+        );
+        resources.insert(
+            Resource::RUM,
+            rng.gen_range(-10 + base_rum as i32..5).max(0) as u32,
+        );
+
+        Ok(resources)
     }
 
     fn free_agents_found_after_exploration(
@@ -764,7 +782,8 @@ impl World {
 
     fn cleanup_games(&mut self, current_timestamp: Tick) -> AppResult<()> {
         for (_, game) in self.games.iter() {
-            if game.ended_at.is_some() && current_timestamp > game.ended_at.unwrap() + 10 * SECONDS
+            if game.ended_at.is_some()
+                && current_timestamp > game.ended_at.unwrap() + GAME_CLEANUP_TIME
             {
                 log::info!(
                     "Game {} vs {}: started at {}, ended at {} and is being removed at {}",
@@ -807,10 +826,31 @@ impl World {
 
                 // Teams get money depending on game attendance.
                 // Home team gets a bonus for playing at home.
-                let home_team_income = 100 + game.attendance * INCOME_PER_ATTENDEE_HOME;
-                let away_team_income = 100 + game.attendance * INCOME_PER_ATTENDEE_AWAY;
-                // Winner team gets reputation bonus
+                // If a team is knocked out, money goes to the other team.
+                // If both are knocked out, they get no money.
 
+                let mut home_team_income = 100 + game.attendance * INCOME_PER_ATTENDEE_HOME;
+                let mut away_team_income = 100 + game.attendance * INCOME_PER_ATTENDEE_AWAY;
+                let home_knocked_out = game.is_team_knocked_out(Possession::Home);
+                let away_knocked_out = game.is_team_knocked_out(Possession::Away);
+
+                match (home_knocked_out, away_knocked_out) {
+                    (true, false) => {
+                        away_team_income += home_team_income;
+                        home_team_income = 0;
+                    }
+                    (false, true) => {
+                        home_team_income += away_team_income;
+                        away_team_income = 0;
+                    }
+                    (true, true) => {
+                        home_team_income = 0;
+                        away_team_income = 0;
+                    }
+                    _ => {}
+                }
+
+                // Winner team gets reputation bonus
                 let (home_team_reputation, away_team_reputation) = match game.winner {
                     Some(winner) => {
                         if winner == game.home_team_in_game.team_id {
@@ -822,7 +862,7 @@ impl World {
                     None => (REPUTATION_BONUS_DRAW, REPUTATION_BONUS_DRAW),
                 };
 
-                // Set playing teams current game to None
+                // Set playing teams current game to None and assign income and reputation.
                 if let Ok(res) = self.get_team_or_err(game.home_team_in_game.team_id) {
                     let mut home_team = res.clone();
                     home_team.current_game = None;
@@ -846,7 +886,7 @@ impl World {
         self.games.retain(|_, game| {
             game.ended_at.is_none()
                 || (game.ended_at.is_some()
-                    && current_timestamp <= game.ended_at.unwrap() + 10 * SECONDS)
+                    && current_timestamp <= game.ended_at.unwrap() + GAME_CLEANUP_TIME)
         });
         Ok(())
     }
@@ -920,7 +960,7 @@ impl World {
                     }
 
                     let found_resources =
-                        self.resources_found_after_exploration(&team, &planet, duration);
+                        self.resources_found_after_exploration(&team, &planet, duration)?;
                     for (resource, &amount) in found_resources.iter() {
                         team.add_resource(resource.clone(), amount);
                     }
@@ -965,7 +1005,7 @@ impl World {
                     }
 
                     return Ok(Some(format!(
-                        "Team has returned from exploration.\n{}",
+                        "Team has returned from exploration:\n\n{}",
                         resource_text
                     )));
                 }

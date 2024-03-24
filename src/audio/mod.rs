@@ -123,23 +123,4 @@ impl MusicPlayer {
         }
         None
     }
-
-    // pub async fn radio() -> AppResult<()> {
-    //     let (_stream, handle) = rodio::OutputStream::try_default()?;
-    //     let sink = rodio::Sink::try_new(&handle)?;
-    //     let stream =
-    //         HttpStream::<Client>::create("https://radio.frittura.org/telemarket.ogg".parse()?)
-    //             .await?;
-
-    //     let reader =
-    //         StreamDownload::from_stream(stream, TempStorageProvider::new(), Settings::default())
-    //             .await?;
-    //     sink.append(rodio::Decoder::new(reader)?);
-
-    //     let handle = tokio::task::spawn_blocking(move || {
-    //         sink.sleep_until_end();
-    //     });
-    //     handle.await?;
-    //     Ok(())
-    // }
 }
