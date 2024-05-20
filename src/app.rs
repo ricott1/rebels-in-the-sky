@@ -119,12 +119,21 @@ impl App {
         let simulation = self.world.simulate_until_now();
 
         match simulation {
-            Ok(messages) => {
-                for message in messages.iter() {
-                    self.ui.set_popup(crate::ui::ui::PopupMessage::Ok(
-                        message.clone(),
-                        Tick::now(),
-                    ));
+            Ok(callbacks) => {
+                for callback in callbacks.iter() {
+                    match callback.call(self) {
+                        Ok(Some(text)) => {
+                            self.ui
+                                .set_popup(crate::ui::popup_message::PopupMessage::Ok(
+                                    text,
+                                    Tick::now(),
+                                ));
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            panic!("Failed to load world: {}", e);
+                        }
+                    }
                 }
             }
             Err(_) => {
@@ -154,19 +163,33 @@ impl App {
             let tick_result = self.world.handle_tick_events(current_timestamp, false);
 
             match tick_result {
-                Ok(messages) => {
-                    for message in messages.iter() {
-                        self.ui.set_popup(crate::ui::ui::PopupMessage::Ok(
-                            message.clone(),
-                            Tick::now(),
-                        ));
+                Ok(callbacks) => {
+                    for callback in callbacks.iter() {
+                        match callback.call(self) {
+                            Ok(Some(text)) => {
+                                self.ui
+                                    .set_popup(crate::ui::popup_message::PopupMessage::Ok(
+                                        text,
+                                        Tick::now(),
+                                    ));
+                            }
+                            Ok(None) => {}
+                            Err(e) => {
+                                self.ui
+                                    .set_popup(crate::ui::popup_message::PopupMessage::Error(
+                                        e.to_string(),
+                                        Tick::now(),
+                                    ));
+                            }
+                        }
                     }
                 }
                 Err(e) => {
-                    self.ui.set_popup(crate::ui::ui::PopupMessage::Error(
-                        format!("Tick error\n{}", e.to_string()),
-                        Tick::now(),
-                    ));
+                    self.ui
+                        .set_popup(crate::ui::popup_message::PopupMessage::Error(
+                            format!("Tick error\n{}", e.to_string()),
+                            Tick::now(),
+                        ));
                 }
             }
         }
@@ -174,10 +197,11 @@ impl App {
         match self.ui.update(&self.world) {
             Ok(_) => {}
             Err(e) => {
-                self.ui.set_popup(crate::ui::ui::PopupMessage::Error(
-                    format!("Ui update error\n{}", e.to_string()),
-                    Tick::now(),
-                ));
+                self.ui
+                    .set_popup(crate::ui::popup_message::PopupMessage::Error(
+                        format!("Ui update error\n{}", e.to_string()),
+                        Tick::now(),
+                    ));
             }
         }
         self.world.dirty_ui = false;
@@ -234,16 +258,20 @@ impl App {
             _ => {
                 if let Some(callback) = self.ui.handle_key_events(key_event, &self.world) {
                     match callback.call(self) {
-                        Ok(Some(cb)) => {
+                        Ok(Some(text)) => {
                             self.ui
-                                .set_popup(crate::ui::ui::PopupMessage::Ok(cb, Tick::now()));
+                                .set_popup(crate::ui::popup_message::PopupMessage::Ok(
+                                    text,
+                                    Tick::now(),
+                                ));
                         }
                         Ok(None) => {}
                         Err(e) => {
-                            self.ui.set_popup(crate::ui::ui::PopupMessage::Error(
-                                e.to_string(),
-                                Tick::now(),
-                            ));
+                            self.ui
+                                .set_popup(crate::ui::popup_message::PopupMessage::Error(
+                                    e.to_string(),
+                                    Tick::now(),
+                                ));
                         }
                     }
                 }
@@ -260,14 +288,15 @@ impl App {
             match callback.call(self) {
                 Ok(Some(cb)) => {
                     self.ui
-                        .set_popup(crate::ui::ui::PopupMessage::Ok(cb, Tick::now()));
+                        .set_popup(crate::ui::popup_message::PopupMessage::Ok(cb, Tick::now()));
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    self.ui.set_popup(crate::ui::ui::PopupMessage::Error(
-                        e.to_string(),
-                        Tick::now(),
-                    ));
+                    self.ui
+                        .set_popup(crate::ui::popup_message::PopupMessage::Error(
+                            e.to_string(),
+                            Tick::now(),
+                        ));
                 }
             }
         }
@@ -283,7 +312,7 @@ impl App {
                 match callback.call(self) {
                     Ok(Some(cb)) => {
                         self.ui
-                            .set_popup(crate::ui::ui::PopupMessage::Ok(cb, Tick::now()));
+                            .set_popup(crate::ui::popup_message::PopupMessage::Ok(cb, Tick::now()));
                     }
                     Ok(None) => {}
                     Err(e) => {

@@ -10,7 +10,7 @@ const NORMAL_AVG: f32 = 0.6;
 const NORMAL_STD: f32 = 4.4;
 const LEVEL_BONUS: u8 = 2;
 pub const WEIGHT_MOD: f32 = 1.45;
-pub const MIN_SKILL: f32 = 1.0;
+pub const MIN_SKILL: f32 = 0.0;
 pub const MAX_SKILL: f32 = 20.0;
 pub const SKILL_NAMES: [&'static str; 20] = [
     "Quickness",
@@ -58,6 +58,12 @@ pub trait Rated {
 impl Rated for f32 {
     fn rating(&self) -> u8 {
         *self as u8
+    }
+}
+
+impl Rated for u8 {
+    fn rating(&self) -> u8 {
+        *self
     }
 }
 
@@ -186,7 +192,7 @@ pub struct Technical {
     pub passing: Skill,
     pub ball_handling: Skill,
     pub post_moves: Skill,
-    pub rebounding: Skill,
+    pub rebounds: Skill,
 }
 
 impl Technical {
@@ -196,19 +202,19 @@ impl Technical {
         let passing = (level + WEIGHT_MOD * weights[12] as f32).normal_sample(rng);
         let ball_handling = (level + WEIGHT_MOD * weights[13] as f32).normal_sample(rng);
         let post_moves = (level + WEIGHT_MOD * weights[14] as f32).normal_sample(rng);
-        let rebounding = (level + WEIGHT_MOD * weights[15] as f32).normal_sample(rng);
+        let rebounds = (level + WEIGHT_MOD * weights[15] as f32).normal_sample(rng);
         Self {
             passing,
             ball_handling,
             post_moves,
-            rebounding,
+            rebounds,
         }
     }
 }
 
 impl Rated for Technical {
     fn rating(&self) -> u8 {
-        (self.passing + self.ball_handling + self.post_moves + self.rebounding) as u8 / 4
+        (self.passing + self.ball_handling + self.post_moves + self.rebounds) as u8 / 4
     }
 }
 

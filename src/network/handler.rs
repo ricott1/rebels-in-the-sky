@@ -1,6 +1,6 @@
 use super::constants::*;
 use super::network_callback::NetworkCallbackPreset;
-use super::types::{Challenge, ChallengeState, NetworkGame, NetworkTeam, SeedInfo};
+use super::types::{Challenge, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::engine::types::TeamInGame;
 use crate::types::TeamId;
 use crate::types::{AppResult, GameId};
@@ -232,14 +232,14 @@ impl NetworkHandler {
 
             let mut challenge = challenge.clone();
             challenge.away_team = Some(away_team_in_game);
-            challenge.state = ChallengeState::SynAck;
+            challenge.state = NetworkRequestState::SynAck;
             self.send_challenge(&challenge)?;
             Ok(())
         };
 
         if let Err(err) = handle_syn() {
             let mut challenge = Challenge::new(challenge.home_peer_id, challenge.away_peer_id);
-            challenge.state = ChallengeState::Failed;
+            challenge.state = NetworkRequestState::Failed;
             challenge.error_message = Some(err.to_string());
             self.send_challenge(&challenge)?;
             return Err(err.to_string())?;
@@ -249,7 +249,7 @@ impl NetworkHandler {
 
     pub fn decline_challenge(&mut self, challenge: Challenge) -> AppResult<()> {
         let mut challenge = challenge.clone();
-        challenge.state = ChallengeState::Failed;
+        challenge.state = NetworkRequestState::Failed;
         challenge.error_message = Some("Declined".to_string());
         self.send_challenge(&challenge)?;
         self.challenges.remove(&challenge.home_peer_id);

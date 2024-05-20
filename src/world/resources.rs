@@ -6,7 +6,7 @@ use std::{collections::HashMap, fmt::Display, hash::Hash};
 pub enum Resource {
     SATOSHI,
     GOLD,
-    FOOD,
+    SCRAPS,
     FUEL,
     RUM,
 }
@@ -16,7 +16,7 @@ impl Display for Resource {
         match self {
             Resource::SATOSHI => write!(f, "Satoshi"),
             Resource::GOLD => write!(f, "Gold"),
-            Resource::FOOD => write!(f, "Food"),
+            Resource::SCRAPS => write!(f, "Scraps"),
             Resource::FUEL => write!(f, "Fuel"),
             Resource::RUM => write!(f, "Rum"),
         }
@@ -29,13 +29,13 @@ impl Resource {
     pub const FUEL_STORING_SPACE: u32 = 0;
     pub const GOLD_STORING_SPACE: u32 = 1;
     pub const RUM_STORING_SPACE: u32 = 1;
-    pub const FOOD_STORING_SPACE: u32 = 2;
+    pub const SCRAPS_STORING_SPACE: u32 = 10;
 
     pub fn base_price(&self) -> f32 {
         match self {
             Resource::SATOSHI => 1.0,
             Resource::GOLD => 10000.0,
-            Resource::FOOD => 35.0,
+            Resource::SCRAPS => 35.0,
             Resource::FUEL => 60.0,
             Resource::RUM => 125.0,
         }
@@ -45,7 +45,7 @@ impl Resource {
         match self {
             Resource::SATOSHI => Self::SATOSHI_STORING_SPACE,
             Resource::GOLD => Self::GOLD_STORING_SPACE,
-            Resource::FOOD => Self::FOOD_STORING_SPACE,
+            Resource::SCRAPS => Self::SCRAPS_STORING_SPACE,
             Resource::FUEL => Self::FUEL_STORING_SPACE,
             Resource::RUM => Self::RUM_STORING_SPACE,
         }

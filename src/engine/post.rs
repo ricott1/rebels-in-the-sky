@@ -130,7 +130,7 @@ impl EngineAction for Post {
                         defender.info.last_name, poster.info.last_name,
                     ),
                     start_at: input.end_at,
-                    end_at: input.end_at.plus(2),
+                    end_at: input.end_at.plus(3),
                     home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()

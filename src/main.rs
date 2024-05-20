@@ -32,6 +32,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> AppResult<()> {
     let logfile = FileAppender::builder()
+        .append(false)
         .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
         .build("rebels.log")?;
 

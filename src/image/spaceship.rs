@@ -61,7 +61,7 @@ impl SpaceshipImage {
 
             let mut engine = read_image(engine.select_file(size).as_str())?;
             let eng_x = (SPACESHIP_IMAGE_WIDTH - engine.width()) / 2;
-            let eng_y = 20;
+            let eng_y = 0;
             engine.apply_color_map(color_map);
 
             let mut base = RgbaImage::new(SPACESHIP_IMAGE_WIDTH, SPACESHIP_IMAGE_HEIGHT);

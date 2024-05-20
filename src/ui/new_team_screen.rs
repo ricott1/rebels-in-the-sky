@@ -3,8 +3,8 @@ use super::clickable_list::ClickableListState;
 use super::constants::{UiText, LEFT_PANEL_WIDTH};
 use super::gif_map::GifMap;
 use super::traits::SplitPanel;
-
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::utils::validate_textarea_input;
 use super::{
     constants::UiStyle,
     traits::Screen,
@@ -47,9 +47,7 @@ use std::{sync::Arc, sync::Mutex};
 use strum::IntoEnumIterator;
 use tui_textarea::{CursorMove, TextArea};
 
-const INITIAL_TEAM_SIZE: usize = 6;
-const MIN_NAME_LENGTH: usize = 3;
-const MAX_NAME_LENGTH: usize = 12;
+const INITIAL_TEAM_SIZE: usize = 5;
 
 #[derive(Debug, Default, PartialOrd, PartialEq)]
 pub enum CreationState {
@@ -1218,23 +1216,5 @@ impl SplitPanel for NewTeamScreen {
             }
             _ => {}
         }
-    }
-}
-
-fn validate_textarea_input(textarea: &mut TextArea<'_>, title: String) -> bool {
-    let text = textarea.lines()[0].trim();
-    // let current_block_title = textarea.block().unwrap().title().clone();
-    if text.len() < MIN_NAME_LENGTH {
-        textarea.set_style(UiStyle::ERROR);
-        textarea.set_block(default_block().title(title).title("(too short)"));
-        false
-    } else if text.len() > MAX_NAME_LENGTH {
-        textarea.set_style(UiStyle::ERROR);
-        textarea.set_block(default_block().title(title).title("(too long)"));
-        false
-    } else {
-        textarea.set_style(UiStyle::DEFAULT);
-        textarea.set_block(default_block().title(title));
-        true
     }
 }

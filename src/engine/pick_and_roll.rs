@@ -117,7 +117,7 @@ impl EngineAction for PickAndRoll {
                             playmaker.info.last_name, target_defender.info.last_name, playmaker.info.pronouns.as_possessive()
                         ),
                         start_at: input.end_at,
-                end_at: input.end_at.plus(2),
+                end_at: input.end_at.plus(3),
                 home_score: input.home_score,
                     away_score: input.away_score,
                         ..Default::default()

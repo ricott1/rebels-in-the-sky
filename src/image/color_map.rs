@@ -369,3 +369,27 @@ impl HairColorMap {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq)]
+#[repr(u8)]
+pub enum AsteroidColorMap {
+    Base,
+}
+
+impl AsteroidColorMap {
+    pub fn random(rng: &mut ChaCha8Rng) -> Self {
+        match rng.gen_range(0..9) {
+            0 => Self::Base,
+            _ => Self::Base,
+        }
+    }
+    pub fn color_map(&self) -> ColorMap {
+        match self {
+            Self::Base => ColorMap {
+                red: Rgb([163, 167, 194]),
+                green: Rgb([76, 104, 133]),
+                blue: Rgb([58, 63, 94]),
+            },
+        }
+    }
+}

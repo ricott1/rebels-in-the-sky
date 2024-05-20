@@ -1,5 +1,8 @@
 use crate::{
-    engine::{constants::TirednessCost, types::*},
+    engine::{
+        constants::{TirednessCost, ADV_DEFENSE_LIMIT},
+        types::*,
+    },
     world::{player::Player, skill::GameSkill},
 };
 
@@ -177,7 +180,14 @@ fn execute_shot(
     };
     let def_skill = defenders
         .iter()
-        .map(|&p| p.roll(rng) / defenders.len() as u8 + p.defense.block.value())
+        .map(|&p| {
+            p.roll(rng) / defenders.len() as u8
+                + if p.is_knocked_out() {
+                    0
+                } else {
+                    p.defense.block.value()
+                }
+        })
         .sum::<u8>();
 
     let roll = match input.advantage {
@@ -346,7 +356,7 @@ fn execute_shot(
             Advantage::Defense => {
                 defender_update.extra_tiredness = TirednessCost::MEDIUM;
                 // Only the first defender gets the block
-                if !success && idx == 0 {
+                if !success && idx == 0 && roll <= ADV_DEFENSE_LIMIT {
                     defender_update.blocks = 1;
                 }
             }

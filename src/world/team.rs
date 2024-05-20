@@ -1,11 +1,12 @@
 use super::{
-    constants::MIN_PLAYERS_PER_TEAM,
+    constants::{MIN_PLAYERS_PER_TEAM, MORALE_BONUS_ON_TEAM_ADD, MORALE_DEMOTION_MALUS},
     jersey::Jersey,
     planet::Planet,
     player::Player,
     position::{GamePosition, MAX_POSITION},
     resources::Resource,
     role::CrewRole,
+    skill::GameSkill,
     spaceship::Spaceship,
     types::{PlayerLocation, TeamLocation},
 };
@@ -37,7 +38,7 @@ pub struct Team {
     pub jersey: Jersey,
     pub resources: HashMap<Resource, u32>,
     pub spaceship: Spaceship,
-    pub home_planet: PlanetId,
+    pub home_planet_id: PlanetId,
     pub current_location: TeamLocation,
     pub peer_id: Option<PeerId>,
     pub current_game: Option<GameId>,
@@ -45,7 +46,7 @@ pub struct Team {
 }
 
 impl Team {
-    pub fn random(id: TeamId, home_planet: PlanetId, name: String) -> Self {
+    pub fn random(id: TeamId, home_planet_id: PlanetId, name: String) -> Self {
         let jersey = Jersey::random();
         let ship_name = format!("{}shipp", name);
         let ship_color = jersey.color;
@@ -53,9 +54,9 @@ impl Team {
             id,
             name,
             jersey,
-            home_planet,
+            home_planet_id,
             current_location: TeamLocation::OnPlanet {
-                planet_id: home_planet,
+                planet_id: home_planet_id,
             },
             spaceship: Spaceship::random(ship_name, ship_color),
             game_tactic: Tactic::random(),
@@ -255,6 +256,10 @@ impl Team {
         travel_time: Tick,
         current_fuel: u32,
     ) -> AppResult<()> {
+        if planet.peer_id.is_some() {
+            return Err("Cannot travel to asteroid".into());
+        }
+
         match self.current_location {
             TeamLocation::OnPlanet {
                 planet_id: current_planet_id,
@@ -268,6 +273,7 @@ impl Team {
                 to: _to,
                 started,
                 duration,
+                ..
             } => {
                 let current = Tick::now();
                 if started + duration > current {
@@ -289,7 +295,7 @@ impl Team {
             return Err("Team is currently playing".into());
         }
 
-        if planet.total_population() == 0 {
+        if planet.total_population() == 0 && self.home_planet_id != planet.id {
             return Err("This place is inhabitable".into());
         }
 
@@ -315,6 +321,7 @@ impl Team {
                 to: _to,
                 started,
                 duration,
+                ..
             } => {
                 let current = Tick::now();
                 if started + duration > current {
@@ -391,6 +398,7 @@ impl Team {
             return;
         }
         player.team = Some(self.id);
+        player.morale = (player.morale + MORALE_BONUS_ON_TEAM_ADD).bound();
         player.current_location = PlayerLocation::WithTeam;
         self.player_ids.push(player.id);
         player.set_jersey(&self.jersey);
@@ -403,6 +411,22 @@ impl Team {
         }
         player.team = None;
         self.player_ids.retain(|&p| p != player.id);
+
+        match player.info.crew_role {
+            CrewRole::Captain => self.crew_roles.captain = None,
+            CrewRole::Doctor => self.crew_roles.doctor = None,
+            CrewRole::Pilot => self.crew_roles.pilot = None,
+            CrewRole::Mozzo => self.crew_roles.mozzo.retain(|&p| p != player.id),
+        }
+
+        player.info.crew_role = CrewRole::Mozzo;
+        // Removed player is a bit demoralized :(
+        if player.morale > MORALE_DEMOTION_MALUS {
+            player.morale -= MORALE_DEMOTION_MALUS;
+        } else {
+            player.morale = 0.0;
+        }
+
         player.image.remove_jersey();
         player.compose_image()?;
         match self.current_location {

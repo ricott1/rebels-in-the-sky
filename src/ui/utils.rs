@@ -1,4 +1,7 @@
-use super::constants::UiStyle;
+use super::{
+    constants::{UiStyle, MAX_NAME_LENGTH, MIN_NAME_LENGTH},
+    widgets::default_block,
+};
 use crate::types::Tick;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use image::{Pixel, RgbaImage};
@@ -10,7 +13,7 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
-use tui_textarea::{Input, Key};
+use tui_textarea::{Input, Key, TextArea};
 
 #[derive(Debug)]
 pub struct SwarmPanelEvent {
@@ -130,4 +133,22 @@ pub fn hover_text_target(frame: &Frame) -> Rect {
     ])
     .split(frame.size());
     split[1]
+}
+
+pub fn validate_textarea_input(textarea: &mut TextArea<'_>, title: String) -> bool {
+    let text = textarea.lines()[0].trim();
+    // let current_block_title = textarea.block().unwrap().title().clone();
+    if text.len() < MIN_NAME_LENGTH {
+        textarea.set_style(UiStyle::ERROR);
+        textarea.set_block(default_block().title(title).title("(too short)"));
+        false
+    } else if text.len() > MAX_NAME_LENGTH {
+        textarea.set_style(UiStyle::ERROR);
+        textarea.set_block(default_block().title(title).title("(too long)"));
+        false
+    } else {
+        textarea.set_style(UiStyle::DEFAULT);
+        textarea.set_block(default_block().title(title));
+        true
+    }
 }

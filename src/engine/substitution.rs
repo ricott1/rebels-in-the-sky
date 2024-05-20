@@ -1,13 +1,14 @@
 use super::{
-    action::ActionOutput, constants::MIN_TIREDNESS_FOR_SUB, game::Game, types::GameStatsMap,
+    action::ActionOutput,
+    constants::MIN_TIREDNESS_FOR_SUB,
+    game::Game,
+    types::{GameStats, GameStatsMap, Possession},
 };
 use crate::{
-    engine::{
-        constants::MAX_TIREDNESS,
-        types::{GameStats, Possession},
-    },
     types::SortablePlayerMap,
-    world::{player::Player, position::Position, team::Team, types::Pronoun},
+    world::{
+        constants::MAX_TIREDNESS, player::Player, position::Position, team::Team, types::Pronoun,
+    },
 };
 use itertools::Itertools;
 use rand_chacha::ChaCha8Rng;

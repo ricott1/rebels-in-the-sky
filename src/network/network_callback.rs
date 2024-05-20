@@ -1,6 +1,6 @@
 use super::constants::*;
 use super::handler::NetworkHandler;
-use super::types::{Challenge, ChallengeState, NetworkGame, NetworkTeam, SeedInfo};
+use super::types::{Challenge, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::types::{AppResult, SystemTimeTick, Tick, MINUTES};
 use crate::types::{GameId, IdSystem};
 use crate::ui::utils::SwarmPanelEvent;
@@ -254,7 +254,7 @@ impl NetworkCallbackPreset {
             app.ui.swarm_panel.push_log_event(event);
 
             if info.message.is_some() {
-                app.ui.set_popup(crate::ui::ui::PopupMessage::Ok(
+                app.ui.set_popup(crate::ui::popup_message::PopupMessage::Ok(
                     info.message.unwrap(),
                     timestamp,
                 ));
@@ -276,7 +276,7 @@ impl NetworkCallbackPreset {
                     info.version_major, info.version_minor, info.version_patch,
                 );
                 app.ui
-                    .set_popup(crate::ui::ui::PopupMessage::Ok(text, timestamp));
+                    .set_popup(crate::ui::popup_message::PopupMessage::Ok(text, timestamp));
             }
             Ok(None)
         })
@@ -298,7 +298,7 @@ impl NetworkCallbackPreset {
 
             match challenge.state {
                 //FIXME: I think a single player is trying to handle more than one state. We should enforce the roles more clearly, i.e. who is the challenger who the challenged and only handle relevant states
-                ChallengeState::Syn => {
+                NetworkRequestState::Syn => {
                     if challenge.home_peer_id == self_peer_id {
                         return Err(format!("Team is challenge sender (should be receiver)").into());
                     }
@@ -318,7 +318,7 @@ impl NetworkCallbackPreset {
                     ));
                 }
 
-                ChallengeState::SynAck => {
+                NetworkRequestState::SynAck => {
                     if challenge.away_peer_id == self_peer_id {
                         return Err(format!("Team is challenge receiver (should be sender)").into());
                     }
@@ -329,7 +329,7 @@ impl NetworkCallbackPreset {
 
                     let mut handle_syn_ack = || -> AppResult<()> {
                         NetworkHandler::can_handle_challenge(&app.world)?;
-                        challenge.state = ChallengeState::Ack;
+                        challenge.state = NetworkRequestState::Ack;
                         challenge.game_id = Some(GameId::new());
                         challenge.starting_at = Some(Tick::now() + 2 * MINUTES);
 
@@ -340,7 +340,7 @@ impl NetworkCallbackPreset {
                         };
                         app.ui.swarm_panel.push_log_event(event);
                         challenge.generate_game(&mut app.world)?;
-                        app.ui.set_popup(crate::ui::ui::PopupMessage::Ok(
+                        app.ui.set_popup(crate::ui::popup_message::PopupMessage::Ok(
                             format!("Challenge accepted, game is starting."),
                             Tick::now(),
                         ));
@@ -352,14 +352,14 @@ impl NetworkCallbackPreset {
                     if let Err(err) = handle_syn_ack() {
                         let mut challenge =
                             Challenge::new(challenge.home_peer_id, challenge.away_peer_id);
-                        challenge.state = ChallengeState::Failed;
+                        challenge.state = NetworkRequestState::Failed;
                         challenge.error_message = Some(err.to_string());
                         network_handler.send_challenge(&challenge)?;
                         return Err(err.to_string())?;
                     }
                 }
 
-                ChallengeState::Ack => {
+                NetworkRequestState::Ack => {
                     // Not team challenge, we just generate game to display it in UI.
                     if challenge.home_peer_id != self_peer_id
                         && challenge.away_peer_id != self_peer_id
@@ -391,7 +391,7 @@ impl NetworkCallbackPreset {
                         };
                         app.ui.swarm_panel.push_log_event(event);
                         challenge.generate_game(&mut app.world)?;
-                        app.ui.set_popup(crate::ui::ui::PopupMessage::Ok(
+                        app.ui.set_popup(crate::ui::popup_message::PopupMessage::Ok(
                             format!("Challenge accepted, game is starting."),
                             Tick::now(),
                         ));
@@ -401,14 +401,14 @@ impl NetworkCallbackPreset {
                     if let Err(err) = handle_ack() {
                         let mut challenge =
                             Challenge::new(challenge.home_peer_id, challenge.away_peer_id);
-                        challenge.state = ChallengeState::Failed;
+                        challenge.state = NetworkRequestState::Failed;
                         challenge.error_message = Some(err.to_string());
                         network_handler.send_challenge(&challenge)?;
                         return Err(err.to_string())?;
                     }
                 }
 
-                ChallengeState::Failed => {
+                NetworkRequestState::Failed => {
                     assert!(challenge.error_message.is_some());
                     if challenge.home_peer_id != self_peer_id
                         && challenge.away_peer_id != self_peer_id
@@ -416,13 +416,14 @@ impl NetworkCallbackPreset {
                         return Err("Challenge failed, but it's not our challenge.")?;
                     }
                     app.ui.swarm_panel.remove_challenge(&challenge.home_peer_id);
-                    app.ui.set_popup(crate::ui::ui::PopupMessage::Error(
-                        format!(
-                            "Challenge failed: {}",
-                            challenge.error_message.clone().unwrap()
-                        ),
-                        Tick::now(),
-                    ));
+                    app.ui
+                        .set_popup(crate::ui::popup_message::PopupMessage::Error(
+                            format!(
+                                "Challenge failed: {}",
+                                challenge.error_message.clone().unwrap()
+                            ),
+                            Tick::now(),
+                        ));
 
                     return Err(format!(
                         "Challenge failed. {}",

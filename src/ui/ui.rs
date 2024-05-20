@@ -1,7 +1,8 @@
 use super::button::Button;
-use super::constants::{PrintableKeyCode, UiKey, UiStyle, UiText};
+use super::constants::{PrintableKeyCode, UiKey, UiStyle};
 use super::galaxy_panel::GalaxyPanel;
 use super::gif_map::GifMap;
+use super::popup_message::PopupMessage;
 use super::splash_screen::{AudioPlayerState, SplashScreen};
 use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
@@ -15,12 +16,11 @@ use crate::audio::{self};
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::world::world::World;
 use core::fmt::Debug;
-use crossterm::event::KeyCode;
-use ratatui::layout::{Margin, Rect};
+use ratatui::layout::Rect;
 use ratatui::prelude::Alignment;
 use ratatui::style::{Color, Style, Styled};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Clear, Paragraph, Wrap};
+use ratatui::widgets::Paragraph;
 use ratatui::{
     layout::{Constraint, Layout},
     Frame,
@@ -29,6 +29,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use std::vec;
 use strum_macros::Display;
+use tui_textarea::TextArea;
 
 const MAX_POPUP_MESSAGES: usize = 8;
 
@@ -50,13 +51,6 @@ pub enum UiTab {
     Swarm,
 }
 
-#[derive(Debug, Display, Clone)]
-pub enum PopupMessage {
-    Error(String, Tick),
-    Ok(String, Tick),
-}
-
-#[derive()]
 pub struct Ui {
     state: UiState,
     ui_tabs: Vec<UiTab>,
@@ -73,6 +67,7 @@ pub struct Ui {
     pub my_team_panel: MyTeamPanel,
     pub galaxy_panel: GalaxyPanel,
     popup_messages: Vec<PopupMessage>,
+    popup_input: TextArea<'static>,
     callback_registry: Arc<Mutex<CallbackRegistry>>,
 }
 
@@ -133,15 +128,21 @@ impl Ui {
             swarm_panel,
             my_team_panel,
             galaxy_panel,
+            popup_input: TextArea::default(),
             popup_messages: vec![],
             callback_registry,
         }
     }
 
-    pub fn set_popup(&mut self, message: PopupMessage) {
-        self.popup_messages.push(message);
-        if self.popup_messages.len() == MAX_POPUP_MESSAGES {
-            self.popup_messages.remove(0);
+    pub fn set_popup(&mut self, popup_message: PopupMessage) {
+        self.popup_messages.push(popup_message);
+        if self.popup_messages.len() >= MAX_POPUP_MESSAGES {
+            for index in 0..self.popup_messages.len() {
+                if self.popup_messages[index].is_skippable() {
+                    self.popup_messages.remove(index);
+                    break;
+                }
+            }
         }
     }
 
@@ -249,13 +250,20 @@ impl Ui {
             }
             _ => {
                 if self.popup_messages.len() > 0 {
-                    if key_event.code == KeyCode::Enter {
-                        self.close_popup();
-                    }
-                    return None;
+                    return self.popup_messages[0].consumes_input(&mut self.popup_input, key_event);
                 }
-                self.get_active_screen_mut()
+
+                if let Some(callback) = self
+                    .get_active_screen_mut()
                     .handle_key_events(key_event, world)
+                {
+                    return Some(callback);
+                }
+
+                self.callback_registry
+                    .lock()
+                    .unwrap()
+                    .handle_keyboard_event(&key_event.code)
             }
         }
     }
@@ -271,7 +279,7 @@ impl Ui {
         self.callback_registry
             .lock()
             .unwrap()
-            .handle_event(mouse_event)
+            .handle_mouse_event(&mouse_event)
     }
 
     pub(super) fn next_tab(&mut self) {
@@ -319,6 +327,9 @@ impl Ui {
     /// Renders the user interface widgets.
     pub fn render(&mut self, frame: &mut Frame, world: &World) {
         self.callback_registry.lock().unwrap().clear();
+        if self.popup_messages.len() > 0 {
+            self.callback_registry.lock().unwrap().set_max_layer(1);
+        }
         let area = frame.size();
         let split = Layout::vertical([
             Constraint::Min(6),    // body
@@ -381,78 +392,27 @@ impl Ui {
             ));
         }
 
-        self.render_popup(frame, area);
+        if self.render_popup_messages(frame, area).is_err() {
+            self.set_popup(PopupMessage::Error(
+                "Popup render error".into(),
+                Tick::now(),
+            ));
+        }
         self.last_update = Instant::now();
     }
 
-    fn render_popup(&mut self, frame: &mut Frame, area: Rect) {
+    fn render_popup_messages(&mut self, frame: &mut Frame, area: Rect) -> AppResult<()> {
         // Render popup message
         if self.popup_messages.len() > 0 {
             let popup_rect = popup_rect(area);
-            let split = Layout::vertical([
-                Constraint::Length(3), //header
-                Constraint::Min(3),    //message
-                Constraint::Length(3), //button
-            ])
-            .split(popup_rect.inner(&Margin {
-                vertical: 1,
-                horizontal: 1,
-            }));
-
-            frame.render_widget(Clear, popup_rect);
-            frame.render_widget(default_block(), popup_rect);
-
-            let button = Button::new(
-                UiText::YES.into(),
-                UiCallbackPreset::CloseUiPopup,
-                Arc::clone(&self.callback_registry),
-            );
-
-            frame.render_widget(
-                button,
-                split[2].inner(&Margin {
-                    vertical: 0,
-                    horizontal: 8,
-                }),
-            );
-            let popup_message = self.popup_messages[0].clone();
-            match popup_message {
-                PopupMessage::Ok(message, tick) => {
-                    frame.render_widget(
-                        Paragraph::new(format!("Message: {}", tick.formatted_as_date()))
-                            .block(default_block().border_style(UiStyle::OK))
-                            .alignment(Alignment::Center),
-                        split[0],
-                    );
-                    frame.render_widget(
-                        Paragraph::new(message)
-                            .alignment(Alignment::Center)
-                            .wrap(Wrap { trim: true }),
-                        split[1].inner(&Margin {
-                            horizontal: 1,
-                            vertical: 1,
-                        }),
-                    );
-                }
-                PopupMessage::Error(message, tick) => {
-                    frame.render_widget(
-                        Paragraph::new(format!("Error: {}", tick.formatted_as_date()))
-                            .block(default_block().border_style(UiStyle::ERROR))
-                            .alignment(Alignment::Center),
-                        split[0],
-                    );
-                    frame.render_widget(
-                        Paragraph::new(message)
-                            .alignment(Alignment::Center)
-                            .wrap(Wrap { trim: true }),
-                        split[1].inner(&Margin {
-                            horizontal: 1,
-                            vertical: 1,
-                        }),
-                    );
-                }
-            }
+            self.popup_messages[0].render(
+                frame,
+                popup_rect,
+                &mut self.popup_input,
+                &self.callback_registry,
+            )?;
         }
+        Ok(())
     }
 
     pub fn switch_to(&mut self, tab: UiTab) {

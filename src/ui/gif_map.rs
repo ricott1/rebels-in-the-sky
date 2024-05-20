@@ -1,5 +1,6 @@
 use crate::{
     image::{
+        color_map::AsteroidColorMap,
         types::Gif,
         utils::{read_image, ExtraImageUtils},
     },
@@ -24,8 +25,8 @@ pub type GifLines = Vec<FrameLines>;
 
 const MAX_GIF_WIDTH: u32 = 160;
 const MAX_GIF_HEIGHT: u32 = 140;
-// pub const TICKS_PER_REVOLUTION: usize = 3;
 pub const FRAMES_PER_REVOLUTION: usize = 360;
+
 pub static UNIVERSE_BACKGROUND: Lazy<RgbaImage> =
     Lazy::new(|| read_image("planets/background.png").unwrap());
 pub static TRAVELLING_BACKGROUND: Lazy<RgbaImage> =
@@ -43,6 +44,7 @@ impl ImageResizeInGalaxyGif {
                 PlanetType::BlackHole => 16,
                 PlanetType::Sol => 28,
                 PlanetType::Earth => 24,
+                PlanetType::Rocky => 16,
                 PlanetType::Ring => 32,
                 _ => 24,
             },
@@ -64,7 +66,7 @@ pub struct GifMap {
     travelling_spaceship_lines: HashMap<TeamId, GifLines>,
     exploring_spaceship_lines: HashMap<TeamId, GifLines>,
     planets_zoom_in_lines: HashMap<PlanetId, GifLines>,
-    planets_zoom_out_lines: HashMap<PlanetId, GifLines>,
+    planets_zoom_out_lines: HashMap<PlanetId, (u64, GifLines)>,
 }
 
 impl GifMap {
@@ -132,25 +134,33 @@ impl GifMap {
         // just picked those randomly, we could do better by using some deterministic position
         let x_blit = MAX_GIF_WIDTH / 2 + planet.axis.0 as u32;
         let y_blit = MAX_GIF_HEIGHT / 2 + planet.axis.1 as u32;
-        let gif = Self::open_gif(format!("planets/{}_full.gif", planet.filename.clone()))
-            .iter()
-            .map(|img: &ImageBuffer<Rgba<u8>, Vec<u8>>| {
-                let base = &mut UNIVERSE_BACKGROUND.clone();
+        let gif = if planet.planet_type == PlanetType::Asteroid {
+            let mut img =
+                read_image(format!("asteroids/{}.png", planet.filename.clone()).as_str())?;
 
-                // Blit img on base
-                base.copy_non_trasparent_from(&mut img.clone(), x_blit, y_blit)
-                    .unwrap();
+            let color_map = AsteroidColorMap::Base.color_map();
+            vec![img.apply_color_map(color_map).clone()]
+        } else {
+            Self::open_gif(format!("planets/{}_full.gif", planet.filename.clone()))
+                .iter()
+                .map(|img: &ImageBuffer<Rgba<u8>, Vec<u8>>| {
+                    let base = &mut UNIVERSE_BACKGROUND.clone();
 
-                let center = (x_blit + img.width() / 2, y_blit + img.height() / 2);
-                base.view(
-                    center.0 - MAX_GIF_WIDTH / 2,
-                    center.1 - MAX_GIF_HEIGHT / 2,
-                    MAX_GIF_WIDTH,
-                    MAX_GIF_HEIGHT,
-                )
-                .to_image()
-            })
-            .collect::<Gif>();
+                    // Blit img on base
+                    base.copy_non_trasparent_from(&mut img.clone(), x_blit, y_blit)
+                        .unwrap();
+
+                    let center = (x_blit + img.width() / 2, y_blit + img.height() / 2);
+                    base.view(
+                        center.0 - MAX_GIF_WIDTH / 2,
+                        center.1 - MAX_GIF_HEIGHT / 2,
+                        MAX_GIF_WIDTH,
+                        MAX_GIF_HEIGHT,
+                    )
+                    .to_image()
+                })
+                .collect::<Gif>()
+        };
         Ok(gif)
     }
 
@@ -206,22 +216,33 @@ impl GifMap {
                     planet_type: satellite.planet_type.clone(),
                 }
                 .size();
-                Self::open_gif(format!(
-                    "planets/{}_zoomout.gif",
-                    satellite.filename.clone()
-                ))
-                .iter()
-                .map(|img| {
-                    //We resize twice to try to get nicer looking results
-                    resize(
-                        img,
-                        2 * size,
-                        2 * size,
-                        image::imageops::FilterType::Triangle,
+
+                let gif = if satellite.planet_type == PlanetType::Asteroid {
+                    let mut img = read_image(
+                        format!("asteroids/{}.png", satellite.filename.clone()).as_str(),
                     )
-                })
-                .map(|img| resize(&img, size, size, image::imageops::FilterType::Nearest))
-                .collect()
+                    .unwrap();
+                    let color_map = AsteroidColorMap::Base.color_map();
+                    vec![img.apply_color_map(color_map).clone()] as Gif
+                } else {
+                    Self::open_gif(format!(
+                        "planets/{}_zoomout.gif",
+                        satellite.filename.clone()
+                    ))
+                };
+
+                gif.iter()
+                    .map(|img| {
+                        //We resize twice to try to get nicer looking results
+                        resize(
+                            img,
+                            2 * size,
+                            2 * size,
+                            image::imageops::FilterType::Triangle,
+                        )
+                    })
+                    .map(|img| resize(&img, size, size, image::imageops::FilterType::Nearest))
+                    .collect()
             })
             .collect();
 
@@ -255,6 +276,7 @@ impl GifMap {
                     // Satellite img moves along an ellipse
                     let theta_0 = idx.clone() as f32 * 2.0 * std::f32::consts::PI
                         / planet.satellites.len() as f32;
+
                     let theta = theta_0
                         + (tick as f32 * 2.0 * std::f32::consts::PI)
                             / satellite.revolution_period as f32;
@@ -264,7 +286,7 @@ impl GifMap {
                     y_planet += y_origin as f32;
 
                     let mut satellite_img = satellites_images[idx]
-                        [(tick / satellite.rotation_period) % satellites_images.len()]
+                        [(tick / satellite.rotation_period) % satellites_images[idx].len()]
                     .clone();
 
                     base.copy_non_trasparent_from(
@@ -312,17 +334,20 @@ impl GifMap {
 
     pub fn planet_zoom_out_frame_lines(
         &mut self,
-        planet_id: PlanetId,
+        planet: &Planet,
         tick: usize,
         world: &World,
     ) -> AppResult<FrameLines> {
-        if let Some(lines) = self.planets_zoom_out_lines.get(&planet_id) {
-            return Ok(lines[tick % lines.len()].clone());
+        if let Some((version, lines)) = self.planets_zoom_out_lines.get(&planet.id) {
+            if planet.version == *version {
+                return Ok(lines[tick % lines.len()].clone());
+            }
         }
 
-        let gif = self.planet_zoom_out(planet_id, world)?;
+        let gif = self.planet_zoom_out(planet.id, world)?;
         let lines = Self::gif_to_lines(&gif);
-        self.planets_zoom_out_lines.insert(planet_id, lines.clone());
+        self.planets_zoom_out_lines
+            .insert(planet.id, (planet.version, lines.clone()));
         Ok(lines[tick % lines.len()].clone())
     }
 
@@ -337,8 +362,12 @@ impl GifMap {
         }
 
         let team = world.get_team_or_err(team_id)?;
-        let gif = team.spaceship.compose_image()?;
-        let lines = Self::gif_to_lines(&gif);
+        let gif = team.spaceship.compose_image();
+        if let Err(e) = gif {
+            log::error!("{}", e);
+            return Err(e);
+        }
+        let lines = Self::gif_to_lines(&gif?);
         self.spaceship_lines.insert(team_id, lines.clone());
         Ok(lines[tick % lines.len()].clone())
     }

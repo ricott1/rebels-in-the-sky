@@ -24,7 +24,7 @@ uuid = { version = "1.7.0", features = [
 ] }
 crossterm = "0.26.1"
 rand = "0.8.5"
-ratatui = { version = "0.26.1", features = ["all-widgets"] }
+ratatui = { version = "0.26.2", features = ["all-widgets"] }
 strum = { version = "0.21", features = ["derive"] }
 image = "0.24.8"
 gif = "0.12.0"

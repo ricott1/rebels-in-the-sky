@@ -59,6 +59,7 @@ impl Debug for dyn SplitPanel {
 pub trait StyledRating: Rated {
     fn style(&self) -> Style {
         match self.rating() {
+            0 => Style::default().fg(Color::DarkGray),
             1..=2 => Style::default().fg(Color::Red),
             3..=4 => Style::default().fg(Color::LightRed),
             5..=6 => Style::default().fg(Color::Yellow),
@@ -75,3 +76,4 @@ pub trait StyledRating: Rated {
 }
 
 impl StyledRating for f32 {}
+impl StyledRating for u8 {}

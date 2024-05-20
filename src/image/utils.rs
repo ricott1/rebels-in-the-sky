@@ -116,7 +116,7 @@ impl ExtraImageUtils for ImageBuffer<Rgba<u8>, Vec<u8>> {
                             Rgba([r, g, b, p[3]])
                         }
 
-                        _ => continue,
+                        _ => *p,
                     };
 
                     let masked_mapped_pixel =

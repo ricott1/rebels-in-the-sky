@@ -3,7 +3,9 @@ use super::clickable_list::ClickableListState;
 use super::gif_map::GifMap;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
 use super::utils::hover_text_target;
-use super::widgets::{go_to_team_planet_button, render_spaceship_description};
+use super::widgets::{
+    challenge_button, go_to_team_current_planet_button, render_spaceship_description,
+};
 use super::{
     constants::{UiKey, UiStyle, LEFT_PANEL_WIDTH},
     traits::{Screen, SplitPanel},
@@ -43,35 +45,35 @@ use strum_macros::Display;
 const IMG_FRAME_WIDTH: u16 = 80;
 
 #[derive(Debug, Clone, Copy, Display, Default, PartialEq, Eq, Hash)]
-pub enum TeamFilter {
+pub enum TeamView {
     #[default]
     All,
     OpenToChallenge,
     Peers,
 }
 
-impl TeamFilter {
+impl TeamView {
     fn next(&self) -> Self {
         match self {
-            TeamFilter::All => TeamFilter::OpenToChallenge,
-            TeamFilter::OpenToChallenge => TeamFilter::Peers,
-            TeamFilter::Peers => TeamFilter::All,
+            TeamView::All => TeamView::OpenToChallenge,
+            TeamView::OpenToChallenge => TeamView::Peers,
+            TeamView::Peers => TeamView::All,
         }
     }
 
     fn rule(&self, team: &Team, own_team: &Team) -> bool {
         match self {
-            TeamFilter::All => true,
-            TeamFilter::OpenToChallenge => team.can_challenge_team(own_team).is_ok(),
-            TeamFilter::Peers => team.peer_id.is_some(),
+            TeamView::All => true,
+            TeamView::OpenToChallenge => team.can_challenge_team(own_team).is_ok(),
+            TeamView::Peers => team.peer_id.is_some(),
         }
     }
 
     fn to_string(&self) -> String {
         match self {
-            TeamFilter::All => "All".to_string(),
-            TeamFilter::OpenToChallenge => "Open to challenge".to_string(),
-            TeamFilter::Peers => "From swarm".to_string(),
+            TeamView::All => "All".to_string(),
+            TeamView::OpenToChallenge => "Open to challenge".to_string(),
+            TeamView::Peers => "From swarm".to_string(),
         }
     }
 }
@@ -84,8 +86,8 @@ pub struct TeamListPanel {
     pub selected_team_id: TeamId,
     pub teams: Vec<TeamId>,
     pub all_teams: Vec<TeamId>,
-    filter: TeamFilter,
-    update_filter: bool,
+    view: TeamView,
+    update_view: bool,
     current_team_players_length: usize,
     tick: usize,
     callback_registry: Arc<Mutex<CallbackRegistry>>,
@@ -121,15 +123,6 @@ impl TeamListPanel {
             % self.current_team_players_length;
     }
 
-    pub fn set_filter(&mut self, filter: TeamFilter) {
-        self.filter = filter;
-        self.update_filter = true;
-    }
-
-    pub fn reset_filter(&mut self) {
-        self.set_filter(TeamFilter::All);
-    }
-
     fn build_left_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
         let split = Layout::vertical([
             Constraint::Length(3),
@@ -140,32 +133,35 @@ impl TeamListPanel {
         .split(area);
 
         let mut filter_all_button = Button::new(
-            format!("Filter: {}", TeamFilter::All.to_string()),
-            UiCallbackPreset::SetTeamPanelFilter {
-                filter: TeamFilter::All,
+            format!("View: {}", TeamView::All.to_string()),
+            UiCallbackPreset::SetTeamPanelView {
+                view: TeamView::All,
             },
             Arc::clone(&self.callback_registry),
-        );
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW);
 
         let mut filter_challenge_button = Button::new(
-            format!("Filter: {}", TeamFilter::OpenToChallenge.to_string()),
-            UiCallbackPreset::SetTeamPanelFilter {
-                filter: TeamFilter::OpenToChallenge,
+            format!("View: {}", TeamView::OpenToChallenge.to_string()),
+            UiCallbackPreset::SetTeamPanelView {
+                view: TeamView::OpenToChallenge,
             },
             Arc::clone(&self.callback_registry),
-        );
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW);
 
         let mut filter_peers_button = Button::new(
-            format!("Filter: {}", TeamFilter::Peers.to_string()),
-            UiCallbackPreset::SetTeamPanelFilter {
-                filter: TeamFilter::Peers,
+            format!("View: {}", TeamView::Peers.to_string()),
+            UiCallbackPreset::SetTeamPanelView {
+                view: TeamView::Peers,
             },
             Arc::clone(&self.callback_registry),
-        );
-        match self.filter {
-            TeamFilter::All => filter_all_button.disable(None),
-            TeamFilter::OpenToChallenge => filter_challenge_button.disable(None),
-            TeamFilter::Peers => filter_peers_button.disable(None),
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW);
+        match self.view {
+            TeamView::All => filter_all_button.disable(None),
+            TeamView::OpenToChallenge => filter_challenge_button.disable(None),
+            TeamView::Peers => filter_peers_button.disable(None),
         }
 
         frame.render_widget(filter_all_button, split[0]);
@@ -378,33 +374,26 @@ impl TeamListPanel {
                 vertical: 0,
             }));
 
-        let own_team = world.get_own_team()?;
         let hover_text_target = hover_text_target(frame);
         if team.id != world.own_team_id {
-            if let Ok(go_to_team_planet_button) =
-                go_to_team_planet_button(world, team, &self.callback_registry, hover_text_target)
-            {
-                frame.render_widget(go_to_team_planet_button, button_split[0]);
+            if let Ok(go_to_team_current_planet_button) = go_to_team_current_planet_button(
+                world,
+                team,
+                &self.callback_registry,
+                hover_text_target,
+            ) {
+                frame.render_widget(go_to_team_current_planet_button, button_split[0]);
             }
 
-            let can_challenge = own_team.can_challenge_team(team);
+            let challenge_button = challenge_button(
+                world,
+                team,
+                &self.callback_registry,
+                hover_text_target,
+                true,
+            )?;
 
-            let mut button = Button::new(
-                format!("{}: Challenge", UiKey::CHALLENGE_TEAM.to_string()),
-                UiCallbackPreset::ChallengeTeam { team_id: team.id },
-                Arc::clone(&self.callback_registry),
-            );
-            if can_challenge.is_err() {
-                button.disable(Some(format!(
-                    "{}: {}",
-                    UiKey::CHALLENGE_TEAM.to_string(),
-                    can_challenge.unwrap_err().to_string()
-                )));
-            } else {
-                button = button.set_box_style(UiStyle::NETWORK);
-            }
-
-            frame.render_widget(button, button_split[1])
+            frame.render_widget(challenge_button, button_split[1])
         }
 
         render_spaceship_description(
@@ -432,6 +421,15 @@ impl TeamListPanel {
 
         Ok(())
     }
+
+    pub fn set_view(&mut self, filter: TeamView) {
+        self.view = filter;
+        self.update_view = true;
+    }
+
+    pub fn reset_view(&mut self) {
+        self.set_view(TeamView::All);
+    }
 }
 
 impl Screen for TeamListPanel {
@@ -451,20 +449,20 @@ impl Screen for TeamListPanel {
                     .partial_cmp(&world.team_rating(a.id))
                     .unwrap()
             });
-            self.update_filter = true;
+            self.update_view = true;
         }
 
-        if self.update_filter {
+        if self.update_view {
             self.teams = self
                 .all_teams
                 .iter()
                 .filter(|&&team_id| {
                     let team = world.get_team_or_err(team_id).unwrap();
-                    self.filter.rule(team, world.get_own_team().unwrap())
+                    self.view.rule(team, world.get_own_team().unwrap())
                 })
                 .map(|&player_id| player_id)
                 .collect();
-            self.update_filter = false;
+            self.update_view = false;
         }
 
         if self.index >= self.teams.len() && self.teams.len() > 0 {
@@ -515,21 +513,14 @@ impl Screen for TeamListPanel {
             KeyCode::Down => self.previous_index(),
             KeyCode::Right => self.next_player_index(),
             KeyCode::Left => self.previous_player_index(),
-            UiKey::CYCLE_FILTER => {
-                self.set_filter(self.filter.next());
-                self.set_index(0);
+            UiKey::CYCLE_VIEW => {
+                return Some(UiCallbackPreset::SetTeamPanelView {
+                    view: self.view.next(),
+                });
             }
             KeyCode::Enter => {
                 let player_id = self.selected_player_id.clone();
                 return Some(UiCallbackPreset::GoToPlayer { player_id });
-            }
-            UiKey::GO_TO_PLANET | KeyCode::Backspace => {
-                let team_id = self.selected_team_id.clone();
-                return Some(UiCallbackPreset::GoToCurrentTeamPlanet { team_id });
-            }
-            UiKey::CHALLENGE_TEAM => {
-                let team_id: uuid::Uuid = self.selected_team_id.clone();
-                return Some(UiCallbackPreset::ChallengeTeam { team_id });
             }
             _ => {}
         }
@@ -539,14 +530,6 @@ impl Screen for TeamListPanel {
     fn footer_spans(&self) -> Vec<Span> {
         vec![
             Span::styled(
-                format!(" {} ", UiKey::CYCLE_FILTER.to_string()),
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(
-                format!(" Change filter: {:<12} ", self.filter.to_string()),
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(
                 " ←/→ ",
                 Style::default().bg(Color::Gray).fg(Color::DarkGray),
             ),
@@ -554,10 +537,6 @@ impl Screen for TeamListPanel {
             Span::styled(
                 format!(" {} ", KeyCode::Backspace.to_string()),
                 Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(
-                format!(" Go to planet "),
-                Style::default().fg(Color::DarkGray),
             ),
         ]
     }

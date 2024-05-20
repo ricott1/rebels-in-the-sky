@@ -494,17 +494,23 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
         }
 
         if self.callback_registry.lock().unwrap().is_hovering(area) {
-            self.callback_registry.lock().unwrap().register_callback(
-                crossterm::event::MouseEventKind::ScrollDown,
-                None,
-                UiCallbackPreset::NextPanelIndex,
-            );
+            self.callback_registry
+                .lock()
+                .unwrap()
+                .register_mouse_callback(
+                    crossterm::event::MouseEventKind::ScrollDown,
+                    None,
+                    UiCallbackPreset::NextPanelIndex,
+                );
 
-            self.callback_registry.lock().unwrap().register_callback(
-                crossterm::event::MouseEventKind::ScrollUp,
-                None,
-                UiCallbackPreset::PreviousPanelIndex,
-            );
+            self.callback_registry
+                .lock()
+                .unwrap()
+                .register_mouse_callback(
+                    crossterm::event::MouseEventKind::ScrollUp,
+                    None,
+                    UiCallbackPreset::PreviousPanelIndex,
+                );
         }
 
         let (start, end) = self.get_row_bounds(state.selected, state.offset, rows_height);
@@ -565,11 +571,14 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
             }
         }
         if let Some((area, index)) = selected_element {
-            self.callback_registry.lock().unwrap().register_callback(
-                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
-                Some(area),
-                UiCallbackPreset::SetPanelIndex { index },
-            );
+            self.callback_registry
+                .lock()
+                .unwrap()
+                .register_mouse_callback(
+                    crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                    Some(area),
+                    UiCallbackPreset::SetPanelIndex { index },
+                );
         }
     }
 }

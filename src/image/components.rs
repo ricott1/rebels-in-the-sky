@@ -351,6 +351,7 @@ impl ImageComponent for Hull {
             Hull::ShuttleLarge => "hull/shuttle_large.png".into(),
             Hull::PincherStandard => "hull/pincher_standard.png".into(),
             Hull::PincherLarge => "hull/pincher_large.png".into(),
+            Hull::JesterStandard => "hull/jester_standard.png".into(),
         }
     }
 
@@ -361,6 +362,7 @@ impl ImageComponent for Hull {
             Hull::ShuttleLarge => "hull/mask_shuttle_large.png".into(),
             Hull::PincherStandard => "hull/mask_pincher_standard.png".into(),
             Hull::PincherLarge => "hull/mask_pincher_large.png".into(),
+            Hull::JesterStandard => "hull/mask_jester_standard.png".into(),
         }
     }
 }
@@ -374,6 +376,8 @@ impl ImageComponent for Engine {
             Engine::PincherSingle => "engine/pincher_single.png".into(),
             Engine::PincherDouble => "engine/pincher_double.png".into(),
             Engine::PincherTriple => "engine/pincher_triple.png".into(),
+            Engine::JesterDouble => "engine/jester_double.png".into(),
+            Engine::JesterQuadruple => "engine/jester_quadruple.png".into(),
         }
     }
 }

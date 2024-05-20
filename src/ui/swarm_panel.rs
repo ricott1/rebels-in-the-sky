@@ -37,6 +37,16 @@ pub enum EventTopic {
     Chat,
 }
 
+impl EventTopic {
+    fn next(&self) -> EventTopic {
+        match self {
+            EventTopic::Log => EventTopic::Chat,
+            EventTopic::Challenges => EventTopic::Log,
+            EventTopic::Chat => EventTopic::Challenges,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct SwarmPanel {
     pub index: usize,
@@ -117,28 +127,31 @@ impl SwarmPanel {
         .split(area);
 
         let mut chat_button = Button::new(
-            "Chat".to_string(),
+            "View:Chat".to_string(),
             UiCallbackPreset::SetSwarmPanelTopic {
                 topic: EventTopic::Chat,
             },
             Arc::clone(&self.callback_registry),
-        );
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW);
 
         let mut challenges_button = Button::new(
-            "Challenges".to_string(),
+            "View:Challenges".to_string(),
             UiCallbackPreset::SetSwarmPanelTopic {
                 topic: EventTopic::Challenges,
             },
             Arc::clone(&self.callback_registry),
-        );
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW);
 
         let mut log_button = Button::new(
-            "Log".to_string(),
+            "View:Log".to_string(),
             UiCallbackPreset::SetSwarmPanelTopic {
                 topic: EventTopic::Log,
             },
             Arc::clone(&self.callback_registry),
-        );
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW);
         match self.current_topic {
             EventTopic::Log => {
                 log_button.disable(None);
@@ -185,11 +198,14 @@ impl SwarmPanel {
     }
 
     fn build_challenge_list(&mut self, frame: &mut Frame, area: Rect) {
+        frame.render_widget(default_block().title("Challenges"), area);
+
         let mut constraints = [Constraint::Length(3)].repeat(self.peer_to_challenge.len());
         constraints.push(Constraint::Min(0));
-        let split = Layout::vertical(constraints).split(area);
-
-        // let mut items = vec![];
+        let split = Layout::vertical(constraints).split(area.inner(&Margin {
+            horizontal: 1,
+            vertical: 1,
+        }));
 
         for (idx, (peer_id, challenge)) in self.peer_to_challenge.iter().enumerate() {
             let line_split = Layout::horizontal([
@@ -235,10 +251,6 @@ impl SwarmPanel {
                 frame.render_widget(decline_button, line_split[2]);
             }
         }
-
-        // let list = List::new(items);
-
-        // frame.render_widget(list, area);
     }
 
     fn build_right_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
@@ -248,13 +260,7 @@ impl SwarmPanel {
         frame.render_widget(self.textarea.widget(), split[1]);
 
         if self.current_topic == EventTopic::Challenges {
-            self.build_challenge_list(
-                frame,
-                split[0].inner(&Margin {
-                    vertical: 1,
-                    horizontal: 1,
-                }),
-            );
+            self.build_challenge_list(frame, split[0]);
             return;
         }
         let mut items = vec![];
@@ -338,12 +344,11 @@ impl Screen for SwarmPanel {
         match key_event.code {
             KeyCode::Up => self.previous_index(),
             KeyCode::Down => self.next_index(),
-            UiKey::CYCLE_FILTER => {
-                match self.current_topic {
-                    EventTopic::Log => self.set_current_topic(EventTopic::Chat),
-                    EventTopic::Chat => self.set_current_topic(EventTopic::Challenges),
-                    EventTopic::Challenges => self.set_current_topic(EventTopic::Log),
-                };
+            UiKey::CYCLE_VIEW => {
+                //FIXME: this means the chat can't use the capital V
+                return Some(UiCallbackPreset::SetSwarmPanelTopic {
+                    topic: self.current_topic.next(),
+                });
             }
             KeyCode::Enter => {
                 let lines: Vec<String> = self
@@ -421,7 +426,7 @@ impl Screen for SwarmPanel {
     fn footer_spans(&self) -> Vec<Span> {
         vec![
             Span::styled(
-                format!(" {} ", UiKey::CYCLE_FILTER.to_string()),
+                format!(" {} ", UiKey::CYCLE_VIEW.to_string()),
                 Style::default().bg(Color::Gray).fg(Color::DarkGray),
             ),
             Span::styled(" Cycle topic ", Style::default().fg(Color::DarkGray)),

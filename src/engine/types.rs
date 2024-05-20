@@ -120,14 +120,6 @@ impl GameStats {
     pub fn is_playing(&self) -> bool {
         self.position.is_some()
     }
-
-    // pub fn is_knocked_out(&self) -> bool {
-    //     self.tiredness == MAX_TIREDNESS
-    // }
-
-    // pub fn add_tiredness(&mut self, tiredness: f32, stamina: f32) {
-    //     self.tiredness = (self.tiredness + tiredness / (1.0 + stamina / 20.0)).min(MAX_TIREDNESS);
-    // }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]

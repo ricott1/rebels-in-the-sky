@@ -50,7 +50,7 @@ pub struct SplashScreen {
     gif_map: Arc<Mutex<GifMap>>,
 }
 
-const QUOTES: [&'static str;13] = [
+const QUOTES: [&'static str;14] = [
     " “What cannot be destroyed can, nonetheless, be diverted, frozen, transformed, and gradually deprived of its substance - which in the case of states, is ultimately their capacity to inspire terror.” - D. Graeber",
     " “Aber der Staat lügt in allen Zungen des Guten und Bösen; und was er auch redet, er lügt—und was er auch hat, gestohlen hat er's.” - F. Nietzsche",
     " “That is what I have always understood to be the essence of anarchism: the conviction that the burden of proof has to be placed on authority, and that it should be dismantled if that burden cannot be met.” - N. Chomsky",
@@ -65,6 +65,8 @@ const QUOTES: [&'static str;13] = [
     " “Dilige, et quod vis fac.” - Aurelius Augustinus Hipponensis",
     " “The only way to deal with an unfree world is to become so absolutely free that your very existence is an act of rebellion.” - A. Camus",
     " “He who can destroy a thing, controls a thing.” - F. Herbert",
+    " “What's law? Control? Laws filter chaos and what drips through? Serenity? [..] Don't look too closely at the law. Do, and you'll find the rationalised interpretations, the legal casuistry, the precedents of convenience. You'll find the serenity, which is just another word for death.” - F. Herbert"
+
     ];
 
 const TITLE: [&'static str; 13] = [
@@ -106,7 +108,7 @@ impl SplashScreen {
             can_load_world = false;
         }
         selection_text.push(continue_text);
-        selection_text.push("New".to_string());
+        selection_text.push("New Game".to_string());
         selection_text.push("Music: On ".to_string());
         selection_text.push("Quit".to_string());
 

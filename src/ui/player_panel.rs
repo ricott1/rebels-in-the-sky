@@ -6,7 +6,7 @@ use super::gif_map::GifMap;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
 use super::utils::hover_text_target;
 use super::{
-    constants::{PrintableKeyCode, UiKey, IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
+    constants::{UiKey, IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
     traits::{Screen, SplitPanel},
     widgets::{default_block, render_player_description, selectable_list},
 };
@@ -24,8 +24,6 @@ use ratatui::layout::Margin;
 use ratatui::{
     layout::{Constraint, Layout},
     prelude::Rect,
-    style::{Color, Style},
-    text::Span,
     widgets::Paragraph,
     Frame,
 };
@@ -34,37 +32,37 @@ use std::{sync::Arc, sync::Mutex};
 use strum_macros::Display;
 
 #[derive(Debug, Clone, Copy, Display, Default, PartialEq, Eq, Hash)]
-pub enum PlayerFilter {
+pub enum PlayerView {
     #[default]
     All,
     FreeAgents,
     OwnTeam,
 }
 
-impl PlayerFilter {
+impl PlayerView {
     fn next(&self) -> Self {
         match self {
-            PlayerFilter::All => PlayerFilter::FreeAgents,
-            PlayerFilter::FreeAgents => PlayerFilter::OwnTeam,
-            PlayerFilter::OwnTeam => PlayerFilter::All,
+            PlayerView::All => PlayerView::FreeAgents,
+            PlayerView::FreeAgents => PlayerView::OwnTeam,
+            PlayerView::OwnTeam => PlayerView::All,
         }
     }
 
     fn rule(&self, player: &Player, own_team: &Team) -> bool {
         match self {
-            PlayerFilter::All => true,
-            PlayerFilter::FreeAgents => {
+            PlayerView::All => true,
+            PlayerView::FreeAgents => {
                 player.team.is_none() && own_team.can_hire_player(player).is_ok()
             }
-            PlayerFilter::OwnTeam => player.team.is_some() && player.team.unwrap() == own_team.id,
+            PlayerView::OwnTeam => player.team.is_some() && player.team.unwrap() == own_team.id,
         }
     }
 
     fn to_string(&self) -> String {
         match self {
-            PlayerFilter::All => "All".to_string(),
-            PlayerFilter::FreeAgents => "Hirable Free agents".to_string(),
-            PlayerFilter::OwnTeam => "Own team".to_string(),
+            PlayerView::All => "All".to_string(),
+            PlayerView::FreeAgents => "Hirable Free agents".to_string(),
+            PlayerView::OwnTeam => "Own team".to_string(),
         }
     }
 }
@@ -78,8 +76,8 @@ pub struct PlayerListPanel {
     pub all_players: Vec<PlayerId>,
     pub players: Vec<PlayerId>,
     own_team_id: TeamId,
-    filter: PlayerFilter,
-    update_filter: bool,
+    view: PlayerView,
+    update_view: bool,
     tick: usize,
     callback_registry: Arc<Mutex<CallbackRegistry>>,
     gif_map: Arc<Mutex<GifMap>>,
@@ -107,32 +105,35 @@ impl PlayerListPanel {
         .split(area);
 
         let mut filter_all_button = Button::new(
-            format!("Filter: {}", PlayerFilter::All.to_string()),
-            UiCallbackPreset::SetPlayerPanelFilter {
-                filter: PlayerFilter::All,
+            format!("View: {}", PlayerView::All.to_string()),
+            UiCallbackPreset::SetPlayerPanelView {
+                view: PlayerView::All,
             },
             Arc::clone(&self.callback_registry),
-        );
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW);
 
         let mut filter_free_agents_button = Button::new(
-            format!("Filter: {}", PlayerFilter::FreeAgents.to_string()),
-            UiCallbackPreset::SetPlayerPanelFilter {
-                filter: PlayerFilter::FreeAgents,
+            format!("View: {}", PlayerView::FreeAgents.to_string()),
+            UiCallbackPreset::SetPlayerPanelView {
+                view: PlayerView::FreeAgents,
             },
             Arc::clone(&self.callback_registry),
-        );
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW);
 
         let mut filter_own_team_button = Button::new(
-            format!("Filter: {}", PlayerFilter::OwnTeam.to_string()),
-            UiCallbackPreset::SetPlayerPanelFilter {
-                filter: PlayerFilter::OwnTeam,
+            format!("View: {}", PlayerView::OwnTeam.to_string()),
+            UiCallbackPreset::SetPlayerPanelView {
+                view: PlayerView::OwnTeam,
             },
             Arc::clone(&self.callback_registry),
-        );
-        match self.filter {
-            PlayerFilter::All => filter_all_button.disable(None),
-            PlayerFilter::FreeAgents => filter_free_agents_button.disable(None),
-            PlayerFilter::OwnTeam => filter_own_team_button.disable(None),
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW);
+        match self.view {
+            PlayerView::All => filter_all_button.disable(None),
+            PlayerView::FreeAgents => filter_free_agents_button.disable(None),
+            PlayerView::OwnTeam => filter_own_team_button.disable(None),
         }
 
         frame.render_widget(filter_all_button, split[0]);
@@ -262,54 +263,59 @@ impl PlayerListPanel {
             PlayerLocation::OnPlanet { planet_id } => {
                 let planet = world.get_planet_or_err(planet_id)?;
                 let button = Button::new(
-                    format!("{}: FA on {}", UiKey::GO_TO_PLANET.to_string(), planet.name),
+                    format!("FA on planet {}", planet.name),
                     UiCallbackPreset::GoToPlanetZoomIn { planet_id },
                     Arc::clone(&self.callback_registry),
                 )
                 .set_hover_text(
                     format!("Go to {}, the free agent's current location", planet.name),
                     hover_text_target,
-                );
+                )
+                .set_hotkey(UiKey::GO_TO_PLANET);
                 frame.render_widget(button, buttons_split[0]);
             }
             PlayerLocation::WithTeam => {
                 let team = world.get_team_or_err(player.team.unwrap())?;
                 let button = Button::new(
-                    format!(
-                        "{}: Team {}",
-                        UiKey::GO_TO_TEAM_ALTERNATIVE.to_string(),
-                        team.name
-                    ),
+                    format!("team {}", team.name),
                     UiCallbackPreset::GoToPlayerTeam {
                         player_id: player.id,
                     },
                     Arc::clone(&self.callback_registry),
                 )
-                .set_hover_text(format!("Go to team {}", team.name), hover_text_target);
+                .set_hover_text(format!("Go to team {}", team.name), hover_text_target)
+                .set_hotkey(UiKey::GO_TO_TEAM_ALTERNATIVE);
                 frame.render_widget(button, buttons_split[0]);
             }
         }
-        let lock_text =
+        let lock_button =
             if self.locked_player_id.is_some() && self.locked_player_id.unwrap() == player.id {
-                format!("{}: Unlock", UiKey::UNLOCK_PLAYER.to_string())
+                Button::new(
+                    "Unlock".into(),
+                    UiCallbackPreset::LockPlayerPanel {
+                        player_id: self.selected_player_id,
+                    },
+                    Arc::clone(&self.callback_registry),
+                )
+                .set_hover_text(
+                    format!("Unlock the player panel to allow browsing other players"),
+                    hover_text_target,
+                )
+                .set_hotkey(UiKey::UNLOCK_PLAYER)
             } else {
-                format!("{}: Lock", UiKey::LOCK_PLAYER.to_string())
+                Button::new(
+                    "Lock".into(),
+                    UiCallbackPreset::LockPlayerPanel {
+                        player_id: self.selected_player_id,
+                    },
+                    Arc::clone(&self.callback_registry),
+                )
+                .set_hover_text(
+                    format!("Lock the player panel to keep the info while browsing"),
+                    hover_text_target,
+                )
+                .set_hotkey(UiKey::LOCK_PLAYER)
             };
-        let lock_button = Button::new(
-            lock_text,
-            UiCallbackPreset::LockPlayerPanel {
-                player_id: self.selected_player_id,
-            },
-            Arc::clone(&self.callback_registry),
-        )
-        .set_hover_text(
-            if self.locked_player_id.is_some() && self.locked_player_id.unwrap() == player.id {
-                format!("Lock the player panel to keep the info while browsing")
-            } else {
-                format!("Unlock the player panel to allow browsing other players")
-            },
-            hover_text_target,
-        );
         frame.render_widget(lock_button, buttons_split[1]);
 
         // Add hire button for free agents
@@ -318,12 +324,7 @@ impl PlayerListPanel {
             let hire_cost = player.hire_cost(own_team.reputation);
 
             let mut button = Button::new(
-                format!(
-                    "{}: Hire -{} {}",
-                    UiKey::HIRE_FIRE.to_string(),
-                    hire_cost,
-                    CURRENCY_SYMBOL
-                ),
+                format!("Hire -{} {}", hire_cost, CURRENCY_SYMBOL),
                 UiCallbackPreset::HirePlayer {
                     player_id: player.id,
                 },
@@ -332,52 +333,44 @@ impl PlayerListPanel {
             .set_hover_text(
                 format!("Hire the free agent for {} {}", hire_cost, CURRENCY_SYMBOL),
                 hover_text_target,
-            );
+            )
+            .set_hotkey(UiKey::HIRE);
             if can_hire.is_err() {
-                button.disable(Some(format!(
-                    "{}: {}",
-                    UiKey::HIRE_FIRE.to_string(),
-                    can_hire.unwrap_err().to_string()
-                )));
+                button.disable(Some(format!("{}", can_hire.unwrap_err().to_string())));
             }
 
             frame.render_widget(button, buttons_split[2]);
         }
         // Add release button for own players
-        else if player.team.is_some() && player.team.unwrap() == world.own_team_id {
-            let can_release = own_team.can_release_player(&player);
+        //FIXME: decide if we want to allow this.
+        // else if player.team.is_some() && player.team.unwrap() == world.own_team_id {
+        //     let can_release = own_team.can_release_player(&player);
 
-            let mut button = Button::new(
-                format!("{}: Release", UiKey::HIRE_FIRE.to_string()),
-                UiCallbackPreset::ReleasePlayer {
-                    player_id: player.id,
-                },
-                Arc::clone(&self.callback_registry),
-            )
-            .set_hover_text(
-                format!("Release the player from the team"),
-                hover_text_target,
-            );
-            if can_release.is_err() {
-                button.disable(Some(format!(
-                    "{}: {}",
-                    UiKey::HIRE_FIRE.to_string(),
-                    can_release.unwrap_err().to_string()
-                )));
-            }
+        //     let mut button = Button::new(
+        //         "Release".into(),
+        //         UiCallbackPreset::ReleasePlayer {
+        //             player_id: player.id,
+        //         },
+        //         Arc::clone(&self.callback_registry),
+        //     )
+        //     .set_hover_text(format!("Fire the player from the team"), hover_text_target)
+        //     .set_hotkey(UiKey::FIRE);
+        //     if can_release.is_err() {
+        //         button.disable(Some(format!("{}", can_release.unwrap_err().to_string())));
+        //     }
 
-            frame.render_widget(button, buttons_split[2]);
-        }
+        //     frame.render_widget(button, buttons_split[2]);
+        // }
         Ok(())
     }
 
-    pub fn set_filter(&mut self, filter: PlayerFilter) {
-        self.filter = filter;
-        self.update_filter = true;
+    pub fn set_view(&mut self, filter: PlayerView) {
+        self.view = filter;
+        self.update_view = true;
     }
 
-    pub fn reset_filter(&mut self) {
-        self.set_filter(PlayerFilter::All);
+    pub fn reset_view(&mut self) {
+        self.set_view(PlayerView::All);
     }
 }
 
@@ -400,20 +393,20 @@ impl Screen for PlayerListPanel {
                     b.rating().cmp(&a.rating())
                 }
             });
-            self.update_filter = true;
+            self.update_view = true;
         }
-        if self.update_filter {
+        if self.update_view {
             let own_team = world.get_own_team()?;
             self.players = self
                 .all_players
                 .iter()
                 .filter(|&&player_id| {
                     let player = world.get_player(player_id).unwrap();
-                    self.filter.rule(player, own_team)
+                    self.view.rule(player, own_team)
                 })
                 .map(|&player_id| player_id)
                 .collect();
-            self.update_filter = false;
+            self.update_view = false;
         }
 
         if self.index >= self.players.len() && self.players.len() > 0 {
@@ -438,17 +431,23 @@ impl Screen for PlayerListPanel {
             return Ok(());
         }
 
-        self.callback_registry.lock().unwrap().register_callback(
-            crossterm::event::MouseEventKind::ScrollDown,
-            None,
-            UiCallbackPreset::NextPanelIndex,
-        );
+        self.callback_registry
+            .lock()
+            .unwrap()
+            .register_mouse_callback(
+                crossterm::event::MouseEventKind::ScrollDown,
+                None,
+                UiCallbackPreset::NextPanelIndex,
+            );
 
-        self.callback_registry.lock().unwrap().register_callback(
-            crossterm::event::MouseEventKind::ScrollUp,
-            None,
-            UiCallbackPreset::PreviousPanelIndex,
-        );
+        self.callback_registry
+            .lock()
+            .unwrap()
+            .register_mouse_callback(
+                crossterm::event::MouseEventKind::ScrollUp,
+                None,
+                UiCallbackPreset::PreviousPanelIndex,
+            );
 
         // Split into left and right panels
         let left_right_split = Layout::horizontal([
@@ -469,69 +468,22 @@ impl Screen for PlayerListPanel {
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
-            UiKey::CYCLE_FILTER => {
-                self.set_filter(self.filter.next());
-                self.set_index(0);
-            }
-            UiKey::GO_TO_TEAM_ALTERNATIVE | UiKey::GO_TO_TEAM => {
+            UiKey::GO_TO_TEAM => {
                 if let Some(_) = self.selected_team_id.clone() {
                     return Some(UiCallbackPreset::GoToPlayerTeam {
                         player_id: self.selected_player_id,
                     });
                 }
             }
-
-            UiKey::GO_TO_PLANET => {
-                return Some(UiCallbackPreset::GoToCurrentPlayerPlanet {
-                    player_id: self.selected_player_id,
-                })
+            UiKey::CYCLE_VIEW => {
+                return Some(UiCallbackPreset::SetPlayerPanelView {
+                    view: self.view.next(),
+                });
             }
 
-            UiKey::HIRE_FIRE => {
-                let team_id = self.selected_team_id.clone();
-                let player_id = self.selected_player_id.clone();
-                if team_id.is_none() {
-                    // player is a free agent, hire
-                    return Some(UiCallbackPreset::HirePlayer { player_id });
-                } else if team_id.is_some() && team_id.unwrap() == self.own_team_id {
-                    // player is on own team, release
-                    return Some(UiCallbackPreset::ReleasePlayer { player_id });
-                }
-            }
-            UiKey::LOCK_PLAYER => {
-                if self.locked_player_id.is_none()
-                    || self.locked_player_id.unwrap() != self.selected_player_id
-                {
-                    return Some(UiCallbackPreset::LockPlayerPanel {
-                        player_id: self.selected_player_id,
-                    });
-                }
-            }
-            UiKey::UNLOCK_PLAYER => {
-                if self.locked_player_id.is_some() {
-                    return Some(UiCallbackPreset::LockPlayerPanel {
-                        player_id: self.selected_player_id,
-                    });
-                }
-            }
             _ => {}
         }
         None
-    }
-
-    fn footer_spans(&self) -> Vec<Span> {
-        let spans = vec![
-            Span::styled(
-                format!(" {} ", UiKey::CYCLE_FILTER.to_string()),
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(
-                format!(" Change filter: {:<12} ", self.filter.to_string()),
-                Style::default().fg(Color::DarkGray),
-            ),
-        ];
-
-        spans
     }
 }
 

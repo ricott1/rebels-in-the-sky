@@ -9,9 +9,8 @@ use super::{
     utils::img_to_lines,
     widgets::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
 };
-use crate::engine::constants::MAX_TIREDNESS;
+use crate::engine::constants::{MIN_TIREDNESS_FOR_ROLL_DECLINE, MIN_TIREDNESS_FOR_SUB};
 use crate::types::AppResult;
-use crate::world::planet::PlanetType;
 use crate::{
     engine::{
         action::{ActionOutput, ActionSituation, Advantage},
@@ -24,6 +23,8 @@ use crate::{
     types::GameId,
     ui::constants::{PrintableKeyCode, UiKey},
     world::{
+        constants::MAX_TIREDNESS,
+        planet::PlanetType,
         player::Player,
         position::{GamePosition, Position},
         world::World,
@@ -61,7 +62,6 @@ pub struct GamePanel {
     pitch_view: bool,
     pitch_view_filter: PitchViewFilter,
     commentary_index: usize,
-    debug_mode: bool,
     action_results: Vec<ActionOutput>,
     tick: usize,
     callback_registry: Arc<Mutex<CallbackRegistry>>,
@@ -436,7 +436,7 @@ impl GamePanel {
             return;
         }
         let game = game.unwrap();
-        self.build_statbox(game, frame, split[1]);
+        Self::build_statbox(game, frame, split[1]);
     }
 
     fn format_commentary(
@@ -498,7 +498,7 @@ impl GamePanel {
         )
     }
 
-    fn build_stat_table(&self, players_data: &GameStatsMap, players: Vec<&Player>) -> Table {
+    fn build_stat_table<'a>(players_data: &'a GameStatsMap, players: Vec<&Player>) -> Table<'a> {
         let mut rows: Vec<Row<'_>> = vec![];
 
         let mut points_total = 0;
@@ -536,15 +536,14 @@ impl GamePanel {
                 None => "".to_string(),
             };
 
-            let name_span = if self.debug_mode {
-                Span::raw(format!("Tds: {}", player.tiredness))
-            } else {
+            let name_span = {
                 let style = match player.tiredness {
-                    x if x < MAX_TIREDNESS / 4.0 => Style::default().fg(Color::White),
-                    x if x < MAX_TIREDNESS / 2.0 => Style::default().fg(Color::Yellow),
-                    x if x < MAX_TIREDNESS => Style::default().fg(Color::Red),
-                    _ => Style::default().fg(Color::DarkGray),
+                    x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE => UiStyle::DEFAULT,
+                    x if x < MIN_TIREDNESS_FOR_SUB => UiStyle::WARNING,
+                    x if x < MAX_TIREDNESS => UiStyle::ERROR,
+                    _ => UiStyle::UNSELECTABLE,
                 };
+
                 Span::styled(
                     format!(
                         "{}.{}",
@@ -627,7 +626,41 @@ impl GamePanel {
         )
     }
 
-    fn build_statbox(&self, game: &Game, frame: &mut Frame, area: Rect) {
+    fn build_timer_lines(&self, world: &World, game: &Game) -> Vec<Line<'static>> {
+        let timer = if self.commentary_index > 0 {
+            self.action_results[self.action_results.len() - 1 - self.commentary_index].start_at
+        } else {
+            game.timer
+        };
+        let mut timer_lines: Vec<Line> = vec![];
+        if !timer.has_started() {
+            timer_lines.push(Line::from(Timer::from(timer.period().start()).format()));
+            let starting_in_seconds = (game.starting_at - world.last_tick_short_interval) / 1000;
+            timer_lines.push(Line::from(format!(
+                "Starting in {:02}:{:02}",
+                starting_in_seconds / 60,
+                starting_in_seconds % 60
+            )));
+        } else if timer.has_ended() {
+            timer_lines.push(Line::from(
+                Timer::from(timer.period().next().start()).format(),
+            ));
+        } else if timer.is_break() {
+            timer_lines.push(Line::from(
+                Timer::from(timer.period().next().start()).format(),
+            ));
+            timer_lines.push(Line::from(format!(
+                "Resuming in {:02}:{:02}",
+                timer.minutes(),
+                timer.seconds()
+            )));
+        } else {
+            timer_lines.push(Line::from(timer.format()));
+        }
+        timer_lines
+    }
+
+    pub fn build_statbox(game: &Game, frame: &mut Frame, area: Rect) {
         let header_cells_home = [
             "  ",
             game.home_team_in_game.name.as_str(),
@@ -686,13 +719,11 @@ impl GamePanel {
             Constraint::Length(3), //plus minus
         ];
 
-        let home_table = self
-            .build_stat_table(&game.home_team_in_game.stats, home_players)
+        let home_table = Self::build_stat_table(&game.home_team_in_game.stats, home_players)
             .header(Row::new(header_cells_home).style(UiStyle::HEADER).height(1))
             .widths(constraint);
 
-        let away_table = self
-            .build_stat_table(&game.away_team_in_game.stats, away_players)
+        let away_table = Self::build_stat_table(&game.away_team_in_game.stats, away_players)
             .header(Row::new(header_cells_away).style(UiStyle::HEADER).height(1))
             .widths(constraint);
 
@@ -712,38 +743,87 @@ impl GamePanel {
         frame.render_widget(default_block().title(" Stats "), area);
     }
 
-    fn build_timer_lines(&self, world: &World, game: &Game) -> Vec<Line<'static>> {
-        let timer = if self.commentary_index > 0 {
-            self.action_results[self.action_results.len() - 1 - self.commentary_index].start_at
-        } else {
-            game.timer
-        };
-        let mut timer_lines: Vec<Line> = vec![];
-        if !timer.has_started() {
-            timer_lines.push(Line::from(Timer::from(timer.period().start()).format()));
-            let starting_in_seconds = (game.starting_at - world.last_tick_short_interval) / 1000;
-            timer_lines.push(Line::from(format!(
-                "Starting in {:02}:{:02}",
-                starting_in_seconds / 60,
-                starting_in_seconds % 60
-            )));
-        } else if timer.has_ended() {
-            timer_lines.push(Line::from(
-                Timer::from(timer.period().next().start()).format(),
-            ));
-        } else if timer.is_break() {
-            timer_lines.push(Line::from(
-                Timer::from(timer.period().next().start()).format(),
-            ));
-            timer_lines.push(Line::from(format!(
-                "Resuming in {:02}:{:02}",
-                timer.minutes(),
-                timer.seconds()
-            )));
-        } else {
-            timer_lines.push(Line::from(timer.format()));
-        }
-        timer_lines
+    pub fn build_summary_statbox(game: &Game, frame: &mut Frame, area: Rect) {
+        let header_cells_home = [
+            "  ",
+            game.home_team_in_game.name.as_str(),
+            "Min",
+            "Pts",
+            " 2pt ",
+            " 3pt ",
+            "Ast/TO",
+            "DRb/ORb",
+            "Stl",
+            "Blk",
+            "PF",
+            "+/-",
+        ];
+
+        let header_cells_away = [
+            "  ",
+            game.away_team_in_game.name.as_str(),
+            "Min",
+            "Pts",
+            " 2pt ",
+            " 3pt ",
+            "Ast/TO",
+            "DRb/ORb",
+            "Stl",
+            "Blk",
+            "PF",
+            "+/-",
+        ];
+
+        let home_players = game
+            .home_team_in_game
+            .initial_positions
+            .iter()
+            .map(|id| game.home_team_in_game.players.get(id).unwrap())
+            .collect::<Vec<&Player>>();
+        let away_players = game
+            .away_team_in_game
+            .initial_positions
+            .iter()
+            .map(|id| game.away_team_in_game.players.get(id).unwrap())
+            .collect::<Vec<&Player>>();
+
+        let constraint = &[
+            Constraint::Length(2), //role
+            Constraint::Min(16),   //player
+            Constraint::Length(3), //minutes
+            Constraint::Length(3), //points
+            Constraint::Length(6), //2pt
+            Constraint::Length(5), //3pt
+            Constraint::Length(6), //assists/turnovers
+            Constraint::Length(7), //defensive rebounds/offensive rebounds
+            Constraint::Length(3), //steals
+            Constraint::Length(3), //blocks
+            Constraint::Length(2), //personal fouls
+            Constraint::Length(3), //plus minus
+        ];
+
+        let home_table = Self::build_stat_table(&game.home_team_in_game.stats, home_players)
+            .header(Row::new(header_cells_home).style(UiStyle::HEADER).height(1))
+            .widths(constraint);
+
+        let away_table = Self::build_stat_table(&game.away_team_in_game.stats, away_players)
+            .header(Row::new(header_cells_away).style(UiStyle::HEADER).height(1))
+            .widths(constraint);
+
+        let box_area = Layout::vertical([
+            Constraint::Length(game.home_team_in_game.players.len() as u16 + 2),
+            Constraint::Max(1),
+            Constraint::Length(game.away_team_in_game.players.len() as u16 + 2),
+            Constraint::Min(0),
+        ])
+        .split(area.inner(&Margin {
+            horizontal: 1,
+            vertical: 1,
+        }));
+
+        frame.render_widget(home_table, box_area[0]);
+        frame.render_widget(away_table, box_area[2]);
+        frame.render_widget(default_block().title(" Stats "), area);
     }
 }
 

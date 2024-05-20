@@ -1,9 +1,11 @@
 use super::{
     galaxy_panel::ZoomLevel,
+    my_team_panel::MyTeamView,
     new_team_screen::CreationState,
-    player_panel::PlayerFilter,
+    player_panel::PlayerView,
+    popup_message::PopupMessage,
     swarm_panel::EventTopic,
-    team_panel::TeamFilter,
+    team_panel::TeamView,
     traits::{Screen, SplitPanel},
     ui::{UiState, UiTab},
 };
@@ -26,7 +28,7 @@ use crate::{
         types::{PlayerLocation, TeamLocation, TrainingFocus},
     },
 };
-use crossterm::event::{MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, MouseEvent, MouseEventKind};
 use rand::Rng;
 use ratatui::layout::Rect;
 use std::collections::HashMap;
@@ -98,11 +100,14 @@ pub enum UiCallbackPreset {
     SetSwarmPanelTopic {
         topic: EventTopic,
     },
-    SetPlayerPanelFilter {
-        filter: PlayerFilter,
+    SetMyTeamPanelView {
+        view: MyTeamView,
     },
-    SetTeamPanelFilter {
-        filter: TeamFilter,
+    SetPlayerPanelView {
+        view: PlayerView,
+    },
+    SetTeamPanelView {
+        view: TeamView,
     },
     HirePlayer {
         player_id: PlayerId,
@@ -149,12 +154,18 @@ pub enum UiCallbackPreset {
     SendMessage {
         message: String,
     },
+    PushUiPopup {
+        popup_message: PopupMessage,
+    },
+    NameAndAcceptAsteroid {
+        name: String,
+    },
 }
 
 impl UiCallbackPreset {
     fn go_to_team(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.team_panel.reset_filter();
+            app.ui.team_panel.reset_view();
             if let Some(index) = app
                 .ui
                 .team_panel
@@ -172,7 +183,7 @@ impl UiCallbackPreset {
 
     fn go_to_player(player_id: PlayerId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.player_panel.reset_filter();
+            app.ui.player_panel.reset_view();
             if let Some(index) = app
                 .ui
                 .player_panel
@@ -217,13 +228,13 @@ impl UiCallbackPreset {
         Box::new(move |app: &mut App| {
             let team = app.world.get_team_or_err(team_id)?;
 
-            let target = app.world.get_planet_or_err(team.home_planet)?;
+            let target = app.world.get_planet_or_err(team.home_planet_id)?;
 
-            let team_index = target.teams.iter().position(|&x| x == team_id);
+            let team_index = target.team_ids.iter().position(|&x| x == team_id);
 
             app.ui
                 .galaxy_panel
-                .go_to_planet(team.home_planet, team_index, ZoomLevel::In);
+                .go_to_planet(team.home_planet_id, team_index, ZoomLevel::In);
             app.ui.switch_to(super::ui::UiTab::Galaxy);
 
             Ok(None)
@@ -246,7 +257,7 @@ impl UiCallbackPreset {
                 }
             };
 
-            let team_index = target.teams.iter().position(|&x| x == team_id);
+            let team_index = target.team_ids.iter().position(|&x| x == team_id);
 
             app.ui
                 .galaxy_panel
@@ -325,7 +336,7 @@ impl UiCallbackPreset {
             if panel.planet_index == 0 {
                 panel.zoom_level = ZoomLevel::In;
 
-                if target.teams.len() == 0 {
+                if target.team_ids.len() == 0 {
                     panel.team_index = None;
                 } else {
                     panel.team_index = Some(0);
@@ -341,7 +352,7 @@ impl UiCallbackPreset {
                 panel.planet_index = 0;
                 if new_target.satellites.len() == 0 {
                     panel.zoom_level = ZoomLevel::In;
-                    if new_target.teams.len() == 0 {
+                    if new_target.team_ids.len() == 0 {
                         panel.team_index = None;
                     } else {
                         panel.team_index = Some(0);
@@ -584,12 +595,15 @@ impl UiCallbackPreset {
                 .world
                 .travel_time_to_planet(own_team.id, target_planet.id)?;
             own_team.can_travel_to_planet(&target_planet, travel_time, own_team.fuel())?;
-
+            let distance = app
+                .world
+                .distance_between_planets(current_planet.id, target_planet.id)?;
             own_team.current_location = TeamLocation::Travelling {
                 from: current_planet.id,
                 to: planet_id,
                 started: Tick::now(),
                 duration: travel_time,
+                distance,
             };
 
             // For simplicity we just subtract the fuel upfront, maybe would be nicer on UI to
@@ -597,7 +611,7 @@ impl UiCallbackPreset {
             // but this would require more operations and checks in the tick function.
             own_team.remove_resource(
                 Resource::FUEL,
-                (travel_time as f32 * own_team.spaceship.fuel_consumption()) as u32,
+                (travel_time as f32 * own_team.spaceship.fuel_consumption()).max(1.0) as u32,
             )?;
 
             log::info!(
@@ -608,7 +622,7 @@ impl UiCallbackPreset {
                 travel_time as f32 * own_team.spaceship.fuel_consumption()
             );
 
-            current_planet.teams.retain(|&x| x != own_team.id);
+            current_planet.team_ids.retain(|&x| x != own_team.id);
             app.world.planets.insert(current_planet.id, current_planet);
 
             let pirate_jersey = Jersey {
@@ -656,10 +670,10 @@ impl UiCallbackPreset {
             // but this would require more operations and checks in the tick function.
             own_team.remove_resource(
                 Resource::FUEL,
-                (exploration_time as f32 * own_team.spaceship.fuel_consumption()) as u32,
+                (exploration_time as f32 * own_team.spaceship.fuel_consumption()).max(1.0) as u32,
             )?;
 
-            around_planet.teams.retain(|&x| x != own_team.id);
+            around_planet.team_ids.retain(|&x| x != own_team.id);
             app.world.planets.insert(around_planet.id, around_planet);
 
             let pirate_jersey = Jersey {
@@ -715,6 +729,39 @@ impl UiCallbackPreset {
                 .as_mut()
                 .unwrap()
                 .send_msg(message.clone())?;
+
+            Ok(None)
+        })
+    }
+
+    fn name_and_accept_asteorid(name: String) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let mut team = app.world.get_own_team()?.clone();
+
+            match team.current_location {
+                TeamLocation::OnPlanet { planet_id } => {
+                    let asteroid_id = app.world.generate_team_asteroid(name.clone(), planet_id)?;
+                    team.current_location = TeamLocation::OnPlanet {
+                        planet_id: asteroid_id,
+                    };
+
+                    let mut asteroid = app.world.get_planet_or_err(asteroid_id)?.clone();
+                    asteroid.team_ids.push(team.id);
+                    asteroid.version += 1;
+
+                    team.home_planet_id = asteroid_id;
+                    team.version += 1;
+
+                    app.world.planets.insert(asteroid.id, asteroid);
+                    app.world.teams.insert(team.id, team);
+                }
+                _ => return Err("Invalid team location when accepting asteroid.".into()),
+            }
+            app.world.dirty = true;
+            app.world.dirty_network = true;
+            app.world.dirty_ui = true;
+
+            app.ui.close_popup();
 
             Ok(None)
         })
@@ -838,12 +885,16 @@ impl UiCallbackPreset {
                 app.ui.swarm_panel.set_current_topic(*topic);
                 Ok(None)
             }
-            UiCallbackPreset::SetPlayerPanelFilter { filter } => {
-                app.ui.player_panel.set_filter(*filter);
+            UiCallbackPreset::SetMyTeamPanelView { view } => {
+                app.ui.my_team_panel.set_view(*view);
                 Ok(None)
             }
-            UiCallbackPreset::SetTeamPanelFilter { filter } => {
-                app.ui.team_panel.set_filter(*filter);
+            UiCallbackPreset::SetPlayerPanelView { view } => {
+                app.ui.player_panel.set_view(*view);
+                Ok(None)
+            }
+            UiCallbackPreset::SetTeamPanelView { view } => {
+                app.ui.team_panel.set_view(*view);
                 Ok(None)
             }
             UiCallbackPreset::HirePlayer { player_id } => {
@@ -906,14 +957,23 @@ impl UiCallbackPreset {
             UiCallbackPreset::Dial { address } => Self::dial(address.clone())(app),
             UiCallbackPreset::Sync => Self::sync()(app),
             UiCallbackPreset::SendMessage { message } => Self::send(message.clone())(app),
+            UiCallbackPreset::PushUiPopup { popup_message } => {
+                app.ui.set_popup(popup_message.clone());
+                Ok(None)
+            }
+            UiCallbackPreset::NameAndAcceptAsteroid { name } => {
+                Self::name_and_accept_asteorid(name.clone())(app)
+            }
         }
     }
 }
 
 #[derive(Default, Debug, PartialEq)]
 pub struct CallbackRegistry {
-    callbacks: HashMap<MouseEventKind, HashMap<Option<Rect>, UiCallbackPreset>>,
+    mouse_callbacks: HashMap<MouseEventKind, HashMap<Option<Rect>, UiCallbackPreset>>,
+    keyboard_callbacks: HashMap<KeyCode, UiCallbackPreset>,
     hovering: (u16, u16),
+    max_layer: u8,
 }
 
 impl CallbackRegistry {
@@ -925,23 +985,38 @@ impl CallbackRegistry {
         Self::default()
     }
 
-    pub fn register_callback(
+    pub fn set_max_layer(&mut self, layer: u8) {
+        self.max_layer = layer;
+    }
+
+    pub fn get_max_layer(&mut self) -> u8 {
+        self.max_layer
+    }
+
+    pub fn register_mouse_callback(
         &mut self,
         event_kind: MouseEventKind,
         rect: Option<Rect>,
         callback: UiCallbackPreset,
     ) {
-        self.callbacks
+        self.mouse_callbacks
             .entry(event_kind)
             .or_insert_with(HashMap::new)
             .insert(rect, callback);
     }
 
+    pub fn register_keyboard_callback(&mut self, key_code: KeyCode, callback: UiCallbackPreset) {
+        self.keyboard_callbacks.insert(key_code, callback);
+    }
+
     pub fn clear(&mut self) {
-        self.callbacks.clear();
+        self.mouse_callbacks.clear();
+        self.keyboard_callbacks.clear();
+        self.max_layer = 0;
     }
 
     pub fn is_hovering(&self, rect: Rect) -> bool {
+        //FIXME: should only say yes if top
         Self::contains(&rect, self.hovering.0, self.hovering.1)
     }
 
@@ -949,9 +1024,9 @@ impl CallbackRegistry {
         self.hovering = (event.column, event.row);
     }
 
-    pub fn handle_event(&self, event: MouseEvent) -> Option<UiCallbackPreset> {
-        if let Some(callbacks) = self.callbacks.get(&event.kind) {
-            for (rect, callback) in callbacks.iter() {
+    pub fn handle_mouse_event(&self, event: &MouseEvent) -> Option<UiCallbackPreset> {
+        if let Some(mouse_callbacks) = self.mouse_callbacks.get(&event.kind) {
+            for (rect, callback) in mouse_callbacks.iter() {
                 if rect.is_none() {
                     return Some(callback.clone());
                 } else {
@@ -963,5 +1038,9 @@ impl CallbackRegistry {
             }
         }
         None
+    }
+
+    pub fn handle_keyboard_event(&self, key_code: &KeyCode) -> Option<UiCallbackPreset> {
+        self.keyboard_callbacks.get(key_code).cloned()
     }
 }

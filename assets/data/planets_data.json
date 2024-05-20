@@ -4,29 +4,31 @@
         "peer_id": null,
         "version": 0,
         "name": "Sagittarius",
-        "populations": [],
-        "base_resources": [],
+        "populations": {},
+        "resources": {},
         "filename": "blackhole",
         "rotation_period": 300,
         "revolution_period": 1,
         "gravity": 1000,
+        "asteroid_probability": 0.0,
         "planet_type": 0,
         "satellites": ["71a43700-0000-0000-0001-000000000000", "71a43700-0000-0000-0001-000000000001"],
         "satellite_of": null,
         "axis": [0.0, 0.0],
-        "teams": []
+        "team_ids": []
     },
     {
         "id": "71a43700-0000-0000-0001-000000000000",
         "peer_id": null,
         "version": 0,
         "name": "Sol",
-        "populations": [],
-        "base_resources": [],
+        "populations": {},
+        "resources": {},
         "filename": "sol",
         "rotation_period": 12,
         "revolution_period": 180,
         "gravity": 100,
+        "asteroid_probability": 0.0,
         "planet_type": 1,
         "satellites": [
             "71a43700-0000-0000-0002-000000000000",
@@ -37,272 +39,287 @@
         ],
         "satellite_of": "71a43700-0000-0000-0000-000000000000",
         "axis": [30.0, 20.0],
-        "teams": []
+        "team_ids": []
     },
     {
         "id": "71a43700-0000-0000-0001-000000000001",
         "peer_id": null,
         "version": 0,
         "name": "Proxima Centauri",
-        "populations": [],
-        "base_resources": [],
+        "populations": {},
+        "resources": {},
         "filename": "proxima",
         "rotation_period": 9,
         "revolution_period": 120,
         "gravity": 80,
+        "asteroid_probability": 0.0,
         "planet_type": 1,
         "satellites": ["71a43700-0000-0000-0002-000000000005", "71a43700-0000-0000-0002-000000000006"],
         "satellite_of": "71a43700-0000-0000-0000-000000000000",
         "axis": [45.0, 35.0],
-        "teams": []
+        "team_ids": []
     },
     {
         "id": "71a43700-0000-0000-0002-000000000005",
         "peer_id": null,
         "version": 0,
-        "name": "Proxima Centauri b",
-        "populations": [
-            [1, 60],
-            [2, 50]
-        ],
-        "base_resources": [],
+        "name": "Proxima b",
+        "populations": {
+            "1": 60,
+            "2": 50
+        },
+        "resources": {},
         "filename": "weird",
         "rotation_period": 18,
         "revolution_period": 180,
         "gravity": 2,
+        "asteroid_probability": 0.3,
         "planet_type": 8,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0001-000000000001",
         "axis": [31.0, 69.0],
-        "teams": []
+        "team_ids": []
     },
     {
         "id": "71a43700-0000-0000-0002-000000000006",
         "peer_id": null,
         "version": 0,
-        "name": "Proxima Centauri d",
-        "populations": [
-            [2, 60],
-            [3, 50]
-        ],
-        "base_resources": [],
+        "name": "Proxima d",
+        "populations": {
+            "2": 60,
+            "3": 50
+        },
+        "resources": {},
         "filename": "redgreen",
         "rotation_period": 18,
         "revolution_period": 360,
         "gravity": 3,
+        "asteroid_probability": 0.1,
         "planet_type": 8,
         "satellites": ["71a43700-0000-0000-0003-000000000003"],
         "satellite_of": "71a43700-0000-0000-0001-000000000001",
         "axis": [68.0, 24.0],
-        "teams": []
+        "team_ids": []
     },
     {
         "id": "71a43700-0000-0000-0003-000000000003",
         "peer_id": null,
         "version": 0,
         "name": "Frittura",
-        "populations": [[4, 110]],
-        "base_resources": [
-            [1, 4],
-            [2, 4],
-            [3, 1],
-            [4, 10]
-        ],
+        "populations": { "4": 110 },
+        "resources": {
+            "1": 4,
+            "2": 4,
+            "3": 1,
+            "4": 10
+        },
         "filename": "venom",
         "rotation_period": 6,
         "revolution_period": 360,
         "gravity": 3,
+        "asteroid_probability": 0.3,
         "planet_type": 8,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0002-000000000006",
         "axis": [44.0, 44.0],
-        "teams": []
+        "team_ids": []
     },
     {
         "id": "71a43700-0000-0000-0002-000000000000",
         "peer_id": null,
         "version": 0,
         "name": "Earth",
-        "populations": [
-            [100, 10],
-            [101, 15],
-            [102, 25],
-            [103, 25],
-            [104, 15],
-            [105, 20],
-            [106, 10]
-        ],
-        "base_resources": [
-            [1, 10],
-            [2, 10],
-            [4, 4]
-        ],
+        "populations": {
+            "100": 10,
+            "101": 10,
+            "102": 10,
+            "103": 10,
+            "104": 10,
+            "105": 10,
+            "107": 10,
+            "108": 10,
+            "109": 10
+        },
+        "resources": {
+            "1": 10,
+            "2": 10,
+            "4": 4
+        },
         "filename": "earth",
         "rotation_period": 12,
         "revolution_period": 120,
         "gravity": 10,
+        "asteroid_probability": 0.5,
         "planet_type": 2,
         "satellites": ["71a43700-0000-0000-0003-000000000000"],
         "satellite_of": "71a43700-0000-0000-0001-000000000000",
         "axis": [22.0, 24.0],
-        "teams": []
+        "team_ids": []
     },
     {
         "id": "71a43700-0000-0000-0002-000000000001",
         "peer_id": null,
         "version": 0,
         "name": "Mars",
-        "populations": [
-            [2, 90],
-            [102, 30]
-        ],
-        "base_resources": [
-            [1, 2],
-            [2, 4],
-            [4, 4]
-        ],
+        "populations": {
+            "2": 90,
+            "102": 30,
+            "109": 10
+        },
+        "resources": {
+            "1": 12,
+            "2": 5,
+            "4": 6
+        },
         "filename": "lava",
         "rotation_period": 12,
         "revolution_period": 180,
         "gravity": 8,
+        "asteroid_probability": 0.5,
         "planet_type": 3,
         "satellites": ["71a43700-0000-0000-0003-000000000001", "71a43700-0000-0000-0003-000000000002"],
         "satellite_of": "71a43700-0000-0000-0001-000000000000",
         "axis": [38.0, 33.0],
-        "teams": []
+        "team_ids": []
     },
     {
         "id": "71a43700-0000-0000-0002-000000000002",
         "peer_id": null,
         "version": 0,
         "name": "Jupiter",
-        "populations": [[1, 110]],
-        "base_resources": [
-            [2, 6],
-            [3, 8]
-        ],
+        "populations": { "1": 110, "109": 5 },
+        "resources": {
+            "2": 12,
+            "3": 16
+        },
         "filename": "gas",
         "rotation_period": 18,
         "revolution_period": 360,
         "gravity": 25,
+        "asteroid_probability": 0.95,
         "planet_type": 5,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0001-000000000000",
         "axis": [46.0, 44.0],
-        "teams": []
+        "team_ids": []
     },
     {
         "id": "71a43700-0000-0000-0002-000000000003",
         "peer_id": null,
         "version": 0,
         "name": "Saturn",
-        "populations": [
-            [1, 60],
-            [3, 30],
-            [102, 20]
-        ],
-        "base_resources": [
-            [2, 6],
-            [3, 8]
-        ],
+        "populations": {
+            "1": 60,
+            "3": 30,
+            "102": 20
+        },
+        "resources": {
+            "2": 12,
+            "3": 16
+        },
         "filename": "ring",
         "rotation_period": 18,
         "revolution_period": 360,
         "gravity": 20,
+        "asteroid_probability": 0.86,
         "planet_type": 7,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0001-000000000000",
         "axis": [54.0, 42.0],
-        "teams": []
+        "team_ids": []
     },
     {
         "id": "71a43700-0000-0000-0002-000000000004",
         "peer_id": null,
         "version": 0,
         "name": "Uranus",
-        "populations": [[3, 90]],
-        "base_resources": [
-            [1, 3],
-            [2, 3],
-            [3, 3]
-        ],
+        "populations": { "3": 90 },
+        "resources": {
+            "1": 6,
+            "2": 6,
+            "3": 7
+        },
         "filename": "ice",
         "rotation_period": 18,
         "revolution_period": 360,
         "gravity": 16,
+        "asteroid_probability": 0.7,
         "planet_type": 4,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0001-000000000000",
         "axis": [61.0, 51.0],
-        "teams": []
+        "team_ids": []
     },
     {
         "id": "71a43700-0000-0000-0003-000000000000",
         "peer_id": null,
         "version": 0,
         "name": "Moon",
-        "populations": [
-            [101, 60],
-            [1, 50],
-            [5, 30]
-        ],
-        "base_resources": [
-            [1, 4],
-            [2, 4],
-            [3, 1],
-            [4, 1]
-        ],
+        "populations": {
+            "101": 60,
+            "1": 50,
+            "5": 30
+        },
+        "resources": {
+            "1": 8,
+            "2": 9,
+            "3": 1,
+            "4": 3
+        },
         "filename": "rocky",
         "rotation_period": 18,
         "revolution_period": 120,
         "gravity": 2,
+        "asteroid_probability": 0.0,
         "planet_type": 8,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0002-000000000000",
         "axis": [35.0, 34.0],
-        "teams": []
+        "team_ids": []
     },
     {
         "id": "71a43700-0000-0000-0003-000000000001",
         "peer_id": null,
         "version": 0,
         "name": "Phobos",
-        "populations": [
-            [107, 20],
-            [108, 20],
-            [2, 40],
-            [5, 10]
-        ],
-        "base_resources": [],
+        "populations": {
+            "107": 20,
+            "108": 20,
+            "2": 40,
+            "5": 10
+        },
+        "resources": {},
         "filename": "phobos",
         "rotation_period": 12,
         "revolution_period": 120,
         "gravity": 2,
+        "asteroid_probability": 0.0,
         "planet_type": 8,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0002-000000000001",
         "axis": [35.0, 34.0],
-        "teams": []
+        "team_ids": []
     },
     {
         "id": "71a43700-0000-0000-0003-000000000002",
         "peer_id": null,
         "version": 0,
         "name": "Deimos",
-        "populations": [
-            [1, 10],
-            [2, 70],
-            [5, 10]
-        ],
-        "base_resources": [],
+        "populations": {
+            "1": 10,
+            "2": 70,
+            "5": 10
+        },
+        "resources": {},
         "filename": "deimos",
         "rotation_period": 12,
         "revolution_period": 180,
         "gravity": 2,
+        "asteroid_probability": 0.0,
         "planet_type": 8,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0002-000000000001",
         "axis": [55.0, 64.0],
-        "teams": []
+        "team_ids": []
     }
 ]

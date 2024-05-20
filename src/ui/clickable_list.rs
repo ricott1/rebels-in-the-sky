@@ -229,17 +229,23 @@ impl<'a> StatefulWidget for ClickableList<'a> {
         }
 
         if self.callback_registry.lock().unwrap().is_hovering(area) {
-            self.callback_registry.lock().unwrap().register_callback(
-                crossterm::event::MouseEventKind::ScrollDown,
-                None,
-                UiCallbackPreset::NextPanelIndex,
-            );
+            self.callback_registry
+                .lock()
+                .unwrap()
+                .register_mouse_callback(
+                    crossterm::event::MouseEventKind::ScrollDown,
+                    None,
+                    UiCallbackPreset::NextPanelIndex,
+                );
 
-            self.callback_registry.lock().unwrap().register_callback(
-                crossterm::event::MouseEventKind::ScrollUp,
-                None,
-                UiCallbackPreset::PreviousPanelIndex,
-            );
+            self.callback_registry
+                .lock()
+                .unwrap()
+                .register_mouse_callback(
+                    crossterm::event::MouseEventKind::ScrollUp,
+                    None,
+                    UiCallbackPreset::PreviousPanelIndex,
+                );
         }
 
         let list_height = list_area.height as usize;
@@ -312,11 +318,14 @@ impl<'a> StatefulWidget for ClickableList<'a> {
             }
         }
         if let Some((area, index)) = selected_element {
-            self.callback_registry.lock().unwrap().register_callback(
-                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
-                Some(area),
-                UiCallbackPreset::SetPanelIndex { index },
-            );
+            self.callback_registry
+                .lock()
+                .unwrap()
+                .register_mouse_callback(
+                    crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                    Some(area),
+                    UiCallbackPreset::SetPanelIndex { index },
+                );
         }
     }
 }

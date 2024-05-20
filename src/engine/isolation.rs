@@ -2,7 +2,7 @@ use super::{
     action::{ActionOutput, ActionSituation, Advantage, EngineAction},
     constants::{TirednessCost, ADV_ATTACK_LIMIT, ADV_DEFENSE_LIMIT, ADV_NEUTRAL_LIMIT},
     game::Game,
-    types::GameStats,
+    types::{GameStats, Possession},
 };
 use crate::world::skill::GameSkill;
 use rand::Rng;
@@ -17,7 +17,35 @@ impl EngineAction for Isolation {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
 
-        let iso_idx = Self::sample(rng, [2, 3, 2, 1, 0])?;
+        let mut weights = [4, 5, 4, 3, 1];
+        for (idx, player) in attacking_players.iter().enumerate() {
+            if player.is_knocked_out() {
+                weights[idx] = 0
+            }
+        }
+
+        if weights.iter().sum::<u8>() == 0 {
+            let name = if game.possession == Possession::Home {
+                game.home_team_in_game.name.clone()
+            } else {
+                game.away_team_in_game.name.clone()
+            };
+            return Some(ActionOutput {
+                situation: ActionSituation::Turnover,
+                possession: !input.possession,
+                description: format!(
+                    "Oh no! The whole team is wasted! {name} just turned the ball over like that.",
+                ),
+                start_at: input.end_at,
+                end_at: input.end_at.plus(4),
+                home_score: input.home_score,
+                away_score: input.away_score,
+                ..Default::default()
+            });
+        }
+
+        let iso_idx = Self::sample(rng, weights)?;
+
         let iso = attacking_players[iso_idx];
         let defender = defending_players[iso_idx];
 

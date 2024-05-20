@@ -10,8 +10,8 @@ use super::{
     traits::Screen,
     widgets::{default_block, selectable_list},
 };
-use crate::types::{AppResult, SystemTimeTick};
-use crate::ui::constants::{PrintableKeyCode, UiKey};
+use crate::types::{AppResult, SystemTimeTick, AU};
+use crate::ui::constants::UiKey;
 use crate::world::skill::Rated;
 use crate::{
     types::{PlanetId, PlanetMap},
@@ -34,7 +34,7 @@ use ratatui::{
 use std::sync::{Arc, Mutex};
 use std::{cmp::min, vec};
 
-const TICKS_PER_REVOLUTION: usize = 2;
+const TICKS_PER_REVOLUTION: usize = 3;
 
 #[derive(Debug, Default, PartialEq)]
 pub enum ZoomLevel {
@@ -78,7 +78,7 @@ impl GalaxyPanel {
         self.planet_index = 0;
         self.zoom_level = zoom_level;
         if let Some(target) = self.planets.get(&self.planet_id) {
-            self.team_index = if target.teams.len() == 0 {
+            self.team_index = if target.team_ids.len() == 0 {
                 None
             } else {
                 team_index
@@ -95,7 +95,7 @@ impl GalaxyPanel {
                 world,
             ),
             ZoomLevel::Out => self.gif_map.lock().unwrap().planet_zoom_out_frame_lines(
-                self.planet_id,
+                planet,
                 self.tick / TICKS_PER_REVOLUTION,
                 world,
             ),
@@ -185,6 +185,7 @@ impl GalaxyPanel {
 
         if self.zoom_level == ZoomLevel::In {
             let own_team = world.get_own_team()?;
+            let hover_text_target = hover_text_target(frame);
 
             match own_team.current_location {
                 x if x
@@ -195,14 +196,18 @@ impl GalaxyPanel {
                     let can_explore = own_team.can_explore_around_planet(&planet);
                     let explore_time = BASE_EXPLORATION_TIME;
                     let mut explore_button = Button::new(
-                        format!(
-                            "{}: Explore ({})",
-                            UiKey::EXPLORE.to_string(),
-                            explore_time.formatted()
-                        ),
+                        format!("Explore ({})", explore_time.formatted()),
                         UiCallbackPreset::ExploreAroundPlanet,
                         Arc::clone(&self.callback_registry),
-                    );
+                    )
+                    .set_hover_text(
+                        format!(
+                            "Explore around {}, who knows what you may find!",
+                            planet.name
+                        ),
+                        hover_text_target,
+                    )
+                    .set_hotkey(UiKey::EXPLORE);
                     if can_explore.is_err() {
                         explore_button.disable(Some(can_explore.unwrap_err().to_string()));
                     }
@@ -212,16 +217,32 @@ impl GalaxyPanel {
                     let travel_time = world.travel_time_to_planet(own_team.id, planet.id);
 
                     let (can_travel, button_text, hover_text) = match travel_time {
-                        Ok(time) => (
-                            own_team.can_travel_to_planet(&planet, time, own_team.fuel()),
-                            time.formatted(),
-                            format!(
-                                "Travel to {}: Time {}, Fuel {}",
-                                planet.name,
+                        Ok(time) => {
+                            let distance_text = match own_team.current_location {
+                                TeamLocation::OnPlanet { planet_id } => {
+                                    if let Ok(distance) =
+                                        world.distance_between_planets(planet_id, planet.id)
+                                    {
+                                        format!("Distance {:4} AU - ", distance as f32 / AU as f32)
+                                    } else {
+                                        "".into()
+                                    }
+                                }
+                                _ => "".into(),
+                            };
+
+                            (
+                                own_team.can_travel_to_planet(&planet, time, own_team.fuel()),
                                 time.formatted(),
-                                (time as f32 * own_team.spaceship.fuel_consumption()) as u32,
-                            ),
-                        ),
+                                format!(
+                                    "Travel to {}: {}Time {} - Fuel {}",
+                                    planet.name,
+                                    distance_text,
+                                    time.formatted(),
+                                    (time as f32 * own_team.spaceship.fuel_consumption()) as u32,
+                                ),
+                            )
+                        }
                         Err(e) => {
                             let err_string = e.to_string();
                             (
@@ -231,15 +252,16 @@ impl GalaxyPanel {
                             )
                         }
                     };
-                    let hover_text_target = hover_text_target(frame);
+
                     let mut go_to_planet_button = Button::new(
-                        format!("{}: Travel ({})", UiKey::TRAVEL.to_string(), button_text),
+                        format!("Travel ({})", button_text),
                         UiCallbackPreset::TravelToPlanet {
                             planet_id: planet.id,
                         },
                         Arc::clone(&self.callback_registry),
                     )
-                    .set_hover_text(hover_text, hover_text_target);
+                    .set_hover_text(hover_text, hover_text_target)
+                    .set_hotkey(UiKey::TRAVEL);
 
                     if can_travel.is_err() {
                         go_to_planet_button.disable(Some(can_travel.unwrap_err().to_string()));
@@ -250,11 +272,11 @@ impl GalaxyPanel {
             }
         }
         let mut constraints = vec![Constraint::Length(3)].repeat(buttons.len());
-        constraints.push(Constraint::Length(target.teams.len() as u16 + 2));
+        constraints.push(Constraint::Length(target.team_ids.len() as u16 + 2));
         constraints.push(Constraint::Min(0));
 
         let width = (LEFT_PANEL_WIDTH).min(area.width);
-        let height = (3 * buttons.len() as u16 + target.teams.len() as u16 + 2)
+        let height = (3 * buttons.len() as u16 + target.team_ids.len() as u16 + 2)
             .max(14)
             .min(area.height);
 
@@ -273,9 +295,9 @@ impl GalaxyPanel {
             frame.render_widget(button.clone(), split[idx]);
         }
 
-        if target.teams.len() > 0 {
+        if target.team_ids.len() > 0 {
             let mut options = vec![];
-            for &team_id in target.teams.iter() {
+            for &team_id in target.team_ids.iter() {
                 if let Some(team) = world.get_team(team_id) {
                     let mut style = UiStyle::DEFAULT;
                     if team_id == world.own_team_id {
@@ -387,7 +409,7 @@ impl GalaxyPanel {
         match self.zoom_level {
             ZoomLevel::In => {
                 if self.team_index.is_some() {
-                    let team_id = target.teams[self.team_index?].clone();
+                    let team_id = target.team_ids[self.team_index?].clone();
                     return Some(UiCallbackPreset::GoToTeam { team_id });
                 }
             }
@@ -479,12 +501,12 @@ impl Screen for GalaxyPanel {
                         % (target.satellites.len() + 1);
                 }
                 ZoomLevel::In => {
-                    if target.teams.len() == 0 {
+                    if target.team_ids.len() == 0 {
                         self.team_index = None;
                     } else {
                         self.team_index = Some(
-                            (self.team_index.unwrap_or_default() + target.teams.len() - 1)
-                                % target.teams.len(),
+                            (self.team_index.unwrap_or_default() + target.team_ids.len() - 1)
+                                % target.team_ids.len(),
                         );
                     }
                 }
@@ -494,25 +516,15 @@ impl Screen for GalaxyPanel {
                     self.planet_index = (self.planet_index + 1) % (target.satellites.len() + 1);
                 }
                 ZoomLevel::In => {
-                    if target.teams.len() == 0 {
+                    if target.team_ids.len() == 0 {
                         self.team_index = None;
                     } else {
                         self.team_index =
-                            Some((self.team_index.unwrap_or_default() + 1) % target.teams.len());
+                            Some((self.team_index.unwrap_or_default() + 1) % target.team_ids.len());
                     }
                 }
             },
-            UiKey::TRAVEL => {
-                if self.zoom_level == ZoomLevel::In {
-                    let planet_id = target.id;
-                    return Some(UiCallbackPreset::TravelToPlanet { planet_id });
-                }
-            }
-            UiKey::EXPLORE => {
-                if self.zoom_level == ZoomLevel::In {
-                    return Some(UiCallbackPreset::ExploreAroundPlanet);
-                }
-            }
+
             KeyCode::Enter => {
                 return self.select_target();
             }
@@ -569,7 +581,7 @@ impl SplitPanel for GalaxyPanel {
             return 0;
         }
         let target = target.unwrap();
-        target.teams.len()
+        target.team_ids.len()
     }
     fn set_index(&mut self, index: usize) {
         let target = self.planets.get(&self.planet_id);
@@ -578,7 +590,7 @@ impl SplitPanel for GalaxyPanel {
             return;
         }
         let target = target.unwrap();
-        if index >= target.teams.len() {
+        if index >= target.team_ids.len() {
             self.team_index = None;
             return;
         }

@@ -305,10 +305,11 @@ impl PlayerImage {
 
         let mut other = read_image(self.legs.select_file(size).as_str())?;
         let mask = read_image(self.legs.select_mask_file(size).as_str())?;
-        offset_y += other.height();
-        let x = (base.width() - other.width()) / 2;
+
         other.apply_color_map_with_shadow_mask(skin_color_map, &mask);
 
+        offset_y += other.height();
+        let x = (base.width() - other.width()) / 2;
         base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
         blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
 

@@ -1,20 +1,19 @@
-use std::cmp::min;
-
 use super::{
     constants::{COST_PER_VALUE, EXPERIENCE_PER_SKILL_MULTIPLIER, REPUTATION_PER_EXPERIENCE},
     jersey::Jersey,
     planet::Planet,
     position::{GamePosition, PlayingStyle, MAX_POSITION},
     role::CrewRole,
-    skill::{GameSkill, Skill, MAX_SKILL},
+    skill::{GameSkill, Skill, MAX_SKILL, MIN_SKILL},
     types::{PlayerLocation, Pronoun, TrainingFocus},
     utils::PLAYER_DATA,
 };
 use crate::{
-    engine::constants::MAX_TIREDNESS,
+    engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
     image::{player::PlayerImage, types::Gif},
     types::{PlanetId, PlayerId, TeamId},
     world::{
+        constants::*,
         position::Position,
         skill::{Athleticism, Defense, Mental, Offense, Rated, Technical},
         types::Population,
@@ -52,7 +51,7 @@ pub struct Player {
     pub previous_skills: [Skill; 20], // This is for displaying purposes to show the skills that were recently modified
     pub training_focus: Option<TrainingFocus>,
     pub tiredness: f32,
-    pub drunkness: f32,
+    pub morale: f32,
 }
 
 impl Serialize for Player {
@@ -75,6 +74,7 @@ impl Serialize for Player {
         state.serialize_field("previous_skills", &self.previous_skills)?;
         state.serialize_field("training_focus", &self.training_focus)?;
         state.serialize_field("tiredness", &self.tiredness)?;
+        state.serialize_field("morale", &self.morale)?;
         state.serialize_field("compact_skills", &compact_skills)?;
         state.end()
     }
@@ -99,7 +99,7 @@ impl<'de> Deserialize<'de> for Player {
             PreviousSkills,
             TrainingFocus,
             Tiredness,
-            Drunkness,
+            Morale,
             CompactSkills,
         }
 
@@ -132,7 +132,7 @@ impl<'de> Deserialize<'de> for Player {
                             "previous_skills" => Ok(Field::PreviousSkills),
                             "training_focus" => Ok(Field::TrainingFocus),
                             "tiredness" => Ok(Field::Tiredness),
-                            "drunkness" => Ok(Field::Drunkness),
+                            "morale" => Ok(Field::Morale),
                             "compact_skills" => Ok(Field::CompactSkills),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
@@ -195,7 +195,7 @@ impl<'de> Deserialize<'de> for Player {
                 let tiredness = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(12, &self))?;
-                let drunkness = seq
+                let morale = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(13, &self))?;
                 let compact_skills: Vec<Skill> = seq
@@ -221,7 +221,7 @@ impl<'de> Deserialize<'de> for Player {
                     previous_skills,
                     training_focus,
                     tiredness,
-                    drunkness,
+                    morale,
                 };
 
                 player.athleticism = Athleticism {
@@ -246,7 +246,7 @@ impl<'de> Deserialize<'de> for Player {
                     passing: compact_skills[12],
                     ball_handling: compact_skills[13],
                     post_moves: compact_skills[14],
-                    rebounding: compact_skills[15],
+                    rebounds: compact_skills[15],
                 };
                 player.mental = Mental {
                     vision: compact_skills[16],
@@ -275,7 +275,7 @@ impl<'de> Deserialize<'de> for Player {
                 let mut previous_skills = None;
                 let mut training_focus = None;
                 let mut tiredness = None;
-                let mut drunkness = None;
+                let mut morale = None;
                 let mut compact_skills: Option<Vec<Skill>> = None;
 
                 while let Some(key) = map.next_key()? {
@@ -358,11 +358,11 @@ impl<'de> Deserialize<'de> for Player {
                             }
                             tiredness = Some(map.next_value()?);
                         }
-                        Field::Drunkness => {
-                            if drunkness.is_some() {
-                                return Err(serde::de::Error::duplicate_field("drunkness"));
+                        Field::Morale => {
+                            if morale.is_some() {
+                                return Err(serde::de::Error::duplicate_field("morale"));
                             }
-                            drunkness = Some(map.next_value()?);
+                            morale = Some(map.next_value()?);
                         }
                         Field::CompactSkills => {
                             if compact_skills.is_some() {
@@ -393,8 +393,7 @@ impl<'de> Deserialize<'de> for Player {
                     .ok_or_else(|| serde::de::Error::missing_field("training_focus"))?;
                 let tiredness =
                     tiredness.ok_or_else(|| serde::de::Error::missing_field("tiredness"))?;
-                let drunkness =
-                    drunkness.ok_or_else(|| serde::de::Error::missing_field("drunkness"))?;
+                let morale = morale.ok_or_else(|| serde::de::Error::missing_field("morale"))?;
                 let compact_skills = compact_skills
                     .ok_or_else(|| serde::de::Error::missing_field("compact_skills"))?;
 
@@ -417,7 +416,7 @@ impl<'de> Deserialize<'de> for Player {
                     previous_skills,
                     training_focus,
                     tiredness,
-                    drunkness,
+                    morale,
                 };
 
                 player.athleticism = Athleticism {
@@ -442,7 +441,7 @@ impl<'de> Deserialize<'de> for Player {
                     passing: compact_skills[12],
                     ball_handling: compact_skills[13],
                     post_moves: compact_skills[14],
-                    rebounding: compact_skills[15],
+                    rebounds: compact_skills[15],
                 };
                 player.mental = Mental {
                     vision: compact_skills[16],
@@ -469,7 +468,7 @@ impl<'de> Deserialize<'de> for Player {
             "previous_skills",
             "training_focus",
             "tiredness",
-            "drunkness",
+            "morale",
             "compact_skills",
         ];
         deserializer.deserialize_struct("Player", FIELDS, PlayerVisitor)
@@ -559,7 +558,7 @@ impl Player {
             previous_skills: [Skill::default(); 20],
             training_focus: None,
             tiredness: 0.0,
-            drunkness: 0.0,
+            morale: MAX_MORALE,
         };
 
         player.apply_info_modifiers();
@@ -622,8 +621,8 @@ impl Player {
             self.info.weight,
             [90.0, 1.0, 130.0, 0.8],
         );
-        self.technical.rebounding = skill_linear_interpolation(
-            self.technical.rebounding,
+        self.technical.rebounds = skill_linear_interpolation(
+            self.technical.rebounds,
             self.info.height,
             [190.0, 0.75, 215.0, 1.25],
         );
@@ -693,7 +692,7 @@ impl Player {
             12 => self.technical.passing,
             13 => self.technical.ball_handling,
             14 => self.technical.post_moves,
-            15 => self.technical.rebounding,
+            15 => self.technical.rebounds,
             16 => self.mental.vision,
             17 => self.mental.aggression,
             18 => self.mental.off_ball_movement,
@@ -734,7 +733,8 @@ impl Player {
         } else {
             MAX_TIREDNESS
         };
-        self.tiredness = (self.tiredness + tiredness / (1.0 + self.athleticism.stamina / 20.0))
+        self.tiredness = (self.tiredness
+            + tiredness / (1.0 + self.athleticism.stamina / MAX_TIREDNESS))
             .min(max_tiredness);
     }
 
@@ -742,10 +742,15 @@ impl Player {
         if self.tiredness == MAX_TIREDNESS {
             return 0;
         }
-        min(
-            ((MAX_TIREDNESS - self.tiredness / 2.0) / 2.0).round() as u8,
-            rng.gen_range(1..=50),
-        )
+
+        let result = rng.gen_range(MIN_SKILL as u8..=MAX_SKILL as u8)
+            + rng.gen_range(MIN_SKILL as u8..=MAX_SKILL as u8);
+
+        if self.tiredness <= MIN_TIREDNESS_FOR_ROLL_DECLINE {
+            return result;
+        }
+
+        result.min(2 * (MAX_TIREDNESS - (self.tiredness - MIN_TIREDNESS_FOR_ROLL_DECLINE)) as u8)
     }
 
     fn modify_skill(&mut self, idx: usize, mut value: f32) {
@@ -791,7 +796,7 @@ impl Player {
             12 => self.technical.passing = new_value,
             13 => self.technical.ball_handling = new_value,
             14 => self.technical.post_moves = new_value,
-            15 => self.technical.rebounding = new_value,
+            15 => self.technical.rebounds = new_value,
             16 => self.mental.vision = new_value,
             17 => self.mental.aggression = new_value,
             18 => self.mental.off_ball_movement = new_value,
@@ -803,6 +808,7 @@ impl Player {
     pub fn apply_end_of_game_logic(
         &mut self,
         experience_at_position: [u16; MAX_POSITION as usize],
+        training_bonus: f32,
     ) {
         self.version += 1;
         self.reputation = (self.reputation
@@ -823,7 +829,8 @@ impl Player {
         self.previous_skills = self.current_skill_array();
 
         for idx in 0..20 {
-            let mut increment = experience_per_skill[idx] as f32 * EXPERIENCE_PER_SKILL_MULTIPLIER;
+            let mut increment =
+                experience_per_skill[idx] as f32 * EXPERIENCE_PER_SKILL_MULTIPLIER * training_bonus;
             match self.training_focus {
                 Some(focus) => {
                     if focus.is_focus(idx) {
@@ -836,6 +843,8 @@ impl Player {
             }
             self.modify_skill(idx, increment);
         }
+
+        self.morale = (self.morale + MORALE_INCREASE_PER_GAME_PLAYER).bound();
     }
 }
 

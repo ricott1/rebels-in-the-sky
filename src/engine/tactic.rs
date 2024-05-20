@@ -60,7 +60,7 @@ impl Tactic {
         Ok(action)
     }
 
-    pub fn brawl_probability(&self) -> f32 {
+    pub fn brawl_probability_modifier(&self) -> f32 {
         match self {
             Self::Balanced => 1.0,
             Self::BigPirates => 1.25,

@@ -17,6 +17,7 @@ use strum_macros::{Display, EnumIter};
 pub enum SpaceshipStyle {
     Shuttle,
     Pincher,
+    Jester,
 }
 
 pub trait SpaceshipComponent {
@@ -26,6 +27,7 @@ pub trait SpaceshipComponent {
     fn fuel_capacity(&self) -> u32;
     fn fuel_consumption(&self) -> f32;
     fn speed(&self) -> f32;
+    fn durability(&self) -> f32;
     fn cost(&self) -> u32;
 }
 
@@ -40,16 +42,18 @@ pub enum Hull {
     ShuttleLarge,
     PincherStandard,
     PincherLarge,
+    JesterStandard,
 }
 
 impl Display for Hull {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Hull::ShuttleSmall => write!(f, "Small"),
-            Hull::ShuttleStandard => write!(f, "Standard"),
-            Hull::ShuttleLarge => write!(f, "Large"),
-            Hull::PincherStandard => write!(f, "Standard"),
-            Hull::PincherLarge => write!(f, "Large"),
+            Self::ShuttleSmall => write!(f, "Small"),
+            Self::ShuttleStandard => write!(f, "Standard"),
+            Self::ShuttleLarge => write!(f, "Large"),
+            Self::PincherStandard => write!(f, "Standard"),
+            Self::PincherLarge => write!(f, "Large"),
+            Self::JesterStandard => write!(f, "Standard"),
         }
     }
 }
@@ -62,6 +66,7 @@ impl Hull {
             Self::ShuttleLarge => Self::ShuttleSmall,
             Self::PincherStandard => Self::PincherLarge,
             Self::PincherLarge => Self::PincherStandard,
+            Self::JesterStandard => Self::JesterStandard,
         }
     }
 
@@ -72,6 +77,7 @@ impl Hull {
             Self::ShuttleLarge => Self::ShuttleStandard,
             Self::PincherStandard => Self::PincherLarge,
             Self::PincherLarge => Self::PincherStandard,
+            Self::JesterStandard => Self::JesterStandard,
         }
     }
 }
@@ -84,15 +90,17 @@ impl SpaceshipComponent for Hull {
             Self::ShuttleLarge => SpaceshipStyle::Shuttle,
             Self::PincherStandard => SpaceshipStyle::Pincher,
             Self::PincherLarge => SpaceshipStyle::Pincher,
+            Self::JesterStandard => SpaceshipStyle::Jester,
         }
     }
     fn crew_capacity(&self) -> u8 {
         match self {
-            Self::ShuttleSmall => MIN_PLAYERS_PER_TEAM as u8 + 1,
-            Self::ShuttleStandard => MIN_PLAYERS_PER_TEAM as u8 + 2,
-            Self::ShuttleLarge => MIN_PLAYERS_PER_TEAM as u8 + 3,
-            Self::PincherStandard => MIN_PLAYERS_PER_TEAM as u8 + 2,
+            Self::ShuttleSmall => MIN_PLAYERS_PER_TEAM as u8 + 2,
+            Self::ShuttleStandard => MIN_PLAYERS_PER_TEAM as u8 + 3,
+            Self::ShuttleLarge => MIN_PLAYERS_PER_TEAM as u8 + 4,
+            Self::PincherStandard => MIN_PLAYERS_PER_TEAM as u8 + 3,
             Self::PincherLarge => MIN_PLAYERS_PER_TEAM as u8 + 4,
+            Self::JesterStandard => MIN_PLAYERS_PER_TEAM as u8 + 3,
         }
     }
 
@@ -103,6 +111,7 @@ impl SpaceshipComponent for Hull {
             Self::ShuttleLarge => 4000,
             Self::PincherStandard => 3000,
             Self::PincherLarge => 5000,
+            Self::JesterStandard => 1000,
         }
     }
 
@@ -113,6 +122,7 @@ impl SpaceshipComponent for Hull {
             Self::ShuttleLarge => 400,
             Self::PincherStandard => 300,
             Self::PincherLarge => 500,
+            Self::JesterStandard => 450,
         }
     }
 
@@ -123,6 +133,7 @@ impl SpaceshipComponent for Hull {
             Self::ShuttleLarge => 1.5,
             Self::PincherStandard => 1.25,
             Self::PincherLarge => 1.75,
+            Self::JesterStandard => 1.15,
         }
     }
 
@@ -133,16 +144,27 @@ impl SpaceshipComponent for Hull {
             Self::ShuttleLarge => 0.5,
             Self::PincherStandard => 1.25,
             Self::PincherLarge => 0.75,
+            Self::JesterStandard => 1.05,
         }
     }
-
+    fn durability(&self) -> f32 {
+        match self {
+            Self::ShuttleSmall => 16.0,
+            Self::ShuttleStandard => 18.0,
+            Self::ShuttleLarge => 19.0,
+            Self::PincherStandard => 18.0,
+            Self::PincherLarge => 20.0,
+            Self::JesterStandard => 16.0,
+        }
+    }
     fn cost(&self) -> u32 {
         match self {
             Self::ShuttleSmall => 15000,
-            Self::ShuttleStandard => 18000,
-            Self::ShuttleLarge => 25000,
-            Self::PincherStandard => 25000,
-            Self::PincherLarge => 35000,
+            Self::ShuttleStandard => 25000,
+            Self::ShuttleLarge => 32000,
+            Self::PincherStandard => 33000,
+            Self::PincherLarge => 45000,
+            Self::JesterStandard => 52000,
         }
     }
 }
@@ -159,6 +181,8 @@ pub enum Engine {
     PincherSingle,
     PincherDouble,
     PincherTriple,
+    JesterDouble,
+    JesterQuadruple,
 }
 
 impl Display for Engine {
@@ -170,6 +194,8 @@ impl Display for Engine {
             Engine::PincherSingle => write!(f, "Single"),
             Engine::PincherDouble => write!(f, "Double"),
             Engine::PincherTriple => write!(f, "Triple"),
+            Engine::JesterDouble => write!(f, "Double"),
+            Engine::JesterQuadruple => write!(f, "Quadruple"),
         }
     }
 }
@@ -183,6 +209,8 @@ impl Engine {
             Self::PincherSingle => Self::PincherDouble,
             Self::PincherDouble => Self::PincherTriple,
             Self::PincherTriple => Self::PincherSingle,
+            Self::JesterDouble => Self::JesterQuadruple,
+            Self::JesterQuadruple => Self::JesterDouble,
         }
     }
 
@@ -194,6 +222,8 @@ impl Engine {
             Self::PincherSingle => Self::PincherTriple,
             Self::PincherDouble => Self::PincherSingle,
             Self::PincherTriple => Self::PincherDouble,
+            Self::JesterDouble => Self::JesterQuadruple,
+            Self::JesterQuadruple => Self::JesterDouble,
         }
     }
 }
@@ -207,6 +237,8 @@ impl SpaceshipComponent for Engine {
             Self::PincherSingle => SpaceshipStyle::Pincher,
             Self::PincherDouble => SpaceshipStyle::Pincher,
             Self::PincherTriple => SpaceshipStyle::Pincher,
+            Self::JesterDouble => SpaceshipStyle::Jester,
+            Self::JesterQuadruple => SpaceshipStyle::Jester,
         }
     }
     fn crew_capacity(&self) -> u8 {
@@ -229,6 +261,8 @@ impl SpaceshipComponent for Engine {
             Self::PincherSingle => 1.0,
             Self::PincherDouble => 1.5,
             Self::PincherTriple => 2.0,
+            Self::JesterDouble => 1.25,
+            Self::JesterQuadruple => 2.2,
         }
     }
 
@@ -240,6 +274,21 @@ impl SpaceshipComponent for Engine {
             Self::PincherSingle => 1.1,
             Self::PincherDouble => 1.65,
             Self::PincherTriple => 2.25,
+            Self::JesterDouble => 1.7,
+            Self::JesterQuadruple => 2.45,
+        }
+    }
+
+    fn durability(&self) -> f32 {
+        match self {
+            Self::ShuttleSingle => 8.0,
+            Self::ShuttleDouble => 7.0,
+            Self::ShuttleTriple => 6.0,
+            Self::PincherSingle => 8.0,
+            Self::PincherDouble => 7.0,
+            Self::PincherTriple => 6.0,
+            Self::JesterDouble => 6.0,
+            Self::JesterQuadruple => 5.0,
         }
     }
     fn cost(&self) -> u32 {
@@ -250,6 +299,8 @@ impl SpaceshipComponent for Engine {
             Self::PincherSingle => 8000,
             Self::PincherDouble => 12000,
             Self::PincherTriple => 19000,
+            Self::JesterDouble => 14000,
+            Self::JesterQuadruple => 29000,
         }
     }
 }
@@ -302,7 +353,11 @@ impl SpaceshipComponent for Storage {
         }
     }
     fn crew_capacity(&self) -> u8 {
-        0
+        match self {
+            Self::ShuttleSingle => 0,
+            Self::ShuttleDouble => 1,
+            Self::PincherSingle => 0,
+        }
     }
 
     fn storage_capacity(&self) -> u32 {
@@ -336,6 +391,14 @@ impl SpaceshipComponent for Storage {
             Self::PincherSingle => 0.97,
         }
     }
+
+    fn durability(&self) -> f32 {
+        match self {
+            Self::ShuttleSingle => 10.0,
+            Self::ShuttleDouble => 11.0,
+            Self::PincherSingle => 7.0,
+        }
+    }
     fn cost(&self) -> u32 {
         match self {
             Self::ShuttleSingle => 5000,
@@ -345,13 +408,14 @@ impl SpaceshipComponent for Storage {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct Spaceship {
     pub name: String,
     pub hull: Hull,
     pub engine: Engine,
     pub storage: Option<Storage>,
     pub image: SpaceshipImage,
+    pub total_travelled: u128,
 }
 
 impl Spaceship {
@@ -368,6 +432,7 @@ impl Spaceship {
             engine,
             storage,
             image: SpaceshipImage::new(color_map),
+            total_travelled: 0,
         }
     }
 
@@ -378,6 +443,7 @@ impl Spaceship {
             Hull::ShuttleLarge => 2,
             Hull::PincherStandard => 1,
             Hull::PincherLarge => 2,
+            Hull::JesterStandard => 1,
         }
     }
 
@@ -393,12 +459,7 @@ impl Spaceship {
             .choose(rng)
             .unwrap();
         let storage = match rng.gen_bool(0.5) {
-            true => Some(
-                Storage::iter()
-                    .filter(|s| s.style() == style)
-                    .choose(rng)
-                    .unwrap(),
-            ),
+            true => Storage::iter().filter(|s| s.style() == style).choose(rng),
             false => None,
         };
 
@@ -461,7 +522,13 @@ impl Spaceship {
     }
 
     pub fn cost(&self) -> u32 {
-        self.hull.cost() + self.engine.cost()
+        self.hull.cost()
+            + self.engine.cost()
+            + if let Some(storage) = self.storage {
+                storage.cost()
+            } else {
+                0
+            }
     }
 
     pub fn max_distance(&self, current_fuel: u32) -> f32 {
@@ -484,6 +551,7 @@ pub enum SpaceshipPrefab {
     Pincher,
     Orwell,
     Ragnarok,
+    Ibarruri,
 }
 
 impl SpaceshipPrefab {
@@ -495,19 +563,21 @@ impl SpaceshipPrefab {
             Self::Milwaukee => Self::Pincher,
             Self::Pincher => Self::Orwell,
             Self::Orwell => Self::Ragnarok,
-            Self::Ragnarok => Self::Bresci,
+            Self::Ragnarok => Self::Ibarruri,
+            Self::Ibarruri => Self::Bresci,
         }
     }
 
     pub fn previous(&self) -> Self {
         match self {
-            Self::Bresci => Self::Ragnarok,
+            Self::Bresci => Self::Ibarruri,
             Self::Cafiero => Self::Bresci,
             Self::Yukawa => Self::Cafiero,
             Self::Milwaukee => Self::Yukawa,
             Self::Pincher => Self::Milwaukee,
             Self::Orwell => Self::Pincher,
             Self::Ragnarok => Self::Orwell,
+            Self::Ibarruri => Self::Ragnarok,
         }
     }
 
@@ -548,6 +618,13 @@ impl SpaceshipPrefab {
                 None,
                 color_map,
             ),
+            Self::Orwell => Spaceship::new(
+                name,
+                Hull::PincherStandard,
+                Engine::PincherTriple,
+                Some(Storage::PincherSingle),
+                color_map,
+            ),
             Self::Ragnarok => Spaceship::new(
                 name,
                 Hull::PincherLarge,
@@ -555,11 +632,11 @@ impl SpaceshipPrefab {
                 None,
                 color_map,
             ),
-            Self::Orwell => Spaceship::new(
+            Self::Ibarruri => Spaceship::new(
                 name,
-                Hull::PincherStandard,
-                Engine::PincherTriple,
-                Some(Storage::PincherSingle),
+                Hull::JesterStandard,
+                Engine::JesterQuadruple,
+                None,
                 color_map,
             ),
         }
@@ -573,12 +650,17 @@ impl SpaceshipPrefab {
 #[cfg(test)]
 
 mod tests {
-    use crate::types::{SystemTimeTick, AU, HOURS};
+    use itertools::Itertools;
+
+    use crate::{
+        types::{IdSystem, SystemTimeTick, TeamId, AU, HOURS},
+        world::{team::Team, types::TeamLocation, world::World},
+    };
 
     use super::*;
 
     #[test]
-    fn spaceship_prefab_data() {
+    fn test_spaceship_prefab_data() {
         let color_map = ColorMap::random();
         let name = "test".to_string();
         let spaceship = SpaceshipPrefab::Yukawa.specs(name, color_map);
@@ -617,5 +699,70 @@ mod tests {
             max_travel_time,
             max_travel_time.formatted()
         );
+    }
+
+    #[test]
+    fn test_total_travelled_au() -> AppResult<()> {
+        let color_map = ColorMap::random();
+        let name = "test".to_string();
+        let spaceship = SpaceshipPrefab::Yukawa.specs(name, color_map);
+
+        let mut world = World::new(None);
+
+        world.initialize(false)?;
+
+        let planet_ids = world.planets.keys().collect_vec();
+        let from = planet_ids[0].clone();
+        let to = planet_ids[1].clone();
+        let mut team = Team::random(TeamId::new(), from.clone(), "test".into());
+        team.spaceship = spaceship;
+        team.current_location = TeamLocation::Travelling {
+            from,
+            to,
+            started: Tick::now(),
+            duration: 100,
+            distance: 1000,
+        };
+        println!("TOTAL AU: {}", team.spaceship.total_travelled);
+        world.own_team_id = team.id;
+
+        world.teams.insert(team.id, team);
+
+        let mut current_timestamp = Tick::now();
+
+        loop {
+            let own_team = world.get_own_team()?;
+            match own_team.current_location {
+                TeamLocation::Travelling {
+                    started, duration, ..
+                } => println!(
+                    "Team is travelling: {} < {} + {} = {}\r",
+                    current_timestamp,
+                    started,
+                    duration,
+                    started + duration
+                ),
+                _ => {
+                    println!("Team landed");
+                    println!("TOTALAU: {}", own_team.spaceship.total_travelled);
+                    break;
+                }
+            };
+
+            match world.tick_travel(current_timestamp, false) {
+                Ok(message_option) => {
+                    if let Some(messages) = message_option {
+                        println!("{:#?}", messages)
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to tick event: {}", e);
+                    break;
+                }
+            }
+            current_timestamp += 1;
+        }
+
+        Ok(())
     }
 }

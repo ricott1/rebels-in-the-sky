@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::engine::timer::Timer;
 use crate::engine::types::GameStats;
 use crate::types::{PlanetId, Tick};
+use crate::world::planet::{Planet, PlanetType};
 use crate::world::position::{Position, MAX_POSITION};
 use crate::{
     engine::types::TeamInGame,
@@ -14,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 
 #[derive(Debug, Clone, Display, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum ChallengeState {
+pub enum NetworkRequestState {
     #[default]
     Syn,
     SynAck,
@@ -24,7 +25,7 @@ pub enum ChallengeState {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Challenge {
-    pub state: ChallengeState,
+    pub state: NetworkRequestState,
     pub home_peer_id: PeerId,
     pub away_peer_id: PeerId,
     pub home_team: Option<TeamInGame>,
@@ -37,7 +38,7 @@ pub struct Challenge {
 impl Challenge {
     pub fn new(home_peer_id: PeerId, away_peer_id: PeerId) -> Self {
         Self {
-            state: ChallengeState::Syn,
+            state: NetworkRequestState::Syn,
             home_peer_id,
             away_peer_id,
             home_team: None,
@@ -89,23 +90,39 @@ impl Challenge {
 pub struct NetworkTeam {
     pub team: Team,
     pub players: Vec<Player>,
+    pub home_planet: Option<Planet>,
 }
 
 impl NetworkTeam {
-    pub fn new(team: Team, players: Vec<Player>) -> Self {
-        Self { team, players }
+    pub fn new(team: Team, players: Vec<Player>, home_planet: Option<Planet>) -> Self {
+        Self {
+            team,
+            players,
+            home_planet,
+        }
     }
 
     pub fn from_team_id(world: &World, team_id: &TeamId) -> AppResult<Self> {
         let team = world.get_team_or_err(*team_id)?.clone();
         let players = world.get_players_by_team(&team)?;
-        Ok(Self::new(team, players))
+        let planet = world.get_planet_or_err(team.home_planet_id)?;
+        let home_planet = if planet.planet_type == PlanetType::Asteroid {
+            Some(planet)
+        } else {
+            None
+        }
+        .cloned();
+
+        Ok(Self::new(team, players, home_planet))
     }
 
     pub fn set_peer_id(&mut self, peer_id: PeerId) {
         self.team.peer_id = Some(peer_id);
         for player in self.players.iter_mut() {
             player.peer_id = Some(peer_id.clone());
+        }
+        if self.home_planet.is_some() {
+            self.home_planet.as_mut().unwrap().peer_id = Some(peer_id);
         }
     }
 }

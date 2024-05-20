@@ -1,7 +1,7 @@
 use super::{
     button::Button,
     clickable_list::{ClickableList, ClickableListItem},
-    constants::{PrintableKeyCode, UiKey, UiStyle},
+    constants::{UiKey, UiStyle},
     gif_map::GifMap,
     hover_text_line::HoverTextLine,
     hover_text_span::HoverTextSpan,
@@ -10,7 +10,7 @@ use super::{
     utils::hover_text_target,
 };
 use crate::{
-    engine::constants::MAX_TIREDNESS,
+    engine::constants::{MIN_TIREDNESS_FOR_ROLL_DECLINE, MIN_TIREDNESS_FOR_SUB},
     image::{player::PLAYER_IMAGE_WIDTH, spaceship::SPACESHIP_IMAGE_WIDTH},
     types::{AppResult, SystemTimeTick, Tick, AU, HOURS, SECONDS},
     world::{
@@ -94,32 +94,30 @@ pub fn selectable_list<'a>(
         .hovering_style(UiStyle::HIGHLIGHT)
 }
 
-pub fn go_to_team_planet_button<'a>(
+pub fn go_to_team_current_planet_button<'a>(
     world: &World,
     team: &Team,
     callback_registry: &Arc<Mutex<CallbackRegistry>>,
     hover_text_target: Rect,
 ) -> AppResult<Button<'a>> {
-    let go_to_team_planet_button = match team.current_location {
+    let go_to_team_current_planet_button = match team.current_location {
         TeamLocation::OnPlanet { planet_id } => Button::new(
-            format!(
-                "{}: On planet {}",
-                UiKey::GO_TO_PLANET.to_string(),
-                world.get_planet_or_err(planet_id)?.name
-            ),
+            format!("On planet {}", world.get_planet_or_err(planet_id)?.name),
             UiCallbackPreset::GoToCurrentTeamPlanet { team_id: team.id },
             Arc::clone(&callback_registry),
         )
         .set_hover_text(
             format!("Go to planet {}", world.get_planet_or_err(planet_id)?.name),
             hover_text_target,
-        ),
+        )
+        .set_hotkey(UiKey::GO_TO_PLANET),
 
         TeamLocation::Travelling {
             from: _from,
             to,
             started,
             duration,
+            ..
         } => {
             let to = world.get_planet_or_err(to)?.name.to_string();
             let text = if started + duration > world.last_tick_short_interval + 3 * SECONDS {
@@ -169,7 +167,62 @@ pub fn go_to_team_planet_button<'a>(
         }
     };
 
-    Ok(go_to_team_planet_button)
+    Ok(go_to_team_current_planet_button)
+}
+
+pub fn go_to_team_home_planet_button<'a>(
+    world: &World,
+    team: &Team,
+    callback_registry: &Arc<Mutex<CallbackRegistry>>,
+    hover_text_target: Rect,
+) -> AppResult<Button<'a>> {
+    let planet_name = world.get_planet_or_err(team.home_planet_id)?.name.clone();
+    Ok(Button::new(
+        format!("Home planet: {planet_name}",),
+        UiCallbackPreset::GoToHomePlanet { team_id: team.id },
+        Arc::clone(&callback_registry),
+    )
+    .set_hover_text(
+        format!("Go to team home planet {planet_name}",),
+        hover_text_target,
+    )
+    .set_hotkey(UiKey::GO_TO_HOME_PLANET))
+}
+
+pub fn challenge_button<'a>(
+    world: &World,
+    team: &Team,
+    callback_registry: &Arc<Mutex<CallbackRegistry>>,
+    hover_text_target: Rect,
+    hotkey: bool,
+) -> AppResult<Button<'a>> {
+    let own_team = world.get_own_team()?;
+    let can_challenge = own_team.can_challenge_team(team);
+
+    let mut button = Button::new(
+        "Challenge".into(),
+        UiCallbackPreset::ChallengeTeam { team_id: team.id },
+        Arc::clone(&callback_registry),
+    )
+    .set_hover_text(
+        format!("Challenge {} to a game", team.name),
+        hover_text_target,
+    );
+
+    if hotkey {
+        button = button.set_hotkey(UiKey::CHALLENGE_TEAM)
+    }
+    if can_challenge.is_err() {
+        button.disable(Some(format!("{}", can_challenge.unwrap_err().to_string())));
+    } else {
+        button = if team.peer_id.is_some() {
+            button.set_box_style(UiStyle::NETWORK)
+        } else {
+            button.set_box_style(UiStyle::OK)
+        };
+    }
+
+    Ok(button)
 }
 
 pub fn trade_button<'a>(
@@ -234,11 +287,7 @@ pub fn explore_button<'a>(
             team.can_explore_around_planet(&planet)?;
             let explore_time = BASE_EXPLORATION_TIME;
             Button::new(
-                format!(
-                    "{}: Explore ({})",
-                    UiKey::EXPLORE.to_string(),
-                    explore_time.formatted()
-                ),
+                format!("Explore ({})", explore_time.formatted()),
                 UiCallbackPreset::ExploreAroundPlanet,
                 Arc::clone(&callback_registry),
             )
@@ -249,12 +298,14 @@ pub fn explore_button<'a>(
                 ),
                 hover_text_target,
             )
+            .set_hotkey(UiKey::EXPLORE)
         }
         TeamLocation::Travelling {
             from: _from,
             to,
             started,
             duration,
+            ..
         } => {
             let to = world.get_planet_or_err(to)?.name.to_string();
             let text = if started + duration > world.last_tick_short_interval + 3 * SECONDS {
@@ -338,19 +389,65 @@ pub fn render_spaceship_description(
         );
     }
 
+    let bars_length = 25;
+
+    let fuel_length = (team.fuel() as f32 / team.spaceship.fuel_capacity() as f32
+        * bars_length as f32)
+        .round() as usize;
+    let fuel_bars = format!(
+        "{}{}",
+        "▰".repeat(fuel_length),
+        "▱".repeat(bars_length - fuel_length),
+    );
+
+    let fuel_style = (20.0 * (team.fuel() as f32 / team.spaceship.fuel_capacity() as f32))
+        .bound()
+        .style();
+
+    let mut gold_length = ((Resource::GOLD.to_storing_space()
+        * team.resources.get(&Resource::GOLD).unwrap_or(&0).clone())
+        as f32
+        / team.spaceship.storage_capacity() as f32
+        * bars_length as f32)
+        .round() as usize;
+    let mut scraps_length = ((Resource::SCRAPS.to_storing_space()
+        * team.resources.get(&Resource::SCRAPS).unwrap_or(&0).clone())
+        as f32
+        / team.spaceship.storage_capacity() as f32
+        * bars_length as f32)
+        .round() as usize;
+    let mut rum_length = ((Resource::RUM.to_storing_space()
+        * team.resources.get(&Resource::RUM).unwrap_or(&0).clone())
+        as f32
+        / team.spaceship.storage_capacity() as f32
+        * bars_length as f32)
+        .round() as usize;
+
+    let mut free_bars = bars_length - gold_length - scraps_length - rum_length;
+    let free_space = team.spaceship.storage_capacity() - team.used_storage_capacity();
+
+    // Try to round up to eliminate free bars when storage is full
+    if free_space == 0 && free_bars != 0 {
+        if team.resources.get(&Resource::GOLD).unwrap_or(&0).clone() > 0 && gold_length == 0 {
+            gold_length += free_bars;
+        } else if team.resources.get(&Resource::SCRAPS).unwrap_or(&0).clone() > 0
+            && scraps_length == 0
+        {
+            scraps_length += free_bars;
+        } else if team.resources.get(&Resource::RUM).unwrap_or(&0).clone() > 0 && rum_length == 0 {
+            rum_length += free_bars;
+        } else if gold_length >= scraps_length && gold_length >= rum_length {
+            gold_length += free_bars;
+        } else if rum_length > gold_length && rum_length >= scraps_length {
+            rum_length += free_bars;
+        } else if scraps_length > gold_length && scraps_length > rum_length {
+            scraps_length += free_bars;
+        }
+        free_bars = 0
+    }
+
     let spaceship_info = if team.id == world.own_team_id {
         Paragraph::new(vec![
-            Line::from(format!("Reputation {}", team.reputation.stars())),
-            Line::from(format!("Treasury {} {}", team.balance(), CURRENCY_SYMBOL)),
-            Line::from(format!(
-                "Food {}",
-                team.resources.get(&Resource::FOOD).unwrap_or(&0)
-            )),
-            Line::from(format!(
-                "Gold {}",
-                team.resources.get(&Resource::GOLD).unwrap_or(&0)
-            )),
-            Line::from(format!("Ship name: {}", team.spaceship.name.to_string())),
             Line::from(format!(
                 "Speed: {:.3} AU/h",
                 team.spaceship.speed() * HOURS as f32 / AU as f32
@@ -360,23 +457,38 @@ pub fn render_spaceship_description(
                 team.player_ids.len(),
                 team.spaceship.crew_capacity()
             )),
-            Line::from(format!(
-                "Storage: {}/{}",
-                team.used_storage_capacity(),
-                team.max_storage_capacity()
-            )),
-            Line::from(format!(
-                "Tank: {}/{} t",
-                team.fuel(),
-                team.spaceship.fuel_capacity()
-            )),
+            Line::from(vec![
+                Span::raw(format!(
+                    "Storage: {:<9} ",
+                    format!(
+                        "{}/{}",
+                        team.used_storage_capacity(),
+                        team.max_storage_capacity(),
+                    ),
+                )),
+                Span::styled("▰".repeat(gold_length), UiStyle::STORAGE_GOLD),
+                Span::styled("▰".repeat(scraps_length), UiStyle::STORAGE_SCRAPS),
+                Span::styled("▰".repeat(rum_length), UiStyle::STORAGE_RUM),
+                Span::raw("▱".repeat(free_bars)),
+            ]),
+            Line::from(vec![
+                Span::raw(format!(
+                    "Tank: {:<11}  ",
+                    format!("{}/{} t", team.fuel(), team.spaceship.fuel_capacity()),
+                )),
+                Span::styled(fuel_bars, fuel_style),
+            ]),
             Line::from(format!(
                 "Consumption: {:.2} t/h",
                 team.spaceship.fuel_consumption() * HOURS as f32
             )),
             Line::from(format!(
-                "Max distance: {:.2} AU",
+                "Max distance: {:.3} AU",
                 team.spaceship.max_distance(team.fuel()) / AU as f32
+            )),
+            Line::from(format!(
+                "Travelled: {:.3} AU",
+                team.spaceship.total_travelled as f32 / AU as f32
             )),
             Line::from(format!(
                 "Value: {} {}",
@@ -388,7 +500,6 @@ pub fn render_spaceship_description(
         Paragraph::new(vec![
             Line::from(format!("Reputation {}", team.reputation.stars())),
             Line::from(format!("Treasury {} {}", team.balance(), CURRENCY_SYMBOL)),
-            Line::from(format!("Ship name: {}", team.spaceship.name.to_string())),
             Line::from(format!(
                 "Crew: {}/{}",
                 team.player_ids.len(),
@@ -400,14 +511,14 @@ pub fn render_spaceship_description(
     frame.render_widget(
         spaceship_info,
         spaceship_split[1].inner(&Margin {
-            horizontal: 1,
+            horizontal: 0,
             vertical: 1,
         }),
     );
 
     // Render main block
     let block = default_block()
-        .title("Spaceship")
+        .title(format!("Spaceship - {}", team.spaceship.name.to_string()))
         .title_alignment(Alignment::Left);
     frame.render_widget(block, area);
 }
@@ -439,6 +550,7 @@ pub fn render_player_description(
         Constraint::Length(1),  //header
         Constraint::Length(1),  //header
         Constraint::Length(1),  //header
+        Constraint::Length(1),  //header
         Constraint::Length(1),  //margin
         Constraint::Length(20), //stats
     ])
@@ -449,41 +561,6 @@ pub fn render_player_description(
         frame.render_widget(paragraph, header_body_img[1]);
     }
 
-    let mut tiredness = player.tiredness;
-
-    // Check if player is currently playing.
-    // In this case, read current tiredness from game.
-    if let Some(team_id) = player.team {
-        if let Ok(team) = world.get_team_or_err(team_id) {
-            if let Some(game_id) = team.current_game {
-                if let Ok(game) = world.get_game_or_err(game_id) {
-                    if let Some(p) = if game.home_team_in_game.team_id == team_id {
-                        game.home_team_in_game.players.get(&player.id)
-                    } else {
-                        game.away_team_in_game.players.get(&player.id)
-                    } {
-                        tiredness = p.tiredness;
-                    }
-                }
-            }
-        }
-    }
-
-    let max_tiredness_length = 25;
-    let tiredness_length =
-        (tiredness / MAX_TIREDNESS * max_tiredness_length as f32).round() as usize;
-    let energy_string = format!(
-        "{}{}",
-        "▰".repeat(max_tiredness_length - tiredness_length),
-        "▱".repeat(tiredness_length),
-    );
-    let energy_style = match tiredness {
-        x if x < MAX_TIREDNESS / 4.0 => UiStyle::OK,
-        x if x < MAX_TIREDNESS / 2.0 => UiStyle::WARNING,
-        x if x < MAX_TIREDNESS => UiStyle::ERROR,
-        _ => UiStyle::UNSELECTABLE,
-    };
-
     let hover_text_target = hover_text_target(frame);
 
     let line = HoverTextLine::from(vec![
@@ -492,7 +569,7 @@ pub fn render_player_description(
                 "Reputation {}  ",
                 player.reputation.stars()
             )),
-            "Reputation indicates how much the player is known and respected in the galaxy. It influences special trait bonuses and the player's hiring cost.".to_string(),
+            format!("Reputation indicates how much the player is known and respected in the galaxy. It influences special trait bonuses and the player's hiring cost. (current value {})", player.reputation.value()),
             hover_text_target,
             Arc::clone(&callback_registry),
         ),
@@ -513,12 +590,86 @@ pub fn render_player_description(
     ]);
     frame.render_widget(line, header_body_stats[1]);
 
+    let bars_length = 25;
+
+    let mut tiredness = player.tiredness;
+    // Check if player is currently playing.
+    // In this case, read current tiredness from game.
+    if let Some(team_id) = player.team {
+        if let Ok(team) = world.get_team_or_err(team_id) {
+            if let Some(game_id) = team.current_game {
+                if let Ok(game) = world.get_game_or_err(game_id) {
+                    if let Some(p) = if game.home_team_in_game.team_id == team_id {
+                        game.home_team_in_game.players.get(&player.id)
+                    } else {
+                        game.away_team_in_game.players.get(&player.id)
+                    } {
+                        tiredness = p.tiredness;
+                    }
+                }
+            }
+        }
+    }
+
+    let tiredness_length = (tiredness / MAX_TIREDNESS * bars_length as f32).round() as usize;
+    let energy_string = format!(
+        "{}{}",
+        "▰".repeat(bars_length - tiredness_length),
+        "▱".repeat(tiredness_length),
+    );
+    let energy_style = match tiredness {
+        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE => UiStyle::OK,
+        x if x < MIN_TIREDNESS_FOR_SUB => UiStyle::WARNING,
+        x if x < MAX_TIREDNESS => UiStyle::ERROR,
+        _ => UiStyle::UNSELECTABLE,
+    };
+
     frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::raw("Energy ".to_string()),
-            Span::styled(format!("{}", energy_string), energy_style),
-        ])),
+        HoverTextLine::from(vec![
+            HoverTextSpan::new(
+                Span::raw("Energy ".to_string()),
+                format!("Energy affects player's performance in a game. When the energy goes to 0, the player is exhausted and will fail most game actions. (current value {:.2})", (MAX_TIREDNESS-tiredness)),
+                hover_text_target,
+                Arc::clone(&callback_registry)
+            ),
+            HoverTextSpan::new(Span::styled(format!("{}", energy_string), energy_style),"", hover_text_target,
+            Arc::clone(&callback_registry)),
+        ]),
         header_body_stats[2],
+    );
+
+    let morale_length = (player.morale / MAX_MORALE * bars_length as f32).round() as usize;
+    let morale_string = format!(
+        "{}{}",
+        "▰".repeat(morale_length),
+        "▱".repeat(bars_length - morale_length),
+    );
+    let morale_style = match player.morale {
+        x if x > 2.0 * MIN_TIREDNESS_FOR_ROLL_DECLINE => UiStyle::OK,
+        x if x > MORALE_THRESHOLD_FOR_LEAVING => UiStyle::WARNING,
+        x if x > 0.0 => UiStyle::ERROR,
+        _ => UiStyle::UNSELECTABLE,
+    };
+
+    frame.render_widget(
+        HoverTextLine::from(vec![
+            HoverTextSpan::new(
+                Span::raw("Morale ".to_string()),
+                format!(
+                    "When morale is low, pirates may decide to leave the team! (current value {:.2})",
+                    player.morale
+                ),
+                hover_text_target,
+                Arc::clone(&callback_registry),
+            ),
+            HoverTextSpan::new(
+                Span::styled(format!("{}", morale_string), morale_style),
+                "",
+                hover_text_target,
+                Arc::clone(&callback_registry),
+            ),
+        ]),
+        header_body_stats[3],
     );
 
     frame.render_widget(
@@ -529,12 +680,12 @@ pub fn render_player_description(
             player.info.weight as u8,
             player.info.population,
         )),
-        header_body_stats[3],
+        header_body_stats[4],
     );
 
     frame.render_widget(
         Paragraph::new(format_player_data(player)),
-        header_body_stats[5],
+        header_body_stats[6],
     );
 
     // Render main block
@@ -575,10 +726,10 @@ fn format_player_data(player: &Player) -> Vec<Line> {
         format!("{:<2} {:<5}          ", roles[0].0, roles[0].1.stars()),
         roles[0].1.style(),
     ));
-    spans.push(Span::raw(format!(
-        "Athleticism {:<5}",
-        player.athleticism.stars()
-    )));
+    spans.push(Span::styled(
+        format!("Athleticism {:<5}", player.athleticism.stars()),
+        player.athleticism.rating().style(),
+    ));
     text.push(Line::from(spans));
 
     for i in 0..4 {
@@ -601,13 +752,16 @@ fn format_player_data(player: &Player) -> Vec<Line> {
     }
     text.push(Line::from(""));
 
-    text.push(Line::from(Span::raw(format!(
-        "{:<8}{:<5}     {} {}",
-        "Offense",
-        player.offense.stars(),
-        "Defense",
-        player.defense.stars()
-    ))));
+    text.push(Line::from(vec![
+        Span::styled(
+            format!("{} {:<5}     ", "Offense", player.offense.stars()),
+            player.offense.rating().style(),
+        ),
+        Span::styled(
+            format!("{} {}", "Defense", player.defense.stars()),
+            player.defense.rating().style(),
+        ),
+    ]));
     for i in 0..4 {
         let mut spans = vec![];
         spans.push(Span::styled(
@@ -635,13 +789,16 @@ fn format_player_data(player: &Player) -> Vec<Line> {
         text.push(Line::from(spans));
     }
     text.push(Line::from(""));
-    text.push(Line::from(Span::raw(format!(
-        "{} {}   {} {}",
-        "Technical",
-        player.technical.stars(),
-        "Mental",
-        player.mental.stars()
-    ))));
+    text.push(Line::from(vec![
+        Span::styled(
+            format!("{} {:<5}   ", "Technical", player.technical.stars()),
+            player.technical.rating().style(),
+        ),
+        Span::styled(
+            format!("{} {}", "Mental", player.mental.stars()),
+            player.mental.rating().style(),
+        ),
+    ]));
 
     for i in 0..4 {
         let mut spans = vec![];

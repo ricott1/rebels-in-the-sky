@@ -7,7 +7,7 @@ use super::{
     types::{GameStatsMap, Possession, TeamInGame},
 };
 use crate::{
-    types::{GameId, PlanetId, SortablePlayerMap, TeamId, Tick},
+    types::{GameId, PlanetId, PlayerId, SortablePlayerMap, TeamId, Tick},
     world::{
         planet::Planet,
         player::{Player, Trait},
@@ -15,6 +15,7 @@ use crate::{
         skill::GameSkill,
     },
 };
+use itertools::Itertools;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -66,6 +67,13 @@ impl GameSummary {
     }
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct GameMVPSummary {
+    pub name: String,
+    pub score: u32,
+    pub best_stats: [(String, u8, u32); 3],
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Game {
     pub id: GameId,
@@ -82,6 +90,8 @@ pub struct Game {
     pub next_step: u16,
     pub current_action: Action,
     pub winner: Option<TeamId>,
+    pub home_team_mvps: Option<Vec<GameMVPSummary>>,
+    pub away_team_mvps: Option<Vec<GameMVPSummary>>,
 }
 
 impl<'game> Game {
@@ -142,6 +152,8 @@ impl<'game> Game {
             next_step: 0,
             current_action: Action::JumpBall,
             winner: None,
+            home_team_mvps: None,
+            away_team_mvps: None,
         };
         let seed = game.get_rng_seed();
         let mut rng = ChaCha8Rng::from_seed(seed);
@@ -160,6 +172,80 @@ impl<'game> Game {
         game
     }
 
+    fn player_mvp_summary(&self, player_id: PlayerId) -> Option<GameMVPSummary> {
+        let stats = if let Some(s) = self.home_team_in_game.stats.get(&player_id) {
+            s
+        } else {
+            self.away_team_in_game.stats.get(&player_id)?
+        };
+
+        let best_stats = vec![
+            ("Pts", stats.points, 100.0), //We want points to show as number 1
+            (
+                "Reb",
+                stats.defensive_rebounds + stats.offensive_rebounds,
+                1.5,
+            ),
+            ("Stl", stats.steals, 2.5),
+            ("Blk", stats.blocks, 3.0),
+            ("Ast", stats.assists, 2.0),
+            ("TO", stats.turnovers, -1.5),
+            (
+                "Acc",
+                stats.attempted_2pt - stats.made_2pt + stats.attempted_3pt - stats.made_3pt,
+                -0.5,
+            ),
+        ];
+
+        let score = best_stats
+            .iter()
+            .map(|(_, s, m)| s.clone() as f32 * m.clone())
+            .sum::<f32>() as u32;
+
+        let player = if let Some(p) = self.home_team_in_game.players.get(&player_id) {
+            p
+        } else {
+            self.away_team_in_game.players.get(&player_id)?
+        };
+        let name = format!(
+            "{}. {} ",
+            player.info.first_name.chars().next().unwrap_or_default(),
+            player.info.last_name,
+        );
+
+        Some(GameMVPSummary {
+            name,
+            score,
+            best_stats: best_stats
+                .iter()
+                .map(|(t, s, m)| {
+                    (
+                        t.to_string(),
+                        s.clone(),
+                        (s.clone() as f32 * m.clone()) as u32,
+                    )
+                })
+                .sorted_by(|(_, _, a), (_, _, b)| b.cmp(a))
+                .take(3)
+                .collect_vec()
+                .try_into()
+                .ok()?,
+        })
+    }
+
+    pub fn team_mvps(&self, possession: Possession) -> Vec<GameMVPSummary> {
+        let players = match possession {
+            Possession::Home => &self.home_team_in_game.players,
+            Possession::Away => &self.away_team_in_game.players,
+        };
+        players
+            .keys()
+            .map(|&id| self.player_mvp_summary(id).unwrap_or_default())
+            .sorted_by(|a, b| b.score.cmp(&a.score))
+            .take(3)
+            .collect()
+    }
+
     fn pick_action(&self, rng: &mut ChaCha8Rng) -> Action {
         //FIXME: Actions should be picked based on the team tactic/players
         let situation = self.action_results[self.action_results.len() - 1]
@@ -175,10 +261,10 @@ impl<'game> Game {
             ActionSituation::MissedShot => Action::Rebound,
             ActionSituation::EndOfQuarter => Action::StartOfQuarter,
             ActionSituation::BallInBackcourt => {
-                let r = rng.gen_range(1..=100) as f32;
-                let extra_brawl_probability = self.home_team_in_game.tactic.brawl_probability()
-                    + self.away_team_in_game.tactic.brawl_probability();
-                if r < BRAWL_ACTION_PROBABILITY * extra_brawl_probability {
+                let brawl_probability = BRAWL_ACTION_PROBABILITY
+                    * (self.home_team_in_game.tactic.brawl_probability_modifier()
+                        + self.away_team_in_game.tactic.brawl_probability_modifier());
+                if rng.gen_bool(brawl_probability as f64) {
                     Action::Brawl
                 } else {
                     match self.possession {
@@ -436,6 +522,9 @@ impl<'game> Game {
                 away_score: self.get_score().1,
                 ..Default::default()
             });
+
+            self.home_team_mvps = Some(self.team_mvps(Possession::Home));
+            self.away_team_mvps = Some(self.team_mvps(Possession::Away));
 
             return;
         }

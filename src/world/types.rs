@@ -52,6 +52,7 @@ pub enum Region {
     Euskadi,
     Kurdistan,
     Palestine,
+    Japan,
 }
 
 impl From<u8> for Region {
@@ -66,6 +67,7 @@ impl From<u8> for Region {
             6 => Self::Euskadi,
             7 => Self::Kurdistan,
             8 => Self::Palestine,
+            9 => Self::Japan,
             _ => Self::Italy,
         }
     }
@@ -108,7 +110,7 @@ impl<'de> Deserialize<'de> for Population {
             3 => Ok(Self::Juppa),
             4 => Ok(Self::Galdari),
             5 => Ok(Self::Pupparoll),
-            100..=108 => Ok(Self::Human {
+            100..=109 => Ok(Self::Human {
                 region: (value - 100).into(),
             }),
             _ => Err(serde::de::Error::custom("Invalid value for Population")),
@@ -140,23 +142,38 @@ impl Display for Population {
 impl Population {
     pub fn apply_skill_modifiers(&self, player: &mut Player) {
         match self {
+            Population::Human { region } => match region {
+                Region::Italy => player.info.height = (player.info.height * 1.02).min(225.0),
+                Region::Germany => player.info.height = (player.info.height * 1.05).min(225.0),
+                Region::Spain => player.info.height = (player.info.height * 1.00).min(225.0),
+                Region::Greece => player.info.height = (player.info.height * 0.96).min(225.0),
+                Region::Nigeria => player.info.height = (player.info.height * 1.05).min(225.0),
+                Region::India => player.info.height = (player.info.height * 0.95).min(225.0),
+                Region::Euskadi => player.info.height = (player.info.height * 0.98).min(225.0),
+                Region::Kurdistan => player.info.height = (player.info.height * 0.96).min(225.0),
+                Region::Palestine => player.info.height = (player.info.height * 0.96).min(225.0),
+                Region::Japan => player.info.height = (player.info.height * 0.94).min(225.0),
+            },
             Population::Yardalaim => {
                 player.info.weight = (player.info.weight * 1.5).min(255.0);
                 player.athleticism.strength = (player.athleticism.strength * 1.35).round().bound();
+                player.info.age -= 5.1;
             }
             Population::Juppa => {
                 player.info.height = (player.info.height * 1.09).min(225.0);
+                player.info.age += 15.5;
             }
             Population::Galdari => {
-                player.info.height = (player.info.height * 1.005).min(225.0);
+                player.info.height = (player.info.height * 1.02).min(225.0);
                 player.mental.charisma = (player.mental.charisma * 1.15).round().bound();
                 player.mental.vision = (player.mental.vision * 1.5).round().bound();
                 player.defense.steal = (player.defense.steal * 1.2).round().bound();
+                player.info.age += 85.2;
             }
             Population::Pupparoll => {
                 player.athleticism.quickness =
                     (player.athleticism.quickness * 1.05).round().bound();
-                player.technical.rebounding = (player.technical.rebounding * 1.25).round().bound();
+                player.technical.rebounds = (player.technical.rebounds * 1.25).round().bound();
                 player.mental.aggression = (player.mental.aggression * 0.85).round().bound();
                 player.offense.dunk = (player.offense.dunk * 1.25).round().bound();
             }
@@ -222,6 +239,12 @@ impl Population {
                     (SkinColorMap::Medium, 0.5),
                     (SkinColorMap::Dark, 0.2),
                 ],
+                &Region::Japan => vec![
+                    (SkinColorMap::Pale, 0.2),
+                    (SkinColorMap::Light, 0.25),
+                    (SkinColorMap::Medium, 0.1),
+                    (SkinColorMap::Dark, 0.025),
+                ],
             },
             Self::Yardalaim => vec![(SkinColorMap::LightGreen, 0.5), (SkinColorMap::Green, 0.5)],
             Self::Polpett => vec![(SkinColorMap::LightRed, 0.75), (SkinColorMap::Red, 0.25)],
@@ -286,6 +309,7 @@ pub enum TeamLocation {
         to: PlanetId,
         started: Tick,
         duration: Tick,
+        distance: u128,
     },
     OnPlanet {
         planet_id: PlanetId,
@@ -325,9 +349,9 @@ pub enum Pronoun {
 
 impl Pronoun {
     pub fn random() -> Self {
-        match rand::thread_rng().gen_range(0..=2) {
-            0 => Self::He,
-            1 => Self::She,
+        match rand::thread_rng().gen_range(0..=4) {
+            0 | 1 => Self::He,
+            2 | 3 => Self::She,
             _ => Self::They,
         }
     }
@@ -423,6 +447,7 @@ mod tests {
             to: planet_id2,
             started: 0,
             duration: 0,
+            distance: 0,
         };
         assert_ne!(team_location, team_location2);
         assert_ne!(team_location, team_location3);

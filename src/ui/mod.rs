@@ -11,6 +11,7 @@ mod hover_text_span;
 mod my_team_panel;
 mod new_team_screen;
 mod player_panel;
+pub mod popup_message;
 mod splash_screen;
 mod swarm_panel;
 mod team_panel;
