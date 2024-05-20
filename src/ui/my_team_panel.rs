@@ -1370,7 +1370,7 @@ impl Screen for MyTeamPanel {
                 .planets
                 .iter()
                 .filter(|(_, planet)| planet.total_population() > 0)
-                .sorted_by(|(_, a), (_, b)| b.total_population().cmp(&a.total_population()))
+                .sorted_by(|(_, a), (_, b)| a.name.cmp(&b.name))
                 .map(|(id, _)| id.clone())
                 .collect::<Vec<PlanetId>>();
             if self.planet_index.is_none() && self.planet_markets.len() > 0 {
