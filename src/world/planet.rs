@@ -1,4 +1,8 @@
-use std::{collections::HashMap, time::SystemTime};
+use std::{
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
+    time::SystemTime,
+};
 
 use super::{resources::Resource, skill::MAX_SKILL, types::Population};
 use crate::{
@@ -70,7 +74,9 @@ impl Planet {
         let random_fluctuation =
             0.2 * ((unix_secs / RESOURCE_PRICE_REFRESH_RATE_SECS) as f32).sin();
 
-        let planet_fluctation = 0.05 * (self.id.as_u128() as f32).sin();
+        let mut s = DefaultHasher::new();
+        self.name.hash(&mut s);
+        let planet_fluctation = 0.05 * (s.finish() as f32).sin();
 
         let price = resource.base_price()
             * amount_modifier
