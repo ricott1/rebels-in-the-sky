@@ -70,7 +70,11 @@ impl Planet {
         let random_fluctuation =
             0.2 * ((unix_secs / RESOURCE_PRICE_REFRESH_RATE_SECS) as f32).sin();
 
-        let price = resource.base_price() * amount_modifier * (1.0 + random_fluctuation);
+        let planet_fluctation = 0.05 * (self.id.as_u128() as f32).sin();
+
+        let price = resource.base_price()
+            * amount_modifier
+            * (1.0 + random_fluctuation + planet_fluctation);
         log::debug!(
             "Calculated price for {} (amount={}): {} * {} = {}",
             resource,
