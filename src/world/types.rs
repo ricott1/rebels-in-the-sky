@@ -156,7 +156,7 @@ impl Population {
             },
             Population::Yardalaim => {
                 player.info.weight = (player.info.weight * 1.5).min(255.0);
-                player.athleticism.strength = (player.athleticism.strength * 1.35).round().bound();
+                player.athletics.strength = (player.athletics.strength * 1.35).round().bound();
                 player.info.age -= 5.1;
             }
             Population::Juppa => {
@@ -171,8 +171,7 @@ impl Population {
                 player.info.age += 85.2;
             }
             Population::Pupparoll => {
-                player.athleticism.quickness =
-                    (player.athleticism.quickness * 1.05).round().bound();
+                player.athletics.quickness = (player.athletics.quickness * 1.05).round().bound();
                 player.technical.rebounds = (player.technical.rebounds * 1.25).round().bound();
                 player.mental.aggression = (player.mental.aggression * 0.85).round().bound();
                 player.offense.dunk = (player.offense.dunk * 1.25).round().bound();
@@ -387,7 +386,7 @@ impl Pronoun {
 #[repr(u8)]
 pub enum TrainingFocus {
     #[default]
-    Athleticism,
+    Athletics,
     Offense,
     Defense,
     Technical,
@@ -397,7 +396,7 @@ pub enum TrainingFocus {
 impl TrainingFocus {
     pub fn is_focus(&self, skill_index: usize) -> bool {
         match self {
-            Self::Athleticism => skill_index < 4,
+            Self::Athletics => skill_index < 4,
             Self::Offense => skill_index >= 4 && skill_index < 8,
             Self::Defense => skill_index >= 8 && skill_index < 12,
             Self::Technical => skill_index >= 12 && skill_index < 16,
@@ -407,7 +406,7 @@ impl TrainingFocus {
 
     pub fn next(&self) -> Option<Self> {
         match self {
-            Self::Athleticism => Some(Self::Offense),
+            Self::Athletics => Some(Self::Offense),
             Self::Offense => Some(Self::Defense),
             Self::Defense => Some(Self::Technical),
             Self::Technical => Some(Self::Mental),

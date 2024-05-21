@@ -132,6 +132,8 @@ impl TeamListPanel {
         ])
         .split(area);
 
+        let hover_text_target = hover_text_target(frame);
+
         let mut filter_all_button = Button::new(
             format!("View: {}", TeamView::All.to_string()),
             UiCallbackPreset::SetTeamPanelView {
@@ -139,7 +141,8 @@ impl TeamListPanel {
             },
             Arc::clone(&self.callback_registry),
         )
-        .set_hotkey(UiKey::CYCLE_VIEW);
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text("View all teams.".into(), hover_text_target);
 
         let mut filter_challenge_button = Button::new(
             format!("View: {}", TeamView::OpenToChallenge.to_string()),
@@ -148,7 +151,11 @@ impl TeamListPanel {
             },
             Arc::clone(&self.callback_registry),
         )
-        .set_hotkey(UiKey::CYCLE_VIEW);
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text(
+            "View all teams that can be currently challenged to a game.".into(),
+            hover_text_target,
+        );
 
         let mut filter_peers_button = Button::new(
             format!("View: {}", TeamView::Peers.to_string()),
@@ -157,7 +164,12 @@ impl TeamListPanel {
             },
             Arc::clone(&self.callback_registry),
         )
-        .set_hotkey(UiKey::CYCLE_VIEW);
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text(
+            "View all teams received from the network (i.e. teams controlled by other players online)."
+                .into(),
+            hover_text_target,
+        );
         match self.view {
             TeamView::All => filter_all_button.disable(None),
             TeamView::OpenToChallenge => filter_challenge_button.disable(None),
@@ -308,7 +320,7 @@ impl TeamListPanel {
 
         let bottom_split = Layout::horizontal([
             Constraint::Length(44),
-            Constraint::Length(SPACESHIP_IMAGE_WIDTH as u16 + 2 + 34),
+            Constraint::Min(SPACESHIP_IMAGE_WIDTH as u16 + 2 + 34),
         ])
         .split(vertical_split[4]);
 

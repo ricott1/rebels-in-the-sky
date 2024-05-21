@@ -12,7 +12,7 @@ use super::{
 use crate::{
     engine::constants::{MIN_TIREDNESS_FOR_ROLL_DECLINE, MIN_TIREDNESS_FOR_SUB},
     image::{player::PLAYER_IMAGE_WIDTH, spaceship::SPACESHIP_IMAGE_WIDTH},
-    types::{AppResult, SystemTimeTick, Tick, AU, HOURS, SECONDS},
+    types::{AppResult, PlayerId, SystemTimeTick, Tick, AU, HOURS, SECONDS},
     world::{
         constants::*,
         player::Player,
@@ -168,6 +168,34 @@ pub fn go_to_team_current_planet_button<'a>(
     };
 
     Ok(go_to_team_current_planet_button)
+}
+
+pub fn drink_button<'a>(
+    world: &World,
+    player_id: PlayerId,
+    callback_registry: &Arc<Mutex<CallbackRegistry>>,
+    hover_text_target: Rect,
+) -> AppResult<Button<'a>> {
+    let player = world.get_player_or_err(player_id)?;
+    let can_drink = player.can_drink(world);
+
+    let mut button = Button::new(
+        "Drink!".into(),
+        UiCallbackPreset::Drink { player_id },
+        Arc::clone(&callback_registry),
+    )
+    .set_hotkey(UiKey::DRINK)
+    .set_hover_text(
+        "Drink a liter of rum, increasing morale and decreasing energy.".into(),
+        hover_text_target,
+    )
+    .set_box_style(UiStyle::STORAGE_RUM);
+
+    if can_drink.is_err() {
+        button.disable(Some(format!("{}", can_drink.unwrap_err().to_string())));
+    }
+
+    Ok(button)
 }
 
 pub fn go_to_team_home_planet_button<'a>(
@@ -357,6 +385,93 @@ pub fn explore_button<'a>(
 
     Ok(explore_button)
 }
+
+pub fn get_storage_spans(team: &Team) -> Vec<Span> {
+    let bars_length = 25;
+    let gold = team.resources.get(&Resource::GOLD).unwrap_or(&0).clone();
+    let scraps = team.resources.get(&Resource::SCRAPS).unwrap_or(&0).clone();
+    let rum = team.resources.get(&Resource::RUM).unwrap_or(&0).clone();
+
+    let mut gold_length = ((Resource::GOLD.to_storing_space() * gold) as f32
+        / team.spaceship.storage_capacity() as f32
+        * bars_length as f32)
+        .round() as usize;
+    let mut scraps_length = ((Resource::SCRAPS.to_storing_space() * scraps) as f32
+        / team.spaceship.storage_capacity() as f32
+        * bars_length as f32)
+        .round() as usize;
+    let mut rum_length = ((Resource::RUM.to_storing_space() * rum) as f32
+        / team.spaceship.storage_capacity() as f32
+        * bars_length as f32)
+        .round() as usize;
+
+    // If the quantity is larger than 0, we should display it with at least 1 bar.
+    if gold_length == 0 && gold > 0 {
+        gold_length = 1;
+    }
+    if scraps_length == 0 && scraps > 0 {
+        scraps_length = 1;
+    }
+    if rum_length == 0 && rum > 0 {
+        rum_length = 1;
+    }
+
+    let mut free_bars = if gold_length + scraps_length + rum_length <= bars_length {
+        bars_length - gold_length - scraps_length - rum_length
+    } else {
+        0
+    };
+    let free_space = team.spaceship.storage_capacity() - team.used_storage_capacity();
+    // Try to round up to eliminate free bars when storage is full
+    if free_space == 0 && free_bars != 0 {
+        if gold_length >= scraps_length && gold_length >= rum_length {
+            gold_length += free_bars;
+        } else if rum_length >= scraps_length {
+            rum_length += free_bars;
+        } else {
+            scraps_length += free_bars;
+        }
+        free_bars = 0
+    }
+
+    vec![
+        Span::raw(format!(
+            "Storage: {:>4}/{:<4} ",
+            team.used_storage_capacity(),
+            team.max_storage_capacity(),
+        )),
+        Span::styled("▰".repeat(gold_length), UiStyle::STORAGE_GOLD),
+        Span::styled("▰".repeat(scraps_length), UiStyle::STORAGE_SCRAPS),
+        Span::styled("▰".repeat(rum_length), UiStyle::STORAGE_RUM),
+        Span::raw("▱".repeat(free_bars)),
+    ]
+}
+
+pub fn get_fuel_spans(team: &Team) -> Vec<Span> {
+    let bars_length = 25;
+
+    let fuel_length = (team.fuel() as f32 / team.spaceship.fuel_capacity() as f32
+        * bars_length as f32)
+        .round() as usize;
+    let fuel_bars = format!(
+        "{}{}",
+        "▰".repeat(fuel_length),
+        "▱".repeat(bars_length - fuel_length),
+    );
+
+    let fuel_style = (20.0 * (team.fuel() as f32 / team.spaceship.fuel_capacity() as f32))
+        .bound()
+        .style();
+
+    vec![
+        Span::raw(format!(
+            "Tank: {:<11}  ",
+            format!("{}/{} t", team.fuel(), team.spaceship.fuel_capacity()),
+        )),
+        Span::styled(fuel_bars, fuel_style),
+    ]
+}
+
 pub fn render_spaceship_description(
     team: &Team,
     gif_map: &Arc<Mutex<GifMap>>,
@@ -389,62 +504,8 @@ pub fn render_spaceship_description(
         );
     }
 
-    let bars_length = 25;
-
-    let fuel_length = (team.fuel() as f32 / team.spaceship.fuel_capacity() as f32
-        * bars_length as f32)
-        .round() as usize;
-    let fuel_bars = format!(
-        "{}{}",
-        "▰".repeat(fuel_length),
-        "▱".repeat(bars_length - fuel_length),
-    );
-
-    let fuel_style = (20.0 * (team.fuel() as f32 / team.spaceship.fuel_capacity() as f32))
-        .bound()
-        .style();
-
-    let mut gold_length = ((Resource::GOLD.to_storing_space()
-        * team.resources.get(&Resource::GOLD).unwrap_or(&0).clone())
-        as f32
-        / team.spaceship.storage_capacity() as f32
-        * bars_length as f32)
-        .round() as usize;
-    let mut scraps_length = ((Resource::SCRAPS.to_storing_space()
-        * team.resources.get(&Resource::SCRAPS).unwrap_or(&0).clone())
-        as f32
-        / team.spaceship.storage_capacity() as f32
-        * bars_length as f32)
-        .round() as usize;
-    let mut rum_length = ((Resource::RUM.to_storing_space()
-        * team.resources.get(&Resource::RUM).unwrap_or(&0).clone())
-        as f32
-        / team.spaceship.storage_capacity() as f32
-        * bars_length as f32)
-        .round() as usize;
-
-    let mut free_bars = bars_length - gold_length - scraps_length - rum_length;
-    let free_space = team.spaceship.storage_capacity() - team.used_storage_capacity();
-
-    // Try to round up to eliminate free bars when storage is full
-    if free_space == 0 && free_bars != 0 {
-        if team.resources.get(&Resource::GOLD).unwrap_or(&0).clone() > 0 && gold_length == 0 {
-            gold_length += free_bars;
-        } else if team.resources.get(&Resource::SCRAPS).unwrap_or(&0).clone() > 0
-            && scraps_length == 0
-        {
-            scraps_length += free_bars;
-        } else if team.resources.get(&Resource::RUM).unwrap_or(&0).clone() > 0 && rum_length == 0 {
-            rum_length += free_bars;
-        } else if gold_length >= scraps_length && gold_length >= rum_length {
-            gold_length += free_bars;
-        } else if rum_length > gold_length && rum_length >= scraps_length {
-            rum_length += free_bars;
-        } else if scraps_length > gold_length && scraps_length > rum_length {
-            scraps_length += free_bars;
-        }
-        free_bars = 0
-    }
+    let storage_spans = get_storage_spans(team);
+    let fuel_spans = get_fuel_spans(team);
 
     let spaceship_info = if team.id == world.own_team_id {
         Paragraph::new(vec![
@@ -457,27 +518,8 @@ pub fn render_spaceship_description(
                 team.player_ids.len(),
                 team.spaceship.crew_capacity()
             )),
-            Line::from(vec![
-                Span::raw(format!(
-                    "Storage: {:<9} ",
-                    format!(
-                        "{}/{}",
-                        team.used_storage_capacity(),
-                        team.max_storage_capacity(),
-                    ),
-                )),
-                Span::styled("▰".repeat(gold_length), UiStyle::STORAGE_GOLD),
-                Span::styled("▰".repeat(scraps_length), UiStyle::STORAGE_SCRAPS),
-                Span::styled("▰".repeat(rum_length), UiStyle::STORAGE_RUM),
-                Span::raw("▱".repeat(free_bars)),
-            ]),
-            Line::from(vec![
-                Span::raw(format!(
-                    "Tank: {:<11}  ",
-                    format!("{}/{} t", team.fuel(), team.spaceship.fuel_capacity()),
-                )),
-                Span::styled(fuel_bars, fuel_style),
-            ]),
+            Line::from(storage_spans),
+            Line::from(fuel_spans),
             Line::from(format!(
                 "Consumption: {:.2} t/h",
                 team.spaceship.fuel_consumption() * HOURS as f32
@@ -727,8 +769,8 @@ fn format_player_data(player: &Player) -> Vec<Line> {
         roles[0].1.style(),
     ));
     spans.push(Span::styled(
-        format!("Athleticism {:<5}", player.athleticism.stars()),
-        player.athleticism.rating().style(),
+        format!("Athletics {:<5}", player.athletics.stars()),
+        player.athletics.rating().style(),
     ));
     text.push(Line::from(spans));
 

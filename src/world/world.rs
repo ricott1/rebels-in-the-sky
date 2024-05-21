@@ -865,8 +865,12 @@ impl World {
                         let db_team = self.get_team_or_err(team.team_id)?;
                         let training_bonus =
                             self.tiredness_recovery_bonus(db_team.crew_roles.doctor)?;
-                        player
-                            .apply_end_of_game_logic(stats.experience_at_position, training_bonus);
+                        let training_focus = team.training_focus;
+                        player.apply_end_of_game_logic(
+                            stats.experience_at_position,
+                            training_bonus,
+                            training_focus,
+                        );
                         self.players.insert(player.id, player);
                     }
                 }
@@ -1195,7 +1199,7 @@ impl World {
     pub fn spaceship_speed_bonus(&self, pilot: Option<PlayerId>) -> AppResult<f32> {
         let role_fitness = if let Some(pilot_id) = pilot {
             let pilot = self.get_player_or_err(pilot_id)?;
-            0.75 * pilot.athleticism.quickness + 0.25 * pilot.mental.vision
+            0.75 * pilot.athletics.quickness + 0.25 * pilot.mental.vision
         } else {
             0.0
         };
@@ -1215,7 +1219,7 @@ impl World {
     pub fn tiredness_recovery_bonus(&self, doctor: Option<PlayerId>) -> AppResult<f32> {
         let role_fitness = if let Some(doctor_id) = doctor {
             let doctor = self.get_player_or_err(doctor_id)?;
-            doctor.athleticism.stamina
+            doctor.athletics.stamina
         } else {
             0.0
         };

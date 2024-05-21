@@ -1832,12 +1832,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "indoc"
-version = "2.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e186cfbae8084e513daff4240b4797e342f988cecda4fb6c939150f96315fd8"
-
-[[package]]
 name = "inout"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3467,15 +3461,14 @@ dependencies = [
 
 [[package]]
 name = "ratatui"
-version = "0.26.2"
+version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a564a852040e82671dc50a37d88f3aa83bbc690dfc6844cfe7a2591620206a80"
+checksum = "f44c9e68fd46eda15c646fbb85e1040b657a58cdc8c98db1d97a55930d991eef"
 dependencies = [
  "bitflags 2.4.2",
  "cassowary",
  "compact_str",
  "crossterm 0.27.0",
- "indoc",
  "itertools 0.12.1",
  "lru",
  "paste",
@@ -3483,6 +3476,7 @@ dependencies = [
  "strum 0.26.1",
  "time",
  "unicode-segmentation",
+ "unicode-truncate",
  "unicode-width",
 ]
 
@@ -3532,7 +3526,7 @@ dependencies = [
 
 [[package]]
 name = "rebels"
-version = "1.0.8"
+version = "1.0.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3698,8 +3692,9 @@ dependencies = [
 
 [[package]]
 name = "russh"
-version = "0.43.0-beta.1"
-source = "git+https://github.com/warp-tech/russh#f1985e14bfb56dba93ba0c70db234bf2b888e35e"
+version = "0.43.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c9534703dc13be1eefc5708618f4c346da8e4f04f260218613f351ed5e94259"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -3733,7 +3728,8 @@ dependencies = [
 [[package]]
 name = "russh-cryptovec"
 version = "0.7.2"
-source = "git+https://github.com/warp-tech/russh#f1985e14bfb56dba93ba0c70db234bf2b888e35e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b077b6dd8d8c085dac62f7fcc5a83df60c7f7a22d49bfba994f2f4dbf60bc74"
 dependencies = [
  "libc",
  "winapi",
@@ -3741,8 +3737,9 @@ dependencies = [
 
 [[package]]
 name = "russh-keys"
-version = "0.42.0"
-source = "git+https://github.com/warp-tech/russh#f1985e14bfb56dba93ba0c70db234bf2b888e35e"
+version = "0.43.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa4a5afa2fab6fd49d0c470a3b75c3c70a4f363c38db32df5ae3b44a3abf5ab9"
 dependencies = [
  "aes",
  "async-trait",
@@ -4438,9 +4435,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.36.0"
+version = "1.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61285f6515fa018fb2d1e46eb21223fff441ee8db5d0f1435e8ab4f5cdb80931"
+checksum = "1adbebffeca75fcfd058afa480fb6c0b81e165a0323f9c9d39c9697e37c46787"
 dependencies = [
  "backtrace",
  "bytes",
@@ -4695,6 +4692,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4c87d22b6e3f4a18d4d40ef354e97c90fcb14dd91d7dc0aa9d8a1172ebf7202"
 
 [[package]]
+name = "unicode-truncate"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a5fbabedabe362c618c714dbefda9927b5afc8e2a8102f47f081089a9019226"
+dependencies = [
+ "itertools 0.12.1",
+ "unicode-width",
+]
+
+[[package]]
 name = "unicode-width"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4777,20 +4784,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f00cc9702ca12d3c81455259621e676d0f7251cec66a21e98fe2e9a37db93b2a"
 dependencies = [
  "getrandom 0.2.12",
- "rand 0.8.5",
  "serde",
- "uuid-macro-internal",
-]
-
-[[package]]
-name = "uuid-macro-internal"
-version = "1.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7abb14ae1a50dad63eaa768a458ef43d298cd1bd44951677bd10b732a9ba2a2d"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.49",
 ]
 
 [[package]]

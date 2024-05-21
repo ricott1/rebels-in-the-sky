@@ -21,7 +21,7 @@ impl EngineAction for JumpBall {
     let defending_players = game.defending_players();
 
         let jump_ball =
-            |player: &Player| player.athleticism.vertical.value() + ((player.info.height as u8).max(150) - 150) / 4;
+            |player: &Player| player.athletics.vertical.value() + ((player.info.height as u8).max(150) - 150) / 4;
         let home_jumper = attacking_players.iter().max_by_key(|&p| jump_ball(p));
         let away_jumper = defending_players.iter().max_by_key(|&p| jump_ball(p));
 

@@ -23,7 +23,7 @@ impl UiKey {
     pub const GO_TO_PLANET: KeyCode = KeyCode::Char('p');
     pub const GO_TO_HOME_PLANET: KeyCode = KeyCode::Char('H');
     pub const CHALLENGE_TEAM: KeyCode = KeyCode::Char('C');
-    pub const TRAINING_FOCUS: KeyCode = KeyCode::Char('f');
+    pub const TRAINING_FOCUS: KeyCode = KeyCode::Char('T');
     pub const AUTO_ASSIGN: KeyCode = KeyCode::Char('a');
     pub const SET_TACTIC: KeyCode = KeyCode::Char('t');
     pub const CYCLE_VIEW: KeyCode = KeyCode::Char('V');
@@ -37,6 +37,7 @@ impl UiKey {
     pub const PITCH_VIEW: KeyCode = KeyCode::Char('v');
     pub const TRAVEL: KeyCode = KeyCode::Char('T');
     pub const EXPLORE: KeyCode = KeyCode::Char('x');
+    pub const DRINK: KeyCode = KeyCode::Char('D');
     pub const BUY_SCRAPS: KeyCode = KeyCode::Char('s');
     pub const BUY_FUEL: KeyCode = KeyCode::Char('u');
     pub const BUY_GOLD: KeyCode = KeyCode::Char('g');

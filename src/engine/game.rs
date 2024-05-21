@@ -721,7 +721,7 @@ mod tests {
         let quickness_before = world
             .get_player(checked_player_id)
             .unwrap()
-            .athleticism
+            .athletics
             .quickness
             .clone();
 
@@ -765,7 +765,7 @@ mod tests {
         let quickness_after = world
             .get_player(checked_player_id)
             .unwrap()
-            .athleticism
+            .athletics
             .quickness
             .clone();
         println!("{} {}", quickness_before, quickness_after);

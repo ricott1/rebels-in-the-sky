@@ -3,19 +3,21 @@ use super::{
     jersey::Jersey,
     planet::Planet,
     position::{GamePosition, PlayingStyle, MAX_POSITION},
+    resources::Resource,
     role::CrewRole,
     skill::{GameSkill, Skill, MAX_SKILL, MIN_SKILL},
     types::{PlayerLocation, Pronoun, TrainingFocus},
     utils::PLAYER_DATA,
+    world::World,
 };
 use crate::{
     engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
     image::{player::PlayerImage, types::Gif},
-    types::{PlanetId, PlayerId, TeamId},
+    types::{AppResult, PlanetId, PlayerId, TeamId},
     world::{
         constants::*,
         position::Position,
-        skill::{Athleticism, Defense, Mental, Offense, Rated, Technical},
+        skill::{Athletics, Defense, Mental, Offense, Rated, Technical},
         types::Population,
         utils::skill_linear_interpolation,
     },
@@ -41,7 +43,7 @@ pub struct Player {
     pub special_trait: Option<Trait>,
     pub reputation: f32,
     pub playing_style: PlayingStyle,
-    pub athleticism: Athleticism,
+    pub athletics: Athletics,
     pub offense: Offense,
     pub defense: Defense,
     pub technical: Technical,
@@ -49,14 +51,13 @@ pub struct Player {
     pub image: PlayerImage,
     pub current_location: PlayerLocation,
     pub previous_skills: [Skill; 20], // This is for displaying purposes to show the skills that were recently modified
-    pub training_focus: Option<TrainingFocus>,
     pub tiredness: f32,
     pub morale: f32,
 }
 
 impl Serialize for Player {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // Don't serialize athleticism, offense, technical, defense, mental
+        // Don't serialize athletics, offense, technical, defense, mental
         // and serialize them in a vector which is then deserialized
         // into the corresponding fields
         let compact_skills = self.current_skill_array().to_vec();
@@ -72,7 +73,6 @@ impl Serialize for Player {
         state.serialize_field("image", &self.image)?;
         state.serialize_field("current_location", &self.current_location)?;
         state.serialize_field("previous_skills", &self.previous_skills)?;
-        state.serialize_field("training_focus", &self.training_focus)?;
         state.serialize_field("tiredness", &self.tiredness)?;
         state.serialize_field("morale", &self.morale)?;
         state.serialize_field("compact_skills", &compact_skills)?;
@@ -83,7 +83,7 @@ impl Serialize for Player {
 impl<'de> Deserialize<'de> for Player {
     // Deserialize compact_skills into the corresponding fields.
     // compact_skills is a vector of 20 skills.
-    // The first 4 skills are athleticism, the next 4 are offense, etc.
+    // The first 4 skills are athletics, the next 4 are offense, etc.
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         enum Field {
             Id,
@@ -97,7 +97,6 @@ impl<'de> Deserialize<'de> for Player {
             Image,
             CurrentLocation,
             PreviousSkills,
-            TrainingFocus,
             Tiredness,
             Morale,
             CompactSkills,
@@ -130,7 +129,6 @@ impl<'de> Deserialize<'de> for Player {
                             "image" => Ok(Field::Image),
                             "current_location" => Ok(Field::CurrentLocation),
                             "previous_skills" => Ok(Field::PreviousSkills),
-                            "training_focus" => Ok(Field::TrainingFocus),
                             "tiredness" => Ok(Field::Tiredness),
                             "morale" => Ok(Field::Morale),
                             "compact_skills" => Ok(Field::CompactSkills),
@@ -189,9 +187,6 @@ impl<'de> Deserialize<'de> for Player {
                 let previous_skills = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(10, &self))?;
-                let training_focus = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(11, &self))?;
                 let tiredness = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(12, &self))?;
@@ -211,7 +206,7 @@ impl<'de> Deserialize<'de> for Player {
                     special_trait,
                     reputation,
                     playing_style,
-                    athleticism: Athleticism::default(),
+                    athletics: Athletics::default(),
                     offense: Offense::default(),
                     defense: Defense::default(),
                     technical: Technical::default(),
@@ -219,12 +214,11 @@ impl<'de> Deserialize<'de> for Player {
                     image,
                     current_location,
                     previous_skills,
-                    training_focus,
                     tiredness,
                     morale,
                 };
 
-                player.athleticism = Athleticism {
+                player.athletics = Athletics {
                     quickness: compact_skills[0],
                     vertical: compact_skills[1],
                     strength: compact_skills[2],
@@ -273,7 +267,6 @@ impl<'de> Deserialize<'de> for Player {
                 let mut image = None;
                 let mut current_location = None;
                 let mut previous_skills = None;
-                let mut training_focus = None;
                 let mut tiredness = None;
                 let mut morale = None;
                 let mut compact_skills: Option<Vec<Skill>> = None;
@@ -346,12 +339,6 @@ impl<'de> Deserialize<'de> for Player {
                             }
                             previous_skills = Some(map.next_value()?);
                         }
-                        Field::TrainingFocus => {
-                            if training_focus.is_some() {
-                                return Err(serde::de::Error::duplicate_field("training_focus"));
-                            }
-                            training_focus = Some(map.next_value()?);
-                        }
                         Field::Tiredness => {
                             if tiredness.is_some() {
                                 return Err(serde::de::Error::duplicate_field("tiredness"));
@@ -389,8 +376,6 @@ impl<'de> Deserialize<'de> for Player {
                     .ok_or_else(|| serde::de::Error::missing_field("current_location"))?;
                 let previous_skills = previous_skills
                     .ok_or_else(|| serde::de::Error::missing_field("previous_skills"))?;
-                let training_focus = training_focus
-                    .ok_or_else(|| serde::de::Error::missing_field("training_focus"))?;
                 let tiredness =
                     tiredness.ok_or_else(|| serde::de::Error::missing_field("tiredness"))?;
                 let morale = morale.ok_or_else(|| serde::de::Error::missing_field("morale"))?;
@@ -406,7 +391,7 @@ impl<'de> Deserialize<'de> for Player {
                     special_trait,
                     reputation,
                     playing_style,
-                    athleticism: Athleticism::default(),
+                    athletics: Athletics::default(),
                     offense: Offense::default(),
                     defense: Defense::default(),
                     technical: Technical::default(),
@@ -414,12 +399,11 @@ impl<'de> Deserialize<'de> for Player {
                     image,
                     current_location,
                     previous_skills,
-                    training_focus,
                     tiredness,
                     morale,
                 };
 
-                player.athleticism = Athleticism {
+                player.athletics = Athletics {
                     quickness: compact_skills[0],
                     vertical: compact_skills[1],
                     strength: compact_skills[2],
@@ -466,7 +450,6 @@ impl<'de> Deserialize<'de> for Player {
             "image",
             "current_location",
             "previous_skills",
-            "training_focus",
             "tiredness",
             "morale",
             "compact_skills",
@@ -482,6 +465,27 @@ impl Player {
             .collect::<Vec<Skill>>()
             .try_into()
             .unwrap()
+    }
+
+    pub fn can_drink(&self, world: &World) -> AppResult<()> {
+        if self.team.is_none() {
+            return Err("Player has no team, so no rum to drink".into());
+        }
+
+        let team = world.get_team_or_err(self.team.unwrap())?;
+        if self.morale == MAX_SKILL {
+            return Err("No need to drink".into());
+        }
+
+        if self.tiredness == MAX_SKILL {
+            return Err("No energy to drink".into());
+        }
+
+        if team.resources.get(&Resource::RUM).unwrap_or(&0).clone() == 0 {
+            return Err("No rum to drink".into());
+        }
+
+        Ok(())
     }
 
     fn player_value(&self) -> u32 {
@@ -529,7 +533,7 @@ impl Player {
             base_level = info.age as f32 / 8.0;
         }
 
-        let athleticism = Athleticism::for_position(position.unwrap(), rng, base_level);
+        let athletics = Athletics::for_position(position.unwrap(), rng, base_level);
         let offense = Offense::for_position(position.unwrap(), rng, base_level);
         let technical = Technical::for_position(position.unwrap(), rng, base_level);
         let defense = Defense::for_position(position.unwrap(), rng, base_level);
@@ -546,7 +550,7 @@ impl Player {
             special_trait: None,
             reputation: 0.0,
             playing_style: PlayingStyle::random(rng),
-            athleticism,
+            athletics,
             offense,
             technical,
             defense,
@@ -556,7 +560,6 @@ impl Player {
             },
             image,
             previous_skills: [Skill::default(); 20],
-            training_focus: None,
             tiredness: 0.0,
             morale: MAX_MORALE,
         };
@@ -568,7 +571,7 @@ impl Player {
             .population
             .apply_skill_modifiers(&mut player.clone());
 
-        if athleticism.quickness < WOODEN_LEG_MAX_QUICKNESS {
+        if athletics.quickness < WOODEN_LEG_MAX_QUICKNESS {
             player.image.set_wooden_leg(rng);
             player.mental.charisma = (player.mental.charisma + 1.0).bound();
         }
@@ -582,13 +585,13 @@ impl Player {
             player.mental.charisma = (player.mental.charisma + 1.0).bound();
         }
 
-        if athleticism.strength > 15.0 && rng.gen_range(0..10) < 2 {
+        if athletics.strength > 15.0 && rng.gen_range(0..10) < 2 {
             player.special_trait = Some(Trait::Killer);
         } else if mental.charisma > 15.0 && rng.gen_range(0..10) < 2 {
             player.special_trait = Some(Trait::Showpirate);
         } else if mental.vision > 15.0 && rng.gen_range(0..10) < 2 {
             player.special_trait = Some(Trait::Merchant);
-        } else if athleticism.stamina > 15.0 && rng.gen_range(0..10) < 2 {
+        } else if athletics.stamina > 15.0 && rng.gen_range(0..10) < 2 {
             player.special_trait = Some(Trait::Relentless);
         }
 
@@ -601,23 +604,23 @@ impl Player {
     }
 
     fn apply_info_modifiers(&mut self) {
-        self.athleticism.quickness = skill_linear_interpolation(
-            self.athleticism.quickness,
+        self.athletics.quickness = skill_linear_interpolation(
+            self.athletics.quickness,
             self.info.weight,
             [90.0, 1.0, 130.0, 0.5],
         );
-        self.athleticism.vertical = skill_linear_interpolation(
-            self.athleticism.vertical,
+        self.athletics.vertical = skill_linear_interpolation(
+            self.athletics.vertical,
             self.info.weight,
             [90.0, 1.0, 130.0, 0.5],
         );
-        self.athleticism.strength = skill_linear_interpolation(
-            self.athleticism.strength,
+        self.athletics.strength = skill_linear_interpolation(
+            self.athletics.strength,
             self.info.weight,
             [75.0, 0.5, 135.0, 1.3],
         );
-        self.athleticism.stamina = skill_linear_interpolation(
-            self.athleticism.stamina,
+        self.athletics.stamina = skill_linear_interpolation(
+            self.athletics.stamina,
             self.info.weight,
             [90.0, 1.0, 130.0, 0.8],
         );
@@ -640,14 +643,14 @@ impl Player {
             [16.0, 0.75, 38.0, 1.25],
         );
 
-        self.athleticism.stamina = skill_linear_interpolation(
-            self.athleticism.stamina,
+        self.athletics.stamina = skill_linear_interpolation(
+            self.athletics.stamina,
             self.info.age,
             [16.0, 1.3, 44.0, 0.7],
         );
 
         if self.info.first_name == "Costantino" && self.info.last_name == "Frittura" {
-            self.athleticism.vertical = MAX_SKILL;
+            self.athletics.vertical = MAX_SKILL;
             self.offense.dunk = MAX_SKILL;
             self.offense.long_range = MAX_SKILL;
             self.defense.steal = MAX_SKILL;
@@ -656,7 +659,7 @@ impl Player {
             self.mental.vision = MAX_SKILL;
             self.info.age = 35.0;
         } else if self.info.first_name == "Neko" && self.info.last_name == "Neko" {
-            self.athleticism.quickness = MAX_SKILL;
+            self.athletics.quickness = MAX_SKILL;
             self.offense.close_range = MAX_SKILL;
             self.defense.steal = MAX_SKILL;
             self.technical.ball_handling = MAX_SKILL;
@@ -677,10 +680,10 @@ impl Player {
 
     fn skill_at_index(&self, idx: usize) -> Skill {
         match idx {
-            0 => self.athleticism.quickness,
-            1 => self.athleticism.vertical,
-            2 => self.athleticism.strength,
-            3 => self.athleticism.stamina,
+            0 => self.athletics.quickness,
+            1 => self.athletics.vertical,
+            2 => self.athletics.strength,
+            3 => self.athletics.stamina,
             4 => self.offense.dunk,
             5 => self.offense.close_range,
             6 => self.offense.medium_range,
@@ -734,7 +737,7 @@ impl Player {
             MAX_TIREDNESS
         };
         self.tiredness = (self.tiredness
-            + tiredness / (1.0 + self.athleticism.stamina / MAX_TIREDNESS))
+            + tiredness / (1.0 + self.athletics.stamina / MAX_TIREDNESS))
             .min(max_tiredness);
     }
 
@@ -755,9 +758,7 @@ impl Player {
 
     fn modify_skill(&mut self, idx: usize, mut value: f32) {
         // Quickness cannot improve beyond WOODEN_LEG_MAX_QUICKNESS if player has a wooden leg
-        if self.has_wooden_leg()
-            && idx == 0
-            && self.athleticism.quickness >= WOODEN_LEG_MAX_QUICKNESS
+        if self.has_wooden_leg() && idx == 0 && self.athletics.quickness >= WOODEN_LEG_MAX_QUICKNESS
         {
             return;
         }
@@ -781,10 +782,10 @@ impl Player {
 
         let new_value = (self.skill_at_index(idx) + value).bound();
         match idx {
-            0 => self.athleticism.quickness = new_value,
-            1 => self.athleticism.vertical = new_value,
-            2 => self.athleticism.strength = new_value,
-            3 => self.athleticism.stamina = new_value,
+            0 => self.athletics.quickness = new_value,
+            1 => self.athletics.vertical = new_value,
+            2 => self.athletics.strength = new_value,
+            3 => self.athletics.stamina = new_value,
             4 => self.offense.dunk = new_value,
             5 => self.offense.close_range = new_value,
             6 => self.offense.medium_range = new_value,
@@ -809,6 +810,7 @@ impl Player {
         &mut self,
         experience_at_position: [u16; MAX_POSITION as usize],
         training_bonus: f32,
+        training_focus: Option<TrainingFocus>,
     ) {
         self.version += 1;
         self.reputation = (self.reputation
@@ -831,7 +833,7 @@ impl Player {
         for idx in 0..20 {
             let mut increment =
                 experience_per_skill[idx] as f32 * EXPERIENCE_PER_SKILL_MULTIPLIER * training_bonus;
-            match self.training_focus {
+            match training_focus {
                 Some(focus) => {
                     if focus.is_focus(idx) {
                         increment *= 2.0;

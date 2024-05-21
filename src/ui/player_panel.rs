@@ -104,6 +104,8 @@ impl PlayerListPanel {
         ])
         .split(area);
 
+        let hover_text_target = hover_text_target(frame);
+
         let mut filter_all_button = Button::new(
             format!("View: {}", PlayerView::All.to_string()),
             UiCallbackPreset::SetPlayerPanelView {
@@ -111,7 +113,8 @@ impl PlayerListPanel {
             },
             Arc::clone(&self.callback_registry),
         )
-        .set_hotkey(UiKey::CYCLE_VIEW);
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text("View all players.".into(), hover_text_target);
 
         let mut filter_free_agents_button = Button::new(
             format!("View: {}", PlayerView::FreeAgents.to_string()),
@@ -120,7 +123,8 @@ impl PlayerListPanel {
             },
             Arc::clone(&self.callback_registry),
         )
-        .set_hotkey(UiKey::CYCLE_VIEW);
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text("View hirable free agents.".into(), hover_text_target);
 
         let mut filter_own_team_button = Button::new(
             format!("View: {}", PlayerView::OwnTeam.to_string()),
@@ -129,7 +133,8 @@ impl PlayerListPanel {
             },
             Arc::clone(&self.callback_registry),
         )
-        .set_hotkey(UiKey::CYCLE_VIEW);
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text("View your own team players.".into(), hover_text_target);
         match self.view {
             PlayerView::All => filter_all_button.disable(None),
             PlayerView::FreeAgents => filter_free_agents_button.disable(None),

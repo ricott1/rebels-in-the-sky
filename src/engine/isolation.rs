@@ -60,11 +60,11 @@ impl EngineAction for Isolation {
         defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
         let atk_result =
-            iso.roll(rng) + iso.technical.ball_handling.value() + iso.athleticism.quickness.value();
+            iso.roll(rng) + iso.technical.ball_handling.value() + iso.athletics.quickness.value();
 
         let def_result = defender.roll(rng)
             + defender.defense.perimeter_defense.value()
-            + defender.athleticism.quickness.value();
+            + defender.athletics.quickness.value();
 
         let mut result = match atk_result as i16 - def_result as i16 {
             x if x > ADV_ATTACK_LIMIT => ActionOutput {

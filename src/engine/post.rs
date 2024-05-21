@@ -38,11 +38,11 @@ impl EngineAction for Post {
 
         let atk_result = poster.roll(rng)
             + poster.technical.post_moves.value()
-            + poster.athleticism.strength.value();
+            + poster.athletics.strength.value();
 
         let def_result = defender.roll(rng)
             + defender.defense.interior_defense.value()
-            + defender.athleticism.strength.value();
+            + defender.athletics.strength.value();
 
         let mut result = match atk_result as i16 - def_result as i16 {
             x if x > ADV_ATTACK_LIMIT => ActionOutput {

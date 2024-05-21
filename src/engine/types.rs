@@ -5,8 +5,9 @@ use crate::{
     world::{
         player::{InfoStats, Player},
         position::{Position, MAX_POSITION},
-        skill::{Athleticism, Defense, Mental, Offense, Technical},
+        skill::{Athletics, Defense, Mental, Offense, Technical},
         team::Team,
+        types::TrainingFocus,
     },
 };
 use libp2p::PeerId;
@@ -137,6 +138,7 @@ pub struct TeamInGame {
     pub players: PlayerMap,
     pub stats: GameStatsMap,
     pub tactic: Tactic,
+    pub training_focus: Option<TrainingFocus>,
     pub momentum: u8,
 }
 
@@ -168,6 +170,7 @@ impl<'game> TeamInGame {
             players,
             stats,
             tactic: team.game_tactic,
+            training_focus: team.training_focus,
             ..Default::default()
         }
     }
@@ -224,7 +227,7 @@ pub struct PersistedPlayer {
     pub id: PlayerId,
     pub version: u64,
     pub info: InfoStats,
-    pub athleticism: Athleticism,
+    pub athletics: Athletics,
     pub offense: Offense,
     pub technical: Technical,
     pub defense: Defense,
@@ -237,7 +240,7 @@ impl PersistedPlayer {
             id: player.id,
             version: player.version,
             info: player.info.clone(),
-            athleticism: player.athleticism,
+            athletics: player.athletics,
             offense: player.offense,
             technical: player.technical,
             defense: player.defense,

@@ -1,7 +1,7 @@
 use super::button::Button;
 use super::constants::{UiStyle, UiText, LEFT_PANEL_WIDTH};
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
-use super::utils::SwarmPanelEvent;
+use super::utils::{hover_text_target, SwarmPanelEvent};
 use super::{
     traits::{Screen, SplitPanel},
     utils::input_from_key_event,
@@ -126,6 +126,8 @@ impl SwarmPanel {
         ])
         .split(area);
 
+        let hover_text_target = hover_text_target(frame);
+
         let mut chat_button = Button::new(
             "View:Chat".to_string(),
             UiCallbackPreset::SetSwarmPanelTopic {
@@ -133,7 +135,11 @@ impl SwarmPanel {
             },
             Arc::clone(&self.callback_registry),
         )
-        .set_hotkey(UiKey::CYCLE_VIEW);
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text(
+            "View the chat. Just type and press Enter to message the network.".into(),
+            hover_text_target,
+        );
 
         let mut challenges_button = Button::new(
             "View:Challenges".to_string(),
@@ -142,7 +148,11 @@ impl SwarmPanel {
             },
             Arc::clone(&self.callback_registry),
         )
-        .set_hotkey(UiKey::CYCLE_VIEW);
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text(
+            "View challenges received from the network.".into(),
+            hover_text_target,
+        );
 
         let mut log_button = Button::new(
             "View:Log".to_string(),
@@ -151,7 +161,11 @@ impl SwarmPanel {
             },
             Arc::clone(&self.callback_registry),
         )
-        .set_hotkey(UiKey::CYCLE_VIEW);
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text(
+            "View log and system info from the network.".into(),
+            hover_text_target,
+        );
         match self.current_topic {
             EventTopic::Log => {
                 log_button.disable(None);
@@ -197,7 +211,7 @@ impl SwarmPanel {
         frame.render_widget(dial_button, split[4]);
     }
 
-    fn build_challenge_list(&mut self, frame: &mut Frame, area: Rect) {
+    fn build_challenge_list(&mut self, frame: &mut Frame, world: &World, area: Rect) {
         frame.render_widget(default_block().title("Challenges"), area);
 
         let mut constraints = [Constraint::Length(3)].repeat(self.peer_to_challenge.len());
@@ -216,12 +230,15 @@ impl SwarmPanel {
             ])
             .split(split[idx]);
 
+            let hover_text_target = hover_text_target(frame);
+
             if let Some(team) = challenge.home_team.clone() {
                 frame.render_widget(
                     Paragraph::new(Span::styled(
                         format!(
-                            "{} ({})",
+                            "{} {} ({})",
                             team.name,
+                            world.team_rating(team.team_id),
                             peer_id.to_base58().chars().take(6).collect::<String>()
                         ),
                         UiStyle::NETWORK,
@@ -231,23 +248,37 @@ impl SwarmPanel {
                         vertical: 1,
                     }),
                 );
-                let accept_button = Button::new(
+                let mut accept_button = Button::new(
                     format!("{:6^}", UiText::YES),
                     UiCallbackPreset::AcceptChallenge {
                         challenge: challenge.clone(),
                     },
                     Arc::clone(&self.callback_registry),
                 )
-                .set_box_style(UiStyle::OK);
+                .set_box_style(UiStyle::OK)
+                .set_hover_text(
+                    format!("Accept the challenge from {} and start a game.", team.name),
+                    hover_text_target,
+                );
+                if idx == 0 {
+                    accept_button = accept_button.set_hotkey(UiKey::YES_TO_DIALOG);
+                }
                 frame.render_widget(accept_button, line_split[1]);
-                let decline_button = Button::new(
+                let mut decline_button = Button::new(
                     format!("{:6^}", UiText::NO),
                     UiCallbackPreset::DeclineChallenge {
                         challenge: challenge.clone(),
                     },
                     Arc::clone(&self.callback_registry),
                 )
-                .set_box_style(UiStyle::ERROR);
+                .set_box_style(UiStyle::ERROR)
+                .set_hover_text(
+                    format!("Decline the challenge from {}.", team.name),
+                    hover_text_target,
+                );
+                if idx == 0 {
+                    decline_button = decline_button.set_hotkey(UiKey::NO_TO_DIALOG);
+                }
                 frame.render_widget(decline_button, line_split[2]);
             }
         }
@@ -260,7 +291,7 @@ impl SwarmPanel {
         frame.render_widget(self.textarea.widget(), split[1]);
 
         if self.current_topic == EventTopic::Challenges {
-            self.build_challenge_list(frame, split[0]);
+            self.build_challenge_list(frame, world, split[0]);
             return;
         }
         let mut items = vec![];

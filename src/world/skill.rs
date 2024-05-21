@@ -95,14 +95,14 @@ impl GameSkill for Skill {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Copy, Clone, PartialEq)]
-pub struct Athleticism {
+pub struct Athletics {
     pub quickness: Skill,
     pub vertical: Skill,
     pub strength: Skill,
     pub stamina: Skill,
 }
 
-impl Athleticism {
+impl Athletics {
     pub fn for_position(position: Position, rng: &mut ChaCha8Rng, base_level: f32) -> Self {
         let weights = position.weights();
         let level = base_level + rng.gen_range(0..=LEVEL_BONUS) as f32;
@@ -119,7 +119,7 @@ impl Athleticism {
     }
 }
 
-impl Rated for Athleticism {
+impl Rated for Athletics {
     fn rating(&self) -> u8 {
         (self.quickness + self.vertical + self.strength + self.stamina) as u8 / 4
     }

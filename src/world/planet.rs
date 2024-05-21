@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum_macros::{Display, EnumIter};
 
-const TRADE_DELTA_AMOUNT: f32 = 9.0;
-const TRADE_DELTA_BUY_SELL: f32 = 0.15;
+const TRADE_DELTA_SCARCITY: f32 = 3.0;
+const TRADE_DELTA_BUY_SELL: f32 = 0.12;
 const RESOURCE_PRICE_REFRESH_RATE_SECS: u64 = 60 * 60 * 2;
 
 #[derive(Debug, Display, Clone, Serialize_repr, Deserialize_repr, PartialEq, Default, EnumIter)]
@@ -64,7 +64,7 @@ impl Planet {
         let relative_amount =
             (self.resources.get(&resource).unwrap_or(&0).clone() as f32).bound() / MAX_SKILL;
         let amount_modifier =
-            relative_amount / TRADE_DELTA_AMOUNT + (1.0 - relative_amount) * TRADE_DELTA_AMOUNT;
+            relative_amount / TRADE_DELTA_SCARCITY + (1.0 - relative_amount) * TRADE_DELTA_SCARCITY;
 
         let unix_secs = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)

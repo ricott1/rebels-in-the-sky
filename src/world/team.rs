@@ -8,7 +8,7 @@ use super::{
     role::CrewRole,
     skill::GameSkill,
     spaceship::Spaceship,
-    types::{PlayerLocation, TeamLocation},
+    types::{PlayerLocation, TeamLocation, TrainingFocus},
 };
 use crate::{
     engine::tactic::Tactic,
@@ -43,6 +43,7 @@ pub struct Team {
     pub peer_id: Option<PeerId>,
     pub current_game: Option<GameId>,
     pub game_tactic: Tactic,
+    pub training_focus: Option<TrainingFocus>,
 }
 
 impl Team {

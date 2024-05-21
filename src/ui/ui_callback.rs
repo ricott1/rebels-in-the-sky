@@ -23,6 +23,7 @@ use crate::{
         jersey::{Jersey, JerseyStyle},
         resources::Resource,
         role::CrewRole,
+        skill::GameSkill,
         spaceship::Spaceship,
         team::Team,
         types::{PlayerLocation, TeamLocation, TrainingFocus},
@@ -122,6 +123,9 @@ pub enum UiCallbackPreset {
         player_id: PlayerId,
         role: CrewRole,
     },
+    Drink {
+        player_id: PlayerId,
+    },
     GeneratePlayerTeam {
         name: String,
         home_planet: PlanetId,
@@ -138,7 +142,7 @@ pub enum UiCallbackPreset {
         position: usize,
     },
     NextTrainingFocus {
-        player_id: PlayerId,
+        team_id: TeamId,
     },
     TravelToPlanet {
         planet_id: PlanetId,
@@ -543,29 +547,19 @@ impl UiCallbackPreset {
         })
     }
 
-    fn next_training_focus(player_id: PlayerId) -> AppCallback {
+    fn next_training_focus(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let mut player = app
-                .world
-                .get_player(player_id)
-                .ok_or("Failed to get player")?
-                .clone();
-            let team = app.world.get_team_or_err(
-                player
-                    .team
-                    .ok_or("Player has no team. This should not happen".to_string())?,
-            )?;
-
+            let mut team = app.world.get_team_or_err(team_id)?.clone();
             if team.current_game.is_some() {
                 return Err("Cannot change training focus:\nTeam is currently playing".into());
             }
 
-            let new_focus = match player.training_focus {
+            let new_focus = match team.training_focus {
                 Some(focus) => focus.next(),
                 None => Some(TrainingFocus::default()),
             };
-            player.training_focus = new_focus;
-            app.world.players.insert(player.id, player);
+            team.training_focus = new_focus;
+            app.world.teams.insert(team.id, team);
             app.world.dirty = true;
             app.world.dirty_ui = true;
             Ok(None)
@@ -921,6 +915,29 @@ impl UiCallbackPreset {
                 app.world.set_team_crew_role(role.clone(), *player_id)?;
                 Ok(None)
             }
+
+            UiCallbackPreset::Drink { player_id } => {
+                let mut player = app.world.get_player_or_err(*player_id)?.clone();
+                player.can_drink(&app.world)?;
+
+                player.morale = (player.morale + MORALE_DRINK_BONUS).bound();
+                player.tiredness = (player.tiredness + TIREDNESS_DRINK_MALUS).bound();
+
+                let mut team = app
+                    .world
+                    .get_team_or_err(player.team.expect("Player should have team"))?
+                    .clone();
+
+                team.remove_resource(Resource::RUM, 1)?;
+
+                app.world.players.insert(player_id.clone(), player);
+                app.world.teams.insert(team.id, team);
+                app.world.dirty_network = true;
+                app.world.dirty_ui = true;
+                app.world.dirty = true;
+
+                Ok(None)
+            }
             UiCallbackPreset::GeneratePlayerTeam {
                 name,
                 home_planet,
@@ -944,8 +961,8 @@ impl UiCallbackPreset {
                 player_id,
                 position,
             } => Self::swap_player_positions(*player_id, *position)(app),
-            UiCallbackPreset::NextTrainingFocus { player_id } => {
-                Self::next_training_focus(*player_id)(app)
+            UiCallbackPreset::NextTrainingFocus { team_id } => {
+                Self::next_training_focus(*team_id)(app)
             }
             UiCallbackPreset::TravelToPlanet { planet_id } => {
                 Self::travel_to_planet(*planet_id)(app)

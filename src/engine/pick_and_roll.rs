@@ -50,7 +50,7 @@ impl EngineAction for PickAndRoll {
         if play_idx == target_idx {
             let atk_result = playmaker.roll(rng)
                 + playmaker.technical.ball_handling.value()
-                + playmaker.athleticism.quickness.value()
+                + playmaker.athletics.quickness.value()
                 + target.mental.vision.value();
 
             let def_result = playmaker_defender.roll(rng)
@@ -132,7 +132,7 @@ impl EngineAction for PickAndRoll {
 
             let def_result = playmaker_defender.roll(rng)
                 + playmaker_defender.defense.perimeter_defense.value()
-                + target_defender.athleticism.quickness.value();
+                + target_defender.athletics.quickness.value();
 
             result = match atk_result as i16 - def_result as i16 {
             x if x > ADV_ATTACK_LIMIT => ActionOutput {

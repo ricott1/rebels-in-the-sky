@@ -54,7 +54,7 @@ impl EngineAction for OffTheScreen {
 
         let def_result = playmaker_defender.roll(rng)
             + target_defender.defense.perimeter_defense.value()
-            + target_defender.athleticism.quickness.value();
+            + target_defender.athletics.quickness.value();
 
         let mut result = match atk_result as i16 - def_result as i16 {
             x if x > ADV_ATTACK_LIMIT => ActionOutput {
