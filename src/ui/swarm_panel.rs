@@ -10,6 +10,7 @@ use super::{
 use crate::network::types::Challenge;
 use crate::types::{AppResult, SystemTimeTick, TeamId, Tick};
 use crate::ui::constants::{PrintableKeyCode, UiKey};
+use crate::world::skill::Rated;
 use crate::world::world::World;
 use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
