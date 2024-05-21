@@ -238,7 +238,7 @@ impl SwarmPanel {
                         format!(
                             "{} {} ({})",
                             team.name,
-                            world.team_rating(team.team_id),
+                            world.team_rating(team.team_id).stars(),
                             peer_id.to_base58().chars().take(6).collect::<String>()
                         ),
                         UiStyle::NETWORK,
