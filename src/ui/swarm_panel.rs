@@ -55,7 +55,8 @@ pub struct SwarmPanel {
     current_topic: EventTopic,
     textarea: TextArea<'static>,
     connected_peers: Vec<PeerId>,
-    peer_to_team_id: HashMap<PeerId, TeamId>,
+    team_id_to_peer_id: HashMap<TeamId, PeerId>,
+    peer_id_to_team_id: HashMap<PeerId, TeamId>,
     peer_to_challenge: HashMap<PeerId, Challenge>,
     callback_registry: Arc<Mutex<CallbackRegistry>>,
 }
@@ -83,24 +84,16 @@ impl SwarmPanel {
 
     pub fn add_peer_id(&mut self, peer_id: PeerId, team_id: TeamId) {
         // If team id is already in the list, remove the previous entry
-        let mut remove_from_teams: Option<PeerId> = None;
-        if let Some((previous_id, _)) = self
-            .peer_to_team_id
-            .iter()
-            .find(|&(_, p_team_id)| *p_team_id == team_id)
-        {
-            remove_from_teams = Some(*previous_id);
-            self.connected_peers.retain(|id| id != previous_id);
+        if let Some(previous_peer_id) = self.team_id_to_peer_id.get(&team_id) {
+            self.connected_peers.retain(|id| id != previous_peer_id);
+            // We do not remove from peer_id_to_team_id to retain info about past messages
         }
-        if let Some(previous_id) = remove_from_teams {
-            self.peer_to_team_id.remove(&previous_id);
-        }
-        self.peer_to_team_id.insert(peer_id, team_id);
+        self.team_id_to_peer_id.insert(team_id, peer_id);
+        self.peer_id_to_team_id.insert(peer_id, team_id);
         self.connected_peers.push(peer_id);
     }
 
     pub fn remove_peer_id(&mut self, peer_id: &PeerId) {
-        // self.peer_to_team_id.remove(peer_id);
         self.connected_peers.retain(|id| id != peer_id);
         self.remove_challenge(peer_id);
     }
@@ -185,7 +178,7 @@ impl SwarmPanel {
 
         let mut items: Vec<ListItem> = vec![];
 
-        for (peer_id, team_id) in self.peer_to_team_id.iter() {
+        for (team_id, peer_id) in self.team_id_to_peer_id.iter() {
             let team = world.get_team_or_err(*team_id);
             if team.is_ok() {
                 let style = if self.connected_peers.contains(peer_id) {
@@ -299,7 +292,7 @@ impl SwarmPanel {
         for event in self.events.get(&self.current_topic).unwrap().iter().rev() {
             match event.peer_id {
                 Some(peer_id) => {
-                    let from = if let Some(team_id) = self.peer_to_team_id.get(&peer_id) {
+                    let from = if let Some(team_id) = self.peer_id_to_team_id.get(&peer_id) {
                         let team = world.get_team_or_err(*team_id);
                         if team.is_ok() {
                             team.unwrap().name.clone()

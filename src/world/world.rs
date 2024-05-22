@@ -553,7 +553,8 @@ impl World {
             return Err("Cannot receive team without peer_id over the network.".into());
         }
         let db_team = self.get_team(team.id);
-        if db_team.is_none() || db_team.unwrap().version < team.version {
+        // here the version can also be equal since we want to override the network team with the new peer_id in case of disconnections.
+        if db_team.is_none() || db_team.unwrap().version <= team.version {
             // Remove team from previous planet
             if db_team.is_some() {
                 match db_team.unwrap().current_location {
@@ -596,7 +597,7 @@ impl World {
                     return Err("Cannot receive player without peer_id over the network.".into());
                 }
                 let db_player = self.get_player(player.id);
-                if db_player.is_none() || db_player.unwrap().version < player.version {
+                if db_player.is_none() || db_player.unwrap().version <= player.version {
                     self.players.insert(player.id, player);
                 }
             }

@@ -378,6 +378,7 @@ impl NetworkCallbackPreset {
                         return Err(format!("Team is challenge sender (should be receiver)").into());
                     }
 
+                    // The following check sometimes fails if the peer_id changed after the challenge has been sent.
                     if challenge.away_peer_id != self_peer_id {
                         return Err(format!("Team is not challenge receiver").into());
                     }
