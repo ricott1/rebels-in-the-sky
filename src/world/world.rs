@@ -1,14 +1,14 @@
 use super::constants::*;
 use super::jersey::{Jersey, JerseyStyle};
 use super::planet::{Planet, PlanetType};
-use super::player::{Player, Trait};
+use super::player::Player;
 use super::position::{Position, MAX_POSITION};
 use super::resources::Resource;
 use super::role::CrewRole;
 use super::skill::{GameSkill, Rated};
 use super::spaceship::Spaceship;
 use super::team::Team;
-use super::types::{PlayerLocation, TeamLocation};
+use super::types::{PlayerLocation, TeamBonus, TeamLocation};
 use super::utils::{PLANET_DATA, TEAM_DATA};
 use crate::engine::constants::RECOVERING_TIREDNESS_PER_SHORT_TICK;
 use crate::engine::game::{Game, GameSummary};
@@ -321,7 +321,8 @@ impl World {
                 .insert(current_role_player.id, current_role_player);
         }
 
-        let previous_spaceship_speed_bonus = self.spaceship_speed_bonus(team.crew_roles.pilot)?;
+        let previous_spaceship_speed_bonus =
+            TeamBonus::SpaceshipSpeed.current_team_bonus(&self, team.id)?;
 
         // Empty previous role of player.
         match player.info.crew_role {
@@ -369,10 +370,10 @@ impl World {
             } => {
                 let new_start = Tick::now();
                 let time_elapsed = new_start - started;
+                let bonus = TeamBonus::SpaceshipSpeed.current_team_bonus(&self, team.id)?;
 
-                let new_duration = (duration - time_elapsed) as f32
-                    * previous_spaceship_speed_bonus
-                    / self.spaceship_speed_bonus(team.crew_roles.pilot)?;
+                let new_duration =
+                    (duration - time_elapsed) as f32 * previous_spaceship_speed_bonus / bonus;
 
                 team.current_location = TeamLocation::Travelling {
                     from,
@@ -433,8 +434,6 @@ impl World {
             .clone();
 
         let mut team = self.get_team_or_err(player.team.unwrap())?.clone();
-
-        team.can_release_player(&player)?;
 
         team.remove_player(&mut player)?;
         team.player_ids = Team::best_position_assignment(
@@ -714,44 +713,54 @@ impl World {
     ) -> AppResult<HashMap<Resource, u32>> {
         let mut rng = ChaCha8Rng::from_entropy();
         let mut resources = HashMap::new();
-        let mut duration_bonus = (duration / HOURS) as f32;
 
-        // For each pirate in the team with the special trait Explorator,
-        // the duration bonus is increased by 50%.
-        for player_id in team.player_ids.iter() {
-            let player = self.get_player_or_err(*player_id)?;
-            if player.special_trait == Some(Trait::Explorator) {
-                duration_bonus += duration_bonus / 2.0;
-            }
-        }
+        let bonus = TeamBonus::Exploration.current_team_bonus(&self, team.id)?;
 
-        let max_gold = planet.resources.get(&Resource::GOLD).unwrap_or(&0).clone() as i32;
-        let max_scraps = planet
-            .resources
-            .get(&Resource::SCRAPS)
-            .unwrap_or(&0)
-            .clone() as i32;
-        let max_rum = planet.resources.get(&Resource::RUM).unwrap_or(&0).clone() as i32;
+        let base_gold = 1;
+        let base_scraps = 16;
+        let base_rum = 5;
 
-        let base_gold = 3;
-        let base_scraps = 12;
-        let base_rum = 9;
+        let max_gold = (base_gold
+            + planet
+                .resources
+                .get(&Resource::GOLD)
+                .copied()
+                .unwrap_or_default() as i32) as f32
+            * bonus
+            * duration as f32
+            / (1 * HOURS) as f32;
+        let max_scraps = (base_scraps
+            + planet
+                .resources
+                .get(&Resource::SCRAPS)
+                .copied()
+                .unwrap_or_default() as i32) as f32
+            * bonus
+            * duration as f32
+            / (1 * HOURS) as f32;
+        let max_rum = (base_rum
+            + planet
+                .resources
+                .get(&Resource::RUM)
+                .copied()
+                .unwrap_or_default() as i32) as f32
+            * bonus
+            * duration as f32
+            / (1 * HOURS) as f32;
 
         resources.insert(
             Resource::GOLD,
-            rng.gen_range((-50 + base_gold + duration_bonus as i32).min(0)..max_gold + base_gold)
+            rng.gen_range((-50 + base_gold).min(0)..max_gold as i32)
                 .max(0) as u32,
         );
         resources.insert(
             Resource::SCRAPS,
-            rng.gen_range(
-                (-10 + base_scraps + duration_bonus as i32).min(0)..max_scraps + base_scraps,
-            )
-            .max(0) as u32,
+            rng.gen_range((-10 + base_scraps).min(0)..max_scraps as i32)
+                .max(0) as u32,
         );
         resources.insert(
             Resource::RUM,
-            rng.gen_range((-20 + base_rum + duration_bonus as i32).min(0)..max_rum + base_rum)
+            rng.gen_range((-20 + base_rum).min(0)..max_rum as i32)
                 .max(0) as u32,
         );
 
@@ -863,9 +872,8 @@ impl World {
                             .get(&player.id)
                             .ok_or(format!("Player {:?} not found in team stats", player.id))?;
 
-                        let db_team = self.get_team_or_err(team.team_id)?;
                         let training_bonus =
-                            self.tiredness_recovery_bonus(db_team.crew_roles.doctor)?;
+                            TeamBonus::Training.current_team_bonus(&self, team.team_id)?;
                         let training_focus = team.training_focus;
                         player.apply_end_of_game_logic(
                             stats.experience_at_position,
@@ -1134,7 +1142,7 @@ impl World {
             .collect::<Vec<&Team>>();
 
         for team in teams {
-            let bonus = self.tiredness_recovery_bonus(team.crew_roles.doctor)?;
+            let bonus = TeamBonus::TirednessRecovery.current_team_bonus(&self, team.id)?;
             for player_id in team.player_ids.iter() {
                 let db_player = self
                     .get_player(*player_id)
@@ -1197,36 +1205,6 @@ impl World {
         }
     }
 
-    pub fn spaceship_speed_bonus(&self, pilot: Option<PlayerId>) -> AppResult<f32> {
-        let role_fitness = if let Some(pilot_id) = pilot {
-            let pilot = self.get_player_or_err(pilot_id)?;
-            0.75 * pilot.athletics.quickness + 0.25 * pilot.mental.vision
-        } else {
-            0.0
-        };
-        Ok(BASE_BONUS + BONUS_PER_SKILL * role_fitness)
-    }
-
-    pub fn team_reputation_bonus(&self, captain: Option<PlayerId>) -> AppResult<f32> {
-        let role_fitness = if let Some(captain_id) = captain {
-            let captain = self.get_player_or_err(captain_id)?;
-            0.75 * captain.mental.charisma + 0.25 * captain.mental.aggression
-        } else {
-            0.0
-        };
-        Ok(BASE_BONUS + BONUS_PER_SKILL * role_fitness)
-    }
-
-    pub fn tiredness_recovery_bonus(&self, doctor: Option<PlayerId>) -> AppResult<f32> {
-        let role_fitness = if let Some(doctor_id) = doctor {
-            let doctor = self.get_player_or_err(doctor_id)?;
-            doctor.athletics.stamina
-        } else {
-            0.0
-        };
-        Ok(BASE_BONUS + BONUS_PER_SKILL * role_fitness)
-    }
-
     fn modify_players_reputation(&mut self) {
         for (_, player) in self.players.iter_mut() {
             if player.peer_id.is_some() {
@@ -1246,7 +1224,7 @@ impl World {
             if team.peer_id.is_some() {
                 continue;
             }
-            let bonus = self.team_reputation_bonus(team.crew_roles.captain)?;
+            let bonus = TeamBonus::Reputation.current_team_bonus(&self, team.id)?;
             let players_reputation = team
                 .player_ids
                 .iter()
@@ -1384,7 +1362,7 @@ impl World {
         };
 
         let distance = self.distance_between_planets(from, to)?;
-        let bonus = self.spaceship_speed_bonus(team.crew_roles.pilot)?;
+        let bonus = TeamBonus::SpaceshipSpeed.current_team_bonus(&self, team.id)?;
         Ok(
             ((LANDING_TIME_OVERHEAD as f32 + (distance as f32 / team.spaceship.speed())) / bonus)
                 as Tick,

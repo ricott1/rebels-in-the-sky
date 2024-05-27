@@ -128,6 +128,10 @@ impl UiStyle {
     pub const STORAGE_SCRAPS: Style = DEFAULT_STYLE.fg(Color::DarkGray);
     pub const STORAGE_RUM: Style = DEFAULT_STYLE.fg(Color::LightRed);
     pub const STORAGE_FUEL: Style = DEFAULT_STYLE.fg(Color::Cyan);
+    pub const TRAIT_KILLER: Style = DEFAULT_STYLE.fg(Color::Red);
+    pub const TRAIT_SHOWPIRATE: Style = DEFAULT_STYLE.fg(Color::Magenta);
+    pub const TRAIT_RELENTLESS: Style = DEFAULT_STYLE.fg(Color::Blue);
+    pub const TRAIT_SPUGNA: Style = DEFAULT_STYLE.fg(Color::LightRed);
 }
 
 pub struct UiText;

@@ -2,7 +2,7 @@ use super::{
     constants::{COST_PER_VALUE, EXPERIENCE_PER_SKILL_MULTIPLIER, REPUTATION_PER_EXPERIENCE},
     jersey::Jersey,
     planet::Planet,
-    position::{GamePosition, PlayingStyle, MAX_POSITION},
+    position::{GamePosition, MAX_POSITION},
     resources::Resource,
     role::CrewRole,
     skill::{GameSkill, Skill, MAX_SKILL, MIN_SKILL},
@@ -27,6 +27,7 @@ use rand::{seq::SliceRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
 use serde::{de::Visitor, ser::SerializeStruct, Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum_macros::Display;
 
 const HOOK_MAX_BALL_HANDLING: f32 = 4.0;
@@ -42,7 +43,6 @@ pub struct Player {
     pub team: Option<TeamId>,
     pub special_trait: Option<Trait>,
     pub reputation: f32,
-    pub playing_style: PlayingStyle,
     pub athletics: Athletics,
     pub offense: Offense,
     pub defense: Defense,
@@ -69,7 +69,6 @@ impl Serialize for Player {
         state.serialize_field("team", &self.team)?;
         state.serialize_field("special_trait", &self.special_trait)?;
         state.serialize_field("reputation", &self.reputation)?;
-        state.serialize_field("playing_style", &self.playing_style)?;
         state.serialize_field("image", &self.image)?;
         state.serialize_field("current_location", &self.current_location)?;
         state.serialize_field("previous_skills", &self.previous_skills)?;
@@ -93,7 +92,6 @@ impl<'de> Deserialize<'de> for Player {
             Team,
             SpecialTrait,
             Reputation,
-            PlayingStyle,
             Image,
             CurrentLocation,
             PreviousSkills,
@@ -125,7 +123,6 @@ impl<'de> Deserialize<'de> for Player {
                             "team" => Ok(Field::Team),
                             "special_trait" => Ok(Field::SpecialTrait),
                             "reputation" => Ok(Field::Reputation),
-                            "playing_style" => Ok(Field::PlayingStyle),
                             "image" => Ok(Field::Image),
                             "current_location" => Ok(Field::CurrentLocation),
                             "previous_skills" => Ok(Field::PreviousSkills),
@@ -175,9 +172,6 @@ impl<'de> Deserialize<'de> for Player {
                 let reputation = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(6, &self))?;
-                let playing_style = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(7, &self))?;
                 let image = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(8, &self))?;
@@ -205,7 +199,6 @@ impl<'de> Deserialize<'de> for Player {
                     team,
                     special_trait,
                     reputation,
-                    playing_style,
                     athletics: Athletics::default(),
                     offense: Offense::default(),
                     defense: Defense::default(),
@@ -245,7 +238,7 @@ impl<'de> Deserialize<'de> for Player {
                 player.mental = Mental {
                     vision: compact_skills[16],
                     aggression: compact_skills[17],
-                    off_ball_movement: compact_skills[18],
+                    intuition: compact_skills[18],
                     charisma: compact_skills[19],
                 };
 
@@ -263,7 +256,6 @@ impl<'de> Deserialize<'de> for Player {
                 let mut team = None;
                 let mut special_trait = None;
                 let mut reputation = None;
-                let mut playing_style = None;
                 let mut image = None;
                 let mut current_location = None;
                 let mut previous_skills = None;
@@ -315,12 +307,6 @@ impl<'de> Deserialize<'de> for Player {
                             }
                             reputation = Some(map.next_value()?);
                         }
-                        Field::PlayingStyle => {
-                            if playing_style.is_some() {
-                                return Err(serde::de::Error::duplicate_field("playing_style"));
-                            }
-                            playing_style = Some(map.next_value()?);
-                        }
                         Field::Image => {
                             if image.is_some() {
                                 return Err(serde::de::Error::duplicate_field("image"));
@@ -369,8 +355,6 @@ impl<'de> Deserialize<'de> for Player {
                     .ok_or_else(|| serde::de::Error::missing_field("special_trait"))?;
                 let reputation =
                     reputation.ok_or_else(|| serde::de::Error::missing_field("reputation"))?;
-                let playing_style = playing_style
-                    .ok_or_else(|| serde::de::Error::missing_field("playing_style"))?;
                 let image = image.ok_or_else(|| serde::de::Error::missing_field("image"))?;
                 let current_location = current_location
                     .ok_or_else(|| serde::de::Error::missing_field("current_location"))?;
@@ -390,7 +374,6 @@ impl<'de> Deserialize<'de> for Player {
                     team,
                     special_trait,
                     reputation,
-                    playing_style,
                     athletics: Athletics::default(),
                     offense: Offense::default(),
                     defense: Defense::default(),
@@ -430,7 +413,7 @@ impl<'de> Deserialize<'de> for Player {
                 player.mental = Mental {
                     vision: compact_skills[16],
                     aggression: compact_skills[17],
-                    off_ball_movement: compact_skills[18],
+                    intuition: compact_skills[18],
                     charisma: compact_skills[19],
                 };
 
@@ -446,7 +429,6 @@ impl<'de> Deserialize<'de> for Player {
             "team",
             "jersey_number",
             "reputation",
-            "playing_style",
             "image",
             "current_location",
             "previous_skills",
@@ -481,7 +463,13 @@ impl Player {
             return Err("No energy to drink".into());
         }
 
-        if team.resources.get(&Resource::RUM).unwrap_or(&0).clone() == 0 {
+        if team
+            .resources
+            .get(&Resource::RUM)
+            .copied()
+            .unwrap_or_default()
+            == 0
+        {
             return Err("No rum to drink".into());
         }
 
@@ -549,7 +537,6 @@ impl Player {
             team: None,
             special_trait: None,
             reputation: 0.0,
-            playing_style: PlayingStyle::random(rng),
             athletics,
             offense,
             technical,
@@ -589,8 +576,8 @@ impl Player {
             player.special_trait = Some(Trait::Killer);
         } else if mental.charisma > 15.0 && rng.gen_range(0..10) < 2 {
             player.special_trait = Some(Trait::Showpirate);
-        } else if mental.vision > 15.0 && rng.gen_range(0..10) < 2 {
-            player.special_trait = Some(Trait::Merchant);
+        // } else if mental.vision > 15.0 && rng.gen_range(0..10) < 2 {
+        // player.special_trait = Some(Trait::Merchant);
         } else if athletics.stamina > 15.0 && rng.gen_range(0..10) < 2 {
             player.special_trait = Some(Trait::Relentless);
         }
@@ -664,7 +651,7 @@ impl Player {
             self.defense.steal = MAX_SKILL;
             self.technical.ball_handling = MAX_SKILL;
             self.mental.vision = MAX_SKILL;
-            self.mental.off_ball_movement = MAX_SKILL;
+            self.mental.intuition = MAX_SKILL;
             self.info.age = 16.0;
         }
     }
@@ -698,7 +685,7 @@ impl Player {
             15 => self.technical.rebounds,
             16 => self.mental.vision,
             17 => self.mental.aggression,
-            18 => self.mental.off_ball_movement,
+            18 => self.mental.intuition,
             19 => self.mental.charisma,
             _ => panic!("Invalid skill index"),
         }
@@ -800,7 +787,7 @@ impl Player {
             15 => self.technical.rebounds = new_value,
             16 => self.mental.vision = new_value,
             17 => self.mental.aggression = new_value,
-            18 => self.mental.off_ball_movement = new_value,
+            18 => self.mental.intuition = new_value,
             19 => self.mental.charisma = new_value,
             _ => panic!("Invalid skill index {}", idx),
         }
@@ -830,7 +817,7 @@ impl Player {
 
         self.previous_skills = self.current_skill_array();
 
-        for idx in 0..20 {
+        for idx in 0..experience_per_skill.len() {
             let mut increment =
                 experience_per_skill[idx] as f32 * EXPERIENCE_PER_SKILL_MULTIPLIER * training_bonus;
             match training_focus {
@@ -924,13 +911,14 @@ impl InfoStats {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Display)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Eq, Display)]
+#[repr(u8)]
 pub enum Trait {
     Killer,
-    Merchant,
+    // Merchant,
     Relentless,
     Showpirate,
-    Explorator,
+    // Explorator,
     Spugna,
 }
 
@@ -938,11 +926,7 @@ impl Trait {
     pub fn description(&self, player: &Player) -> String {
         match self {
             Trait::Killer => format!(
-                "Bonus when brawling in a match based on reputation (+{}).",
-                player.reputation.value()
-            ),
-            Trait::Merchant => format!(
-                "Cheaper ship upgrades based on reputation (-{}%)",
+                "Better at brawling during games. Bonus is based on reputation (+{}).",
                 player.reputation.value()
             ),
             Trait::Relentless => format!("Cannot get exhausted"),
@@ -952,11 +936,7 @@ impl Trait {
                     player.reputation.value()
                 )
             }
-            Trait::Explorator => format!(
-                "Higher chance of finding something during exploration based on reputation (+{}%)",
-                player.reputation.value()
-            ),
-            Trait::Spugna => format!("Cannot get drunk.",),
+            Trait::Spugna => format!("Immediately maximizes morale when drinking",),
         }
     }
 }

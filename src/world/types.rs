@@ -3,11 +3,12 @@ use std::fmt::Display;
 use super::{
     constants::DEFAULT_PLANET_ID,
     player::{InfoStats, Player},
-    skill::GameSkill,
+    skill::{GameSkill, MAX_SKILL},
+    world::World,
 };
 use crate::{
     image::color_map::SkinColorMap,
-    types::{PlanetId, Tick},
+    types::{AppResult, PlanetId, PlayerId, TeamId, Tick},
 };
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
@@ -411,6 +412,88 @@ impl TrainingFocus {
             Self::Defense => Some(Self::Technical),
             Self::Technical => Some(Self::Mental),
             Self::Mental => None,
+        }
+    }
+}
+
+const BASE_BONUS: f32 = 1.0;
+const BONUS_PER_SKILL: f32 = 1.0 / MAX_SKILL;
+#[derive(Clone, Copy, Debug)]
+pub enum TeamBonus {
+    Exploration,       //pilot
+    Reputation,        //captain
+    SpaceshipSpeed,    //pilot
+    TirednessRecovery, //doctor
+    TradePrice,        //captain
+    Training,          //doctor
+}
+
+impl Display for TeamBonus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TeamBonus::Exploration => write!(f, "Exploration"),
+            TeamBonus::Reputation => write!(f, "Reputation"),
+            TeamBonus::SpaceshipSpeed => write!(f, "Ship speed"),
+            TeamBonus::TirednessRecovery => write!(f, "Recovery"),
+            TeamBonus::TradePrice => write!(f, "Trading"),
+            TeamBonus::Training => write!(f, "Training"),
+        }
+    }
+}
+
+impl TeamBonus {
+    pub fn current_team_bonus(&self, world: &World, team_id: TeamId) -> AppResult<f32> {
+        let team = world.get_team_or_err(team_id)?;
+        let player_id = match self {
+            TeamBonus::Exploration => team.crew_roles.pilot,
+            TeamBonus::Reputation => team.crew_roles.captain,
+            TeamBonus::SpaceshipSpeed => team.crew_roles.pilot,
+            TeamBonus::TirednessRecovery => team.crew_roles.doctor,
+            TeamBonus::TradePrice => team.crew_roles.captain,
+            TeamBonus::Training => team.crew_roles.doctor,
+        };
+
+        let skill = if let Some(id) = player_id {
+            self.as_skill(world, id).unwrap_or_default()
+        } else {
+            0.0
+        };
+
+        Ok(BASE_BONUS + BONUS_PER_SKILL * skill)
+    }
+
+    pub fn as_skill(&self, world: &World, player_id: PlayerId) -> AppResult<f32> {
+        match self {
+            TeamBonus::Exploration => {
+                let pilot = world.get_player_or_err(player_id)?;
+                Ok(0.35 * pilot.athletics.stamina + 0.65 * pilot.mental.vision)
+            }
+            TeamBonus::Reputation => {
+                let captain = world.get_player_or_err(player_id)?;
+                Ok(0.8 * captain.mental.charisma
+                    + 0.1 * captain.mental.aggression
+                    + 0.1 * captain.athletics.strength)
+            }
+            TeamBonus::SpaceshipSpeed => {
+                let pilot = world.get_player_or_err(player_id)?;
+                Ok(0.75 * pilot.athletics.quickness + 0.25 * pilot.mental.vision)
+            }
+            TeamBonus::TirednessRecovery => {
+                let doctor = world.get_player_or_err(player_id)?;
+                Ok(0.8 * doctor.athletics.stamina + 0.2 * doctor.mental.intuition)
+            }
+            TeamBonus::TradePrice => {
+                let captain = world.get_player_or_err(player_id)?;
+                Ok(0.5 * captain.mental.charisma
+                    + 0.25 * captain.mental.aggression
+                    + 0.25 * captain.mental.intuition)
+            }
+            TeamBonus::Training => {
+                let doctor = world.get_player_or_err(player_id)?;
+                Ok(0.25 * doctor.athletics.strength
+                    + 0.25 * doctor.athletics.vertical
+                    + 0.5 * doctor.mental.intuition)
+            }
         }
     }
 }

@@ -15,7 +15,7 @@ use crate::{
     types::{AppResult, PlayerId, SystemTimeTick, Tick, AU, HOURS, SECONDS},
     world::{
         constants::*,
-        player::Player,
+        player::{Player, Trait},
         position::{GamePosition, Position, MAX_POSITION},
         resources::Resource,
         skill::{GameSkill, Rated, SKILL_NAMES},
@@ -312,9 +312,9 @@ pub fn explore_button<'a>(
     let explore_button = match team.current_location {
         TeamLocation::OnPlanet { planet_id } => {
             let planet = world.get_planet_or_err(planet_id)?;
-            team.can_explore_around_planet(&planet)?;
+
             let explore_time = BASE_EXPLORATION_TIME;
-            Button::new(
+            let mut button = Button::new(
                 format!("Explore ({})", explore_time.formatted()),
                 UiCallbackPreset::ExploreAroundPlanet,
                 Arc::clone(&callback_registry),
@@ -326,7 +326,12 @@ pub fn explore_button<'a>(
                 ),
                 hover_text_target,
             )
-            .set_hotkey(UiKey::EXPLORE)
+            .set_hotkey(UiKey::EXPLORE);
+
+            if let Err(msg) = team.can_explore_around_planet(&planet) {
+                button.disable(Some(msg.to_string()));
+            }
+            button
         }
         TeamLocation::Travelling {
             from: _from,
@@ -388,9 +393,21 @@ pub fn explore_button<'a>(
 
 pub fn get_storage_spans(team: &Team) -> Vec<Span> {
     let bars_length = 25;
-    let gold = team.resources.get(&Resource::GOLD).unwrap_or(&0).clone();
-    let scraps = team.resources.get(&Resource::SCRAPS).unwrap_or(&0).clone();
-    let rum = team.resources.get(&Resource::RUM).unwrap_or(&0).clone();
+    let gold = team
+        .resources
+        .get(&Resource::GOLD)
+        .copied()
+        .unwrap_or_default();
+    let scraps = team
+        .resources
+        .get(&Resource::SCRAPS)
+        .copied()
+        .unwrap_or_default();
+    let rum = team
+        .resources
+        .get(&Resource::RUM)
+        .copied()
+        .unwrap_or_default();
 
     let mut gold_length = ((Resource::GOLD.to_storing_space() * gold) as f32
         / team.spaceship.storage_capacity() as f32
@@ -605,6 +622,18 @@ pub fn render_player_description(
 
     let hover_text_target = hover_text_target(frame);
 
+    let trait_span = if let Some(t) = player.special_trait {
+        let trait_style = match t {
+            Trait::Killer => UiStyle::TRAIT_KILLER,
+            Trait::Relentless => UiStyle::TRAIT_RELENTLESS,
+            Trait::Showpirate => UiStyle::TRAIT_SHOWPIRATE,
+            Trait::Spugna => UiStyle::TRAIT_SPUGNA,
+        };
+        Span::styled(format!("{t}"), trait_style)
+    } else {
+        Span::raw("")
+    };
+
     let line = HoverTextLine::from(vec![
         HoverTextSpan::new(
             Span::raw(format!(
@@ -616,16 +645,12 @@ pub fn render_player_description(
             Arc::clone(&callback_registry),
         ),
         HoverTextSpan::new(
-            Span::raw(format!(
-                "Trait {}",
-                if player.special_trait.is_some() {
-                    format!("{}", player.special_trait.as_ref().unwrap())
-                } else {
-                    "None".to_string()
-                }
-            )),
-            if player.special_trait.is_some() {
-                player.special_trait.as_ref().unwrap().description(&player)}else{"".to_string()},
+            trait_span,
+            if let Some(t) = player.special_trait {
+                t.description(&player)
+            } else {
+                    "".to_string()
+            },
             hover_text_target,
             Arc::clone(&callback_registry),
         )

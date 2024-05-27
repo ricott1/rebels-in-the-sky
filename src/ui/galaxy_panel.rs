@@ -232,7 +232,7 @@ impl GalaxyPanel {
                             };
 
                             (
-                                own_team.can_travel_to_planet(&planet, time, own_team.fuel()),
+                                own_team.can_travel_to_planet(&planet, time),
                                 time.formatted(),
                                 format!(
                                     "Travel to {}: {}Time {} - Fuel {}",

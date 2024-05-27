@@ -59,10 +59,13 @@ pub struct Planet {
 }
 
 impl Planet {
+    fn price_delta(&self, merchant_bonus: f32) -> f32 {
+        (TRADE_DELTA_BUY_SELL + 1.0 / (10.0 + self.total_population() as f32)) / merchant_bonus
+    }
     fn resource_price(&self, resource: Resource) -> f32 {
         // Resource price follows a hyperbolic tangent curve
         let relative_amount =
-            (self.resources.get(&resource).unwrap_or(&0).clone() as f32).bound() / MAX_SKILL;
+            (self.resources.get(&resource).copied().unwrap_or_default() as f32).bound() / MAX_SKILL;
         let amount_modifier =
             relative_amount / TRADE_DELTA_SCARCITY + (1.0 - relative_amount) * TRADE_DELTA_SCARCITY;
 
@@ -93,9 +96,9 @@ impl Planet {
         price
     }
 
-    pub fn resource_buy_price(&self, resource: Resource) -> u32 {
+    pub fn resource_buy_price(&self, resource: Resource, merchant_bonus: f32) -> u32 {
         let price = self.resource_price(resource);
-        let delta = TRADE_DELTA_BUY_SELL + 1.0 / (10.0 + self.total_population() as f32);
+        let delta = self.price_delta(merchant_bonus);
         let buy_price = price * (1.0 + delta);
 
         log::debug!(
@@ -107,9 +110,9 @@ impl Planet {
         (buy_price as u32).max(1)
     }
 
-    pub fn resource_sell_price(&self, resource: Resource) -> u32 {
+    pub fn resource_sell_price(&self, resource: Resource, merchant_bonus: f32) -> u32 {
         let price = self.resource_price(resource);
-        let delta = TRADE_DELTA_BUY_SELL + 1.0 / (10.0 + self.total_population() as f32);
+        let delta = self.price_delta(merchant_bonus);
         let sell_price = price * (1.0 - delta);
 
         log::debug!(

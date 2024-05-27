@@ -77,3 +77,13 @@ pub trait StyledRating: Rated {
 
 impl StyledRating for f32 {}
 impl StyledRating for u8 {}
+
+pub trait PercentageRating: Rated {
+    fn percentage(&self) -> u8;
+}
+
+impl PercentageRating for f32 {
+    fn percentage(&self) -> u8 {
+        (5.0 * self) as u8
+    }
+}

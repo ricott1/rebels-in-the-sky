@@ -21,9 +21,10 @@ use crate::{
     world::{
         constants::*,
         jersey::{Jersey, JerseyStyle},
+        player::Trait,
         resources::Resource,
         role::CrewRole,
-        skill::GameSkill,
+        skill::{GameSkill, MAX_SKILL},
         spaceship::Spaceship,
         team::Team,
         types::{PlayerLocation, TeamLocation, TrainingFocus},
@@ -588,7 +589,7 @@ impl UiCallbackPreset {
             let travel_time = app
                 .world
                 .travel_time_to_planet(own_team.id, target_planet.id)?;
-            own_team.can_travel_to_planet(&target_planet, travel_time, own_team.fuel())?;
+            own_team.can_travel_to_planet(&target_planet, travel_time)?;
             let distance = app
                 .world
                 .distance_between_planets(current_planet.id, target_planet.id)?;
@@ -603,10 +604,9 @@ impl UiCallbackPreset {
             // For simplicity we just subtract the fuel upfront, maybe would be nicer on UI to
             // show the fuel consumption as the team travels in world.tick_travel,
             // but this would require more operations and checks in the tick function.
-            own_team.remove_resource(
-                Resource::FUEL,
-                (travel_time as f32 * own_team.spaceship.fuel_consumption()).max(1.0) as u32,
-            )?;
+            let fuel_consumed =
+                (travel_time as f32 * own_team.spaceship.fuel_consumption()).max(1.0) as u32;
+            own_team.remove_resource(Resource::FUEL, fuel_consumed)?;
 
             log::info!(
                 "Team {:?} is travelling from {:?} to {:?}, consuming {:.2} fuel",
@@ -920,8 +920,14 @@ impl UiCallbackPreset {
                 let mut player = app.world.get_player_or_err(*player_id)?.clone();
                 player.can_drink(&app.world)?;
 
-                player.morale = (player.morale + MORALE_DRINK_BONUS).bound();
-                player.tiredness = (player.tiredness + TIREDNESS_DRINK_MALUS).bound();
+                let morale_bonus = if matches!(player.special_trait, Some(Trait::Spugna)) {
+                    MAX_SKILL
+                } else {
+                    MORALE_DRINK_BONUS
+                };
+
+                player.morale = (player.morale + morale_bonus).bound();
+                player.add_tiredness(TIREDNESS_DRINK_MALUS);
 
                 let mut team = app
                     .world

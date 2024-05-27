@@ -4,7 +4,7 @@ use super::{
     clickable_table::{ClickableCell, ClickableRow, ClickableTable, ClickableTableState},
     constants::{PrintableKeyCode, UiKey, UiStyle},
     gif_map::GifMap,
-    traits::{Screen, SplitPanel, StyledRating},
+    traits::{PercentageRating, Screen, SplitPanel, StyledRating},
     ui_callback::{CallbackRegistry, UiCallbackPreset},
     utils::hover_text_target,
     widgets::{
@@ -22,18 +22,13 @@ use crate::{
         planet::PlanetType,
         position::{GamePosition, Position, MAX_POSITION},
         skill::Rated,
-        types::TeamLocation,
+        types::{TeamBonus, TeamLocation},
         world::World,
     },
 };
 use crate::{
     types::{PlanetId, TeamId},
-    world::{
-        constants::{BASE_BONUS, BONUS_PER_SKILL},
-        resources::Resource,
-        role::CrewRole,
-        skill::GameSkill,
-    },
+    world::{resources::Resource, role::CrewRole},
 };
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
@@ -205,6 +200,7 @@ impl MyTeamPanel {
 
         let planet_id = self.planet_markets[self.planet_index.unwrap_or_default()];
         let planet = world.get_planet_or_err(planet_id)?;
+        let merchant_bonus = TeamBonus::TradePrice.current_team_bonus(world, team.id)?;
 
         frame.render_widget(
             Paragraph::new(vec![
@@ -216,48 +212,72 @@ impl MyTeamPanel {
                 Line::from(vec![
                     Span::styled("Fuel      ", UiStyle::STORAGE_FUEL),
                     Span::styled(
-                        format!("{}", planet.resource_buy_price(Resource::FUEL)),
+                        format!(
+                            "{}",
+                            planet.resource_buy_price(Resource::FUEL, merchant_bonus)
+                        ),
                         UiStyle::OK,
                     ),
                     Span::raw("/"),
                     Span::styled(
-                        format!("{}", planet.resource_sell_price(Resource::FUEL)),
+                        format!(
+                            "{}",
+                            planet.resource_sell_price(Resource::FUEL, merchant_bonus)
+                        ),
                         UiStyle::ERROR,
                     ),
                 ]),
                 Line::from(vec![
                     Span::styled("Gold      ", UiStyle::STORAGE_GOLD),
                     Span::styled(
-                        format!("{}", planet.resource_buy_price(Resource::GOLD)),
+                        format!(
+                            "{}",
+                            planet.resource_buy_price(Resource::GOLD, merchant_bonus)
+                        ),
                         UiStyle::OK,
                     ),
                     Span::raw("/"),
                     Span::styled(
-                        format!("{}", planet.resource_sell_price(Resource::GOLD)),
+                        format!(
+                            "{}",
+                            planet.resource_sell_price(Resource::GOLD, merchant_bonus)
+                        ),
                         UiStyle::ERROR,
                     ),
                 ]),
                 Line::from(vec![
                     Span::styled("Scraps    ", UiStyle::STORAGE_SCRAPS),
                     Span::styled(
-                        format!("{}", planet.resource_buy_price(Resource::SCRAPS)),
+                        format!(
+                            "{}",
+                            planet.resource_buy_price(Resource::SCRAPS, merchant_bonus)
+                        ),
                         UiStyle::OK,
                     ),
                     Span::raw("/"),
                     Span::styled(
-                        format!("{}", planet.resource_sell_price(Resource::SCRAPS)),
+                        format!(
+                            "{}",
+                            planet.resource_sell_price(Resource::SCRAPS, merchant_bonus)
+                        ),
                         UiStyle::ERROR,
                     ),
                 ]),
                 Line::from(vec![
                     Span::styled("Rum       ", UiStyle::STORAGE_RUM),
                     Span::styled(
-                        format!("{}", planet.resource_buy_price(Resource::RUM)),
+                        format!(
+                            "{}",
+                            planet.resource_buy_price(Resource::RUM, merchant_bonus)
+                        ),
                         UiStyle::OK,
                     ),
                     Span::raw("/"),
                     Span::styled(
-                        format!("{}", planet.resource_sell_price(Resource::RUM)),
+                        format!(
+                            "{}",
+                            planet.resource_sell_price(Resource::RUM, merchant_bonus)
+                        ),
                         UiStyle::ERROR,
                     ),
                 ]),
@@ -383,8 +403,9 @@ impl MyTeamPanel {
             ])
             .split(button_split[button_split_idx + 2]);
 
-            let buy_unit_cost = planet.resource_buy_price(*resource);
-            let sell_unit_cost = planet.resource_sell_price(*resource);
+            let merchant_bonus = TeamBonus::TradePrice.current_team_bonus(world, team.id)?;
+            let buy_unit_cost = planet.resource_buy_price(*resource, merchant_bonus);
+            let sell_unit_cost = planet.resource_sell_price(*resource, merchant_bonus);
             frame.render_widget(
                 Paragraph::new(Line::from(vec![
                     Span::styled(
@@ -489,21 +510,30 @@ impl MyTeamPanel {
                 Span::styled("   Gold", UiStyle::STORAGE_GOLD),
                 Span::raw(format!(
                     ":   {} Kg",
-                    team.resources.get(&Resource::GOLD).unwrap_or(&0)
+                    team.resources
+                        .get(&Resource::GOLD)
+                        .copied()
+                        .unwrap_or_default()
                 )),
             ]),
             Line::from(vec![
                 Span::styled("   Scraps", UiStyle::STORAGE_SCRAPS),
                 Span::raw(format!(
                     ": {} t",
-                    team.resources.get(&Resource::SCRAPS).unwrap_or(&0)
+                    team.resources
+                        .get(&Resource::SCRAPS)
+                        .copied()
+                        .unwrap_or_default()
                 )),
             ]),
             Line::from(vec![
                 Span::styled("   Rum", UiStyle::STORAGE_RUM),
                 Span::raw(format!(
                     ":    {} l",
-                    team.resources.get(&Resource::RUM).unwrap_or(&0)
+                    team.resources
+                        .get(&Resource::RUM)
+                        .copied()
+                        .unwrap_or_default()
                 )),
             ]),
         ]);
@@ -925,10 +955,6 @@ impl MyTeamPanel {
             horizontal: 1,
         }));
         let can_set_as_captain = team.can_set_crew_role(&player, CrewRole::Captain);
-        let percentage = {
-            let bonus = world.team_reputation_bonus(Some(player_id))?;
-            ((bonus - BASE_BONUS) * 100.0) as u32
-        };
         let mut captain_button = Button::new(
             "captain".into(),
             UiCallbackPreset::SetCrewRole {
@@ -939,8 +965,15 @@ impl MyTeamPanel {
         )
         .set_hover_text(
             format!(
-                "Set player to captain role. The team reputation update bonus would be {}%",
-                percentage
+                "Set player to captain role: {} +{}%, {} {}%",
+                TeamBonus::Reputation,
+                TeamBonus::Reputation
+                    .as_skill(world, player_id)?
+                    .percentage(),
+                TeamBonus::TradePrice,
+                TeamBonus::TradePrice
+                    .as_skill(world, player_id)?
+                    .percentage()
             ),
             hover_text_target,
         )
@@ -951,10 +984,6 @@ impl MyTeamPanel {
         frame.render_widget(captain_button, button_splits[0]);
 
         let can_set_as_pilot = team.can_set_crew_role(&player, CrewRole::Pilot);
-        let percentage = {
-            let bonus = world.spaceship_speed_bonus(Some(player_id))?;
-            ((bonus - BASE_BONUS) * 100.0) as u32
-        };
 
         let mut pilot_button = Button::new(
             "pilot".into(),
@@ -966,8 +995,15 @@ impl MyTeamPanel {
         )
         .set_hover_text(
             format!(
-                "Set player to pilot role. The spaceship speed would increase by {}%",
-                percentage
+                "Set player to pilot role: {} +{}%, {} {}%",
+                TeamBonus::SpaceshipSpeed,
+                TeamBonus::SpaceshipSpeed
+                    .as_skill(world, player_id)?
+                    .percentage(),
+                TeamBonus::Exploration,
+                TeamBonus::Exploration
+                    .as_skill(world, player_id)?
+                    .percentage()
             ),
             hover_text_target,
         )
@@ -978,10 +1014,7 @@ impl MyTeamPanel {
         frame.render_widget(pilot_button, button_splits[1]);
 
         let can_set_as_doctor = team.can_set_crew_role(&player, CrewRole::Doctor);
-        let percentage = {
-            let bonus = world.tiredness_recovery_bonus(Some(player_id))?;
-            ((bonus - BASE_BONUS) * 100.0) as u32
-        };
+
         let mut doctor_button = Button::new(
             "doctor".into(),
             UiCallbackPreset::SetCrewRole {
@@ -992,8 +1025,13 @@ impl MyTeamPanel {
         )
         .set_hover_text(
             format!(
-                "Set player to doctor role. The team tiredness recovery bonus would be {}%",
-                percentage
+                "Set player to doctor role: {} +{}%, {} {}%",
+                TeamBonus::TirednessRecovery,
+                TeamBonus::TirednessRecovery
+                    .as_skill(world, player_id)?
+                    .percentage(),
+                TeamBonus::Training,
+                TeamBonus::Training.as_skill(world, player_id)?.percentage()
             ),
             hover_text_target,
         )
@@ -1032,9 +1070,16 @@ impl MyTeamPanel {
 
     fn build_players_table(&self, world: &World) -> AppResult<ClickableTable> {
         let team = world.get_own_team().unwrap();
-        let header_cells = [" Name", "Current", "Best", "Role", "Crew bonus"]
-            .iter()
-            .map(|h| ClickableCell::from(*h).style(UiStyle::HEADER));
+        let header_cells = [
+            " Name",
+            "Current",
+            "Best",
+            "Role",
+            "Crew bonus",
+            "Crew bonus",
+        ]
+        .iter()
+        .map(|h| ClickableCell::from(*h).style(UiStyle::HEADER));
         let header = ClickableRow::new(header_cells);
         let rows = self
             .players
@@ -1057,27 +1102,52 @@ impl MyTeamPanel {
                 };
                 let best_role = Position::best(skills);
 
-                let bonus_string = match player.info.crew_role {
+                let bonus_string_1 = match player.info.crew_role {
                     CrewRole::Pilot => {
-                        let bonus = world.spaceship_speed_bonus(team.crew_roles.pilot)?;
-                        let fitness = ((bonus - BASE_BONUS) / BONUS_PER_SKILL).bound();
-                        let style = fitness.style();
-                        let percentage = ((bonus - BASE_BONUS) * 100.0) as u32;
-                        Span::styled(format!("Ship speed +{}%", percentage), style)
+                        let skill = TeamBonus::SpaceshipSpeed.as_skill(world, player.id)?;
+                        Span::styled(
+                            format!("{} +{}%", TeamBonus::SpaceshipSpeed, skill.percentage()),
+                            skill.style(),
+                        )
                     }
                     CrewRole::Captain => {
-                        let bonus = world.team_reputation_bonus(team.crew_roles.captain)?;
-                        let fitness = ((bonus - BASE_BONUS) / BONUS_PER_SKILL).bound();
-                        let style = fitness.style();
-                        let percentage = ((bonus - BASE_BONUS) * 100.0) as u32;
-                        Span::styled(format!("Reputation +{}%", percentage), style)
+                        let skill = TeamBonus::Reputation.as_skill(world, player.id)?;
+                        Span::styled(
+                            format!("{} +{}%", TeamBonus::Reputation, skill.percentage()),
+                            skill.style(),
+                        )
                     }
                     CrewRole::Doctor => {
-                        let bonus = world.tiredness_recovery_bonus(team.crew_roles.doctor)?;
-                        let fitness = ((bonus - BASE_BONUS) / BONUS_PER_SKILL).bound();
-                        let style = fitness.style();
-                        let percentage = ((bonus - BASE_BONUS) * 100.0) as u32;
-                        Span::styled(format!("Recovery   +{}%", percentage), style)
+                        let skill = TeamBonus::TirednessRecovery.as_skill(world, player.id)?;
+                        Span::styled(
+                            format!("{} +{}%", TeamBonus::TirednessRecovery, skill.percentage()),
+                            skill.style(),
+                        )
+                    }
+                    _ => Span::raw(""),
+                };
+
+                let bonus_string_2 = match player.info.crew_role {
+                    CrewRole::Pilot => {
+                        let skill = TeamBonus::Exploration.as_skill(world, player.id)?;
+                        Span::styled(
+                            format!("{} +{}%", TeamBonus::Exploration, skill.percentage()),
+                            skill.style(),
+                        )
+                    }
+                    CrewRole::Captain => {
+                        let skill = TeamBonus::TradePrice.as_skill(world, player.id)?;
+                        Span::styled(
+                            format!("{} +{}%", TeamBonus::TradePrice, skill.percentage()),
+                            skill.style(),
+                        )
+                    }
+                    CrewRole::Doctor => {
+                        let skill = TeamBonus::Training.as_skill(world, player.id)?;
+                        Span::styled(
+                            format!("{} +{}%", TeamBonus::Training, skill.percentage()),
+                            skill.style(),
+                        )
                     }
                     _ => Span::raw(""),
                 };
@@ -1094,7 +1164,8 @@ impl MyTeamPanel {
                         best_role.player_rating(skills).stars()
                     )),
                     ClickableCell::from(player.info.crew_role.to_string()),
-                    ClickableCell::from(bonus_string),
+                    ClickableCell::from(bonus_string_1),
+                    ClickableCell::from(bonus_string_2),
                 ];
                 Ok(ClickableRow::new(cells))
             })
@@ -1108,6 +1179,7 @@ impl MyTeamPanel {
                 Constraint::Length(12),
                 Constraint::Length(12),
                 Constraint::Length(12),
+                Constraint::Length(18),
                 Constraint::Length(18),
             ]);
 
@@ -1464,6 +1536,10 @@ impl Screen for MyTeamPanel {
         if self.players.is_empty() {
             return None;
         }
+
+        let merchant_bonus = TeamBonus::TradePrice
+            .current_team_bonus(world, world.own_team_id)
+            .unwrap_or(1.0);
         match key_event.code {
             KeyCode::Up => {
                 self.next_index();
@@ -1482,7 +1558,7 @@ impl Screen for MyTeamPanel {
                 if let Some(planet_id) = self.current_planet_id {
                     if let Ok(buy_price) = world
                         .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_buy_price(Resource::SCRAPS))
+                        .map(|p| p.resource_buy_price(Resource::SCRAPS, merchant_bonus))
                     {
                         return Some(UiCallbackPreset::TradeResource {
                             resource: Resource::SCRAPS,
@@ -1497,7 +1573,7 @@ impl Screen for MyTeamPanel {
                 if let Some(planet_id) = self.current_planet_id {
                     if let Ok(buy_price) = world
                         .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_buy_price(Resource::GOLD))
+                        .map(|p| p.resource_buy_price(Resource::GOLD, merchant_bonus))
                     {
                         return Some(UiCallbackPreset::TradeResource {
                             resource: Resource::SCRAPS,
@@ -1512,7 +1588,7 @@ impl Screen for MyTeamPanel {
                 if let Some(planet_id) = self.current_planet_id {
                     if let Ok(buy_price) = world
                         .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_buy_price(Resource::FUEL))
+                        .map(|p| p.resource_buy_price(Resource::FUEL, merchant_bonus))
                     {
                         return Some(UiCallbackPreset::TradeResource {
                             resource: Resource::FUEL,
@@ -1527,7 +1603,7 @@ impl Screen for MyTeamPanel {
                 if let Some(planet_id) = self.current_planet_id {
                     if let Ok(buy_price) = world
                         .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_buy_price(Resource::RUM))
+                        .map(|p| p.resource_buy_price(Resource::RUM, merchant_bonus))
                     {
                         return Some(UiCallbackPreset::TradeResource {
                             resource: Resource::RUM,
@@ -1542,7 +1618,7 @@ impl Screen for MyTeamPanel {
                 if let Some(planet_id) = self.current_planet_id {
                     if let Ok(sell_price) = world
                         .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_sell_price(Resource::SCRAPS))
+                        .map(|p| p.resource_sell_price(Resource::SCRAPS, merchant_bonus))
                     {
                         return Some(UiCallbackPreset::TradeResource {
                             resource: Resource::SCRAPS,
@@ -1557,7 +1633,7 @@ impl Screen for MyTeamPanel {
                 if let Some(planet_id) = self.current_planet_id {
                     if let Ok(sell_price) = world
                         .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_sell_price(Resource::GOLD))
+                        .map(|p| p.resource_sell_price(Resource::GOLD, merchant_bonus))
                     {
                         return Some(UiCallbackPreset::TradeResource {
                             resource: Resource::GOLD,
@@ -1572,7 +1648,7 @@ impl Screen for MyTeamPanel {
                 if let Some(planet_id) = self.current_planet_id {
                     if let Ok(sell_price) = world
                         .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_sell_price(Resource::FUEL))
+                        .map(|p| p.resource_sell_price(Resource::FUEL, merchant_bonus))
                     {
                         return Some(UiCallbackPreset::TradeResource {
                             resource: Resource::FUEL,
@@ -1587,7 +1663,7 @@ impl Screen for MyTeamPanel {
                 if let Some(planet_id) = self.current_planet_id {
                     if let Ok(sell_price) = world
                         .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_sell_price(Resource::RUM))
+                        .map(|p| p.resource_sell_price(Resource::RUM, merchant_bonus))
                     {
                         return Some(UiCallbackPreset::TradeResource {
                             resource: Resource::RUM,

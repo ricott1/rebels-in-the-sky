@@ -1,5 +1,8 @@
 use super::{
-    constants::{MIN_PLAYERS_PER_TEAM, MORALE_BONUS_ON_TEAM_ADD, MORALE_DEMOTION_MALUS},
+    constants::{
+        BASE_EXPLORATION_TIME, MIN_PLAYERS_PER_TEAM, MORALE_BONUS_ON_TEAM_ADD,
+        MORALE_DEMOTION_MALUS,
+    },
     jersey::Jersey,
     planet::Planet,
     player::Player,
@@ -13,6 +16,7 @@ use super::{
 use crate::{
     engine::tactic::Tactic,
     types::{AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick},
+    world::constants::MAX_PLAYERS_PER_TEAM,
 };
 use itertools::Itertools;
 use libp2p::PeerId;
@@ -164,6 +168,10 @@ impl Team {
     }
 
     pub fn can_release_player(&self, player: &Player) -> AppResult<()> {
+        if !self.player_ids.contains(&player.id) {
+            return Err("Player is not in team".into());
+        }
+
         if player.team.is_none() {
             return Err("Player is not in a team".into());
         }
@@ -251,12 +259,7 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_travel_to_planet(
-        &self,
-        planet: &Planet,
-        travel_time: Tick,
-        current_fuel: u32,
-    ) -> AppResult<()> {
+    pub fn can_travel_to_planet(&self, planet: &Planet, travel_time: Tick) -> AppResult<()> {
         if planet.peer_id.is_some() {
             return Err("Cannot travel to asteroid".into());
         }
@@ -300,9 +303,19 @@ impl Team {
             return Err("This place is inhabitable".into());
         }
 
-        let autonomy = self.spaceship.max_travel_time(current_fuel);
-        if travel_time > autonomy {
+        //If we can't get there with full tank, than the planet is too far.
+        let max_fuel = self.spaceship.fuel_capacity();
+        let max_autonomy = self.spaceship.max_travel_time(max_fuel);
+        if travel_time > max_autonomy {
             return Err("This planet is too far".into());
+        }
+
+        // Else we check that we can go there with the current fuel.
+        let current_fuel = self.fuel();
+        let autonomy = self.spaceship.max_travel_time(current_fuel);
+
+        if travel_time > autonomy {
+            return Err("Not enough fuel".into());
         }
 
         Ok(())
@@ -342,6 +355,23 @@ impl Team {
 
         if self.current_game.is_some() {
             return Err("Team is currently playing".into());
+        }
+
+        let exploration_time = BASE_EXPLORATION_TIME;
+
+        //If we can't get there with full tank, than the planet is too far.
+        let max_fuel = self.spaceship.fuel_capacity();
+        let max_autonomy = self.spaceship.max_travel_time(max_fuel);
+        if exploration_time > max_autonomy {
+            return Err("This planet is too far".into());
+        }
+
+        // Else we check that we can go there with the current fuel.
+        let current_fuel = self.fuel();
+        let autonomy = self.spaceship.max_travel_time(current_fuel);
+
+        if exploration_time > autonomy {
+            return Err("Not enough fuel".into());
         }
 
         Ok(())
@@ -407,9 +437,8 @@ impl Team {
     }
 
     pub fn remove_player(&mut self, player: &mut Player) -> AppResult<()> {
-        if !self.player_ids.contains(&player.id) {
-            return Err("Player is not in team".into());
-        }
+        self.can_release_player(&player)?;
+
         player.team = None;
         self.player_ids.retain(|&p| p != player.id);
 
@@ -436,7 +465,6 @@ impl Team {
             }
             _ => return Err("Cannot release player while travelling".into()),
         }
-        player.version += 1;
         Ok(())
     }
 
@@ -451,7 +479,7 @@ impl Team {
         // Create an N-vector of 5-vectors. Each player is mapped to the vector (of length 5) of ratings for each role.
         let all_ratings = players
             .iter()
-            .take(12) // For performance reasons, we only consider the first 12 players by rating.
+            .take(MAX_PLAYERS_PER_TEAM) // For performance reasons, we only consider the first MAX_PLAYERS_PER_TEAM players by rating.
             .map(|&p| {
                 (0..MAX_POSITION)
                     .map(|i| i.player_rating(p.current_skill_array()))

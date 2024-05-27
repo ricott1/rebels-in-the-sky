@@ -158,8 +158,9 @@ impl<'game> Game {
         let seed = game.get_rng_seed();
         let mut rng = ChaCha8Rng::from_seed(seed);
 
-        let attendance = (BASE_ATTENDANCE + total_reputation as u32 * total_population) as f32
-            * rng.gen_range(0.5..1.5)
+        let attendance = (BASE_ATTENDANCE + total_reputation.value() as u32 * total_population)
+            as f32
+            * rng.gen_range(0.75..1.25)
             * (1.0 + bonus_attendance);
         game.attendance = attendance as u32;
         let mut default_output = ActionOutput::default();
@@ -499,6 +500,9 @@ impl<'game> Game {
 
         if self.timer.has_ended() {
             self.ended_at = Some(current_timestamp);
+            self.home_team_mvps = Some(self.team_mvps(Possession::Home));
+            self.away_team_mvps = Some(self.team_mvps(Possession::Away));
+
             let description = match self.get_score() {
                 (home, away) if home > away => {
                     self.winner = Some(self.home_team_in_game.team_id);
@@ -522,9 +526,6 @@ impl<'game> Game {
                 away_score: self.get_score().1,
                 ..Default::default()
             });
-
-            self.home_team_mvps = Some(self.team_mvps(Possession::Home));
-            self.away_team_mvps = Some(self.team_mvps(Possession::Away));
 
             return;
         }
@@ -601,6 +602,9 @@ impl<'game> Game {
                 match (home_knocked_out, away_knocked_out) {
                     (true, true) => {
                         self.ended_at = Some(current_timestamp);
+                        self.home_team_mvps = Some(self.team_mvps(Possession::Home));
+                        self.away_team_mvps = Some(self.team_mvps(Possession::Away));
+
                         let description = match self.get_score() {
                             (home, away) if home > away => {
                                 self.winner = Some(self.home_team_in_game.team_id);
@@ -630,6 +634,9 @@ impl<'game> Game {
                     }
                     (true, false) => {
                         self.ended_at = Some(current_timestamp);
+                        self.home_team_mvps = Some(self.team_mvps(Possession::Home));
+                        self.away_team_mvps = Some(self.team_mvps(Possession::Away));
+
                         self.winner = Some(self.away_team_in_game.team_id);
                         let description = format!(
                             "The home team is completely wasted and lost! {}",
@@ -647,6 +654,9 @@ impl<'game> Game {
                     }
                     (false, true) => {
                         self.ended_at = Some(current_timestamp);
+                        self.home_team_mvps = Some(self.team_mvps(Possession::Home));
+                        self.away_team_mvps = Some(self.team_mvps(Possession::Away));
+
                         self.winner = Some(self.home_team_in_game.team_id);
                         let description = format!(
                             "The away team is completely wasted and lost! {}",

@@ -247,6 +247,7 @@ impl PlayerImage {
         self.shorts = None;
         self.shoes = None;
         self.jersey_color_map = None;
+        self.hat = None;
     }
 
     fn set_hat(&mut self, hat: Option<HatImage>) {

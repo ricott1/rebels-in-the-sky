@@ -50,7 +50,7 @@ impl EngineAction for OffTheScreen {
         let atk_result = playmaker.roll(rng)
             + playmaker.mental.vision.value()
             + playmaker.technical.passing.value()
-            + target.mental.off_ball_movement.value();
+            + target.mental.intuition.value();
 
         let def_result = playmaker_defender.roll(rng)
             + target_defender.defense.perimeter_defense.value()

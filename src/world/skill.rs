@@ -30,8 +30,8 @@ pub const SKILL_NAMES: [&'static str; 20] = [
     "Posting",
     "Rebounds",
     "Vision",
-    "Positioning",
-    "Off-ball",
+    "Aggression",
+    "Intuition",
     "Charisma",
 ];
 
@@ -222,7 +222,7 @@ impl Rated for Technical {
 pub struct Mental {
     pub vision: Skill,
     pub aggression: Skill,
-    pub off_ball_movement: Skill,
+    pub intuition: Skill,
     pub charisma: Skill,
 }
 
@@ -232,12 +232,12 @@ impl Mental {
         let level = base_level + rng.gen_range(0..=LEVEL_BONUS) as f32;
         let vision = (level + WEIGHT_MOD * weights[16] as f32).normal_sample(rng);
         let aggression = (level + WEIGHT_MOD * weights[17] as f32).normal_sample(rng);
-        let off_ball_movement = (level + WEIGHT_MOD * weights[18] as f32).normal_sample(rng);
+        let intuition = (level + WEIGHT_MOD * weights[18] as f32).normal_sample(rng);
         let charisma = (level + WEIGHT_MOD * weights[19] as f32).normal_sample(rng);
         Self {
             vision,
             aggression,
-            off_ball_movement,
+            intuition,
             charisma,
         }
     }
@@ -245,6 +245,6 @@ impl Mental {
 
 impl Rated for Mental {
     fn rating(&self) -> u8 {
-        (self.vision + self.aggression + self.off_ball_movement + self.charisma) as u8 / 4
+        (self.vision + self.aggression + self.intuition + self.charisma) as u8 / 4
     }
 }

@@ -128,7 +128,7 @@ impl EngineAction for PickAndRoll {
             let atk_result = playmaker.roll(rng)
                 + playmaker.technical.ball_handling.value()
                 + playmaker.technical.passing.value()
-                + target.mental.off_ball_movement.value();
+                + target.mental.intuition.value();
 
             let def_result = playmaker_defender.roll(rng)
                 + playmaker_defender.defense.perimeter_defense.value()

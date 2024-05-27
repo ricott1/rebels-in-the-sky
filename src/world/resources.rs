@@ -27,7 +27,7 @@ impl Resource {
     pub const SATOSHI_STORING_SPACE: u32 = 0;
     // Fuel is stored in the spaceship tank
     pub const FUEL_STORING_SPACE: u32 = 0;
-    pub const GOLD_STORING_SPACE: u32 = 1;
+    pub const GOLD_STORING_SPACE: u32 = 2;
     pub const RUM_STORING_SPACE: u32 = 1;
     pub const SCRAPS_STORING_SPACE: u32 = 10;
 
