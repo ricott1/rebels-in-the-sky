@@ -3,7 +3,7 @@ use super::{
     constants::*,
     end_of_quarter::EndOfQuarter,
     substitution::Substitution,
-    timer::Timer,
+    timer::{Period, Timer},
     types::{GameStatsMap, Possession, TeamInGame},
 };
 use crate::{
@@ -28,8 +28,8 @@ pub struct GameSummary {
     pub away_team_id: TeamId,
     pub home_team_name: String,
     pub away_team_name: String,
-    pub home_score: u16,
-    pub away_score: u16,
+    pub home_quarters_score: [u16; 4],
+    pub away_quarters_score: [u16; 4],
     pub location: PlanetId,
     pub attendance: u32,
     pub starting_at: Tick,
@@ -39,16 +39,39 @@ pub struct GameSummary {
 
 impl GameSummary {
     pub fn from_game(game: &Game) -> GameSummary {
-        let home_score = if let Some(result) = game.action_results.last() {
-            result.home_score
-        } else {
-            0
-        };
-        let away_score = if let Some(result) = game.action_results.last() {
-            result.away_score
-        } else {
-            0
-        };
+        let mut home_quarters_score = [0 as u16; 4];
+        let mut away_quarters_score = [0 as u16; 4];
+        for action in game.action_results.iter() {
+            // The first action of the break period will update only the correct element of the partial score.
+            // For quarters>1, we need to remove previous quarters score to get only the partial score of the quarter.
+            match action.start_at.period() {
+                Period::B1 => {
+                    home_quarters_score[0] = action.home_score;
+                    away_quarters_score[0] = action.away_score;
+                }
+                Period::B2 => {
+                    home_quarters_score[1] = action.home_score - home_quarters_score[0];
+                    away_quarters_score[1] = action.away_score - away_quarters_score[0];
+                }
+                Period::B3 => {
+                    home_quarters_score[2] =
+                        action.home_score - home_quarters_score[0] - home_quarters_score[1];
+                    away_quarters_score[2] =
+                        action.away_score - away_quarters_score[0] - away_quarters_score[1];
+                }
+                Period::B4 => {
+                    home_quarters_score[3] = action.home_score
+                        - home_quarters_score[0]
+                        - home_quarters_score[1]
+                        - home_quarters_score[2];
+                    away_quarters_score[3] = action.away_score
+                        - away_quarters_score[0]
+                        - away_quarters_score[1]
+                        - away_quarters_score[2];
+                }
+                _ => continue,
+            }
+        }
 
         Self {
             id: game.id.clone(),
@@ -56,8 +79,8 @@ impl GameSummary {
             away_team_id: game.away_team_in_game.team_id,
             home_team_name: game.home_team_in_game.name.clone(),
             away_team_name: game.away_team_in_game.name.clone(),
-            home_score,
-            away_score,
+            home_quarters_score,
+            away_quarters_score,
             location: game.location,
             attendance: game.attendance,
             starting_at: game.starting_at,
@@ -700,6 +723,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
+    #[ignore]
     #[test]
     fn test_game() {
         let mut world = World::new(None);

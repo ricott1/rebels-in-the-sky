@@ -1,8 +1,5 @@
 use super::{
-    constants::{
-        BASE_EXPLORATION_TIME, MIN_PLAYERS_PER_TEAM, MORALE_BONUS_ON_TEAM_ADD,
-        MORALE_DEMOTION_MALUS,
-    },
+    constants::{MIN_PLAYERS_PER_TEAM, MORALE_BONUS_ON_TEAM_ADD, MORALE_DEMOTION_MALUS},
     jersey::Jersey,
     planet::Planet,
     player::Player,
@@ -108,17 +105,6 @@ impl Team {
             .or_insert(max_amount);
     }
 
-    pub fn add_resource_checked(&mut self, resource: Resource, amount: u32) -> AppResult<()> {
-        self.can_trade_resource(resource, amount as i32, 0)?;
-        self.resources
-            .entry(resource)
-            .and_modify(|e| {
-                *e = e.saturating_add(amount);
-            })
-            .or_insert(amount);
-        Ok(())
-    }
-
     pub fn remove_resource(&mut self, resource: Resource, amount: u32) -> AppResult<()> {
         self.can_trade_resource(resource, -(amount as i32), 0)?;
         self.resources
@@ -184,7 +170,7 @@ impl Team {
         }
 
         if self.current_game.is_some() {
-            return Err("Team is currently playing".into());
+            return Err("Team is playing".into());
         }
 
         if self.player_ids.len() <= MIN_PLAYERS_PER_TEAM {
@@ -199,7 +185,7 @@ impl Team {
         }
 
         if self.current_game.is_some() {
-            return Err("Team is currently playing".into());
+            return Err("Team is playing".into());
         }
 
         match role {
@@ -296,7 +282,7 @@ impl Team {
         }
 
         if self.current_game.is_some() {
-            return Err("Team is currently playing".into());
+            return Err("Team is playing".into());
         }
 
         if planet.total_population() == 0 && self.home_planet_id != planet.id {
@@ -321,7 +307,11 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_explore_around_planet(&self, planet: &Planet) -> AppResult<()> {
+    pub fn can_explore_around_planet(
+        &self,
+        planet: &Planet,
+        exploration_time: Tick,
+    ) -> AppResult<()> {
         match self.current_location {
             TeamLocation::OnPlanet {
                 planet_id: current_planet_id,
@@ -354,10 +344,8 @@ impl Team {
         }
 
         if self.current_game.is_some() {
-            return Err("Team is currently playing".into());
+            return Err("Team is playing".into());
         }
-
-        let exploration_time = BASE_EXPLORATION_TIME;
 
         //If we can't get there with full tank, than the planet is too far.
         let max_fuel = self.spaceship.fuel_capacity();
@@ -379,7 +367,7 @@ impl Team {
 
     pub fn can_change_training_focus(&self) -> AppResult<()> {
         if self.current_game.is_some() {
-            return Err("Team is currently playing".into());
+            return Err("Team is playing".into());
         }
         Ok(())
     }

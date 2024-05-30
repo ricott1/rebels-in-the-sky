@@ -26,6 +26,9 @@ pub struct MusicPlayer {
     sources: Vec<rodio::source::Buffered<Decoder<Cursor<Vec<u8>>>>>,
     source_index: Option<usize>,
 }
+
+unsafe impl Send for MusicPlayer {}
+
 impl MusicPlayer {
     pub fn new() -> AppResult<MusicPlayer> {
         let (_stream, _stream_handle) = OutputStream::try_default()?;
@@ -44,7 +47,6 @@ impl MusicPlayer {
 
         // Start in paused state.
         player.pause();
-
         player.next();
 
         Ok(player)

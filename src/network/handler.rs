@@ -13,7 +13,6 @@ use libp2p::{identity, noise, tcp, yamux, PeerId, Transport};
 use libp2p::{Multiaddr, Swarm};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
-use std::error::Error;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
@@ -36,7 +35,7 @@ impl Debug for NetworkHandler {
 }
 
 impl NetworkHandler {
-    pub fn new(seed_ip: Option<String>) -> Result<Self, Box<dyn Error>> {
+    pub fn new(seed_ip: Option<String>) -> AppResult<Self> {
         let local_key = identity::Keypair::generate_ed25519();
         let local_peer_id = PeerId::from(local_key.public());
 
@@ -350,6 +349,9 @@ mod tests {
         let deserialized_team = try_deserialize_team.unwrap();
         assert_eq!(deserialized_team.team, network_team.team);
         assert_eq!(deserialized_team.players.len(), network_team.players.len());
-        assert_eq!(deserialized_team.players[0], network_team.players[0]);
+        assert_eq!(
+            deserialized_team.players[0].clone(),
+            network_team.players[0].clone()
+        );
     }
 }

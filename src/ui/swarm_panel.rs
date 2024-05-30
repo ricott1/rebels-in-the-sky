@@ -228,19 +228,19 @@ impl SwarmPanel {
 
             if let Some(team) = challenge.home_team.clone() {
                 frame.render_widget(
-                    Paragraph::new(Span::styled(
+                    Button::new(
                         format!(
                             "{} {} ({})",
                             team.name,
                             world.team_rating(team.team_id).stars(),
-                            peer_id.to_base58().chars().take(6).collect::<String>()
+                            peer_id.to_base58().chars().take(4).collect::<String>()
                         ),
-                        UiStyle::NETWORK,
-                    )),
-                    line_split[0].inner(&Margin {
-                        horizontal: 1,
-                        vertical: 1,
-                    }),
+                        UiCallbackPreset::GoToTeam {
+                            team_id: team.team_id,
+                        },
+                        Arc::clone(&self.callback_registry),
+                    ),
+                    line_split[0],
                 );
                 let mut accept_button = Button::new(
                     format!("{:6^}", UiText::YES),

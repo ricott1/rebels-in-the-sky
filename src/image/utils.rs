@@ -1,9 +1,9 @@
 use super::color_map::ColorMap;
 use crate::store::ASSETS_DIR;
+use crate::types::AppResult;
 use image::error::{ParameterError, ParameterErrorKind};
 use image::io::Reader as ImageReader;
 use image::{ImageBuffer, ImageError, ImageResult, Rgba, RgbaImage};
-use std::error::Error;
 use std::io::Cursor;
 
 pub trait ExtraImageUtils {
@@ -146,7 +146,7 @@ impl ExtraImageUtils for ImageBuffer<Rgba<u8>, Vec<u8>> {
     }
 }
 
-pub fn read_image(path: &str) -> Result<RgbaImage, Box<dyn Error>> {
+pub fn read_image(path: &str) -> AppResult<RgbaImage> {
     let file = ASSETS_DIR.get_file(path);
     if file.is_none() {
         return Err(format!("File {} not found", path).into());

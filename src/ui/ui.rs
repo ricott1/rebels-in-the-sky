@@ -16,6 +16,7 @@ use crate::audio::{self};
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::world::world::World;
 use core::fmt::Debug;
+use log::info;
 use ratatui::layout::Rect;
 use ratatui::prelude::Alignment;
 use ratatui::style::{Color, Style, Styled};
@@ -76,7 +77,6 @@ impl Default for Ui {
         Self::new(false, false)
     }
 }
-unsafe impl Send for audio::MusicPlayer {}
 
 impl Ui {
     pub fn new(disable_network: bool, disable_audio: bool) -> Self {
@@ -110,6 +110,7 @@ impl Ui {
             None
         } else {
             let audio_player = audio::MusicPlayer::new();
+            info!("Audio player created: {}", audio_player.is_ok());
             audio_player.ok()
         };
 
@@ -155,20 +156,21 @@ impl Ui {
     }
 
     pub fn toggle_audio_player(&mut self) {
-        if self.audio_player.is_some() {
-            self.audio_player.as_mut().unwrap().toggle();
+        if let Some(player) = self.audio_player.as_mut() {
+            player.toggle();
+            info!("Toggling: {}", player.is_playing);
         }
     }
 
     pub fn next_audio_sample(&mut self) {
-        if self.audio_player.is_some() {
-            self.audio_player.as_mut().unwrap().next();
+        if let Some(player) = self.audio_player.as_mut() {
+            player.next();
         }
     }
 
     pub fn previous_audio_sample(&mut self) {
-        if self.audio_player.is_some() {
-            self.audio_player.as_mut().unwrap().previous();
+        if let Some(player) = self.audio_player.as_mut() {
+            player.previous();
         }
     }
 
@@ -318,8 +320,8 @@ impl Ui {
             }
         }
 
-        if self.audio_player.is_some() {
-            self.audio_player.as_mut().unwrap().check_if_next();
+        if let Some(player) = self.audio_player.as_mut() {
+            player.check_if_next();
         }
         Ok(())
     }

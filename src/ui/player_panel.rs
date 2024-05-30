@@ -268,7 +268,7 @@ impl PlayerListPanel {
             PlayerLocation::OnPlanet { planet_id } => {
                 let planet = world.get_planet_or_err(planet_id)?;
                 let button = Button::new(
-                    format!("FA on planet {}", planet.name),
+                    format!("Free pirate - On planet {}", planet.name),
                     UiCallbackPreset::GoToPlanetZoomIn { planet_id },
                     Arc::clone(&self.callback_registry),
                 )

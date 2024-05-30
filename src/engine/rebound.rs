@@ -17,6 +17,10 @@ use std::{
 
 const MIN_REBOUND_VALUE: u16 = 20;
 
+fn position_rebound_bonus(idx: usize) -> f32 {
+    1.0 + idx as f32 / 5.0
+}
+
 #[derive(Debug, Default)]
 pub struct Rebound;
 
@@ -42,7 +46,7 @@ impl EngineAction for Rebound {
         for idx in 0..attacking_players.len() {
             // apply bonus based on position
             attack_rebounds[idx] =
-                (attack_rebounds[idx] as f32 * (20.0 + idx as f32) / 20.0) as u16;
+                (attack_rebounds[idx] as f32 * position_rebound_bonus(idx)) as u16;
             //add random roll
             match input.advantage {
                 Advantage::Attack => {
@@ -69,7 +73,7 @@ impl EngineAction for Rebound {
             }
             // apply bonus based on position
             defense_rebounds[idx] =
-                (defense_rebounds[idx] as f32 * (20.0 + idx as f32) / 20.0) as u16;
+                (defense_rebounds[idx] as f32 * position_rebound_bonus(idx)) as u16;
             //add random roll
             defense_rebounds[idx] += defending_players[idx].roll(rng) as u16;
         }

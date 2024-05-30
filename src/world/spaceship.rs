@@ -106,20 +106,20 @@ impl SpaceshipComponent for Hull {
 
     fn storage_capacity(&self) -> u32 {
         match self {
-            Self::ShuttleSmall => 1000,
-            Self::ShuttleStandard => 2000,
-            Self::ShuttleLarge => 4000,
-            Self::PincherStandard => 3000,
-            Self::PincherLarge => 5000,
+            Self::ShuttleSmall => 1800,
+            Self::ShuttleStandard => 2700,
+            Self::ShuttleLarge => 5000,
+            Self::PincherStandard => 2000,
+            Self::PincherLarge => 3800,
             Self::JesterStandard => 1000,
         }
     }
 
     fn fuel_capacity(&self) -> u32 {
         match self {
-            Self::ShuttleSmall => 100,
+            Self::ShuttleSmall => 110,
             Self::ShuttleStandard => 200,
-            Self::ShuttleLarge => 400,
+            Self::ShuttleLarge => 380,
             Self::PincherStandard => 300,
             Self::PincherLarge => 500,
             Self::JesterStandard => 450,
@@ -129,8 +129,8 @@ impl SpaceshipComponent for Hull {
     fn fuel_consumption(&self) -> f32 {
         match self {
             Self::ShuttleSmall => 0.75,
-            Self::ShuttleStandard => 1.0,
-            Self::ShuttleLarge => 1.5,
+            Self::ShuttleStandard => 0.95,
+            Self::ShuttleLarge => 1.45,
             Self::PincherStandard => 1.25,
             Self::PincherLarge => 1.75,
             Self::JesterStandard => 1.15,
@@ -139,9 +139,9 @@ impl SpaceshipComponent for Hull {
 
     fn speed(&self) -> f32 {
         match self {
-            Self::ShuttleSmall => 1.5,
+            Self::ShuttleSmall => 1.45,
             Self::ShuttleStandard => 1.0,
-            Self::ShuttleLarge => 0.5,
+            Self::ShuttleLarge => 0.6,
             Self::PincherStandard => 1.25,
             Self::PincherLarge => 0.75,
             Self::JesterStandard => 1.05,

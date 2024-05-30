@@ -20,6 +20,7 @@ use crate::store::{
 };
 use crate::types::*;
 use crate::ui::ui_callback::UiCallbackPreset;
+use itertools::Itertools;
 use libp2p::PeerId;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::{Rng, SeedableRng};
@@ -104,7 +105,7 @@ impl World {
         }
     }
 
-    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load() -> AppResult<Self> {
         load_from_json(PERSISTED_WORLD_FILENAME)
     }
 
@@ -715,6 +716,7 @@ impl World {
         let mut resources = HashMap::new();
 
         let bonus = TeamBonus::Exploration.current_team_bonus(&self, team.id)?;
+        let duration_bonus = (duration as f32 / (1 * HOURS) as f32).powf(1.3);
 
         let base_gold = 1;
         let base_scraps = 16;
@@ -727,8 +729,7 @@ impl World {
                 .copied()
                 .unwrap_or_default() as i32) as f32
             * bonus
-            * duration as f32
-            / (1 * HOURS) as f32;
+            * duration_bonus;
         let max_scraps = (base_scraps
             + planet
                 .resources
@@ -736,8 +737,7 @@ impl World {
                 .copied()
                 .unwrap_or_default() as i32) as f32
             * bonus
-            * duration as f32
-            / (1 * HOURS) as f32;
+            * duration_bonus;
         let max_rum = (base_rum
             + planet
                 .resources
@@ -745,8 +745,7 @@ impl World {
                 .copied()
                 .unwrap_or_default() as i32) as f32
             * bonus
-            * duration as f32
-            / (1 * HOURS) as f32;
+            * duration_bonus;
 
         resources.insert(
             Resource::GOLD,
@@ -771,15 +770,17 @@ impl World {
         &self,
         _team: &Team,
         planet: &Planet,
-        _duration: u128,
+        duration: u128,
     ) -> Vec<Player> {
         let mut rng = ChaCha8Rng::from_entropy();
         let mut free_agents = vec![];
 
+        let duration_bonus = (duration as f32 / (1 * HOURS) as f32).powf(1.3);
+        let population_bonus = planet.total_population() as f32 / 8.0;
+
         let amount = rng
-            .gen_range(-50..planet.total_population() as i32 / 10)
-            .max(0)
-            .min(3);
+            .gen_range((-32 + (population_bonus + duration_bonus) as i32).min(0)..3)
+            .max(0);
 
         if amount > 0 {
             for _ in 0..amount {
@@ -994,11 +995,12 @@ impl World {
             } => {
                 if current_timestamp > started + duration {
                     let mut team = own_team.clone();
+                    let team_name = team.name.clone();
                     team.current_location = TeamLocation::OnPlanet { planet_id: to };
                     let mut planet = self.get_planet_or_err(to)?.clone();
                     let planet_name = planet.name.clone();
+
                     planet.team_ids.push(team.id);
-                    let team_name = team.name.clone();
 
                     for player in team.player_ids.iter() {
                         let mut player = self.get_player_or_err(*player)?.clone();
@@ -1041,12 +1043,13 @@ impl World {
                     let mut rng = ChaCha8Rng::from_entropy();
 
                     // If the home planet is an asteroid, it means an asteroid has already been found.
-                    if ASTEROID_DISCOVERY_PROBABILITY * around_planet.asteroid_probability as f64
-                        > 0.0
-                        && home_planet.planet_type != PlanetType::Asteroid
+                    let duration_bonus = duration as f64 / (1.0 * HOURS as f64);
+                    if home_planet.planet_type != PlanetType::Asteroid
                         && rng.gen_bool(
-                            ASTEROID_DISCOVERY_PROBABILITY
-                                * around_planet.asteroid_probability as f64,
+                            (ASTEROID_DISCOVERY_PROBABILITY
+                                * around_planet.asteroid_probability as f64
+                                * duration_bonus)
+                                .min(1.0),
                         )
                     {
                         // We temporarily set the team back on the exploration base planet,
@@ -1071,7 +1074,12 @@ impl World {
 
                     let found_resources =
                         self.resources_found_after_exploration(&team, &around_planet, duration)?;
-                    for (resource, &amount) in found_resources.iter() {
+                    // Try to add resources starting from the most expensive one,
+                    // but still trying to add the others if they fit (notice that resources occupy a different amount of space).
+                    for (resource, &amount) in found_resources
+                        .iter()
+                        .sorted_by(|(a, _), (b, _)| b.base_price().total_cmp(&a.base_price()))
+                    {
                         team.add_resource(resource.clone(), amount);
                     }
 
@@ -1094,17 +1102,21 @@ impl World {
 
                     if found_free_agents.len() > 0 {
                         exploration_result_text.push_str(
-                            format! {"\nFound {} free agents\n", found_free_agents.len()}.as_str(),
+                            format! {"\nFound {} stranded pirate{}:\n", found_free_agents.len(), if found_free_agents.len() > 1 {
+                                "s"
+                            }else{""}}.as_str(),
                         );
                         for player in found_free_agents.iter() {
-                            exploration_result_text.push_str(
+                            let text = format!(
+                                "  {:<16} {}\n",
                                 format!(
-                                    "  {}.{}\n",
+                                    "{}.{}",
                                     player.info.first_name.chars().next().unwrap_or_default(),
                                     player.info.last_name
-                                )
-                                .as_str(),
+                                ),
+                                player.stars()
                             );
+                            exploration_result_text.push_str(text.as_str());
                         }
                     }
                     self.planets.insert(around_planet.id, around_planet);
@@ -1461,9 +1473,14 @@ impl World {
 
 #[cfg(test)]
 mod test {
-    use super::{AppResult, World};
-    use crate::world::world::AU;
-    use rand::{Rng, SeedableRng};
+    use super::{AppResult, World, QUICK_EXPLORATION_TIME};
+    use crate::world::{
+        planet::PlanetType,
+        skill::Rated,
+        utils::PLANET_DATA,
+        world::{ASTEROID_DISCOVERY_PROBABILITY, AU, HOURS, LONG_EXPLORATION_TIME},
+    };
+    use rand::{seq::IteratorRandom, Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
     #[test]
@@ -1495,6 +1512,106 @@ mod test {
                 distance,
                 distance as f32 / AU as f32
             );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_exploration_result() -> AppResult<()> {
+        let mut world = World::new(None);
+        let rng = &mut ChaCha8Rng::from_entropy();
+        let planet = PLANET_DATA.iter().choose(rng).unwrap();
+        println!(
+            "Around planet {} - Population {} - Asteroid probability {}",
+            planet.name,
+            planet.total_population(),
+            planet.asteroid_probability
+        );
+        let team_id =
+            world.generate_random_team(rng, planet.id, "test".into(), "testship".into())?;
+
+        let team = world.get_team_or_err(team_id)?;
+        println!("\nQUICK EXPLORATION");
+
+        let duration = QUICK_EXPLORATION_TIME;
+        let duration_bonus = duration as f64 / (1.0 * HOURS as f64);
+
+        let found_resources = world.resources_found_after_exploration(&team, &planet, duration)?;
+
+        println!("Found resources:");
+        for res in found_resources.iter() {
+            println!("  {} {}", res.1, res.0);
+        }
+
+        let found_free_agents = world.free_agents_found_after_exploration(&team, &planet, duration);
+        let fa_duration_bonus = (duration as f32 / (1 * HOURS) as f32).powf(1.3);
+        let population_bonus = planet.total_population() as f32 / 8.0;
+        println!(
+            "Found pirates (min {}):",
+            (-35 + (population_bonus + fa_duration_bonus) as i32)
+        );
+
+        for player in found_free_agents.iter() {
+            println!(
+                "  {:<16} {}\n",
+                format!(
+                    "{}.{}",
+                    player.info.first_name.chars().next().unwrap_or_default(),
+                    player.info.last_name
+                ),
+                player.stars()
+            );
+        }
+
+        if planet.planet_type != PlanetType::Asteroid
+            && rng.gen_bool(
+                (ASTEROID_DISCOVERY_PROBABILITY
+                    * planet.asteroid_probability as f64
+                    * duration_bonus)
+                    .min(1.0),
+            )
+        {
+            println!("Found asteroid!!!");
+        }
+
+        println!("\nLONG EXPLORATION");
+        let duration = LONG_EXPLORATION_TIME;
+        let duration_bonus = duration as f64 / (1.0 * HOURS as f64);
+        let found_resources = world.resources_found_after_exploration(&team, &planet, duration)?;
+        println!("Found resources:");
+        for res in found_resources.iter() {
+            println!("  {} {}", res.1, res.0);
+        }
+
+        let found_free_agents = world.free_agents_found_after_exploration(&team, &planet, duration);
+        let fa_duration_bonus = (duration as f32 / (1 * HOURS) as f32).powf(1.3);
+        let population_bonus = planet.total_population() as f32 / 8.0;
+        println!(
+            "Found pirates (min {}):",
+            (-35 + (population_bonus + fa_duration_bonus) as i32)
+        );
+        for player in found_free_agents.iter() {
+            println!(
+                "  {:<16} {}\n",
+                format!(
+                    "{}.{}",
+                    player.info.first_name.chars().next().unwrap_or_default(),
+                    player.info.last_name
+                ),
+                player.stars()
+            );
+        }
+
+        if planet.planet_type != PlanetType::Asteroid
+            && rng.gen_bool(
+                (ASTEROID_DISCOVERY_PROBABILITY
+                    * planet.asteroid_probability as f64
+                    * duration_bonus)
+                    .min(1.0),
+            )
+        {
+            println!("Found asteroid!!!");
         }
 
         Ok(())

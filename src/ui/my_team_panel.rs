@@ -8,9 +8,10 @@ use super::{
     ui_callback::{CallbackRegistry, UiCallbackPreset},
     utils::hover_text_target,
     widgets::{
-        challenge_button, default_block, drink_button, explore_button, get_fuel_spans,
-        get_storage_spans, go_to_team_current_planet_button, go_to_team_home_planet_button,
-        render_player_description, render_spaceship_description, selectable_list, trade_button,
+        challenge_button, default_block, drink_button, get_fuel_spans, get_storage_spans,
+        go_to_team_current_planet_button, go_to_team_home_planet_button, long_explore_button,
+        quick_explore_button, render_player_description, render_spaceship_description,
+        selectable_list, trade_button,
     },
 };
 use crate::{
@@ -153,9 +154,9 @@ impl MyTeamPanel {
     }
 
     fn render_market(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
-        let split = Layout::horizontal([Constraint::Min(20), Constraint::Length(54)]).split(area);
-        self.render_market_buttons(frame, world, split[0])?;
-        self.render_planet_markets(frame, world, split[1])?;
+        let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
+        self.render_planet_markets(frame, world, split[0])?;
+        self.render_market_buttons(frame, world, split[1])?;
 
         Ok(())
     }
@@ -205,10 +206,7 @@ impl MyTeamPanel {
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(""),
-                Line::from(Span::styled(
-                    format!("Resource: Buy {CURRENCY_SYMBOL}/Sell {CURRENCY_SYMBOL}"),
-                    UiStyle::HEADER,
-                )),
+                Line::from(Span::styled(format!("Resource: Buy/Sell"), UiStyle::HEADER)),
                 Line::from(vec![
                     Span::styled("Fuel      ", UiStyle::STORAGE_FUEL),
                     Span::styled(
@@ -356,7 +354,7 @@ impl MyTeamPanel {
 
         frame.render_widget(
             Paragraph::new(Span::styled(
-                format!(" Shortcuts                                       Buy {CURRENCY_SYMBOL}/Sell {CURRENCY_SYMBOL}"),
+                format!(" Shortcuts                                       Buy/Sell"),
                 UiStyle::HEADER,
             )),
             button_split[1],
@@ -488,8 +486,9 @@ impl MyTeamPanel {
         let team = world.get_own_team()?;
         let hover_text_target = hover_text_target(&frame);
 
-        let split = Layout::horizontal([Constraint::Max(48), Constraint::Min(32)]).split(area);
+        let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
         let storage_spans = get_storage_spans(team);
+        let fuel_spans = get_fuel_spans(team);
 
         let home_planet = world.get_planet_or_err(team.home_planet_id)?;
         let asteroid_name = if home_planet.planet_type == PlanetType::Asteroid {
@@ -504,7 +503,7 @@ impl MyTeamPanel {
             Line::from(format!("Reputation {}", team.reputation.stars())),
             Line::from(format!("Treasury {} {}", team.balance(), CURRENCY_SYMBOL)),
             Line::from(format!("Asteroid: {}", asteroid_name)),
-            Line::from(""),
+            Line::from(fuel_spans),
             Line::from(storage_spans),
             Line::from(vec![
                 Span::styled("   Gold", UiStyle::STORAGE_GOLD),
@@ -654,9 +653,9 @@ impl MyTeamPanel {
     }
 
     fn render_games(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
-        let split = Layout::horizontal([Constraint::Min(30), Constraint::Max(48)]).split(area);
-        self.render_recent_games(frame, world, split[0])?;
-        self.render_challenge_teams(frame, world, split[1])?;
+        let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
+        self.render_challenge_teams(frame, world, split[0])?;
+        self.render_recent_games(frame, world, split[1])?;
         Ok(())
     }
 
@@ -687,7 +686,7 @@ impl MyTeamPanel {
 
             frame.render_widget(
                 Paragraph::new(format!(
-                    "{:<14} {}",
+                    "{:<12} {}",
                     team.name,
                     world.team_rating(team_id).stars()
                 )),
@@ -748,7 +747,10 @@ impl MyTeamPanel {
         for game in world.past_games.values() {
             let text = format!(
                 " {:>12} {:>3}-{:<3} {:<}",
-                game.home_team_name, game.home_score, game.away_score, game.away_team_name,
+                game.home_team_name,
+                game.home_quarters_score.iter().sum::<u16>(),
+                game.away_quarters_score.iter().sum::<u16>(),
+                game.away_team_name,
             );
 
             let style = UiStyle::DEFAULT;
@@ -811,7 +813,32 @@ impl MyTeamPanel {
                         .formatted_as_date()
                 )),
                 Line::from(""),
-                Line::from(""),
+                Line::from(Span::styled(
+                    format!(
+                        "{:12} {:02} {:02} {:02} {:02} {:05}",
+                        "Team", "Q1", "Q2", "Q3", "Q4", "Total"
+                    ),
+                    UiStyle::HEADER,
+                )),
+                Line::from(format!(
+                    "{:12} {:02} {:02} {:02} {:02} {}",
+                    game.home_team_name,
+                    game.home_quarters_score[0],
+                    game.home_quarters_score[1],
+                    game.home_quarters_score[2],
+                    game.home_quarters_score[3],
+                    game.home_quarters_score.iter().sum::<u16>()
+                )),
+                Line::from(format!(
+                    "{:12} {:02} {:02} {:02} {:02} {}",
+                    game.away_team_name,
+                    game.away_quarters_score[0],
+                    game.away_quarters_score[1],
+                    game.away_quarters_score[2],
+                    game.away_quarters_score[3],
+                    game.away_quarters_score.iter().sum::<u16>()
+                )),
+                Line::from(format!("")),
                 Line::from(Span::styled(game.home_team_name.clone(), UiStyle::HEADER)),
                 Line::from(format!(
                     "{:<18}{:<8}{:<8}{:<8}",
@@ -1310,10 +1337,17 @@ impl MyTeamPanel {
 
         render_spaceship_description(&team, &self.gif_map, self.tick, world, frame, area);
 
+        let explore_split =
+            Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(split[1]);
         if let Ok(explore_button) =
-            explore_button(world, team, &self.callback_registry, hover_text_target)
+            quick_explore_button(world, team, &self.callback_registry, hover_text_target)
         {
-            frame.render_widget(explore_button, split[1]);
+            frame.render_widget(explore_button, explore_split[0]);
+        }
+        if let Ok(explore_button) =
+            long_explore_button(world, team, &self.callback_registry, hover_text_target)
+        {
+            frame.render_widget(explore_button, explore_split[1]);
         }
         Ok(())
     }

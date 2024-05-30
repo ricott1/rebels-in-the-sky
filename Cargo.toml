@@ -1,6 +1,6 @@
 [package]
 name = "rebels"
-version = "1.0.10"
+version = "1.0.11"
 edition = "2021"
 
 [profile.release]
@@ -50,7 +50,7 @@ clap = { version = "4.5.0", features = ["derive"] }
 include_dir = "0.7.3"
 once_cell = "1.19.0"
 imageproc = "0.23.0"
-rodio = "0.17.3"
+rodio = "0.18.1"
 chrono = "0.4.34"
 russh = "0.43.0"
 russh-keys = "0.43.0"

@@ -197,11 +197,12 @@ impl App {
         match self.ui.update(&self.world) {
             Ok(_) => {}
             Err(e) => {
-                self.ui
-                    .set_popup(crate::ui::popup_message::PopupMessage::Error(
-                        format!("Ui update error\n{}", e.to_string()),
-                        Tick::now(),
-                    ));
+                // We push to Logs rather than Error popup since otherwise it would spam too much
+                self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
+                    timestamp: Tick::now(),
+                    peer_id: None,
+                    text: format!("Ui update error\n{}", e.to_string()),
+                })
             }
         }
         self.world.dirty_ui = false;

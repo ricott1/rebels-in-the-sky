@@ -18,7 +18,7 @@ use image::{imageops::resize, GenericImageView, ImageBuffer, Rgba, RgbaImage};
 use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use once_cell::sync::Lazy;
 use ratatui::text::Line;
-use std::{collections::HashMap, error::Error};
+use std::collections::HashMap;
 
 pub type FrameLines = Vec<Line<'static>>;
 pub type GifLines = Vec<FrameLines>;
@@ -109,11 +109,7 @@ impl GifMap {
     }
 
     fn player(&mut self, player: &Player) -> AppResult<Gif> {
-        let gif = player
-            .compose_image()
-            .map_err(|err: Box<dyn Error>| err.to_string())?;
-
-        Ok(gif)
+        player.compose_image()
     }
 
     pub fn player_frame_lines(&mut self, player: &Player, tick: usize) -> AppResult<FrameLines> {

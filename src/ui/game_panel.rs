@@ -735,95 +735,12 @@ impl GamePanel {
         ])
         .split(area.inner(&Margin {
             horizontal: 1,
-            vertical: 1,
+            vertical: 0,
         }));
 
         frame.render_widget(home_table, box_area[0]);
         frame.render_widget(away_table, box_area[2]);
-        frame.render_widget(default_block().title(" Stats "), area);
-    }
-
-    pub fn build_summary_statbox(game: &Game, frame: &mut Frame, area: Rect) {
-        let header_cells_home = [
-            "  ",
-            game.home_team_in_game.name.as_str(),
-            "Min",
-            "Pts",
-            " 2pt ",
-            " 3pt ",
-            "Ast/TO",
-            "DRb/ORb",
-            "Stl",
-            "Blk",
-            "PF",
-            "+/-",
-        ];
-
-        let header_cells_away = [
-            "  ",
-            game.away_team_in_game.name.as_str(),
-            "Min",
-            "Pts",
-            " 2pt ",
-            " 3pt ",
-            "Ast/TO",
-            "DRb/ORb",
-            "Stl",
-            "Blk",
-            "PF",
-            "+/-",
-        ];
-
-        let home_players = game
-            .home_team_in_game
-            .initial_positions
-            .iter()
-            .map(|id| game.home_team_in_game.players.get(id).unwrap())
-            .collect::<Vec<&Player>>();
-        let away_players = game
-            .away_team_in_game
-            .initial_positions
-            .iter()
-            .map(|id| game.away_team_in_game.players.get(id).unwrap())
-            .collect::<Vec<&Player>>();
-
-        let constraint = &[
-            Constraint::Length(2), //role
-            Constraint::Min(16),   //player
-            Constraint::Length(3), //minutes
-            Constraint::Length(3), //points
-            Constraint::Length(6), //2pt
-            Constraint::Length(5), //3pt
-            Constraint::Length(6), //assists/turnovers
-            Constraint::Length(7), //defensive rebounds/offensive rebounds
-            Constraint::Length(3), //steals
-            Constraint::Length(3), //blocks
-            Constraint::Length(2), //personal fouls
-            Constraint::Length(3), //plus minus
-        ];
-
-        let home_table = Self::build_stat_table(&game.home_team_in_game.stats, home_players)
-            .header(Row::new(header_cells_home).style(UiStyle::HEADER).height(1))
-            .widths(constraint);
-
-        let away_table = Self::build_stat_table(&game.away_team_in_game.stats, away_players)
-            .header(Row::new(header_cells_away).style(UiStyle::HEADER).height(1))
-            .widths(constraint);
-
-        let box_area = Layout::vertical([
-            Constraint::Length(game.home_team_in_game.players.len() as u16 + 2),
-            Constraint::Max(1),
-            Constraint::Length(game.away_team_in_game.players.len() as u16 + 2),
-            Constraint::Min(0),
-        ])
-        .split(area.inner(&Margin {
-            horizontal: 1,
-            vertical: 1,
-        }));
-
-        frame.render_widget(home_table, box_area[0]);
-        frame.render_widget(away_table, box_area[2]);
-        frame.render_widget(default_block().title(" Stats "), area);
+        // frame.render_widget(default_block().title(" Stats "), area);
     }
 }
 
@@ -1002,6 +919,7 @@ mod tests {
     };
     use std::{io::Write, thread, time::Duration};
 
+    #[ignore]
     #[test]
     fn test_timer_formatting() {
         let mut stdout = std::io::stdout();

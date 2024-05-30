@@ -135,7 +135,7 @@ impl Planet {
             .map(|(pop, n)| (pop.clone(), n.clone()))
             .collect::<Vec<(Population, u32)>>();
 
-        let dist = rand_distr::WeightedIndex::new(weights.iter().map(|(_, w)| w)).unwrap();
+        let dist = rand_distr::WeightedIndex::new(weights.iter().map(|(_, w)| w)).ok()?;
         Some(weights[dist.sample(rng)].0)
     }
 

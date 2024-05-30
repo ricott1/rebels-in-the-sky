@@ -194,7 +194,7 @@ impl TeamListPanel {
                 } else if team.peer_id.is_some() {
                     style = UiStyle::NETWORK;
                 }
-                let text = format!("{:<14} {}", team.name, world.team_rating(team.id).stars());
+                let text = format!("{:<12} {}", team.name, world.team_rating(team.id).stars());
                 options.push((text, style));
             }
             let list = selectable_list(options, &self.callback_registry);
@@ -222,15 +222,15 @@ impl TeamListPanel {
             Constraint::Length(2),                              //rating
             Constraint::Min(1),                                 //bottom
         ])
-        .split(area.inner(&Margin {
-            horizontal: 1,
-            vertical: 0,
-        }));
+        .split(area);
 
         let floor = floor_from_size(area.width as u32, 2);
         frame.render_widget(
             Paragraph::new(img_to_lines(&floor)).alignment(Alignment::Center),
-            vertical_split[1],
+            vertical_split[1].inner(&Margin {
+                horizontal: 1,
+                vertical: 0,
+            }),
         );
 
         let side_length: u16;
@@ -334,7 +334,7 @@ impl TeamListPanel {
                 Constraint::Min(0),
             ])
             .split(bottom_split[0].inner(&Margin {
-                horizontal: 1,
+                horizontal: 2,
                 vertical: 1,
             }));
 
@@ -374,17 +374,16 @@ impl TeamListPanel {
         }
 
         let ship_buttons_split = Layout::vertical([
-            Constraint::Length(SPACESHIP_IMAGE_HEIGHT as u16 / 2 + 2), // ship
-            Constraint::Length(3),                                     //button
-            Constraint::Min(0),
+            Constraint::Min(SPACESHIP_IMAGE_HEIGHT as u16 / 2 + 2), // ship
+            Constraint::Length(3),                                  //button
         ])
-        .split(bottom_split[1]);
+        .split(bottom_split[1].inner(&Margin {
+            horizontal: 1,
+            vertical: 1,
+        }));
 
         let button_split = Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-            .split(ship_buttons_split[1].inner(&Margin {
-                horizontal: 1,
-                vertical: 0,
-            }));
+            .split(ship_buttons_split[1]);
 
         let hover_text_target = hover_text_target(frame);
         if team.id != world.own_team_id {
@@ -418,14 +417,14 @@ impl TeamListPanel {
         );
 
         let box_split = Layout::vertical([
-            Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2 + 1),
+            Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2 + 4),
             Constraint::Min(0),
         ])
         .split(area);
 
         frame.render_widget(
             default_block()
-                .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
+                // .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
                 .title(format!(" {} ", team.name))
                 .title_alignment(Alignment::Left),
             box_split[0],

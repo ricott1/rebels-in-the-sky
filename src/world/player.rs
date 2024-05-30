@@ -455,7 +455,13 @@ impl Player {
         }
 
         let team = world.get_team_or_err(self.team.unwrap())?;
-        if self.morale == MAX_SKILL {
+
+        if team.current_game.is_some() {
+            return Err("Can't drink during game".into());
+        }
+
+        // Spugna can drink ad libitum
+        if self.morale == MAX_SKILL && !matches!(self.special_trait, Some(Trait::Spugna)) {
             return Err("No need to drink".into());
         }
 
@@ -572,13 +578,13 @@ impl Player {
             player.mental.charisma = (player.mental.charisma + 1.0).bound();
         }
 
-        if athletics.strength > 15.0 && rng.gen_range(0..10) < 2 {
+        if athletics.strength > 15.0 && rng.gen_bool(TRAIT_PROBABILITY) {
             player.special_trait = Some(Trait::Killer);
-        } else if mental.charisma > 15.0 && rng.gen_range(0..10) < 2 {
+        } else if mental.charisma > 15.0 && rng.gen_bool(TRAIT_PROBABILITY) {
             player.special_trait = Some(Trait::Showpirate);
-        // } else if mental.vision > 15.0 && rng.gen_range(0..10) < 2 {
-        // player.special_trait = Some(Trait::Merchant);
-        } else if athletics.stamina > 15.0 && rng.gen_range(0..10) < 2 {
+        } else if mental.intuition > 10.0 && rng.gen_bool(TRAIT_PROBABILITY) {
+            player.special_trait = Some(Trait::Spugna);
+        } else if athletics.stamina > 15.0 && rng.gen_bool(TRAIT_PROBABILITY) {
             player.special_trait = Some(Trait::Relentless);
         }
 
@@ -661,7 +667,7 @@ impl Player {
         self.version += 1;
     }
 
-    pub fn compose_image(&self) -> Result<Gif, Box<dyn std::error::Error>> {
+    pub fn compose_image(&self) -> AppResult<Gif> {
         self.image.compose(&self.info)
     }
 
@@ -870,7 +876,7 @@ impl InfoStats {
     ) -> Self {
         let population = match population {
             Some(p) => p,
-            None => home_planet.random_population(rng).unwrap(),
+            None => home_planet.random_population(rng).unwrap_or_default(),
         };
         let p_data = PLAYER_DATA.get(&population).unwrap();
         let pronouns = if population == Population::Polpett {
@@ -915,10 +921,8 @@ impl InfoStats {
 #[repr(u8)]
 pub enum Trait {
     Killer,
-    // Merchant,
     Relentless,
     Showpirate,
-    // Explorator,
     Spugna,
 }
 
@@ -936,7 +940,7 @@ impl Trait {
                     player.reputation.value()
                 )
             }
-            Trait::Spugna => format!("Immediately maximizes morale when drinking",),
+            Trait::Spugna => format!("Immediately maximizes morale when drinking. It is said that a drunk pilot could bring you somewhere unexpected...",),
         }
     }
 }

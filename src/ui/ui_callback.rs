@@ -31,7 +31,8 @@ use crate::{
     },
 };
 use crossterm::event::{KeyCode, MouseEvent, MouseEventKind};
-use rand::Rng;
+use rand::{seq::IteratorRandom, Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use ratatui::layout::Rect;
 use std::collections::HashMap;
 
@@ -148,7 +149,9 @@ pub enum UiCallbackPreset {
     TravelToPlanet {
         planet_id: PlanetId,
     },
-    ExploreAroundPlanet,
+    ExploreAroundPlanet {
+        duration: Tick,
+    },
     ZoomInToPlanet {
         planet_id: PlanetId,
     },
@@ -552,7 +555,7 @@ impl UiCallbackPreset {
         Box::new(move |app: &mut App| {
             let mut team = app.world.get_team_or_err(team_id)?.clone();
             if team.current_game.is_some() {
-                return Err("Cannot change training focus:\nTeam is currently playing".into());
+                return Err("Cannot change training focus:\nTeam is playing".into());
             }
 
             let new_focus = match team.training_focus {
@@ -570,7 +573,6 @@ impl UiCallbackPreset {
     fn travel_to_planet(planet_id: PlanetId) -> AppCallback {
         Box::new(move |app: &mut App| {
             let mut own_team = app.world.get_own_team()?.clone();
-
             let target_planet = app.world.get_planet_or_err(planet_id)?;
 
             let mut current_planet = match own_team.current_location {
@@ -639,7 +641,7 @@ impl UiCallbackPreset {
         })
     }
 
-    fn explore_around_planet() -> AppCallback {
+    fn explore_around_planet(duration: Tick) -> AppCallback {
         Box::new(move |app: &mut App| {
             let mut own_team = app.world.get_own_team()?.clone();
 
@@ -650,13 +652,12 @@ impl UiCallbackPreset {
             };
 
             let mut around_planet = app.world.get_planet_or_err(planet_id)?.clone();
-            own_team.can_explore_around_planet(&around_planet)?;
-            let exploration_time = BASE_EXPLORATION_TIME;
+            own_team.can_explore_around_planet(&around_planet, duration)?;
 
             own_team.current_location = TeamLocation::Exploring {
                 around: planet_id,
                 started: Tick::now(),
-                duration: exploration_time,
+                duration,
             };
 
             // For simplicity we just subtract the fuel upfront, maybe would be nicer on UI to
@@ -664,7 +665,7 @@ impl UiCallbackPreset {
             // but this would require more operations and checks in the tick function.
             own_team.remove_resource(
                 Resource::FUEL,
-                (exploration_time as f32 * own_team.spaceship.fuel_consumption()).max(1.0) as u32,
+                (duration as f32 * own_team.spaceship.fuel_consumption()).max(1.0) as u32,
             )?;
 
             around_planet.team_ids.retain(|&x| x != own_team.id);
@@ -926,6 +927,7 @@ impl UiCallbackPreset {
                     MORALE_DRINK_BONUS
                 };
 
+                let previous_morale = player.morale;
                 player.morale = (player.morale + morale_bonus).bound();
                 player.add_tiredness(TIREDNESS_DRINK_MALUS);
 
@@ -935,6 +937,70 @@ impl UiCallbackPreset {
                     .clone();
 
                 team.remove_resource(Resource::RUM, 1)?;
+
+                //If player is a spugna and pilot and team is travelling or exploring and player was already maxxed in morale,
+                // there is a chance that the player enters a portal to a random planet.
+                let rng = &mut ChaCha8Rng::from_entropy();
+                if matches!(player.special_trait, Some(Trait::Spugna))
+                    && player.info.crew_role == CrewRole::Pilot
+                    && previous_morale == MAX_SKILL
+                    && rng.gen_bool(PORTAL_DISCOVERY_PROBABILITY)
+                {
+                    let portal_target_id = match team.current_location {
+                        TeamLocation::OnPlanet { .. } => None,
+                        TeamLocation::Travelling { from, to, .. } => app
+                            .world
+                            .planets
+                            .iter()
+                            .filter(|(&id, p)| {
+                                id != from
+                                    && id != to
+                                    && p.total_population() > 0
+                                    && p.peer_id.is_none()
+                            })
+                            .choose(rng)
+                            .map(|(&id, _)| id.clone()),
+
+                        TeamLocation::Exploring { around, .. } => app
+                            .world
+                            .planets
+                            .iter()
+                            .filter(|(&id, p)| {
+                                id != around && p.total_population() > 0 && p.peer_id.is_none()
+                            })
+                            .choose(rng)
+                            .map(|(&id, _)| id.clone()),
+                    };
+                    if let Some(to) = portal_target_id {
+                        let portal_target = app.world.get_planet_or_err(to)?;
+                        // We set the new target to the portal_target
+                        let from = match team.current_location {
+                            TeamLocation::OnPlanet { .. } => {
+                                panic!("Should not get into this branch")
+                            }
+                            TeamLocation::Travelling { from, .. } => from,
+                            TeamLocation::Exploring { around, .. } => around,
+                        };
+
+                        let distance = app.world.distance_between_planets(from, to)?;
+                        // Notice that the team will arrive when  world.current_timestamp > started + duration.
+                        team.current_location = TeamLocation::Travelling {
+                            from,
+                            to,
+                            started: Tick::now(),
+                            duration: 10 * SECONDS,
+                            distance,
+                        };
+
+                        app.ui.set_popup(PopupMessage::Ok(
+                            format!(
+                                "{} got drunk while driving and accidentaly found a portal to {}!",
+                                player.info.last_name, portal_target.name
+                            ),
+                            Tick::now(),
+                        ));
+                    }
+                }
 
                 app.world.players.insert(player_id.clone(), player);
                 app.world.teams.insert(team.id, team);
@@ -973,7 +1039,9 @@ impl UiCallbackPreset {
             UiCallbackPreset::TravelToPlanet { planet_id } => {
                 Self::travel_to_planet(*planet_id)(app)
             }
-            UiCallbackPreset::ExploreAroundPlanet => Self::explore_around_planet()(app),
+            UiCallbackPreset::ExploreAroundPlanet { duration } => {
+                Self::explore_around_planet(duration.clone())(app)
+            }
             UiCallbackPreset::ZoomInToPlanet { planet_id } => {
                 Self::zoom_in_to_planet(*planet_id)(app)
             }

@@ -20,7 +20,7 @@ impl UiKey {
     pub const MUSIC_PREVIOUS: KeyCode = KeyCode::Char('<');
     pub const GO_TO_TEAM: KeyCode = KeyCode::Backspace;
     pub const GO_TO_TEAM_ALTERNATIVE: KeyCode = KeyCode::Char('t');
-    pub const GO_TO_PLANET: KeyCode = KeyCode::Char('p');
+    pub const GO_TO_PLANET: KeyCode = KeyCode::Char('O');
     pub const GO_TO_HOME_PLANET: KeyCode = KeyCode::Char('H');
     pub const CHALLENGE_TEAM: KeyCode = KeyCode::Char('C');
     pub const TRAINING_FOCUS: KeyCode = KeyCode::Char('T');
@@ -33,10 +33,11 @@ impl UiKey {
     pub const UNLOCK_PLAYER: KeyCode = KeyCode::Char('U');
     pub const SET_CAPTAIN: KeyCode = KeyCode::Char('c');
     pub const SET_DOCTOR: KeyCode = KeyCode::Char('d');
-    pub const SET_PILOT: KeyCode = KeyCode::Char('l');
+    pub const SET_PILOT: KeyCode = KeyCode::Char('p');
     pub const PITCH_VIEW: KeyCode = KeyCode::Char('v');
     pub const TRAVEL: KeyCode = KeyCode::Char('T');
-    pub const EXPLORE: KeyCode = KeyCode::Char('x');
+    pub const QUICK_EXPLORE: KeyCode = KeyCode::Char('x');
+    pub const LONG_EXPLORE: KeyCode = KeyCode::Char('X');
     pub const DRINK: KeyCode = KeyCode::Char('D');
     pub const BUY_SCRAPS: KeyCode = KeyCode::Char('s');
     pub const BUY_FUEL: KeyCode = KeyCode::Char('u');
@@ -118,7 +119,7 @@ impl UiStyle {
     pub const ERROR: Style = DEFAULT_STYLE.fg(Color::Red);
     pub const OWN_TEAM: Style = DEFAULT_STYLE.fg(Color::Green);
     pub const HEADER: Style = DEFAULT_STYLE.fg(Color::LightBlue);
-    pub const NETWORK: Style = DEFAULT_STYLE.fg(Color::Rgb(234, 123, 123));
+    pub const NETWORK: Style = DEFAULT_STYLE.fg(Color::Rgb(204, 144, 184));
     pub const DISCONNECTED: Style = DEFAULT_STYLE.fg(Color::DarkGray);
     pub const FANCY: Style = DEFAULT_STYLE.fg(Color::Rgb(244, 255, 232));
     pub const HIGHLIGHT: Style = DEFAULT_STYLE.fg(Color::Rgb(118, 213, 192));

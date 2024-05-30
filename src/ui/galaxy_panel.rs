@@ -6,6 +6,7 @@ use super::traits::SplitPanel;
 
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
 use super::utils::hover_text_target;
+use super::widgets::quick_explore_button;
 use super::{
     traits::Screen,
     widgets::{default_block, selectable_list},
@@ -193,25 +194,14 @@ impl GalaxyPanel {
                         planet_id: planet.id,
                     } =>
                 {
-                    let can_explore = own_team.can_explore_around_planet(&planet);
-                    let explore_time = BASE_EXPLORATION_TIME;
-                    let mut explore_button = Button::new(
-                        format!("Explore ({})", explore_time.formatted()),
-                        UiCallbackPreset::ExploreAroundPlanet,
-                        Arc::clone(&self.callback_registry),
-                    )
-                    .set_hover_text(
-                        format!(
-                            "Explore around {}, who knows what you may find!",
-                            planet.name
-                        ),
+                    if let Ok(explore_button) = quick_explore_button(
+                        world,
+                        own_team,
+                        &self.callback_registry,
                         hover_text_target,
-                    )
-                    .set_hotkey(UiKey::EXPLORE);
-                    if can_explore.is_err() {
-                        explore_button.disable(Some(can_explore.unwrap_err().to_string()));
+                    ) {
+                        buttons.push(explore_button);
                     }
-                    buttons.push(explore_button);
                 }
                 _ => {
                     let travel_time = world.travel_time_to_planet(own_team.id, planet.id);

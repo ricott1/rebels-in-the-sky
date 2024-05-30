@@ -303,32 +303,45 @@ pub fn trade_button<'a>(
     Ok(button)
 }
 
-pub fn explore_button<'a>(
+fn explore_button<'a>(
     world: &World,
     team: &Team,
     callback_registry: &Arc<Mutex<CallbackRegistry>>,
     hover_text_target: Rect,
+    duration: Tick,
 ) -> AppResult<Button<'a>> {
     let explore_button = match team.current_location {
         TeamLocation::OnPlanet { planet_id } => {
             let planet = world.get_planet_or_err(planet_id)?;
 
-            let explore_time = BASE_EXPLORATION_TIME;
+            let needed_fuel = (duration as f32 * team.spaceship.fuel_consumption()) as u32;
+            let explore_text = if duration == QUICK_EXPLORATION_TIME {
+                "Explore"
+            } else {
+                "eXplore"
+            };
+            let hotkey = if duration == QUICK_EXPLORATION_TIME {
+                UiKey::QUICK_EXPLORE
+            } else {
+                UiKey::LONG_EXPLORE
+            };
+
             let mut button = Button::new(
-                format!("Explore ({})", explore_time.formatted()),
-                UiCallbackPreset::ExploreAroundPlanet,
+                format!("{} ({})",explore_text, duration.formatted()),
+                UiCallbackPreset::ExploreAroundPlanet { duration },
                 Arc::clone(&callback_registry),
             )
             .set_hover_text(
                 format!(
-                    "Explore the space around {}. Hope to find resources, free agents or more...",
-                    planet.name
+                    "Explore the space around {} (need {} t of fuel). Hope to find resources, free agents or more...",
+                    planet.name,
+                    needed_fuel
                 ),
                 hover_text_target,
             )
-            .set_hotkey(UiKey::EXPLORE);
+            .set_hotkey(hotkey);
 
-            if let Err(msg) = team.can_explore_around_planet(&planet) {
+            if let Err(msg) = team.can_explore_around_planet(&planet, duration) {
                 button.disable(Some(msg.to_string()));
             }
             button
@@ -389,6 +402,36 @@ pub fn explore_button<'a>(
     };
 
     Ok(explore_button)
+}
+
+pub fn quick_explore_button<'a>(
+    world: &World,
+    team: &Team,
+    callback_registry: &Arc<Mutex<CallbackRegistry>>,
+    hover_text_target: Rect,
+) -> AppResult<Button<'a>> {
+    explore_button(
+        world,
+        team,
+        callback_registry,
+        hover_text_target,
+        QUICK_EXPLORATION_TIME,
+    )
+}
+
+pub fn long_explore_button<'a>(
+    world: &World,
+    team: &Team,
+    callback_registry: &Arc<Mutex<CallbackRegistry>>,
+    hover_text_target: Rect,
+) -> AppResult<Button<'a>> {
+    explore_button(
+        world,
+        team,
+        callback_registry,
+        hover_text_target,
+        LONG_EXPLORATION_TIME,
+    )
 }
 
 pub fn get_storage_spans(team: &Team) -> Vec<Span> {
@@ -521,9 +564,6 @@ pub fn render_spaceship_description(
         );
     }
 
-    let storage_spans = get_storage_spans(team);
-    let fuel_spans = get_fuel_spans(team);
-
     let spaceship_info = if team.id == world.own_team_id {
         Paragraph::new(vec![
             Line::from(format!(
@@ -535,8 +575,8 @@ pub fn render_spaceship_description(
                 team.player_ids.len(),
                 team.spaceship.crew_capacity()
             )),
-            Line::from(storage_spans),
-            Line::from(fuel_spans),
+            Line::from(get_fuel_spans(team)),
+            Line::from(get_storage_spans(team)),
             Line::from(format!(
                 "Consumption: {:.2} t/h",
                 team.spaceship.fuel_consumption() * HOURS as f32
