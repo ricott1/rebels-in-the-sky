@@ -35,7 +35,7 @@ use ratatui::{
     prelude::Rect,
     style::{Color, Style},
     text::Span,
-    widgets::{Borders, Paragraph},
+    widgets::Paragraph,
     Frame,
 };
 use std::vec;
