@@ -18,7 +18,7 @@ use crate::{
         timer::{Period, Timer},
         types::{GameStatsMap, Possession},
     },
-    image::pitch::{set_shot_pixels, PitchStyle, PITCH_WIDTH},
+    image::pitch::{set_shot_pixels, PitchStyle, PITCH_HEIGHT},
     image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
     types::GameId,
     ui::constants::{PrintableKeyCode, UiKey},
@@ -95,14 +95,10 @@ impl GamePanel {
         ])
         .split(area);
         self.build_game_list(frame, world, split[0]);
-
         if let Some(game) = self.selected_game(world) {
-            if self.pitch_view {
-                self.build_pitch_panel(frame, world, game, split[1]);
-            } else {
-                self.build_score_panel(frame, world, game, split[1])?;
-            }
+            self.build_score_panel(frame, world, game, split[1])?;
         }
+
         Ok(())
     }
 
@@ -330,18 +326,16 @@ impl GamePanel {
     }
 
     fn build_pitch_panel(&self, frame: &mut Frame, world: &World, game: &Game, area: Rect) {
-        let split = Layout::horizontal([
-            Constraint::Length(2),           // border
-            Constraint::Length(PITCH_WIDTH), // pitch
-            Constraint::Min(1),              // score
+        frame.render_widget(default_block().title("Shots map"), area);
+        let split = Layout::vertical([
+            Constraint::Length(PITCH_HEIGHT / 2 + 5), // pitch
+            Constraint::Min(1),                       // score
         ])
-        .split(area);
+        .split(area.inner(&Margin {
+            horizontal: 1,
+            vertical: 1,
+        }));
 
-        let action = if self.commentary_index == 0 {
-            &game.action_results[game.action_results.len() - 1]
-        } else {
-            &game.action_results[self.action_results.len() - 1 - self.commentary_index]
-        };
         let planet = world.get_planet_or_err(game.location).unwrap();
         let pitch_style = match planet.planet_type {
             PlanetType::Earth => PitchStyle::PitchBall,
@@ -380,57 +374,41 @@ impl GamePanel {
             }
         }
 
-        let pitch = Paragraph::new(img_to_lines(&pitch_image)).alignment(Alignment::Center);
-        frame.render_widget(pitch, split[1]);
+        frame.render_widget(
+            Paragraph::new(img_to_lines(&pitch_image)).centered(),
+            split[0].inner(&Margin {
+                horizontal: 0,
+                vertical: 2,
+            }),
+        );
 
-        let home_dot = if action.possession == Possession::Home {
-            "●"
-        } else {
-            " "
+        let quarter = match self.pitch_view_filter {
+            PitchViewFilter::All => "Full game",
+            PitchViewFilter::First => "Quarter 1",
+            PitchViewFilter::Second => "Quarter 2",
+            PitchViewFilter::Third => "Quarter 3",
+            PitchViewFilter::Fourth => "Quarter 4",
         };
-        let away_dot = if action.possession == Possession::Away {
-            "●"
-        } else {
-            " "
-        };
 
-        let mut lines: Vec<Line> = vec![
-            Line::from(""),
-            Line::from(format!(
-                "{:1} {:>13} {:>3}-{:<3} {:<} {}",
-                home_dot,
-                game.home_team_in_game.name,
-                action.home_score,
-                action.away_score,
-                game.away_team_in_game.name,
-                away_dot
-            )),
-            Line::from(""),
-            Line::from(format!(
-                "{:>18} vs {:<}",
-                game.home_team_in_game.tactic, game.away_team_in_game.tactic
-            )),
-        ];
+        let line = Line::from(vec![
+            Span::raw(format!("{:<16}", quarter)),
+            Span::styled(format!("{:<16}", "██ made shot"), UiStyle::OWN_TEAM),
+            Span::styled(format!("{:<16}", "██ missed shot"), UiStyle::ERROR),
+        ]);
 
-        let mut timer_lines = self.build_timer_lines(world, game);
-        lines.append(&mut timer_lines);
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            format!("{:<16}", "██ made shot"),
-            UiStyle::OWN_TEAM,
-        )));
-        lines.push(Line::from(Span::styled(
-            format!("{:<16}", "██ missed shot"),
-            UiStyle::ERROR,
-        )));
-
-        let score = Paragraph::new(lines).alignment(Alignment::Center);
-        frame.render_widget(score, split[2]);
+        frame.render_widget(Paragraph::new(line).centered(), split[1]);
     }
 
     fn build_bottom_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
         let split = Layout::horizontal([Constraint::Min(8), Constraint::Length(73)]).split(area);
-        self.build_commentary(frame, split[0]);
+
+        if let Some(game) = self.selected_game(world) {
+            if self.pitch_view {
+                self.build_pitch_panel(frame, world, game, split[0]);
+            } else {
+                self.build_commentary(frame, split[0]);
+            }
+        }
         let game = self.selected_game(world);
         if game.is_none() {
             return;
@@ -740,7 +718,6 @@ impl GamePanel {
 
         frame.render_widget(home_table, box_area[0]);
         frame.render_widget(away_table, box_area[2]);
-        // frame.render_widget(default_block().title(" Stats "), area);
     }
 }
 
@@ -835,28 +812,22 @@ impl Screen for GamePanel {
             KeyCode::Enter => self.commentary_index = 0,
             UiKey::PITCH_VIEW => {
                 self.pitch_view = !self.pitch_view;
-                // self.debug_mode = !self.debug_mode;
             }
 
             KeyCode::Char('0') => {
                 self.pitch_view_filter = PitchViewFilter::All;
-                // self.debug_mode = !self.debug_mode;
             }
             KeyCode::Char('1') => {
                 self.pitch_view_filter = PitchViewFilter::First;
-                // self.debug_mode = !self.debug_mode;
             }
             KeyCode::Char('2') => {
                 self.pitch_view_filter = PitchViewFilter::Second;
-                // self.debug_mode = !self.debug_mode;
             }
             KeyCode::Char('3') => {
                 self.pitch_view_filter = PitchViewFilter::Third;
-                // self.debug_mode = !self.debug_mode;
             }
             KeyCode::Char('4') => {
                 self.pitch_view_filter = PitchViewFilter::Fourth;
-                // self.debug_mode = !self.debug_mode;
             }
             _ => {}
         };
@@ -865,15 +836,7 @@ impl Screen for GamePanel {
 
     fn footer_spans(&self) -> Vec<Span> {
         let next_view = if self.pitch_view { "Score" } else { "Pitch" };
-        vec![
-            Span::styled(
-                " Enter ",
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(
-                " Scroll commentary to top ",
-                Style::default().fg(Color::DarkGray),
-            ),
+        let mut v = vec![
             Span::styled(
                 format!(" {} ", UiKey::PITCH_VIEW.to_string()),
                 Style::default().bg(Color::Gray).fg(Color::DarkGray),
@@ -882,15 +845,32 @@ impl Screen for GamePanel {
                 format!(" Change view: {} ", next_view),
                 Style::default().fg(Color::DarkGray),
             ),
-            Span::styled(
-                " 0-4 ",
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(
-                format!(" Filter: {:<6} ", self.pitch_view_filter),
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]
+        ];
+
+        if self.pitch_view {
+            v.append(&mut vec![
+                Span::styled(
+                    " 0-4 ",
+                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    format!(" Filter: {:<6} ", self.pitch_view_filter),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ])
+        } else {
+            v.append(&mut vec![
+                Span::styled(
+                    " Enter ",
+                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    " Scroll commentary to top ",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ])
+        };
+        v
     }
 }
 
