@@ -17,6 +17,23 @@ Connect via SSH to try the game. Only local game is available and there is no mo
 
 Compiled binaries of the last release can be downloaded at https://rebels.frittura.org.
 
+### Distro Packages
+
+<details>
+  <summary>Packaging status</summary>
+
+[![Packaging status](https://repology.org/badge/vertical-allrepos/rebels-in-the-sky.svg)](https://repology.org/project/rebels-in-the-sky/versions)
+
+</details>
+
+#### Arch Linux
+
+`rebels-in-the-sky` can be installed from the [official repositories](https://archlinux.org/packages/extra/x86_64/rebels-in-the-sky/):
+
+```sh
+pacman -S rebels-in-the-sky
+```
+
 ## Build
 
 You need to have the rust toolchain installed --> https://www.rust-lang.org/tools/install. Then you can build the game with
