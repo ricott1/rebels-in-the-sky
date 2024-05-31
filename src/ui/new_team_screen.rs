@@ -35,7 +35,7 @@ use rand_chacha::ChaCha8Rng;
 use ratatui::style::Styled;
 use ratatui::text::Line;
 use ratatui::{
-    prelude::{Alignment, Constraint, Layout, Margin, Rect},
+    prelude::{Constraint, Layout, Margin, Rect},
     style::{Color, Style},
     text::Span,
     widgets::{Clear, Paragraph, Wrap},
@@ -211,12 +211,7 @@ impl NewTeamScreen {
         );
 
         let paragraph = Paragraph::new(text);
-        frame.render_widget(
-            paragraph
-                .wrap(Wrap { trim: true })
-                .alignment(Alignment::Center),
-            area,
-        );
+        frame.render_widget(paragraph.wrap(Wrap { trim: true }).centered(), area);
 
         // Render main block
         frame.render_widget(default_block(), area);
@@ -236,7 +231,7 @@ impl NewTeamScreen {
             let img = gif[(self.tick) % gif.len()].clone();
             let paragraph = Paragraph::new(img_to_lines(&img));
             frame.render_widget(
-                paragraph.alignment(Alignment::Center),
+                paragraph.centered(),
                 split[0].inner(&Margin {
                     vertical: 0,
                     horizontal: 1,
@@ -378,7 +373,7 @@ impl NewTeamScreen {
             let img = gif[(self.tick / 8) % gif.len()].clone();
             let paragraph = Paragraph::new(img_to_lines(&img));
             frame.render_widget(
-                paragraph.alignment(Alignment::Center),
+                paragraph.centered(),
                 area.inner(&Margin {
                     vertical: 1,
                     horizontal: 1,
@@ -594,7 +589,7 @@ impl NewTeamScreen {
             }
         }
 
-        let paragraph = Paragraph::new(lines).alignment(Alignment::Center);
+        let paragraph = Paragraph::new(lines).centered();
         frame.render_widget(
             paragraph,
             area.inner(&Margin {
@@ -741,7 +736,7 @@ impl NewTeamScreen {
             Line::from(Span::raw(format!("{} from {}", name, planet.name))),
             Line::from(Span::raw("Ready to sail the cosmic waves?")),
         ])
-        .alignment(Alignment::Center);
+        .centered();
         frame.render_widget(
             text,
             split[1].inner(&Margin {

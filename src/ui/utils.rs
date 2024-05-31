@@ -7,7 +7,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use image::{Pixel, RgbaImage};
 use libp2p::PeerId;
 use ratatui::{
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::{Constraint, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
@@ -123,7 +123,7 @@ pub fn big_text<'a>(text: &'a [&str]) -> Paragraph<'a> {
             Line::from(spans)
         })
         .collect::<Vec<Line>>();
-    Paragraph::new(lines).alignment(Alignment::Center)
+    Paragraph::new(lines).centered()
 }
 
 pub fn hover_text_target(frame: &Frame) -> Rect {

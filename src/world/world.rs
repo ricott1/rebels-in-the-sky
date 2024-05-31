@@ -286,6 +286,7 @@ impl World {
 
         let team_id = player.team.unwrap();
         let mut team = self.get_team_or_err(team_id)?.clone();
+        team.can_set_crew_role(&player, role)?;
 
         let current_role_player = match role {
             CrewRole::Captain => team.crew_roles.captain,
@@ -1474,11 +1475,19 @@ impl World {
 #[cfg(test)]
 mod test {
     use super::{AppResult, World, QUICK_EXPLORATION_TIME};
-    use crate::world::{
-        planet::PlanetType,
-        skill::Rated,
-        utils::PLANET_DATA,
-        world::{ASTEROID_DISCOVERY_PROBABILITY, AU, HOURS, LONG_EXPLORATION_TIME},
+    use crate::{
+        app::App,
+        ui::ui_callback::UiCallbackPreset,
+        world::{
+            planet::PlanetType,
+            player::Trait,
+            resources::Resource,
+            role::CrewRole,
+            skill::Rated,
+            types::TeamLocation,
+            utils::PLANET_DATA,
+            world::{ASTEROID_DISCOVERY_PROBABILITY, AU, HOURS, LONG_EXPLORATION_TIME},
+        },
     };
     use rand::{seq::IteratorRandom, Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -1613,6 +1622,54 @@ mod test {
         {
             println!("Found asteroid!!!");
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_spugna_portal() -> AppResult<()> {
+        let app = &mut App::new(None, true, true, false, false, None);
+        app.new_world();
+
+        let mut world = app.world.clone();
+        let rng = &mut ChaCha8Rng::from_entropy();
+        let planet = PLANET_DATA[0].clone();
+        let team_id =
+            world.generate_random_team(rng, planet.id, "test".into(), "testship".into())?;
+
+        let mut team = world.get_team_or_err(team_id)?.clone();
+        team.add_resource(Resource::RUM, 20);
+
+        let mut spugna = world.get_player_or_err(team.player_ids[0])?.clone();
+        let spugna_id = spugna.id.clone();
+        spugna.special_trait = Some(Trait::Spugna);
+        if spugna.info.crew_role != CrewRole::Pilot {
+            world.set_team_crew_role(CrewRole::Pilot, spugna.id)?;
+        }
+        world.players.insert(spugna.id, spugna);
+
+        let target = PLANET_DATA[1].clone();
+        team.current_location = TeamLocation::Travelling {
+            from: planet.id,
+            to: target.id,
+            started: 0,
+            duration: world.travel_time_to_planet(team.id, target.id)?,
+            distance: world.distance_between_planets(planet.id, target.id)?,
+        };
+
+        println!("Team resources {:?}", team.resources);
+        println!("Team location {:?}", team.current_location);
+        world.teams.insert(team.id, team);
+        app.world = world;
+
+        UiCallbackPreset::Drink {
+            player_id: spugna_id,
+        }
+        .call(app)?;
+
+        let team = app.world.get_team_or_err(team_id)?.clone();
+        println!("Team resources {:?}", team.resources);
+        println!("Team location {:?}", team.current_location);
 
         Ok(())
     }

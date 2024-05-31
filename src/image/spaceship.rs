@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 pub const SPACESHIP_IMAGE_WIDTH: u32 = 30;
 pub const SPACESHIP_IMAGE_HEIGHT: u32 = 24;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq,  Hash, Default)]
 pub struct SpaceshipImage {
     color_map: ColorMap,
 }

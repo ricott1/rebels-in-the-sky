@@ -18,7 +18,6 @@ use crate::world::world::World;
 use core::fmt::Debug;
 use log::info;
 use ratatui::layout::Rect;
-use ratatui::prelude::Alignment;
 use ratatui::style::{Color, Style, Styled};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
@@ -42,7 +41,7 @@ pub enum UiState {
     Main,
 }
 
-#[derive(Debug, Clone, Copy, Eq, Hash, Display, PartialEq)]
+#[derive(Debug, Clone, Copy,  Hash, Display, PartialEq)]
 pub enum UiTab {
     MyTeam,
     Teams,
@@ -524,6 +523,6 @@ impl Ui {
         };
         spans.extend(extra_spans);
 
-        Paragraph::new(Line::from(spans)).alignment(Alignment::Center)
+        Paragraph::new(Line::from(spans)).centered()
     }
 }

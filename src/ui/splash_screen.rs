@@ -17,7 +17,6 @@ use crossterm::event::KeyCode;
 use rand::seq::SliceRandom;
 use ratatui::layout::Margin;
 use ratatui::{
-    layout::Alignment,
     prelude::{Constraint, Layout, Rect},
     style::{Color, Style},
     text::Span,
@@ -181,7 +180,7 @@ impl Screen for SplashScreen {
 
         frame.render_widget(self.title.clone(), title[1]);
         frame.render_widget(
-            Paragraph::new(format!("Version {VERSION}")).alignment(Alignment::Center),
+            Paragraph::new(format!("Version {VERSION}")).centered(),
             split[2].inner(&Margin {
                 vertical: 1,
                 horizontal: 0,
@@ -221,7 +220,7 @@ impl Screen for SplashScreen {
                     line.spans = line.spans[min_offset..max_offset].to_vec();
                 }
             }
-            frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), split[3]);
+            frame.render_widget(Paragraph::new(lines).centered(), split[3]);
         }
 
         let selection_split = Layout::vertical::<Vec<Constraint>>(

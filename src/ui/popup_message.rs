@@ -6,7 +6,6 @@ use super::widgets::default_block;
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use core::fmt::Debug;
 use ratatui::layout::{Margin, Rect};
-use ratatui::prelude::Alignment;
 use ratatui::widgets::{Clear, Paragraph, Wrap};
 use ratatui::{
     layout::{Constraint, Layout},
@@ -95,12 +94,12 @@ impl PopupMessage {
                 frame.render_widget(
                     Paragraph::new(format!("Message: {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::OK))
-                        .alignment(Alignment::Center),
+                        .centered(),
                     split[0],
                 );
                 frame.render_widget(
                     Paragraph::new(message.clone())
-                        .alignment(Alignment::Center)
+                        .centered()
                         .wrap(Wrap { trim: true }),
                     split[1].inner(&Margin {
                         horizontal: 1,
@@ -129,12 +128,12 @@ impl PopupMessage {
                 frame.render_widget(
                     Paragraph::new(format!("Error: {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::ERROR))
-                        .alignment(Alignment::Center),
+                        .centered(),
                     split[0],
                 );
                 frame.render_widget(
                     Paragraph::new(message.clone())
-                        .alignment(Alignment::Center)
+                        .centered()
                         .wrap(Wrap { trim: true }),
                     split[1].inner(&Margin {
                         horizontal: 1,
@@ -163,12 +162,12 @@ impl PopupMessage {
                 frame.render_widget(
                     Paragraph::new(format!("Conundrum! {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::NETWORK))
-                        .alignment(Alignment::Center),
+                        .centered(),
                     split[0],
                 );
                 frame.render_widget(
                     Paragraph::new(message.clone())
-                        .alignment(Alignment::Center)
+                        .centered()
                         .wrap(Wrap { trim: true }),
                     split[1].inner(&Margin {
                         horizontal: 1,
@@ -197,7 +196,7 @@ impl PopupMessage {
                 frame.render_widget(
                     Paragraph::new(format!("Asteorid discovered! {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::NETWORK))
-                        .alignment(Alignment::Center),
+                        .centered(),
                     split[0],
                 );
 
@@ -209,7 +208,7 @@ impl PopupMessage {
 
                 frame.render_widget(
                     Paragraph::new("Do you want to set up base on this asteroid?\nYou will need a proper name for it!")
-                        .alignment(Alignment::Center)
+                        .centered()
                         .wrap(Wrap { trim: true }),
                         message_split[0].inner(&Margin {
                         horizontal: 1,

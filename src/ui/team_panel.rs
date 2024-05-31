@@ -44,7 +44,7 @@ use strum_macros::Display;
 
 const IMG_FRAME_WIDTH: u16 = 80;
 
-#[derive(Debug, Clone, Copy, Display, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Display, Default, PartialEq,  Hash)]
 pub enum TeamView {
     #[default]
     All,
@@ -226,7 +226,7 @@ impl TeamListPanel {
 
         let floor = floor_from_size(area.width as u32, 2);
         frame.render_widget(
-            Paragraph::new(img_to_lines(&floor)).alignment(Alignment::Center),
+            Paragraph::new(img_to_lines(&floor)).centered(),
             vertical_split[1].inner(&Margin {
                 horizontal: 1,
                 vertical: 0,
@@ -289,10 +289,7 @@ impl TeamListPanel {
                 .unwrap()
                 .player_frame_lines(player, self.tick)
             {
-                frame.render_widget(
-                    Paragraph::new(lines).alignment(Alignment::Center),
-                    player_img_split[i + 1],
-                );
+                frame.render_widget(Paragraph::new(lines).centered(), player_img_split[i + 1]);
             }
 
             let name = format!(
@@ -300,10 +297,7 @@ impl TeamListPanel {
                 player.info.first_name.chars().next().unwrap_or_default(),
                 player.info.last_name,
             );
-            frame.render_widget(
-                Paragraph::new(name).alignment(Alignment::Center),
-                player_name_split[i + 1],
-            );
+            frame.render_widget(Paragraph::new(name).centered(), player_name_split[i + 1]);
 
             frame.render_widget(
                 Paragraph::new(format!(
@@ -313,7 +307,7 @@ impl TeamListPanel {
                         .player_rating(player.current_skill_array())
                         .stars()
                 ))
-                .alignment(Alignment::Center),
+                .centered(),
                 player_rating_split[i + 1],
             );
         }

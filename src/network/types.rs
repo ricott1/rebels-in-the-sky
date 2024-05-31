@@ -14,7 +14,7 @@ use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 
-#[derive(Debug, Clone, Display, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Display, Default, Serialize, Deserialize, PartialEq,  Hash)]
 pub enum NetworkRequestState {
     #[default]
     Syn,

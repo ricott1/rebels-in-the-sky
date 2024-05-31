@@ -1,7 +1,7 @@
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{collections::HashMap, fmt::Display, hash::Hash};
 
-#[derive(Debug, Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq, Hash, Eq)]
+#[derive(Debug, Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Resource {
     SATOSHI,

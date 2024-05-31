@@ -32,7 +32,7 @@ pub trait SpaceshipComponent {
 }
 
 #[derive(
-    Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Eq, Hash, Default, EnumIter,
+    Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Hash, Default, EnumIter,
 )]
 #[repr(u8)]
 pub enum Hull {
@@ -170,7 +170,7 @@ impl SpaceshipComponent for Hull {
 }
 
 #[derive(
-    Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Default, EnumIter, Eq, Hash,
+    Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Default, EnumIter, Hash,
 )]
 #[repr(u8)]
 pub enum Engine {
@@ -306,7 +306,7 @@ impl SpaceshipComponent for Engine {
 }
 
 #[derive(
-    Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Default, EnumIter, Eq, Hash,
+    Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Default, EnumIter,  Hash,
 )]
 #[repr(u8)]
 pub enum Storage {
@@ -542,7 +542,7 @@ impl Spaceship {
     }
 }
 
-#[derive(Display, Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
+#[derive(Display, Debug, Clone, Copy, PartialEq, Hash, EnumIter)]
 pub enum SpaceshipPrefab {
     Bresci,
     Cafiero,

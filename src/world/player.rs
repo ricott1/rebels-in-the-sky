@@ -917,7 +917,7 @@ impl InfoStats {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Eq, Display)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Display)]
 #[repr(u8)]
 pub enum Trait {
     Killer,

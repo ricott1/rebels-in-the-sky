@@ -588,10 +588,10 @@ impl UiCallbackPreset {
                 TeamLocation::Exploring { .. } => return Err("Team is exploring".into()),
             };
 
-            let travel_time = app
+            let duration = app
                 .world
                 .travel_time_to_planet(own_team.id, target_planet.id)?;
-            own_team.can_travel_to_planet(&target_planet, travel_time)?;
+            own_team.can_travel_to_planet(&target_planet, duration)?;
             let distance = app
                 .world
                 .distance_between_planets(current_planet.id, target_planet.id)?;
@@ -599,7 +599,7 @@ impl UiCallbackPreset {
                 from: current_planet.id,
                 to: planet_id,
                 started: Tick::now(),
-                duration: travel_time,
+                duration,
                 distance,
             };
 
@@ -607,7 +607,7 @@ impl UiCallbackPreset {
             // show the fuel consumption as the team travels in world.tick_travel,
             // but this would require more operations and checks in the tick function.
             let fuel_consumed =
-                (travel_time as f32 * own_team.spaceship.fuel_consumption()).max(1.0) as u32;
+                (duration as f32 * own_team.spaceship.fuel_consumption()).max(1.0) as u32;
             own_team.remove_resource(Resource::FUEL, fuel_consumed)?;
 
             log::info!(
@@ -615,7 +615,7 @@ impl UiCallbackPreset {
                 own_team.id,
                 current_planet.id,
                 target_planet.id,
-                travel_time as f32 * own_team.spaceship.fuel_consumption()
+                duration as f32 * own_team.spaceship.fuel_consumption()
             );
 
             current_planet.team_ids.retain(|&x| x != own_team.id);
@@ -927,7 +927,6 @@ impl UiCallbackPreset {
                     MORALE_DRINK_BONUS
                 };
 
-                let previous_morale = player.morale;
                 player.morale = (player.morale + morale_bonus).bound();
                 player.add_tiredness(TIREDNESS_DRINK_MALUS);
 
@@ -943,7 +942,6 @@ impl UiCallbackPreset {
                 let rng = &mut ChaCha8Rng::from_entropy();
                 if matches!(player.special_trait, Some(Trait::Spugna))
                     && player.info.crew_role == CrewRole::Pilot
-                    && previous_morale == MAX_SKILL
                     && rng.gen_bool(PORTAL_DISCOVERY_PROBABILITY)
                 {
                     let portal_target_id = match team.current_location {

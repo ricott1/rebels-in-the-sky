@@ -672,16 +672,21 @@ impl MyTeamPanel {
             }),
         );
 
+        let displayed_challenges = self.challenge_teams.len().min(area.height as usize / 3 - 1);
+
         let left_split =
-            Layout::vertical([Constraint::Length(3)].repeat(self.challenge_teams.len()))
-                .split(split[0]);
+            Layout::vertical([Constraint::Length(3)].repeat(displayed_challenges)).split(split[0]);
         let right_split =
-            Layout::vertical([Constraint::Length(3)].repeat(self.challenge_teams.len()))
-                .split(split[1]);
+            Layout::vertical([Constraint::Length(3)].repeat(displayed_challenges)).split(split[1]);
 
         let hover_text_target = hover_text_target(&frame);
 
-        for (idx, &team_id) in self.challenge_teams.iter().enumerate() {
+        for (idx, &team_id) in self
+            .challenge_teams
+            .iter()
+            .take(displayed_challenges)
+            .enumerate()
+        {
             let team = world.get_team_or_err(team_id)?;
 
             frame.render_widget(
@@ -707,7 +712,7 @@ impl MyTeamPanel {
             frame.render_widget(challenge_button, right_split[idx]);
         }
 
-        frame.render_widget(default_block().title("Open to challenge"), area);
+        frame.render_widget(default_block().title("Open to challenge "), area);
 
         Ok(())
     }

@@ -192,7 +192,7 @@ impl GamePanel {
                 "Playing on {}",
                 world.get_planet_or_err(game.location).unwrap().name
             ))
-            .alignment(Alignment::Center),
+            .centered(),
             central_split[2],
         );
 
@@ -248,7 +248,7 @@ impl GamePanel {
             .player_frame_lines(&base_home_player, self.tick)
         {
             lines.remove(0);
-            let paragraph = Paragraph::new(lines).alignment(Alignment::Center);
+            let paragraph = Paragraph::new(lines).centered();
             frame.render_widget(paragraph, top_split[1]);
         }
         if let Ok(mut lines) = self
@@ -258,7 +258,7 @@ impl GamePanel {
             .player_frame_lines(&base_away_player, self.tick)
         {
             lines.remove(0);
-            let paragraph = Paragraph::new(lines).alignment(Alignment::Center);
+            let paragraph = Paragraph::new(lines).centered();
             frame.render_widget(paragraph, top_split[3]);
         }
 
@@ -280,15 +280,12 @@ impl GamePanel {
                 game.away_team_in_game.name.to_string(),
                 away_dot
             )))
-            .alignment(Alignment::Center),
+            .centered(),
             central_split[1],
         );
 
         let timer_lines = self.build_timer_lines(world, game);
-        frame.render_widget(
-            Paragraph::new(timer_lines).alignment(Alignment::Center),
-            central_split[4],
-        );
+        frame.render_widget(Paragraph::new(timer_lines).centered(), central_split[4]);
         match home_score {
             x if x < 10 => frame.render_widget((home_score % 10).big_font(), digit_split[4]),
             x if x < 100 => {
@@ -328,7 +325,7 @@ impl GamePanel {
     fn build_pitch_panel(&self, frame: &mut Frame, world: &World, game: &Game, area: Rect) {
         frame.render_widget(default_block().title("Shots map"), area);
         let split = Layout::vertical([
-            Constraint::Length(PITCH_HEIGHT / 2 + 5), // pitch
+            Constraint::Length(PITCH_HEIGHT / 2 + 8), // pitch
             Constraint::Min(1),                       // score
         ])
         .split(area.inner(&Margin {
@@ -376,10 +373,7 @@ impl GamePanel {
 
         frame.render_widget(
             Paragraph::new(img_to_lines(&pitch_image)).centered(),
-            split[0].inner(&Margin {
-                horizontal: 0,
-                vertical: 2,
-            }),
+            split[0],
         );
 
         let quarter = match self.pitch_view_filter {
@@ -770,11 +764,8 @@ impl Screen for GamePanel {
     fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         if self.games.len() == 0 {
             frame.render_widget(
-                Paragraph::new(" No games today!"),
-                area.inner(&Margin {
-                    vertical: 1,
-                    horizontal: 1,
-                }),
+                Paragraph::new(" No games at the moment!").block(default_block()),
+                area,
             );
             return Ok(());
         }

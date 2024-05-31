@@ -31,7 +31,7 @@ use std::vec;
 use std::{sync::Arc, sync::Mutex};
 use strum_macros::Display;
 
-#[derive(Debug, Clone, Copy, Display, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Display, Default, PartialEq, Hash)]
 pub enum PlayerView {
     #[default]
     All,

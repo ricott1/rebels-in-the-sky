@@ -25,7 +25,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Constraint;
 use ratatui::widgets::{List, ListItem};
 use ratatui::{
-    layout::{Alignment, Layout},
+    layout::Layout,
     prelude::Rect,
     style::{Color, Style},
     text::Span,
@@ -126,7 +126,7 @@ impl GalaxyPanel {
             }
         }
 
-        let paragraph = Paragraph::new(lines).alignment(Alignment::Center);
+        let paragraph = Paragraph::new(lines).centered();
         frame.render_widget(paragraph, area);
         Ok(())
     }

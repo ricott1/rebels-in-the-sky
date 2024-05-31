@@ -245,7 +245,7 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_travel_to_planet(&self, planet: &Planet, travel_time: Tick) -> AppResult<()> {
+    pub fn can_travel_to_planet(&self, planet: &Planet, duration: Tick) -> AppResult<()> {
         if planet.peer_id.is_some() {
             return Err("Cannot travel to asteroid".into());
         }
@@ -292,7 +292,7 @@ impl Team {
         //If we can't get there with full tank, than the planet is too far.
         let max_fuel = self.spaceship.fuel_capacity();
         let max_autonomy = self.spaceship.max_travel_time(max_fuel);
-        if travel_time > max_autonomy {
+        if duration > max_autonomy {
             return Err("This planet is too far".into());
         }
 
@@ -300,7 +300,7 @@ impl Team {
         let current_fuel = self.fuel();
         let autonomy = self.spaceship.max_travel_time(current_fuel);
 
-        if travel_time > autonomy {
+        if duration > autonomy {
             return Err("Not enough fuel".into());
         }
 
