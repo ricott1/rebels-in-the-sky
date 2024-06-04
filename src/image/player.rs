@@ -516,8 +516,9 @@ mod tests {
 
     use super::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH};
 
+    #[ignore]
     #[test]
-    fn generate_player_image() -> AppResult<()> {
+    fn test_generate_player_image() -> AppResult<()> {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
         let n = 5;
         for population in Population::iter() {

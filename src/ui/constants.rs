@@ -62,9 +62,6 @@ impl UiKey {
 }
 pub trait PrintableKeyCode {
     fn to_string(&self) -> String;
-    fn to_char(&self) -> Option<char> {
-        self.to_string().chars().next()
-    }
 }
 
 impl PrintableKeyCode for KeyCode {

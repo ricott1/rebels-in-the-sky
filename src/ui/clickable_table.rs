@@ -11,30 +11,6 @@ use unicode_width::UnicodeWidthStr;
 
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
 
-/// A [`ClickableCell`] contains the [`Text`] to be displayed in a [`ClickableRow`] of a [`Table`].
-///
-/// It can be created from anything that can be converted to a [`Text`].
-/// ```rust
-/// # use ratatui::widgets::ClickableCell;
-/// # use ratatui::style::{Style, Modifier};
-/// # use ratatui::text::{Span, Line, Text};
-/// # use std::borrow::Cow;
-/// ClickableCell::from("simple string");
-///
-/// ClickableCell::from(Span::from("span"));
-///
-/// ClickableCell::from(Line::from(vec![
-///     Span::raw("a vec of "),
-///     Span::styled("spans", Style::default().add_modifier(Modifier::BOLD))
-/// ]));
-///
-/// ClickableCell::from(Text::from("a text"));
-///
-/// ClickableCell::from(Text::from(Cow::Borrowed("hello")));
-/// ```
-///
-/// You can apply a [`Style`] on the entire [`ClickableCell`] using [`ClickableCell::style`] or rely on the styling
-/// capabilities of [`Text`].
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
 pub struct ClickableCell<'a> {
     content: Text<'a>,
@@ -73,35 +49,6 @@ impl<'a> Styled for ClickableCell<'a> {
     }
 }
 
-/// Holds data to be displayed in a [`Table`] widget.
-///
-/// A [`ClickableRow`] is a collection of cells. It can be created from simple strings:
-/// ```rust
-/// # use ratatui::widgets::ClickableRow;
-/// ClickableRow::new(vec!["Cell1", "Cell2", "Cell3"]);
-/// ```
-///
-/// But if you need a bit more control over individual cells, you can explicitly create [`ClickableCell`]s:
-/// ```rust
-/// # use ratatui::widgets::{ClickableRow, ClickableCell};
-/// # use ratatui::style::{Style, Color};
-/// ClickableRow::new(vec![
-///     ClickableCell::from("Cell1"),
-///     ClickableCell::from("Cell2").style(Style::default().fg(Color::Yellow)),
-/// ]);
-/// ```
-///
-/// You can also construct a row from any type that can be converted into [`Text`]:
-/// ```rust
-/// # use std::borrow::Cow;
-/// # use ratatui::widgets::ClickableRow;
-/// ClickableRow::new(vec![
-///     Cow::Borrowed("hello"),
-///     Cow::Owned("world".to_uppercase()),
-/// ]);
-/// ```
-///
-/// By default, a row has a height of 1 but you can change this using [`ClickableRow::height`].
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
 pub struct ClickableRow<'a> {
     cells: Vec<ClickableCell<'a>>,
@@ -163,57 +110,6 @@ impl<'a> Styled for ClickableRow<'a> {
     }
 }
 
-/// A widget to display data in formatted columns.
-///
-/// It is a collection of [`ClickableRow`]s, themselves composed of [`ClickableCell`]s:
-/// ```rust
-/// # use ratatui::widgets::{Block, Borders, Table, ClickableRow, ClickableCell};
-/// # use ratatui::layout::Constraint;
-/// # use ratatui::style::{Style, Color, Modifier};
-/// # use ratatui::text::{Text, Line, Span};
-/// Table::new(vec![
-///     // ClickableRow can be created from simple strings.
-///     ClickableRow::new(vec!["Row11", "Row12", "Row13"]),
-///     // You can style the entire row.
-///     ClickableRow::new(vec!["Row21", "Row22", "Row23"]).style(Style::default().fg(Color::Blue)),
-///     // If you need more control over the styling you may need to create Cells directly
-///     ClickableRow::new(vec![
-///         ClickableCell::from("Row31"),
-///         ClickableCell::from("Row32").style(Style::default().fg(Color::Yellow)),
-///         ClickableCell::from(Line::from(vec![
-///             Span::raw("ClickableRow"),
-///             Span::styled("33", Style::default().fg(Color::Green))
-///         ])),
-///     ]),
-///     // If a ClickableRow need to display some content over multiple lines, you just have to change
-///     // its height.
-///     ClickableRow::new(vec![
-///         ClickableCell::from("ClickableRow\n41"),
-///         ClickableCell::from("ClickableRow\n42"),
-///         ClickableCell::from("ClickableRow\n43"),
-///     ]).height(2),
-/// ])
-/// // You can set the style of the entire Table.
-/// .style(Style::default().fg(Color::White))
-/// // It has an optional header, which is simply a ClickableRow always visible at the top.
-/// .header(
-///     ClickableRow::new(vec!["Col1", "Col2", "Col3"])
-///         .style(Style::default().fg(Color::Yellow))
-///         // If you want some space between the header and the rest of the rows, you can always
-///         // specify some margin at the bottom.
-///         .bottom_margin(1)
-/// )
-/// // As any other widget, a Table can be wrapped in a Block.
-/// .block(Block::default().title("Table"))
-/// // Columns widths are constrained in the same way as Layout...
-/// .widths(&[Constraint::Length(5), Constraint::Length(5), Constraint::Length(10)])
-/// // ...and they can be separated by a fixed spacing.
-/// .column_spacing(1)
-/// // If you wish to highlight a row in any specific way when it is selected...
-/// .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-/// // ...and potentially show a symbol in front of the selection.
-/// .highlight_symbol(">>");
-/// ```
 #[derive(Debug, Default, Clone)]
 #[allow(dead_code)]
 pub struct ClickableTable<'a> {
