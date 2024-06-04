@@ -58,7 +58,7 @@ impl MusicPlayer {
             .ok_or("Failed to load sound file".to_string())?;
 
         let file = Cursor::new(data.contents().to_vec());
-        let source = Decoder::new(file).unwrap().buffered();
+        let source = Decoder::new(file)?.buffered();
         self.sources.push(source);
 
         Ok(())
@@ -81,14 +81,19 @@ impl MusicPlayer {
     }
 
     pub fn next(&mut self) {
-        if self.source_index.is_none() {
-            self.source_index = Some(0);
+        if let Some(idx) = self.source_index {
+            self.source_index = Some((idx + 1) % self.sources.len());
         } else {
-            self.source_index = Some((self.source_index.unwrap() + 1) % self.sources.len());
+            self.source_index = Some(0);
         }
+
         self.sink.clear();
-        self.sink
-            .append(self.sources[self.source_index.unwrap()].clone());
+        self.sink.append(
+            self.sources[self
+                .source_index
+                .expect("audio.rs: source_index should have been set")]
+            .clone(),
+        );
 
         if self.is_playing {
             self.sink.play();
@@ -96,15 +101,18 @@ impl MusicPlayer {
     }
 
     pub fn previous(&mut self) {
-        if self.source_index.is_none() {
-            self.source_index = Some(0);
+        if let Some(idx) = self.source_index {
+            self.source_index = Some((idx + self.sources.len() - 1) % self.sources.len());
         } else {
-            self.source_index =
-                Some((self.source_index.unwrap() + self.sources.len() - 1) % self.sources.len());
+            self.source_index = Some(0);
         }
         self.sink.clear();
-        self.sink
-            .append(self.sources[self.source_index.unwrap()].clone());
+        self.sink.append(
+            self.sources[self
+                .source_index
+                .expect("audio.rs: source_index should have been set")]
+            .clone(),
+        );
 
         if self.is_playing {
             self.sink.play();
@@ -121,7 +129,7 @@ impl MusicPlayer {
 
     pub fn currently_playing(&self) -> Option<&SampleData> {
         if let Some(index) = self.source_index {
-            return PLAYLIST_DATA.as_ref().unwrap().get(index);
+            return PLAYLIST_DATA.as_ref()?.get(index);
         }
         None
     }

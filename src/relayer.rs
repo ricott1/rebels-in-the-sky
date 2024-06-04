@@ -48,7 +48,7 @@ impl Relayer {
                     self.network_handler.send_seed_info(SeedInfo::new(
                         self.network_handler.swarm.connected_peers().count(),
                         None,
-                    ))?;
+                    )?)?;
                 }
             }
             _ => {}

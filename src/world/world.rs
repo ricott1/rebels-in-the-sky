@@ -54,17 +54,12 @@ impl World {
         for planet in data_planets.iter() {
             planets.insert(planet.id, planet.clone());
         }
-        let seed = if seed.is_none() {
-            rand::random()
-        } else {
-            seed.unwrap()
-        };
 
         Self {
-            seed,
+            seed: seed.unwrap_or(rand::random()),
             last_tick_short_interval: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("Time went backwards")
                 .as_millis(),
             planets,
             ..Default::default()

@@ -14,7 +14,7 @@ use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 
-#[derive(Debug, Clone, Display, Default, Serialize, Deserialize, PartialEq,  Hash)]
+#[derive(Debug, Clone, Display, Default, Serialize, Deserialize, PartialEq, Hash)]
 pub enum NetworkRequestState {
     #[default]
     Syn,
@@ -203,13 +203,13 @@ pub struct SeedInfo {
 }
 
 impl SeedInfo {
-    pub fn new(connected_peers_count: usize, message: Option<String>) -> Self {
-        Self {
+    pub fn new(connected_peers_count: usize, message: Option<String>) -> AppResult<Self> {
+        Ok(Self {
             connected_peers_count,
-            version_major: env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap(),
-            version_minor: env!("CARGO_PKG_VERSION_MINOR").parse().unwrap(),
-            version_patch: env!("CARGO_PKG_VERSION_PATCH").parse().unwrap(),
+            version_major: env!("CARGO_PKG_VERSION_MAJOR").parse()?,
+            version_minor: env!("CARGO_PKG_VERSION_MINOR").parse()?,
+            version_patch: env!("CARGO_PKG_VERSION_PATCH").parse()?,
             message,
-        }
+        })
     }
 }

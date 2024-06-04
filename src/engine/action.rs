@@ -108,9 +108,7 @@ impl Action {
             Action::Substitution => Substitution::execute(input, game, rng),
             Action::Brawl => Brawl::execute(input, game, rng),
         };
-        if output.is_some() {
-            output.as_mut().unwrap().random_seed = rng.get_seed();
-        }
+        output.as_mut()?.random_seed = rng.get_seed();
         output
     }
 }

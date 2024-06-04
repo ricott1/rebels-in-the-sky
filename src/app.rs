@@ -59,10 +59,10 @@ impl App {
                 self.initialize_network_handler(self.seed_ip.clone());
             }
             //FIXME consolidate this into a single select! macro
-            if self.network_handler.is_some() {
+            if let Some(network_handler) = self.network_handler.as_mut() {
                 select! {
                     //TODO: world_event = app.world_handler
-                    swarm_event = self.network_handler.as_mut().unwrap().swarm.select_next_some() =>  self.handle_network_events(swarm_event)?,
+                    swarm_event = network_handler.swarm.select_next_some() =>  self.handle_network_events(swarm_event)?,
                     app_event = tui.events.next()? => match app_event{
                         TerminalEvent::Tick {tick} => {
                                 self.handle_tick_events(tick)?;
@@ -92,28 +92,20 @@ impl App {
     }
 
     pub fn initialize_network_handler(&mut self, seed_ip: Option<String>) {
-        let handler = NetworkHandler::new(seed_ip);
-        if handler.is_err() {
-            eprintln!("Failed to initialize network handler");
-        } else {
-            self.network_handler = Some(handler.unwrap());
-        }
+        self.network_handler = NetworkHandler::new(seed_ip).ok();
     }
 
     pub fn new_world(&mut self) {
-        let initialize = self.world.initialize(self.generate_local_world);
-        if initialize.is_err() {
-            panic!("Failed to initialize world: {}", initialize.err().unwrap());
+        if let Err(e) = self.world.initialize(self.generate_local_world) {
+            panic!("Failed to initialize world: {}", e);
         }
     }
 
     pub fn load_world(&mut self) {
         // Try to load an existing world.
-        let try_load = World::load();
-        if let Ok(loaded_world) = try_load {
-            self.world = loaded_world;
-        } else {
-            panic!("Failed to load world: {}", try_load.err().unwrap());
+        match World::load() {
+            Ok(w) => self.world = w,
+            Err(e) => panic!("Failed to load world: {}", e),
         }
 
         let simulation = self.world.simulate_until_now();
@@ -227,15 +219,11 @@ impl App {
             self.world.dirty_network = false;
             if let Some(network_handler) = &mut self.network_handler {
                 if network_handler.swarm.connected_peers().count() > 0 {
-                    let send_own_team_result = network_handler.send_own_team(&self.world);
-                    if send_own_team_result.is_err() {
+                    if let Err(e) = network_handler.send_own_team(&self.world) {
                         self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
                             timestamp: Tick::now(),
                             peer_id: None,
-                            text: format!(
-                                "Failed to send own team to peers: {}",
-                                send_own_team_result.err().unwrap()
-                            ),
+                            text: format!("Failed to send own team to peers: {}", e),
                         });
                     }
                 }

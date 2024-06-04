@@ -12,6 +12,8 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+const SERVER_SSH_PORT: u16 = 2222;
+
 pub fn save_keys(signing_key: &ed25519_dalek::SigningKey) -> AppResult<()> {
     let file = File::create::<&str>("./keys".into())?;
     assert!(file.metadata()?.is_file());
@@ -141,7 +143,7 @@ impl AppServer {
             let signing_key = match key_pair {
                 russh_keys::key::KeyPair::Ed25519(signing_key) => signing_key,
             };
-            save_keys(&signing_key).unwrap();
+            save_keys(&signing_key).expect("Failed to save SSH keys.");
             signing_key
         });
 
@@ -155,7 +157,7 @@ impl AppServer {
             ..Default::default()
         };
 
-        self.run_on_address(Arc::new(config), ("0.0.0.0", 2222))
+        self.run_on_address(Arc::new(config), ("0.0.0.0", SERVER_SSH_PORT))
             .await?;
         Ok(())
     }

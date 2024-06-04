@@ -324,6 +324,17 @@ impl PlayerImage {
             blinking_base.copy_non_trasparent_from(&other, x, img_height - other.height())?;
         }
 
+        if let Some(shorts) = self.shorts.clone() {
+            let mut other = read_image(shorts.select_file(size).as_str())?;
+            let x = (base.width() - other.width()) / 2;
+            if let Some(color_map) = jersey_color_map {
+                let mask = read_image(shorts.select_mask_file(size).as_str())?;
+                other.apply_color_map_with_shadow_mask(color_map, &mask);
+            }
+            base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
+            blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
+        }
+
         if let Some(wooden_leg) = self.wooden_leg.clone() {
             //Polpett have small legs regardless of size
             let leg_size = if info.population == Population::Polpett
@@ -373,17 +384,6 @@ impl PlayerImage {
 
             base.copy_non_trasparent_from(&other, x, img_height - other.height())?;
             blinking_base.copy_non_trasparent_from(&other, x, img_height - other.height())?;
-        }
-
-        if let Some(shorts) = self.shorts.clone() {
-            let mut other = read_image(shorts.select_file(size).as_str())?;
-            let x = (base.width() - other.width()) / 2;
-            if let Some(color_map) = jersey_color_map {
-                let mask = read_image(shorts.select_mask_file(size).as_str())?;
-                other.apply_color_map_with_shadow_mask(color_map, &mask);
-            }
-            base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
-            blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
         }
 
         let mut other = read_image(self.body.select_file(size).as_str())?;
@@ -506,6 +506,7 @@ mod tests {
 
     use crate::{
         image::player::PlayerImage,
+        types::AppResult,
         world::{player::InfoStats, types::Population},
     };
     use image::{self, GenericImage, RgbaImage};
@@ -516,12 +517,11 @@ mod tests {
     use super::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH};
 
     #[test]
-    fn generate_player_image() {
+    fn generate_player_image() -> AppResult<()> {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
         let n = 5;
         for population in Population::iter() {
             let mut base = RgbaImage::new(PLAYER_IMAGE_WIDTH * n, PLAYER_IMAGE_HEIGHT);
-
             for i in 0..n {
                 let info = InfoStats {
                     population,
@@ -534,8 +534,7 @@ mod tests {
                     &player_image.compose(&info).unwrap()[0],
                     (PLAYER_IMAGE_WIDTH * i) as u32,
                     0,
-                )
-                .unwrap();
+                )?;
             }
             image::save_buffer(
                 &Path::new(format!("tests/image_{}.png", population).as_str()),
@@ -543,8 +542,8 @@ mod tests {
                 PLAYER_IMAGE_WIDTH * n,
                 PLAYER_IMAGE_HEIGHT,
                 image::ColorType::Rgba8,
-            )
-            .unwrap();
+            )?;
         }
+        Ok(())
     }
 }

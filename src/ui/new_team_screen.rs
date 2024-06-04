@@ -354,14 +354,14 @@ impl NewTeamScreen {
         }
     }
 
-    fn render_jersey(&self, frame: &mut Frame, world: &World, area: Rect) {
+    fn render_jersey(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let style = self.jersey_styles[self.jersey_style_index];
         let planet_id = self.planet_ids[self.planet_index];
         let planet_players = &self
             .planet_players
             .get(&planet_id)
             .unwrap_or_else(|| panic!("No players found for planet {}", planet_id.to_string()));
-        let mut player = world.get_player(planet_players[0].0).unwrap().clone();
+        let mut player = world.get_player_or_err(planet_players[0].0)?.clone();
         let jersey = Jersey {
             style,
             color: self.get_team_colors(),
@@ -383,6 +383,7 @@ impl NewTeamScreen {
 
         // Render main block
         frame.render_widget(default_block(), area);
+        Ok(())
     }
 
     fn render_colors_selection(&self, frame: &mut Frame, area: Rect) {
@@ -510,11 +511,14 @@ impl NewTeamScreen {
         );
     }
 
-    fn render_planet_selection(&mut self, frame: &mut Frame, world: &World, area: Rect) {
+    fn render_planet_selection(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         if self.state > CreationState::Planet {
-            let selected_planet = world
-                .get_planet_or_err(self.planet_ids[self.planet_index])
-                .unwrap();
+            let selected_planet = world.get_planet_or_err(self.planet_ids[self.planet_index])?;
             frame.render_widget(
                 Paragraph::new(format!(" {}", selected_planet.name.clone())).block(
                     default_block()
@@ -551,21 +555,18 @@ impl NewTeamScreen {
                 area,
             );
         }
+        Ok(())
     }
 
-    fn render_planet(&mut self, frame: &mut Frame, world: &World, area: Rect) {
+    fn render_planet(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let planet_id = self.planet_ids[self.planet_index];
-        let planet = world.get_planet_or_err(planet_id).unwrap();
+        let planet = world.get_planet_or_err(planet_id)?;
 
-        let frame_lines = self.gif_map.lock().unwrap().planet_zoom_in_frame_lines(
+        let mut lines = self.gif_map.lock().unwrap().planet_zoom_in_frame_lines(
             planet_id,
             self.tick / planet.rotation_period,
             world,
-        );
-        if frame_lines.is_err() {
-            return;
-        }
-        let mut lines = frame_lines.unwrap();
+        )?;
 
         // Apply y-centering
         let min_offset = if lines.len() > area.height as usize {
@@ -598,6 +599,7 @@ impl NewTeamScreen {
             }),
         );
         frame.render_widget(default_block(), area);
+        Ok(())
     }
 
     fn get_remaining_balance(&self) -> i32 {
@@ -892,15 +894,15 @@ impl Screen for NewTeamScreen {
             self.render_intro(frame, v_split[2]);
         }
 
-        self.render_planet_selection(frame, world, h_split[3]);
+        self.render_planet_selection(frame, world, h_split[3])?;
         if self.state == CreationState::Planet {
-            self.render_planet(frame, world, v_split[2]);
+            self.render_planet(frame, world, v_split[2])?;
         }
 
         self.render_colors_selection(frame, h_split[4]);
         self.render_jersey_selection(frame, h_split[5]);
         if self.state == CreationState::Jersey {
-            self.render_jersey(frame, world, v_split[2]);
+            self.render_jersey(frame, world, v_split[2])?;
         }
 
         self.render_spaceship_selection(frame, h_split[6]);
@@ -1188,7 +1190,7 @@ impl SplitPanel for NewTeamScreen {
             CreationState::ShipModel => self.spaceship_models.len(),
             CreationState::Players => {
                 let planet_id = self.planet_ids[self.planet_index];
-                let planet_players = &self.planet_players.get(&planet_id).unwrap();
+                let planet_players = self.planet_players.get(&planet_id).unwrap();
                 planet_players.len()
             }
             _ => 0,
