@@ -4,14 +4,14 @@ use super::{
     clickable_table::{ClickableCell, ClickableRow, ClickableTable, ClickableTableState},
     constants::{PrintableKeyCode, UiKey, UiStyle},
     gif_map::GifMap,
-    traits::{PercentageRating, Screen, SplitPanel, StyledRating},
+    traits::{PercentageRating, Screen, SplitPanel, UiStyled},
     ui_callback::{CallbackRegistry, UiCallbackPreset},
     utils::hover_text_target,
     widgets::{
         challenge_button, default_block, drink_button, get_fuel_spans, get_storage_spans,
         go_to_team_current_planet_button, go_to_team_home_planet_button, long_explore_button,
         quick_explore_button, render_player_description, render_spaceship_description,
-        selectable_list, trade_button,
+        render_spaceship_upgrade, selectable_list, trade_button, upgrade_spaceship_button,
     },
 };
 use crate::{
@@ -19,10 +19,11 @@ use crate::{
     store::{load_from_json, PERSISTED_GAMES_PREFIX},
     types::{AppResult, GameId, PlayerId, SystemTimeTick, Tick},
     world::{
-        constants::CURRENCY_SYMBOL,
+        constants::*,
         planet::PlanetType,
         position::{GamePosition, Position, MAX_POSITION},
         skill::Rated,
+        spaceship::{SpaceshipComponent, SpaceshipUpgrade},
         types::{TeamBonus, TeamLocation},
         world::World,
     },
@@ -52,6 +53,7 @@ pub enum MyTeamView {
     Info,
     Games,
     Market,
+    Shipyard,
 }
 
 impl MyTeamView {
@@ -59,7 +61,8 @@ impl MyTeamView {
         match self {
             MyTeamView::Info => MyTeamView::Games,
             MyTeamView::Games => MyTeamView::Market,
-            MyTeamView::Market => MyTeamView::Info,
+            MyTeamView::Market => MyTeamView::Shipyard,
+            MyTeamView::Shipyard => MyTeamView::Info,
         }
     }
 }
@@ -76,6 +79,7 @@ pub struct MyTeamPanel {
     player_index: Option<usize>,
     game_index: Option<usize>,
     planet_index: Option<usize>,
+    upgrade_index: usize,
     view: MyTeamView,
     active_list: PanelList,
     players: Vec<PlayerId>,
@@ -132,15 +136,33 @@ impl MyTeamPanel {
             Arc::clone(&self.callback_registry),
         )
         .set_hotkey(UiKey::CYCLE_VIEW)
-        .set_hover_text("View market, buy and sell stuff.".into(), hover_text_target);
+        .set_hover_text(
+            "View market, buy and sell resources.".into(),
+            hover_text_target,
+        );
+
+        let mut view_shipyard_button = Button::new(
+            "View: Shipyard".into(),
+            UiCallbackPreset::SetMyTeamPanelView {
+                view: MyTeamView::Shipyard,
+            },
+            Arc::clone(&self.callback_registry),
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text(
+            "View shipyard, improve your spaceship.".into(),
+            hover_text_target,
+        );
 
         match self.view {
             MyTeamView::Info => view_info_button.disable(None),
             MyTeamView::Games => view_games_button.disable(None),
             MyTeamView::Market => view_market_button.disable(None),
+            MyTeamView::Shipyard => view_shipyard_button.disable(None),
         }
 
         let split = Layout::vertical([
+            Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
@@ -151,6 +173,7 @@ impl MyTeamPanel {
         frame.render_widget(view_info_button, split[0]);
         frame.render_widget(view_games_button, split[1]);
         frame.render_widget(view_market_button, split[2]);
+        frame.render_widget(view_shipyard_button, split[3]);
     }
 
     fn render_market(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
@@ -360,13 +383,6 @@ impl MyTeamPanel {
             button_split[1],
         );
 
-        let resource_styles = [
-            UiStyle::STORAGE_FUEL,
-            UiStyle::STORAGE_GOLD,
-            UiStyle::STORAGE_SCRAPS,
-            UiStyle::STORAGE_RUM,
-        ];
-
         let buy_ui_keys = [
             UiKey::BUY_FUEL,
             UiKey::BUY_GOLD,
@@ -406,10 +422,7 @@ impl MyTeamPanel {
             let sell_unit_cost = planet.resource_sell_price(*resource, merchant_bonus);
             frame.render_widget(
                 Paragraph::new(Line::from(vec![
-                    Span::styled(
-                        format!("{:<6} ", resource.to_string()),
-                        resource_styles[button_split_idx],
-                    ),
+                    Span::styled(format!("{:<6} ", resource.to_string()), resource.style()),
                     Span::styled(
                         format!("{}", buy_ui_keys[button_split_idx].to_string()),
                         UiStyle::OK,
@@ -444,6 +457,11 @@ impl MyTeamPanel {
                     buy_unit_cost,
                     &self.callback_registry,
                     hover_text_target,
+                    if idx == 0 {
+                        Some(buy_ui_keys[button_split_idx])
+                    } else {
+                        None
+                    },
                 ) {
                     frame.render_widget(btn, resource_split[idx + 1]);
                 }
@@ -454,6 +472,11 @@ impl MyTeamPanel {
                     sell_unit_cost,
                     &self.callback_registry,
                     hover_text_target,
+                    if idx == 0 {
+                        Some(sell_ui_keys[button_split_idx])
+                    } else {
+                        None
+                    },
                 ) {
                     frame.render_widget(btn, resource_split[idx + 4]);
                 }
@@ -959,6 +982,176 @@ impl MyTeamPanel {
         Ok(())
     }
 
+    fn render_shipyard(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+        let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
+        self.render_shipyard_upgrades(frame, world, split[0])?;
+
+        let team = world.get_own_team()?;
+        match team.current_location {
+            TeamLocation::OnPlanet { planet_id } => {
+                self.render_in_shipyard_spaceship(frame, world, split[1], planet_id)?
+            }
+            TeamLocation::Travelling {
+                to,
+                started,
+                duration,
+                ..
+            } => {
+                let countdown = if started + duration > world.last_tick_short_interval {
+                    (started + duration - world.last_tick_short_interval).formatted()
+                } else {
+                    (0 as Tick).formatted()
+                };
+                self.render_travelling_spaceship(frame, world, split[1], to, countdown)?
+            }
+            TeamLocation::Exploring {
+                around,
+                started,
+                duration,
+                ..
+            } => {
+                let countdown = if started + duration > world.last_tick_short_interval {
+                    (started + duration - world.last_tick_short_interval).formatted()
+                } else {
+                    (0 as Tick).formatted()
+                };
+                self.render_exploring_spaceship(frame, world, split[1], around, countdown)?
+            }
+        }
+
+        Ok(())
+    }
+
+    fn render_shipyard_upgrades(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
+        let split = Layout::horizontal([Constraint::Length(12), Constraint::Length(30)]).split(
+            area.inner(&Margin {
+                horizontal: 1,
+                vertical: 1,
+            }),
+        );
+        let team = world.get_own_team()?;
+        frame.render_widget(default_block().title("Upgrades "), area);
+
+        let hull_style = if team.spaceship.hull.can_be_upgraded() {
+            UiStyle::DEFAULT
+        } else {
+            UiStyle::UNSELECTABLE
+        };
+        let engine_style = if team.spaceship.engine.can_be_upgraded() {
+            UiStyle::DEFAULT
+        } else {
+            UiStyle::UNSELECTABLE
+        };
+        let storage_style = if team.spaceship.storage.can_be_upgraded() {
+            UiStyle::DEFAULT
+        } else {
+            UiStyle::UNSELECTABLE
+        };
+
+        let options = vec![
+            ("Hull".into(), hull_style),
+            ("Engine".into(), engine_style),
+            ("Storage".into(), storage_style),
+        ];
+
+        let list = selectable_list(options, &self.callback_registry);
+
+        frame.render_stateful_widget(
+            list,
+            split[0].inner(&Margin {
+                horizontal: 1,
+                vertical: 1,
+            }),
+            &mut ClickableListState::default().with_selected(Some(self.upgrade_index)),
+        );
+
+        let component = match self.upgrade_index {
+            0 => "Hull",
+            1 => "Engine",
+            2 => "Storage",
+            _ => panic!("Invalid upgrade index"),
+        };
+
+        let current = match self.upgrade_index {
+            0 => team.spaceship.hull.to_string(),
+            1 => team.spaceship.engine.to_string(),
+            2 => team.spaceship.storage.to_string(),
+            _ => panic!("Invalid upgrade index"),
+        };
+        let next = match self.upgrade_index {
+            0 => team.spaceship.hull.next().to_string(),
+            1 => team.spaceship.engine.next().to_string(),
+            2 => team.spaceship.storage.next().to_string(),
+            _ => panic!("Invalid upgrade index"),
+        };
+
+        let upgrade_cost = match self.upgrade_index {
+            0 => team.spaceship.hull.upgrade_cost(),
+            1 => team.spaceship.engine.upgrade_cost(),
+            2 => team.spaceship.storage.upgrade_cost(),
+            _ => panic!("Invalid upgrade index"),
+        };
+
+        let upgrade_to_text = match self.upgrade_index {
+            0 => {
+                if team.spaceship.hull.can_be_upgraded() {
+                    format!("{} -> {}", current, next)
+                } else {
+                    "Already fully upgraded".to_string()
+                }
+            }
+            1 => {
+                if team.spaceship.engine.can_be_upgraded() {
+                    format!("{} -> {}", current, next)
+                } else {
+                    "Already fully upgraded".to_string()
+                }
+            }
+            2 => {
+                if team.spaceship.storage.can_be_upgraded() {
+                    format!("{} -> {}", current, next)
+                } else {
+                    "Already fully upgraded".to_string()
+                }
+            }
+            _ => panic!("Invalid upgrade index"),
+        };
+
+        let mut lines = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                format!("Upgrade {}", component),
+                UiStyle::HEADER,
+            ))
+            .centered(),
+            Line::from(Span::raw(upgrade_to_text)).centered(),
+            Line::from(""),
+        ];
+
+        for (resource, amount) in upgrade_cost.iter() {
+            let have = team.resources.get(resource).copied().unwrap_or_default();
+            let style = if amount.clone() > have {
+                UiStyle::ERROR
+            } else {
+                UiStyle::OK
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {} ", resource.to_string()), resource.style()),
+                Span::styled(format!("{}/{}", amount, have), style),
+            ]));
+        }
+
+        frame.render_widget(Paragraph::new(lines), split[1]);
+
+        Ok(())
+    }
+
     fn render_player_buttons(
         &mut self,
         frame: &mut Frame,
@@ -970,9 +1163,7 @@ impl MyTeamPanel {
             return Ok(());
         }
         let player_id = self.players[self.player_index.unwrap()];
-        let player = world
-            .get_player(player_id)
-            .ok_or(format!("Player {:?} not found", player_id).to_string())?;
+        let player = world.get_player_or_err(player_id)?;
         let hover_text_target = hover_text_target(frame);
         let button_splits = Layout::horizontal([
             Constraint::Length(11),
@@ -999,13 +1190,9 @@ impl MyTeamPanel {
             format!(
                 "Set player to captain role: {} +{}%, {} {}%",
                 TeamBonus::Reputation,
-                TeamBonus::Reputation
-                    .as_skill(world, player_id)?
-                    .percentage(),
+                TeamBonus::Reputation.as_skill(player)?.percentage(),
                 TeamBonus::TradePrice,
-                TeamBonus::TradePrice
-                    .as_skill(world, player_id)?
-                    .percentage()
+                TeamBonus::TradePrice.as_skill(player)?.percentage()
             ),
             hover_text_target,
         )
@@ -1029,13 +1216,9 @@ impl MyTeamPanel {
             format!(
                 "Set player to pilot role: {} +{}%, {} {}%",
                 TeamBonus::SpaceshipSpeed,
-                TeamBonus::SpaceshipSpeed
-                    .as_skill(world, player_id)?
-                    .percentage(),
+                TeamBonus::SpaceshipSpeed.as_skill(player)?.percentage(),
                 TeamBonus::Exploration,
-                TeamBonus::Exploration
-                    .as_skill(world, player_id)?
-                    .percentage()
+                TeamBonus::Exploration.as_skill(player)?.percentage()
             ),
             hover_text_target,
         )
@@ -1059,11 +1242,9 @@ impl MyTeamPanel {
             format!(
                 "Set player to doctor role: {} +{}%, {} {}%",
                 TeamBonus::TirednessRecovery,
-                TeamBonus::TirednessRecovery
-                    .as_skill(world, player_id)?
-                    .percentage(),
+                TeamBonus::TirednessRecovery.as_skill(player)?.percentage(),
                 TeamBonus::Training,
-                TeamBonus::Training.as_skill(world, player_id)?.percentage()
+                TeamBonus::Training.as_skill(player)?.percentage()
             ),
             hover_text_target,
         )
@@ -1136,21 +1317,21 @@ impl MyTeamPanel {
 
                 let bonus_string_1 = match player.info.crew_role {
                     CrewRole::Pilot => {
-                        let skill = TeamBonus::SpaceshipSpeed.as_skill(world, player.id)?;
+                        let skill = TeamBonus::SpaceshipSpeed.as_skill(player)?;
                         Span::styled(
                             format!("{} +{}%", TeamBonus::SpaceshipSpeed, skill.percentage()),
                             skill.style(),
                         )
                     }
                     CrewRole::Captain => {
-                        let skill = TeamBonus::Reputation.as_skill(world, player.id)?;
+                        let skill = TeamBonus::Reputation.as_skill(player)?;
                         Span::styled(
                             format!("{} +{}%", TeamBonus::Reputation, skill.percentage()),
                             skill.style(),
                         )
                     }
                     CrewRole::Doctor => {
-                        let skill = TeamBonus::TirednessRecovery.as_skill(world, player.id)?;
+                        let skill = TeamBonus::TirednessRecovery.as_skill(player)?;
                         Span::styled(
                             format!("{} +{}%", TeamBonus::TirednessRecovery, skill.percentage()),
                             skill.style(),
@@ -1161,21 +1342,21 @@ impl MyTeamPanel {
 
                 let bonus_string_2 = match player.info.crew_role {
                     CrewRole::Pilot => {
-                        let skill = TeamBonus::Exploration.as_skill(world, player.id)?;
+                        let skill = TeamBonus::Exploration.as_skill(player)?;
                         Span::styled(
                             format!("{} +{}%", TeamBonus::Exploration, skill.percentage()),
                             skill.style(),
                         )
                     }
                     CrewRole::Captain => {
-                        let skill = TeamBonus::TradePrice.as_skill(world, player.id)?;
+                        let skill = TeamBonus::TradePrice.as_skill(player)?;
                         Span::styled(
                             format!("{} +{}%", TeamBonus::TradePrice, skill.percentage()),
                             skill.style(),
                         )
                     }
                     CrewRole::Doctor => {
-                        let skill = TeamBonus::Training.as_skill(world, player.id)?;
+                        let skill = TeamBonus::Training.as_skill(player)?;
                         Span::styled(
                             format!("{} +{}%", TeamBonus::Training, skill.percentage()),
                             skill.style(),
@@ -1353,6 +1534,64 @@ impl MyTeamPanel {
             long_explore_button(world, team, &self.callback_registry, hover_text_target)
         {
             frame.render_widget(explore_button, explore_split[1]);
+        }
+        Ok(())
+    }
+
+    fn render_in_shipyard_spaceship(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+        _planet_id: PlanetId,
+    ) -> AppResult<()> {
+        let team = world.get_own_team()?;
+        let hover_text_target = hover_text_target(&frame);
+
+        let split = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(
+            area.inner(&Margin {
+                vertical: 1,
+                horizontal: 1,
+            }),
+        );
+
+        let mut upgrade = SpaceshipUpgrade {
+            hull: None,
+            engine: None,
+            storage: None,
+            cost: vec![],
+            started: Tick::now(),
+            duration: SPACESHIP_UPGRADE_BASE_DURATION,
+        };
+
+        match self.upgrade_index {
+            0 => {
+                if team.spaceship.hull.can_be_upgraded() {
+                    upgrade.hull = Some(team.spaceship.hull.next());
+                    upgrade.cost = team.spaceship.hull.upgrade_cost();
+                }
+            }
+            1 => {
+                if team.spaceship.engine.can_be_upgraded() {
+                    upgrade.engine = Some(team.spaceship.engine.next());
+                    upgrade.cost = team.spaceship.engine.upgrade_cost();
+                }
+            }
+            2 => {
+                if team.spaceship.storage.can_be_upgraded() {
+                    upgrade.storage = Some(team.spaceship.storage.next());
+                    upgrade.cost = team.spaceship.storage.upgrade_cost();
+                }
+            }
+            _ => panic!("Invalid upgrade_index"),
+        };
+
+        render_spaceship_upgrade(&team, &upgrade, &self.gif_map, world, frame, area);
+
+        if let Ok(upgrade_button) =
+            upgrade_spaceship_button(team, &self.callback_registry, hover_text_target, upgrade)
+        {
+            frame.render_widget(upgrade_button, split[1]);
         }
         Ok(())
     }
@@ -1562,6 +1801,7 @@ impl Screen for MyTeamPanel {
             MyTeamView::Info => self.render_info(frame, world, bottom_split[1])?,
             MyTeamView::Games => self.render_games(frame, world, bottom_split[1])?,
             MyTeamView::Market => self.render_market(frame, world, bottom_split[1])?,
+            MyTeamView::Shipyard => self.render_shipyard(frame, world, bottom_split[1])?,
         }
 
         Ok(())
@@ -1570,15 +1810,12 @@ impl Screen for MyTeamPanel {
     fn handle_key_events(
         &mut self,
         key_event: crossterm::event::KeyEvent,
-        world: &World,
+        _world: &World,
     ) -> Option<UiCallbackPreset> {
         if self.players.is_empty() {
             return None;
         }
 
-        let merchant_bonus = TeamBonus::TradePrice
-            .current_team_bonus(world, world.own_team_id)
-            .unwrap_or(1.0);
         match key_event.code {
             KeyCode::Up => {
                 self.next_index();
@@ -1586,133 +1823,11 @@ impl Screen for MyTeamPanel {
             KeyCode::Down => {
                 self.previous_index();
             }
-
             UiKey::CYCLE_VIEW => {
                 return Some(UiCallbackPreset::SetMyTeamPanelView {
                     view: self.view.next(),
                 });
             }
-
-            UiKey::BUY_SCRAPS => {
-                if let Some(planet_id) = self.current_planet_id {
-                    if let Ok(buy_price) = world
-                        .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_buy_price(Resource::SCRAPS, merchant_bonus))
-                    {
-                        return Some(UiCallbackPreset::TradeResource {
-                            resource: Resource::SCRAPS,
-                            amount: 1,
-                            unit_cost: buy_price,
-                        });
-                    }
-                }
-            }
-
-            UiKey::BUY_GOLD => {
-                if let Some(planet_id) = self.current_planet_id {
-                    if let Ok(buy_price) = world
-                        .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_buy_price(Resource::GOLD, merchant_bonus))
-                    {
-                        return Some(UiCallbackPreset::TradeResource {
-                            resource: Resource::SCRAPS,
-                            amount: 1,
-                            unit_cost: buy_price,
-                        });
-                    }
-                }
-            }
-
-            UiKey::BUY_FUEL => {
-                if let Some(planet_id) = self.current_planet_id {
-                    if let Ok(buy_price) = world
-                        .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_buy_price(Resource::FUEL, merchant_bonus))
-                    {
-                        return Some(UiCallbackPreset::TradeResource {
-                            resource: Resource::FUEL,
-                            amount: 1,
-                            unit_cost: buy_price,
-                        });
-                    }
-                }
-            }
-
-            UiKey::BUY_RUM => {
-                if let Some(planet_id) = self.current_planet_id {
-                    if let Ok(buy_price) = world
-                        .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_buy_price(Resource::RUM, merchant_bonus))
-                    {
-                        return Some(UiCallbackPreset::TradeResource {
-                            resource: Resource::RUM,
-                            amount: 1,
-                            unit_cost: buy_price,
-                        });
-                    }
-                }
-            }
-
-            UiKey::SELL_SCRAPS => {
-                if let Some(planet_id) = self.current_planet_id {
-                    if let Ok(sell_price) = world
-                        .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_sell_price(Resource::SCRAPS, merchant_bonus))
-                    {
-                        return Some(UiCallbackPreset::TradeResource {
-                            resource: Resource::SCRAPS,
-                            amount: -1,
-                            unit_cost: sell_price,
-                        });
-                    }
-                }
-            }
-
-            UiKey::SELL_GOLD => {
-                if let Some(planet_id) = self.current_planet_id {
-                    if let Ok(sell_price) = world
-                        .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_sell_price(Resource::GOLD, merchant_bonus))
-                    {
-                        return Some(UiCallbackPreset::TradeResource {
-                            resource: Resource::GOLD,
-                            amount: -1,
-                            unit_cost: sell_price,
-                        });
-                    }
-                }
-            }
-
-            UiKey::SELL_FUEL => {
-                if let Some(planet_id) = self.current_planet_id {
-                    if let Ok(sell_price) = world
-                        .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_sell_price(Resource::FUEL, merchant_bonus))
-                    {
-                        return Some(UiCallbackPreset::TradeResource {
-                            resource: Resource::FUEL,
-                            amount: -1,
-                            unit_cost: sell_price,
-                        });
-                    }
-                }
-            }
-
-            UiKey::SELL_RUM => {
-                if let Some(planet_id) = self.current_planet_id {
-                    if let Ok(sell_price) = world
-                        .get_planet_or_err(planet_id)
-                        .map(|p| p.resource_sell_price(Resource::RUM, merchant_bonus))
-                    {
-                        return Some(UiCallbackPreset::TradeResource {
-                            resource: Resource::RUM,
-                            amount: -1,
-                            unit_cost: sell_price,
-                        });
-                    }
-                }
-            }
-
             _ => {}
         }
 
@@ -1730,6 +1845,8 @@ impl SplitPanel for MyTeamPanel {
             return self.game_index.unwrap_or_default();
         } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Market {
             return self.planet_index.unwrap_or_default();
+        } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Shipyard {
+            return self.upgrade_index;
         }
 
         // we should always have at least 1 player
@@ -1741,6 +1858,8 @@ impl SplitPanel for MyTeamPanel {
             return self.recent_games.len();
         } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Market {
             return self.planet_markets.len();
+        } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Shipyard {
+            return 3;
         }
         self.players.len()
     }
@@ -1751,6 +1870,8 @@ impl SplitPanel for MyTeamPanel {
                 self.game_index = None;
             } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Market {
                 self.planet_index = None;
+            } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Shipyard {
+                panic!("Max upgrade_index should be 3");
             } else {
                 self.player_index = None;
             }
@@ -1759,6 +1880,8 @@ impl SplitPanel for MyTeamPanel {
                 self.game_index = Some(index % self.max_index());
             } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Market {
                 self.planet_index = Some(index % self.max_index());
+            } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Shipyard {
+                self.upgrade_index = index % self.max_index();
             } else {
                 self.player_index = Some(index % self.max_index());
             }

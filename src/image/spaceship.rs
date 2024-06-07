@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 pub const SPACESHIP_IMAGE_WIDTH: u32 = 30;
 pub const SPACESHIP_IMAGE_HEIGHT: u32 = 24;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq,  Hash, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Hash, Default)]
 pub struct SpaceshipImage {
     color_map: ColorMap,
 }
@@ -30,7 +30,7 @@ impl SpaceshipImage {
         size: u8,
         hull: Hull,
         engine: Engine,
-        storage: Option<Storage>,
+        storage: Storage,
     ) -> AppResult<Gif> {
         let mut gif = Gif::new();
 
@@ -67,14 +67,17 @@ impl SpaceshipImage {
             let mut base = RgbaImage::new(SPACESHIP_IMAGE_WIDTH, SPACESHIP_IMAGE_HEIGHT);
             base.copy_non_trasparent_from(&engine, eng_x, eng_y)?;
 
-            if let Some(storage) = storage {
-                let mut storage_img = read_image(storage.select_file(size).as_str())?;
-                let mask = read_image(storage.select_mask_file(size).as_str())?;
-                storage_img.apply_color_map_with_shadow_mask(self.color_map, &mask);
-                let stg_x = (SPACESHIP_IMAGE_WIDTH - storage_img.width()) / 2;
-                let stg_y = (SPACESHIP_IMAGE_HEIGHT - storage_img.height()) / 2;
-                storage_img.apply_color_map(self.color_map);
-                base.copy_non_trasparent_from(&storage_img, stg_x, stg_y)?;
+            match storage {
+                Storage::PincherNone | Storage::ShuttleNone | Storage::JesterNone => {}
+                _ => {
+                    let mut storage_img = read_image(storage.select_file(size).as_str())?;
+                    let mask = read_image(storage.select_mask_file(size).as_str())?;
+                    storage_img.apply_color_map_with_shadow_mask(self.color_map, &mask);
+                    let stg_x = (SPACESHIP_IMAGE_WIDTH - storage_img.width()) / 2;
+                    let stg_y = (SPACESHIP_IMAGE_HEIGHT - storage_img.height()) / 2;
+                    storage_img.apply_color_map(self.color_map);
+                    base.copy_non_trasparent_from(&storage_img, stg_x, stg_y)?;
+                }
             }
             base.copy_non_trasparent_from(&hull_img, hull_x, hull_y)?;
 

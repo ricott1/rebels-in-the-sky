@@ -2,7 +2,6 @@ use super::{
     action::{ActionOutput, ActionSituation, EngineAction},
     game::Game,
     types::Possession,
-    
 };
 use crate::world::{player::Player, skill::GameSkill};
 use rand::Rng;
@@ -12,16 +11,13 @@ use rand_chacha::ChaCha8Rng;
 pub struct JumpBall;
 
 impl EngineAction for JumpBall {
-     fn execute(
-        input: &ActionOutput,
-        game: &Game,
-        rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
+    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
-    let defending_players = game.defending_players();
+        let defending_players = game.defending_players();
 
-        let jump_ball =
-            |player: &Player| player.athletics.vertical.value() + ((player.info.height as u8).max(150) - 150) / 4;
+        let jump_ball = |player: &Player| {
+            player.athletics.vertical.value() + ((player.info.height as u8).max(150) - 150) / 4
+        };
         let home_jumper = attacking_players.iter().max_by_key(|&p| jump_ball(p));
         let away_jumper = defending_players.iter().max_by_key(|&p| jump_ball(p));
 
@@ -71,7 +67,7 @@ impl EngineAction for JumpBall {
                 ActionOutput {
                     possession: match r {
                         0=>Possession::Home,
-                        _=>Possession::Away 
+                        _=>Possession::Away
                     },
                     situation: ActionSituation::AfterDefensiveRebound,
                     description: format!(

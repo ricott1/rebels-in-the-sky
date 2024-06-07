@@ -41,7 +41,7 @@ pub enum UiState {
     Main,
 }
 
-#[derive(Debug, Clone, Copy,  Hash, Display, PartialEq)]
+#[derive(Debug, Clone, Copy, Hash, Display, PartialEq)]
 pub enum UiTab {
     MyTeam,
     Teams,

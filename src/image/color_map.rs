@@ -8,7 +8,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-#[derive(Debug, Clone, Copy, PartialEq,  Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub struct ColorMap {
     pub red: Rgb<u8>,
     pub green: Rgb<u8>,
@@ -85,7 +85,7 @@ impl ColorMap {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, EnumIter, PartialEq,  Hash)]
+#[derive(Debug, Clone, Copy, Default, EnumIter, PartialEq, Hash)]
 #[repr(u8)]
 pub enum ColorPreset {
     #[default]

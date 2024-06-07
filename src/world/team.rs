@@ -7,7 +7,7 @@ use super::{
     resources::Resource,
     role::CrewRole,
     skill::GameSkill,
-    spaceship::Spaceship,
+    spaceship::{Spaceship, SpaceshipUpgrade},
     types::{PlayerLocation, TeamLocation, TrainingFocus},
 };
 use crate::{
@@ -67,11 +67,17 @@ impl Team {
     }
 
     pub fn balance(&self) -> u32 {
-        self.resources.get(&Resource::SATOSHI).copied().unwrap_or(0)
+        self.resources
+            .get(&Resource::SATOSHI)
+            .copied()
+            .unwrap_or_default()
     }
 
     pub fn fuel(&self) -> u32 {
-        self.resources.get(&Resource::FUEL).copied().unwrap_or(0)
+        self.resources
+            .get(&Resource::FUEL)
+            .copied()
+            .unwrap_or_default()
     }
 
     pub fn used_storage_capacity(&self) -> u32 {
@@ -281,6 +287,10 @@ impl Team {
             }
         }
 
+        if self.spaceship.pending_upgrade.is_some() {
+            return Err("Upgrading spaceship".into());
+        }
+
         if self.current_game.is_some() {
             return Err("Team is playing".into());
         }
@@ -343,6 +353,10 @@ impl Team {
             }
         }
 
+        if self.spaceship.pending_upgrade.is_some() {
+            return Err("Upgrading spaceship".into());
+        }
+
         if self.current_game.is_some() {
             return Err("Team is playing".into());
         }
@@ -400,11 +414,26 @@ impl Team {
             }
         } else {
             // Selling. Check if enough resource
-            let current = self.resources.get(&resource).copied().unwrap_or(0);
+            let current = self.resources.get(&resource).copied().unwrap_or_default();
             if current < amount.abs() as u32 {
                 return Err("Not enough resource".into());
             }
         }
+        Ok(())
+    }
+
+    pub fn can_set_upgrade_spaceship(&self, upgrade: SpaceshipUpgrade) -> AppResult<()> {
+        match self.current_location {
+            TeamLocation::OnPlanet { .. } => {}
+            _ => return Err("Can only upgrade on a planet".into()),
+        }
+
+        for (resource, amount) in upgrade.cost.iter() {
+            if self.resources.get(resource).copied().unwrap_or_default() < *amount {
+                return Err(format!("Insufficient resources").into());
+            }
+        }
+
         Ok(())
     }
 

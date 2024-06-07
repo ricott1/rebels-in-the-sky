@@ -1,4 +1,6 @@
+use super::constants::UiStyle;
 use super::ui_callback::UiCallbackPreset;
+use crate::world::resources::Resource;
 use crate::world::world::World;
 use crate::{types::AppResult, world::skill::Rated};
 use core::fmt::Debug;
@@ -56,7 +58,29 @@ impl Debug for dyn SplitPanel {
     }
 }
 
-pub trait StyledRating: Rated {
+pub trait UiStyled {
+    fn style(&self) -> Style;
+}
+
+impl UiStyled for f32 {
+    fn style(&self) -> Style {
+        match self.rating() {
+            0 => Style::default().fg(Color::DarkGray),
+            1..=2 => Style::default().fg(Color::Red),
+            3..=4 => Style::default().fg(Color::LightRed),
+            5..=6 => Style::default().fg(Color::Yellow),
+            7..=8 => Style::default().fg(Color::LightYellow),
+            9..=10 => Style::default().fg(Color::White),
+            11..=12 => Style::default().fg(Color::White),
+            13..=14 => Style::default().fg(Color::LightGreen),
+            15..=16 => Style::default().fg(Color::Green),
+            17..=18 => Style::default().fg(Color::Cyan),
+            19..=20 => Style::default().fg(Color::LightBlue),
+            _ => panic!("Invalid rating"),
+        }
+    }
+}
+impl UiStyled for u8 {
     fn style(&self) -> Style {
         match self.rating() {
             0 => Style::default().fg(Color::DarkGray),
@@ -75,8 +99,17 @@ pub trait StyledRating: Rated {
     }
 }
 
-impl StyledRating for f32 {}
-impl StyledRating for u8 {}
+impl UiStyled for Resource {
+    fn style(&self) -> Style {
+        match self {
+            Self::GOLD => UiStyle::STORAGE_GOLD,
+            Self::SCRAPS => UiStyle::STORAGE_SCRAPS,
+            Self::RUM => UiStyle::STORAGE_RUM,
+            Self::FUEL => UiStyle::STORAGE_FUEL,
+            Self::SATOSHI => UiStyle::DEFAULT,
+        }
+    }
+}
 
 pub trait PercentageRating: Rated {
     fn percentage(&self) -> u8;

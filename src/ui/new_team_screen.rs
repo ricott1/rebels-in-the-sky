@@ -166,7 +166,7 @@ impl NewTeamScreen {
         let prefab = self.spaceship_models[self.spaceship_model_index];
         let name = self.ship_name_textarea.lines()[0].clone();
         let color_map = self.get_team_colors();
-        prefab.specs(name, color_map)
+        prefab.spaceship(name, color_map)
     }
 
     fn get_team_colors(&self) -> ColorMap {

@@ -39,6 +39,7 @@ impl UiKey {
     pub const QUICK_EXPLORE: KeyCode = KeyCode::Char('x');
     pub const LONG_EXPLORE: KeyCode = KeyCode::Char('X');
     pub const DRINK: KeyCode = KeyCode::Char('D');
+    pub const SET_UPGRADE_SPACESHIP: KeyCode = KeyCode::Char('U');
     pub const BUY_SCRAPS: KeyCode = KeyCode::Char('s');
     pub const BUY_FUEL: KeyCode = KeyCode::Char('u');
     pub const BUY_GOLD: KeyCode = KeyCode::Char('g');

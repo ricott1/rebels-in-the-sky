@@ -5,7 +5,7 @@ use strum::Display;
 use strum_macros::EnumIter;
 
 #[derive(
-    Debug, Default, Clone, Copy, Display, Serialize, Deserialize, PartialEq,  Hash, EnumIter,
+    Debug, Default, Clone, Copy, Display, Serialize, Deserialize, PartialEq, Hash, EnumIter,
 )]
 pub enum JerseyStyle {
     #[default]

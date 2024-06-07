@@ -5,7 +5,7 @@ use super::{
     gif_map::GifMap,
     hover_text_line::HoverTextLine,
     hover_text_span::HoverTextSpan,
-    traits::StyledRating,
+    traits::UiStyled,
     ui_callback::{CallbackRegistry, UiCallbackPreset},
     utils::hover_text_target,
 };
@@ -19,11 +19,13 @@ use crate::{
         position::{GamePosition, Position, MAX_POSITION},
         resources::Resource,
         skill::{GameSkill, Rated, SKILL_NAMES},
+        spaceship::SpaceshipUpgrade,
         team::Team,
         types::TeamLocation,
         world::World,
     },
 };
+use crossterm::event::KeyCode;
 use once_cell::sync::Lazy;
 use ratatui::{
     prelude::*,
@@ -260,6 +262,7 @@ pub fn trade_button<'a>(
     unit_cost: u32,
     callback_registry: &Arc<Mutex<CallbackRegistry>>,
     hover_text_target: Rect,
+    hotkey: Option<KeyCode>,
 ) -> AppResult<Button<'a>> {
     let style = if amount > 0 {
         UiStyle::OK
@@ -288,7 +291,7 @@ pub fn trade_button<'a>(
         button.disable(None);
     }
 
-    let button = button.set_hover_text(
+    let mut button = button.set_hover_text(
         format!(
             "{} {} {} for {} {}.",
             if amount > 0 { "Buy" } else { "Sell" },
@@ -299,6 +302,9 @@ pub fn trade_button<'a>(
         ),
         hover_text_target,
     );
+    if let Some(key) = hotkey {
+        button = button.set_hotkey(key);
+    }
 
     Ok(button)
 }
@@ -433,8 +439,7 @@ pub fn long_explore_button<'a>(
         LONG_EXPLORATION_TIME,
     )
 }
-
-pub fn get_storage_spans(team: &Team) -> Vec<Span> {
+pub(crate) fn get_storage_lengths(team: &Team) -> Vec<usize> {
     let bars_length = 25;
     let gold = team
         .resources
@@ -452,6 +457,7 @@ pub fn get_storage_spans(team: &Team) -> Vec<Span> {
         .copied()
         .unwrap_or_default();
 
+    // Calculate temptative length
     let mut gold_length = ((Resource::GOLD.to_storing_space() * gold) as f32
         / team.spaceship.storage_capacity() as f32
         * bars_length as f32)
@@ -466,45 +472,109 @@ pub fn get_storage_spans(team: &Team) -> Vec<Span> {
         .round() as usize;
 
     // If the quantity is larger than 0, we should display it with at least 1 bar.
-    if gold_length == 0 && gold > 0 {
-        gold_length = 1;
+    if gold > 0 {
+        gold_length = gold_length.max(1);
     }
-    if scraps_length == 0 && scraps > 0 {
-        scraps_length = 1;
+    if scraps > 0 {
+        scraps_length = scraps_length.max(1);
     }
-    if rum_length == 0 && rum > 0 {
-        rum_length = 1;
+    if rum > 0 {
+        rum_length = rum_length.max(1);
     }
 
-    let mut free_bars = if gold_length + scraps_length + rum_length <= bars_length {
-        bars_length - gold_length - scraps_length - rum_length
-    } else {
-        0
-    };
-    let free_space = team.spaceship.storage_capacity() - team.used_storage_capacity();
-    // Try to round up to eliminate free bars when storage is full
-    if free_space == 0 && free_bars != 0 {
-        if gold_length >= scraps_length && gold_length >= rum_length {
-            gold_length += free_bars;
-        } else if rum_length >= scraps_length {
-            rum_length += free_bars;
+    // free_bars can be negative because of the previous rule.
+    let mut free_bars: isize =
+        bars_length as isize - (gold_length + scraps_length + rum_length) as isize;
+
+    // If free_bars is negative, remove enough bars from the largest length.
+    if free_bars < 0 {
+        if gold_length > scraps_length && gold_length > rum_length {
+            gold_length -= (-free_bars) as usize;
+        } else if rum_length > scraps_length {
+            rum_length -= (-free_bars) as usize;
         } else {
-            scraps_length += free_bars;
+            scraps_length -= (-free_bars) as usize;
         }
-        free_bars = 0
+        free_bars = 0;
+    } else if free_bars > 0 {
+        // Round up to eliminate free bars when storage is full
+        let free_space = team.spaceship.storage_capacity() - team.used_storage_capacity();
+        if free_space == 0 {
+            if gold_length >= scraps_length && gold_length >= rum_length {
+                gold_length += free_bars as usize;
+            } else if rum_length >= scraps_length {
+                rum_length += free_bars as usize;
+            } else {
+                scraps_length += free_bars as usize;
+            }
+            free_bars = 0
+        }
     }
 
-    vec![
-        Span::raw(format!(
-            "Storage: {:>4}/{:<4} ",
-            team.used_storage_capacity(),
-            team.max_storage_capacity(),
-        )),
-        Span::styled("▰".repeat(gold_length), UiStyle::STORAGE_GOLD),
-        Span::styled("▰".repeat(scraps_length), UiStyle::STORAGE_SCRAPS),
-        Span::styled("▰".repeat(rum_length), UiStyle::STORAGE_RUM),
-        Span::raw("▱".repeat(free_bars)),
-    ]
+    vec![gold_length, scraps_length, rum_length, free_bars as usize]
+}
+
+pub fn upgrade_spaceship_button<'a>(
+    team: &Team,
+    callback_registry: &Arc<Mutex<CallbackRegistry>>,
+    hover_text_target: Rect,
+    upgrade: SpaceshipUpgrade,
+) -> AppResult<Button<'a>> {
+    if team.spaceship.pending_upgrade.is_some() {
+        return Err("Upgrading spaceship".into());
+    }
+
+    let mut upgrade_text = "".to_string();
+
+    if upgrade.hull.is_some() {
+        upgrade_text.push_str("Hull ");
+    } else if upgrade.engine.is_some() {
+        upgrade_text.push_str("Engine ");
+    } else if upgrade.storage.is_some() {
+        upgrade_text.push_str("Storage ");
+    } else {
+        return Err("Invalid spaceship upgrade".into());
+    }
+
+    let mut upgrade_button = Button::new(
+        format!(
+            "Upgrade {} ({})",
+            upgrade_text,
+            upgrade.duration.formatted()
+        ),
+        UiCallbackPreset::SetUpgradeSpaceship {
+            upgrade: upgrade.clone(),
+        },
+        Arc::clone(&callback_registry),
+    )
+    .set_hover_text(format!("Upgrade your spaceship.",), hover_text_target)
+    .set_hotkey(UiKey::SET_UPGRADE_SPACESHIP);
+
+    let can_set_upgrade = team.can_set_upgrade_spaceship(upgrade);
+
+    if can_set_upgrade.is_err() {
+        upgrade_button.disable(Some(can_set_upgrade.unwrap_err().to_string()));
+    }
+
+    Ok(upgrade_button)
+}
+
+pub fn get_storage_spans(team: &Team) -> Vec<Span> {
+    if let [gold_length, scraps_length, rum_length, free_bars] = get_storage_lengths(team)[..4] {
+        vec![
+            Span::raw(format!(
+                "Storage: {:>4}/{:<4} ",
+                team.used_storage_capacity(),
+                team.max_storage_capacity(),
+            )),
+            Span::styled("▰".repeat(gold_length), UiStyle::STORAGE_GOLD),
+            Span::styled("▰".repeat(scraps_length), UiStyle::STORAGE_SCRAPS),
+            Span::styled("▰".repeat(rum_length), UiStyle::STORAGE_RUM),
+            Span::raw("▱".repeat(free_bars)),
+        ]
+    } else {
+        vec![Span::raw("")]
+    }
 }
 
 pub fn get_fuel_spans(team: &Team) -> Vec<Span> {
@@ -552,7 +622,7 @@ pub fn render_spaceship_description(
     if let Ok(lines) = gif_map
         .lock()
         .unwrap()
-        .spaceship_lines(team.id, tick, world)
+        .on_planet_spaceship_lines(team.id, tick, world)
     {
         let paragraph = Paragraph::new(lines);
         frame.render_widget(
@@ -616,9 +686,275 @@ pub fn render_spaceship_description(
     );
 
     // Render main block
-    let block = default_block()
-        .title(format!("Spaceship - {}", team.spaceship.name.to_string()))
-        .title_alignment(Alignment::Left);
+    let block = default_block().title(format!("Spaceship - {}", team.spaceship.name.to_string()));
+    frame.render_widget(block, area);
+}
+
+pub fn render_spaceship_upgrade(
+    team: &Team,
+    upgrade: &SpaceshipUpgrade,
+    gif_map: &Arc<Mutex<GifMap>>,
+    world: &World,
+    frame: &mut Frame,
+    area: Rect,
+) {
+    let spaceship_split = Layout::horizontal([
+        Constraint::Length(SPACESHIP_IMAGE_WIDTH as u16 + 2),
+        Constraint::Min(1),
+    ])
+    .split(area.inner(&Margin {
+        horizontal: 1,
+        vertical: 1,
+    }));
+
+    if let Ok(lines) = gif_map
+        .lock()
+        .unwrap()
+        .in_shipyard_spaceship_lines(team.id, world)
+    {
+        let paragraph = Paragraph::new(lines);
+        frame.render_widget(
+            paragraph.centered(),
+            spaceship_split[0].inner(&Margin {
+                horizontal: 1,
+                vertical: 0,
+            }),
+        );
+    }
+
+    let mut upgraded_ship = team.spaceship.clone();
+
+    if let Some(u_hull) = upgrade.hull {
+        upgraded_ship.hull = u_hull;
+    }
+    if let Some(u_engine) = upgrade.engine {
+        upgraded_ship.engine = u_engine;
+    }
+    if let Some(u_storage) = upgrade.storage {
+        upgraded_ship.storage = u_storage;
+    }
+
+    let spaceship_info = Paragraph::new(vec![
+        Line::from(vec![
+            Span::raw(format!(
+                "Speed: {:.3}",
+                team.spaceship.speed() * HOURS as f32 / AU as f32
+            )),
+            Span::raw(format!(
+                "{}",
+                if upgraded_ship.speed() == team.spaceship.speed() {
+                    ""
+                } else {
+                    " --> "
+                }
+            )),
+            Span::styled(
+                format!(
+                    "{}",
+                    if upgraded_ship.speed() == team.spaceship.speed() {
+                        "".to_string()
+                    } else {
+                        format!("{:.3}", upgraded_ship.speed() * HOURS as f32 / AU as f32)
+                    }
+                ),
+                if upgraded_ship.speed() > team.spaceship.speed() {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+            Span::raw(" AU/h"),
+        ]),
+        Line::from(vec![
+            Span::raw(format!("Max crew: {}", team.spaceship.crew_capacity())),
+            Span::raw(format!(
+                "{}",
+                if upgraded_ship.crew_capacity() == team.spaceship.crew_capacity() {
+                    ""
+                } else {
+                    " --> "
+                }
+            )),
+            Span::styled(
+                format!(
+                    "{}",
+                    if upgraded_ship.crew_capacity() == team.spaceship.crew_capacity() {
+                        "".to_string()
+                    } else {
+                        format!("{}", upgraded_ship.crew_capacity())
+                    }
+                ),
+                if upgraded_ship.crew_capacity() > team.spaceship.crew_capacity() {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw(format!("Max tank: {}", team.spaceship.fuel_capacity())),
+            Span::raw(format!(
+                "{}",
+                if upgraded_ship.fuel_capacity() == team.spaceship.fuel_capacity() {
+                    ""
+                } else {
+                    " --> "
+                }
+            )),
+            Span::styled(
+                format!(
+                    "{}",
+                    if upgraded_ship.fuel_capacity() == team.spaceship.fuel_capacity() {
+                        "".to_string()
+                    } else {
+                        format!("{}", upgraded_ship.fuel_capacity())
+                    }
+                ),
+                if upgraded_ship.fuel_capacity() > team.spaceship.fuel_capacity() {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+            Span::raw(" t"),
+        ]),
+        Line::from(vec![
+            Span::raw(format!("Max storage: {}", team.max_storage_capacity(),)),
+            Span::raw(format!(
+                "{}",
+                if upgraded_ship.storage_capacity() == team.spaceship.storage_capacity() {
+                    ""
+                } else {
+                    " --> "
+                }
+            )),
+            Span::styled(
+                format!(
+                    "{}",
+                    if upgraded_ship.storage_capacity() == team.spaceship.storage_capacity() {
+                        "".to_string()
+                    } else {
+                        format!("{}", upgraded_ship.storage_capacity())
+                    }
+                ),
+                if upgraded_ship.storage_capacity() > team.spaceship.storage_capacity() {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw(format!(
+                "Consumption: {:.2}",
+                team.spaceship.fuel_consumption() * HOURS as f32
+            )),
+            Span::raw(format!(
+                "{}",
+                if upgraded_ship.fuel_consumption() == team.spaceship.fuel_consumption() {
+                    ""
+                } else {
+                    " --> "
+                }
+            )),
+            Span::styled(
+                format!(
+                    "{}",
+                    if upgraded_ship.fuel_consumption() == team.spaceship.fuel_consumption() {
+                        "".to_string()
+                    } else {
+                        format!("{:.2}", upgraded_ship.fuel_consumption() * HOURS as f32)
+                    }
+                ),
+                if upgraded_ship.fuel_consumption() < team.spaceship.fuel_consumption() {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+            Span::raw(" t/h"),
+        ]),
+        Line::from(vec![
+            Span::raw(format!(
+                "Max distance: {:.3}",
+                team.spaceship.max_distance(team.spaceship.fuel_capacity()) / AU as f32
+            )),
+            Span::raw(format!(
+                "{}",
+                if upgraded_ship.max_distance(upgraded_ship.fuel_capacity())
+                    == team.spaceship.max_distance(team.spaceship.fuel_capacity())
+                {
+                    ""
+                } else {
+                    " --> "
+                }
+            )),
+            Span::styled(
+                format!(
+                    "{}",
+                    if upgraded_ship.max_distance(upgraded_ship.fuel_capacity())
+                        == team.spaceship.max_distance(team.spaceship.fuel_capacity())
+                    {
+                        "".to_string()
+                    } else {
+                        format!(
+                            "{:.3}",
+                            upgraded_ship.max_distance(upgraded_ship.fuel_capacity()) / AU as f32
+                        )
+                    }
+                ),
+                if upgraded_ship.max_distance(upgraded_ship.fuel_capacity())
+                    > team.spaceship.max_distance(team.spaceship.fuel_capacity())
+                {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+            Span::raw(" AU"),
+        ]),
+        Line::from(vec![
+            Span::raw(format!("Value: {}", team.spaceship.cost(),)),
+            Span::raw(format!(
+                "{}",
+                if upgraded_ship.cost() == team.spaceship.cost() {
+                    ""
+                } else {
+                    " --> "
+                }
+            )),
+            Span::styled(
+                format!(
+                    "{}",
+                    if upgraded_ship.cost() == team.spaceship.cost() {
+                        "".to_string()
+                    } else {
+                        format!("{}", upgraded_ship.cost())
+                    }
+                ),
+                if upgraded_ship.cost() > team.spaceship.cost() {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+            Span::raw(format!(" {}", CURRENCY_SYMBOL)),
+        ]),
+    ]);
+
+    frame.render_widget(
+        spaceship_info,
+        spaceship_split[1].inner(&Margin {
+            horizontal: 0,
+            vertical: 1,
+        }),
+    );
+
+    // Render main block
+    let block = default_block().title(format!(
+        "Upgraded Spaceship - {}",
+        team.spaceship.name.to_string()
+    ));
     frame.render_widget(block, area);
 }
 
@@ -796,12 +1132,10 @@ pub fn render_player_description(
     );
 
     // Render main block
-    let block = default_block()
-        .title(format!(
-            "{} {}",
-            player.info.first_name, player.info.last_name
-        ))
-        .title_alignment(Alignment::Left);
+    let block = default_block().title(format!(
+        "{} {}",
+        player.info.first_name, player.info.last_name
+    ));
     frame.render_widget(block, area);
 }
 
@@ -935,4 +1269,98 @@ fn format_player_data(player: &Player) -> Vec<Line> {
     }
 
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        image::color_map::ColorMap,
+        types::{IdSystem, PlanetId, TeamId},
+        ui::widgets::get_storage_lengths,
+        world::{resources::Resource, spaceship::SpaceshipPrefab, team::Team},
+    };
+
+    #[test]
+    fn test_storage_spans() {
+        let mut team = Team::random(TeamId::new(), PlanetId::new(), "test".into());
+        team.spaceship = SpaceshipPrefab::Bresci.spaceship("test".into(), ColorMap::random());
+
+        let bars_length = 25;
+        if let [gold_length, scraps_length, rum_length, free_bars] = get_storage_lengths(&team)[..4]
+        {
+            println!("{:?}", team.resources);
+            println!(
+                "gold={} scraps={} rum={} free={} storage={}/{}",
+                gold_length,
+                scraps_length,
+                rum_length,
+                free_bars,
+                team.used_storage_capacity(),
+                team.max_storage_capacity()
+            );
+            assert_eq!(gold_length, 0);
+            assert_eq!(scraps_length, 0);
+            assert_eq!(rum_length, 0);
+            assert_eq!(free_bars, bars_length);
+            assert_eq!(
+                gold_length + scraps_length + rum_length + free_bars,
+                bars_length
+            );
+        } else {
+            panic!("Failed to calculate resource length");
+        }
+
+        team.add_resource(Resource::SCRAPS, 178);
+        team.add_resource(Resource::RUM, 11);
+
+        if let [gold_length, scraps_length, rum_length, free_bars] = get_storage_lengths(&team)[..4]
+        {
+            println!("{:?}", team.resources);
+            println!(
+                "gold={} scraps={} rum={} free={} storage={}/{}",
+                gold_length,
+                scraps_length,
+                rum_length,
+                free_bars,
+                team.used_storage_capacity(),
+                team.max_storage_capacity()
+            );
+            assert_eq!(gold_length, 0);
+            assert_eq!(scraps_length, 24);
+            assert_eq!(rum_length, 1);
+            assert_eq!(free_bars, 0);
+            assert_eq!(
+                gold_length + scraps_length + rum_length + free_bars,
+                bars_length
+            );
+        } else {
+            panic!("Failed to calculate resource length");
+        }
+
+        team.add_resource(Resource::GOLD, 1);
+
+        if let [gold_length, scraps_length, rum_length, free_bars] = get_storage_lengths(&team)[..4]
+        {
+            println!("{:?}", team.resources);
+            println!(
+                "gold={} scraps={} rum={} free={} storage={}/{}",
+                gold_length,
+                scraps_length,
+                rum_length,
+                free_bars,
+                team.used_storage_capacity(),
+                team.max_storage_capacity()
+            );
+            assert_eq!(gold_length, 1);
+            assert_eq!(scraps_length, 23);
+            assert_eq!(rum_length, 1);
+            assert_eq!(free_bars, 0);
+            assert_eq!(
+                gold_length + scraps_length + rum_length + free_bars,
+                bars_length
+            );
+        } else {
+            panic!("Failed to calculate resource length");
+        }
+    }
 }

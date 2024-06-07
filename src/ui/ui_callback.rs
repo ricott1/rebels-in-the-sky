@@ -25,7 +25,7 @@ use crate::{
         resources::Resource,
         role::CrewRole,
         skill::{GameSkill, MAX_SKILL},
-        spaceship::Spaceship,
+        spaceship::{Spaceship, SpaceshipUpgrade},
         team::Team,
         types::{PlayerLocation, TeamLocation, TrainingFocus},
     },
@@ -167,6 +167,12 @@ pub enum UiCallbackPreset {
     },
     NameAndAcceptAsteroid {
         name: String,
+    },
+    SetUpgradeSpaceship {
+        upgrade: SpaceshipUpgrade,
+    },
+    UpgradeSpaceship {
+        upgrade: SpaceshipUpgrade,
     },
 }
 
@@ -762,6 +768,54 @@ impl UiCallbackPreset {
         })
     }
 
+    fn set_upgrade_spaceship(upgrade: SpaceshipUpgrade) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let mut team = app.world.get_own_team()?.clone();
+            team.can_set_upgrade_spaceship(upgrade.clone())?;
+
+            for (resource, amount) in upgrade.cost.clone() {
+                team.remove_resource(resource, amount)?;
+            }
+
+            team.spaceship.pending_upgrade = Some(upgrade.clone());
+            app.world.teams.insert(team.id, team);
+
+            app.world.dirty = true;
+            app.world.dirty_network = true;
+            app.world.dirty_ui = true;
+
+            Ok(None)
+        })
+    }
+
+    fn upgrade_spaceship(upgrade: SpaceshipUpgrade) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let mut team = app.world.get_own_team()?.clone();
+            if let Some(u_hull) = upgrade.hull {
+                team.spaceship.hull = u_hull;
+            }
+            if let Some(u_engine) = upgrade.engine {
+                team.spaceship.engine = u_engine;
+            }
+            if let Some(u_storage) = upgrade.storage {
+                team.spaceship.storage = u_storage;
+            }
+            team.spaceship.pending_upgrade = None;
+
+            app.world.teams.insert(team.id, team);
+
+            app.ui.set_popup(PopupMessage::Ok(
+                "Spaceship upgrade completed!".into(),
+                Tick::now(),
+            ));
+
+            app.world.dirty = true;
+            app.world.dirty_network = true;
+            app.world.dirty_ui = true;
+
+            Ok(None)
+        })
+    }
     pub fn call(&self, app: &mut App) -> AppResult<Option<String>> {
         match self {
             UiCallbackPreset::None => Ok(None),
@@ -1052,6 +1106,12 @@ impl UiCallbackPreset {
             }
             UiCallbackPreset::NameAndAcceptAsteroid { name } => {
                 Self::name_and_accept_asteorid(name.clone())(app)
+            }
+            UiCallbackPreset::SetUpgradeSpaceship { upgrade } => {
+                Self::set_upgrade_spaceship(upgrade.clone())(app)
+            }
+            UiCallbackPreset::UpgradeSpaceship { upgrade } => {
+                Self::upgrade_spaceship(upgrade.clone())(app)
             }
         }
     }

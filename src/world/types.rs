@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     image::color_map::SkinColorMap,
-    types::{AppResult, PlanetId, PlayerId, TeamId, Tick},
+    types::{AppResult, PlanetId, TeamId, Tick},
 };
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
@@ -454,7 +454,8 @@ impl TeamBonus {
         };
 
         let skill = if let Some(id) = player_id {
-            self.as_skill(world, id).unwrap_or_default()
+            let player = world.get_player_or_err(id)?;
+            self.as_skill(player).unwrap_or_default()
         } else {
             0.0
         };
@@ -462,38 +463,31 @@ impl TeamBonus {
         Ok(BASE_BONUS + BONUS_PER_SKILL * skill)
     }
 
-    pub fn as_skill(&self, world: &World, player_id: PlayerId) -> AppResult<f32> {
+    pub fn current_player_bonus(&self, player: &Player) -> AppResult<f32> {
+        let skill = self.as_skill(player).unwrap_or_default();
+        Ok(BASE_BONUS + BONUS_PER_SKILL * skill)
+    }
+
+    pub fn as_skill(&self, player: &Player) -> AppResult<f32> {
         match self {
             TeamBonus::Exploration => {
-                let pilot = world.get_player_or_err(player_id)?;
-                Ok(0.35 * pilot.athletics.stamina + 0.65 * pilot.mental.vision)
+                Ok(0.35 * player.athletics.stamina + 0.65 * player.mental.vision)
             }
-            TeamBonus::Reputation => {
-                let captain = world.get_player_or_err(player_id)?;
-                Ok(0.8 * captain.mental.charisma
-                    + 0.1 * captain.mental.aggression
-                    + 0.1 * captain.athletics.strength)
-            }
+            TeamBonus::Reputation => Ok(0.8 * player.mental.charisma
+                + 0.1 * player.mental.aggression
+                + 0.1 * player.athletics.strength),
             TeamBonus::SpaceshipSpeed => {
-                let pilot = world.get_player_or_err(player_id)?;
-                Ok(0.75 * pilot.athletics.quickness + 0.25 * pilot.mental.vision)
+                Ok(0.75 * player.athletics.quickness + 0.25 * player.mental.vision)
             }
             TeamBonus::TirednessRecovery => {
-                let doctor = world.get_player_or_err(player_id)?;
-                Ok(0.8 * doctor.athletics.stamina + 0.2 * doctor.mental.intuition)
+                Ok(0.8 * player.athletics.stamina + 0.2 * player.mental.intuition)
             }
-            TeamBonus::TradePrice => {
-                let captain = world.get_player_or_err(player_id)?;
-                Ok(0.5 * captain.mental.charisma
-                    + 0.25 * captain.mental.aggression
-                    + 0.25 * captain.mental.intuition)
-            }
-            TeamBonus::Training => {
-                let doctor = world.get_player_or_err(player_id)?;
-                Ok(0.25 * doctor.athletics.strength
-                    + 0.25 * doctor.athletics.vertical
-                    + 0.5 * doctor.mental.intuition)
-            }
+            TeamBonus::TradePrice => Ok(0.5 * player.mental.charisma
+                + 0.25 * player.mental.aggression
+                + 0.25 * player.mental.intuition),
+            TeamBonus::Training => Ok(0.25 * player.athletics.strength
+                + 0.25 * player.athletics.vertical
+                + 0.5 * player.mental.intuition),
         }
     }
 }

@@ -283,6 +283,10 @@ impl World {
         let mut team = self.get_team_or_err(team_id)?.clone();
         team.can_set_crew_role(&player, role)?;
 
+        let previous_spaceship_speed_bonus = TeamBonus::SpaceshipSpeed
+            .current_team_bonus(&self, team.id)?
+            .clone();
+
         let current_role_player = match role {
             CrewRole::Captain => team.crew_roles.captain,
             CrewRole::Pilot => team.crew_roles.pilot,
@@ -318,9 +322,6 @@ impl World {
                 .insert(current_role_player.id, current_role_player);
         }
 
-        let previous_spaceship_speed_bonus =
-            TeamBonus::SpaceshipSpeed.current_team_bonus(&self, team.id)?;
-
         // Empty previous role of player.
         match player.info.crew_role {
             CrewRole::Captain => {
@@ -354,7 +355,6 @@ impl World {
         }
         player.info.crew_role = role;
         player.set_jersey(&jersey);
-        self.players.insert(player.id, player);
 
         // If team is travelling and pilot was updated recalculate travel duration.
         match team.current_location {
@@ -367,11 +367,16 @@ impl World {
             } => {
                 let new_start = Tick::now();
                 let time_elapsed = new_start - started;
-                let bonus = TeamBonus::SpaceshipSpeed.current_team_bonus(&self, team.id)?;
+                let bonus = TeamBonus::SpaceshipSpeed.current_player_bonus(&player)?;
 
                 let new_duration =
                     (duration - time_elapsed) as f32 * previous_spaceship_speed_bonus / bonus;
 
+                log::info!(
+                    "Update {role}: old speed {previous_spaceship_speed_bonus}, new speed {bonus}"
+                );
+
+                let old_location = team.current_location.clone();
                 team.current_location = TeamLocation::Travelling {
                     from,
                     to,
@@ -379,10 +384,17 @@ impl World {
                     duration: new_duration as Tick,
                     distance,
                 };
+
+                log::info!(
+                    "Update {role}: old location{:?}, new location {:?}",
+                    old_location,
+                    team.current_location
+                );
             }
             _ => {}
         }
 
+        self.players.insert(player.id, player);
         self.teams.insert(team.id, team);
         self.dirty = true;
         self.dirty_ui = true;
@@ -806,6 +818,9 @@ impl World {
             if let Some(callback) = self.tick_travel(current_timestamp, is_simulating)? {
                 callbacks.push(callback);
             }
+            if let Some(callback) = self.tick_spaceship_upgrade(current_timestamp, is_simulating)? {
+                callbacks.push(callback);
+            }
             self.last_tick_short_interval += TickInterval::SHORT;
             // Round up to the TickInterval::SHORT
             self.last_tick_short_interval -= self.last_tick_short_interval % TickInterval::SHORT;
@@ -1138,6 +1153,20 @@ impl World {
                 }
             }
             _ => {}
+        }
+        Ok(None)
+    }
+
+    pub fn tick_spaceship_upgrade(
+        &mut self,
+        current_timestamp: Tick,
+        _is_simulating: bool,
+    ) -> AppResult<Option<UiCallbackPreset>> {
+        let own_team = self.get_own_team()?;
+        if let Some(upgrade) = own_team.spaceship.pending_upgrade.clone() {
+            if current_timestamp > upgrade.started + upgrade.duration {
+                return Ok(Some(UiCallbackPreset::UpgradeSpaceship { upgrade }));
+            }
         }
         Ok(None)
     }

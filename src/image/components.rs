@@ -396,6 +396,7 @@ impl ImageComponent for Storage {
                 _ => "storage/shuttle_double2.png".into(),
             },
             Storage::PincherSingle => "storage/pincher_single.png".into(),
+            _ => panic!("No image should be required for this component"),
         }
     }
 
@@ -412,6 +413,7 @@ impl ImageComponent for Storage {
                 _ => "storage/mask_shuttle_double2.png".into(),
             },
             Storage::PincherSingle => format!("storage/mask_pincher_single.png"),
+            _ => panic!("No image should be required for this component"),
         }
     }
 }

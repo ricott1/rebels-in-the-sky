@@ -62,7 +62,8 @@ impl ImageResizeInGalaxyGif {
 #[derive(Debug, Default)]
 pub struct GifMap {
     players_lines: HashMap<PlayerId, (u64, GifLines)>,
-    spaceship_lines: HashMap<TeamId, GifLines>,
+    on_planet_spaceship_lines: HashMap<TeamId, GifLines>,
+    in_shipyard_spaceship_lines: HashMap<TeamId, GifLines>,
     travelling_spaceship_lines: HashMap<TeamId, GifLines>,
     exploring_spaceship_lines: HashMap<TeamId, GifLines>,
     planets_zoom_in_lines: HashMap<PlanetId, GifLines>,
@@ -347,13 +348,13 @@ impl GifMap {
         Ok(lines[tick % lines.len()].clone())
     }
 
-    pub fn spaceship_lines(
+    pub fn on_planet_spaceship_lines(
         &mut self,
         team_id: TeamId,
         tick: usize,
         world: &World,
     ) -> AppResult<FrameLines> {
-        if let Some(lines) = self.spaceship_lines.get(&team_id) {
+        if let Some(lines) = self.on_planet_spaceship_lines.get(&team_id) {
             return Ok(lines[tick % lines.len()].clone());
         }
 
@@ -364,8 +365,31 @@ impl GifMap {
             return Err(e);
         }
         let lines = Self::gif_to_lines(&gif?);
-        self.spaceship_lines.insert(team_id, lines.clone());
+        self.on_planet_spaceship_lines
+            .insert(team_id, lines.clone());
         Ok(lines[tick % lines.len()].clone())
+    }
+
+    pub fn in_shipyard_spaceship_lines(
+        &mut self,
+        team_id: TeamId,
+        world: &World,
+    ) -> AppResult<FrameLines> {
+        if let Some(lines) = self.in_shipyard_spaceship_lines.get(&team_id) {
+            return Ok(lines[0].clone());
+        }
+
+        let team = world.get_team_or_err(team_id)?;
+        // FIXME: should compose with shipyard_support
+        let gif = team.spaceship.compose_image();
+        if let Err(e) = gif {
+            log::error!("{}", e);
+            return Err(e);
+        }
+        let lines = Self::gif_to_lines(&gif?);
+        self.on_planet_spaceship_lines
+            .insert(team_id, lines.clone());
+        Ok(lines[0].clone())
     }
 
     pub fn travelling_spaceship_lines(

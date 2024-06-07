@@ -44,7 +44,7 @@ use strum_macros::Display;
 
 const IMG_FRAME_WIDTH: u16 = 80;
 
-#[derive(Debug, Clone, Copy, Display, Default, PartialEq,  Hash)]
+#[derive(Debug, Clone, Copy, Display, Default, PartialEq, Hash)]
 pub enum TeamView {
     #[default]
     All,

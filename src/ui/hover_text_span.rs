@@ -19,7 +19,7 @@ pub struct HoverTextSpan<'a> {
     callback_registry: Arc<Mutex<CallbackRegistry>>,
 }
 
-#[derive(Debug, Default, Clone, Copy,  PartialEq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Hash)]
 pub struct Wrap {
     /// Should leading whitespace be trimmed
     pub trim: bool,
