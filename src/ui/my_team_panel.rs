@@ -643,7 +643,11 @@ impl MyTeamPanel {
 
         match team.current_location {
             TeamLocation::OnPlanet { planet_id } => {
-                self.render_on_planet_spaceship(frame, world, split[1], planet_id)?
+                if let Some(upgrade) = &team.spaceship.pending_upgrade {
+                    self.render_upgrading_spaceship(frame, world, split[1], upgrade)?
+                } else {
+                    self.render_on_planet_spaceship(frame, world, split[1], planet_id)?
+                }
             }
             TeamLocation::Travelling {
                 to,
@@ -989,7 +993,11 @@ impl MyTeamPanel {
         let team = world.get_own_team()?;
         match team.current_location {
             TeamLocation::OnPlanet { planet_id } => {
-                self.render_in_shipyard_spaceship(frame, world, split[1], planet_id)?
+                if let Some(upgrade) = &team.spaceship.pending_upgrade {
+                    self.render_upgrading_spaceship(frame, world, split[1], upgrade)?
+                } else {
+                    self.render_in_shipyard_spaceship(frame, world, split[1], planet_id)?
+                }
             }
             TeamLocation::Travelling {
                 to,
@@ -1097,29 +1105,17 @@ impl MyTeamPanel {
             _ => panic!("Invalid upgrade index"),
         };
 
-        let upgrade_to_text = match self.upgrade_index {
-            0 => {
-                if team.spaceship.hull.can_be_upgraded() {
-                    format!("{} -> {}", current, next)
-                } else {
-                    "Already fully upgraded".to_string()
-                }
-            }
-            1 => {
-                if team.spaceship.engine.can_be_upgraded() {
-                    format!("{} -> {}", current, next)
-                } else {
-                    "Already fully upgraded".to_string()
-                }
-            }
-            2 => {
-                if team.spaceship.storage.can_be_upgraded() {
-                    format!("{} -> {}", current, next)
-                } else {
-                    "Already fully upgraded".to_string()
-                }
-            }
+        let can_be_upgraded = match self.upgrade_index {
+            0 => team.spaceship.hull.can_be_upgraded(),
+            1 => team.spaceship.engine.can_be_upgraded(),
+            2 => team.spaceship.storage.can_be_upgraded(),
             _ => panic!("Invalid upgrade index"),
+        };
+
+        let upgrade_to_text = if can_be_upgraded {
+            format!("{} -> {}", current, next)
+        } else {
+            "Already fully upgraded".to_string()
         };
 
         let mut lines = vec![
@@ -1133,18 +1129,20 @@ impl MyTeamPanel {
             Line::from(""),
         ];
 
-        for (resource, amount) in upgrade_cost.iter() {
-            let have = team.resources.get(resource).copied().unwrap_or_default();
-            let style = if amount.clone() > have {
-                UiStyle::ERROR
-            } else {
-                UiStyle::OK
-            };
+        if can_be_upgraded {
+            for (resource, amount) in upgrade_cost.iter() {
+                let have = team.resources.get(resource).copied().unwrap_or_default();
+                let style = if amount.clone() > have {
+                    UiStyle::ERROR
+                } else {
+                    UiStyle::OK
+                };
 
-            lines.push(Line::from(vec![
-                Span::styled(format!("  {} ", resource.to_string()), resource.style()),
-                Span::styled(format!("{}/{}", amount, have), style),
-            ]));
+                lines.push(Line::from(vec![
+                    Span::styled(format!("  {} ", resource.to_string()), resource.style()),
+                    Span::styled(format!("{}/{}", amount, have), style),
+                ]));
+            }
         }
 
         frame.render_widget(Paragraph::new(lines), split[1]);
@@ -1520,7 +1518,6 @@ impl MyTeamPanel {
                 horizontal: 1,
             }),
         );
-
         render_spaceship_description(&team, &self.gif_map, self.tick, world, frame, area);
 
         let explore_split =
@@ -1535,6 +1532,43 @@ impl MyTeamPanel {
         {
             frame.render_widget(explore_button, explore_split[1]);
         }
+        Ok(())
+    }
+
+    fn render_upgrading_spaceship(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+        upgrade: &SpaceshipUpgrade,
+    ) -> AppResult<()> {
+        let team = world.get_own_team()?;
+
+        let countdown = if upgrade.started + upgrade.duration > world.last_tick_short_interval {
+            (upgrade.started + upgrade.duration - world.last_tick_short_interval).formatted()
+        } else {
+            (0 as Tick).formatted()
+        };
+
+        render_spaceship_upgrade(
+            &team,
+            &upgrade,
+            &self.gif_map,
+            self.tick,
+            world,
+            frame,
+            area,
+        );
+
+        frame.render_widget(
+            default_block().title(format!(
+                "Upgrading Spaceship {} - {}",
+                upgrade.target()?,
+                countdown
+            )),
+            area,
+        );
+
         Ok(())
     }
 
@@ -1586,13 +1620,29 @@ impl MyTeamPanel {
             _ => panic!("Invalid upgrade_index"),
         };
 
-        render_spaceship_upgrade(&team, &upgrade, &self.gif_map, world, frame, area);
+        render_spaceship_upgrade(
+            &team,
+            &upgrade,
+            &self.gif_map,
+            self.tick,
+            world,
+            frame,
+            area,
+        );
+        frame.render_widget(
+            default_block().title(format!(
+                "Upgraded Spaceship {}",
+                upgrade.target().unwrap_or("None")
+            )),
+            area,
+        );
 
         if let Ok(upgrade_button) =
             upgrade_spaceship_button(team, &self.callback_registry, hover_text_target, upgrade)
         {
             frame.render_widget(upgrade_button, split[1]);
         }
+
         Ok(())
     }
 

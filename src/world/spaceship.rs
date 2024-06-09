@@ -18,7 +18,7 @@ pub enum SpaceshipStyle {
     Jester,
 }
 
-pub trait SpaceshipComponent: Sized + Copy {
+pub trait SpaceshipComponent: Sized + Copy + PartialEq {
     fn next(&self) -> Self;
     fn previous(&self) -> Self;
     fn style(&self) -> SpaceshipStyle;
@@ -33,6 +33,9 @@ pub trait SpaceshipComponent: Sized + Copy {
     fn can_be_upgraded(&self) -> bool {
         let next_component = self.next();
         if next_component.cost() < self.cost() {
+            return false;
+        }
+        if next_component == *self {
             return false;
         }
 
@@ -506,6 +509,21 @@ pub struct SpaceshipUpgrade {
     pub duration: Tick,
 }
 
+impl SpaceshipUpgrade {
+    pub fn target(&self) -> AppResult<&str> {
+        if self.hull.is_some() {
+            return Ok("Hull");
+        }
+        if self.engine.is_some() {
+            return Ok("Engine");
+        }
+        if self.storage.is_some() {
+            return Ok("Storage");
+        }
+        return Err("Invalid upgrade".into());
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct Spaceship {
     pub name: String,
@@ -566,13 +584,22 @@ impl Spaceship {
         Self::new(name, hull, engine, storage, color_map)
     }
 
+    pub fn style(&self) -> SpaceshipStyle {
+        self.hull.style()
+    }
+
     pub fn set_color_map(&mut self, color_map: ColorMap) {
         self.image.set_color_map(color_map);
     }
 
     pub fn compose_image(&self) -> AppResult<Gif> {
         self.image
-            .compose(self.size(), self.hull, self.engine, self.storage)
+            .compose(self.size(), self.hull, self.engine, self.storage, false)
+    }
+
+    pub fn compose_image_in_shipyard(&self) -> AppResult<Gif> {
+        self.image
+            .compose(self.size(), self.hull, self.engine, self.storage, true)
     }
 
     pub fn speed(&self) -> f32 {

@@ -524,22 +524,10 @@ pub fn upgrade_spaceship_button<'a>(
         return Err("Upgrading spaceship".into());
     }
 
-    let mut upgrade_text = "".to_string();
-
-    if upgrade.hull.is_some() {
-        upgrade_text.push_str("Hull ");
-    } else if upgrade.engine.is_some() {
-        upgrade_text.push_str("Engine ");
-    } else if upgrade.storage.is_some() {
-        upgrade_text.push_str("Storage ");
-    } else {
-        return Err("Invalid spaceship upgrade".into());
-    }
-
     let mut upgrade_button = Button::new(
         format!(
             "Upgrade {} ({})",
-            upgrade_text,
+            upgrade.target()?,
             upgrade.duration.formatted()
         ),
         UiCallbackPreset::SetUpgradeSpaceship {
@@ -694,6 +682,7 @@ pub fn render_spaceship_upgrade(
     team: &Team,
     upgrade: &SpaceshipUpgrade,
     gif_map: &Arc<Mutex<GifMap>>,
+    tick: usize,
     world: &World,
     frame: &mut Frame,
     area: Rect,
@@ -710,7 +699,7 @@ pub fn render_spaceship_upgrade(
     if let Ok(lines) = gif_map
         .lock()
         .unwrap()
-        .in_shipyard_spaceship_lines(team.id, world)
+        .in_shipyard_spaceship_lines(team.id, tick, world)
     {
         let paragraph = Paragraph::new(lines);
         frame.render_widget(
@@ -949,13 +938,6 @@ pub fn render_spaceship_upgrade(
             vertical: 1,
         }),
     );
-
-    // Render main block
-    let block = default_block().title(format!(
-        "Upgraded Spaceship - {}",
-        team.spaceship.name.to_string()
-    ));
-    frame.render_widget(block, area);
 }
 
 pub fn render_player_description(

@@ -8,7 +8,7 @@ pub static ASSETS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/assets/");
 pub static PERSISTED_WORLD_FILENAME: &str = "world.json";
 pub static PERSISTED_GAMES_PREFIX: &str = "game_";
 
-fn store_path(filename: &str) -> AppResult<PathBuf> {
+pub fn store_path(filename: &str) -> AppResult<PathBuf> {
     let dirs = directories::ProjectDirs::from("org", "frittura", "rebels")
         .ok_or("Failed to get directories")?;
     let config_dirs = dirs.config_dir();

@@ -3,7 +3,7 @@ use super::components::*;
 use super::types::Gif;
 use super::utils::{read_image, ExtraImageUtils};
 use crate::types::AppResult;
-use crate::world::spaceship::{Engine, Hull, Storage};
+use crate::world::spaceship::{Engine, Hull, SpaceshipComponent, Storage};
 use image::RgbaImage;
 use serde;
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,7 @@ impl SpaceshipImage {
         hull: Hull,
         engine: Engine,
         storage: Storage,
+        in_shipyard: bool,
     ) -> AppResult<Gif> {
         let mut gif = Gif::new();
 
@@ -51,7 +52,8 @@ impl SpaceshipImage {
             [ColorPreset::Orange, ColorPreset::Red, ColorPreset::Orange],
         ];
 
-        for tick in 0..32 {
+        let max_tick = if in_shipyard { 1 } else { 32 };
+        for tick in 0..max_tick {
             let color_presets = engine_color_presets[tick / 4].clone();
             let color_map = ColorMap {
                 red: color_presets[0].to_rgb(),
@@ -80,6 +82,21 @@ impl SpaceshipImage {
                 }
             }
             base.copy_non_trasparent_from(&hull_img, hull_x, hull_y)?;
+
+            if in_shipyard {
+                let shipyard_img = read_image(
+                    format!(
+                        "hull/shipyard_{}.png",
+                        hull.style().to_string().to_lowercase()
+                    )
+                    .as_str(),
+                )?;
+
+                let x = (SPACESHIP_IMAGE_WIDTH - shipyard_img.width()) / 2;
+                let y = 0;
+
+                base.copy_non_trasparent_from(&shipyard_img, x, y)?;
+            }
 
             gif.push(base);
         }

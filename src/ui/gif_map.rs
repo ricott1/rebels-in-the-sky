@@ -373,23 +373,24 @@ impl GifMap {
     pub fn in_shipyard_spaceship_lines(
         &mut self,
         team_id: TeamId,
+        tick: usize,
         world: &World,
     ) -> AppResult<FrameLines> {
         if let Some(lines) = self.in_shipyard_spaceship_lines.get(&team_id) {
-            return Ok(lines[0].clone());
+            return Ok(lines[tick % lines.len()].clone());
         }
 
         let team = world.get_team_or_err(team_id)?;
-        // FIXME: should compose with shipyard_support
-        let gif = team.spaceship.compose_image();
+        let gif = team.spaceship.compose_image_in_shipyard();
         if let Err(e) = gif {
             log::error!("{}", e);
             return Err(e);
         }
+
         let lines = Self::gif_to_lines(&gif?);
-        self.on_planet_spaceship_lines
+        self.in_shipyard_spaceship_lines
             .insert(team_id, lines.clone());
-        Ok(lines[0].clone())
+        Ok(lines[tick % lines.len()].clone())
     }
 
     pub fn travelling_spaceship_lines(

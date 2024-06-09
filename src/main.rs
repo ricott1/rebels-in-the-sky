@@ -6,6 +6,7 @@ use log4rs::encode::pattern::PatternEncoder;
 use rebels::app::App;
 use rebels::relayer::Relayer;
 use rebels::ssh_server::AppServer;
+use rebels::store::store_path;
 use rebels::types::AppResult;
 
 #[derive(Parser, Debug)]
@@ -31,10 +32,11 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
+    let logfile_path = store_path("rebels.log")?;
     let logfile = FileAppender::builder()
         .append(false)
         .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
-        .build("rebels.log")?;
+        .build(logfile_path)?;
 
     let config = Config::builder()
         .appender(Appender::builder().build("logfile", Box::new(logfile)))
