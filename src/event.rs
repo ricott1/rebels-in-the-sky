@@ -1,5 +1,5 @@
 use crate::types::{AppResult, SystemTimeTick, Tick};
-use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, MouseEvent};
+use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, KeyEventKind, MouseEvent};
 use futures::Future;
 use std::pin::Pin;
 use std::sync::mpsc;
@@ -49,7 +49,11 @@ impl EventHandler {
             thread::spawn(move || loop {
                 if event::poll(TIME_STEP).expect("no events available") {
                     match event::read().expect("unable to read event") {
-                        CrosstermEvent::Key(e) => sender.send(TerminalEvent::Key(e)),
+                        CrosstermEvent::Key(key) => {
+                            if key.kind == KeyEventKind::Press {
+                                sender.send(TerminalEvent::Key(key))
+                            } else { Ok(()) }
+                          },
                         CrosstermEvent::Mouse(e) => sender.send(TerminalEvent::Mouse(e)),
                         CrosstermEvent::Resize(w, h) => sender.send(TerminalEvent::Resize(w, h)),
                         _ => unimplemented!(),
