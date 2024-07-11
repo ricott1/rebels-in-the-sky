@@ -339,7 +339,7 @@ fn explore_button<'a>(
             )
             .set_hover_text(
                 format!(
-                    "Explore the space around {} (need {} t of fuel). Hope to find resources, free agents or more...",
+                    "Explore the space around {} (need {} t of fuel). Hope to find resources, free pirates or more...",
                     planet.name,
                     needed_fuel
                 ),

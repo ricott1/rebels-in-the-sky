@@ -14,9 +14,9 @@ pub const AGE_INCREASE_PER_LONG_TICK: f32 = 0.025;
 pub const INCOME_PER_ATTENDEE_HOME: u32 = 36;
 pub const INCOME_PER_ATTENDEE_AWAY: u32 = 36;
 
-pub const INITIAL_TEAM_BALANCE: u32 = 180_000;
+pub const INITIAL_TEAM_BALANCE: u32 = 120_000;
 pub const CURRENCY_SYMBOL: &str = "sat";
-pub const COST_PER_VALUE: u32 = 22;
+pub const COST_PER_VALUE: u32 = 12;
 pub const SPACESHIP_UPGRADE_BASE_DURATION: Tick = 8 * HOURS;
 
 pub const AUTO_GENERATE_GAMES_NUMBER: usize = 3;

@@ -1,6 +1,8 @@
 use crate::app::App;
 use crate::event::EventHandler;
 use crate::types::AppResult;
+use crate::ui::ui::Ui;
+use crate::world::world::World;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::layout::Rect;
@@ -35,18 +37,12 @@ where
         Ok(tui)
     }
 
-    pub fn new_over_ssh(backend: B, events: EventHandler) -> AppResult<Self> {
-        let terminal = Terminal::new(backend)?;
-        let tui = Self { terminal, events };
-        Ok(tui)
-    }
-
     /// Initializes the terminal interface.
     ///
     /// It enables the raw mode and sets terminal properties.
-    pub fn init(&mut self) -> AppResult<()> {
+    fn init(&mut self) -> AppResult<()> {
         terminal::enable_raw_mode()?;
-        crossterm::execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?; //EnableMouseCapture
+        crossterm::execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
 
         // Define a custom panic hook to reset the terminal properties.
         // This way, you won't have your terminal messed up if an unexpected error happens.
@@ -65,8 +61,8 @@ where
     ///
     /// [`Draw`]: ratatui::Terminal::draw
     /// [`rendering`]: crate::ui:render
-    pub fn draw(&mut self, app: &mut App) -> AppResult<()> {
-        self.terminal.draw(|frame| app.render(frame))?;
+    pub fn draw(&mut self, ui: &mut Ui, world: &World) -> AppResult<()> {
+        self.terminal.draw(|frame| App::render(ui, world, frame))?;
         Ok(())
     }
 

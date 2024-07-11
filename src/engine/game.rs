@@ -489,21 +489,27 @@ impl<'game> Game {
 
     fn game_end_description(&self, winner: Option<&str>) -> String {
         let (home, away) = self.get_score();
-        if winner.is_none() {
-            return format!(
+        if let Some(winner_name) = winner {
+            let loser_name = if winner_name.to_string() == self.home_team_in_game.name {
+                self.away_team_in_game.name.clone()
+            } else {
+                self.home_team_in_game.name.clone()
+            };
+            format!(
+                "{} won this nice game over {}. The final score is {} {}-{} {}.",
+                winner_name,
+                loser_name,
+                self.home_team_in_game.name,
+                home,
+                away,
+                self.away_team_in_game.name,
+            )
+        } else {
+            format!(
                 "It's a tie! The final score is {} {}-{} {}.",
                 self.home_team_in_game.name, home, away, self.away_team_in_game.name
-            );
+            )
         }
-        format!(
-            "{} won this nice game over {}. The final score is {} {}-{} {}.",
-            winner.unwrap(),
-            self.away_team_in_game.name,
-            self.home_team_in_game.name,
-            home,
-            away,
-            self.away_team_in_game.name,
-        )
     }
 
     pub fn has_started(&self, timestamp: Tick) -> bool {

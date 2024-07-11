@@ -71,18 +71,16 @@ pub struct Ui {
     callback_registry: Arc<Mutex<CallbackRegistry>>,
 }
 
-impl Default for Ui {
-    fn default() -> Self {
-        Self::new(false, false)
-    }
-}
-
 impl Ui {
-    pub fn new(disable_network: bool, disable_audio: bool) -> Self {
+    pub fn new(store_prefix: &str, disable_network: bool, disable_audio: bool) -> Self {
         let gif_map = Arc::new(Mutex::new(GifMap::new()));
         let callback_registry = Arc::new(Mutex::new(CallbackRegistry::new()));
 
-        let splash_screen = SplashScreen::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
+        let splash_screen = SplashScreen::new(
+            store_prefix,
+            Arc::clone(&callback_registry),
+            Arc::clone(&gif_map),
+        );
         let player_panel =
             PlayerListPanel::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
         let team_panel = TeamListPanel::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
@@ -502,7 +500,7 @@ impl Ui {
                 spans.push(Span::styled(
                     format!(
                         " FA refresh in {} ",
-                        world.next_free_agents_refresh().formatted()
+                        world.next_free_pirates_refresh().formatted()
                     ),
                     Style::default().fg(Color::DarkGray),
                 ))

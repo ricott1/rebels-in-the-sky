@@ -14,6 +14,7 @@ use crossterm::{
     terminal::Clear,
 };
 
+use crate::{ssh::client::TerminalHandle, types::AppResult};
 use ratatui::{
     backend::{Backend, ClearType, WindowSize},
     buffer::Cell,
@@ -76,16 +77,14 @@ use ratatui::{
 /// [`backend`]: crate::backend
 /// [Crossterm]: https://crates.io/crates/crossterm
 /// [examples]: https://github.com/ratatui-org/ratatui/tree/main/examples#examples
-#[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
-pub struct SSHCrosstermBackend<W: Write> {
+#[derive(Clone)]
+pub struct SSHBackend {
     /// The writer used to send commands to the terminal.
-    writer: W,
+    writer: TerminalHandle,
+    pub size: (u16, u16),
 }
 
-impl<W> SSHCrosstermBackend<W>
-where
-    W: Write,
-{
+impl SSHBackend {
     /// Creates a new `CrosstermBackend` with the given writer.
     ///
     /// # Example
@@ -95,19 +94,16 @@ where
     /// # use ratatui::prelude::*;
     /// let backend = CrosstermBackend::new(stdout());
     /// ```
-    pub fn new(writer: W) -> SSHCrosstermBackend<W> {
-        SSHCrosstermBackend { writer }
+    pub fn new(writer: TerminalHandle, size: (u16, u16)) -> SSHBackend {
+        SSHBackend { writer, size }
     }
 
-    pub fn set_writer(&mut self, writer: W) {
-        self.writer = writer;
+    pub async fn close(&self) -> AppResult<()> {
+        self.writer.close().await
     }
 }
 
-impl<W> Write for SSHCrosstermBackend<W>
-where
-    W: Write,
-{
+impl Write for SSHBackend {
     /// Writes a buffer of bytes to the underlying buffer.
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.writer.write(buf)
@@ -119,10 +115,7 @@ where
     }
 }
 
-impl<W> Backend for SSHCrosstermBackend<W>
-where
-    W: Write,
-{
+impl Backend for SSHBackend {
     fn draw<'a, I>(&mut self, content: I) -> io::Result<()>
     where
         I: Iterator<Item = (u16, u16, &'a Cell)>,
@@ -218,7 +211,7 @@ where
     }
 
     fn size(&self) -> io::Result<Rect> {
-        Ok(Rect::new(0, 0, 160, 48))
+        Ok(Rect::new(0, 0, self.size.0, self.size.1))
     }
 
     fn window_size(&mut self) -> Result<WindowSize, io::Error> {

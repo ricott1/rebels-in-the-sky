@@ -17,7 +17,7 @@ pub const SKILL_NAMES: [&'static str; 20] = [
     "Vertical",
     "Strength",
     "Stamina",
-    "Dunk",
+    "Brawl",
     "Close",
     "Medium",
     "Long",
@@ -127,7 +127,7 @@ impl Rated for Athletics {
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct Offense {
-    pub dunk: Skill,
+    pub brawl: Skill,
     pub close_range: Skill,
     pub medium_range: Skill,
     pub long_range: Skill,
@@ -137,12 +137,12 @@ impl Offense {
     pub fn for_position(position: Position, rng: &mut ChaCha8Rng, base_level: f32) -> Self {
         let weights = position.weights();
         let level = base_level + rng.gen_range(0..=LEVEL_BONUS) as f32;
-        let dunk = (level + WEIGHT_MOD * weights[4] as f32).normal_sample(rng);
+        let brawl = (level + WEIGHT_MOD * weights[4] as f32).normal_sample(rng);
         let close_range = (level + WEIGHT_MOD * weights[5] as f32).normal_sample(rng);
         let medium_range = (level + WEIGHT_MOD * weights[6] as f32).normal_sample(rng);
         let long_range = (level + WEIGHT_MOD * weights[7] as f32).normal_sample(rng);
         Self {
-            dunk,
+            brawl,
             close_range,
             medium_range,
             long_range,
@@ -152,7 +152,7 @@ impl Offense {
 
 impl Rated for Offense {
     fn rating(&self) -> u8 {
-        (self.dunk + self.close_range + self.medium_range + self.long_range) as u8 / 4
+        (self.brawl + self.close_range + self.medium_range + self.long_range) as u8 / 4
     }
 }
 

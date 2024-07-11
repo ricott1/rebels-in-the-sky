@@ -1,6 +1,6 @@
 use crate::event::{EventHandler, TerminalEvent};
 use crate::network::handler::NetworkHandler;
-use crate::store::{get_world_size, reset, save_world};
+use crate::store::{get_world_size, load_world, reset, save_world};
 use crate::tui::Tui;
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::ui::ui::Ui;
@@ -9,6 +9,7 @@ use crate::world::world::World;
 use crossterm::event::{KeyCode, KeyModifiers};
 use futures::StreamExt;
 use libp2p::{gossipsub, swarm::SwarmEvent};
+use log::info;
 use ratatui::backend::CrosstermBackend;
 use std::io::{self};
 use tokio::select;
@@ -20,10 +21,16 @@ pub struct App {
     pub ui: Ui,
     generate_local_world: bool,
     pub network_handler: Option<NetworkHandler>,
-    pub seed_ip: Option<String>,
+    seed_ip: Option<String>,
+    network_port: Option<u16>,
+    store_prefix: String,
 }
 
 impl App {
+    pub fn initialize_network_handler(&mut self) {
+        self.network_handler = NetworkHandler::new(self.seed_ip.clone(), self.network_port).ok();
+    }
+
     pub fn new(
         seed: Option<u64>,
         disable_network: bool,
@@ -31,12 +38,17 @@ impl App {
         generate_local_world: bool,
         reset_world: bool,
         seed_ip: Option<String>,
+        network_port: Option<u16>,
+        store_prefix: Option<&str>,
     ) -> Self {
         // If the reset_world flag is set, reset the world.
         if reset_world {
             reset().expect("Failed to reset world");
         }
-        let ui = Ui::new(disable_network, disable_audio);
+
+        let store_prefix = store_prefix.unwrap_or("local");
+
+        let ui = Ui::new(store_prefix, disable_network, disable_audio);
         Self {
             world: World::new(seed),
             running: true,
@@ -44,19 +56,22 @@ impl App {
             generate_local_world,
             network_handler: None,
             seed_ip,
+            network_port,
+            store_prefix: store_prefix.to_string(),
         }
     }
 
     pub async fn run(&mut self) -> AppResult<()> {
         // Initialize the terminal user interface.
         let writer = io::stdout();
-        let events = EventHandler::crossterm_handler();
+        let events = EventHandler::handler();
         let backend = CrosstermBackend::new(writer);
         let mut tui = Tui::new(backend, events)?;
 
         while self.running {
-            if self.network_handler.is_none() && (self.world.has_own_team()) {
-                self.initialize_network_handler(self.seed_ip.clone());
+            if self.network_handler.is_none() && self.world.has_own_team() {
+                info!("Initializing network handler...");
+                self.initialize_network_handler();
             }
             //FIXME consolidate this into a single select! macro
             if let Some(network_handler) = self.network_handler.as_mut() {
@@ -66,7 +81,7 @@ impl App {
                     app_event = tui.events.next()? => match app_event{
                         TerminalEvent::Tick {tick} => {
                                 self.handle_tick_events(tick)?;
-                                tui.draw(self)?;
+                                tui.draw(&mut self.ui, &self.world)?;
                         }
                         TerminalEvent::Key(key_event) => self.handle_key_events(key_event)?,
                         TerminalEvent::Mouse(mouse_event) => self.handle_mouse_events(mouse_event)?,
@@ -78,7 +93,7 @@ impl App {
                     app_event = tui.events.next()? => match app_event{
                         TerminalEvent::Tick {tick} => {
                                 self.handle_tick_events(tick)?;
-                                tui.draw(self)?;
+                                tui.draw(&mut self.ui, &self.world)?;
                         }
                         TerminalEvent::Key(key_event) => self.handle_key_events(key_event)?,
                         TerminalEvent::Mouse(mouse_event) => self.handle_mouse_events(mouse_event)?,
@@ -91,10 +106,6 @@ impl App {
         Ok(())
     }
 
-    pub fn initialize_network_handler(&mut self, seed_ip: Option<String>) {
-        self.network_handler = NetworkHandler::new(seed_ip).ok();
-    }
-
     pub fn new_world(&mut self) {
         if let Err(e) = self.world.initialize(self.generate_local_world) {
             panic!("Failed to initialize world: {}", e);
@@ -103,7 +114,7 @@ impl App {
 
     pub fn load_world(&mut self) {
         // Try to load an existing world.
-        match World::load() {
+        match load_world(&self.store_prefix) {
             Ok(w) => self.world = w,
             Err(e) => panic!("Failed to load world: {}", e),
         }
@@ -132,7 +143,8 @@ impl App {
                 panic!("Failed to simulate world");
             }
         }
-        self.world.serialized_size = get_world_size().expect("Failed to get world size");
+        self.world.serialized_size =
+            get_world_size(&self.store_prefix).expect("Failed to get world size");
     }
 
     /// Set running to false to quit the application.
@@ -140,13 +152,13 @@ impl App {
         self.running = false;
         // save world and backup
         if self.world.has_own_team() {
-            save_world(&self.world, true)?;
+            save_world(&self.world, true, &self.store_prefix)?;
         }
         Ok(())
     }
 
-    pub fn render(&mut self, frame: &mut ratatui::Frame) {
-        self.ui.render(frame, &mut self.world);
+    pub fn render(ui: &mut Ui, world: &World, frame: &mut ratatui::Frame) {
+        ui.render(frame, world);
     }
 
     /// Handles the tick event of the terminal.
@@ -204,8 +216,9 @@ impl App {
             let mut own_team = self.world.get_own_team()?.clone();
             own_team.version += 1;
             self.world.teams.insert(own_team.id, own_team);
-            save_world(&self.world, false).expect("Failed to save world");
-            self.world.serialized_size = get_world_size().expect("Failed to get world size");
+            save_world(&self.world, false, &self.store_prefix).expect("Failed to save world");
+            self.world.serialized_size =
+                get_world_size(&self.store_prefix).expect("Failed to get world size");
 
             self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
                 timestamp: Tick::now(),

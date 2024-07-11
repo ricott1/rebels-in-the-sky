@@ -1,12 +1,10 @@
 use crate::{
     image::{
         color_map::AsteroidColorMap,
-        types::Gif,
+        types::{FrameLines, Gif, GifLines, PrintableGif},
         utils::{read_image, ExtraImageUtils},
     },
-    store::ASSETS_DIR,
     types::{AppResult, PlanetId, PlayerId, TeamId},
-    ui::utils::img_to_lines,
     world::{
         planet::{Planet, PlanetType},
         player::Player,
@@ -17,11 +15,7 @@ use crate::{
 use image::{imageops::resize, GenericImageView, ImageBuffer, Rgba, RgbaImage};
 use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use once_cell::sync::Lazy;
-use ratatui::text::Line;
 use std::collections::HashMap;
-
-pub type FrameLines = Vec<Line<'static>>;
-pub type GifLines = Vec<FrameLines>;
 
 const MAX_GIF_WIDTH: u32 = 160;
 const MAX_GIF_HEIGHT: u32 = 140;
@@ -75,40 +69,6 @@ impl GifMap {
         Self::default()
     }
 
-    fn open_gif(filename: String) -> Gif {
-        let mut decoder = gif::DecodeOptions::new();
-        // Configure the decoder such that it will expand the image to RGBA.
-        decoder.set_color_output(gif::ColorOutput::RGBA);
-        let file = ASSETS_DIR
-            .get_file(filename.clone())
-            .expect(
-                format!(
-                    "GifMap: Could not find file {} in assets directory.",
-                    filename
-                )
-                .as_str(),
-            )
-            .contents();
-        let mut decoder = decoder
-            .read_info(file)
-            .expect(format!("GifMap: Could not read gif info from file {}.", filename).as_str());
-        let mut gif: Gif = vec![];
-        while let Some(frame) = decoder.read_next_frame().unwrap() {
-            let img = ImageBuffer::from_raw(
-                frame.width as u32,
-                frame.height as u32,
-                frame.buffer.to_vec(),
-            )
-            .unwrap();
-            gif.push(img);
-        }
-        gif
-    }
-
-    fn gif_to_lines(gif: &Gif) -> GifLines {
-        gif.iter().map(|img| img_to_lines(img)).collect()
-    }
-
     fn player(&mut self, player: &Player) -> AppResult<Gif> {
         player.compose_image()
     }
@@ -121,10 +81,13 @@ impl GifMap {
         }
 
         let gif = self.player(player)?;
-        let lines = Self::gif_to_lines(&gif);
+        let lines = gif.to_lines();
+
+        let line = lines[(tick / 8) % lines.len()].clone();
         self.players_lines
-            .insert(player.id, (player.version, lines.clone()));
-        Ok(lines[(tick / 8) % lines.len()].clone())
+            .insert(player.id, (player.version, lines));
+
+        Ok(line)
     }
 
     fn planet_zoom_in(&mut self, planet: &Planet) -> AppResult<Gif> {
@@ -138,7 +101,7 @@ impl GifMap {
             let color_map = AsteroidColorMap::Base.color_map();
             vec![img.apply_color_map(color_map).clone()]
         } else {
-            Self::open_gif(format!("planets/{}_full.gif", planet.filename.clone()))
+            Gif::open(format!("planets/{}_full.gif", planet.filename.clone()))?
                 .iter()
                 .map(|img: &ImageBuffer<Rgba<u8>, Vec<u8>>| {
                     let base = &mut UNIVERSE_BACKGROUND.clone();
@@ -176,7 +139,7 @@ impl GifMap {
             .ok_or("World: Planet not found.")?;
 
         let gif = self.planet_zoom_in(planet)?;
-        let lines = Self::gif_to_lines(&gif);
+        let lines = gif.to_lines();
         self.planets_zoom_in_lines.insert(planet.id, lines.clone());
         Ok(lines[tick % lines.len()].clone())
     }
@@ -184,7 +147,7 @@ impl GifMap {
     fn planet_zoom_out(&mut self, planet_id: PlanetId, world: &World) -> AppResult<Gif> {
         let planet = world.get_planet_or_err(planet_id)?;
         let base_images = if planet.satellite_of.is_none() {
-            let galaxy_gif = Self::open_gif("planets/galaxy.gif".to_string());
+            let galaxy_gif = Gif::open("planets/galaxy.gif".to_string())?;
             let mut base_gif = vec![];
             let base = RgbaImage::new(MAX_GIF_WIDTH, MAX_GIF_HEIGHT);
             for frame in galaxy_gif.iter() {
@@ -201,10 +164,10 @@ impl GifMap {
             vec![UNIVERSE_BACKGROUND.clone()]
         };
 
-        let center_images: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> =
-            Self::open_gif(format!("planets/{}_zoomout.gif", planet.filename.clone()));
+        let center_images: Gif =
+            Gif::open(format!("planets/{}_zoomout.gif", planet.filename.clone()))?;
 
-        let satellites_images: Vec<Vec<ImageBuffer<Rgba<u8>, Vec<u8>>>> = planet
+        let satellites_images: Vec<Gif> = planet
             .satellites
             .iter()
             .map(|satellite_id| {
@@ -217,31 +180,32 @@ impl GifMap {
                 let gif = if satellite.planet_type == PlanetType::Asteroid {
                     let mut img = read_image(
                         format!("asteroids/{}.png", satellite.filename.clone()).as_str(),
-                    )
-                    .unwrap();
+                    )?;
                     let color_map = AsteroidColorMap::Base.color_map();
                     vec![img.apply_color_map(color_map).clone()] as Gif
                 } else {
-                    Self::open_gif(format!(
+                    Gif::open(format!(
                         "planets/{}_zoomout.gif",
                         satellite.filename.clone()
-                    ))
+                    ))?
                 };
 
-                gif.iter()
+                let g: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> = gif
+                    .iter()
                     .map(|img| {
                         //We resize twice to try to get nicer looking results
-                        resize(
+                        let r = resize(
                             img,
                             2 * size,
                             2 * size,
                             image::imageops::FilterType::Triangle,
-                        )
+                        );
+                        resize(&r, size, size, image::imageops::FilterType::Nearest)
                     })
-                    .map(|img| resize(&img, size, size, image::imageops::FilterType::Nearest))
-                    .collect()
+                    .collect();
+                Ok(g)
             })
-            .collect();
+            .collect::<AppResult<Vec<Gif>>>()?;
 
         let mut frames = vec![];
 
@@ -342,7 +306,7 @@ impl GifMap {
         }
 
         let gif = self.planet_zoom_out(planet.id, world)?;
-        let lines = Self::gif_to_lines(&gif);
+        let lines = gif.to_lines();
         self.planets_zoom_out_lines
             .insert(planet.id, (planet.version, lines.clone()));
         Ok(lines[tick % lines.len()].clone())
@@ -359,12 +323,8 @@ impl GifMap {
         }
 
         let team = world.get_team_or_err(team_id)?;
-        let gif = team.spaceship.compose_image();
-        if let Err(e) = gif {
-            log::error!("{}", e);
-            return Err(e);
-        }
-        let lines = Self::gif_to_lines(&gif?);
+        let gif = team.spaceship.compose_image()?;
+        let lines = gif.to_lines();
         self.on_planet_spaceship_lines
             .insert(team_id, lines.clone());
         Ok(lines[tick % lines.len()].clone())
@@ -381,13 +341,8 @@ impl GifMap {
         }
 
         let team = world.get_team_or_err(team_id)?;
-        let gif = team.spaceship.compose_image_in_shipyard();
-        if let Err(e) = gif {
-            log::error!("{}", e);
-            return Err(e);
-        }
-
-        let lines = Self::gif_to_lines(&gif?);
+        let gif = team.spaceship.compose_image_in_shipyard()?;
+        let lines = gif.to_lines();
         self.in_shipyard_spaceship_lines
             .insert(team_id, lines.clone());
         Ok(lines[tick % lines.len()].clone())
@@ -437,7 +392,7 @@ impl GifMap {
             idx += 1;
         }
 
-        let lines = Self::gif_to_lines(&gif);
+        let lines = gif.to_lines();
         self.travelling_spaceship_lines
             .insert(team_id, lines.clone());
         Ok(lines[tick % lines.len()].clone())
@@ -485,7 +440,7 @@ impl GifMap {
             idx += 1;
         }
 
-        let lines = Self::gif_to_lines(&gif);
+        let lines = gif.to_lines();
         self.exploring_spaceship_lines
             .insert(team_id, lines.clone());
         Ok(lines[tick % lines.len()].clone())

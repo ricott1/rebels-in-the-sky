@@ -12,8 +12,6 @@ use ratatui::{
 };
 
 pub trait Screen {
-    fn name(&self) -> &str;
-
     fn update(&mut self, _world: &World) -> AppResult<()>;
     fn render(&mut self, _frame: &mut Frame, _world: &World, _area: Rect) -> AppResult<()>;
 

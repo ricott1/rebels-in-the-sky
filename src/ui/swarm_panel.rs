@@ -344,10 +344,6 @@ impl SwarmPanel {
 }
 
 impl Screen for SwarmPanel {
-    fn name(&self) -> &str {
-        "Swarm"
-    }
-
     fn update(&mut self, _world: &World) -> AppResult<()> {
         Ok(())
     }

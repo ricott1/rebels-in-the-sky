@@ -41,7 +41,7 @@ pub struct EventHandler {
 
 impl EventHandler {
     /// Constructs a new instance of [`EventHandler`].
-    pub fn crossterm_handler() -> Self {
+    pub fn handler() -> Self {
         let (sender, receiver) = mpsc::channel();
         let handler = {
             let sender = sender.clone();
@@ -52,8 +52,10 @@ impl EventHandler {
                         CrosstermEvent::Key(key) => {
                             if key.kind == KeyEventKind::Press {
                                 sender.send(TerminalEvent::Key(key))
-                            } else { Ok(()) }
-                          },
+                            } else {
+                                Ok(())
+                            }
+                        }
                         CrosstermEvent::Mouse(e) => sender.send(TerminalEvent::Mouse(e)),
                         CrosstermEvent::Resize(w, h) => sender.send(TerminalEvent::Resize(w, h)),
                         _ => unimplemented!(),
@@ -61,30 +63,6 @@ impl EventHandler {
                     .expect("failed to send terminal event")
                 }
 
-                let now = Tick::now();
-                if now - last_tick >= TIME_STEP_MILLIS {
-                    if let Err(_) = sender.send(TerminalEvent::Tick { tick: now }) {
-                        // eprintln!("Failed to send tick event: {}", err);
-                        break;
-                    }
-                    last_tick = now;
-                }
-            })
-        };
-        Self {
-            sender,
-            receiver,
-            handler,
-        }
-    }
-
-    pub fn system_time_handler() -> Self {
-        let (sender, receiver) = mpsc::channel();
-        let handler = {
-            let sender = sender.clone();
-            let mut last_tick = Tick::now();
-            thread::spawn(move || loop {
-                thread::sleep(Duration::from_millis(TIME_STEP_MILLIS as u64));
                 let now = Tick::now();
                 if now - last_tick >= TIME_STEP_MILLIS {
                     if let Err(_) = sender.send(TerminalEvent::Tick { tick: now }) {

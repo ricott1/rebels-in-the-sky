@@ -15,13 +15,12 @@ use crate::engine::game::{Game, GameSummary};
 use crate::engine::types::{Possession, TeamInGame};
 use crate::image::color_map::ColorMap;
 use crate::network::types::{NetworkGame, NetworkTeam};
-use crate::store::{
-    load_from_json, save_to_json, PERSISTED_GAMES_PREFIX, PERSISTED_WORLD_FILENAME,
-};
+use crate::store::save_game;
 use crate::types::*;
 use crate::ui::ui_callback::UiCallbackPreset;
 use itertools::Itertools;
 use libp2p::PeerId;
+use log::info;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -90,18 +89,14 @@ impl World {
     }
 
     fn populate_planet(&mut self, rng: &mut ChaCha8Rng, planet: &Planet) {
-        // generate free agents per each planet
-        let number_free_agents = planet.total_population() / 10;
+        // generate free pirates per each planet
+        let number_free_pirates = planet.total_population() / 10;
         let mut position = 0 as Position;
         let base_level = rng.gen_range(0..5) as f32;
-        for _ in 0..number_free_agents {
+        for _ in 0..number_free_pirates {
             self.generate_random_player(rng, None, Some(position), planet.id, base_level);
             position = (position + 1) % MAX_POSITION;
         }
-    }
-
-    pub fn load() -> AppResult<Self> {
-        load_from_json(PERSISTED_WORLD_FILENAME)
     }
 
     pub fn generate_local_world(&mut self, rng: &mut ChaCha8Rng) -> AppResult<()> {
@@ -372,7 +367,7 @@ impl World {
                 let new_duration =
                     (duration - time_elapsed) as f32 * previous_spaceship_speed_bonus / bonus;
 
-                log::info!(
+                info!(
                     "Update {role}: old speed {previous_spaceship_speed_bonus}, new speed {bonus}"
                 );
 
@@ -385,10 +380,9 @@ impl World {
                     distance,
                 };
 
-                log::info!(
+                info!(
                     "Update {role}: old location{:?}, new location {:?}",
-                    old_location,
-                    team.current_location
+                    old_location, team.current_location
                 );
             }
             _ => {}
@@ -401,7 +395,7 @@ impl World {
         Ok(())
     }
 
-    pub fn next_free_agents_refresh(&self) -> Tick {
+    pub fn next_free_pirates_refresh(&self) -> Tick {
         // Returns the time to the next FA refresh in milliseconds
         let next_refresh = self.last_tick_long_interval + TickInterval::LONG;
         if next_refresh > self.last_tick_short_interval {
@@ -707,7 +701,7 @@ impl World {
 
         // Workaround to ensure we only generate FAs at most once.
         if now - last_tick_long >= TickInterval::LONG {
-            let callback = self.tick_free_agents()?;
+            let callback = self.tick_free_pirates()?;
             callbacks.push(callback);
         }
 
@@ -774,14 +768,14 @@ impl World {
         Ok(resources)
     }
 
-    fn free_agents_found_after_exploration(
+    fn free_pirates_found_after_exploration(
         &self,
         _team: &Team,
         planet: &Planet,
         duration: u128,
     ) -> Vec<Player> {
         let mut rng = ChaCha8Rng::from_entropy();
-        let mut free_agents = vec![];
+        let mut free_pirates = vec![];
 
         let duration_bonus = (duration as f32 / (1 * HOURS) as f32).powf(1.3);
         let population_bonus = planet.total_population() as f32 / 8.0;
@@ -795,11 +789,11 @@ impl World {
                 let base_level = rng.gen_range(0.0..5.0);
                 let player_id = PlayerId::new();
                 let player = Player::random(&mut rng, player_id, None, planet, base_level);
-                free_agents.push(player);
+                free_pirates.push(player);
             }
         }
 
-        free_agents
+        free_pirates
     }
 
     pub fn handle_tick_events(
@@ -844,7 +838,7 @@ impl World {
 
         if current_timestamp >= self.last_tick_long_interval + TickInterval::LONG {
             if !is_simulating {
-                let callback = self.tick_free_agents()?;
+                let callback = self.tick_free_pirates()?;
                 callbacks.push(callback);
                 self.tick_skill_improvements_reset()?;
             }
@@ -863,7 +857,7 @@ impl World {
             if game.ended_at.is_some()
                 && current_timestamp > game.ended_at.unwrap() + GAME_CLEANUP_TIME
             {
-                log::info!(
+                info!(
                     "Game {} vs {}: started at {}, ended at {} and is being removed at {}",
                     game.home_team_in_game.name,
                     game.away_team_in_game.name,
@@ -902,10 +896,7 @@ impl World {
                 {
                     let game_summary = GameSummary::from_game(&game);
                     self.past_games.insert(game_summary.id, game_summary);
-                    save_to_json(
-                        format!("{}{}.json", PERSISTED_GAMES_PREFIX, game.id).as_str(),
-                        &game,
-                    )?;
+                    save_game(&game)?;
                     // Update network that game has ended.
                     self.dirty_network = true;
                 }
@@ -948,12 +939,25 @@ impl World {
                     None => (REPUTATION_BONUS_DRAW, REPUTATION_BONUS_DRAW),
                 };
 
-                // Set playing teams current game to None and assign income and reputation.
+                // Winner team gets 1 rum per player, Loser team gets 1 rum in total
+                let (home_team_rum, away_team_rum) = match game.winner {
+                    Some(winner) => {
+                        if winner == game.home_team_in_game.team_id {
+                            (game.home_team_in_game.players.len() as u32, 1)
+                        } else {
+                            (1, game.away_team_in_game.players.len() as u32)
+                        }
+                    }
+                    None => (1, 1),
+                };
+
+                // Set playing teams current game to None and assign income, reputation, and rum.
                 if let Ok(res) = self.get_team_or_err(game.home_team_in_game.team_id) {
                     let mut home_team = res.clone();
                     home_team.current_game = None;
                     home_team.add_resource(Resource::SATOSHI, home_team_income);
                     home_team.reputation = (home_team.reputation + home_team_reputation).bound();
+                    home_team.add_resource(Resource::RUM, home_team_rum);
                     self.teams.insert(home_team.id, home_team.clone());
                 }
 
@@ -962,6 +966,8 @@ impl World {
                     away_team.current_game = None;
                     away_team.add_resource(Resource::SATOSHI, away_team_income);
                     away_team.reputation = (away_team.reputation + away_team_reputation).bound();
+                    away_team.add_resource(Resource::RUM, away_team_rum);
+
                     self.teams.insert(away_team.id, away_team.clone());
                 }
 
@@ -1094,10 +1100,10 @@ impl World {
                         team.add_resource(resource.clone(), amount);
                     }
 
-                    let found_free_agents =
-                        self.free_agents_found_after_exploration(&team, &around_planet, duration);
+                    let found_free_pirates =
+                        self.free_pirates_found_after_exploration(&team, &around_planet, duration);
 
-                    for player in found_free_agents.iter() {
+                    for player in found_free_pirates.iter() {
                         self.players.insert(player.id, player.clone());
                     }
 
@@ -1111,13 +1117,13 @@ impl World {
                         }
                     }
 
-                    if found_free_agents.len() > 0 {
+                    if found_free_pirates.len() > 0 {
                         exploration_result_text.push_str(
-                            format! {"\nFound {} stranded pirate{}:\n", found_free_agents.len(), if found_free_agents.len() > 1 {
+                            format! {"\nFound {} stranded pirate{}:\n", found_free_pirates.len(), if found_free_pirates.len() > 1 {
                                 "s"
                             }else{""}}.as_str(),
                         );
-                        for player in found_free_agents.iter() {
+                        for player in found_free_pirates.iter() {
                             let text = format!(
                                 "  {:<16} {}\n",
                                 format!(
@@ -1198,7 +1204,7 @@ impl World {
         Ok(())
     }
 
-    fn tick_free_agents(&mut self) -> AppResult<UiCallbackPreset> {
+    fn tick_free_pirates(&mut self) -> AppResult<UiCallbackPreset> {
         self.players.retain(|_, player| player.team.is_some());
 
         let rng = &mut ChaCha8Rng::seed_from_u64(rand::random());
@@ -1207,7 +1213,7 @@ impl World {
         }
         Ok(UiCallbackPreset::PushUiPopup {
             popup_message: crate::ui::popup_message::PopupMessage::Ok(
-                "Free agents refreshed".into(),
+                "Free pirates refreshed".into(),
                 Tick::now(),
             ),
         })
@@ -1577,7 +1583,8 @@ mod test {
             println!("  {} {}", res.1, res.0);
         }
 
-        let found_free_agents = world.free_agents_found_after_exploration(&team, &planet, duration);
+        let found_free_pirates =
+            world.free_pirates_found_after_exploration(&team, &planet, duration);
         let fa_duration_bonus = (duration as f32 / (1 * HOURS) as f32).powf(1.3);
         let population_bonus = planet.total_population() as f32 / 8.0;
         println!(
@@ -1585,7 +1592,7 @@ mod test {
             (-35 + (population_bonus + fa_duration_bonus) as i32)
         );
 
-        for player in found_free_agents.iter() {
+        for player in found_free_pirates.iter() {
             println!(
                 "  {:<16} {}\n",
                 format!(
@@ -1617,14 +1624,15 @@ mod test {
             println!("  {} {}", res.1, res.0);
         }
 
-        let found_free_agents = world.free_agents_found_after_exploration(&team, &planet, duration);
+        let found_free_pirates =
+            world.free_pirates_found_after_exploration(&team, &planet, duration);
         let fa_duration_bonus = (duration as f32 / (1 * HOURS) as f32).powf(1.3);
         let population_bonus = planet.total_population() as f32 / 8.0;
         println!(
             "Found pirates (min {}):",
             (-35 + (population_bonus + fa_duration_bonus) as i32)
         );
-        for player in found_free_agents.iter() {
+        for player in found_free_pirates.iter() {
             println!(
                 "  {:<16} {}\n",
                 format!(
@@ -1652,7 +1660,7 @@ mod test {
 
     #[test]
     fn test_spugna_portal() -> AppResult<()> {
-        let app = &mut App::new(None, true, true, false, false, None);
+        let app = &mut App::new(None, true, true, false, false, None, None, None);
         app.new_world();
 
         let mut world = app.world.clone();

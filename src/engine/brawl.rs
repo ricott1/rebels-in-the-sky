@@ -64,17 +64,21 @@ impl EngineAction for Brawl {
         defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
         let mut atk_result = attacker.roll(rng)
-            + attacker.athletics.strength.value()
-            + attacker.mental.aggression.value();
+            + attacker.athletics.strength.value() / 2
+            + attacker.mental.aggression.value() / 2
+            + attacker.offense.brawl.value();
+
         if attacker.special_trait == Some(Trait::Killer) {
-            atk_result += attacker.reputation as u8;
+            atk_result += attacker.reputation.value();
         }
 
         let mut def_result = defender.roll(rng)
-            + defender.athletics.strength.value()
-            + defender.mental.aggression.value();
+            + defender.athletics.strength.value() / 2
+            + defender.mental.aggression.value() / 2
+            + defender.offense.brawl.value();
+
         if defender.special_trait == Some(Trait::Killer) {
-            def_result += defender.reputation as u8;
+            def_result += defender.reputation.value();
         }
 
         let description = match atk_result as i16 - def_result as i16 {

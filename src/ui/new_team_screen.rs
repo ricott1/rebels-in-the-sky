@@ -491,6 +491,8 @@ impl NewTeamScreen {
             );
         }
 
+        //FIXME:color selection is broken
+
         frame.render_widget(
             default_block()
                 .border_style(border_style)
@@ -798,10 +800,6 @@ impl NewTeamScreen {
 }
 
 impl Screen for NewTeamScreen {
-    fn name(&self) -> &str {
-        "NewTeam"
-    }
-
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
 

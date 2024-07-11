@@ -1,4 +1,4 @@
-use crate::network::constants::SubscriptionTopic;
+use crate::network::constants::{SubscriptionTopic, DEFAULT_SEED_PORT};
 use crate::network::{handler::NetworkHandler, types::SeedInfo};
 use crate::types::AppResult;
 use futures::StreamExt;
@@ -16,7 +16,7 @@ impl Relayer {
     pub fn new() -> Self {
         Self {
             running: true,
-            network_handler: NetworkHandler::new(None)
+            network_handler: NetworkHandler::new(None, Some(DEFAULT_SEED_PORT))
                 .expect("Failed to initialize network handler"),
         }
     }

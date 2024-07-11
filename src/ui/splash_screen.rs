@@ -6,12 +6,10 @@ use super::{
     traits::{Screen, SplitPanel},
     widgets::default_block,
 };
+use crate::store::world_file_data;
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::world::constants::SOL_ID;
-use crate::{
-    store::{file_data, world_exists, PERSISTED_WORLD_FILENAME},
-    world::world::World,
-};
+use crate::{store::world_exists, world::world::World};
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use rand::seq::SliceRandom;
@@ -87,14 +85,16 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 impl SplashScreen {
     pub fn new(
+        store_prefix: &str,
         callback_registry: Arc<Mutex<CallbackRegistry>>,
         gif_map: Arc<Mutex<GifMap>>,
     ) -> Self {
         let mut selection_text = vec![];
         let can_load_world: bool;
         let mut continue_text = "Continue".to_string();
-        if world_exists() {
-            if let Ok(continue_data) = file_data(PERSISTED_WORLD_FILENAME) {
+
+        if world_exists(store_prefix) {
+            if let Ok(continue_data) = world_file_data(store_prefix) {
                 if let Ok(last_modified) = continue_data.modified() {
                     continue_text = format!(
                         "Continue: {}",
@@ -143,10 +143,6 @@ impl SplashScreen {
 }
 
 impl Screen for SplashScreen {
-    fn name(&self) -> &str {
-        "Splash"
-    }
-
     fn update(&mut self, _world: &World) -> AppResult<()> {
         self.tick += 1;
         self.selection_text[2] = if self.audio_player_state == AudioPlayerState::Playing {

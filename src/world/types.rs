@@ -175,7 +175,7 @@ impl Population {
                 player.athletics.quickness = (player.athletics.quickness * 1.05).round().bound();
                 player.technical.rebounds = (player.technical.rebounds * 1.25).round().bound();
                 player.mental.aggression = (player.mental.aggression * 0.85).round().bound();
-                player.offense.dunk = (player.offense.dunk * 1.25).round().bound();
+                player.offense.brawl = (player.offense.brawl * 1.25).round().bound();
             }
             _ => {}
         }

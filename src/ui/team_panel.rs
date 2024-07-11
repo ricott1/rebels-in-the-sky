@@ -438,10 +438,6 @@ impl TeamListPanel {
 }
 
 impl Screen for TeamListPanel {
-    fn name(&self) -> &str {
-        "Teams"
-    }
-
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
         if world.dirty_ui || self.all_teams.len() != world.teams.len() {

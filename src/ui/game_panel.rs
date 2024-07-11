@@ -35,11 +35,11 @@ use crossterm::event::KeyCode;
 use itertools::Itertools;
 use ratatui::layout::Margin;
 use ratatui::{
-    layout::{Alignment, Constraint, Layout},
+    layout::{Constraint, Layout},
     prelude::Rect,
     style::{Color, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, Wrap},
+    widgets::{Cell, Paragraph, Row, Table, Wrap},
     Frame,
 };
 use std::{sync::Arc, sync::Mutex};
@@ -459,13 +459,9 @@ impl GamePanel {
         commentary.reverse();
 
         frame.render_widget(
-            Paragraph::new(commentary).wrap(Wrap { trim: false }).block(
-                Block::new()
-                    .title(" Commentary ←/→")
-                    .title_alignment(Alignment::Left)
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded),
-            ),
+            Paragraph::new(commentary)
+                .wrap(Wrap { trim: false })
+                .block(default_block().title("Commentary ←/→")),
             area,
         )
     }
@@ -713,13 +709,13 @@ impl GamePanel {
         frame.render_widget(home_table, box_area[0]);
         frame.render_widget(away_table, box_area[2]);
     }
+
+    pub fn toggle_pitch_view(&mut self) {
+        self.pitch_view = !self.pitch_view;
+    }
 }
 
 impl Screen for GamePanel {
-    fn name(&self) -> &str {
-        "Game"
-    }
-
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
         if world.dirty_ui || self.games.len() != world.games.len() {
@@ -795,14 +791,13 @@ impl Screen for GamePanel {
                 }
             }
             KeyCode::Right => {
-                // CHECK if this works
                 if self.commentary_index < self.action_results.len() - 1 {
                     self.commentary_index += 1;
                 }
             }
             KeyCode::Enter => self.commentary_index = 0,
             UiKey::PITCH_VIEW => {
-                self.pitch_view = !self.pitch_view;
+                self.toggle_pitch_view();
             }
 
             KeyCode::Char('0') => {

@@ -413,10 +413,6 @@ impl GalaxyPanel {
 }
 
 impl Screen for GalaxyPanel {
-    fn name(&self) -> &str {
-        "Galaxy"
-    }
-
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
         if self.planets.len() < world.planets.len() || world.dirty_ui {

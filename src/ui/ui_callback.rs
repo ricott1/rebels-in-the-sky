@@ -31,6 +31,7 @@ use crate::{
     },
 };
 use crossterm::event::{KeyCode, MouseEvent, MouseEventKind};
+use log::info;
 use rand::{seq::IteratorRandom, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use ratatui::layout::Rect;
@@ -405,7 +406,7 @@ impl UiCallbackPreset {
                 // }
                 app.network_handler
                     .as_mut()
-                    .unwrap()
+                    .ok_or("Network handler is not initialized")?
                     .send_new_challenge(&app.world, peer_id)?;
                 return Ok(Some("Challenge sent".to_string()));
             }
@@ -616,7 +617,7 @@ impl UiCallbackPreset {
                 (duration as f32 * own_team.spaceship.fuel_consumption()).max(1.0) as u32;
             own_team.remove_resource(Resource::FUEL, fuel_consumed)?;
 
-            log::info!(
+            info!(
                 "Team {:?} is travelling from {:?} to {:?}, consuming {:.2} fuel",
                 own_team.id,
                 current_planet.id,
@@ -700,16 +701,19 @@ impl UiCallbackPreset {
     fn dial(address: String) -> AppCallback {
         Box::new(move |app: &mut App| {
             let multiaddr = match address.clone() {
-                x if x == "seed".to_string() => {
-                    app.network_handler.as_ref().unwrap().seed_address.clone()
-                }
+                x if x == "seed".to_string() => app
+                    .network_handler
+                    .as_ref()
+                    .ok_or("Network handler is not initialized")?
+                    .seed_address
+                    .clone(),
                 _ => format!("/ip4/{address}/tcp/{DEFAULT_PORT}")
                     .as_str()
                     .parse()?,
             };
             app.network_handler
                 .as_mut()
-                .unwrap()
+                .ok_or("Network handler is not initialized")?
                 .dial(multiaddr)
                 .map_err(|e| e.to_string())?;
             app.world.dirty_network = true;
@@ -728,7 +732,7 @@ impl UiCallbackPreset {
         Box::new(move |app: &mut App| {
             app.network_handler
                 .as_mut()
-                .unwrap()
+                .ok_or("Network handler is not initialized")?
                 .send_msg(message.clone())?;
 
             Ok(None)
@@ -879,7 +883,7 @@ impl UiCallbackPreset {
             UiCallbackPreset::AcceptChallenge { challenge } => {
                 app.network_handler
                     .as_mut()
-                    .unwrap()
+                    .ok_or("Network handler is not initialized")?
                     .accept_challenge(&&app.world, challenge.clone())?;
 
                 app.ui.swarm_panel.remove_challenge(&challenge.home_peer_id);
@@ -894,7 +898,7 @@ impl UiCallbackPreset {
             UiCallbackPreset::DeclineChallenge { challenge } => {
                 app.network_handler
                     .as_mut()
-                    .unwrap()
+                    .ok_or("Network handler is not initialized")?
                     .decline_challenge(challenge.clone())?;
                 app.ui.swarm_panel.remove_challenge(&challenge.home_peer_id);
                 Ok(None)

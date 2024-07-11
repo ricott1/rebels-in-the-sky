@@ -35,15 +35,15 @@ use strum_macros::Display;
 pub enum PlayerView {
     #[default]
     All,
-    FreeAgents,
+    FreePirates,
     OwnTeam,
 }
 
 impl PlayerView {
     fn next(&self) -> Self {
         match self {
-            PlayerView::All => PlayerView::FreeAgents,
-            PlayerView::FreeAgents => PlayerView::OwnTeam,
+            PlayerView::All => PlayerView::FreePirates,
+            PlayerView::FreePirates => PlayerView::OwnTeam,
             PlayerView::OwnTeam => PlayerView::All,
         }
     }
@@ -51,9 +51,7 @@ impl PlayerView {
     fn rule(&self, player: &Player, own_team: &Team) -> bool {
         match self {
             PlayerView::All => true,
-            PlayerView::FreeAgents => {
-                player.team.is_none() && own_team.can_hire_player(player).is_ok()
-            }
+            PlayerView::FreePirates => player.team.is_none(),
             PlayerView::OwnTeam => player.team.is_some() && player.team.unwrap() == own_team.id,
         }
     }
@@ -61,7 +59,7 @@ impl PlayerView {
     fn to_string(&self) -> String {
         match self {
             PlayerView::All => "All".to_string(),
-            PlayerView::FreeAgents => "Hirable Free agents".to_string(),
+            PlayerView::FreePirates => "Free pirates".to_string(),
             PlayerView::OwnTeam => "Own team".to_string(),
         }
     }
@@ -116,15 +114,15 @@ impl PlayerListPanel {
         .set_hotkey(UiKey::CYCLE_VIEW)
         .set_hover_text("View all players.".into(), hover_text_target);
 
-        let mut filter_free_agents_button = Button::new(
-            format!("View: {}", PlayerView::FreeAgents.to_string()),
+        let mut filter_free_pirates_button = Button::new(
+            format!("View: {}", PlayerView::FreePirates.to_string()),
             UiCallbackPreset::SetPlayerPanelView {
-                view: PlayerView::FreeAgents,
+                view: PlayerView::FreePirates,
             },
             Arc::clone(&self.callback_registry),
         )
         .set_hotkey(UiKey::CYCLE_VIEW)
-        .set_hover_text("View hirable free agents.".into(), hover_text_target);
+        .set_hover_text("View free pirates.".into(), hover_text_target);
 
         let mut filter_own_team_button = Button::new(
             format!("View: {}", PlayerView::OwnTeam.to_string()),
@@ -137,12 +135,12 @@ impl PlayerListPanel {
         .set_hover_text("View your own team players.".into(), hover_text_target);
         match self.view {
             PlayerView::All => filter_all_button.disable(None),
-            PlayerView::FreeAgents => filter_free_agents_button.disable(None),
+            PlayerView::FreePirates => filter_free_pirates_button.disable(None),
             PlayerView::OwnTeam => filter_own_team_button.disable(None),
         }
 
         frame.render_widget(filter_all_button, split[0]);
-        frame.render_widget(filter_free_agents_button, split[1]);
+        frame.render_widget(filter_free_pirates_button, split[1]);
         frame.render_widget(filter_own_team_button, split[2]);
 
         if self.players.len() > 0 {
@@ -323,7 +321,7 @@ impl PlayerListPanel {
             };
         frame.render_widget(lock_button, buttons_split[1]);
 
-        // Add hire button for free agents
+        // Add hire button for free pirates
         if player.team.is_none() {
             let can_hire = own_team.can_hire_player(&player);
             let hire_cost = player.hire_cost(own_team.reputation);
@@ -380,10 +378,6 @@ impl PlayerListPanel {
 }
 
 impl Screen for PlayerListPanel {
-    fn name(&self) -> &str {
-        "Players"
-    }
-
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
         self.own_team_id = world.own_team_id;

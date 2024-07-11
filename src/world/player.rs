@@ -218,7 +218,7 @@ impl<'de> Deserialize<'de> for Player {
                     stamina: compact_skills[3],
                 };
                 player.offense = Offense {
-                    dunk: compact_skills[4],
+                    brawl: compact_skills[4],
                     close_range: compact_skills[5],
                     medium_range: compact_skills[6],
                     long_range: compact_skills[7],
@@ -393,7 +393,7 @@ impl<'de> Deserialize<'de> for Player {
                     stamina: compact_skills[3],
                 };
                 player.offense = Offense {
-                    dunk: compact_skills[4],
+                    brawl: compact_skills[4],
                     close_range: compact_skills[5],
                     medium_range: compact_skills[6],
                     long_range: compact_skills[7],
@@ -496,12 +496,16 @@ impl Player {
             return 0;
         }
 
-        let special_trait_extra = if self.special_trait.is_some() { 2 } else { 1 };
+        let special_trait_extra = if self.special_trait.is_some() {
+            1.5
+        } else {
+            1.0
+        };
 
-        COST_PER_VALUE
+        (COST_PER_VALUE as f32
             * special_trait_extra
-            * self.player_value()
-            * (2.0 * self.reputation - team_reputation) as u32
+            * self.player_value() as f32
+            * (2.0 * self.reputation - team_reputation)) as u32
     }
 
     pub fn release_cost(&self) -> u32 {
@@ -644,7 +648,7 @@ impl Player {
 
         if self.info.first_name == "Costantino" && self.info.last_name == "Frittura" {
             self.athletics.vertical = MAX_SKILL;
-            self.offense.dunk = MAX_SKILL;
+            self.offense.brawl = MAX_SKILL;
             self.offense.long_range = MAX_SKILL;
             self.defense.steal = MAX_SKILL;
             self.technical.ball_handling = MAX_SKILL;
@@ -677,7 +681,7 @@ impl Player {
             1 => self.athletics.vertical,
             2 => self.athletics.strength,
             3 => self.athletics.stamina,
-            4 => self.offense.dunk,
+            4 => self.offense.brawl,
             5 => self.offense.close_range,
             6 => self.offense.medium_range,
             7 => self.offense.long_range,
@@ -779,7 +783,7 @@ impl Player {
             1 => self.athletics.vertical = new_value,
             2 => self.athletics.strength = new_value,
             3 => self.athletics.stamina = new_value,
-            4 => self.offense.dunk = new_value,
+            4 => self.offense.brawl = new_value,
             5 => self.offense.close_range = new_value,
             6 => self.offense.medium_range = new_value,
             7 => self.offense.long_range = new_value,

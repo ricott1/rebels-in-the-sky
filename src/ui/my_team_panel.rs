@@ -16,7 +16,7 @@ use super::{
 };
 use crate::{
     engine::game::Game,
-    store::{load_from_json, PERSISTED_GAMES_PREFIX},
+    store::load_game,
     types::{AppResult, GameId, PlayerId, SystemTimeTick, Tick},
     world::{
         constants::*,
@@ -809,8 +809,7 @@ impl MyTeamPanel {
             ))
         } else {
             if self.loaded_games.get(&game_id).is_none() {
-                let game =
-                    load_from_json(format!("{}{}.json", PERSISTED_GAMES_PREFIX, game_id).as_str())?;
+                let game = load_game(game_id)?;
                 self.loaded_games.insert(game_id, game);
             }
             let game = world
@@ -1736,10 +1735,6 @@ impl MyTeamPanel {
 }
 
 impl Screen for MyTeamPanel {
-    fn name(&self) -> &str {
-        "My Team"
-    }
-
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
         self.own_team_id = world.own_team_id;

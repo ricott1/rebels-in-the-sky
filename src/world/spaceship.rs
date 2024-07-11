@@ -173,7 +173,7 @@ impl SpaceshipComponent for Hull {
             Self::ShuttleLarge => 32000,
             Self::PincherStandard => 33000,
             Self::PincherLarge => 45000,
-            Self::JesterStandard => 52000,
+            Self::JesterStandard => 49000,
         }
     }
 
@@ -183,9 +183,9 @@ impl SpaceshipComponent for Hull {
         }
 
         let scraps_cost = match self.style() {
-            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 200,
-            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 280,
-            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 310,
+            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 20,
+            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 28,
+            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 31,
         };
 
         let mut cost = vec![
@@ -195,9 +195,9 @@ impl SpaceshipComponent for Hull {
         // Final upgrade has a cost in gold
         if self.next().cost() > self.next().next().cost() {
             let gold_cost = match self.style() {
-                SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 4500,
-                SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 3900,
-                SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 3450,
+                SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 4000,
+                SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 3000,
+                SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 2750,
             };
             cost.push((Resource::GOLD, gold_cost))
         }
@@ -344,9 +344,9 @@ impl SpaceshipComponent for Engine {
         }
 
         let scraps_cost = match self.style() {
-            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 750,
-            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 700,
-            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 700,
+            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 75,
+            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 70,
+            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 70,
         };
 
         let mut cost = vec![
@@ -485,9 +485,9 @@ impl SpaceshipComponent for Storage {
         }
 
         let scraps_cost = match self.style() {
-            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 250,
-            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 300,
-            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 300,
+            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 25,
+            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 30,
+            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 30,
         };
 
         let cost = vec![

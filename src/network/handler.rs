@@ -11,6 +11,7 @@ use libp2p::gossipsub::{self, IdentTopic, MessageId};
 use libp2p::swarm::{Config, SwarmEvent};
 use libp2p::{identity, noise, tcp, yamux, PeerId, Transport};
 use libp2p::{Multiaddr, Swarm};
+use log::info;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -35,7 +36,7 @@ impl Debug for NetworkHandler {
 }
 
 impl NetworkHandler {
-    pub fn new(seed_ip: Option<String>) -> AppResult<Self> {
+    pub fn new(seed_ip: Option<String>, port: Option<u16>) -> AppResult<Self> {
         let local_key = identity::Keypair::generate_ed25519();
         let local_peer_id = PeerId::from(local_key.public());
 
@@ -45,14 +46,6 @@ impl NetworkHandler {
             .multiplex(yamux::Config::default())
             .timeout(std::time::Duration::from_secs(20))
             .boxed();
-
-        // let quic_transport = quic::tokio::Transport::new(quic::Config::new(&local_key));
-        // let transport = OrTransport::new(quic_transport, tcp_transport)
-        //     .map(|either_output, _| match either_output {
-        //         Either::Left((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
-        //         Either::Right((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
-        //     })
-        //     .boxed();
 
         // To content-address message, we can take the hash of message and use it as an ID.
         let message_id_fn = |message: &gossipsub::Message| {
@@ -89,20 +82,19 @@ impl NetworkHandler {
             Config::with_tokio_executor(),
         );
 
-        // swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
-        if swarm
-            .listen_on(format!("/ip4/0.0.0.0/tcp/{DEFAULT_PORT}").parse()?)
-            .is_err()
-        {
-            swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{DEFAULT_PORT_BACKUP}").parse()?)?;
-        }
+        let tcp_port = port.unwrap_or(DEFAULT_PORT);
+        swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{tcp_port}").parse()?)?;
 
         let seed_address = match seed_ip {
-            Some(ip) => format!("/ip4/{ip}/tcp/{DEFAULT_PORT}")
+            Some(ip) => format!("/ip4/{ip}/tcp/{DEFAULT_SEED_PORT}")
                 .parse()
                 .expect("Invalid provided seed ip."),
-            None => SEED_ADDRESS.parse()?,
+            None => format!("/ip4/{DEFAULT_SEED_IP}/tcp/{DEFAULT_SEED_PORT}")
+                .parse()
+                .expect("Invalid default seed address."),
         };
+
+        info!("Network handler started on port {}", tcp_port);
 
         Ok(Self {
             swarm,
@@ -259,7 +251,6 @@ impl NetworkHandler {
         &mut self,
         event: SwarmEvent<gossipsub::Event, Void>,
     ) -> Option<NetworkCallbackPreset> {
-        // self.swarm.connected_peers()
         match event {
             SwarmEvent::NewListenAddr { address, .. } => {
                 Some(NetworkCallbackPreset::BindAddress { address })
