@@ -6,12 +6,13 @@ use std::io::{self, Write};
 
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute, queue,
     style::{
         Attribute as CAttribute, Color as CColor, Print, SetAttribute, SetBackgroundColor,
         SetForegroundColor,
     },
-    terminal::Clear,
+    terminal::{Clear, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
 use crate::{ssh::client::TerminalHandle, types::AppResult};
@@ -100,6 +101,22 @@ impl SSHBackend {
 
     pub async fn close(&self) -> AppResult<()> {
         self.writer.close().await
+    }
+
+    pub fn init(&mut self) -> AppResult<()> {
+        execute!(self.writer, EnterAlternateScreen,)?;
+        execute!(self.writer, EnableMouseCapture,)?;
+        self.clear()?;
+        self.hide_cursor()?;
+        Ok(())
+    }
+
+    pub fn reset(&mut self) -> AppResult<()> {
+        execute!(self.writer, DisableMouseCapture,)?;
+        execute!(self.writer, LeaveAlternateScreen,)?;
+        self.clear()?;
+        self.show_cursor()?;
+        Ok(())
     }
 }
 

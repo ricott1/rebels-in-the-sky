@@ -3,8 +3,6 @@ use crate::ssh::backend::SSHBackend;
 use crate::types::AppResult;
 use crate::ui::ui::Ui;
 use crate::world::world::World;
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
-use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::Terminal;
 
 use super::event::TickEventHandler;
@@ -28,14 +26,7 @@ impl SSHTui {
     ///
     /// It enables the raw mode and sets terminal properties.
     fn init(&mut self) -> AppResult<()> {
-        crossterm::execute!(
-            self.terminal.backend_mut(),
-            EnterAlternateScreen,
-            EnableMouseCapture
-        )?;
-
-        self.terminal.clear()?;
-        Ok(())
+        self.terminal.backend_mut().init()
     }
 
     pub fn draw(&mut self, ui: &mut Ui, world: &World) -> AppResult<()> {
@@ -51,23 +42,13 @@ impl SSHTui {
     }
 
     /// Resets the terminal interface.
-    fn reset(&mut self) -> AppResult<()> {
-        crossterm::execute!(
-            self.terminal.backend_mut(),
-            LeaveAlternateScreen,
-            DisableMouseCapture
-        )?;
-        self.terminal.clear()?;
-        self.terminal.show_cursor()?;
-
-        Ok(())
+    pub fn reset(&mut self) -> AppResult<()> {
+        self.terminal.backend_mut().reset()
     }
 
-    /// Exits the terminal interface.
-    ///
-    /// It disables the raw mode and reverts back the terminal properties.
     pub async fn exit(&mut self) -> AppResult<()> {
-        self.reset()?;
+        self.reset()
+            .unwrap_or_else(|e| println!("Failed to reset SSH tui: {}", e));
         self.terminal.backend().close().await
     }
 }

@@ -1114,7 +1114,7 @@ impl MyTeamPanel {
         let upgrade_to_text = if can_be_upgraded {
             format!("{} -> {}", current, next)
         } else {
-            "Already fully upgraded".to_string()
+            "Fully upgraded".to_string()
         };
 
         let mut lines = vec![

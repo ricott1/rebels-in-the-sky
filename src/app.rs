@@ -2,18 +2,21 @@ use crate::event::{EventHandler, TerminalEvent};
 use crate::network::handler::NetworkHandler;
 use crate::store::{get_world_size, load_world, reset, save_world};
 use crate::tui::Tui;
-use crate::types::{AppResult, SystemTimeTick, Tick};
+use crate::types::{AppResult, SystemTimeTick, Tick, SECONDS};
 use crate::ui::ui::Ui;
 use crate::ui::utils::SwarmPanelEvent;
 use crate::world::world::World;
 use crossterm::event::{KeyCode, KeyModifiers};
 use futures::StreamExt;
+use libp2p::PeerId;
 use libp2p::{gossipsub, swarm::SwarmEvent};
-use log::info;
+use log::{error, info};
 use ratatui::backend::CrosstermBackend;
 use std::io::{self};
 use tokio::select;
 use void::Void;
+
+const NETWORK_HANDLER_INIT_INTERVAL: u128 = 10 * SECONDS;
 
 pub struct App {
     pub world: World,
@@ -27,8 +30,10 @@ pub struct App {
 }
 
 impl App {
-    pub fn initialize_network_handler(&mut self) {
-        self.network_handler = NetworkHandler::new(self.seed_ip.clone(), self.network_port).ok();
+    pub fn initialize_network_handler(&mut self) -> AppResult<()> {
+        let handler = NetworkHandler::new(self.seed_ip.clone(), self.network_port)?;
+        self.network_handler = Some(handler);
+        Ok(())
     }
 
     pub fn new(
@@ -68,10 +73,18 @@ impl App {
         let backend = CrosstermBackend::new(writer);
         let mut tui = Tui::new(backend, events)?;
 
+        let mut last_network_handler_init = 0;
+
         while self.running {
-            if self.network_handler.is_none() && self.world.has_own_team() {
+            if self.network_handler.is_none()
+                && self.world.has_own_team()
+                && Tick::now() - last_network_handler_init > NETWORK_HANDLER_INIT_INTERVAL
+            {
                 info!("Initializing network handler...");
-                self.initialize_network_handler();
+                if let Err(e) = self.initialize_network_handler() {
+                    error!("Could not initialize network handler: {}", e);
+                    last_network_handler_init = Tick::now();
+                }
             }
             //FIXME consolidate this into a single select! macro
             if let Some(network_handler) = self.network_handler.as_mut() {
@@ -150,6 +163,22 @@ impl App {
     /// Set running to false to quit the application.
     pub fn quit(&mut self) -> AppResult<()> {
         self.running = false;
+        // close network connections
+        if let Some(network_handler) = &mut self.network_handler {
+            let peers = network_handler
+                .swarm
+                .connected_peers()
+                .map(|id| id.clone())
+                .collect::<Vec<PeerId>>();
+            for peer_id in peers {
+                if network_handler.swarm.is_connected(&peer_id) {
+                    let _ = network_handler
+                        .swarm
+                        .disconnect_peer_id(peer_id)
+                        .map_err(|e| error!("Error disconnecting peer id {}: {:?}", peer_id, e));
+                }
+            }
+        }
         // save world and backup
         if self.world.has_own_team() {
             save_world(&self.world, true, &self.store_prefix)?;

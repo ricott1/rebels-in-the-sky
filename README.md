@@ -9,7 +9,7 @@ Now it's your turn to go out there and make a name for yourself. Create your cre
 
 ## Just try it out!
 
-`ssh rebels.frittura.org -p 2222`
+`ssh rebels.frittura.org -p 3788`
 
 Connect via SSH to try the game. ~~Only local~~ Full networked game is available and there is no ~~mouse support nor~~ music :(
 

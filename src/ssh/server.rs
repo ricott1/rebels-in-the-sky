@@ -1,7 +1,7 @@
 use crate::event::TerminalEvent;
 use crate::network::constants::DEFAULT_PORT;
 use crate::store::world_exists;
-use crate::types::AppResult;
+use crate::types::{AppResult, SystemTimeTick, Tick, SECONDS};
 use async_trait::async_trait;
 use crossterm::event::KeyModifiers;
 use futures::StreamExt;
@@ -19,7 +19,7 @@ use tokio::sync::Mutex;
 
 use super::client::{AppClient, SessionAuth};
 
-const SERVER_SSH_PORT: u16 = 2222;
+const SERVER_SSH_PORT: u16 = 3788;
 const MAX_SSH_CLIENT_PORT: u16 = DEFAULT_PORT + 32;
 
 static AUTH_PASSWORD_SALT: &'static str = "agfg34g";
@@ -27,6 +27,8 @@ static AUTH_PUBLIC_KEY_SALT: &'static str = "1gfg22g";
 
 const MIN_USERNAME_LENGTH: usize = 3;
 const MAX_USERNAME_LENGTH: usize = 16;
+
+const NETWORK_HANDLER_INIT_INTERVAL: u128 = 1 * SECONDS;
 
 fn save_keys(signing_key: &ed25519_dalek::SigningKey) -> AppResult<()> {
     let file = File::create::<&str>("./keys".into())?;
@@ -74,6 +76,7 @@ impl AppServer {
         println!("Starting SSH server. Press Ctrl-C to exit.");
         let clients = self.clients.clone();
         tokio::spawn(async move {
+            let mut last_network_handler_init = 0;
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_millis(25)).await;
                 // let tick = Tick::now();
@@ -92,13 +95,16 @@ impl AppServer {
 
                     if app_client.app.network_handler.is_none()
                         && app_client.app.world.has_own_team()
+                        && Tick::now() - last_network_handler_init > NETWORK_HANDLER_INIT_INTERVAL
                     {
-                        println!("Initializing network handler...");
-                        app_client.app.initialize_network_handler();
-                        if let Some(_) = app_client.app.network_handler {
-                            println!("Done.");
+                        println!("Initializing network handler for '{}'...", username);
+                        if let Err(e) = app_client.app.initialize_network_handler() {
+                            println!("Could not initialize network handler: {}", e);
+                            // setting last_network_handler_init delays setting the handler for other clients.
+                            // A better solution would be to store this on a per client basis
+                            last_network_handler_init = Tick::now();
                         } else {
-                            println!("Failed.");
+                            println!("Done");
                         }
                     }
 
@@ -138,19 +144,6 @@ impl AppServer {
                             }
                         }
                     }
-
-                    // app_client.app.handle_tick_events(tick).unwrap_or_else(|e| {
-                    //     log::error!("Failed to handle tick event for client: {}", e);
-                    //     to_remove.push(*id);
-                    // });
-
-                    // app_client
-                    //     .tui
-                    //     .draw(&mut app_client.app)
-                    //     .unwrap_or_else(|e| {
-                    //         log::error!("Failed to draw tui for client: {}", e);
-                    //         to_remove.push(*id);
-                    //     });
                 }
 
                 for username in to_remove {
@@ -158,10 +151,6 @@ impl AppServer {
                 }
             }
         });
-
-        // app_client.app.handle_network_events(swarm_event).unwrap_or_else(|e| {
-        //     log::error!("Failed to handle network event: {}", e);
-        // })
 
         let signing_key = load_keys().unwrap_or_else(|_| {
             let key_pair =
@@ -322,17 +311,13 @@ impl Handler for AppServer {
                 Some(crossterm::event::Event::Key(key_event)) => match key_event.code {
                     crossterm::event::KeyCode::Esc => {
                         app_client
-                            .tui
-                            .exit()
-                            .await
-                            .unwrap_or_else(|e| println!("Error exiting tui: {}", e));
-                        app_client
                             .app
                             .quit()
                             .unwrap_or_else(|e| println!("Error quitting app: {}", e));
-                        clients.remove(&self.session_auth.username);
-                        session.disconnect(Disconnect::ByApplication, "Game quit", "");
-                        session.close(channel);
+                        app_client
+                            .tui
+                            .reset()
+                            .unwrap_or_else(|e| println!("Error resetting tui: {}", e));
                     }
                     _ => {
                         app_client
