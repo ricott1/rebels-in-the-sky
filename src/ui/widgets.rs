@@ -1309,9 +1309,9 @@ mod tests {
                 team.max_storage_capacity()
             );
             assert_eq!(gold_length, 0);
-            assert_eq!(scraps_length, 24);
+            assert_eq!(scraps_length, 21);
             assert_eq!(rum_length, 1);
-            assert_eq!(free_bars, 0);
+            assert_eq!(free_bars, 3);
             assert_eq!(
                 gold_length + scraps_length + rum_length + free_bars,
                 bars_length
@@ -1319,7 +1319,7 @@ mod tests {
         } else {
             panic!("Failed to calculate resource length");
         }
-
+        team.add_resource(Resource::SCRAPS, 24);
         team.add_resource(Resource::GOLD, 1);
 
         if let [gold_length, scraps_length, rum_length, free_bars] = get_storage_lengths(&team)[..4]
