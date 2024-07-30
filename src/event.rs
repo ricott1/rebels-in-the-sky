@@ -1,11 +1,13 @@
 use crate::types::{AppResult, SystemTimeTick, Tick};
+use anyhow::anyhow;
 use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, KeyEventKind, MouseEvent};
 use futures::Future;
+use log::error;
 use std::pin::Pin;
-use std::sync::mpsc;
 use std::task::{Context, Poll};
 use std::thread;
 use std::time::Duration;
+use tokio::sync::mpsc;
 
 const TICK_RATE: f64 = 30.0; //ticks per milliseconds
 const TIME_STEP: Duration = Duration::from_millis((1000.0 / TICK_RATE) as u64);
@@ -32,9 +34,9 @@ impl Future for TerminalEvent {
 #[derive(Debug)]
 pub struct EventHandler {
     /// TerminalEvent sender channel.
-    sender: mpsc::Sender<TerminalEvent>,
+    sender: mpsc::UnboundedSender<TerminalEvent>,
     /// TerminalEvent receiver channel.
-    receiver: mpsc::Receiver<TerminalEvent>,
+    receiver: mpsc::UnboundedReceiver<TerminalEvent>,
     /// TerminalEvent handler thread.
     handler: thread::JoinHandle<()>,
 }
@@ -42,7 +44,7 @@ pub struct EventHandler {
 impl EventHandler {
     /// Constructs a new instance of [`EventHandler`].
     pub fn handler() -> Self {
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver) = mpsc::unbounded_channel();
         let handler = {
             let sender = sender.clone();
             let mut last_tick = Tick::now();
@@ -65,8 +67,8 @@ impl EventHandler {
 
                 let now = Tick::now();
                 if now - last_tick >= TIME_STEP_MILLIS {
-                    if let Err(_) = sender.send(TerminalEvent::Tick { tick: now }) {
-                        // eprintln!("Failed to send tick event: {}", err);
+                    if let Err(e) = sender.send(TerminalEvent::Tick { tick: now }) {
+                        error!("Failed to send tick event: {e}");
                         break;
                     }
                     last_tick = now;
@@ -84,7 +86,10 @@ impl EventHandler {
     ///
     /// This function will always block the current thread if
     /// there is no data available and it's possible for more data to be sent.
-    pub fn next(&self) -> AppResult<TerminalEvent> {
-        Ok(self.receiver.recv()?)
+    pub async fn next(&mut self) -> AppResult<TerminalEvent> {
+        self.receiver
+            .recv()
+            .await
+            .ok_or(anyhow!("Error pulling next TerminalEvent"))
     }
 }

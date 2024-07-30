@@ -1,6 +1,7 @@
 use super::color_map::ColorMap;
 use crate::store::ASSETS_DIR;
 use crate::types::AppResult;
+use anyhow::anyhow;
 use image::error::{ParameterError, ParameterErrorKind};
 use image::io::Reader as ImageReader;
 use image::{ImageBuffer, ImageError, ImageResult, Rgba, RgbaImage};
@@ -149,7 +150,7 @@ impl ExtraImageUtils for ImageBuffer<Rgba<u8>, Vec<u8>> {
 pub fn read_image(path: &str) -> AppResult<RgbaImage> {
     let file = ASSETS_DIR.get_file(path);
     if file.is_none() {
-        return Err(format!("File {} not found", path).into());
+        return Err(anyhow!("File {} not found", path));
     }
     let img = ImageReader::new(Cursor::new(file.unwrap().contents()))
         .with_guessed_format()?

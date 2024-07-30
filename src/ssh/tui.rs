@@ -30,7 +30,8 @@ impl SSHTui {
     }
 
     pub fn draw(&mut self, ui: &mut Ui, world: &World) -> AppResult<()> {
-        self.terminal.draw(|frame| App::render(ui, world, frame))?;
+        self.terminal
+            .draw(|frame| App::render(ui, world, None, frame))?;
         Ok(())
     }
 
@@ -47,8 +48,6 @@ impl SSHTui {
     }
 
     pub async fn exit(&mut self) -> AppResult<()> {
-        self.reset()
-            .unwrap_or_else(|e| println!("Failed to reset SSH tui: {}", e));
         self.terminal.backend().close().await
     }
 }

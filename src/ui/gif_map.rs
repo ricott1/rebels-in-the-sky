@@ -12,6 +12,7 @@ use crate::{
         world::World,
     },
 };
+use anyhow::anyhow;
 use image::{imageops::resize, GenericImageView, ImageBuffer, Rgba, RgbaImage};
 use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use once_cell::sync::Lazy;
@@ -136,7 +137,7 @@ impl GifMap {
 
         let planet = world
             .get_planet(planet_id)
-            .ok_or("World: Planet not found.")?;
+            .ok_or(anyhow!("World: Planet not found."))?;
 
         let gif = self.planet_zoom_in(planet)?;
         let lines = gif.to_lines();

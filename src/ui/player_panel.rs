@@ -208,7 +208,7 @@ impl PlayerListPanel {
                 player,
                 frame,
                 world,
-                button_split[0].inner(&Margin {
+                button_split[0].inner(Margin {
                     horizontal: 1,
                     vertical: 0,
                 }),
@@ -232,7 +232,7 @@ impl PlayerListPanel {
                     locked_player,
                     frame,
                     world,
-                    button_split[1].inner(&Margin {
+                    button_split[1].inner(Margin {
                         horizontal: 1,
                         vertical: 0,
                     }),
@@ -422,7 +422,7 @@ impl Screen for PlayerListPanel {
         if self.all_players.len() == 0 {
             frame.render_widget(
                 Paragraph::new(" No player yet!"),
-                area.inner(&Margin {
+                area.inner(Margin {
                     vertical: 1,
                     horizontal: 1,
                 }),

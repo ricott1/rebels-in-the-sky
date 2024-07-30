@@ -1,11 +1,13 @@
+use super::challenge::Challenge;
 use super::constants::*;
 use super::network_callback::NetworkCallbackPreset;
-use super::types::{Challenge, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
+use super::types::{NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::engine::types::TeamInGame;
 use crate::types::TeamId;
 use crate::types::{AppResult, GameId};
 use crate::types::{SystemTimeTick, Tick};
 use crate::world::world::World;
+use anyhow::anyhow;
 use libp2p::core::upgrade::Version;
 use libp2p::gossipsub::{self, IdentTopic, MessageId};
 use libp2p::swarm::{Config, SwarmEvent};
@@ -138,7 +140,7 @@ impl NetworkHandler {
         let message_id = if world.has_own_team() {
             self.send_team(world, world.own_team_id)?
         } else {
-            return Err("No own team".into());
+            return Err(anyhow!("No own team"));
         };
 
         //If own team is playing with network peer, send the game.
@@ -176,13 +178,13 @@ impl NetworkHandler {
 
     pub fn can_handle_challenge(world: &World) -> AppResult<()> {
         if !world.has_own_team() {
-            return Err(format!("No own team, declining challenge").into());
+            return Err(anyhow!("No own team, declining challenge"));
         }
 
         let own_team = world.get_own_team()?;
 
         if own_team.current_game.is_some() {
-            return Err(format!("Already in a game, declining challenge").into());
+            return Err(anyhow!("Already in a game, declining challenge"));
         }
 
         Ok(())
@@ -194,7 +196,7 @@ impl NetworkHandler {
         let mut challenge = Challenge::new(self.swarm.local_peer_id().clone(), peer_id);
         let mut home_team_in_game =
             TeamInGame::from_team_id(world.own_team_id, &world.teams, &world.players)
-                .ok_or("Cannot generate team in game")?;
+                .ok_or(anyhow!("Cannot generate team in game"))?;
         home_team_in_game.peer_id = Some(self.swarm.local_peer_id().clone());
         challenge.home_team = Some(home_team_in_game);
 
@@ -208,14 +210,14 @@ impl NetworkHandler {
 
             let away_team = world.get_own_team()?;
             if away_team.current_game.is_some() {
-                return Err("Cannot accept challenge, already in a game".into());
+                return Err(anyhow!("Cannot accept challenge, already in a game"));
             }
 
             let try_away_team_in_game =
                 TeamInGame::from_team_id(world.own_team_id, &world.teams, &world.players);
 
             if try_away_team_in_game.is_none() {
-                return Err("Cannot generate team in game for challenge")?;
+                return Err(anyhow!("Cannot generate team in game for challenge"));
             }
 
             let mut away_team_in_game = try_away_team_in_game.unwrap();
@@ -233,7 +235,7 @@ impl NetworkHandler {
             challenge.state = NetworkRequestState::Failed;
             challenge.error_message = Some(err.to_string());
             self.send_challenge(&challenge)?;
-            return Err(err.to_string())?;
+            return Err(anyhow!(err.to_string()));
         }
         Ok(())
     }

@@ -31,10 +31,9 @@ impl TerminalHandle {
 
     async fn _flush(&self) -> std::io::Result<usize> {
         let handle = self.handle.clone();
-        let channel_id = self.channel_id.clone();
         let data: CryptoVec = self.sink.clone().into();
         let data_length = data.len();
-        let result = handle.data(channel_id, data).await;
+        let result = handle.data(self.channel_id, data).await;
         if result.is_err() {
             log::error!("Failed to send data: {:?}", result);
             return Err(std::io::Error::new(
@@ -45,7 +44,7 @@ impl TerminalHandle {
         log::debug!(
             "Sent {} bytes of data to channel {}",
             data_length,
-            channel_id
+            self.channel_id
         );
         Ok(data_length)
     }

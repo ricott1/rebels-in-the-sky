@@ -60,6 +60,7 @@ impl GamePosition for Position {
             _ => panic!("Invalid position"),
         }
     }
+
     fn player_rating(&self, skills: [Skill; 20]) -> f32 {
         let mut rating = 0 as f32;
         let weights = self.weights();
@@ -71,6 +72,7 @@ impl GamePosition for Position {
         }
         (rating / total_weight).round()
     }
+
     fn best(skills: [Skill; 20]) -> Self
     where
         Self: Sized,

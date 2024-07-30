@@ -3,6 +3,7 @@ use std::fmt::Display;
 use crate::types::AppResult;
 
 use super::action::Action;
+use anyhow::anyhow;
 use rand::seq::IteratorRandom;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, WeightedIndex};
@@ -55,7 +56,7 @@ impl Tactic {
             1 => Action::OffTheScreen,
             2 => Action::PickAndRoll,
             3 => Action::Post,
-            _ => return Err("Invalid index in pick_action.".into()),
+            _ => return Err(anyhow!("Invalid index in pick_action.")),
         };
         Ok(action)
     }

@@ -12,12 +12,12 @@ pub const MAX_NAME_LENGTH: usize = 12;
 pub struct UiKey;
 
 impl UiKey {
-    pub const NEXT_TAB: KeyCode = KeyCode::Char(']');
-    pub const PREVIOUS_TAB: KeyCode = KeyCode::Char('[');
+    pub const NEXT_TAB: KeyCode = KeyCode::Right;
+    pub const PREVIOUS_TAB: KeyCode = KeyCode::Left;
+    pub const NEXT_SELECTION: KeyCode = KeyCode::Char(']');
+    pub const PREVIOUS_SELECTION: KeyCode = KeyCode::Char('[');
     pub const DATA_VIEW: KeyCode = KeyCode::Tab;
     pub const MUSIC_TOGGLE: KeyCode = KeyCode::Char('|');
-    pub const MUSIC_NEXT: KeyCode = KeyCode::Char('>');
-    pub const MUSIC_PREVIOUS: KeyCode = KeyCode::Char('<');
     pub const GO_TO_TEAM: KeyCode = KeyCode::Backspace;
     pub const GO_TO_TEAM_ALTERNATIVE: KeyCode = KeyCode::Char('t');
     pub const GO_TO_PLANET: KeyCode = KeyCode::Char('O');
@@ -72,10 +72,10 @@ impl PrintableKeyCode for KeyCode {
             KeyCode::Enter => "Enter".to_string(),
             KeyCode::Esc => "Esc".to_string(),
             KeyCode::Backspace => "Backspace".to_string(),
-            KeyCode::Left => "Left".to_string(),
-            KeyCode::Right => "Right".to_string(),
-            KeyCode::Up => "Up".to_string(),
-            KeyCode::Down => "Down".to_string(),
+            KeyCode::Left => "←".to_string(),
+            KeyCode::Right => "→".to_string(),
+            KeyCode::Up => "↑".to_string(),
+            KeyCode::Down => "↓".to_string(),
             KeyCode::Home => "Home".to_string(),
             KeyCode::End => "End".to_string(),
             KeyCode::PageUp => "PageUp".to_string(),

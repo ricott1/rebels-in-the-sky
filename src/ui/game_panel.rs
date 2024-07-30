@@ -328,7 +328,7 @@ impl GamePanel {
             Constraint::Length(PITCH_HEIGHT / 2 + 8), // pitch
             Constraint::Min(1),                       // score
         ])
-        .split(area.inner(&Margin {
+        .split(area.inner(Margin {
             horizontal: 1,
             vertical: 1,
         }));
@@ -461,7 +461,7 @@ impl GamePanel {
         frame.render_widget(
             Paragraph::new(commentary)
                 .wrap(Wrap { trim: false })
-                .block(default_block().title("Commentary ←/→")),
+                .block(default_block().title("Commentary")),
             area,
         )
     }
@@ -701,7 +701,7 @@ impl GamePanel {
             Constraint::Length(game.away_team_in_game.players.len() as u16 + 2),
             Constraint::Min(0),
         ])
-        .split(area.inner(&Margin {
+        .split(area.inner(Margin {
             horizontal: 1,
             vertical: 0,
         }));
@@ -785,12 +785,12 @@ impl Screen for GamePanel {
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
-            KeyCode::Left => {
+            UiKey::PREVIOUS_SELECTION => {
                 if self.commentary_index > 0 {
                     self.commentary_index -= 1;
                 }
             }
-            KeyCode::Right => {
+            UiKey::NEXT_SELECTION => {
                 if self.commentary_index < self.action_results.len() - 1 {
                     self.commentary_index += 1;
                 }
@@ -846,6 +846,15 @@ impl Screen for GamePanel {
             ])
         } else {
             v.append(&mut vec![
+                Span::styled(
+                    format!(
+                        " {}/{} ",
+                        UiKey::PREVIOUS_SELECTION.to_string(),
+                        UiKey::NEXT_SELECTION.to_string()
+                    ),
+                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
+                ),
+                Span::styled(" Scroll commentary ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     " Enter ",
                     Style::default().bg(Color::Gray).fg(Color::DarkGray),

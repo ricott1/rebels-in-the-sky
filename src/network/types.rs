@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::engine::timer::Timer;
 use crate::engine::types::GameStats;
 use crate::types::{PlanetId, Tick};
@@ -10,8 +8,10 @@ use crate::{
     types::{AppResult, GameId, TeamId},
     world::{player::Player, team::Team, world::World},
 };
+use anyhow::anyhow;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use strum_macros::Display;
 
 #[derive(Debug, Clone, Display, Default, Serialize, Deserialize, PartialEq, Hash)]
@@ -21,69 +21,6 @@ pub enum NetworkRequestState {
     SynAck,
     Ack,
     Failed,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Challenge {
-    pub state: NetworkRequestState,
-    pub home_peer_id: PeerId,
-    pub away_peer_id: PeerId,
-    pub home_team: Option<TeamInGame>,
-    pub away_team: Option<TeamInGame>,
-    pub game_id: Option<GameId>,
-    pub starting_at: Option<Tick>,
-    pub error_message: Option<String>,
-}
-
-impl Challenge {
-    pub fn new(home_peer_id: PeerId, away_peer_id: PeerId) -> Self {
-        Self {
-            state: NetworkRequestState::Syn,
-            home_peer_id,
-            away_peer_id,
-            home_team: None,
-            away_team: None,
-            game_id: None,
-            starting_at: None,
-            error_message: None,
-        }
-    }
-
-    pub fn format(&self) -> String {
-        format!(
-            "Challenge: {} {} {} - {} vs {} ",
-            self.state,
-            self.home_peer_id,
-            self.away_peer_id,
-            self.home_team
-                .as_ref()
-                .map(|t| t.name.clone())
-                .unwrap_or_else(|| "None".to_string()),
-            self.away_team
-                .as_ref()
-                .map(|t| t.name.clone())
-                .unwrap_or_else(|| "None".to_string()),
-        )
-    }
-
-    pub fn generate_game(&self, world: &mut World) -> AppResult<GameId> {
-        if self.starting_at.is_none() {
-            return Err("Cannot generate game, starting_at not set".into());
-        }
-        world.generate_game(
-            self.game_id.unwrap(),
-            self.home_team
-                .as_ref()
-                .ok_or("Cannot generate game, home team not found in challenge".to_string())?
-                .clone(),
-            self.away_team
-                .as_ref()
-                .ok_or("Cannot generate game, away team not found in challenge".to_string())?
-                .clone(),
-            self.starting_at.unwrap(),
-        )?;
-        Ok(self.game_id.unwrap())
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -155,10 +92,9 @@ impl NetworkGame {
 
             // Reset tiredness to initial one
             let tiredness = home_team_in_game.initial_tiredness[idx];
-            let player = home_team_in_game
-                .players
-                .get_mut(player_id)
-                .ok_or("Cannot get player for home team in game".to_string())?;
+            let player = home_team_in_game.players.get_mut(player_id).ok_or(anyhow!(
+                "Cannot get player for home team in game".to_string()
+            ))?;
             player.tiredness = tiredness;
         }
         home_team_in_game.stats = stats;
@@ -173,10 +109,9 @@ impl NetworkGame {
             stats.insert(player_id.clone(), player_stats.clone());
 
             let tiredness = away_team_in_game.initial_tiredness[idx];
-            let player = away_team_in_game
-                .players
-                .get_mut(player_id)
-                .ok_or("Cannot get player for away team in game".to_string())?;
+            let player = away_team_in_game.players.get_mut(player_id).ok_or(anyhow!(
+                "Cannot get player for away team in game".to_string()
+            ))?;
             player.tiredness = tiredness;
         }
         away_team_in_game.stats = stats;

@@ -332,21 +332,19 @@ mod tests {
         assert_eq!(timer.has_ended(), true);
     }
 
-    //FIXME: add test for end of period and timer format
-
     #[test]
     fn test_end_period() {
         assert_eq!(Timer::from(Period::Q1.end()).format(), "Q1 00:00");
         assert_eq!(Timer::from(Period::B1.start()).format(), "B1 02:00");
-        assert_eq!(Timer::from(Period::B1.end()).format(), "B1 00:00");
+        assert_eq!(Timer::from(Period::B1.end()).format(), "Q2 10:00");
         assert_eq!(Timer::from(Period::Q2.start()).format(), "Q2 10:00");
         assert_eq!(Timer::from(Period::Q2.end()).format(), "Q2 00:00");
         assert_eq!(Timer::from(Period::B2.start()).format(), "B2 02:00");
-        assert_eq!(Timer::from(Period::B2.end()).format(), "B2 00:00");
+        assert_eq!(Timer::from(Period::B2.end()).format(), "Q3 10:00");
         assert_eq!(Timer::from(Period::Q3.start()).format(), "Q3 10:00");
         assert_eq!(Timer::from(Period::Q3.end()).format(), "Q3 00:00");
         assert_eq!(Timer::from(Period::B3.start()).format(), "B3 02:00");
-        assert_eq!(Timer::from(Period::B3.end()).format(), "B3 00:00");
+        assert_eq!(Timer::from(Period::B3.end()).format(), "Q4 10:00");
         assert_eq!(Timer::from(Period::Q4.start()).format(), "Q4 10:00");
         assert_eq!(Timer::from(Period::Q4.end()).format(), "Q4 00:00");
         assert_eq!(Timer::from(Period::B4.start()).format(), "Q4 00:00");

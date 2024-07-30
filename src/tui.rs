@@ -1,10 +1,12 @@
 use crate::app::App;
+use crate::audio;
 use crate::event::EventHandler;
 use crate::types::AppResult;
 use crate::ui::ui::Ui;
 use crate::world::world::World;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+use log::error;
 use ratatui::layout::Rect;
 use ratatui::Terminal;
 use std::io::{self};
@@ -61,8 +63,14 @@ where
     ///
     /// [`Draw`]: ratatui::Terminal::draw
     /// [`rendering`]: crate::ui:render
-    pub fn draw(&mut self, ui: &mut Ui, world: &World) -> AppResult<()> {
-        self.terminal.draw(|frame| App::render(ui, world, frame))?;
+    pub fn draw(
+        &mut self,
+        ui: &mut Ui,
+        world: &World,
+        audio_player: Option<&audio::music_player::MusicPlayer>,
+    ) -> AppResult<()> {
+        self.terminal
+            .draw(|frame| App::render(ui, world, audio_player, frame))?;
         Ok(())
     }
 
@@ -71,8 +79,8 @@ where
     /// This function is also used for the panic hook to revert
     /// the terminal properties if unexpected errors occur.
     fn reset() -> AppResult<()> {
+        crossterm::execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
         terminal::disable_raw_mode()?;
-        crossterm::execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?; //DisableMouseCapture
         Ok(())
     }
 
@@ -85,9 +93,13 @@ where
     ///
     /// It disables the raw mode and reverts back the terminal properties.
     pub fn exit(&mut self) -> AppResult<()> {
-        self.terminal.show_cursor()?;
-        Self::reset()?;
-        self.terminal.clear()?;
+        Self::reset().unwrap_or_else(|e| error!("Error resetting tui: {e}"));
+        self.terminal
+            .clear()
+            .unwrap_or_else(|e| error!("Error clearing terminal: {e}"));
+        self.terminal
+            .show_cursor()
+            .unwrap_or_else(|e| error!("Error showing cursor: {e}"));
         Ok(())
     }
 }

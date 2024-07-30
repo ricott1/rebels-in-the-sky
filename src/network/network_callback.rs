@@ -1,10 +1,12 @@
+use super::challenge::Challenge;
 use super::constants::*;
 use super::handler::NetworkHandler;
-use super::types::{Challenge, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
+use super::types::{NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::types::{AppResult, SystemTimeTick, Tick, MINUTES};
 use crate::types::{GameId, IdSystem};
 use crate::ui::utils::SwarmPanelEvent;
 use crate::{app::App, types::AppCallback};
+use anyhow::anyhow;
 use libp2p::gossipsub::{IdentTopic, TopicHash};
 use libp2p::{gossipsub::Message, Multiaddr, PeerId};
 
@@ -184,7 +186,7 @@ impl NetworkCallbackPreset {
                     text: text.clone(),
                 };
                 app.ui.swarm_panel.push_log_event(event);
-                return Err(text)?;
+                return Err(anyhow!(text));
             }
             Ok(None)
         })
@@ -235,7 +237,7 @@ impl NetworkCallbackPreset {
                     text: text.clone(),
                 };
                 app.ui.swarm_panel.push_log_event(event);
-                return Err(text)?;
+                return Err(anyhow!(text));
             }
             Ok(None)
         })
@@ -300,11 +302,11 @@ impl NetworkCallbackPreset {
                 //FIXME: I think a single player is trying to handle more than one state. We should enforce the roles more clearly, i.e. who is the challenger who the challenged and only handle relevant states
                 NetworkRequestState::Syn => {
                     if challenge.home_peer_id == self_peer_id {
-                        return Err(format!("Team is challenge sender (should be receiver)").into());
+                        return Err(anyhow!("Team is challenge sender (should be receiver)"));
                     }
 
                     if challenge.away_peer_id != self_peer_id {
-                        return Err(format!("Team is not challenge receiver").into());
+                        return Err(anyhow!("Team is not challenge receiver"));
                     }
 
                     network_handler.add_challenge(challenge.clone());
@@ -320,11 +322,11 @@ impl NetworkCallbackPreset {
 
                 NetworkRequestState::SynAck => {
                     if challenge.away_peer_id == self_peer_id {
-                        return Err(format!("Team is challenge receiver (should be sender)").into());
+                        return Err(anyhow!("Team is challenge receiver (should be sender)"));
                     }
 
                     if challenge.home_peer_id != self_peer_id {
-                        return Err(format!("Team is not challenge sender").into());
+                        return Err(anyhow!("Team is not challenge sender"));
                     }
 
                     let mut handle_syn_ack = || -> AppResult<()> {
@@ -355,7 +357,7 @@ impl NetworkCallbackPreset {
                         challenge.state = NetworkRequestState::Failed;
                         challenge.error_message = Some(err.to_string());
                         network_handler.send_challenge(&challenge)?;
-                        return Err(err.to_string())?;
+                        return Err(anyhow!(err.to_string()));
                     }
                 }
 
@@ -375,12 +377,12 @@ impl NetworkCallbackPreset {
                     }
 
                     if challenge.home_peer_id == self_peer_id {
-                        return Err(format!("Team is challenge sender (should be receiver)").into());
+                        return Err(anyhow!("Team is challenge sender (should be receiver)"));
                     }
 
                     // The following check sometimes fails if the peer_id changed after the challenge has been sent.
                     if challenge.away_peer_id != self_peer_id {
-                        return Err(format!("Team is not challenge receiver").into());
+                        return Err(anyhow!("Team is not challenge receiver"));
                     }
 
                     let mut handle_ack = || -> AppResult<()> {
@@ -405,7 +407,7 @@ impl NetworkCallbackPreset {
                         challenge.state = NetworkRequestState::Failed;
                         challenge.error_message = Some(err.to_string());
                         network_handler.send_challenge(&challenge)?;
-                        return Err(err.to_string())?;
+                        return Err(anyhow!(err.to_string()));
                     }
                 }
 
@@ -414,7 +416,7 @@ impl NetworkCallbackPreset {
                     if challenge.home_peer_id != self_peer_id
                         && challenge.away_peer_id != self_peer_id
                     {
-                        return Err("Challenge failed, but it's not our challenge.")?;
+                        return Err(anyhow!("Challenge failed, but it's not our challenge."));
                     }
                     app.ui.swarm_panel.remove_challenge(&challenge.home_peer_id);
                     app.ui
@@ -426,7 +428,7 @@ impl NetworkCallbackPreset {
                             Tick::now(),
                         ));
 
-                    return Err(format!(
+                    return Err(anyhow!(
                         "Challenge failed. {}",
                         challenge.error_message.unwrap()
                     ))?;

@@ -15,10 +15,10 @@ use std::{
     collections::HashMap,
 };
 
-const MIN_REBOUND_VALUE: u16 = 28;
+const MIN_REBOUND_VALUE: u16 = 36;
 
 fn position_rebound_bonus(idx: usize) -> f32 {
-    1.0 + idx as f32 / 5.0
+    1.0 + idx as f32 / 12.0
 }
 
 #[derive(Debug, Default)]

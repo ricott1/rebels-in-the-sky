@@ -7,7 +7,7 @@ use super::{
     utils::input_from_key_event,
     widgets::default_block,
 };
-use crate::network::types::Challenge;
+use crate::network::challenge::Challenge;
 use crate::types::{AppResult, SystemTimeTick, TeamId, Tick};
 use crate::ui::constants::{PrintableKeyCode, UiKey};
 use crate::world::skill::Rated;
@@ -26,7 +26,6 @@ use ratatui::{
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-
 use strum_macros::Display;
 use tui_textarea::{CursorMove, TextArea};
 
@@ -210,7 +209,7 @@ impl SwarmPanel {
 
         let mut constraints = [Constraint::Length(3)].repeat(self.peer_to_challenge.len());
         constraints.push(Constraint::Min(0));
-        let split = Layout::vertical(constraints).split(area.inner(&Margin {
+        let split = Layout::vertical(constraints).split(area.inner(Margin {
             horizontal: 1,
             vertical: 1,
         }));

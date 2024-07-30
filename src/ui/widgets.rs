@@ -25,12 +25,13 @@ use crate::{
         world::World,
     },
 };
+use anyhow::anyhow;
 use crossterm::event::KeyCode;
 use once_cell::sync::Lazy;
 use ratatui::{
     prelude::*,
     text::Span,
-    widgets::{block::Block, BorderType, Borders, List, Paragraph},
+    widgets::{Block, BorderType, Borders, List, Paragraph},
     Frame,
 };
 use std::{sync::Arc, sync::Mutex};
@@ -521,7 +522,7 @@ pub fn upgrade_spaceship_button<'a>(
     upgrade: SpaceshipUpgrade,
 ) -> AppResult<Button<'a>> {
     if team.spaceship.pending_upgrade.is_some() {
-        return Err("Upgrading spaceship".into());
+        return Err(anyhow!("Upgrading spaceship"));
     }
 
     let mut upgrade_button = Button::new(
@@ -602,7 +603,7 @@ pub fn render_spaceship_description(
         Constraint::Length(SPACESHIP_IMAGE_WIDTH as u16 + 2),
         Constraint::Min(1),
     ])
-    .split(area.inner(&Margin {
+    .split(area.inner(Margin {
         horizontal: 1,
         vertical: 1,
     }));
@@ -615,7 +616,7 @@ pub fn render_spaceship_description(
         let paragraph = Paragraph::new(lines);
         frame.render_widget(
             paragraph.centered(),
-            spaceship_split[0].inner(&Margin {
+            spaceship_split[0].inner(Margin {
                 horizontal: 1,
                 vertical: 0,
             }),
@@ -667,7 +668,7 @@ pub fn render_spaceship_description(
 
     frame.render_widget(
         spaceship_info,
-        spaceship_split[1].inner(&Margin {
+        spaceship_split[1].inner(Margin {
             horizontal: 0,
             vertical: 1,
         }),
@@ -691,7 +692,7 @@ pub fn render_spaceship_upgrade(
         Constraint::Length(SPACESHIP_IMAGE_WIDTH as u16 + 2),
         Constraint::Min(1),
     ])
-    .split(area.inner(&Margin {
+    .split(area.inner(Margin {
         horizontal: 1,
         vertical: 1,
     }));
@@ -704,7 +705,7 @@ pub fn render_spaceship_upgrade(
         let paragraph = Paragraph::new(lines);
         frame.render_widget(
             paragraph.centered(),
-            spaceship_split[0].inner(&Margin {
+            spaceship_split[0].inner(Margin {
                 horizontal: 1,
                 vertical: 0,
             }),
@@ -933,7 +934,7 @@ pub fn render_spaceship_upgrade(
 
     frame.render_widget(
         spaceship_info,
-        spaceship_split[1].inner(&Margin {
+        spaceship_split[1].inner(Margin {
             horizontal: 0,
             vertical: 1,
         }),
@@ -956,7 +957,7 @@ pub fn render_player_description(
     .split(area);
 
     let header_body_img = Layout::vertical([Constraint::Length(2), Constraint::Min(2)]).split(
-        h_split[0].inner(&Margin {
+        h_split[0].inner(Margin {
             horizontal: 2,
             vertical: 1,
         }),

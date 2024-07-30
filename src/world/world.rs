@@ -18,6 +18,7 @@ use crate::network::types::{NetworkGame, NetworkTeam};
 use crate::store::save_game;
 use crate::types::*;
 use crate::ui::ui_callback::UiCallbackPreset;
+use anyhow::anyhow;
 use itertools::Itertools;
 use libp2p::PeerId;
 use log::info;
@@ -271,7 +272,7 @@ impl World {
     pub fn set_team_crew_role(&mut self, role: CrewRole, player_id: PlayerId) -> AppResult<()> {
         let mut player = self.get_player_or_err(player_id)?.clone();
         if player.team.is_none() {
-            return Err(format!("Player {:?} is not in a team", player_id,).into());
+            return Err(anyhow!("Player {:?} is not in a team", player_id,));
         }
 
         let team_id = player.team.unwrap();
@@ -433,7 +434,7 @@ impl World {
     pub fn release_player_from_team(&mut self, player_id: PlayerId) -> AppResult<()> {
         let mut player = self
             .get_player(player_id)
-            .ok_or(format!("Player {:?} not found", player_id))?
+            .ok_or(anyhow!("Player {:?} not found", player_id))?
             .clone();
 
         let mut team = self.get_team_or_err(player.team.unwrap())?.clone();
@@ -517,11 +518,15 @@ impl World {
         if network_game.home_team_in_game.team_id == self.own_team_id
             || network_game.away_team_in_game.team_id == self.own_team_id
         {
-            return Err("Cannot receive game involving own team over the network.".into());
+            return Err(anyhow!(
+                "Cannot receive game involving own team over the network."
+            ));
         }
 
         if network_game.timer.has_ended() {
-            return Err("Cannot receive game that has ended over the network.".into());
+            return Err(anyhow!(
+                "Cannot receive game that has ended over the network."
+            ));
         }
 
         let db_game = self.get_game(network_game.id);
@@ -552,7 +557,9 @@ impl World {
             home_planet,
         } = network_team;
         if team.peer_id.is_none() {
-            return Err("Cannot receive team without peer_id over the network.".into());
+            return Err(anyhow!(
+                "Cannot receive team without peer_id over the network."
+            ));
         }
         let db_team = self.get_team(team.id);
         // here the version can also be equal since we want to override the network team with the new peer_id in case of disconnections.
@@ -574,7 +581,9 @@ impl World {
             // This means that the network satellite will not appear in the galaxy.
             if let Some(planet) = home_planet {
                 if planet.peer_id.is_none() {
-                    return Err("Cannot receive planet without peer_id over the network.".into());
+                    return Err(anyhow!(
+                        "Cannot receive planet without peer_id over the network."
+                    ));
                 }
                 let db_planet = self.get_planet(planet.id);
                 if db_planet.is_none() || db_planet.unwrap().version < planet.version {
@@ -596,7 +605,9 @@ impl World {
 
             for player in players {
                 if player.peer_id.is_none() {
-                    return Err("Cannot receive player without peer_id over the network.".into());
+                    return Err(anyhow!(
+                        "Cannot receive player without peer_id over the network."
+                    ));
                 }
                 let db_player = self.get_player(player.id);
                 if db_player.is_none() || db_player.unwrap().version <= player.version {
@@ -615,7 +626,7 @@ impl World {
 
     pub fn get_team_or_err(&self, id: TeamId) -> AppResult<&Team> {
         self.get_team(id)
-            .ok_or(format!("Team {:?} not found", id).into())
+            .ok_or(anyhow!("Team {:?} not found", id).into())
     }
 
     pub fn get_own_team(&self) -> AppResult<&Team> {
@@ -628,7 +639,7 @@ impl World {
 
     pub fn get_planet_or_err(&self, id: PlanetId) -> AppResult<&Planet> {
         self.get_planet(id)
-            .ok_or(format!("Planet {:?} not found", id).into())
+            .ok_or(anyhow!("Planet {:?} not found", id))
     }
 
     pub fn get_player(&self, id: PlayerId) -> Option<&Player> {
@@ -637,7 +648,7 @@ impl World {
 
     pub fn get_player_or_err(&self, id: PlayerId) -> AppResult<&Player> {
         self.get_player(id)
-            .ok_or(format!("Player {:?} not found", id).into())
+            .ok_or(anyhow!("Player {:?} not found", id))
     }
 
     pub fn get_players_by_team(&self, team: &Team) -> AppResult<Vec<Player>> {
@@ -646,7 +657,7 @@ impl World {
             .iter()
             .map(|&id| {
                 self.get_player(id)
-                    .ok_or(format!("Player {:?} not found", id))
+                    .ok_or(anyhow!("Player {:?} not found", id))
             })
             .collect::<Result<Vec<&Player>, _>>()?
             .iter()
@@ -659,8 +670,7 @@ impl World {
     }
 
     pub fn get_game_or_err(&self, id: GameId) -> AppResult<&Game> {
-        self.get_game(id)
-            .ok_or(format!("Game {:?} not found", id).into())
+        self.get_game(id).ok_or(anyhow!("Game {:?} not found", id))
     }
 
     pub fn team_total_skills(&self, team_id: TeamId) -> u16 {
@@ -876,7 +886,7 @@ impl World {
                         let stats = team
                             .stats
                             .get(&player.id)
-                            .ok_or(format!("Player {:?} not found in team stats", player.id))?;
+                            .ok_or(anyhow!("Player {:?} not found in team stats", player.id))?;
 
                         let training_bonus =
                             TeamBonus::Training.current_team_bonus(&self, team.team_id)?;
@@ -1189,7 +1199,7 @@ impl World {
             for player_id in team.player_ids.iter() {
                 let db_player = self
                     .get_player(*player_id)
-                    .ok_or(format!("Player {:?} not found", player_id))?;
+                    .ok_or(anyhow!("Player {:?} not found", player_id))?;
                 if db_player.tiredness > 0.0 && db_player.tiredness <= MAX_TIREDNESS {
                     let mut player = db_player.clone();
                     // Recovery outside of games is slower by a factor TICK_SHORT_INTERVAL/TICK_MEDIUM_INTERVAL
@@ -1335,11 +1345,11 @@ impl World {
             let teams = candidate_teams.iter().choose_multiple(rng, 2);
             let home_team_in_game =
                 TeamInGame::from_team_id(teams[0].id, &self.teams, &self.players)
-                    .ok_or(format!("Team {:?} not found in world", teams[0].id))?;
+                    .ok_or(anyhow!("Team {:?} not found in world", teams[0].id))?;
 
             let away_team_in_game =
                 TeamInGame::from_team_id(teams[1].id, &self.teams, &self.players)
-                    .ok_or(format!("Team {:?} not found in world", teams[1].id))?;
+                    .ok_or(anyhow!("Team {:?} not found in world", teams[1].id))?;
 
             let starting_at = Tick::now() + BASE_GAME_START_DELAY * rng.gen_range(1..=6);
 
@@ -1397,10 +1407,10 @@ impl World {
         let from = match team.current_location {
             TeamLocation::OnPlanet { planet_id } => planet_id,
             TeamLocation::Travelling { .. } => {
-                return Err(format!("Team {} is travelling", team.name).into())
+                return Err(anyhow!("Team {} is travelling", team.name))
             }
             TeamLocation::Exploring { .. } => {
-                return Err(format!("Team {} is exploring", team.name).into())
+                return Err(anyhow!("Team {} is exploring", team.name))
             }
         };
 

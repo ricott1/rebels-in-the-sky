@@ -3,7 +3,7 @@ use super::{
     jersey::Jersey,
     planet::Planet,
     player::Player,
-    position::{GamePosition, MAX_POSITION},
+    position::MAX_POSITION,
     resources::Resource,
     role::CrewRole,
     skill::GameSkill,
@@ -15,6 +15,7 @@ use crate::{
     types::{AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick},
     world::constants::MAX_PLAYERS_PER_TEAM,
 };
+use anyhow::anyhow;
 use itertools::Itertools;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
@@ -124,15 +125,11 @@ impl Team {
 
     pub fn can_hire_player(&self, player: &Player) -> AppResult<()> {
         if player.team.is_some() {
-            return Err("Already in a team".into());
+            return Err(anyhow!("Already in a team"));
         }
 
-        let hiring_cost = player.hire_cost(self.reputation);
-        if self.balance() < hiring_cost {
-            return Err(format!("Not enough money {}", hiring_cost).into());
-        }
         if self.player_ids.len() >= self.spaceship.crew_capacity() as usize {
-            return Err("Team is full".into());
+            return Err(anyhow!("Team is full"));
         }
 
         // Player must be on same planet as team current_location
@@ -142,77 +139,83 @@ impl Team {
             } => match player.current_location {
                 PlayerLocation::OnPlanet { planet_id } => {
                     if planet_id != team_planet_id {
-                        return Err("Not on team planet".into());
+                        return Err(anyhow!("Not on team planet"));
                     }
                 }
                 PlayerLocation::WithTeam => {
-                    return Err("Already in a team".into());
+                    return Err(anyhow!("Already in a team"));
                 }
             },
             TeamLocation::Travelling { .. } => {
-                return Err("Team is travelling".into());
+                return Err(anyhow!("Team is travelling"));
             }
             TeamLocation::Exploring { .. } => {
-                return Err("Team is exploring".into());
+                return Err(anyhow!("Team is exploring"));
             }
         }
+
+        let hiring_cost = player.hire_cost(self.reputation);
+        if self.balance() < hiring_cost {
+            return Err(anyhow!("Not enough money {}", hiring_cost));
+        }
+
         Ok(())
     }
 
     pub fn can_release_player(&self, player: &Player) -> AppResult<()> {
         if !self.player_ids.contains(&player.id) {
-            return Err("Player is not in team".into());
+            return Err(anyhow!("Player is not in team"));
         }
 
         if player.team.is_none() {
-            return Err("Player is not in a team".into());
+            return Err(anyhow!("Player is not in a team"));
         }
 
         match self.current_location {
             TeamLocation::Travelling { .. } => {
-                return Err("Team is travelling".into());
+                return Err(anyhow!("Team is travelling"));
             }
             _ => {}
         }
 
         if self.current_game.is_some() {
-            return Err("Team is playing".into());
+            return Err(anyhow!("Team is playing"));
         }
 
         if self.player_ids.len() <= MIN_PLAYERS_PER_TEAM {
-            return Err("Team is too small".into());
+            return Err(anyhow!("Team is too small"));
         }
         Ok(())
     }
 
     pub fn can_set_crew_role(&self, player: &Player, role: CrewRole) -> AppResult<()> {
         if player.team.is_none() {
-            return Err("Player is not in a team".into());
+            return Err(anyhow!("Player is not in a team"));
         }
 
         if self.current_game.is_some() {
-            return Err("Team is playing".into());
+            return Err(anyhow!("Team is playing"));
         }
 
         match role {
             CrewRole::Captain => {
                 if self.crew_roles.captain == Some(player.id) {
-                    return Err("Player is already captain".into());
+                    return Err(anyhow!("Player is already captain"));
                 }
             }
             CrewRole::Doctor => {
                 if self.crew_roles.doctor == Some(player.id) {
-                    return Err("Player is already doctor".into());
+                    return Err(anyhow!("Player is already doctor"));
                 }
             }
             CrewRole::Pilot => {
                 if self.crew_roles.pilot == Some(player.id) {
-                    return Err("Player is already pilot".into());
+                    return Err(anyhow!("Player is already pilot"));
                 }
             }
             CrewRole::Mozzo => {
                 if self.crew_roles.mozzo.contains(&player.id) {
-                    return Err("Player is already mozzo".into());
+                    return Err(anyhow!("Player is already mozzo"));
                 }
             }
         }
@@ -221,31 +224,31 @@ impl Team {
 
     pub fn can_challenge_team(&self, team: &Team) -> AppResult<()> {
         if self.id == team.id {
-            return Err("Cannot challenge self".into());
+            return Err(anyhow!("Cannot challenge self"));
         }
 
         if matches!(self.current_location, TeamLocation::Travelling { .. }) {
-            return Err("Team is travelling".into());
+            return Err(anyhow!("Team is travelling"));
         }
 
         if matches!(team.current_location, TeamLocation::Travelling { .. }) {
-            return Err("Opponent is travelling".into());
+            return Err(anyhow!("Opponent is travelling"));
         }
 
         if self.current_location != team.current_location {
-            return Err("Not on the same planet".into());
+            return Err(anyhow!("Not on the same planet"));
         }
 
         if self.current_game.is_some() {
-            return Err("Team is already playing".into());
+            return Err(anyhow!("Team is already playing"));
         }
 
         if team.current_game.is_some() {
-            return Err("Opponent is already playing".into());
+            return Err(anyhow!("Opponent is already playing"));
         }
 
         if self.current_location != team.current_location {
-            return Err("Not on the same planet".into());
+            return Err(anyhow!("Not on the same planet"));
         }
 
         Ok(())
@@ -253,7 +256,7 @@ impl Team {
 
     pub fn can_travel_to_planet(&self, planet: &Planet, duration: Tick) -> AppResult<()> {
         if planet.peer_id.is_some() {
-            return Err("Cannot travel to asteroid".into());
+            return Err(anyhow!("Cannot travel to asteroid"));
         }
 
         match self.current_location {
@@ -261,7 +264,7 @@ impl Team {
                 planet_id: current_planet_id,
             } => {
                 if planet.id == current_planet_id {
-                    return Err("Already on this planet".into());
+                    return Err(anyhow!("Already on this planet"));
                 }
             }
             TeamLocation::Travelling {
@@ -273,37 +276,36 @@ impl Team {
             } => {
                 let current = Tick::now();
                 if started + duration > current {
-                    return Err(format!(
+                    return Err(anyhow!(
                         "Travelling ({})",
                         (started + duration - current).formatted()
-                    )
-                    .into());
+                    ));
                 } else {
-                    return Err("Landing...".into());
+                    return Err(anyhow!("Landing..."));
                 };
             }
             TeamLocation::Exploring { .. } => {
-                return Err("Exploring".into());
+                return Err(anyhow!("Exploring"));
             }
         }
 
         if self.spaceship.pending_upgrade.is_some() {
-            return Err("Upgrading spaceship".into());
+            return Err(anyhow!("Upgrading spaceship"));
         }
 
         if self.current_game.is_some() {
-            return Err("Team is playing".into());
+            return Err(anyhow!("Team is playing"));
         }
 
         if planet.total_population() == 0 && self.home_planet_id != planet.id {
-            return Err("This place is inhabitable".into());
+            return Err(anyhow!("This place is inhabitable"));
         }
 
         //If we can't get there with full tank, than the planet is too far.
         let max_fuel = self.spaceship.fuel_capacity();
         let max_autonomy = self.spaceship.max_travel_time(max_fuel);
         if duration > max_autonomy {
-            return Err("This planet is too far".into());
+            return Err(anyhow!("This planet is too far"));
         }
 
         // Else we check that we can go there with the current fuel.
@@ -311,7 +313,7 @@ impl Team {
         let autonomy = self.spaceship.max_travel_time(current_fuel);
 
         if duration > autonomy {
-            return Err("Not enough fuel".into());
+            return Err(anyhow!("Not enough fuel"));
         }
 
         Ok(())
@@ -327,7 +329,7 @@ impl Team {
                 planet_id: current_planet_id,
             } => {
                 if planet.id != current_planet_id {
-                    return Err("Not on this planet".into());
+                    return Err(anyhow!("Not on this planet"));
                 }
             }
             TeamLocation::Travelling {
@@ -339,33 +341,32 @@ impl Team {
             } => {
                 let current = Tick::now();
                 if started + duration > current {
-                    return Err(format!(
+                    return Err(anyhow!(
                         "Travelling ({})",
                         (started + duration - current).formatted()
-                    )
-                    .into());
+                    ));
                 } else {
-                    return Err("Landing...".into());
+                    return Err(anyhow!("Landing..."));
                 };
             }
             TeamLocation::Exploring { .. } => {
-                return Err("Exploring".into());
+                return Err(anyhow!("Exploring"));
             }
         }
 
         if self.spaceship.pending_upgrade.is_some() {
-            return Err("Upgrading spaceship".into());
+            return Err(anyhow!("Upgrading spaceship"));
         }
 
         if self.current_game.is_some() {
-            return Err("Team is playing".into());
+            return Err(anyhow!("Team is playing"));
         }
 
         //If we can't get there with full tank, than the planet is too far.
         let max_fuel = self.spaceship.fuel_capacity();
         let max_autonomy = self.spaceship.max_travel_time(max_fuel);
         if exploration_time > max_autonomy {
-            return Err("This planet is too far".into());
+            return Err(anyhow!("This planet is too far"));
         }
 
         // Else we check that we can go there with the current fuel.
@@ -373,7 +374,7 @@ impl Team {
         let autonomy = self.spaceship.max_travel_time(current_fuel);
 
         if exploration_time > autonomy {
-            return Err("Not enough fuel".into());
+            return Err(anyhow!("Not enough fuel"));
         }
 
         Ok(())
@@ -381,7 +382,7 @@ impl Team {
 
     pub fn can_change_training_focus(&self) -> AppResult<()> {
         if self.current_game.is_some() {
-            return Err("Team is playing".into());
+            return Err(anyhow!("Team is playing"));
         }
         Ok(())
     }
@@ -396,27 +397,27 @@ impl Team {
         if amount > 0 {
             let total_cost = amount as u32 * unit_cost;
             if self.balance() < total_cost {
-                return Err("Not enough satoshi".into());
+                return Err(anyhow!("Not enough satoshi"));
             }
 
             if resource == Resource::FUEL {
                 let current = self.fuel();
                 let max_storage_capacity = self.spaceship.fuel_capacity();
                 if current + amount as u32 > max_storage_capacity {
-                    return Err("Not enough storage capacity".into());
+                    return Err(anyhow!("Not enough storage capacity"));
                 }
             } else {
                 let current = Resource::used_storage_capacity(&self.resources);
                 let max_storage_capacity = self.spaceship.storage_capacity();
                 if current + resource.to_storing_space() * amount as u32 > max_storage_capacity {
-                    return Err("Not enough storage capacity".into());
+                    return Err(anyhow!("Not enough storage capacity"));
                 }
             }
         } else {
             // Selling. Check if enough resource
             let current = self.resources.get(&resource).copied().unwrap_or_default();
             if current < amount.abs() as u32 {
-                return Err("Not enough resource".into());
+                return Err(anyhow!("Not enough resource"));
             }
         }
         Ok(())
@@ -425,12 +426,12 @@ impl Team {
     pub fn can_set_upgrade_spaceship(&self, upgrade: SpaceshipUpgrade) -> AppResult<()> {
         match self.current_location {
             TeamLocation::OnPlanet { .. } => {}
-            _ => return Err("Can only upgrade on a planet".into()),
+            _ => return Err(anyhow!("Can only upgrade on a planet")),
         }
 
         for (resource, amount) in upgrade.cost.iter() {
             if self.resources.get(resource).copied().unwrap_or_default() < *amount {
-                return Err(format!("Insufficient resources").into());
+                return Err(anyhow!("Insufficient resources"));
             }
         }
 
@@ -480,17 +481,17 @@ impl Team {
             TeamLocation::OnPlanet { planet_id } => {
                 player.current_location = PlayerLocation::OnPlanet { planet_id };
             }
-            _ => return Err("Cannot release player while travelling".into()),
+            _ => return Err(anyhow!("Cannot release player while travelling")),
         }
         Ok(())
     }
 
     pub fn best_position_assignment(mut players: Vec<&Player>) -> Vec<PlayerId> {
-        // return players.iter().map(|&p| p.id).collect();
         if players.len() < MAX_POSITION as usize {
             return players.iter().map(|&p| p.id).collect();
         }
 
+        // Sort players in case we need to take only the first MAX_PLAYERS_PER_TEAM
         players.sort_by(|a, b| b.total_skills().cmp(&a.total_skills()));
 
         // Create an N-vector of 5-vectors. Each player is mapped to the vector (of length 5) of ratings for each role.
@@ -499,7 +500,7 @@ impl Team {
             .take(MAX_PLAYERS_PER_TEAM) // For performance reasons, we only consider the first MAX_PLAYERS_PER_TEAM players by rating.
             .map(|&p| {
                 (0..MAX_POSITION)
-                    .map(|i| i.player_rating(p.current_skill_array()))
+                    .map(|position| p.tiredness_weighted_rating_at_position(position))
                     .collect::<Vec<f32>>()
             })
             .collect::<Vec<Vec<f32>>>();

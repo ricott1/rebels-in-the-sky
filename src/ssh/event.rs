@@ -29,7 +29,6 @@ impl TickEventHandler {
                 let now = Tick::now();
                 if now - last_tick >= TIME_STEP_MILLIS {
                     if let Err(_) = sender.send(TerminalEvent::Tick { tick: now }) {
-                        // eprintln!("Failed to send tick event: {}", err);
                         break;
                     }
                     last_tick = now;

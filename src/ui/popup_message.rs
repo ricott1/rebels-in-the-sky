@@ -81,7 +81,7 @@ impl PopupMessage {
             Constraint::Min(3),    //message
             Constraint::Length(3), //button
         ])
-        .split(popup_rect.inner(&Margin {
+        .split(popup_rect.inner(Margin {
             vertical: 1,
             horizontal: 1,
         }));
@@ -101,7 +101,7 @@ impl PopupMessage {
                     Paragraph::new(message.clone())
                         .centered()
                         .wrap(Wrap { trim: true }),
-                    split[1].inner(&Margin {
+                    split[1].inner(Margin {
                         horizontal: 1,
                         vertical: 1,
                     }),
@@ -118,7 +118,7 @@ impl PopupMessage {
 
                 frame.render_widget(
                     button,
-                    split[2].inner(&Margin {
+                    split[2].inner(Margin {
                         vertical: 0,
                         horizontal: 8,
                     }),
@@ -135,7 +135,7 @@ impl PopupMessage {
                     Paragraph::new(message.clone())
                         .centered()
                         .wrap(Wrap { trim: true }),
-                    split[1].inner(&Margin {
+                    split[1].inner(Margin {
                         horizontal: 1,
                         vertical: 1,
                     }),
@@ -152,7 +152,7 @@ impl PopupMessage {
 
                 frame.render_widget(
                     button,
-                    split[2].inner(&Margin {
+                    split[2].inner(Margin {
                         vertical: 0,
                         horizontal: 8,
                     }),
@@ -169,7 +169,7 @@ impl PopupMessage {
                     Paragraph::new(message.clone())
                         .centered()
                         .wrap(Wrap { trim: true }),
-                    split[1].inner(&Margin {
+                    split[1].inner(Margin {
                         horizontal: 1,
                         vertical: 1,
                     }),
@@ -210,7 +210,7 @@ impl PopupMessage {
                     Paragraph::new("Do you want to set up base on this asteroid?\nYou will need a proper name for it!")
                         .centered()
                         .wrap(Wrap { trim: true }),
-                        message_split[0].inner(&Margin {
+                        message_split[0].inner(Margin {
                         horizontal: 1,
                         vertical: 1,
                     }),
@@ -225,7 +225,7 @@ impl PopupMessage {
 
                 frame.render_widget(
                     popup_input.widget(),
-                    message_split[1].inner(&Margin {
+                    message_split[1].inner(Margin {
                         horizontal: 1,
                         vertical: 0,
                     }),

@@ -1,10 +1,11 @@
+use crate::app::App;
 use crate::event::TerminalEvent;
 use crate::network::constants::DEFAULT_PORT;
 use crate::store::world_exists;
 use crate::types::{AppResult, SystemTimeTick, Tick, SECONDS};
+use anyhow::anyhow;
 use async_trait::async_trait;
 use crossterm::event::KeyModifiers;
-use futures::StreamExt;
 use rand::Rng;
 use rand_distr::Alphanumeric;
 use russh::{server::*, Channel, ChannelId, Disconnect, Pty};
@@ -108,40 +109,22 @@ impl AppServer {
                         }
                     }
 
-                    if let Some(network_handler) = app_client.app.network_handler.as_mut() {
-                        select! {
-                            swarm_event = network_handler.swarm.select_next_some() =>  app_client.app.handle_network_events(swarm_event).unwrap_or_else(
-                                |e| println!("Failed to handle network event: {}", e)
-                            ),
-                            app_event = app_client.tui.events.next().unwrap() => match app_event{
-                                TerminalEvent::Tick {tick} => {
-                                    app_client.app.handle_tick_events(tick).unwrap_or_else(|e| {
-                                        log::error!("Failed to handle tick event for client: {}", e);
-                                        to_remove.push(username.clone());
-                                    });
-                                    app_client.tui.draw(&mut app_client.app.ui, &app_client.app.world).unwrap_or_else(|e| {
-                                        log::error!("Failed to draw tui for client: {}", e);
-                                        to_remove.push(username.clone());
-                                    });
-                                }
-                                _ => panic!("Should not receive any TerminalEvent apart from Tick over SSH handler.")
+                    select! {
+                        Some(swarm_event) = App::conditional_network_event(&mut app_client.app.network_handler) =>  app_client.app.handle_network_events(swarm_event).unwrap_or_else(
+                            |e| println!("Failed to handle network event: {}", e)
+                        ),
+                        app_event = app_client.tui.events.next().unwrap() => match app_event{
+                            TerminalEvent::Tick {tick} => {
+                                app_client.app.handle_tick_events(tick).unwrap_or_else(|e| {
+                                    log::error!("Failed to handle tick event for client: {}", e);
+                                    to_remove.push(username.clone());
+                                });
+                                app_client.tui.draw(&mut app_client.app.ui, &app_client.app.world).unwrap_or_else(|e| {
+                                    log::error!("Failed to draw tui for client: {}", e);
+                                    to_remove.push(username.clone());
+                                });
                             }
-                        }
-                    } else {
-                        select! {
-                            app_event = app_client.tui.events.next().unwrap() => match app_event{
-                                TerminalEvent::Tick {tick} => {
-                                    app_client.app.handle_tick_events(tick).unwrap_or_else(|e| {
-                                        log::error!("Failed to handle tick event for client: {}", e);
-                                        to_remove.push(username.clone());
-                                    });
-                                    app_client.tui.draw(&mut app_client.app.ui, &app_client.app.world).unwrap_or_else(|e| {
-                                        log::error!("Failed to draw tui for client: {}", e);
-                                        to_remove.push(username.clone());
-                                    });
-                                }
-                                _ => panic!("Should not receive any TerminalEvent apart from Tick over SSH handler.")
-                            }
+                            _ => panic!("Should not receive any TerminalEvent apart from Tick over SSH handler.")
                         }
                     }
                 }
@@ -396,11 +379,12 @@ fn convert_data_to_key_event(data: &[u8]) -> Option<crossterm::event::KeyEvent> 
 
 fn decode_sgr_mouse_input(ansi_code: Vec<u8>) -> AppResult<(u8, u16, u16)> {
     // Convert u8 vector to a String
-    let ansi_str = String::from_utf8(ansi_code.clone()).map_err(|_| "Invalid UTF-8 sequence")?;
+    let ansi_str =
+        String::from_utf8(ansi_code.clone()).map_err(|_| anyhow!("Invalid UTF-8 sequence"))?;
 
     // Check the prefix
     if !ansi_str.starts_with("\x1b[<") {
-        return Err("Invalid SGR ANSI mouse code".into());
+        return Err(anyhow!("Invalid SGR ANSI mouse code"));
     }
 
     let cb_mod = if ansi_str.ends_with('M') {
@@ -408,7 +392,7 @@ fn decode_sgr_mouse_input(ansi_code: Vec<u8>) -> AppResult<(u8, u16, u16)> {
     } else if ansi_str.ends_with('m') {
         3
     } else {
-        return Err("Invalid SGR ANSI mouse code".into());
+        return Err(anyhow!("Invalid SGR ANSI mouse code"));
     };
 
     // Remove the prefix '\x1b[<' and trailing 'M'
@@ -418,21 +402,21 @@ fn decode_sgr_mouse_input(ansi_code: Vec<u8>) -> AppResult<(u8, u16, u16)> {
     let components: Vec<&str> = code_body.split(';').collect();
 
     if components.len() != 3 {
-        return Err("Invalid SGR ANSI mouse code format".into());
+        return Err(anyhow!("Invalid SGR ANSI mouse code format"));
     }
 
     // Parse the components
     let cb = cb_mod
         + components[0]
             .parse::<u8>()
-            .map_err(|_| "Failed to parse Cb")?;
+            .map_err(|_| anyhow!("Failed to parse Cb"))?;
     let cx = components[1]
         .parse::<u16>()
-        .map_err(|_| "Failed to parse Cx")?
+        .map_err(|_| anyhow!("Failed to parse Cx"))?
         - 1;
     let cy = components[2]
         .parse::<u16>()
-        .map_err(|_| "Failed to parse Cy")?
+        .map_err(|_| anyhow!("Failed to parse Cy"))?
         - 1;
 
     Ok((cb, cx, cy))

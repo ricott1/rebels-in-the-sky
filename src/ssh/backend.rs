@@ -139,8 +139,6 @@ impl Backend for SSHBackend {
     {
         let mut fg = Color::Reset;
         let mut bg = Color::Reset;
-        #[cfg(feature = "underline-color")]
-        let mut underline_color = Color::Reset;
         let mut modifier = Modifier::empty();
         let mut last_pos: Option<(u16, u16)> = None;
         for (x, y, cell) in content {
@@ -167,17 +165,10 @@ impl Backend for SSHBackend {
                 queue!(self.writer, SetBackgroundColor(color))?;
                 bg = cell.bg;
             }
-            #[cfg(feature = "underline-color")]
-            if cell.underline_color != underline_color {
-                let color = CColor::from(cell.underline_color);
-                queue!(self.writer, SetUnderlineColor(color))?;
-                underline_color = cell.underline_color;
-            }
 
             queue!(self.writer, Print(cell.symbol()))?;
         }
 
-        #[cfg(not(feature = "underline-color"))]
         return queue!(
             self.writer,
             SetForegroundColor(CColor::Reset),

@@ -222,7 +222,7 @@ impl NewTeamScreen {
             Constraint::Length(SPACESHIP_IMAGE_WIDTH as u16 + 2),
             Constraint::Min(1),
         ])
-        .split(area.inner(&Margin {
+        .split(area.inner(Margin {
             horizontal: 1,
             vertical: 1,
         }));
@@ -232,7 +232,7 @@ impl NewTeamScreen {
             let paragraph = Paragraph::new(img_to_lines(&img));
             frame.render_widget(
                 paragraph.centered(),
-                split[0].inner(&Margin {
+                split[0].inner(Margin {
                     vertical: 0,
                     horizontal: 1,
                 }),
@@ -265,7 +265,7 @@ impl NewTeamScreen {
 
         frame.render_widget(
             spaceship_info,
-            split[1].inner(&Margin {
+            split[1].inner(Margin {
                 vertical: 1,
                 horizontal: 1,
             }),
@@ -374,7 +374,7 @@ impl NewTeamScreen {
             let paragraph = Paragraph::new(img_to_lines(&img));
             frame.render_widget(
                 paragraph.centered(),
-                area.inner(&Margin {
+                area.inner(Margin {
                     vertical: 1,
                     horizontal: 1,
                 }),
@@ -470,21 +470,21 @@ impl NewTeamScreen {
 
             frame.render_widget(
                 red,
-                color_split[0].inner(&Margin {
+                color_split[0].inner(Margin {
                     horizontal: 1,
                     vertical: 1,
                 }),
             );
             frame.render_widget(
                 green,
-                color_split[1].inner(&Margin {
+                color_split[1].inner(Margin {
                     horizontal: 1,
                     vertical: 1,
                 }),
             );
             frame.render_widget(
                 blue,
-                color_split[2].inner(&Margin {
+                color_split[2].inner(Margin {
                     horizontal: 1,
                     vertical: 1,
                 }),
@@ -595,7 +595,7 @@ impl NewTeamScreen {
         let paragraph = Paragraph::new(lines).centered();
         frame.render_widget(
             paragraph,
-            area.inner(&Margin {
+            area.inner(Margin {
                 vertical: 1,
                 horizontal: 1,
             }),
@@ -743,7 +743,7 @@ impl NewTeamScreen {
         .centered();
         frame.render_widget(
             text,
-            split[1].inner(&Margin {
+            split[1].inner(Margin {
                 vertical: 1,
                 horizontal: 1,
             }),

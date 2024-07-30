@@ -13,7 +13,7 @@ use crate::{
     app::App,
     engine::{tactic::Tactic, types::TeamInGame},
     image::color_map::{ColorMap, ColorPreset},
-    network::{constants::DEFAULT_PORT, types::Challenge},
+    network::{challenge::Challenge, constants::DEFAULT_PORT},
     types::{
         AppCallback, AppResult, GameId, IdSystem, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick,
         SECONDS,
@@ -30,6 +30,7 @@ use crate::{
         types::{PlayerLocation, TeamLocation, TrainingFocus},
     },
 };
+use anyhow::anyhow;
 use crossterm::event::{KeyCode, MouseEvent, MouseEventKind};
 use log::info;
 use rand::{seq::IteratorRandom, Rng, SeedableRng};
@@ -219,9 +220,9 @@ impl UiCallbackPreset {
             let team_id = app
                 .world
                 .get_player(player_id)
-                .ok_or(format!("Player {:?} not found", player_id))?
+                .ok_or(anyhow!("Player {:?} not found", player_id))?
                 .team
-                .ok_or(format!("Player {:?} has no team", player_id))?;
+                .ok_or(anyhow!("Player {:?} has no team", player_id))?;
             if let Some(index) = app.ui.team_panel.teams.iter().position(|&x| x == team_id) {
                 app.ui.team_panel.set_index(index);
                 let player_index = app
@@ -265,10 +266,10 @@ impl UiCallbackPreset {
                     planet_id: current_planet_id,
                 } => app.world.get_planet_or_err(current_planet_id)?,
                 TeamLocation::Travelling { .. } => {
-                    return Err("Team is travelling".into());
+                    return Err(anyhow!("Team is travelling"));
                 }
                 TeamLocation::Exploring { .. } => {
-                    return Err("Team is exploring".into());
+                    return Err(anyhow!("Team is exploring"));
                 }
             };
 
@@ -362,7 +363,7 @@ impl UiCallbackPreset {
                 let new_target = panel
                     .planets
                     .get(&panel.planet_id)
-                    .ok_or(format!("Planet {:?} not found", panel.planet_id))?;
+                    .ok_or(anyhow!("Planet {:?} not found", panel.planet_id))?;
 
                 panel.planet_index = 0;
                 if new_target.satellites.len() == 0 {
@@ -384,7 +385,7 @@ impl UiCallbackPreset {
     fn challenge_team(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
             if !app.world.has_own_team() {
-                return Err("No own team".into());
+                return Err(anyhow!("No own team"));
             }
 
             let own_team_id = app.world.own_team_id;
@@ -402,27 +403,27 @@ impl UiCallbackPreset {
                 //     .swarm
                 //     .is_connected(&peer_id)
                 // {
-                //     return Err("Team is not connected".into());
+                //     return Err(anyhow!("Team is not connected"));
                 // }
                 app.network_handler
                     .as_mut()
-                    .ok_or("Network handler is not initialized")?
+                    .ok_or(anyhow!("Network handler is not initialized"))?
                     .send_new_challenge(&app.world, peer_id)?;
                 return Ok(Some("Challenge sent".to_string()));
             }
             let (home_team_in_game, away_team_in_game) = match rand::thread_rng().gen_range(0..=1) {
                 0 => (
                     TeamInGame::from_team_id(own_team_id, &app.world.teams, &app.world.players)
-                        .ok_or(format!("Own team {:?} not found", own_team_id))?,
+                        .ok_or(anyhow!("Own team {:?} not found", own_team_id))?,
                     TeamInGame::from_team_id(team_id, &app.world.teams, &app.world.players)
-                        .ok_or(format!("Team {:?} not found", team_id))?,
+                        .ok_or(anyhow!("Team {:?} not found", team_id))?,
                 ),
 
                 _ => (
                     TeamInGame::from_team_id(team_id, &app.world.teams, &app.world.players)
-                        .ok_or(format!("Team {:?} not found", team_id))?,
+                        .ok_or(anyhow!("Team {:?} not found", team_id))?,
                     TeamInGame::from_team_id(own_team_id, &app.world.teams, &app.world.players)
-                        .ok_or(format!("Own team {:?} not found", own_team_id))?,
+                        .ok_or(anyhow!("Own team {:?} not found", own_team_id))?,
                 ),
             };
 
@@ -442,7 +443,7 @@ impl UiCallbackPreset {
                 .games
                 .iter()
                 .position(|&x| x == game_id)
-                .ok_or::<String>(format!("Game {:?} not found", game_id).into())?;
+                .ok_or(anyhow!("Game {:?} not found", game_id))?;
 
             app.ui.game_panel.set_index(index);
             app.ui.switch_to(super::ui::UiTab::Games);
@@ -562,7 +563,7 @@ impl UiCallbackPreset {
         Box::new(move |app: &mut App| {
             let mut team = app.world.get_team_or_err(team_id)?.clone();
             if team.current_game.is_some() {
-                return Err("Cannot change training focus:\nTeam is playing".into());
+                return Err(anyhow!("Cannot change training focus:\nTeam is playing"));
             }
 
             let new_focus = match team.training_focus {
@@ -587,12 +588,12 @@ impl UiCallbackPreset {
                     planet_id: current_planet_id,
                 } => {
                     if current_planet_id == planet_id {
-                        return Err("Already on planet".into());
+                        return Err(anyhow!("Already on planet"));
                     }
                     app.world.get_planet_or_err(current_planet_id)?.clone()
                 }
-                TeamLocation::Travelling { .. } => return Err("Team is travelling".into()),
-                TeamLocation::Exploring { .. } => return Err("Team is exploring".into()),
+                TeamLocation::Travelling { .. } => return Err(anyhow!("Team is travelling")),
+                TeamLocation::Exploring { .. } => return Err(anyhow!("Team is exploring")),
             };
 
             let duration = app
@@ -654,8 +655,8 @@ impl UiCallbackPreset {
 
             let planet_id = match own_team.current_location {
                 TeamLocation::OnPlanet { planet_id } => planet_id,
-                TeamLocation::Travelling { .. } => return Err("Team is travelling".into()),
-                TeamLocation::Exploring { .. } => return Err("Team is already exploring".into()),
+                TeamLocation::Travelling { .. } => return Err(anyhow!("Team is travelling")),
+                TeamLocation::Exploring { .. } => return Err(anyhow!("Team is already exploring")),
             };
 
             let mut around_planet = app.world.get_planet_or_err(planet_id)?.clone();
@@ -704,7 +705,7 @@ impl UiCallbackPreset {
                 x if x == "seed".to_string() => app
                     .network_handler
                     .as_ref()
-                    .ok_or("Network handler is not initialized")?
+                    .ok_or(anyhow!("Network handler is not initialized"))?
                     .seed_address
                     .clone(),
                 _ => format!("/ip4/{address}/tcp/{DEFAULT_PORT}")
@@ -713,9 +714,9 @@ impl UiCallbackPreset {
             };
             app.network_handler
                 .as_mut()
-                .ok_or("Network handler is not initialized")?
+                .ok_or(anyhow!("Network handler is not initialized"))?
                 .dial(multiaddr)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| anyhow!(e.to_string()))?;
             app.world.dirty_network = true;
             Ok(None)
         })
@@ -732,7 +733,7 @@ impl UiCallbackPreset {
         Box::new(move |app: &mut App| {
             app.network_handler
                 .as_mut()
-                .ok_or("Network handler is not initialized")?
+                .ok_or(anyhow!("Network handler is not initialized"))?
                 .send_msg(message.clone())?;
 
             Ok(None)
@@ -760,7 +761,7 @@ impl UiCallbackPreset {
                     app.world.planets.insert(asteroid.id, asteroid);
                     app.world.teams.insert(team.id, team);
                 }
-                _ => return Err("Invalid team location when accepting asteroid.".into()),
+                _ => return Err(anyhow!("Invalid team location when accepting asteroid.")),
             }
             app.world.dirty = true;
             app.world.dirty_network = true;
@@ -820,6 +821,7 @@ impl UiCallbackPreset {
             Ok(None)
         })
     }
+
     pub fn call(&self, app: &mut App) -> AppResult<Option<String>> {
         match self {
             UiCallbackPreset::None => Ok(None),
@@ -883,7 +885,7 @@ impl UiCallbackPreset {
             UiCallbackPreset::AcceptChallenge { challenge } => {
                 app.network_handler
                     .as_mut()
-                    .ok_or("Network handler is not initialized")?
+                    .ok_or(anyhow!("Network handler is not initialized"))?
                     .accept_challenge(&&app.world, challenge.clone())?;
 
                 app.ui.swarm_panel.remove_challenge(&challenge.home_peer_id);
@@ -898,7 +900,7 @@ impl UiCallbackPreset {
             UiCallbackPreset::DeclineChallenge { challenge } => {
                 app.network_handler
                     .as_mut()
-                    .ok_or("Network handler is not initialized")?
+                    .ok_or(anyhow!("Network handler is not initialized"))?
                     .decline_challenge(challenge.clone())?;
                 app.ui.swarm_panel.remove_challenge(&challenge.home_peer_id);
                 Ok(None)
@@ -931,7 +933,7 @@ impl UiCallbackPreset {
                 Ok(None)
             }
             UiCallbackPreset::ToggleAudio => {
-                app.ui.toggle_audio_player();
+                app.toggle_audio_player()?;
                 Ok(None)
             }
             UiCallbackPreset::SetSwarmPanelTopic { topic } => {

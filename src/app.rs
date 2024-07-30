@@ -1,3 +1,4 @@
+use crate::audio;
 use crate::event::{EventHandler, TerminalEvent};
 use crate::network::handler::NetworkHandler;
 use crate::store::{get_world_size, load_world, reset, save_world};
@@ -10,9 +11,12 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use futures::StreamExt;
 use libp2p::PeerId;
 use libp2p::{gossipsub, swarm::SwarmEvent};
-use log::{error, info};
+use log::{error, info, warn};
 use ratatui::backend::CrosstermBackend;
 use std::io::{self};
+use stream_download::http::reqwest::Client;
+use stream_download::http::HttpStream;
+use stream_download::source::SourceStream;
 use tokio::select;
 use void::Void;
 
@@ -22,6 +26,7 @@ pub struct App {
     pub world: World,
     pub running: bool,
     pub ui: Ui,
+    pub audio_player: Option<audio::music_player::MusicPlayer>,
     generate_local_world: bool,
     pub network_handler: Option<NetworkHandler>,
     seed_ip: Option<String>,
@@ -30,6 +35,24 @@ pub struct App {
 }
 
 impl App {
+    pub async fn conditional_network_event(
+        network_handler: &mut Option<NetworkHandler>,
+    ) -> Option<SwarmEvent<libp2p::gossipsub::Event, Void>> {
+        match network_handler.as_mut() {
+            Some(handler) => Some(handler.swarm.select_next_some().await),
+            None => None,
+        }
+    }
+
+    pub fn toggle_audio_player(&mut self) -> AppResult<()> {
+        if let Some(player) = self.audio_player.as_mut() {
+            futures::executor::block_on(player.toggle())?;
+        } else {
+            info!("No audio player, cannot toggle it");
+        }
+        Ok(())
+    }
+
     pub fn initialize_network_handler(&mut self) -> AppResult<()> {
         let handler = NetworkHandler::new(self.seed_ip.clone(), self.network_port)?;
         self.network_handler = Some(handler);
@@ -53,11 +76,26 @@ impl App {
 
         let store_prefix = store_prefix.unwrap_or("local");
 
-        let ui = Ui::new(store_prefix, disable_network, disable_audio);
+        let ui = Ui::new(store_prefix, disable_network);
+        let audio_player = if disable_audio {
+            None
+        } else {
+            let try_audio_player =
+                futures::executor::block_on(audio::music_player::MusicPlayer::new());
+            if let Ok(player) = try_audio_player {
+                info!("Audio player created succesfully");
+                Some(player)
+            } else {
+                warn!("Could not create audio player");
+                None
+            }
+        };
+
         Self {
             world: World::new(seed),
             running: true,
             ui,
+            audio_player,
             generate_local_world,
             network_handler: None,
             seed_ip,
@@ -75,46 +113,40 @@ impl App {
 
         let mut last_network_handler_init = 0;
 
+        let stream = HttpStream::<Client>::create(
+            "https://us2.internet-radio.com/proxy/mattjohnsonradio?mp=/stream".parse()?,
+        )
+        .await?;
+
+        log::info!("Success! {:?}", stream);
         while self.running {
+            let now = Tick::now();
             if self.network_handler.is_none()
                 && self.world.has_own_team()
-                && Tick::now() - last_network_handler_init > NETWORK_HANDLER_INIT_INTERVAL
+                && now - last_network_handler_init > NETWORK_HANDLER_INIT_INTERVAL
             {
                 info!("Initializing network handler...");
                 if let Err(e) = self.initialize_network_handler() {
                     error!("Could not initialize network handler: {}", e);
-                    last_network_handler_init = Tick::now();
+                    last_network_handler_init = now;
                 }
             }
-            //FIXME consolidate this into a single select! macro
-            if let Some(network_handler) = self.network_handler.as_mut() {
-                select! {
-                    //TODO: world_event = app.world_handler
-                    swarm_event = network_handler.swarm.select_next_some() =>  self.handle_network_events(swarm_event)?,
-                    app_event = tui.events.next()? => match app_event{
-                        TerminalEvent::Tick {tick} => {
-                                self.handle_tick_events(tick)?;
-                                tui.draw(&mut self.ui, &self.world)?;
-                        }
-                        TerminalEvent::Key(key_event) => self.handle_key_events(key_event)?,
-                        TerminalEvent::Mouse(mouse_event) => self.handle_mouse_events(mouse_event)?,
-                        TerminalEvent::Resize(_, _) => {}
+
+            select! {
+                // music_player = tokio::task::spawn(audio::music_player::MusicPlayer::new()).fuse() => self.audio_player = Some(music_player??),
+                Some(swarm_event) = Self::conditional_network_event(&mut self.network_handler) =>  self.handle_network_events(swarm_event)?,
+                app_event = tui.events.next().await? => match app_event{
+                    TerminalEvent::Tick {tick} => {
+                            self.handle_tick_events(tick)?;
+                            tui.draw(&mut self.ui, &self.world, self.audio_player.as_ref())?;
                     }
-                }
-            } else {
-                select! {
-                    app_event = tui.events.next()? => match app_event{
-                        TerminalEvent::Tick {tick} => {
-                                self.handle_tick_events(tick)?;
-                                tui.draw(&mut self.ui, &self.world)?;
-                        }
-                        TerminalEvent::Key(key_event) => self.handle_key_events(key_event)?,
-                        TerminalEvent::Mouse(mouse_event) => self.handle_mouse_events(mouse_event)?,
-                        TerminalEvent::Resize(_, _) => {}
-                    }
+                    TerminalEvent::Key(key_event) => self.handle_key_events(key_event)?,
+                    TerminalEvent::Mouse(mouse_event) => self.handle_mouse_events(mouse_event)?,
+                    TerminalEvent::Resize(_, _) => {}
                 }
             }
         }
+        info!("Game loop closed");
         tui.exit()?;
         Ok(())
     }
@@ -163,6 +195,12 @@ impl App {
     /// Set running to false to quit the application.
     pub fn quit(&mut self) -> AppResult<()> {
         self.running = false;
+
+        // save world and backup
+        if self.world.has_own_team() {
+            save_world(&self.world, true, &self.store_prefix)?;
+        }
+
         // close network connections
         if let Some(network_handler) = &mut self.network_handler {
             let peers = network_handler
@@ -179,15 +217,17 @@ impl App {
                 }
             }
         }
-        // save world and backup
-        if self.world.has_own_team() {
-            save_world(&self.world, true, &self.store_prefix)?;
-        }
+
         Ok(())
     }
 
-    pub fn render(ui: &mut Ui, world: &World, frame: &mut ratatui::Frame) {
-        ui.render(frame, world);
+    pub fn render(
+        ui: &mut Ui,
+        world: &World,
+        audio_player: Option<&audio::music_player::MusicPlayer>,
+        frame: &mut ratatui::Frame,
+    ) {
+        ui.render(frame, world, audio_player);
     }
 
     /// Handles the tick event of the terminal.
@@ -227,7 +267,7 @@ impl App {
             }
         }
 
-        match self.ui.update(&self.world) {
+        match self.ui.update(&self.world, self.audio_player.as_ref()) {
             Ok(_) => {}
             Err(e) => {
                 // We push to Logs rather than Error popup since otherwise it would spam too much

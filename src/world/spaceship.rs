@@ -3,6 +3,7 @@ use crate::{
     image::{color_map::ColorMap, spaceship::SpaceshipImage, types::Gif},
     types::{AppResult, Tick},
 };
+use anyhow::anyhow;
 use rand::{seq::IteratorRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -115,8 +116,8 @@ impl SpaceshipComponent for Hull {
 
     fn storage_capacity(&self) -> u32 {
         match self {
-            Self::ShuttleSmall => 1800,
-            Self::ShuttleStandard => 2700,
+            Self::ShuttleSmall => 2100,
+            Self::ShuttleStandard => 3000,
             Self::ShuttleLarge => 5000,
             Self::PincherStandard => 2000,
             Self::PincherLarge => 3800,
@@ -139,9 +140,9 @@ impl SpaceshipComponent for Hull {
         match self {
             Self::ShuttleSmall => 0.75,
             Self::ShuttleStandard => 0.95,
-            Self::ShuttleLarge => 1.45,
+            Self::ShuttleLarge => 1.3,
             Self::PincherStandard => 1.25,
-            Self::PincherLarge => 1.75,
+            Self::PincherLarge => 1.45,
             Self::JesterStandard => 1.15,
         }
     }
@@ -150,9 +151,9 @@ impl SpaceshipComponent for Hull {
         match self {
             Self::ShuttleSmall => 1.45,
             Self::ShuttleStandard => 1.0,
-            Self::ShuttleLarge => 0.6,
+            Self::ShuttleLarge => 0.75,
             Self::PincherStandard => 1.25,
-            Self::PincherLarge => 0.75,
+            Self::PincherLarge => 0.8,
             Self::JesterStandard => 1.05,
         }
     }
@@ -183,9 +184,9 @@ impl SpaceshipComponent for Hull {
         }
 
         let scraps_cost = match self.style() {
-            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 20,
-            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 28,
-            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 31,
+            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 28,
+            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 32,
+            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 36,
         };
 
         let mut cost = vec![
@@ -429,8 +430,8 @@ impl SpaceshipComponent for Storage {
 
     fn storage_capacity(&self) -> u32 {
         match self {
-            Self::ShuttleSingle => 1000,
-            Self::ShuttleDouble => 3000,
+            Self::ShuttleSingle => 1600,
+            Self::ShuttleDouble => 3200,
             Self::PincherSingle => 4000,
             _ => 0,
         }
@@ -485,7 +486,7 @@ impl SpaceshipComponent for Storage {
         }
 
         let scraps_cost = match self.style() {
-            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 25,
+            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 30,
             SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 30,
             SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 30,
         };
@@ -520,7 +521,7 @@ impl SpaceshipUpgrade {
         if self.storage.is_some() {
             return Ok("Storage");
         }
-        return Err("Invalid upgrade".into());
+        return Err(anyhow!("Invalid upgrade"));
     }
 }
 

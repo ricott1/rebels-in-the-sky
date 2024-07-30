@@ -16,7 +16,6 @@ use crate::audio::{self};
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::world::world::World;
 use core::fmt::Debug;
-use log::info;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style, Styled};
 use ratatui::text::{Line, Span};
@@ -59,7 +58,6 @@ pub struct Ui {
     last_update: Instant,
     pub splash_screen: SplashScreen,
     pub new_team_screen: NewTeamScreen,
-    pub audio_player: Option<audio::MusicPlayer>,
     pub player_panel: PlayerListPanel,
     pub team_panel: TeamListPanel,
     pub game_panel: GamePanel,
@@ -72,7 +70,7 @@ pub struct Ui {
 }
 
 impl Ui {
-    pub fn new(store_prefix: &str, disable_network: bool, disable_audio: bool) -> Self {
+    pub fn new(store_prefix: &str, disable_network: bool) -> Self {
         let gif_map = Arc::new(Mutex::new(GifMap::new()));
         let callback_registry = Arc::new(Mutex::new(CallbackRegistry::new()));
 
@@ -103,14 +101,6 @@ impl Ui {
             ui_tabs.push(UiTab::Swarm);
         }
 
-        let audio_player = if disable_audio {
-            None
-        } else {
-            let audio_player = audio::MusicPlayer::new();
-            info!("Audio player created: {}", audio_player.is_ok());
-            audio_player.ok()
-        };
-
         Self {
             state: UiState::default(),
             ui_tabs,
@@ -119,7 +109,6 @@ impl Ui {
             last_update: Instant::now(),
             splash_screen,
             new_team_screen,
-            audio_player,
             player_panel,
             team_panel,
             game_panel,
@@ -150,25 +139,6 @@ impl Ui {
 
     pub fn set_state(&mut self, state: UiState) {
         self.state = state;
-    }
-
-    pub fn toggle_audio_player(&mut self) {
-        if let Some(player) = self.audio_player.as_mut() {
-            player.toggle();
-            info!("Toggling: {}", player.is_playing);
-        }
-    }
-
-    pub fn next_audio_sample(&mut self) {
-        if let Some(player) = self.audio_player.as_mut() {
-            player.next();
-        }
-    }
-
-    pub fn previous_audio_sample(&mut self) {
-        if let Some(player) = self.audio_player.as_mut() {
-            player.previous();
-        }
     }
 
     fn get_active_screen(&self) -> &dyn Screen {
@@ -226,19 +196,15 @@ impl Ui {
                 self.data_view = !self.data_view;
                 None
             }
-            UiKey::MUSIC_TOGGLE => {
-                self.toggle_audio_player();
-                None
-            }
-            UiKey::MUSIC_NEXT => {
-                self.next_audio_sample();
-                None
-            }
-            UiKey::MUSIC_PREVIOUS => {
-                self.previous_audio_sample();
-                None
-            }
-
+            UiKey::MUSIC_TOGGLE => Some(UiCallbackPreset::ToggleAudio),
+            // UiKey::MUSIC_NEXT => {
+            //     self.next_audio_sample();
+            //     None
+            // }
+            // UiKey::MUSIC_PREVIOUS => {
+            //     self.previous_audio_sample();
+            //     None
+            // }
             UiKey::NEXT_TAB => {
                 self.next_tab();
                 None
@@ -289,20 +255,23 @@ impl Ui {
         self.tab_index = (self.tab_index + self.ui_tabs.len() - 1) % self.ui_tabs.len();
     }
 
-    pub fn update(&mut self, world: &World) -> AppResult<()> {
+    pub fn update(
+        &mut self,
+        world: &World,
+        audio_player: Option<&audio::music_player::MusicPlayer>,
+    ) -> AppResult<()> {
         self.callback_registry.lock().unwrap().clear();
         match self.state {
             UiState::Splash => {
                 // This is only to get a nice view in the splash screen
-                let audio_state = if self.audio_player.is_some()
-                    && self.audio_player.as_ref().unwrap().is_playing
-                {
-                    AudioPlayerState::Playing
-                } else if self.audio_player.is_some() {
-                    AudioPlayerState::Paused
-                } else {
-                    AudioPlayerState::Disabled
-                };
+                let audio_state =
+                    if audio_player.is_some() && audio_player.as_ref().unwrap().is_playing {
+                        AudioPlayerState::Playing
+                    } else if audio_player.is_some() {
+                        AudioPlayerState::Paused
+                    } else {
+                        AudioPlayerState::Disabled
+                    };
                 self.splash_screen.set_audio_player_state(audio_state);
                 self.splash_screen.update(world)?
             }
@@ -317,14 +286,19 @@ impl Ui {
             }
         }
 
-        if let Some(player) = self.audio_player.as_mut() {
-            player.check_if_next();
-        }
+        // if let Some(player) = audio_player.as_ref() {
+        //     player.check_if_next();
+        // }
         Ok(())
     }
 
     /// Renders the user interface widgets.
-    pub fn render(&mut self, frame: &mut Frame, world: &World) {
+    pub fn render(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        audio_player: Option<&audio::music_player::MusicPlayer>,
+    ) {
         self.callback_registry.lock().unwrap().clear();
         if self.popup_messages.len() > 0 {
             self.callback_registry.lock().unwrap().set_max_layer(1);
@@ -338,7 +312,7 @@ impl Ui {
 
         // Render footer
         // We render the footer first because hover text is displayed in the footer (and thus must overwrite it)
-        frame.render_widget(self.footer(world), split[1]);
+        frame.render_widget(self.footer(world, audio_player), split[1]);
 
         // render selected tab
         let render_result = match self.state {
@@ -423,57 +397,48 @@ impl Ui {
         }
     }
 
-    fn footer(&mut self, world: &World) -> Paragraph {
+    fn footer(
+        &mut self,
+        world: &World,
+        audio_player: Option<&audio::music_player::MusicPlayer>,
+    ) -> Paragraph {
         let mut spans = vec![
             Span::styled(
                 " Esc ",
                 Style::default().bg(Color::Gray).fg(Color::DarkGray),
             ),
             Span::styled(" Quit ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                format!(" {} ", UiKey::PREVIOUS_TAB.to_string()),
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(" Previous tab ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                format!(" {} ", UiKey::NEXT_TAB.to_string()),
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(" Next tab ", Style::default().fg(Color::DarkGray)),
         ];
 
-        if self.audio_player.is_some() {
+        if !self.data_view {
+            spans.extend(vec![
+                Span::styled(
+                    format!(" {} ", UiKey::PREVIOUS_TAB.to_string()),
+                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
+                ),
+                Span::styled(" Previous tab ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!(" {} ", UiKey::NEXT_TAB.to_string()),
+                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
+                ),
+                Span::styled(" Next tab ", Style::default().fg(Color::DarkGray)),
+            ]);
+        }
+
+        if audio_player.is_some() {
             spans.push(Span::styled(
                 format!(" {} ", UiKey::MUSIC_TOGGLE.to_string()),
                 Style::default().bg(Color::Gray).fg(Color::DarkGray),
             ));
             spans.push(Span::styled(
                 format!(
-                    " Toggle music: {} ",
-                    if self.audio_player.is_some() && self.audio_player.as_ref().unwrap().is_playing
-                    {
+                    " Toggle radio: {} ",
+                    if audio_player.is_some() && audio_player.as_ref().unwrap().is_playing {
                         "ON "
                     } else {
                         "OFF"
                     },
                 ),
-                Style::default().fg(Color::DarkGray),
-            ));
-
-            spans.push(Span::styled(
-                format!(" {} ", UiKey::MUSIC_PREVIOUS.to_string()),
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ));
-            spans.push(Span::styled(
-                format!(" Previous "),
-                Style::default().fg(Color::DarkGray),
-            ));
-            spans.push(Span::styled(
-                format!(" {} ", UiKey::MUSIC_NEXT.to_string()),
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ));
-            spans.push(Span::styled(
-                format!(" Next "),
                 Style::default().fg(Color::DarkGray),
             ));
         }
@@ -499,17 +464,17 @@ impl Ui {
             if world.has_own_team() {
                 spans.push(Span::styled(
                     format!(
-                        " FA refresh in {} ",
+                        " New FA in {} ",
                         world.next_free_pirates_refresh().formatted()
                     ),
                     Style::default().fg(Color::DarkGray),
                 ))
             }
-            if let Some(audio_player) = &self.audio_player {
+            if let Some(audio_player) = &audio_player {
                 if audio_player.is_playing {
                     if let Some(currently_playing) = audio_player.currently_playing() {
                         spans.push(Span::styled(
-                            format!(" Playing: {} ", currently_playing.title),
+                            format!(" Playing: {} ", currently_playing),
                             Style::default().bg(Color::Gray).fg(Color::DarkGray),
                         ));
                     }

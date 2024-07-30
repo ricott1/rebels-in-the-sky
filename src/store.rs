@@ -3,6 +3,7 @@ use crate::{
     types::{AppResult, GameId},
     world::world::World,
 };
+use anyhow::anyhow;
 use directories;
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,7 @@ fn path_from_prefix(store_prefix: &str) -> String {
 
 pub fn store_path(filename: &str) -> AppResult<PathBuf> {
     let dirs = directories::ProjectDirs::from("org", "frittura", "rebels")
-        .ok_or("Failed to get directories")?;
+        .ok_or(anyhow!("Failed to get directories"))?;
     let config_dirs = dirs.config_dir();
     if !config_dirs.exists() {
         std::fs::create_dir_all(config_dirs)?;
@@ -76,7 +77,7 @@ fn load_from_json<T: for<'a> Deserialize<'a>>(filename: &str) -> AppResult<T> {
 
 pub fn reset() -> AppResult<()> {
     let dirs = directories::ProjectDirs::from("org", "frittura", "rebels")
-        .ok_or("Failed to get directories")?;
+        .ok_or(anyhow!("Failed to get directories"))?;
     let config_dirs = dirs.config_dir();
     if config_dirs.exists() {
         std::fs::remove_dir_all(config_dirs)?;

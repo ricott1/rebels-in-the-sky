@@ -29,14 +29,16 @@ fn get_subs<'a>(players: Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a 
             let stats = team_stats.get(&p.id).unwrap();
             !stats.is_playing() && !p.is_knocked_out()
         })
-        //Sort from most to less skilled*tired
-        .sorted_by(|&a, &b| {
-            let t1 = a.tiredness;
-            let v1: u16 = a.total_skills() * (MAX_TIREDNESS - t1 / 2.0) as u16;
-            let t2 = b.tiredness;
-            let v2 = b.total_skills() * (MAX_TIREDNESS - t2 / 2.0) as u16;
-            v2.cmp(&v1)
-        })
+        // //Sort from most to less skilled*tired
+        // .sorted_by(|&a, &b| {
+        //     // let t1 = a.tiredness;
+        //     // let v1: u16 = a.total_skills() * (MAX_TIREDNESS - t1 / 2.0) as u16;
+        //     // let t2 = b.tiredness;
+        //     // let v2 = b.total_skills() * (MAX_TIREDNESS - t2 / 2.0) as u16;
+        //     let v1 = a.tiredness_weighted_rating_at_position();
+        //     let v2 = a.tiredness_weighted_rating_at_position();
+        //     v2.cmp(&v1)
+        // })
         .map(|&p| p)
         .collect();
 
@@ -53,18 +55,21 @@ fn get_subs<'a>(players: Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a 
         })
         //Sort from less to most skilled*tired
         .sorted_by(|&a, &b| {
-            let v1 = if a.is_knocked_out() {
-                0
-            } else {
-                let t1 = a.tiredness;
-                a.total_skills() * (MAX_TIREDNESS - t1 / 2.0) as u16
-            };
-            let v2 = if b.is_knocked_out() {
-                0
-            } else {
-                let t2 = b.tiredness;
-                b.total_skills() * (MAX_TIREDNESS - t2 / 2.0) as u16
-            };
+            let a_stats = team_stats
+                .get(&a.id)
+                .expect("Playing player should have stats");
+            let a_position = a_stats
+                .position
+                .expect("Playing player should have a position");
+            let v1 = a.tiredness_weighted_rating_at_position(a_position) as u16;
+            let b_stats = team_stats
+                .get(&b.id)
+                .expect("Playing player should have stats");
+            let b_position = b_stats
+                .position
+                .expect("Playing player should have a position");
+            let v2 = b.tiredness_weighted_rating_at_position(b_position) as u16;
+
             v1.cmp(&v2)
         })
         .map(|&p| p)
@@ -74,7 +79,25 @@ fn get_subs<'a>(players: Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a 
         return vec![];
     }
 
-    return vec![bench[0], playing[0]];
+    let out_candidate = playing[0];
+    let out_stats = team_stats
+        .get(&out_candidate.id)
+        .expect("Player should have stats");
+    let out_position = out_stats
+        .position
+        .expect("Out candidate should have a position");
+
+    let in_candidate = bench
+        .iter()
+        //Sort from most to less skilled*tired
+        .max_by(|&a, &b| {
+            let v1 = a.tiredness_weighted_rating_at_position(out_position) as u16;
+            let v2 = b.tiredness_weighted_rating_at_position(out_position) as u16;
+            v1.cmp(&v2)
+        })
+        .expect("There should be a in candidate");
+
+    return vec![in_candidate, out_candidate];
 }
 
 fn make_substitution(

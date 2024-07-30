@@ -32,6 +32,7 @@ use crate::{
     types::{PlanetId, TeamId},
     world::{resources::Resource, role::CrewRole},
 };
+use anyhow::anyhow;
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use itertools::Itertools;
@@ -188,7 +189,7 @@ impl MyTeamPanel {
         let team = world.get_own_team()?;
         frame.render_widget(default_block().title("Planet Markets"), area);
         let split = Layout::horizontal([Constraint::Length(20), Constraint::Length(30)]).split(
-            area.inner(&Margin {
+            area.inner(Margin {
                 horizontal: 1,
                 vertical: 1,
             }),
@@ -215,7 +216,7 @@ impl MyTeamPanel {
 
         frame.render_stateful_widget(
             list,
-            split[0].inner(&Margin {
+            split[0].inner(Margin {
                 horizontal: 1,
                 vertical: 1,
             }),
@@ -311,14 +312,14 @@ impl MyTeamPanel {
 
     fn render_market_buttons(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let team = world.get_own_team()?;
-        frame.render_widget(default_block().title("Market"), area);
 
         let planet_id = match team.current_location {
             TeamLocation::OnPlanet { planet_id } => planet_id,
             TeamLocation::Travelling { .. } => {
+                frame.render_widget(default_block().title("Market"), area);
                 frame.render_widget(
                     Paragraph::new("There is no market available while travelling."),
-                    area.inner(&Margin {
+                    area.inner(Margin {
                         horizontal: 1,
                         vertical: 1,
                     }),
@@ -326,9 +327,10 @@ impl MyTeamPanel {
                 return Ok(());
             }
             TeamLocation::Exploring { .. } => {
+                frame.render_widget(default_block().title("Market"), area);
                 frame.render_widget(
                     Paragraph::new("There is no market available while exploring."),
-                    area.inner(&Margin {
+                    area.inner(Margin {
                         horizontal: 1,
                         vertical: 1,
                     }),
@@ -338,12 +340,16 @@ impl MyTeamPanel {
         };
 
         let planet = world.get_planet_or_err(planet_id)?;
+        frame.render_widget(
+            default_block().title(format!("Planet {} Market", planet.name)),
+            area,
+        );
         if planet.total_population() == 0 {
             frame.render_widget(
                 Paragraph::new(
                     "There is no market available on this planet!\nTry another planet with more population.",
                 ),
-                area.inner(&Margin {
+                area.inner(Margin {
                     horizontal: 1,
                     vertical: 1,
                 }),
@@ -361,19 +367,10 @@ impl MyTeamPanel {
             Constraint::Length(3),
             Constraint::Length(3),
         ])
-        .split(area.inner(&Margin {
+        .split(area.inner(Margin {
             horizontal: 1,
             vertical: 1,
         }));
-
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                format!("Planet {} Market", planet.name),
-                UiStyle::OWN_TEAM,
-            ))
-            .alignment(ratatui::layout::Alignment::Center),
-            button_split[0],
-        );
 
         frame.render_widget(
             Paragraph::new(Span::styled(
@@ -433,7 +430,7 @@ impl MyTeamPanel {
                         UiStyle::ERROR,
                     ),
                 ])),
-                resource_split[0].inner(&Margin {
+                resource_split[0].inner(Margin {
                     horizontal: 1,
                     vertical: 1,
                 }),
@@ -444,7 +441,7 @@ impl MyTeamPanel {
                     Span::raw(format!("/")),
                     Span::styled(format!("{}", sell_unit_cost), UiStyle::ERROR),
                 ])),
-                resource_split[7].inner(&Margin {
+                resource_split[7].inner(Margin {
                     horizontal: 1,
                     vertical: 1,
                 }),
@@ -496,7 +493,7 @@ impl MyTeamPanel {
                 Line::from(storage_spans),
                 Line::from(fuel_spans),
             ]),
-            button_split[6].inner(&Margin {
+            button_split[6].inner(Margin {
                 horizontal: 1,
                 vertical: 0,
             }),
@@ -562,7 +559,7 @@ impl MyTeamPanel {
         frame.render_widget(default_block().title("Info"), split[0]);
         frame.render_widget(
             info,
-            split[0].inner(&Margin {
+            split[0].inner(Margin {
                 horizontal: 2,
                 vertical: 1,
             }),
@@ -573,7 +570,7 @@ impl MyTeamPanel {
             Constraint::Length(3),
             Constraint::Length(3),
         ])
-        .split(split[0].inner(&Margin {
+        .split(split[0].inner(Margin {
             horizontal: 1,
             vertical: 1,
         }));
@@ -693,7 +690,7 @@ impl MyTeamPanel {
         area: Rect,
     ) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Min(16), Constraint::Max(24)]).split(
-            area.inner(&Margin {
+            area.inner(Margin {
                 horizontal: 1,
                 vertical: 1,
             }),
@@ -722,7 +719,7 @@ impl MyTeamPanel {
                     team.name,
                     world.team_rating(team_id).stars()
                 )),
-                left_split[idx].inner(&Margin {
+                left_split[idx].inner(Margin {
                     horizontal: 1,
                     vertical: 1,
                 }),
@@ -776,23 +773,25 @@ impl MyTeamPanel {
             }
         }
 
-        for game in world.past_games.values() {
-            let text = format!(
-                " {:>12} {:>3}-{:<3} {:<}",
-                game.home_team_name,
-                game.home_quarters_score.iter().sum::<u16>(),
-                game.away_quarters_score.iter().sum::<u16>(),
-                game.away_team_name,
-            );
+        for game_id in self.recent_games.iter() {
+            if let Some(game) = world.past_games.get(game_id) {
+                let text = format!(
+                    " {:>12} {:>3}-{:<3} {:<}",
+                    game.home_team_name,
+                    game.home_quarters_score.iter().sum::<u16>(),
+                    game.away_quarters_score.iter().sum::<u16>(),
+                    game.away_team_name,
+                );
 
-            let style = UiStyle::DEFAULT;
-            options.push((text, style));
+                let style = UiStyle::DEFAULT;
+                options.push((text, style));
+            }
         }
         let list = selectable_list(options, &self.callback_registry);
 
         frame.render_stateful_widget(
             list,
-            split[0].inner(&Margin {
+            split[0].inner(Margin {
                 horizontal: 1,
                 vertical: 1,
             }),
@@ -815,7 +814,7 @@ impl MyTeamPanel {
             let game = world
                 .past_games
                 .get(&game_id)
-                .ok_or("Unable to get past game.")?;
+                .ok_or(anyhow!("Unable to get past game."))?;
 
             let loaded_game = self
                 .loaded_games
@@ -976,7 +975,7 @@ impl MyTeamPanel {
 
         frame.render_widget(
             summary,
-            split[1].inner(&Margin {
+            split[1].inner(Margin {
                 horizontal: 1,
                 vertical: 1,
             }),
@@ -1036,7 +1035,7 @@ impl MyTeamPanel {
         area: Rect,
     ) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Length(12), Constraint::Length(30)]).split(
-            area.inner(&Margin {
+            area.inner(Margin {
                 horizontal: 1,
                 vertical: 1,
             }),
@@ -1070,7 +1069,7 @@ impl MyTeamPanel {
 
         frame.render_stateful_widget(
             list,
-            split[0].inner(&Margin {
+            split[0].inner(Margin {
                 horizontal: 1,
                 vertical: 1,
             }),
@@ -1111,7 +1110,20 @@ impl MyTeamPanel {
             _ => panic!("Invalid upgrade index"),
         };
 
-        let upgrade_to_text = if can_be_upgraded {
+        let is_being_upgraded = if let Some(upgrade) = team.spaceship.pending_upgrade.as_ref() {
+            match self.upgrade_index {
+                0 => upgrade.hull.is_some(),
+                1 => upgrade.engine.is_some(),
+                2 => upgrade.storage.is_some(),
+                _ => panic!("Invalid upgrade index"),
+            }
+        } else {
+            false
+        };
+
+        let upgrade_to_text = if is_being_upgraded {
+            "Currently upgrading".to_string()
+        } else if can_be_upgraded {
             format!("{} -> {}", current, next)
         } else {
             "Fully upgraded".to_string()
@@ -1128,7 +1140,7 @@ impl MyTeamPanel {
             Line::from(""),
         ];
 
-        if can_be_upgraded {
+        if can_be_upgraded && !is_being_upgraded {
             for (resource, amount) in upgrade_cost.iter() {
                 let have = team.resources.get(resource).copied().unwrap_or_default();
                 let style = if amount.clone() > have {
@@ -1170,7 +1182,7 @@ impl MyTeamPanel {
             Constraint::Length(32),
             Constraint::Min(0),
         ])
-        .split(area.inner(&Margin {
+        .split(area.inner(Margin {
             vertical: 0,
             horizontal: 1,
         }));
@@ -1426,7 +1438,7 @@ impl MyTeamPanel {
 
         let player = world
             .get_player(player_id)
-            .ok_or(format!("Player {:?} not found", player_id).to_string())?;
+            .ok_or(anyhow!("Player {:?} not found", player_id))?;
 
         render_player_description(
             player,
@@ -1456,7 +1468,7 @@ impl MyTeamPanel {
             Constraint::Length(32), //auto-assign
             Constraint::Min(0),
         ])
-        .split(table_bottom[1].inner(&Margin {
+        .split(table_bottom[1].inner(Margin {
             vertical: 0,
             horizontal: 1,
         }));
@@ -1512,7 +1524,7 @@ impl MyTeamPanel {
         let hover_text_target = hover_text_target(&frame);
 
         let split = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(
-            area.inner(&Margin {
+            area.inner(Margin {
                 vertical: 1,
                 horizontal: 1,
             }),
@@ -1582,7 +1594,7 @@ impl MyTeamPanel {
         let hover_text_target = hover_text_target(&frame);
 
         let split = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(
-            area.inner(&Margin {
+            area.inner(Margin {
                 vertical: 1,
                 horizontal: 1,
             }),
@@ -1660,7 +1672,7 @@ impl MyTeamPanel {
             .unwrap()
             .travelling_spaceship_lines(team.id, self.tick, world)
         {
-            let rect = area.inner(&Margin {
+            let rect = area.inner(Margin {
                 horizontal: 1,
                 vertical: 1,
             });
@@ -1700,7 +1712,7 @@ impl MyTeamPanel {
             .unwrap()
             .exploring_spaceship_lines(team.id, self.tick, world)
         {
-            let rect = area.inner(&Margin {
+            let rect = area.inner(Margin {
                 horizontal: 1,
                 vertical: 1,
             });
@@ -1788,7 +1800,11 @@ impl Screen for MyTeamPanel {
                 games.push(current_game);
             }
 
-            for game in world.past_games.values() {
+            for game in world.past_games.values().sorted_by(|g1, g2| {
+                g2.ended_at
+                    .unwrap_or_default()
+                    .cmp(&g1.ended_at.unwrap_or_default())
+            }) {
                 games.push(game.id);
             }
             self.recent_games = games;

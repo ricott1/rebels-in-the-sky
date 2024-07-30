@@ -177,7 +177,7 @@ impl Screen for SplashScreen {
         frame.render_widget(self.title.clone(), title[1]);
         frame.render_widget(
             Paragraph::new(format!("Version {VERSION}")).centered(),
-            split[2].inner(&Margin {
+            split[2].inner(Margin {
                 vertical: 1,
                 horizontal: 0,
             }),

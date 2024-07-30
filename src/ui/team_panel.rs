@@ -227,7 +227,7 @@ impl TeamListPanel {
         let floor = floor_from_size(area.width as u32, 2);
         frame.render_widget(
             Paragraph::new(img_to_lines(&floor)).centered(),
-            vertical_split[1].inner(&Margin {
+            vertical_split[1].inner(Margin {
                 horizontal: 1,
                 vertical: 0,
             }),
@@ -327,7 +327,7 @@ impl TeamListPanel {
                 Constraint::Length(4),
                 Constraint::Min(0),
             ])
-            .split(bottom_split[0].inner(&Margin {
+            .split(bottom_split[0].inner(Margin {
                 horizontal: 2,
                 vertical: 1,
             }));
@@ -371,7 +371,7 @@ impl TeamListPanel {
             Constraint::Min(SPACESHIP_IMAGE_HEIGHT as u16 / 2 + 2), // ship
             Constraint::Length(3),                                  //button
         ])
-        .split(bottom_split[1].inner(&Margin {
+        .split(bottom_split[1].inner(Margin {
             horizontal: 1,
             vertical: 1,
         }));
@@ -485,7 +485,7 @@ impl Screen for TeamListPanel {
         if self.all_teams.len() == 0 {
             frame.render_widget(
                 Paragraph::new(" No team yet!"),
-                area.inner(&Margin {
+                area.inner(Margin {
                     vertical: 1,
                     horizontal: 1,
                 }),
@@ -512,8 +512,8 @@ impl Screen for TeamListPanel {
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
-            KeyCode::Right => self.next_player_index(),
-            KeyCode::Left => self.previous_player_index(),
+            UiKey::NEXT_SELECTION => self.next_player_index(),
+            UiKey::PREVIOUS_SELECTION => self.previous_player_index(),
             UiKey::CYCLE_VIEW => {
                 return Some(UiCallbackPreset::SetTeamPanelView {
                     view: self.view.next(),
@@ -531,7 +531,11 @@ impl Screen for TeamListPanel {
     fn footer_spans(&self) -> Vec<Span> {
         vec![
             Span::styled(
-                " ←/→ ",
+                format!(
+                    " {}/{} ",
+                    UiKey::PREVIOUS_SELECTION.to_string(),
+                    UiKey::NEXT_SELECTION.to_string()
+                ),
                 Style::default().bg(Color::Gray).fg(Color::DarkGray),
             ),
             Span::styled(" Select player ", Style::default().fg(Color::DarkGray)),

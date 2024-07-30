@@ -209,7 +209,7 @@ impl<'a> Styled for Button<'a> {
 impl<'a> Widget for Button<'a> {
     fn render(self, area: ratatui::layout::Rect, buf: &mut ratatui::buffer::Buffer) {
         let inner = if area.height >= 3 {
-            area.inner(&Margin {
+            area.inner(Margin {
                 horizontal: 1,
                 vertical: 1,
             })
@@ -449,7 +449,7 @@ impl<'a> RadioButton<'a> {
 impl<'a> Widget for RadioButton<'a> {
     fn render(self, area: ratatui::layout::Rect, buf: &mut ratatui::buffer::Buffer) {
         let inner = if area.height >= 3 {
-            area.inner(&Margin {
+            area.inner(Margin {
                 horizontal: 1,
                 vertical: 1,
             })

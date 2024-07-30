@@ -56,6 +56,9 @@ pub struct Planet {
     pub satellite_of: Option<PlanetId>,
     pub axis: (f32, f32),
     pub team_ids: Vec<TeamId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub custom_radio_stream: Option<String>,
 }
 
 impl Planet {
@@ -160,6 +163,8 @@ impl Planet {
             satellite_of: Some(satellite_of),
             axis: (rng.gen_range(10.0..60.0), rng.gen_range(10.0..60.0)),
             team_ids: vec![],
+            //FIXME: add option to customize asteroid radio stream
+            custom_radio_stream: None,
         }
     }
 }

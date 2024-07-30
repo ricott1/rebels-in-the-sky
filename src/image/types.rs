@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use image::{ImageBuffer, Rgba};
 use ratatui::text::Line;
 
@@ -19,7 +20,7 @@ impl PrintableGif for Gif {
         decoder.set_color_output(gif::ColorOutput::RGBA);
         let file = ASSETS_DIR
             .get_file(filename.clone())
-            .ok_or(format!("Unable to open file {}", filename))?
+            .ok_or(anyhow!("Unable to open file {}", filename))?
             .contents();
         let mut decoder = decoder.read_info(file)?;
         let mut gif: Gif = vec![];
@@ -29,7 +30,7 @@ impl PrintableGif for Gif {
                 frame.height as u32,
                 frame.buffer.to_vec(),
             )
-            .ok_or(format!("Unable to decode file {} into gif", filename))?;
+            .ok_or(anyhow!("Unable to decode file {} into gif", filename))?;
             gif.push(img);
         }
         Ok(gif)

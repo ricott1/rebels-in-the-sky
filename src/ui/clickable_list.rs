@@ -1,10 +1,11 @@
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
 use ratatui::{
     buffer::Buffer,
-    layout::{Corner, Rect},
+    layout::Rect,
+    prelude::*,
     style::{Style, Styled},
     text::Text,
-    widgets::{Block, HighlightSpacing, StatefulWidget, Widget},
+    widgets::{Block, HighlightSpacing, ListDirection, StatefulWidget, Widget},
 };
 use std::{sync::Arc, sync::Mutex};
 use unicode_width::UnicodeWidthStr;
@@ -77,14 +78,15 @@ impl<'a> ClickableListItem<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ClickableList<'a> {
     block: Option<Block<'a>>,
     items: Vec<ClickableListItem<'a>>,
     callback_registry: Arc<Mutex<CallbackRegistry>>,
     /// Style used as a base style for the widget
     style: Style,
-    start_corner: Corner,
+    /// List display direction
+    direction: ListDirection,
     /// Style used to render selected item
     highlight_style: Style,
     // Style used to render hovered item
@@ -95,6 +97,8 @@ pub struct ClickableList<'a> {
     repeat_highlight_symbol: bool,
     /// Decides when to allocate spacing for the selection symbol
     highlight_spacing: HighlightSpacing,
+    /// How many items to try to keep visible before and after the selected item
+    scroll_padding: usize,
 }
 
 impl<'a> ClickableList<'a> {
@@ -107,12 +111,8 @@ impl<'a> ClickableList<'a> {
             style: Style::default(),
             items: items.into(),
             callback_registry,
-            start_corner: Corner::TopLeft,
-            highlight_style: Style::default(),
-            hovering_style: Style::default(),
-            highlight_symbol: None,
-            repeat_highlight_symbol: false,
-            highlight_spacing: HighlightSpacing::default(),
+            direction: ListDirection::default(),
+            ..Self::default()
         }
     }
 
@@ -146,16 +146,18 @@ impl<'a> ClickableList<'a> {
         self
     }
 
-    /// Set when to show the highlight spacing
-    ///
-    /// See [`HighlightSpacing`] about which variant affects spacing in which way
     pub fn highlight_spacing(mut self, value: HighlightSpacing) -> Self {
         self.highlight_spacing = value;
         self
     }
 
-    pub fn start_corner(mut self, corner: Corner) -> ClickableList<'a> {
-        self.start_corner = corner;
+    pub const fn direction(mut self, direction: ListDirection) -> Self {
+        self.direction = direction;
+        self
+    }
+
+    pub const fn scroll_padding(mut self, padding: usize) -> Self {
+        self.scroll_padding = padding;
         self
     }
 
@@ -206,26 +208,26 @@ impl<'a> ClickableList<'a> {
     }
 }
 
-impl<'a> StatefulWidget for ClickableList<'a> {
+impl StatefulWidget for ClickableList<'_> {
     type State = ClickableListState;
 
-    fn render(mut self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         buf.set_style(area, self.style);
-        let list_area = match self.block.take() {
-            Some(b) => {
-                let inner_area = b.inner(area);
-                b.render(area, buf);
-                inner_area
-            }
-            None => area,
-        };
+        self.block.render(area, buf);
+        let list_area = self.block.inner_if_some(area);
 
-        if list_area.width < 1 || list_area.height < 1 {
+        if list_area.is_empty() {
             return;
         }
 
         if self.items.is_empty() {
+            state.select(None);
             return;
+        }
+
+        // If the selected index is out of bounds, set it to the last item
+        if state.selected.is_some_and(|s| s >= self.items.len()) {
+            state.select(Some(self.items.len().saturating_sub(1)));
         }
 
         if self.callback_registry.lock().unwrap().is_hovering(area) {
@@ -250,9 +252,13 @@ impl<'a> StatefulWidget for ClickableList<'a> {
 
         let list_height = list_area.height as usize;
 
-        let (start, end) = self.get_items_bounds(state.selected, state.offset, list_height);
-        state.offset = start;
+        let (first_visible_index, last_visible_index) =
+            self.get_items_bounds(state.selected, state.offset, list_height);
 
+        // Important: this changes the state's offset to be the beginning of the now viewable items
+        state.offset = first_visible_index;
+
+        // Get our set highlighted symbol (if one was set)
         let highlight_symbol = self.highlight_symbol.unwrap_or("");
         let blank_symbol = " ".repeat(highlight_symbol.width());
 
@@ -262,12 +268,12 @@ impl<'a> StatefulWidget for ClickableList<'a> {
         let mut selected_element: Option<(Rect, usize)> = None;
         for (i, item) in self
             .items
-            .iter_mut()
+            .iter()
             .enumerate()
             .skip(state.offset)
-            .take(end - start)
+            .take(last_visible_index - first_visible_index)
         {
-            let (x, y) = if self.start_corner == Corner::BottomLeft {
+            let (x, y) = if self.direction == ListDirection::BottomToTop {
                 current_height += item.height() as u16;
                 (list_area.left(), list_area.bottom() - current_height)
             } else {
@@ -275,7 +281,8 @@ impl<'a> StatefulWidget for ClickableList<'a> {
                 current_height += item.height() as u16;
                 pos
             };
-            let area = Rect {
+
+            let row_area = Rect {
                 x,
                 y,
                 width: list_area.width,
@@ -283,10 +290,23 @@ impl<'a> StatefulWidget for ClickableList<'a> {
             };
 
             let item_style = self.style.patch(item.style);
-            buf.set_style(area, item_style);
+            buf.set_style(row_area, item_style);
 
             let is_selected = state.selected.map_or(false, |s| s == i);
-            for (j, line) in item.content.lines.iter().enumerate() {
+
+            let item_area = if selection_spacing {
+                let highlight_symbol_width = self.highlight_symbol.unwrap_or("").width() as u16;
+                Rect {
+                    x: row_area.x + highlight_symbol_width,
+                    width: row_area.width.saturating_sub(highlight_symbol_width),
+                    ..row_area
+                }
+            } else {
+                row_area
+            };
+            item.content.clone().render(item_area, buf);
+
+            for j in 0..item.content.height() {
                 // if the item is selected, we need to display the highlight symbol:
                 // - either for the first line of the item only,
                 // - or for each line of the item if the appropriate option is set
@@ -295,35 +315,33 @@ impl<'a> StatefulWidget for ClickableList<'a> {
                 } else {
                     &blank_symbol
                 };
-                let (elem_x, max_element_width) = if selection_spacing {
-                    let (elem_x, _) = buf.set_stringn(
+                if selection_spacing {
+                    buf.set_stringn(
                         x,
                         y + j as u16,
                         symbol,
                         list_area.width as usize,
                         item_style,
                     );
-                    (elem_x, (list_area.width - (elem_x - x)))
-                } else {
-                    (x, list_area.width)
-                };
-                buf.set_line(elem_x, y + j as u16, line, max_element_width);
+                }
             }
-            if self.callback_registry.lock().unwrap().is_hovering(area) {
-                selected_element = Some((area, i));
-                buf.set_style(area, self.hovering_style);
+            if self.callback_registry.lock().unwrap().is_hovering(row_area) {
+                selected_element = Some((row_area, i));
+                buf.set_style(row_area, self.hovering_style);
             }
+
             if is_selected {
-                buf.set_style(area, self.highlight_style);
+                buf.set_style(row_area, self.highlight_style);
             }
         }
-        if let Some((area, index)) = selected_element {
+
+        if let Some((row_area, index)) = selected_element {
             self.callback_registry
                 .lock()
                 .unwrap()
                 .register_mouse_callback(
                     crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
-                    Some(area),
+                    Some(row_area),
                     UiCallbackPreset::SetPanelIndex { index },
                 );
         }

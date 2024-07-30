@@ -9,13 +9,17 @@ Now it's your turn to go out there and make a name for yourself. Create your cre
 
 ## Just try it out!
 
-`ssh rebels.frittura.org -p 3788`
+Connect via SSH to try the game.
 
-Connect via SSH to try the game. ~~Only local~~ Full networked game is available and there is no ~~mouse support nor~~ music :(
+`ssh rebels.frittura.org -p 3788`
 
 ## Download
 
 Compiled binaries of the last release can be downloaded at https://rebels.frittura.org.
+
+## Music
+
+Previous versions had the option to play music directly in the game, but this was removed to limit the binary size. Nevertheless, you can still listen to the game soundtrack by connecting to `https://radio.frittura.org/rebels.ogg`!
 
 ### Distro Packages
 
@@ -61,8 +65,7 @@ Suggested minimal terminal size: 160x48. Not all terminals support the game colo
 ## Credits
 
 -   Planet gifs were generated using the [pixel planet generator](https://deep-fold.itch.io/pixel-planet-generator) by [Deep Fold](https://deep-fold.itch.io/).
--   Music of the songs "Rebels in the sky", "Spacepirates", and "Rap the kasta" were generated with [Suno](https://app.suno.ai/).
--   Special thanks to [Il Deposito](https://www.ildeposito.org)
+-   Special thanks to [Il Deposito](https://www.ildeposito.org) for inspiration and the great musical archive.
 
 ## Contribution
 

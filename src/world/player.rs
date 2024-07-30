@@ -22,6 +22,7 @@ use crate::{
         utils::skill_linear_interpolation,
     },
 };
+use anyhow::anyhow;
 use libp2p::PeerId;
 use rand::{seq::SliceRandom, Rng};
 use rand_chacha::ChaCha8Rng;
@@ -451,22 +452,22 @@ impl Player {
 
     pub fn can_drink(&self, world: &World) -> AppResult<()> {
         if self.team.is_none() {
-            return Err("Player has no team, so no rum to drink".into());
+            return Err(anyhow!("Player has no team, so no rum to drink"));
         }
 
         let team = world.get_team_or_err(self.team.unwrap())?;
 
         if team.current_game.is_some() {
-            return Err("Can't drink during game".into());
+            return Err(anyhow!("Can't drink during game"));
         }
 
         // Spugna can drink ad libitum
         if self.morale == MAX_SKILL && !matches!(self.special_trait, Some(Trait::Spugna)) {
-            return Err("No need to drink".into());
+            return Err(anyhow!("No need to drink"));
         }
 
         if self.tiredness == MAX_SKILL {
-            return Err("No energy to drink".into());
+            return Err(anyhow!("No energy to drink"));
         }
 
         if team
@@ -476,7 +477,7 @@ impl Player {
             .unwrap_or_default()
             == 0
         {
-            return Err("No rum to drink".into());
+            return Err(anyhow!("No rum to drink"));
         }
 
         Ok(())
@@ -844,6 +845,13 @@ impl Player {
         }
 
         self.morale = (self.morale + MORALE_INCREASE_PER_GAME_PLAYER).bound();
+    }
+
+    pub fn tiredness_weighted_rating_at_position(&self, position: Position) -> f32 {
+        if self.is_knocked_out() {
+            return 0.0;
+        }
+        position.player_rating(self.current_skill_array()) * (MAX_TIREDNESS - self.tiredness / 2.0)
     }
 }
 

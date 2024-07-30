@@ -68,7 +68,7 @@ impl EngineAction for Post {
                 defenders: vec![post_idx],
                 situation: ActionSituation::CloseShot,
                 description: format!(
-                    "{} bumped on {} and gathers the ball to shoot.",
+                    "{} bumps on {} and gathers the ball to shoot.",
                     poster.info.last_name, defender.info.last_name,
                 ),
                 start_at: input.end_at,
