@@ -1,10 +1,14 @@
 use super::{
     action::{ActionOutput, ActionSituation, Advantage, EngineAction},
-    constants::{TirednessCost, ADV_ATTACK_LIMIT, ADV_DEFENSE_LIMIT, ADV_NEUTRAL_LIMIT},
+    constants::*,
     game::Game,
     types::GameStats,
 };
-use crate::world::{player::Player, skill::GameSkill};
+use crate::world::{
+    constants::{MoraleModifier, TirednessCost},
+    player::Player,
+    skill::GameSkill,
+};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, WeightedIndex};
@@ -120,7 +124,9 @@ impl EngineAction for Post {
             }
             _ => {
                 post_update.turnovers = 1;
+                post_update.extra_morale += MoraleModifier::SMALL_MALUS;
                 defender_update.steals = 1;
+                defender_update.extra_morale += MoraleModifier::MEDIUM_BONUS;
 
                 ActionOutput {
                     situation: ActionSituation::Turnover,

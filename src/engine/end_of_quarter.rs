@@ -11,9 +11,8 @@ pub struct EndOfQuarter;
 impl EngineAction for EndOfQuarter {
     fn execute(input: &ActionOutput, game: &Game, _rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         // This is executed at the beginning of a break
-        let beginning_of_next_quarter = game.timer.period().next().start();
         let mut description = match game.timer.period() {
-            Period::B1 => "It's the end of the first quarter.".to_string(),
+            Period::B1 => "It's the end of the first quarter.".to_string(), //FIXME: this gets printed twice somehow
             Period::B2 => "It's the end of the second quarter. Halftime!".to_string(),
             Period::B3 => "It's the end of the third quarter.".to_string(),
             Period::B4 => "It's the end of the game.".to_string(),
@@ -37,7 +36,7 @@ impl EngineAction for EndOfQuarter {
             situation: ActionSituation::EndOfQuarter,
             description,
             start_at: Timer::from(game.timer.period().previous().end()),
-            end_at: Timer::from(beginning_of_next_quarter),
+            end_at: Timer::from(game.timer.period().end()),
             home_score: input.home_score,
             away_score: input.away_score,
             ..Default::default()

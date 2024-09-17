@@ -2,17 +2,12 @@ use super::{
     button::Button,
     clickable_list::ClickableListState,
     clickable_table::{ClickableCell, ClickableRow, ClickableTable, ClickableTableState},
-    constants::{PrintableKeyCode, UiKey, UiStyle},
+    constants::{UiKey, UiStyle},
     gif_map::GifMap,
     traits::{PercentageRating, Screen, SplitPanel, UiStyled},
     ui_callback::{CallbackRegistry, UiCallbackPreset},
-    utils::hover_text_target,
-    widgets::{
-        challenge_button, default_block, drink_button, get_fuel_spans, get_storage_spans,
-        go_to_team_current_planet_button, go_to_team_home_planet_button, long_explore_button,
-        quick_explore_button, render_player_description, render_spaceship_description,
-        render_spaceship_upgrade, selectable_list, trade_button, upgrade_spaceship_button,
-    },
+    utils::{format_satoshi, hover_text_target},
+    widgets::*,
 };
 use crate::{
     engine::game::Game,
@@ -360,7 +355,6 @@ impl MyTeamPanel {
 
         let button_split = Layout::vertical([
             Constraint::Length(1),
-            Constraint::Length(1),
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
@@ -374,10 +368,10 @@ impl MyTeamPanel {
 
         frame.render_widget(
             Paragraph::new(Span::styled(
-                format!(" Shortcuts                                       Buy/Sell"),
+                format!("       Key                                       Buy/Sell"),
                 UiStyle::HEADER,
             )),
-            button_split[1],
+            button_split[0],
         );
 
         let buy_ui_keys = [
@@ -412,7 +406,7 @@ impl MyTeamPanel {
                 Constraint::Max(6),     // sell 100
                 Constraint::Min(0),     // price
             ])
-            .split(button_split[button_split_idx + 2]);
+            .split(button_split[button_split_idx + 1]);
 
             let merchant_bonus = TeamBonus::TradePrice.current_team_bonus(world, team.id)?;
             let buy_unit_cost = planet.resource_buy_price(*resource, merchant_bonus);
@@ -446,11 +440,13 @@ impl MyTeamPanel {
                     vertical: 1,
                 }),
             );
-            for (idx, amount) in [1, 10, 100].iter().enumerate() {
+
+            let max_buy_amount = team.max_resource_buy_amount(*resource, buy_unit_cost);
+            for (idx, amount) in [1, 10, max_buy_amount as i32].iter().enumerate() {
                 if let Ok(btn) = trade_button(
                     &world,
-                    resource.clone(),
-                    amount.clone(),
+                    *resource,
+                    *amount,
                     buy_unit_cost,
                     &self.callback_registry,
                     hover_text_target,
@@ -462,10 +458,14 @@ impl MyTeamPanel {
                 ) {
                     frame.render_widget(btn, resource_split[idx + 1]);
                 }
+            }
+
+            let max_sell_amount = team.max_resource_sell_amount(*resource);
+            for (idx, amount) in [1, 10, max_sell_amount as i32].iter().enumerate() {
                 if let Ok(btn) = trade_button(
                     &world,
-                    resource.clone(),
-                    -amount.clone(),
+                    *resource,
+                    -*amount,
                     sell_unit_cost,
                     &self.callback_registry,
                     hover_text_target,
@@ -486,14 +486,13 @@ impl MyTeamPanel {
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(Span::raw(format!(
-                    "Treasury {} {}",
-                    team.balance(),
-                    CURRENCY_SYMBOL
+                    "Treasury {}",
+                    format_satoshi(team.balance())
                 ))),
                 Line::from(storage_spans),
                 Line::from(fuel_spans),
             ]),
-            button_split[6].inner(Margin {
+            button_split[5].inner(Margin {
                 horizontal: 1,
                 vertical: 0,
             }),
@@ -521,7 +520,7 @@ impl MyTeamPanel {
             Line::from(""),
             Line::from(format!("Rating {}", world.team_rating(team.id).stars())),
             Line::from(format!("Reputation {}", team.reputation.stars())),
-            Line::from(format!("Treasury {} {}", team.balance(), CURRENCY_SYMBOL)),
+            Line::from(format!("Treasury {}", format_satoshi(team.balance()))),
             Line::from(format!("Asteroid: {}", asteroid_name)),
             Line::from(fuel_spans),
             Line::from(storage_spans),
@@ -587,8 +586,11 @@ impl MyTeamPanel {
             Arc::clone(&self.callback_registry),
         )
         .set_hover_text(
-            "Set team tactic. This affects the actions the team will choose during the game."
-                .into(),
+            format!(
+                "Tactics affect the actions the team will choose during the game.\n{}: {}",
+                team.game_tactic,
+                team.game_tactic.description()
+            ),
             hover_text_target,
         )
         .set_hotkey(UiKey::SET_TACTIC);
@@ -596,21 +598,22 @@ impl MyTeamPanel {
 
         let can_change_training_focus = team.can_change_training_focus();
         let mut training_button = Button::new(
-                format!(
-                    "Training: {}",
-                    if let Some(focus) = team.training_focus {
-                        focus.to_string()
-                    } else {
-                        "General".to_string()
-                    }
-                ),
-                UiCallbackPreset::NextTrainingFocus { team_id: team.id },
-                Arc::clone(&self.callback_registry),
-            ).set_hover_text(
-                    "Change the training focus, which affects which player skills will increase more rapidly after a game.".into(),
-                hover_text_target,
-            )
-            .set_hotkey(UiKey::TRAINING_FOCUS);
+            format!(
+                "Training: {}",
+                if let Some(focus) = team.training_focus {
+                    focus.to_string()
+                } else {
+                    "General".to_string()
+                }
+            ),
+            UiCallbackPreset::NextTrainingFocus { team_id: team.id },
+            Arc::clone(&self.callback_registry),
+        )
+        .set_hover_text(
+            "Change the training focus, which affects how player skills increase.".into(),
+            hover_text_target,
+        )
+        .set_hotkey(UiKey::TRAINING_FOCUS);
         if can_change_training_focus.is_err() {
             training_button.disable(Some(format!(
                 "{}",
@@ -689,6 +692,46 @@ impl MyTeamPanel {
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
+        frame.render_widget(default_block().title("Open to challenge "), area);
+        let team = world.get_own_team()?;
+        let split = Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(
+            area.inner(Margin {
+                horizontal: 1,
+                vertical: 1,
+            }),
+        );
+        if let Some(game_id) = team.current_game {
+            let game = world.get_game_or_err(game_id)?;
+            let hover_text_target = hover_text_target(frame);
+
+            let game_text = if let Some(action) = game.action_results.last() {
+                format!(
+                    "{} {:>3}-{:<3} {}",
+                    game.home_team_in_game.name,
+                    action.home_score,
+                    action.away_score,
+                    game.away_team_in_game.name,
+                )
+            } else {
+                format!(
+                    "{}   0-0   {}",
+                    game.home_team_in_game.name, game.away_team_in_game.name,
+                )
+            };
+            frame.render_widget(
+                Button::new(
+                    format!("Current game - {}", game_text),
+                    UiCallbackPreset::GoToGame { game_id },
+                    Arc::clone(&self.callback_registry),
+                )
+                .set_hover_text("Go to current game".into(), hover_text_target)
+                .set_hotkey(UiKey::GO_TO_GAME)
+                .set_box_style(UiStyle::OWN_TEAM),
+                split[0],
+            );
+            return Ok(());
+        }
+
         let split = Layout::horizontal([Constraint::Min(16), Constraint::Max(24)]).split(
             area.inner(Margin {
                 horizontal: 1,
@@ -725,18 +768,16 @@ impl MyTeamPanel {
                 }),
             );
 
-            let challenge_button = challenge_button(
+            render_challenge_button(
                 world,
                 team,
                 &self.callback_registry,
                 hover_text_target,
                 idx == 0,
+                frame,
+                right_split[idx],
             )?;
-
-            frame.render_widget(challenge_button, right_split[idx]);
         }
-
-        frame.render_widget(default_block().title("Open to challenge "), area);
 
         Ok(())
     }
@@ -1151,7 +1192,7 @@ impl MyTeamPanel {
 
                 lines.push(Line::from(vec![
                     Span::styled(format!("  {} ", resource.to_string()), resource.style()),
-                    Span::styled(format!("{}/{}", amount, have), style),
+                    Span::styled(format!("{}/{}", have, amount), style),
                 ]));
             }
         }
@@ -1265,11 +1306,7 @@ impl MyTeamPanel {
 
         let can_release = team.can_release_player(&player);
         let mut release_button = Button::new(
-            format!(
-                "Fire {}.{}",
-                player.info.first_name.chars().next().unwrap_or_default(),
-                player.info.last_name
-            ),
+            format!("Fire {}", player.info.shortened_name()),
             UiCallbackPreset::ReleasePlayer { player_id },
             Arc::clone(&self.callback_registry),
         )
@@ -1294,6 +1331,8 @@ impl MyTeamPanel {
         let team = world.get_own_team().unwrap();
         let header_cells = [
             " Name",
+            "Overall",
+            "Potential",
             "Current",
             "Best",
             "Role",
@@ -1323,6 +1362,8 @@ impl MyTeamPanel {
                     None => "Free agent".to_string(),
                 };
                 let best_role = Position::best(skills);
+                let overall = player.average_skill().stars();
+                let potential = player.potential.stars();
 
                 let bonus_string_1 = match player.info.crew_role {
                     CrewRole::Pilot => {
@@ -1379,6 +1420,8 @@ impl MyTeamPanel {
                         " {} {}",
                         player.info.first_name, player.info.last_name
                     )),
+                    ClickableCell::from(overall),
+                    ClickableCell::from(potential),
                     ClickableCell::from(current_role),
                     ClickableCell::from(format!(
                         "{:<2} {:<5}",
@@ -1398,11 +1441,13 @@ impl MyTeamPanel {
             .highlight_style(UiStyle::SELECTED)
             .widths(&[
                 Constraint::Length(26),
-                Constraint::Length(12),
-                Constraint::Length(12),
-                Constraint::Length(12),
-                Constraint::Length(18),
-                Constraint::Length(18),
+                Constraint::Length(9),
+                Constraint::Length(9),
+                Constraint::Length(9),
+                Constraint::Length(9),
+                Constraint::Length(9),
+                Constraint::Length(17),
+                Constraint::Length(17),
             ]);
 
         Ok(table)
@@ -1450,66 +1495,68 @@ impl MyTeamPanel {
             top_split[1],
         );
 
-        let table_bottom = Layout::vertical([
-            Constraint::Min(10),
-            Constraint::Length(3), //role buttons
-            Constraint::Length(3), //buttons
-            Constraint::Length(1), //margin box
-        ])
-        .split(area);
+        if team.current_game.is_none() {
+            let table_bottom = Layout::vertical([
+                Constraint::Min(10),
+                Constraint::Length(3), //role buttons
+                Constraint::Length(3), //buttons
+                Constraint::Length(1), //margin box
+            ])
+            .split(area);
 
-        let position_button_splits = Layout::horizontal([
-            Constraint::Length(6),
-            Constraint::Length(6),
-            Constraint::Length(6),
-            Constraint::Length(6),
-            Constraint::Length(6),
-            Constraint::Length(3),  //margin
-            Constraint::Length(32), //auto-assign
-            Constraint::Min(0),
-        ])
-        .split(table_bottom[1].inner(Margin {
-            vertical: 0,
-            horizontal: 1,
-        }));
+            let position_button_splits = Layout::horizontal([
+                Constraint::Length(6),
+                Constraint::Length(6),
+                Constraint::Length(6),
+                Constraint::Length(6),
+                Constraint::Length(6),
+                Constraint::Length(3),  //margin
+                Constraint::Length(32), //auto-assign
+                Constraint::Min(0),
+            ])
+            .split(table_bottom[1].inner(Margin {
+                vertical: 0,
+                horizontal: 1,
+            }));
 
-        for idx in 0..MAX_POSITION as usize {
-            let position = idx as Position;
-            let rect = position_button_splits[idx];
-            let mut button = Button::new(
-                format!("{}:{:<2}", (idx + 1), position.as_str()),
-                UiCallbackPreset::SwapPlayerPositions {
-                    player_id,
-                    position: idx,
-                },
+            for idx in 0..MAX_POSITION as usize {
+                let position = idx as Position;
+                let rect = position_button_splits[idx];
+                let mut button = Button::new(
+                    format!("{}:{:<2}", (idx + 1), position.as_str()),
+                    UiCallbackPreset::SwapPlayerPositions {
+                        player_id,
+                        position: idx,
+                    },
+                    Arc::clone(&self.callback_registry),
+                )
+                .set_hover_text(
+                    format!("Set player initial position to {}.", position.as_str()),
+                    hover_text_target,
+                )
+                .set_hotkey(UiKey::set_player_position(idx as Position));
+
+                let position = team.player_ids.iter().position(|id| *id == player.id);
+                if position.is_some() && position.unwrap() == idx {
+                    button.disable(None);
+                }
+                frame.render_widget(button, rect);
+            }
+
+            let auto_assign_button = Button::new(
+                "Auto-assign positions".into(),
+                UiCallbackPreset::AssignBestTeamPositions,
                 Arc::clone(&self.callback_registry),
             )
             .set_hover_text(
-                format!("Set player initial position to {}.", position.as_str()),
+                "Auto-assign players' initial position.".into(),
                 hover_text_target,
             )
-            .set_hotkey(UiKey::set_player_position(idx as Position));
-
-            let position = team.player_ids.iter().position(|id| *id == player.id);
-            if position.is_some() && position.unwrap() == idx {
-                button.disable(None);
-            }
-            frame.render_widget(button, rect);
+            .set_hotkey(UiKey::AUTO_ASSIGN);
+            frame.render_widget(auto_assign_button, position_button_splits[6]);
+            self.render_player_buttons(frame, world, table_bottom[2])?;
         }
 
-        let auto_assign_button = Button::new(
-            "Auto-assign positions".into(),
-            UiCallbackPreset::AssignBestTeamPositions,
-            Arc::clone(&self.callback_registry),
-        )
-        .set_hover_text(
-            "Auto-assign players' initial position.".into(),
-            hover_text_target,
-        )
-        .set_hotkey(UiKey::AUTO_ASSIGN);
-        frame.render_widget(auto_assign_button, position_button_splits[6]);
-
-        self.render_player_buttons(frame, world, table_bottom[2])?;
         Ok(())
     }
 
@@ -1750,6 +1797,7 @@ impl Screen for MyTeamPanel {
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
         self.own_team_id = world.own_team_id;
+        let own_team = world.get_own_team()?;
 
         self.current_planet_id = match world.get_own_team()?.current_location {
             TeamLocation::OnPlanet { planet_id } => Some(planet_id),
@@ -1757,13 +1805,14 @@ impl Screen for MyTeamPanel {
         };
 
         if self.players.len() != world.get_own_team()?.player_ids.len() || world.dirty_ui {
-            let own_team = world.get_own_team()?;
             self.players = own_team.player_ids.clone();
             self.players.sort_by(|a, b| {
                 let a = world.get_player(*a).unwrap();
                 let b = world.get_player(*b).unwrap();
                 if a.rating() == b.rating() {
-                    b.total_skills().cmp(&a.total_skills())
+                    b.average_skill()
+                        .partial_cmp(&a.average_skill())
+                        .expect("Skill value should exist")
                 } else {
                     b.rating().cmp(&a.rating())
                 }
@@ -1794,7 +1843,6 @@ impl Screen for MyTeamPanel {
         };
 
         if world.dirty_ui {
-            let own_team = world.get_own_team()?;
             let mut games = vec![];
             if let Some(current_game) = own_team.current_game {
                 games.push(current_game);

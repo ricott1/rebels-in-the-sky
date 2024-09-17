@@ -89,7 +89,11 @@ impl SortablePlayerMap for PlayerMap {
     }
     fn by_total_skills(&self) -> Vec<&Player> {
         let mut players = self.values().collect::<Vec<&Player>>();
-        players.sort_by(|&a, &b| b.total_skills().cmp(&a.total_skills()));
+        players.sort_by(|&a, &b| {
+            b.average_skill()
+                .partial_cmp(&a.average_skill())
+                .expect("Skill value should exist")
+        });
         players
     }
 }

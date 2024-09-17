@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use crossterm::event::KeyModifiers;
 use rand::Rng;
 use rand_distr::Alphanumeric;
+use russh::keys::key::PublicKey;
 use russh::{server::*, Channel, ChannelId, Disconnect, Pty};
-use russh_keys::key::PublicKey;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::File;
@@ -145,7 +145,7 @@ impl AppServer {
             signing_key
         });
 
-        let key_pair = russh_keys::key::KeyPair::Ed25519(signing_key);
+        let key_pair = russh::keys::key::KeyPair::Ed25519(signing_key);
 
         let config = Config {
             inactivity_timeout: Some(std::time::Duration::from_secs(3600)),

@@ -29,7 +29,7 @@ pub fn store_path(filename: &str) -> AppResult<PathBuf> {
 }
 
 pub fn save_world(world: &World, with_backup: bool, store_prefix: &str) -> AppResult<()> {
-    let stored_world = world.to_store();
+    let stored_world = world.to_store()?;
     let filename = path_from_prefix(store_prefix);
     save_to_json(&filename, &stored_world)?;
     if with_backup {

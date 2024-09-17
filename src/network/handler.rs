@@ -1,10 +1,11 @@
 use super::challenge::Challenge;
 use super::constants::*;
 use super::network_callback::NetworkCallbackPreset;
-use super::types::{NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
+use super::trade::Trade;
+use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::engine::types::TeamInGame;
-use crate::types::TeamId;
 use crate::types::{AppResult, GameId};
+use crate::types::{PlayerId, TeamId};
 use crate::types::{SystemTimeTick, Tick};
 use crate::world::world::World;
 use anyhow::anyhow;
@@ -15,7 +16,6 @@ use libp2p::{identity, noise, tcp, yamux, PeerId, Transport};
 use libp2p::{Multiaddr, Swarm};
 use log::info;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
@@ -24,7 +24,6 @@ use void::Void;
 pub struct NetworkHandler {
     pub swarm: Swarm<gossipsub::Behaviour>,
     pub address: Multiaddr,
-    challenges: HashMap<PeerId, Challenge>,
     pub seed_address: Multiaddr,
 }
 
@@ -32,7 +31,6 @@ impl Debug for NetworkHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NetworkHandler")
             .field("address", &self.address)
-            .field("challenges", &self.challenges)
             .finish()
     }
 }
@@ -71,11 +69,7 @@ impl NetworkHandler {
         )
         .expect("Correct configuration");
 
-        gossipsub.subscribe(&IdentTopic::new(SubscriptionTopic::SEED_INFO))?;
-        gossipsub.subscribe(&IdentTopic::new(SubscriptionTopic::TEAM))?;
-        gossipsub.subscribe(&IdentTopic::new(SubscriptionTopic::MSG))?;
-        gossipsub.subscribe(&IdentTopic::new(SubscriptionTopic::GAME))?;
-        gossipsub.subscribe(&IdentTopic::new(SubscriptionTopic::CHALLENGE))?;
+        gossipsub.subscribe(&IdentTopic::new(TOPIC))?;
 
         let mut swarm = Swarm::new(
             tcp_transport,
@@ -101,23 +95,17 @@ impl NetworkHandler {
         Ok(Self {
             swarm,
             address: Multiaddr::empty(),
-            challenges: HashMap::new(),
             seed_address,
         })
     }
 
-    fn _send(&mut self, data: Vec<u8>, topic: &str) -> AppResult<MessageId> {
-        let timestamp = Tick::now().to_le_bytes().to_vec();
+    fn _send(&mut self, data: NetworkData) -> AppResult<MessageId> {
+        let data = serde_json::to_vec(&data)?;
         let msg_id = self
             .swarm
             .behaviour_mut()
-            .publish(IdentTopic::new(topic), [timestamp, data].concat());
-        Ok(msg_id?)
-    }
-
-    pub fn add_challenge(&mut self, challenge: Challenge) {
-        self.challenges
-            .insert(challenge.home_peer_id.clone(), challenge);
+            .publish(IdentTopic::new(TOPIC), data)?;
+        Ok(msg_id)
     }
 
     pub fn dial(&mut self, address: Multiaddr) -> AppResult<()> {
@@ -128,12 +116,11 @@ impl NetworkHandler {
     }
 
     pub fn send_msg(&mut self, msg: String) -> AppResult<MessageId> {
-        self._send(msg.as_bytes().to_vec(), SubscriptionTopic::MSG)
+        self._send(NetworkData::Message(Tick::now(), msg))
     }
 
-    pub fn send_seed_info(&mut self, info: SeedInfo) -> AppResult<MessageId> {
-        let serialized_info = serde_json::to_string(&info)?.as_bytes().to_vec();
-        self._send(serialized_info, SubscriptionTopic::SEED_INFO)
+    pub fn send_seed_info(&mut self, seed_info: SeedInfo) -> AppResult<MessageId> {
+        self._send(NetworkData::SeedInfo(Tick::now(), seed_info))
     }
 
     pub fn send_own_team(&mut self, world: &World) -> AppResult<MessageId> {
@@ -146,7 +133,7 @@ impl NetworkHandler {
         //If own team is playing with network peer, send the game.
         if let Some(game_id) = world.get_own_team()?.current_game {
             let game = world.get_game_or_err(game_id)?;
-            if game.home_team_in_game.peer_id.is_some() && game.away_team_in_game.peer_id.is_some()
+            if game.home_team_in_game.peer_id.is_some() || game.away_team_in_game.peer_id.is_some()
             {
                 return self.send_game(world, game_id);
             }
@@ -157,8 +144,7 @@ impl NetworkHandler {
 
     fn send_game(&mut self, world: &World, game_id: GameId) -> AppResult<MessageId> {
         let network_game = NetworkGame::from_game_id(&world, game_id)?;
-        let serialized_game = serde_json::to_string(&network_game)?.as_bytes().to_vec();
-        self._send(serialized_game, SubscriptionTopic::GAME)
+        self._send(NetworkData::Game(Tick::now(), network_game))
     }
 
     fn send_team(&mut self, world: &World, team_id: TeamId) -> AppResult<MessageId> {
@@ -167,85 +153,143 @@ impl NetworkHandler {
         // This means that the team can be challenged online and it will not be stored.
         network_team.set_peer_id(self.swarm.local_peer_id().clone());
 
-        let serialized_team = serde_json::to_string(&network_team)?.as_bytes().to_vec();
-        self._send(serialized_team, SubscriptionTopic::TEAM)
+        self._send(NetworkData::Team(Tick::now(), network_team))
     }
 
-    pub fn send_challenge(&mut self, challenge: &Challenge) -> AppResult<MessageId> {
-        let serialized_challenge = serde_json::to_vec(challenge)?;
-        self._send(serialized_challenge, SubscriptionTopic::CHALLENGE)
+    pub fn send_challenge(&mut self, challenge: Challenge) -> AppResult<MessageId> {
+        self._send(NetworkData::Challenge(Tick::now(), challenge))
     }
 
-    pub fn can_handle_challenge(world: &World) -> AppResult<()> {
-        if !world.has_own_team() {
-            return Err(anyhow!("No own team, declining challenge"));
-        }
-
-        let own_team = world.get_own_team()?;
-
-        if own_team.current_game.is_some() {
-            return Err(anyhow!("Already in a game, declining challenge"));
-        }
-
-        Ok(())
+    pub fn send_trade(&mut self, trade: Trade) -> AppResult<MessageId> {
+        self._send(NetworkData::Trade(Tick::now(), trade))
     }
 
-    pub fn send_new_challenge(&mut self, world: &World, peer_id: PeerId) -> AppResult<()> {
+    pub fn send_failed_request(&mut self, error_message: String) -> AppResult<MessageId> {
+        self._send(NetworkData::FailedRequest(Tick::now(), error_message))
+    }
+
+    pub fn send_new_challenge(
+        &mut self,
+        world: &World,
+        peer_id: PeerId,
+        team_id: TeamId,
+    ) -> AppResult<()> {
         self.send_own_team(world)?;
-
-        let mut challenge = Challenge::new(self.swarm.local_peer_id().clone(), peer_id);
         let mut home_team_in_game =
             TeamInGame::from_team_id(world.own_team_id, &world.teams, &world.players)
                 .ok_or(anyhow!("Cannot generate team in game"))?;
         home_team_in_game.peer_id = Some(self.swarm.local_peer_id().clone());
-        challenge.home_team = Some(home_team_in_game);
 
-        self.send_challenge(&challenge)?;
+        let away_team_in_game = TeamInGame::from_team_id(team_id, &world.teams, &world.players)
+            .ok_or(anyhow!("Cannot generate team in game"))?;
+
+        let challenge = Challenge::new(
+            self.swarm.local_peer_id().clone(),
+            peer_id,
+            home_team_in_game,
+            away_team_in_game,
+        );
+
+        self.send_challenge(challenge)?;
+        Ok(())
+    }
+
+    pub fn send_new_trade(
+        &mut self,
+        world: &World,
+        target_peer_id: PeerId,
+        proposer_player_id: PlayerId,
+        target_player_id: PlayerId,
+    ) -> AppResult<()> {
+        self.send_own_team(world)?;
+
+        let proposer_player = world.get_player_or_err(proposer_player_id)?.clone();
+        let target_player = world.get_player_or_err(target_player_id)?.clone();
+
+        let trade = Trade::new(
+            self.swarm.local_peer_id().clone(),
+            target_peer_id,
+            proposer_player,
+            target_player,
+            0,
+        );
+
+        self.send_trade(trade)?;
         Ok(())
     }
 
     pub fn accept_challenge(&mut self, world: &World, challenge: Challenge) -> AppResult<()> {
+        self.send_own_team(world)?;
         let mut handle_syn = || -> AppResult<()> {
-            Self::can_handle_challenge(world)?;
+            let home_team = world.get_team_or_err(challenge.home_team_in_game.team_id)?;
+            let away_team = world.get_team_or_err(challenge.away_team_in_game.team_id)?;
+            home_team.can_challenge_team(away_team)?;
 
-            let away_team = world.get_own_team()?;
-            if away_team.current_game.is_some() {
-                return Err(anyhow!("Cannot accept challenge, already in a game"));
-            }
+            let mut away_team_in_game =
+                TeamInGame::from_team_id(world.own_team_id, &world.teams, &world.players)
+                    .ok_or(anyhow!("Cannot generate team in game"))?;
 
-            let try_away_team_in_game =
-                TeamInGame::from_team_id(world.own_team_id, &world.teams, &world.players);
-
-            if try_away_team_in_game.is_none() {
-                return Err(anyhow!("Cannot generate team in game for challenge"));
-            }
-
-            let mut away_team_in_game = try_away_team_in_game.unwrap();
             away_team_in_game.peer_id = Some(self.swarm.local_peer_id().clone());
 
+            // Note: we do not start immediately the game at this point,
+            // because it could take a long time to accept a challenge
+            // and the status of the challenger could have changed considerably
+            // possibly making the challenge invalid.
             let mut challenge = challenge.clone();
-            challenge.away_team = Some(away_team_in_game);
+            challenge.away_team_in_game = away_team_in_game;
             challenge.state = NetworkRequestState::SynAck;
-            self.send_challenge(&challenge)?;
+            self.send_challenge(challenge)?;
             Ok(())
         };
 
         if let Err(err) = handle_syn() {
-            let mut challenge = Challenge::new(challenge.home_peer_id, challenge.away_peer_id);
-            challenge.state = NetworkRequestState::Failed;
-            challenge.error_message = Some(err.to_string());
-            self.send_challenge(&challenge)?;
+            self.send_failed_request(err.to_string())?;
             return Err(anyhow!(err.to_string()));
         }
         Ok(())
     }
 
-    pub fn decline_challenge(&mut self, challenge: Challenge) -> AppResult<()> {
-        let mut challenge = challenge.clone();
-        challenge.state = NetworkRequestState::Failed;
-        challenge.error_message = Some("Declined".to_string());
-        self.send_challenge(&challenge)?;
-        self.challenges.remove(&challenge.home_peer_id);
+    pub fn decline_challenge(&mut self, _challenge: Challenge) -> AppResult<()> {
+        self.send_failed_request("Challenge declined".into())?;
+        Ok(())
+    }
+
+    pub fn accept_trade(&mut self, world: &World, trade: Trade) -> AppResult<()> {
+        let mut handle_syn = || -> AppResult<()> {
+            let own_team = world.get_own_team()?;
+            let proposer_team = if let Some(proposer_team_id) = trade.proposer_player.team {
+                world.get_team_or_err(proposer_team_id)?
+            } else {
+                return Err(anyhow!("Trade target player has no team"));
+            };
+
+            // Note: we do not apply immediately the trade at this point,
+            // because it could take a long time to accept a trade
+            // and the status of the proposer could have changed considerably
+            // possibly making the trade invalid.
+            let mut trade = trade.clone();
+            let target_player = world.get_player_or_err(trade.target_player.id)?.clone();
+            trade.target_player = target_player;
+            proposer_team.can_trade_players(
+                &trade.proposer_player,
+                &trade.target_player,
+                own_team,
+            )?;
+
+            trade.state = NetworkRequestState::SynAck;
+            self.send_trade(trade)?;
+            Ok(())
+        };
+
+        if let Err(err) = handle_syn() {
+            self.send_failed_request(err.to_string())?;
+            return Err(anyhow!(err.to_string()));
+        }
+        Ok(())
+    }
+
+    pub fn decline_trade(&mut self, _trade: Trade) -> AppResult<()> {
+        self.send_failed_request("Trade declined".into())?;
         Ok(())
     }
 
@@ -261,29 +305,17 @@ impl NetworkHandler {
                 propagation_source: _,
                 message_id: _,
                 message,
-            }) => match message.topic.clone() {
-                x if x == IdentTopic::new(SubscriptionTopic::TEAM).hash() => {
-                    Some(NetworkCallbackPreset::HandleTeamTopic { message })
-                }
-                x if x == IdentTopic::new(SubscriptionTopic::MSG).hash() => {
-                    Some(NetworkCallbackPreset::HandleMsgTopic { message })
-                }
-                x if x == IdentTopic::new(SubscriptionTopic::CHALLENGE).hash() => {
-                    Some(NetworkCallbackPreset::HandleChallengeTopic { message })
-                }
-                x if x == IdentTopic::new(SubscriptionTopic::GAME).hash() => {
-                    Some(NetworkCallbackPreset::HandleGameTopic { message })
-                }
-                x if x == IdentTopic::new(SubscriptionTopic::SEED_INFO).hash() => {
-                    Some(NetworkCallbackPreset::HandleSeedTopic { message })
-                }
-                _ => None,
-            },
+            }) => {
+                assert!(message.topic == IdentTopic::new(TOPIC).hash());
+                Some(NetworkCallbackPreset::HandleMessage { message })
+            }
             SwarmEvent::Behaviour(gossipsub::Event::Subscribed { peer_id, topic }) => {
+                assert!(topic == IdentTopic::new(TOPIC).hash());
                 Some(NetworkCallbackPreset::Subscribe { peer_id, topic })
             }
 
             SwarmEvent::Behaviour(gossipsub::Event::Unsubscribed { peer_id, topic }) => {
+                assert!(topic == IdentTopic::new(TOPIC).hash());
                 Some(NetworkCallbackPreset::Unsubscribe { peer_id, topic })
             }
             SwarmEvent::ExpiredListenAddr {
@@ -310,10 +342,11 @@ impl NetworkHandler {
 #[cfg(test)]
 mod tests {
     use crate::{
-        network::types::NetworkTeam,
+        network::types::{NetworkData, NetworkTeam},
         types::{AppResult, SystemTimeTick, Tick},
         world::world::World,
     };
+    use anyhow::anyhow;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
@@ -327,25 +360,27 @@ mod tests {
         let own_team_id = world.generate_random_team(rng, home_planet, team_name, ship_name);
         let network_team = NetworkTeam::from_team_id(&world, &own_team_id.unwrap()).unwrap();
 
-        let timestamp = Tick::now().as_secs().to_le_bytes().to_vec();
-        let serialized_team = serde_json::to_string(&network_team)
-            .unwrap()
-            .as_bytes()
-            .to_vec();
-        let data = [timestamp.clone(), serialized_team].concat();
+        let timestamp = Tick::now();
+        let serialized_network_data =
+            serde_json::to_vec(&NetworkData::Team(timestamp, network_team.clone()))?;
 
-        let deserialize_timestamp = u128::from_le_bytes(data[..16].try_into().unwrap());
-        let old_timestamp: u128 = u128::from_le_bytes(timestamp.as_slice().try_into().unwrap());
-        assert!(old_timestamp == deserialize_timestamp);
-        let deserialized_team = serde_json::from_slice::<NetworkTeam>(&data[16..])?;
-        assert_eq!(deserialized_team.team, network_team.team);
-        assert_eq!(deserialized_team.players.len(), network_team.players.len());
-        // FIXME: the equality is correct but somehow the assertion doesn't work
+        let deserialized_network_data =
+            serde_json::from_slice::<NetworkData>(serialized_network_data.as_slice())?;
 
-        let network_player = network_team.players[0].clone();
-        let deserialized_player = deserialized_team.players[0].clone();
-        assert_eq!(deserialized_player.id, network_player.id);
-        assert_eq!(deserialized_player.mental, network_player.mental);
+        match deserialized_network_data {
+            NetworkData::Team(deserialized_timestamp, deserialized_team) => {
+                assert!(deserialized_timestamp == timestamp);
+
+                assert_eq!(deserialized_team.team, network_team.team);
+                assert_eq!(deserialized_team.players.len(), network_team.players.len());
+
+                let network_player = network_team.players[0].clone();
+                let deserialized_player = deserialized_team.players[0].clone();
+                assert_eq!(deserialized_player.id, network_player.id);
+                assert_eq!(deserialized_player.mental, network_player.mental);
+            }
+            _ => return Err(anyhow!("Invalid NetworkData deserialization")),
+        }
 
         Ok(())
     }

@@ -9,7 +9,7 @@ use super::{
     utils::img_to_lines,
     widgets::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
 };
-use crate::engine::constants::{MIN_TIREDNESS_FOR_ROLL_DECLINE, MIN_TIREDNESS_FOR_SUB};
+use crate::engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE;
 use crate::types::AppResult;
 use crate::{
     engine::{
@@ -21,7 +21,7 @@ use crate::{
     image::pitch::{set_shot_pixels, PitchStyle, PITCH_HEIGHT},
     image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
     types::GameId,
-    ui::constants::{PrintableKeyCode, UiKey},
+    ui::constants::UiKey,
     world::{
         constants::MAX_TIREDNESS,
         planet::PlanetType,
@@ -234,11 +234,19 @@ impl GamePanel {
 
         let base_home_player = home_players
             .iter()
-            .max_by(|&a, &b| a.total_skills().cmp(&b.total_skills()))
+            .max_by(|&a, &b| {
+                b.average_skill()
+                    .partial_cmp(&a.average_skill())
+                    .expect("Skill value should exist")
+            })
             .unwrap();
         let base_away_player = away_players
             .iter()
-            .max_by(|&a, &b| a.total_skills().cmp(&b.total_skills()))
+            .max_by(|&a, &b| {
+                b.average_skill()
+                    .partial_cmp(&a.average_skill())
+                    .expect("Skill value should exist")
+            })
             .unwrap();
 
         if let Ok(mut lines) = self
@@ -506,20 +514,13 @@ impl GamePanel {
 
             let name_span = {
                 let style = match player.tiredness {
-                    x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE => UiStyle::DEFAULT,
-                    x if x < MIN_TIREDNESS_FOR_SUB => UiStyle::WARNING,
+                    x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::DEFAULT,
+                    x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
                     x if x < MAX_TIREDNESS => UiStyle::ERROR,
                     _ => UiStyle::UNSELECTABLE,
                 };
 
-                Span::styled(
-                    format!(
-                        "{}.{}",
-                        player.info.first_name.chars().next().unwrap_or_default(),
-                        player.info.last_name,
-                    ),
-                    style,
-                )
+                Span::styled(player.info.shortened_name(), style)
             };
 
             let cells = vec![
@@ -610,13 +611,9 @@ impl GamePanel {
                 starting_in_seconds % 60
             )));
         } else if timer.has_ended() {
-            timer_lines.push(Line::from(
-                Timer::from(timer.period().next().start()).format(),
-            ));
+            timer_lines.push(Line::from(Timer::from(timer.period().end()).format()));
         } else if timer.is_break() {
-            timer_lines.push(Line::from(
-                Timer::from(timer.period().next().start()).format(),
-            ));
+            timer_lines.push(Line::from(Timer::from(timer.period().end()).format()));
             timer_lines.push(Line::from(format!(
                 "Resuming in {:02}:{:02}",
                 timer.minutes(),

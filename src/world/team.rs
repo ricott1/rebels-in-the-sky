@@ -1,5 +1,5 @@
 use super::{
-    constants::{MIN_PLAYERS_PER_TEAM, MORALE_BONUS_ON_TEAM_ADD, MORALE_DEMOTION_MALUS},
+    constants::{MIN_PLAYERS_PER_TEAM, MORALE_RELEASE_MALUS},
     jersey::Jersey,
     planet::Planet,
     player::Player,
@@ -12,6 +12,7 @@ use super::{
 };
 use crate::{
     engine::tactic::Tactic,
+    network::{challenge::Challenge, trade::Trade},
     types::{AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick},
     world::constants::MAX_PLAYERS_PER_TEAM,
 };
@@ -46,6 +47,10 @@ pub struct Team {
     pub current_game: Option<GameId>,
     pub game_tactic: Tactic,
     pub training_focus: Option<TrainingFocus>,
+    #[serde(skip)]
+    pub open_trades: HashMap<(PlayerId, PlayerId), Trade>,
+    #[serde(skip)]
+    pub open_challenges: HashMap<TeamId, Challenge>,
 }
 
 impl Team {
@@ -65,6 +70,33 @@ impl Team {
             game_tactic: Tactic::random(),
             ..Default::default()
         }
+    }
+
+    pub fn add_challenge(&mut self, challenge: Challenge) {
+        self.open_challenges
+            .insert(challenge.home_team_in_game.team_id, challenge);
+    }
+
+    pub fn remove_challenge(&mut self, team_id: &TeamId) {
+        self.open_challenges.remove(team_id);
+    }
+
+    pub fn clear_challenges(&mut self) {
+        self.open_challenges.clear();
+    }
+
+    pub fn add_trade(&mut self, trade: Trade) {
+        self.open_trades
+            .insert((trade.proposer_player.id, trade.target_player.id), trade);
+    }
+
+    pub fn remove_trade(&mut self, trade: &Trade) {
+        self.open_trades
+            .remove(&(trade.proposer_player.id, trade.target_player.id));
+    }
+
+    pub fn clear_trades(&mut self) {
+        self.open_trades.clear();
     }
 
     pub fn balance(&self) -> u32 {
@@ -87,6 +119,15 @@ impl Team {
 
     pub fn max_storage_capacity(&self) -> u32 {
         self.spaceship.storage_capacity()
+    }
+
+    pub fn spaceship_speed(&self) -> f32 {
+        self.spaceship.speed(self.used_storage_capacity())
+    }
+
+    pub fn spaceship_fuel_consumption(&self) -> f32 {
+        self.spaceship
+            .fuel_consumption(self.used_storage_capacity())
     }
 
     pub fn add_resource(&mut self, resource: Resource, amount: u32) {
@@ -123,7 +164,7 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_hire_player(&self, player: &Player) -> AppResult<()> {
+    pub fn can_add_player(&self, player: &Player) -> AppResult<()> {
         if player.team.is_some() {
             return Err(anyhow!("Already in a team"));
         }
@@ -154,6 +195,11 @@ impl Team {
             }
         }
 
+        Ok(())
+    }
+
+    pub fn can_hire_player(&self, player: &Player) -> AppResult<()> {
+        self.can_add_player(player)?;
         let hiring_cost = player.hire_cost(self.reputation);
         if self.balance() < hiring_cost {
             return Err(anyhow!("Not enough money {}", hiring_cost));
@@ -182,9 +228,6 @@ impl Team {
             return Err(anyhow!("Team is playing"));
         }
 
-        if self.player_ids.len() <= MIN_PLAYERS_PER_TEAM {
-            return Err(anyhow!("Team is too small"));
-        }
         Ok(())
     }
 
@@ -247,8 +290,61 @@ impl Team {
             return Err(anyhow!("Opponent is already playing"));
         }
 
-        if self.current_location != team.current_location {
+        if self.player_ids.len() < MIN_PLAYERS_PER_TEAM {
+            return Err(anyhow!("Team does not have enough players"));
+        }
+
+        if team.player_ids.len() < MIN_PLAYERS_PER_TEAM {
+            return Err(anyhow!("Opponent does not have enough players"));
+        }
+
+        Ok(())
+    }
+
+    pub fn can_trade_players(
+        &self,
+        proposer_player: &Player,
+        target_player: &Player,
+        target_team: &Team,
+    ) -> AppResult<()> {
+        // This is always run from the proposer team point of view.
+        if self.id == target_team.id {
+            return Err(anyhow!("Cannot trade with oneself"));
+        }
+
+        if proposer_player.team.is_none() || proposer_player.team.unwrap() != self.id {
+            return Err(anyhow!("Proposed player is not part of the team"));
+        }
+
+        if target_player.team.is_none() || target_player.team.unwrap() != target_team.id {
+            return Err(anyhow!("Target player is not part of the team"));
+        }
+
+        if target_player.team.unwrap() == self.id {
+            return Err(anyhow!("Target player is in team"));
+        }
+
+        if matches!(self.current_location, TeamLocation::Travelling { .. }) {
+            return Err(anyhow!("Team is travelling"));
+        }
+
+        if matches!(
+            target_team.current_location,
+            TeamLocation::Travelling { .. }
+        ) {
+            return Err(anyhow!("Other team is travelling"));
+        }
+
+        if self.current_location != target_team.current_location {
             return Err(anyhow!("Not on the same planet"));
+        }
+
+        if self.current_game.is_some() {
+            return Err(anyhow!("Team is playing"));
+        }
+
+        if target_team.current_game.is_some() {
+            return Err(anyhow!("Opponent is playing"));
         }
 
         Ok(())
@@ -257,6 +353,10 @@ impl Team {
     pub fn can_travel_to_planet(&self, planet: &Planet, duration: Tick) -> AppResult<()> {
         if planet.peer_id.is_some() {
             return Err(anyhow!("Cannot travel to asteroid"));
+        }
+
+        if self.player_ids.len() < 1 {
+            return Err(anyhow!("Team needs at least one pirate to travel"));
         }
 
         match self.current_location {
@@ -324,6 +424,10 @@ impl Team {
         planet: &Planet,
         exploration_time: Tick,
     ) -> AppResult<()> {
+        if self.player_ids.len() < 1 {
+            return Err(anyhow!("Team needs at least one pirate to explore"));
+        }
+
         match self.current_location {
             TeamLocation::OnPlanet {
                 planet_id: current_planet_id,
@@ -413,7 +517,7 @@ impl Team {
                     return Err(anyhow!("Not enough storage capacity"));
                 }
             }
-        } else {
+        } else if amount < 0 {
             // Selling. Check if enough resource
             let current = self.resources.get(&resource).copied().unwrap_or_default();
             if current < amount.abs() as u32 {
@@ -438,6 +542,27 @@ impl Team {
         Ok(())
     }
 
+    pub fn max_resource_buy_amount(&self, resource: Resource, unit_cost: u32) -> u32 {
+        let max_satoshi_amount = self.balance() / unit_cost;
+        let max_storage_amount = if resource == Resource::FUEL {
+            self.spaceship.fuel_capacity() - self.fuel()
+        } else {
+            let free_storage_capacity = self.spaceship.storage_capacity()
+                - Resource::used_storage_capacity(&self.resources);
+            if resource.to_storing_space() == 0 {
+                u32::MAX
+            } else {
+                free_storage_capacity / resource.to_storing_space()
+            }
+        };
+
+        max_satoshi_amount.min(max_storage_amount)
+    }
+
+    pub fn max_resource_sell_amount(&self, resource: Resource) -> u32 {
+        self.resources.get(&resource).copied().unwrap_or_default()
+    }
+
     pub fn is_travelling(&self) -> bool {
         matches!(self.current_location, TeamLocation::Travelling { .. })
     }
@@ -447,16 +572,14 @@ impl Team {
             return;
         }
         player.team = Some(self.id);
-        player.morale = (player.morale + MORALE_BONUS_ON_TEAM_ADD).bound();
         player.current_location = PlayerLocation::WithTeam;
         self.player_ids.push(player.id);
         player.set_jersey(&self.jersey);
+        player.peer_id = self.peer_id;
         player.version += 1;
     }
 
     pub fn remove_player(&mut self, player: &mut Player) -> AppResult<()> {
-        self.can_release_player(&player)?;
-
         player.team = None;
         self.player_ids.retain(|&p| p != player.id);
 
@@ -469,11 +592,7 @@ impl Team {
 
         player.info.crew_role = CrewRole::Mozzo;
         // Removed player is a bit demoralized :(
-        if player.morale > MORALE_DEMOTION_MALUS {
-            player.morale -= MORALE_DEMOTION_MALUS;
-        } else {
-            player.morale = 0.0;
-        }
+        player.morale = (player.morale - MORALE_RELEASE_MALUS).bound();
 
         player.image.remove_jersey();
         player.compose_image()?;
@@ -492,7 +611,11 @@ impl Team {
         }
 
         // Sort players in case we need to take only the first MAX_PLAYERS_PER_TEAM
-        players.sort_by(|a, b| b.total_skills().cmp(&a.total_skills()));
+        players.sort_by(|a, b| {
+            b.average_skill()
+                .partial_cmp(&a.average_skill())
+                .expect("Skill value should exist")
+        });
 
         // Create an N-vector of 5-vectors. Each player is mapped to the vector (of length 5) of ratings for each role.
         let all_ratings = players
@@ -531,7 +654,11 @@ impl Team {
             .filter(|&p| !new_players.contains(&p.id))
             .map(|&p| p)
             .collect::<Vec<&Player>>();
-        bench.sort_by(|a, b| b.total_skills().cmp(&a.total_skills()));
+        bench.sort_by(|a, b| {
+            b.average_skill()
+                .partial_cmp(&a.average_skill())
+                .expect("Skill value should exist")
+        });
         new_players.append(&mut bench.iter().map(|&p| p.id).collect::<Vec<PlayerId>>());
 
         new_players

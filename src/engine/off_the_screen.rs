@@ -1,10 +1,13 @@
 use super::{
     action::{ActionOutput, ActionSituation, Advantage, EngineAction},
-    constants::{TirednessCost, ADV_ATTACK_LIMIT, ADV_DEFENSE_LIMIT},
+    constants::*,
     game::Game,
     types::{GameStats, GameStatsMap},
 };
-use crate::world::skill::GameSkill;
+use crate::world::{
+    constants::{MoraleModifier, TirednessCost},
+    skill::GameSkill,
+};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
@@ -111,6 +114,9 @@ impl EngineAction for OffTheScreen {
             _ => {
                 playmaker_update.turnovers = 1;
                 target_defender_update.steals = 1;
+                playmaker_update.extra_morale += MoraleModifier::SMALL_MALUS;
+                target_defender_update.extra_morale += MoraleModifier::MEDIUM_BONUS;
+
 
                 ActionOutput {
                     situation: ActionSituation::Turnover,

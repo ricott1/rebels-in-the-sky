@@ -1,16 +1,16 @@
 use super::{
     button::Button,
     clickable_list::{ClickableList, ClickableListItem},
-    constants::{UiKey, UiStyle},
+    constants::{UiKey, UiStyle, UiText},
     gif_map::GifMap,
     hover_text_line::HoverTextLine,
     hover_text_span::HoverTextSpan,
     traits::UiStyled,
     ui_callback::{CallbackRegistry, UiCallbackPreset},
-    utils::hover_text_target,
+    utils::{format_satoshi, hover_text_target},
 };
 use crate::{
-    engine::constants::{MIN_TIREDNESS_FOR_ROLL_DECLINE, MIN_TIREDNESS_FOR_SUB},
+    engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
     image::{player::PLAYER_IMAGE_WIDTH, spaceship::SPACESHIP_IMAGE_WIDTH},
     types::{AppResult, PlayerId, SystemTimeTick, Tick, AU, HOURS, SECONDS},
     world::{
@@ -220,40 +220,88 @@ pub fn go_to_team_home_planet_button<'a>(
     .set_hotkey(UiKey::GO_TO_HOME_PLANET))
 }
 
-pub fn challenge_button<'a>(
+pub fn render_challenge_button<'a>(
     world: &World,
     team: &Team,
     callback_registry: &Arc<Mutex<CallbackRegistry>>,
     hover_text_target: Rect,
     hotkey: bool,
-) -> AppResult<Button<'a>> {
+    frame: &mut Frame,
+    area: Rect,
+) -> AppResult<()> {
     let own_team = world.get_own_team()?;
     let can_challenge = own_team.can_challenge_team(team);
 
-    let mut button = Button::new(
-        "Challenge".into(),
-        UiCallbackPreset::ChallengeTeam { team_id: team.id },
-        Arc::clone(&callback_registry),
-    )
-    .set_hover_text(
-        format!("Challenge {} to a game", team.name),
-        hover_text_target,
-    );
+    if let Some(challenge) = own_team.open_challenges.get(&team.id) {
+        let c_split = Layout::horizontal([
+            Constraint::Min(10),
+            Constraint::Length(6),
+            Constraint::Length(6),
+        ])
+        .split(area);
 
-    if hotkey {
-        button = button.set_hotkey(UiKey::CHALLENGE_TEAM)
-    }
-    if can_challenge.is_err() {
-        button.disable(Some(format!("{}", can_challenge.unwrap_err().to_string())));
+        let accept_button = Button::new(
+            format!("{:6^}", UiText::YES),
+            UiCallbackPreset::AcceptChallenge {
+                challenge: challenge.clone(),
+            },
+            Arc::clone(&callback_registry),
+        )
+        .set_box_style(UiStyle::OK)
+        .set_hover_text(
+            format!("Accept the challenge from {} and start a game.", team.name),
+            hover_text_target,
+        );
+
+        let decline_button = Button::new(
+            format!("{:6^}", UiText::NO),
+            UiCallbackPreset::DeclineChallenge {
+                challenge: challenge.clone(),
+            },
+            Arc::clone(&callback_registry),
+        )
+        .set_box_style(UiStyle::ERROR)
+        .set_hover_text(
+            format!("Decline the challenge from {}.", team.name),
+            hover_text_target,
+        );
+
+        frame.render_widget(
+            Paragraph::new("Challenged!")
+                .centered()
+                .block(default_block()),
+            c_split[0],
+        );
+
+        frame.render_widget(accept_button, c_split[1]);
+        frame.render_widget(decline_button, c_split[2]);
     } else {
-        button = if team.peer_id.is_some() {
-            button.set_box_style(UiStyle::NETWORK)
+        let mut button = Button::new(
+            "Challenge".into(),
+            UiCallbackPreset::ChallengeTeam { team_id: team.id },
+            Arc::clone(&callback_registry),
+        )
+        .set_hover_text(
+            format!("Challenge {} to a game", team.name),
+            hover_text_target,
+        );
+
+        if hotkey {
+            button = button.set_hotkey(UiKey::CHALLENGE_TEAM)
+        }
+        if can_challenge.is_err() {
+            button.disable(Some(format!("{}", can_challenge.unwrap_err().to_string())));
         } else {
-            button.set_box_style(UiStyle::OK)
-        };
+            button = if team.peer_id.is_some() {
+                button.set_box_style(UiStyle::NETWORK)
+            } else {
+                button.set_box_style(UiStyle::OK)
+            };
+        }
+        frame.render_widget(button, area)
     }
 
-    Ok(button)
+    Ok(())
 }
 
 pub fn trade_button<'a>(
@@ -272,6 +320,7 @@ pub fn trade_button<'a>(
     } else {
         UiStyle::DEFAULT
     };
+
     let mut button = Button::new(
         format!("{amount:^+}"),
         UiCallbackPreset::TradeResource {
@@ -292,14 +341,18 @@ pub fn trade_button<'a>(
         button.disable(None);
     }
 
+    if amount == 0 {
+        button = button.set_box_style(UiStyle::UNSELECTABLE);
+        button.disable(Some("".into()));
+    }
+
     let mut button = button.set_hover_text(
         format!(
-            "{} {} {} for {} {}.",
+            "{} {} {} for {}.",
             if amount > 0 { "Buy" } else { "Sell" },
             amount.abs(),
             resource,
-            amount.abs() as u32 * unit_cost,
-            CURRENCY_SYMBOL
+            format_satoshi(amount.abs() as u32 * unit_cost),
         ),
         hover_text_target,
     );
@@ -321,7 +374,7 @@ fn explore_button<'a>(
         TeamLocation::OnPlanet { planet_id } => {
             let planet = world.get_planet_or_err(planet_id)?;
 
-            let needed_fuel = (duration as f32 * team.spaceship.fuel_consumption()) as u32;
+            let needed_fuel = (duration as f32 * team.spaceship_fuel_consumption()) as u32;
             let explore_text = if duration == QUICK_EXPLORATION_TIME {
                 "Explore"
             } else {
@@ -552,7 +605,7 @@ pub fn get_storage_spans(team: &Team) -> Vec<Span> {
     if let [gold_length, scraps_length, rum_length, free_bars] = get_storage_lengths(team)[..4] {
         vec![
             Span::raw(format!(
-                "Storage: {:>4}/{:<4} ",
+                "Storage: {:>04}/{:<04} ",
                 team.used_storage_capacity(),
                 team.max_storage_capacity(),
             )),
@@ -627,7 +680,7 @@ pub fn render_spaceship_description(
         Paragraph::new(vec![
             Line::from(format!(
                 "Speed: {:.3} AU/h",
-                team.spaceship.speed() * HOURS as f32 / AU as f32
+                team.spaceship_speed() * HOURS as f32 / AU as f32
             )),
             Line::from(format!(
                 "Crew: {}/{}",
@@ -638,7 +691,7 @@ pub fn render_spaceship_description(
             Line::from(get_storage_spans(team)),
             Line::from(format!(
                 "Consumption: {:.2} t/h",
-                team.spaceship.fuel_consumption() * HOURS as f32
+                team.spaceship_fuel_consumption() * HOURS as f32
             )),
             Line::from(format!(
                 "Max distance: {:.3} AU",
@@ -648,16 +701,12 @@ pub fn render_spaceship_description(
                 "Travelled: {:.3} AU",
                 team.spaceship.total_travelled as f32 / AU as f32
             )),
-            Line::from(format!(
-                "Value: {} {}",
-                team.spaceship.cost(),
-                CURRENCY_SYMBOL
-            )),
+            Line::from(format!("Value: {}", format_satoshi(team.spaceship.cost()),)),
         ])
     } else {
         Paragraph::new(vec![
             Line::from(format!("Reputation {}", team.reputation.stars())),
-            Line::from(format!("Treasury {} {}", team.balance(), CURRENCY_SYMBOL)),
+            Line::from(format!("Treasury {}", format_satoshi(team.balance()))),
             Line::from(format!(
                 "Crew: {}/{}",
                 team.player_ids.len(),
@@ -724,15 +773,16 @@ pub fn render_spaceship_upgrade(
         upgraded_ship.storage = u_storage;
     }
 
+    let storage_units = 0;
     let spaceship_info = Paragraph::new(vec![
         Line::from(vec![
             Span::raw(format!(
-                "Speed: {:.3}",
-                team.spaceship.speed() * HOURS as f32 / AU as f32
+                "Max speed: {:.3}",
+                team.spaceship.speed(storage_units) * HOURS as f32 / AU as f32
             )),
             Span::raw(format!(
                 "{}",
-                if upgraded_ship.speed() == team.spaceship.speed() {
+                if upgraded_ship.speed(storage_units) == team.spaceship.speed(storage_units) {
                     ""
                 } else {
                     " --> "
@@ -741,13 +791,16 @@ pub fn render_spaceship_upgrade(
             Span::styled(
                 format!(
                     "{}",
-                    if upgraded_ship.speed() == team.spaceship.speed() {
+                    if upgraded_ship.speed(storage_units) == team.spaceship.speed(storage_units) {
                         "".to_string()
                     } else {
-                        format!("{:.3}", upgraded_ship.speed() * HOURS as f32 / AU as f32)
+                        format!(
+                            "{:.3}",
+                            upgraded_ship.speed(storage_units) * HOURS as f32 / AU as f32
+                        )
                     }
                 ),
-                if upgraded_ship.speed() > team.spaceship.speed() {
+                if upgraded_ship.speed(storage_units) > team.spaceship.speed(storage_units) {
                     UiStyle::OK
                 } else {
                     UiStyle::ERROR
@@ -836,12 +889,14 @@ pub fn render_spaceship_upgrade(
         ]),
         Line::from(vec![
             Span::raw(format!(
-                "Consumption: {:.2}",
-                team.spaceship.fuel_consumption() * HOURS as f32
+                "Bare consumption: {:.2}",
+                team.spaceship.fuel_consumption(storage_units) * HOURS as f32
             )),
             Span::raw(format!(
                 "{}",
-                if upgraded_ship.fuel_consumption() == team.spaceship.fuel_consumption() {
+                if upgraded_ship.fuel_consumption(storage_units)
+                    == team.spaceship.fuel_consumption(storage_units)
+                {
                     ""
                 } else {
                     " --> "
@@ -850,13 +905,20 @@ pub fn render_spaceship_upgrade(
             Span::styled(
                 format!(
                     "{}",
-                    if upgraded_ship.fuel_consumption() == team.spaceship.fuel_consumption() {
+                    if upgraded_ship.fuel_consumption(storage_units)
+                        == team.spaceship.fuel_consumption(storage_units)
+                    {
                         "".to_string()
                     } else {
-                        format!("{:.2}", upgraded_ship.fuel_consumption() * HOURS as f32)
+                        format!(
+                            "{:.2}",
+                            upgraded_ship.fuel_consumption(storage_units) * HOURS as f32
+                        )
                     }
                 ),
-                if upgraded_ship.fuel_consumption() < team.spaceship.fuel_consumption() {
+                if upgraded_ship.fuel_consumption(storage_units)
+                    < team.spaceship.fuel_consumption(storage_units)
+                {
                     UiStyle::OK
                 } else {
                     UiStyle::ERROR
@@ -904,7 +966,7 @@ pub fn render_spaceship_upgrade(
             Span::raw(" AU"),
         ]),
         Line::from(vec![
-            Span::raw(format!("Value: {}", team.spaceship.cost(),)),
+            Span::raw(format!("Value: {}", format_satoshi(team.spaceship.cost()),)),
             Span::raw(format!(
                 "{}",
                 if upgraded_ship.cost() == team.spaceship.cost() {
@@ -919,7 +981,7 @@ pub fn render_spaceship_upgrade(
                     if upgraded_ship.cost() == team.spaceship.cost() {
                         "".to_string()
                     } else {
-                        format!("{}", upgraded_ship.cost())
+                        format!("{}", format_satoshi(upgraded_ship.cost()))
                     }
                 ),
                 if upgraded_ship.cost() > team.spaceship.cost() {
@@ -928,7 +990,6 @@ pub fn render_spaceship_upgrade(
                     UiStyle::ERROR
                 },
             ),
-            Span::raw(format!(" {}", CURRENCY_SYMBOL)),
         ]),
     ]);
 
@@ -1043,9 +1104,9 @@ pub fn render_player_description(
         "▰".repeat(bars_length - tiredness_length),
         "▱".repeat(tiredness_length),
     );
-    let energy_style = match tiredness {
-        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE => UiStyle::OK,
-        x if x < MIN_TIREDNESS_FOR_SUB => UiStyle::WARNING,
+    let energy_style = match player.tiredness {
+        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::OK,
+        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
         x if x < MAX_TIREDNESS => UiStyle::ERROR,
         _ => UiStyle::UNSELECTABLE,
     };
@@ -1064,14 +1125,33 @@ pub fn render_player_description(
         header_body_stats[2],
     );
 
-    let morale_length = (player.morale / MAX_MORALE * bars_length as f32).round() as usize;
+    let mut morale = player.morale;
+    // Check if player is currently playing.
+    // In this case, read current morale from game.
+    if let Some(team_id) = player.team {
+        if let Ok(team) = world.get_team_or_err(team_id) {
+            if let Some(game_id) = team.current_game {
+                if let Ok(game) = world.get_game_or_err(game_id) {
+                    if let Some(p) = if game.home_team_in_game.team_id == team_id {
+                        game.home_team_in_game.players.get(&player.id)
+                    } else {
+                        game.away_team_in_game.players.get(&player.id)
+                    } {
+                        morale = p.morale;
+                    }
+                }
+            }
+        }
+    }
+
+    let morale_length = (morale / MAX_MORALE * bars_length as f32).round() as usize;
     let morale_string = format!(
         "{}{}",
         "▰".repeat(morale_length),
         "▱".repeat(bars_length - morale_length),
     );
-    let morale_style = match player.morale {
-        x if x > 2.0 * MIN_TIREDNESS_FOR_ROLL_DECLINE => UiStyle::OK,
+    let morale_style = match morale {
+        x if x > 1.75 * MORALE_THRESHOLD_FOR_LEAVING => UiStyle::OK,
         x if x > MORALE_THRESHOLD_FOR_LEAVING => UiStyle::WARNING,
         x if x > 0.0 => UiStyle::ERROR,
         _ => UiStyle::UNSELECTABLE,
@@ -1083,7 +1163,7 @@ pub fn render_player_description(
                 Span::raw("Morale ".to_string()),
                 format!(
                     "When morale is low, pirates may decide to leave the team! (current value {:.2})",
-                    player.morale
+                    morale
                 ),
                 hover_text_target,
                 Arc::clone(&callback_registry),
@@ -1116,8 +1196,10 @@ pub fn render_player_description(
 
     // Render main block
     let block = default_block().title(format!(
-        "{} {}",
-        player.info.first_name, player.info.last_name
+        "{} {} {}",
+        player.info.first_name,
+        player.info.last_name,
+        player.stars()
     ));
     frame.render_widget(block, area);
 }

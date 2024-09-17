@@ -7,11 +7,9 @@ use super::{
     utils::input_from_key_event,
     widgets::default_block,
 };
-use crate::network::challenge::Challenge;
 use crate::types::{AppResult, SystemTimeTick, TeamId, Tick};
-use crate::ui::constants::{PrintableKeyCode, UiKey};
-use crate::world::skill::Rated;
-use crate::world::world::World;
+use crate::ui::constants::UiKey;
+use crate::world::{skill::Rated, world::World};
 use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
 use libp2p::PeerId;
@@ -32,7 +30,7 @@ use tui_textarea::{CursorMove, TextArea};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display, Hash, Default)]
 pub enum EventTopic {
     Log,
-    Challenges,
+    Requests,
     #[default]
     Chat,
 }
@@ -41,8 +39,8 @@ impl EventTopic {
     fn next(&self) -> EventTopic {
         match self {
             EventTopic::Log => EventTopic::Chat,
-            EventTopic::Challenges => EventTopic::Log,
-            EventTopic::Chat => EventTopic::Challenges,
+            EventTopic::Requests => EventTopic::Log,
+            EventTopic::Chat => EventTopic::Requests,
         }
     }
 }
@@ -56,7 +54,6 @@ pub struct SwarmPanel {
     connected_peers: Vec<PeerId>,
     team_id_to_peer_id: HashMap<TeamId, PeerId>,
     peer_id_to_team_id: HashMap<PeerId, TeamId>,
-    peer_to_challenge: HashMap<PeerId, Challenge>,
     callback_registry: Arc<Mutex<CallbackRegistry>>,
 }
 
@@ -64,7 +61,7 @@ impl SwarmPanel {
     pub fn new(callback_registry: Arc<Mutex<CallbackRegistry>>) -> Self {
         let mut events = HashMap::new();
         events.insert(EventTopic::Log, vec![]);
-        events.insert(EventTopic::Challenges, vec![]);
+        events.insert(EventTopic::Requests, vec![]);
         events.insert(EventTopic::Chat, vec![]);
         Self {
             callback_registry,
@@ -94,19 +91,6 @@ impl SwarmPanel {
 
     pub fn remove_peer_id(&mut self, peer_id: &PeerId) {
         self.connected_peers.retain(|id| id != peer_id);
-        self.remove_challenge(peer_id);
-    }
-
-    pub fn add_challenge(&mut self, peer_id: PeerId, challenge: Challenge) {
-        self.peer_to_challenge.insert(peer_id, challenge);
-    }
-
-    pub fn remove_challenge(&mut self, peer_id: &PeerId) {
-        self.peer_to_challenge.remove(peer_id);
-    }
-
-    pub fn remove_all_challenges(&mut self) {
-        self.peer_to_challenge.clear();
     }
 
     fn build_left_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
@@ -135,9 +119,9 @@ impl SwarmPanel {
         );
 
         let mut challenges_button = Button::new(
-            "View:Challenges".to_string(),
+            "View:Requests".to_string(),
             UiCallbackPreset::SetSwarmPanelTopic {
-                topic: EventTopic::Challenges,
+                topic: EventTopic::Requests,
             },
             Arc::clone(&self.callback_registry),
         )
@@ -163,7 +147,7 @@ impl SwarmPanel {
             EventTopic::Log => {
                 log_button.disable(None);
             }
-            EventTopic::Challenges => {
+            EventTopic::Requests => {
                 challenges_button.disable(None);
             }
             EventTopic::Chat => {
@@ -195,97 +179,200 @@ impl SwarmPanel {
         frame.render_widget(list.block(default_block().title("Peers")), split[3]);
 
         let dial_button = Button::new(
-            "Ping".to_string(),
+            "Ping".into(),
             UiCallbackPreset::Dial {
-                address: "seed".to_string(),
+                address: "seed".into(),
             },
             Arc::clone(&self.callback_registry),
-        );
+        )
+        .set_hotkey(UiKey::PING);
         frame.render_widget(dial_button, split[4]);
     }
 
-    fn build_challenge_list(&mut self, frame: &mut Frame, world: &World, area: Rect) {
+    fn build_challenge_list(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         frame.render_widget(default_block().title("Challenges"), area);
+        let own_team = world.get_own_team()?;
 
-        let mut constraints = [Constraint::Length(3)].repeat(self.peer_to_challenge.len());
+        let mut constraints = [Constraint::Length(3)].repeat(own_team.open_challenges.len());
         constraints.push(Constraint::Min(0));
         let split = Layout::vertical(constraints).split(area.inner(Margin {
             horizontal: 1,
             vertical: 1,
         }));
 
-        for (idx, (peer_id, challenge)) in self.peer_to_challenge.iter().enumerate() {
+        for (idx, (team_id, challenge)) in own_team.open_challenges.iter().enumerate() {
+            let peer_id = self.team_id_to_peer_id.get(team_id);
+            if peer_id.is_none() {
+                continue;
+            }
+
             let line_split = Layout::horizontal([
                 Constraint::Length(24),
-                Constraint::Length(8),
-                Constraint::Length(8),
+                Constraint::Length(6),
+                Constraint::Length(6),
                 Constraint::Min(0),
             ])
             .split(split[idx]);
 
             let hover_text_target = hover_text_target(frame);
 
-            if let Some(team) = challenge.home_team.clone() {
-                frame.render_widget(
-                    Button::new(
-                        format!(
-                            "{} {} ({})",
-                            team.name,
-                            world.team_rating(team.team_id).stars(),
-                            peer_id.to_base58().chars().take(4).collect::<String>()
-                        ),
-                        UiCallbackPreset::GoToTeam {
-                            team_id: team.team_id,
-                        },
-                        Arc::clone(&self.callback_registry),
+            let team = &challenge.home_team_in_game;
+            frame.render_widget(
+                Button::new(
+                    format!(
+                        "{} {} ({})",
+                        team.name,
+                        world.team_rating(team.team_id).stars(),
+                        peer_id
+                            .unwrap()
+                            .to_base58()
+                            .chars()
+                            .take(4)
+                            .collect::<String>()
                     ),
-                    line_split[0],
-                );
-                let mut accept_button = Button::new(
-                    format!("{:6^}", UiText::YES),
-                    UiCallbackPreset::AcceptChallenge {
-                        challenge: challenge.clone(),
+                    UiCallbackPreset::GoToTeam {
+                        team_id: team.team_id,
                     },
                     Arc::clone(&self.callback_registry),
-                )
-                .set_box_style(UiStyle::OK)
-                .set_hover_text(
-                    format!("Accept the challenge from {} and start a game.", team.name),
-                    hover_text_target,
-                );
-                if idx == 0 {
-                    accept_button = accept_button.set_hotkey(UiKey::YES_TO_DIALOG);
-                }
-                frame.render_widget(accept_button, line_split[1]);
-                let mut decline_button = Button::new(
-                    format!("{:6^}", UiText::NO),
-                    UiCallbackPreset::DeclineChallenge {
-                        challenge: challenge.clone(),
-                    },
-                    Arc::clone(&self.callback_registry),
-                )
-                .set_box_style(UiStyle::ERROR)
-                .set_hover_text(
-                    format!("Decline the challenge from {}.", team.name),
-                    hover_text_target,
-                );
-                if idx == 0 {
-                    decline_button = decline_button.set_hotkey(UiKey::NO_TO_DIALOG);
-                }
-                frame.render_widget(decline_button, line_split[2]);
+                ),
+                line_split[0],
+            );
+            let mut accept_button = Button::new(
+                format!("{:6^}", UiText::YES),
+                UiCallbackPreset::AcceptChallenge {
+                    challenge: challenge.clone(),
+                },
+                Arc::clone(&self.callback_registry),
+            )
+            .set_box_style(UiStyle::OK)
+            .set_hover_text(
+                format!("Accept the challenge from {} and start a game.", team.name),
+                hover_text_target,
+            );
+            if idx == 0 {
+                accept_button = accept_button.set_hotkey(UiKey::YES_TO_DIALOG);
             }
+            frame.render_widget(accept_button, line_split[1]);
+            let mut decline_button = Button::new(
+                format!("{:6^}", UiText::NO),
+                UiCallbackPreset::DeclineChallenge {
+                    challenge: challenge.clone(),
+                },
+                Arc::clone(&self.callback_registry),
+            )
+            .set_box_style(UiStyle::ERROR)
+            .set_hover_text(
+                format!("Decline the challenge from {}.", team.name),
+                hover_text_target,
+            );
+            if idx == 0 {
+                decline_button = decline_button.set_hotkey(UiKey::NO_TO_DIALOG);
+            }
+            frame.render_widget(decline_button, line_split[2]);
         }
+        Ok(())
     }
 
-    fn build_right_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
+    fn build_trade_list(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+        frame.render_widget(default_block().title("Trades"), area);
+        let own_team = world.get_own_team()?;
+
+        let mut constraints = [Constraint::Length(3)].repeat(own_team.open_trades.len());
+        constraints.push(Constraint::Min(0));
+        let split = Layout::vertical(constraints).split(area.inner(Margin {
+            horizontal: 1,
+            vertical: 1,
+        }));
+
+        for (idx, (_, trade)) in own_team.open_trades.iter().enumerate() {
+            let line_split = Layout::horizontal([
+                Constraint::Length(46),
+                Constraint::Length(6),
+                Constraint::Length(6),
+                Constraint::Min(0),
+            ])
+            .split(split[idx]);
+
+            let hover_text_target = hover_text_target(frame);
+            let proposer_player = &trade.proposer_player;
+            let target_player = &trade.target_player;
+            frame.render_widget(
+                Button::new(
+                    format!(
+                        "{} {} ⇄ {} {}",
+                        target_player.info.shortened_name(),
+                        target_player.stars(),
+                        proposer_player.info.shortened_name(),
+                        proposer_player.stars()
+                    ),
+                    UiCallbackPreset::GoToTrade {
+                        trade: trade.clone(),
+                    },
+                    Arc::clone(&self.callback_registry),
+                ),
+                line_split[0],
+            );
+            let mut accept_button = Button::new(
+                format!("{:6^}", UiText::YES),
+                UiCallbackPreset::AcceptTrade {
+                    trade: trade.clone(),
+                },
+                Arc::clone(&self.callback_registry),
+            )
+            .set_box_style(UiStyle::OK)
+            .set_hover_text(
+                format!(
+                    "Accept to trade {} for {}.",
+                    target_player.info.shortened_name(),
+                    proposer_player.info.shortened_name()
+                ),
+                hover_text_target,
+            );
+            if idx == 0 {
+                accept_button = accept_button.set_hotkey(UiKey::YES_TO_DIALOG);
+            }
+            frame.render_widget(accept_button, line_split[1]);
+            let mut decline_button = Button::new(
+                format!("{:6^}", UiText::NO),
+                UiCallbackPreset::DeclineTrade {
+                    trade: trade.clone(),
+                },
+                Arc::clone(&self.callback_registry),
+            )
+            .set_box_style(UiStyle::ERROR)
+            .set_hover_text(
+                format!(
+                    "Decline to trade {} for {}.",
+                    target_player.info.shortened_name(),
+                    proposer_player.info.shortened_name()
+                ),
+                hover_text_target,
+            );
+            if idx == 0 {
+                decline_button = decline_button.set_hotkey(UiKey::NO_TO_DIALOG);
+            }
+            frame.render_widget(decline_button, line_split[2]);
+        }
+        Ok(())
+    }
+
+    fn build_right_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let split = Layout::vertical([Constraint::Min(1), Constraint::Length(3)]).split(area);
 
         self.textarea.set_block(default_block());
-        frame.render_widget(self.textarea.widget(), split[1]);
+        frame.render_widget(&self.textarea, split[1]);
 
-        if self.current_topic == EventTopic::Challenges {
-            self.build_challenge_list(frame, world, split[0]);
-            return;
+        if self.current_topic == EventTopic::Requests {
+            let h_split = Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                .split(split[0]);
+            self.build_challenge_list(frame, world, h_split[0])?;
+            self.build_trade_list(frame, world, h_split[1])?;
+            return Ok(());
         }
         let mut items = vec![];
         for event in self.events.get(&self.current_topic).unwrap().iter().rev() {
@@ -335,6 +422,7 @@ impl SwarmPanel {
                 .block(default_block().title(self.current_topic.to_string())),
             split[0],
         );
+        Ok(())
     }
 
     pub fn set_current_topic(&mut self, topic: EventTopic) {
@@ -352,7 +440,7 @@ impl Screen for SwarmPanel {
             .split(area);
 
         self.build_left_panel(frame, world, split[0]);
-        self.build_right_panel(frame, world, split[1]);
+        self.build_right_panel(frame, world, split[1])?;
         Ok(())
     }
 
@@ -368,6 +456,12 @@ impl Screen for SwarmPanel {
                 //FIXME: this means the chat can't use the capital V
                 return Some(UiCallbackPreset::SetSwarmPanelTopic {
                     topic: self.current_topic.next(),
+                });
+            }
+            UiKey::PING => {
+                //FIXME: this means the chat can't use the capital P
+                return Some(UiCallbackPreset::Dial {
+                    address: "seed".into(),
                 });
             }
             KeyCode::Enter => {
@@ -402,21 +496,6 @@ impl Screen for SwarmPanel {
                     }
 
                     "/help" => {
-                        // self.push_log_event(SwarmPanelEvent {
-                        //     timestamp: Tick::now(),
-                        //     peer_id: None,
-                        //     text: "/dial <Option<ip_address>>".to_string(),
-                        // });
-                        // self.push_log_event(SwarmPanelEvent {
-                        //     timestamp: Tick::now(),
-                        //     peer_id: None,
-                        //     text: "/sync".to_string(),
-                        // });
-                        // self.push_log_event(SwarmPanelEvent {
-                        //     timestamp: Tick::now(),
-                        //     peer_id: None,
-                        //     text: "/clear".to_string(),
-                        // });
                         self.push_log_event(SwarmPanelEvent {
                             timestamp: Tick::now(),
                             peer_id: None,
@@ -460,7 +539,7 @@ impl SplitPanel for SwarmPanel {
     }
 
     fn max_index(&self) -> usize {
-        self.peer_to_challenge.len()
+        self.peer_id_to_team_id.len()
     }
 
     fn set_index(&mut self, index: usize) {

@@ -17,9 +17,11 @@ impl UiKey {
     pub const NEXT_SELECTION: KeyCode = KeyCode::Char(']');
     pub const PREVIOUS_SELECTION: KeyCode = KeyCode::Char('[');
     pub const DATA_VIEW: KeyCode = KeyCode::Tab;
-    pub const MUSIC_TOGGLE: KeyCode = KeyCode::Char('|');
+    pub const TOGGLE_AUDIO: KeyCode = KeyCode::Char('|');
+    pub const NEXT_AUDIO_SAMPLE: KeyCode = KeyCode::Char('>');
     pub const GO_TO_TEAM: KeyCode = KeyCode::Backspace;
     pub const GO_TO_TEAM_ALTERNATIVE: KeyCode = KeyCode::Char('t');
+    pub const GO_TO_GAME: KeyCode = KeyCode::Char('g');
     pub const GO_TO_PLANET: KeyCode = KeyCode::Char('O');
     pub const GO_TO_HOME_PLANET: KeyCode = KeyCode::Char('H');
     pub const CHALLENGE_TEAM: KeyCode = KeyCode::Char('C');
@@ -48,6 +50,10 @@ impl UiKey {
     pub const SELL_FUEL: KeyCode = KeyCode::Char('U');
     pub const SELL_GOLD: KeyCode = KeyCode::Char('G');
     pub const SELL_RUM: KeyCode = KeyCode::Char('R');
+    pub const CREATE_TRADE: KeyCode = KeyCode::Char('P');
+    pub const ACCEPT_TRADE: KeyCode = KeyCode::Char('A');
+    pub const DECLINE_TRADE: KeyCode = KeyCode::Char('D');
+    pub const PING: KeyCode = KeyCode::Char('P');
     pub const YES_TO_DIALOG: KeyCode = KeyCode::Enter;
     pub const NO_TO_DIALOG: KeyCode = KeyCode::Backspace;
     pub const fn set_player_position(position: Position) -> KeyCode {
@@ -58,43 +64,6 @@ impl UiKey {
             3 => KeyCode::Char('4'),
             4 => KeyCode::Char('5'),
             _ => panic!("Invalid position for SET_PLAYER_POSITION UiKey."),
-        }
-    }
-}
-pub trait PrintableKeyCode {
-    fn to_string(&self) -> String;
-}
-
-impl PrintableKeyCode for KeyCode {
-    fn to_string(&self) -> String {
-        match self {
-            KeyCode::Char(c) => format!("{}", c),
-            KeyCode::Enter => "Enter".to_string(),
-            KeyCode::Esc => "Esc".to_string(),
-            KeyCode::Backspace => "Backspace".to_string(),
-            KeyCode::Left => "←".to_string(),
-            KeyCode::Right => "→".to_string(),
-            KeyCode::Up => "↑".to_string(),
-            KeyCode::Down => "↓".to_string(),
-            KeyCode::Home => "Home".to_string(),
-            KeyCode::End => "End".to_string(),
-            KeyCode::PageUp => "PageUp".to_string(),
-            KeyCode::PageDown => "PageDown".to_string(),
-            KeyCode::Tab => "Tab".to_string(),
-            KeyCode::BackTab => "BackTab".to_string(),
-            KeyCode::Delete => "Delete".to_string(),
-            KeyCode::Insert => "Insert".to_string(),
-            KeyCode::F(u) => format!("F{}", u),
-            KeyCode::Null => "Null".to_string(),
-            KeyCode::Modifier(c) => format!("{:?}", c),
-            KeyCode::CapsLock => "CapsLock".to_string(),
-            KeyCode::ScrollLock => "ScrollLock".to_string(),
-            KeyCode::NumLock => "NumLock".to_string(),
-            KeyCode::PrintScreen => "PrintScreen".to_string(),
-            KeyCode::Pause => "Pause".to_string(),
-            KeyCode::Menu => "Menu".to_string(),
-            KeyCode::KeypadBegin => "KeypadBegin".to_string(),
-            KeyCode::Media(_) => "Media".to_string(),
         }
     }
 }

@@ -218,8 +218,8 @@ impl Backend for SSHBackend {
         self.writer.flush()
     }
 
-    fn size(&self) -> io::Result<Rect> {
-        Ok(Rect::new(0, 0, self.size.0, self.size.1))
+    fn size(&self) -> io::Result<Size> {
+        Ok(Rect::new(0, 0, self.size.0, self.size.1).as_size())
     }
 
     fn window_size(&mut self) -> Result<WindowSize, io::Error> {
@@ -233,6 +233,14 @@ impl Backend for SSHBackend {
 
     fn flush(&mut self) -> io::Result<()> {
         self.writer.flush()
+    }
+
+    fn get_cursor_position(&mut self) -> io::Result<ratatui::prelude::Position> {
+        todo!()
+    }
+
+    fn set_cursor_position<P: Into<ratatui::prelude::Position>>(&mut self, _: P) -> io::Result<()> {
+        todo!()
     }
 }
 

@@ -132,28 +132,28 @@ impl SpaceshipComponent for Hull {
             Self::ShuttleLarge => 380,
             Self::PincherStandard => 300,
             Self::PincherLarge => 500,
-            Self::JesterStandard => 450,
+            Self::JesterStandard => 400,
         }
     }
 
     fn fuel_consumption(&self) -> f32 {
         match self {
-            Self::ShuttleSmall => 0.75,
-            Self::ShuttleStandard => 0.95,
-            Self::ShuttleLarge => 1.3,
-            Self::PincherStandard => 1.25,
-            Self::PincherLarge => 1.45,
-            Self::JesterStandard => 1.15,
+            Self::ShuttleSmall => 0.95,
+            Self::ShuttleStandard => 1.0,
+            Self::ShuttleLarge => 1.05,
+            Self::PincherStandard => 1.05,
+            Self::PincherLarge => 1.1,
+            Self::JesterStandard => 1.06,
         }
     }
 
     fn speed(&self) -> f32 {
         match self {
-            Self::ShuttleSmall => 1.45,
+            Self::ShuttleSmall => 1.25,
             Self::ShuttleStandard => 1.0,
-            Self::ShuttleLarge => 0.75,
-            Self::PincherStandard => 1.25,
-            Self::PincherLarge => 0.8,
+            Self::ShuttleLarge => 0.92,
+            Self::PincherStandard => 1.15,
+            Self::PincherLarge => 0.95,
             Self::JesterStandard => 1.05,
         }
     }
@@ -172,9 +172,9 @@ impl SpaceshipComponent for Hull {
             Self::ShuttleSmall => 15000,
             Self::ShuttleStandard => 25000,
             Self::ShuttleLarge => 32000,
-            Self::PincherStandard => 33000,
+            Self::PincherStandard => 27000,
             Self::PincherLarge => 45000,
-            Self::JesterStandard => 49000,
+            Self::JesterStandard => 35000,
         }
     }
 
@@ -296,7 +296,7 @@ impl SpaceshipComponent for Engine {
             Self::PincherSingle => 1.0,
             Self::PincherDouble => 1.5,
             Self::PincherTriple => 2.0,
-            Self::JesterDouble => 1.25,
+            Self::JesterDouble => 1.35,
             Self::JesterQuadruple => 2.2,
         }
     }
@@ -304,13 +304,13 @@ impl SpaceshipComponent for Engine {
     fn speed(&self) -> f32 {
         match self {
             Self::ShuttleSingle => 1.2,
-            Self::ShuttleDouble => 1.7,
-            Self::ShuttleTriple => 2.2,
+            Self::ShuttleDouble => 1.8,
+            Self::ShuttleTriple => 2.4,
             Self::PincherSingle => 1.1,
-            Self::PincherDouble => 1.65,
-            Self::PincherTriple => 2.25,
+            Self::PincherDouble => 1.75,
+            Self::PincherTriple => 2.5,
             Self::JesterDouble => 1.7,
-            Self::JesterQuadruple => 2.45,
+            Self::JesterQuadruple => 3.0,
         }
     }
 
@@ -331,11 +331,11 @@ impl SpaceshipComponent for Engine {
             Self::ShuttleSingle => 5000,
             Self::ShuttleDouble => 8000,
             Self::ShuttleTriple => 15000,
-            Self::PincherSingle => 8000,
-            Self::PincherDouble => 12000,
-            Self::PincherTriple => 19000,
-            Self::JesterDouble => 14000,
-            Self::JesterQuadruple => 29000,
+            Self::PincherSingle => 5000,
+            Self::PincherDouble => 11000,
+            Self::PincherTriple => 18000,
+            Self::JesterDouble => 10000,
+            Self::JesterQuadruple => 27000,
         }
     }
 
@@ -457,9 +457,9 @@ impl SpaceshipComponent for Storage {
 
     fn speed(&self) -> f32 {
         match self {
-            Self::ShuttleSingle => 0.96,
-            Self::ShuttleDouble => 0.93,
-            Self::PincherSingle => 0.97,
+            Self::ShuttleSingle => 0.99,
+            Self::ShuttleDouble => 0.98,
+            Self::PincherSingle => 0.99,
             _ => 1.0,
         }
     }
@@ -485,11 +485,7 @@ impl SpaceshipComponent for Storage {
             return vec![];
         }
 
-        let scraps_cost = match self.style() {
-            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 30,
-            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 30,
-            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 30,
-        };
+        let scraps_cost = (self.next().cost() - self.cost()) / 30;
 
         let cost = vec![
             (Resource::SATOSHI, self.next().cost() - self.cost()),
@@ -603,10 +599,10 @@ impl Spaceship {
             .compose(self.size(), self.hull, self.engine, self.storage, true)
     }
 
-    pub fn speed(&self) -> f32 {
+    pub fn speed(&self, storage_units: u32) -> f32 {
         // Returns the speed in Km/ms (Kilometers per Tick)
-
         BASE_SPEED * self.hull.speed() * self.engine.speed() * self.storage.speed()
+            / (1.0 + FUEL_CONSUMPTION_PER_UNIT_STORAGE * storage_units as f32)
     }
 
     pub fn crew_capacity(&self) -> u8 {
@@ -623,12 +619,13 @@ impl Spaceship {
         self.hull.fuel_capacity() + self.engine.fuel_capacity() + self.storage.fuel_capacity()
     }
 
-    pub fn fuel_consumption(&self) -> f32 {
+    pub fn fuel_consumption(&self, storage_units: u32) -> f32 {
         // Returns the fuel consumption in t/ms (tonnes per Tick)
         BASE_FUEL_CONSUMPTION
             * self.hull.fuel_consumption()
             * self.engine.fuel_consumption()
             * self.storage.fuel_consumption()
+            * (1.0 + FUEL_CONSUMPTION_PER_UNIT_STORAGE * storage_units as f32)
     }
 
     pub fn cost(&self) -> u32 {
@@ -638,12 +635,14 @@ impl Spaceship {
 
     pub fn max_distance(&self, current_fuel: u32) -> f32 {
         // Return the max distance in kilometers.
-        self.speed() / self.fuel_consumption() * current_fuel as f32
+        let storage_units = 0;
+        self.speed(storage_units) / self.fuel_consumption(storage_units) * current_fuel as f32
     }
 
     pub fn max_travel_time(&self, current_fuel: u32) -> Tick {
         // Return the max travel time in milliseconds (Ticks)
-        (current_fuel as f32 / self.fuel_consumption()) as Tick
+        let storage_units = 0;
+        (current_fuel as f32 / self.fuel_consumption(storage_units)) as Tick
     }
 }
 
@@ -690,8 +689,8 @@ impl SpaceshipPrefab {
         match self {
             Self::Yukawa => Spaceship::new(
                 name,
-                Hull::ShuttleStandard,
-                Engine::ShuttleDouble,
+                Hull::ShuttleSmall,
+                Engine::ShuttleTriple,
                 Storage::ShuttleNone,
                 color_map,
             ),
@@ -712,22 +711,22 @@ impl SpaceshipPrefab {
             Self::Bresci => Spaceship::new(
                 name,
                 Hull::ShuttleSmall,
-                Engine::ShuttleTriple,
+                Engine::ShuttleSingle,
                 Storage::ShuttleNone,
                 color_map,
             ),
             Self::Pincher => Spaceship::new(
                 name,
                 Hull::PincherStandard,
-                Engine::PincherSingle,
-                Storage::PincherNone,
+                Engine::PincherTriple,
+                Storage::PincherSingle,
                 color_map,
             ),
             Self::Orwell => Spaceship::new(
                 name,
                 Hull::PincherStandard,
-                Engine::PincherTriple,
-                Storage::PincherSingle,
+                Engine::PincherSingle,
+                Storage::PincherNone,
                 color_map,
             ),
             Self::Ragnarok => Spaceship::new(
@@ -740,7 +739,7 @@ impl SpaceshipPrefab {
             Self::Ibarruri => Spaceship::new(
                 name,
                 Hull::JesterStandard,
-                Engine::JesterQuadruple,
+                Engine::JesterDouble,
                 Storage::JesterNone,
                 color_map,
             ),
@@ -769,11 +768,11 @@ mod tests {
         let color_map = ColorMap::random();
         let name = "test".to_string();
         let spaceship = SpaceshipPrefab::Yukawa.spaceship(name, color_map);
-        let speed = spaceship.speed();
+        let speed = spaceship.speed(0);
         let crew_capacity = spaceship.crew_capacity();
         let storage_capacity = spaceship.storage_capacity();
         let fuel_capacity = spaceship.fuel_capacity();
-        let fuel_consumption = spaceship.fuel_consumption();
+        let fuel_consumption = spaceship.fuel_consumption(0);
         let cost = spaceship.cost();
         let max_distance = spaceship.max_distance(fuel_capacity);
         let max_travel_time = spaceship.max_travel_time(fuel_capacity);

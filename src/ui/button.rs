@@ -1,5 +1,5 @@
 use super::{
-    constants::{PrintableKeyCode, UiStyle},
+    constants::UiStyle,
     ui_callback::{CallbackRegistry, UiCallbackPreset},
     widgets::default_block,
 };

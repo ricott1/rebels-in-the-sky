@@ -9,6 +9,7 @@ use super::{
 use crate::{
     types::{GameId, PlanetId, PlayerId, SortablePlayerMap, TeamId, Tick},
     world::{
+        constants::{MoraleModifier, TirednessCost},
         planet::Planet,
         player::{Player, Trait},
         position::MAX_POSITION,
@@ -110,7 +111,7 @@ pub struct Game {
     pub ended_at: Option<Tick>,
     pub possession: Possession,
     pub timer: Timer,
-    pub next_step: u16,
+    next_step: u16,
     pub current_action: Action,
     pub winner: Option<TeamId>,
     pub home_team_mvps: Option<Vec<GameMVPSummary>>,
@@ -126,12 +127,6 @@ impl<'game> Game {
         planet: &Planet,
     ) -> Self {
         let total_reputation = home_team_in_game.reputation + away_team_in_game.reputation;
-        let total_population = planet
-            .populations
-            .iter()
-            .map(|(_, population)| population)
-            .sum::<u32>();
-
         let home_name = home_team_in_game.name.clone();
         let away_name = away_team_in_game.name.clone();
 
@@ -181,10 +176,10 @@ impl<'game> Game {
         let seed = game.get_rng_seed();
         let mut rng = ChaCha8Rng::from_seed(seed);
 
-        let attendance = (BASE_ATTENDANCE + total_reputation.value() as u32 * total_population)
-            as f32
-            * rng.gen_range(0.75..1.25)
-            * (1.0 + bonus_attendance);
+        let attendance =
+            (BASE_ATTENDANCE + total_reputation.value() as u32 * planet.total_population()) as f32
+                * rng.gen_range(0.75..1.25)
+                * (1.0 + bonus_attendance);
         game.attendance = attendance as u32;
         let mut default_output = ActionOutput::default();
         default_output.description = format!(
@@ -231,11 +226,7 @@ impl<'game> Game {
         } else {
             self.away_team_in_game.players.get(&player_id)?
         };
-        let name = format!(
-            "{}. {} ",
-            player.info.first_name.chars().next().unwrap_or_default(),
-            player.info.last_name,
-        );
+        let name = player.info.shortened_name();
 
         Some(GameMVPSummary {
             name,
@@ -294,12 +285,10 @@ impl<'game> Game {
                     match self.possession {
                         Possession::Home => self
                             .home_team_in_game
-                            .tactic
                             .pick_action(rng)
                             .unwrap_or(Action::Isolation),
                         Possession::Away => self
                             .away_team_in_game
-                            .tactic
                             .pick_action(rng)
                             .unwrap_or(Action::Isolation),
                     }
@@ -325,6 +314,7 @@ impl<'game> Game {
         &mut self,
         attack_stats: Option<GameStatsMap>,
         defense_stats: Option<GameStatsMap>,
+        score_change: u8,
     ) {
         let (home_stats, away_stats) = match self.possession {
             Possession::Home => (attack_stats, defense_stats),
@@ -333,19 +323,38 @@ impl<'game> Game {
 
         if let Some(updates) = home_stats {
             for (id, player_stats) in self.home_team_in_game.stats.iter_mut() {
+                let player = self.home_team_in_game.players.get_mut(&id).unwrap();
                 if let Some(update) = updates.get(&id) {
                     player_stats.update(update);
-                    let player = self.home_team_in_game.players.get_mut(&id).unwrap();
                     player.add_tiredness(update.extra_tiredness);
+                    player.add_morale(update.extra_morale);
+                }
+                // Add morale if team scored
+                if score_change > 0 {
+                    if self.possession == Possession::Home {
+                        player.add_morale(MoraleModifier::SMALL_BONUS);
+                    } else {
+                        player.add_morale(MoraleModifier::SMALL_MALUS);
+                    }
                 }
             }
         }
         if let Some(updates) = away_stats {
             for (id, player_stats) in self.away_team_in_game.stats.iter_mut() {
+                let player = self.away_team_in_game.players.get_mut(&id).unwrap();
+
                 if let Some(update) = updates.get(&id) {
                     player_stats.update(update);
-                    let player = self.away_team_in_game.players.get_mut(&id).unwrap();
                     player.add_tiredness(update.extra_tiredness);
+                    player.add_morale(update.extra_morale);
+                }
+                // Add morale if team scored
+                if score_change > 0 {
+                    if self.possession == Possession::Away {
+                        player.add_morale(MoraleModifier::SMALL_BONUS);
+                    } else {
+                        player.add_morale(MoraleModifier::SMALL_MALUS);
+                    }
                 }
             }
         }
@@ -572,7 +581,7 @@ impl<'game> Game {
         // If next tick is at a break, we are at the end of the quarter and should stop.
         if self.timer.is_break() {
             if let Some(eoq) = EndOfQuarter::execute(action_input, self, rng) {
-                self.next_step = eoq.end_at.value;
+                self.next_step = self.timer.period().next().start();
                 self.action_results.push(eoq);
                 return;
             }
@@ -584,6 +593,7 @@ impl<'game> Game {
             self.apply_game_stats_update(
                 result.attack_stats_update.clone(),
                 result.defense_stats_update.clone(),
+                result.score_change,
             );
 
             if result.score_change > 0 {

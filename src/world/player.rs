@@ -1,5 +1,5 @@
 use super::{
-    constants::{COST_PER_VALUE, EXPERIENCE_PER_SKILL_MULTIPLIER, REPUTATION_PER_EXPERIENCE},
+    constants::{COST_PER_VALUE, EXPERIENCE_PER_SKILL_MULTIPLIER, SPECIAL_TRAIT_VALUE_BONUS},
     jersey::Jersey,
     planet::Planet,
     position::{GamePosition, MAX_POSITION},
@@ -44,6 +44,7 @@ pub struct Player {
     pub team: Option<TeamId>,
     pub special_trait: Option<Trait>,
     pub reputation: f32,
+    pub potential: Skill,
     pub athletics: Athletics,
     pub offense: Offense,
     pub defense: Defense,
@@ -51,6 +52,7 @@ pub struct Player {
     pub mental: Mental,
     pub image: PlayerImage,
     pub current_location: PlayerLocation,
+    pub skills_training: [f32; 20],
     pub previous_skills: [Skill; 20], // This is for displaying purposes to show the skills that were recently modified
     pub tiredness: f32,
     pub morale: f32,
@@ -70,9 +72,11 @@ impl Serialize for Player {
         state.serialize_field("team", &self.team)?;
         state.serialize_field("special_trait", &self.special_trait)?;
         state.serialize_field("reputation", &self.reputation)?;
+        state.serialize_field("potential", &self.potential)?;
         state.serialize_field("image", &self.image)?;
         state.serialize_field("current_location", &self.current_location)?;
         state.serialize_field("previous_skills", &self.previous_skills)?;
+        state.serialize_field("skills_training", &self.skills_training)?;
         state.serialize_field("tiredness", &self.tiredness)?;
         state.serialize_field("morale", &self.morale)?;
         state.serialize_field("compact_skills", &compact_skills)?;
@@ -93,9 +97,11 @@ impl<'de> Deserialize<'de> for Player {
             Team,
             SpecialTrait,
             Reputation,
+            Potential,
             Image,
             CurrentLocation,
             PreviousSkills,
+            SkillsTraining,
             Tiredness,
             Morale,
             CompactSkills,
@@ -124,9 +130,11 @@ impl<'de> Deserialize<'de> for Player {
                             "team" => Ok(Field::Team),
                             "special_trait" => Ok(Field::SpecialTrait),
                             "reputation" => Ok(Field::Reputation),
+                            "potential" => Ok(Field::Potential),
                             "image" => Ok(Field::Image),
                             "current_location" => Ok(Field::CurrentLocation),
                             "previous_skills" => Ok(Field::PreviousSkills),
+                            "skills_training" => Ok(Field::SkillsTraining),
                             "tiredness" => Ok(Field::Tiredness),
                             "morale" => Ok(Field::Morale),
                             "compact_skills" => Ok(Field::CompactSkills),
@@ -173,6 +181,9 @@ impl<'de> Deserialize<'de> for Player {
                 let reputation = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(6, &self))?;
+                let potential = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(7, &self))?;
                 let image = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(8, &self))?;
@@ -182,6 +193,9 @@ impl<'de> Deserialize<'de> for Player {
                 let previous_skills = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(10, &self))?;
+                let skills_training = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(11, &self))?;
                 let tiredness = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(12, &self))?;
@@ -190,7 +204,7 @@ impl<'de> Deserialize<'de> for Player {
                     .ok_or_else(|| serde::de::Error::invalid_length(13, &self))?;
                 let compact_skills: Vec<Skill> = seq
                     .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(13, &self))?;
+                    .ok_or_else(|| serde::de::Error::invalid_length(14, &self))?;
 
                 let mut player = Player {
                     id,
@@ -200,6 +214,7 @@ impl<'de> Deserialize<'de> for Player {
                     team,
                     special_trait,
                     reputation,
+                    potential,
                     athletics: Athletics::default(),
                     offense: Offense::default(),
                     defense: Defense::default(),
@@ -207,6 +222,7 @@ impl<'de> Deserialize<'de> for Player {
                     mental: Mental::default(),
                     image,
                     current_location,
+                    skills_training,
                     previous_skills,
                     tiredness,
                     morale,
@@ -257,8 +273,10 @@ impl<'de> Deserialize<'de> for Player {
                 let mut team = None;
                 let mut special_trait = None;
                 let mut reputation = None;
+                let mut potential = None;
                 let mut image = None;
                 let mut current_location = None;
+                let mut skills_training = None;
                 let mut previous_skills = None;
                 let mut tiredness = None;
                 let mut morale = None;
@@ -308,6 +326,12 @@ impl<'de> Deserialize<'de> for Player {
                             }
                             reputation = Some(map.next_value()?);
                         }
+                        Field::Potential => {
+                            if potential.is_some() {
+                                return Err(serde::de::Error::duplicate_field("potential"));
+                            }
+                            potential = Some(map.next_value()?);
+                        }
                         Field::Image => {
                             if image.is_some() {
                                 return Err(serde::de::Error::duplicate_field("image"));
@@ -319,6 +343,12 @@ impl<'de> Deserialize<'de> for Player {
                                 return Err(serde::de::Error::duplicate_field("current_location"));
                             }
                             current_location = Some(map.next_value()?);
+                        }
+                        Field::SkillsTraining => {
+                            if skills_training.is_some() {
+                                return Err(serde::de::Error::duplicate_field("skills_training"));
+                            }
+                            skills_training = Some(map.next_value()?);
                         }
                         Field::PreviousSkills => {
                             if previous_skills.is_some() {
@@ -356,9 +386,13 @@ impl<'de> Deserialize<'de> for Player {
                     .ok_or_else(|| serde::de::Error::missing_field("special_trait"))?;
                 let reputation =
                     reputation.ok_or_else(|| serde::de::Error::missing_field("reputation"))?;
+                let potential =
+                    potential.ok_or_else(|| serde::de::Error::missing_field("potential"))?;
                 let image = image.ok_or_else(|| serde::de::Error::missing_field("image"))?;
                 let current_location = current_location
                     .ok_or_else(|| serde::de::Error::missing_field("current_location"))?;
+                let skills_training = skills_training
+                    .ok_or_else(|| serde::de::Error::missing_field("skills_training"))?;
                 let previous_skills = previous_skills
                     .ok_or_else(|| serde::de::Error::missing_field("previous_skills"))?;
                 let tiredness =
@@ -375,6 +409,7 @@ impl<'de> Deserialize<'de> for Player {
                     team,
                     special_trait,
                     reputation,
+                    potential,
                     athletics: Athletics::default(),
                     offense: Offense::default(),
                     defense: Defense::default(),
@@ -382,6 +417,7 @@ impl<'de> Deserialize<'de> for Player {
                     mental: Mental::default(),
                     image,
                     current_location,
+                    skills_training,
                     previous_skills,
                     tiredness,
                     morale,
@@ -430,8 +466,10 @@ impl<'de> Deserialize<'de> for Player {
             "team",
             "jersey_number",
             "reputation",
+            "potential",
             "image",
             "current_location",
+            "skills_training",
             "previous_skills",
             "tiredness",
             "morale",
@@ -447,7 +485,7 @@ impl Player {
             .map(|idx| self.skill_at_index(idx))
             .collect::<Vec<Skill>>()
             .try_into()
-            .unwrap()
+            .expect("There should be 20 skills")
     }
 
     pub fn can_drink(&self, world: &World) -> AppResult<()> {
@@ -483,30 +521,28 @@ impl Player {
         Ok(())
     }
 
-    fn player_value(&self) -> u32 {
-        let value = self.total_skills() as f32;
-        let age_diff = self.info.age - 36.0;
-        // Multiply value by distribution decaying for age = 36.
-        // age factor is basically a sigmoid function
-        let age_factor = 1.0 / (1.0 + (0.5 * age_diff).exp());
-        (value * (0.5 + age_factor)) as u32
-    }
-
-    pub fn hire_cost(&self, team_reputation: f32) -> u32 {
-        if 2.0 * self.reputation <= team_reputation {
-            return 0;
-        }
+    pub fn bare_value(&self) -> f32 {
+        // Age modifier decrease linearly from (0,1.5) to (PEAK_PERFORMANCE_RELATIVE_AGE, 1.0),
+        // then decreases linearly from (PEAK_PERFORMANCE_RELATIVE_AGE, 1.0) to (1.0, 0.5).
+        let age_modifier = if PEAK_PERFORMANCE_RELATIVE_AGE >= self.info.relative_age() {
+            -self.info.relative_age() / (2.0 * PEAK_PERFORMANCE_RELATIVE_AGE) + 1.5
+        } else {
+            (self.info.relative_age() + PEAK_PERFORMANCE_RELATIVE_AGE - 2.0)
+                / (2.0 * PEAK_PERFORMANCE_RELATIVE_AGE - 2.0)
+        };
 
         let special_trait_extra = if self.special_trait.is_some() {
-            1.5
+            SPECIAL_TRAIT_VALUE_BONUS * self.reputation.powf(1.0 / 3.0)
         } else {
             1.0
         };
 
-        (COST_PER_VALUE as f32
-            * special_trait_extra
-            * self.player_value() as f32
-            * (2.0 * self.reputation - team_reputation)) as u32
+        (self.average_skill() * age_modifier * special_trait_extra).max(0.0)
+    }
+
+    pub fn hire_cost(&self, team_reputation: f32) -> u32 {
+        (COST_PER_VALUE * self.bare_value() * (5.0 * self.reputation - team_reputation)).max(1.0)
+            as u32
     }
 
     pub fn release_cost(&self) -> u32 {
@@ -528,9 +564,14 @@ impl Player {
         let info = InfoStats::for_position(position, None, rng, home_planet);
         let population = info.population;
 
-        if base_level > info.age as f32 / 8.0 {
-            base_level = info.age as f32 / 8.0;
-        }
+        // Base level modifier increases linearly from (0,0) to (PEAK_PERFORMANCE_RELATIVE_AGE, 1.0),
+        // then decreases linearly from (PEAK_PERFORMANCE_RELATIVE_AGE, 1.0) to (1.0, 0.0).
+        let base_level_modifier = if PEAK_PERFORMANCE_RELATIVE_AGE >= info.relative_age() {
+            info.relative_age() / PEAK_PERFORMANCE_RELATIVE_AGE
+        } else {
+            (info.relative_age() - 1.0) / (PEAK_PERFORMANCE_RELATIVE_AGE - 1.0)
+        };
+        base_level *= base_level_modifier;
 
         let athletics = Athletics::for_position(position.unwrap(), rng, base_level);
         let offense = Offense::for_position(position.unwrap(), rng, base_level);
@@ -548,6 +589,7 @@ impl Player {
             team: None,
             special_trait: None,
             reputation: 0.0,
+            potential: 0.0,
             athletics,
             offense,
             technical,
@@ -557,6 +599,7 @@ impl Player {
                 planet_id: home_planet.id,
             },
             image,
+            skills_training: [Skill::default(); 20],
             previous_skills: [Skill::default(); 20],
             tiredness: 0.0,
             morale: MAX_MORALE,
@@ -595,8 +638,11 @@ impl Player {
 
         player.previous_skills = player.current_skill_array();
 
+        let normal = Normal::new(0.0, 1.8).expect("Should create valid normal distribution");
+        let extra_potential = (normal.sample(rng) as f32).abs();
+        player.potential = (player.average_skill() + extra_potential).bound();
         player.reputation =
-            (player.total_skills() as f32 / 100.0 + player.info.age as f32 / 24.0).bound();
+            (player.average_skill() as f32 / 5.0 + player.info.relative_age() * 5.0).bound();
 
         player
     }
@@ -646,25 +692,6 @@ impl Player {
             self.info.age,
             [16.0, 1.3, 44.0, 0.7],
         );
-
-        if self.info.first_name == "Costantino" && self.info.last_name == "Frittura" {
-            self.athletics.vertical = MAX_SKILL;
-            self.offense.brawl = MAX_SKILL;
-            self.offense.long_range = MAX_SKILL;
-            self.defense.steal = MAX_SKILL;
-            self.technical.ball_handling = MAX_SKILL;
-            self.technical.post_moves = MAX_SKILL;
-            self.mental.vision = MAX_SKILL;
-            self.info.age = 35.0;
-        } else if self.info.first_name == "Neko" && self.info.last_name == "Neko" {
-            self.athletics.quickness = MAX_SKILL;
-            self.offense.close_range = MAX_SKILL;
-            self.defense.steal = MAX_SKILL;
-            self.technical.ball_handling = MAX_SKILL;
-            self.mental.vision = MAX_SKILL;
-            self.mental.intuition = MAX_SKILL;
-            self.info.age = 16.0;
-        }
     }
 
     pub fn set_jersey(&mut self, jersey: &Jersey) {
@@ -702,10 +729,8 @@ impl Player {
         }
     }
 
-    pub fn total_skills(&self) -> u16 {
-        (0..20)
-            .map(|idx| self.skill_at_index(idx).value() as u16)
-            .sum::<u16>()
+    pub fn average_skill(&self) -> Skill {
+        (0..20).map(|idx| self.skill_at_index(idx)).sum::<Skill>() / 20.0
     }
 
     pub fn has_hat(&self) -> bool {
@@ -736,7 +761,16 @@ impl Player {
         };
         self.tiredness = (self.tiredness
             + tiredness / (1.0 + self.athletics.stamina / MAX_TIREDNESS))
-            .min(max_tiredness);
+            .min(max_tiredness)
+            .bound();
+
+        if self.is_knocked_out() {
+            self.morale = 0.0;
+        }
+    }
+
+    pub fn add_morale(&mut self, morale: f32) {
+        self.morale = (self.morale + morale).bound();
     }
 
     pub fn roll(&self, rng: &mut ChaCha8Rng) -> u8 {
@@ -744,17 +778,22 @@ impl Player {
             return 0;
         }
 
-        let result = rng.gen_range(MIN_SKILL as u8..=MAX_SKILL as u8)
-            + rng.gen_range(MIN_SKILL as u8..=MAX_SKILL as u8);
+        let mut result =
+            rng.gen_range(MIN_SKILL..=MAX_SKILL) + rng.gen_range(MIN_SKILL..=MAX_SKILL);
+
+        result = result.max(self.morale);
 
         if self.tiredness <= MIN_TIREDNESS_FOR_ROLL_DECLINE {
-            return result;
+            return result as u8;
         }
 
-        result.min(2 * (MAX_TIREDNESS - (self.tiredness - MIN_TIREDNESS_FOR_ROLL_DECLINE)) as u8)
+        result =
+            result.min(2.0 * (MAX_TIREDNESS - (self.tiredness - MIN_TIREDNESS_FOR_ROLL_DECLINE)));
+
+        result as u8
     }
 
-    fn modify_skill(&mut self, idx: usize, mut value: f32) {
+    pub fn modify_skill(&mut self, idx: usize, mut value: f32) {
         // Quickness cannot improve beyond WOODEN_LEG_MAX_QUICKNESS if player has a wooden leg
         if self.has_wooden_leg() && idx == 0 && self.athletics.quickness >= WOODEN_LEG_MAX_QUICKNESS
         {
@@ -804,47 +843,34 @@ impl Player {
         }
     }
 
-    pub fn apply_end_of_game_logic(
+    pub fn update_skills_training(
         &mut self,
         experience_at_position: [u16; MAX_POSITION as usize],
         training_bonus: f32,
         training_focus: Option<TrainingFocus>,
     ) {
-        self.version += 1;
-        self.reputation = (self.reputation
-            + REPUTATION_PER_EXPERIENCE / self.reputation
-                * experience_at_position.iter().sum::<u16>() as f32
-                * self.mental.charisma)
-            .bound();
-
-        let mut experience_per_skill: [u16; 20] =
-            (0..20).map(|_| 0).collect::<Vec<u16>>().try_into().unwrap();
-
+        // Players below their potential improve faster, above their potential improve slower.
+        let potential_modifier = 1.0 - (self.potential - self.average_skill()) / 20.0;
         for p in 0..MAX_POSITION {
             for (idx, &w) in p.weights().iter().enumerate() {
-                experience_per_skill[idx] += experience_at_position[p as usize] * w as u16;
-            }
-        }
-
-        self.previous_skills = self.current_skill_array();
-
-        for idx in 0..experience_per_skill.len() {
-            let mut increment =
-                experience_per_skill[idx] as f32 * EXPERIENCE_PER_SKILL_MULTIPLIER * training_bonus;
-            match training_focus {
-                Some(focus) => {
-                    if focus.is_focus(idx) {
-                        increment *= 2.0;
-                    } else {
-                        increment *= 0.5;
+                let training_focus_bonus = match training_focus {
+                    Some(focus) => {
+                        if focus.is_focus(idx) {
+                            2.0
+                        } else {
+                            0.5
+                        }
                     }
-                }
-                None => {}
+                    None => 1.0,
+                };
+                self.skills_training[idx] += experience_at_position[p as usize] as f32
+                    * w
+                    * EXPERIENCE_PER_SKILL_MULTIPLIER
+                    * training_bonus
+                    * training_focus_bonus
+                    * potential_modifier;
             }
-            self.modify_skill(idx, increment);
         }
-
-        self.morale = (self.morale + MORALE_INCREASE_PER_GAME_PLAYER).bound();
     }
 
     pub fn tiredness_weighted_rating_at_position(&self, position: Position) -> f32 {
@@ -857,12 +883,7 @@ impl Player {
 
 impl Rated for Player {
     fn rating(&self) -> u8 {
-        let mut ratings = (0..MAX_POSITION)
-            .map(|p: Position| p.player_rating(self.current_skill_array()) as u8)
-            .collect::<Vec<u8>>();
-        ratings.sort();
-        ratings.reverse();
-        ratings[0]
+        self.average_skill().value()
     }
 }
 
@@ -880,6 +901,16 @@ pub struct InfoStats {
 }
 
 impl InfoStats {
+    pub fn shortened_name(&self) -> String {
+        format!(
+            "{}.{}",
+            self.first_name.chars().next().unwrap_or_default(),
+            self.last_name
+        )
+    }
+    pub fn relative_age(&self) -> f32 {
+        self.population.relative_age(self.age)
+    }
     pub fn for_position(
         position: Option<Position>,
         population: Option<Population>,
@@ -891,10 +922,10 @@ impl InfoStats {
             None => home_planet.random_population(rng).unwrap_or_default(),
         };
         let p_data = PLAYER_DATA.get(&population).unwrap();
-        let pronouns = if population == Population::Polpett {
+        let pronouns = if population == Population::Polpett || population == Population::Octopulp {
             Pronoun::They
         } else {
-            Pronoun::random()
+            Pronoun::random(rng)
         };
         let first_name = match pronouns {
             Pronoun::He => p_data.first_names_he.choose(rng).unwrap().to_string(),
@@ -905,7 +936,8 @@ impl InfoStats {
             },
         };
         let last_name = p_data.last_names.choose(rng).unwrap().to_string();
-        let age = rng.gen_range(16..=38) as f32;
+        let age = population.min_age()
+            + rng.gen_range(0.0..0.95) * (population.max_age() - population.min_age());
         let height = match position {
             Some(x) => Normal::new(192.0 + 3.5 * x as f32, 5.0)
                 .unwrap()
@@ -953,6 +985,40 @@ impl Trait {
                 )
             }
             Trait::Spugna => format!("Immediately maximizes morale when drinking. It is said that a drunk pilot could bring you somewhere unexpected...",),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{app::App, world::skill::Rated};
+
+    #[test]
+    fn test_bare_value() {
+        let mut app = App::new(None, true, true, true, false, None, None, None);
+        app.new_world();
+
+        let world = &mut app.world;
+
+        let player_id = world
+            .players
+            .values()
+            .next()
+            .expect("There should be at least one player")
+            .id;
+
+        let player = world.players.get_mut(&player_id).unwrap();
+        player.info.age = player.info.population.min_age();
+
+        for _ in 0..20 {
+            println!(
+                "Relative age {:02} - Overall {:02} {} - Bare value {:02}",
+                player.info.relative_age(),
+                player.average_skill(),
+                player.average_skill().stars(),
+                player.bare_value()
+            );
+            player.info.age += 0.025 * player.info.population.max_age();
         }
     }
 }

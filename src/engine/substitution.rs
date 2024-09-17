@@ -6,9 +6,7 @@ use super::{
 };
 use crate::{
     types::SortablePlayerMap,
-    world::{
-        constants::MAX_TIREDNESS, player::Player, position::Position, team::Team, types::Pronoun,
-    },
+    world::{constants::MAX_TIREDNESS, player::Player, position::Position, team::Team},
 };
 use itertools::Itertools;
 use rand_chacha::ChaCha8Rng;
@@ -29,16 +27,6 @@ fn get_subs<'a>(players: Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a 
             let stats = team_stats.get(&p.id).unwrap();
             !stats.is_playing() && !p.is_knocked_out()
         })
-        // //Sort from most to less skilled*tired
-        // .sorted_by(|&a, &b| {
-        //     // let t1 = a.tiredness;
-        //     // let v1: u16 = a.total_skills() * (MAX_TIREDNESS - t1 / 2.0) as u16;
-        //     // let t2 = b.tiredness;
-        //     // let v2 = b.total_skills() * (MAX_TIREDNESS - t2 / 2.0) as u16;
-        //     let v1 = a.tiredness_weighted_rating_at_position();
-        //     let v2 = a.tiredness_weighted_rating_at_position();
-        //     v2.cmp(&v1)
-        // })
         .map(|&p| p)
         .collect();
 
@@ -127,16 +115,11 @@ fn make_substitution(
             .as_str(),
         );
     } else if tiredness > MAX_TIREDNESS / 4.0 {
-        let verb = if player_out.info.pronouns == Pronoun::They {
-            "are"
-        } else {
-            "is"
-        };
         description.push_str(
             format!(
                 "{} {} a bit tired. ",
                 player_out.info.pronouns.as_subject(),
-                verb
+                player_out.info.pronouns.to_be(),
             )
             .as_str(),
         );

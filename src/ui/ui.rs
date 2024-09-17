@@ -1,5 +1,5 @@
 use super::button::Button;
-use super::constants::{PrintableKeyCode, UiKey, UiStyle};
+use super::constants::{UiKey, UiStyle};
 use super::galaxy_panel::GalaxyPanel;
 use super::gif_map::GifMap;
 use super::popup_message::PopupMessage;
@@ -196,15 +196,9 @@ impl Ui {
                 self.data_view = !self.data_view;
                 None
             }
-            UiKey::MUSIC_TOGGLE => Some(UiCallbackPreset::ToggleAudio),
-            // UiKey::MUSIC_NEXT => {
-            //     self.next_audio_sample();
-            //     None
-            // }
-            // UiKey::MUSIC_PREVIOUS => {
-            //     self.previous_audio_sample();
-            //     None
-            // }
+            UiKey::TOGGLE_AUDIO => Some(UiCallbackPreset::ToggleAudio),
+            UiKey::NEXT_AUDIO_SAMPLE => Some(UiCallbackPreset::NextAudioSample),
+
             UiKey::NEXT_TAB => {
                 self.next_tab();
                 None
@@ -265,7 +259,7 @@ impl Ui {
             UiState::Splash => {
                 // This is only to get a nice view in the splash screen
                 let audio_state =
-                    if audio_player.is_some() && audio_player.as_ref().unwrap().is_playing {
+                    if audio_player.is_some() && audio_player.as_ref().unwrap().is_playing() {
                         AudioPlayerState::Playing
                     } else if audio_player.is_some() {
                         AudioPlayerState::Paused
@@ -277,7 +271,8 @@ impl Ui {
             }
             UiState::NewTeam => self.new_team_screen.update(world)?,
             _ => {
-                // Update panels
+                // Update panels. Can we get away updating only the active one?
+                // self.get_active_screen_mut().update(world)?;
                 self.my_team_panel.update(world)?;
                 self.team_panel.update(world)?;
                 self.player_panel.update(world)?;
@@ -303,7 +298,7 @@ impl Ui {
         if self.popup_messages.len() > 0 {
             self.callback_registry.lock().unwrap().set_max_layer(1);
         }
-        let area = frame.size();
+        let area = frame.area();
         let split = Layout::vertical([
             Constraint::Min(6),    // body
             Constraint::Length(2), //footer
@@ -334,9 +329,18 @@ impl Ui {
                 constraints.push(Constraint::Min(1));
                 let tab_split = Layout::horizontal(constraints).split(tab_main_split[0]);
 
-                for idx in 0..self.ui_tabs.len() {
+                for (idx, &tab) in self.ui_tabs.iter().enumerate() {
+                    let tab_name = if tab == UiTab::MyTeam {
+                        world
+                            .get_own_team()
+                            .expect("Own team should be set if rendering main page")
+                            .name
+                            .clone()
+                    } else {
+                        tab.to_string()
+                    };
                     let mut button = Button::no_box(
-                        format!("{:^}", self.ui_tabs[idx].to_string()),
+                        tab_name,
                         UiCallbackPreset::SetUiTab {
                             ui_tab: self.ui_tabs[idx],
                         },
@@ -427,18 +431,26 @@ impl Ui {
 
         if audio_player.is_some() {
             spans.push(Span::styled(
-                format!(" {} ", UiKey::MUSIC_TOGGLE.to_string()),
+                format!(" {} ", UiKey::TOGGLE_AUDIO.to_string()),
                 Style::default().bg(Color::Gray).fg(Color::DarkGray),
             ));
             spans.push(Span::styled(
                 format!(
                     " Toggle radio: {} ",
-                    if audio_player.is_some() && audio_player.as_ref().unwrap().is_playing {
+                    if audio_player.is_some() && audio_player.as_ref().unwrap().is_playing() {
                         "ON "
                     } else {
                         "OFF"
                     },
                 ),
+                Style::default().fg(Color::DarkGray),
+            ));
+            spans.push(Span::styled(
+                format!(" {} ", UiKey::NEXT_AUDIO_SAMPLE.to_string()),
+                Style::default().bg(Color::Gray).fg(Color::DarkGray),
+            ));
+            spans.push(Span::styled(
+                format!(" Next radio ",),
                 Style::default().fg(Color::DarkGray),
             ));
         }
@@ -471,7 +483,7 @@ impl Ui {
                 ))
             }
             if let Some(audio_player) = &audio_player {
-                if audio_player.is_playing {
+                if audio_player.is_playing() {
                     if let Some(currently_playing) = audio_player.currently_playing() {
                         spans.push(Span::styled(
                             format!(" Playing: {} ", currently_playing),

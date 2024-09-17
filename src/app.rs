@@ -1,4 +1,5 @@
 use crate::audio;
+use crate::audio::music_player::MusicPlayer;
 use crate::event::{EventHandler, TerminalEvent};
 use crate::network::handler::NetworkHandler;
 use crate::store::{get_world_size, load_world, reset, save_world};
@@ -14,9 +15,8 @@ use libp2p::{gossipsub, swarm::SwarmEvent};
 use log::{error, info, warn};
 use ratatui::backend::CrosstermBackend;
 use std::io::{self};
-use stream_download::http::reqwest::Client;
-use stream_download::http::HttpStream;
-use stream_download::source::SourceStream;
+use stream_download::storage::temp::TempStorageProvider;
+use stream_download::StreamDownload;
 use tokio::select;
 use void::Void;
 
@@ -26,7 +26,7 @@ pub struct App {
     pub world: World,
     pub running: bool,
     pub ui: Ui,
-    pub audio_player: Option<audio::music_player::MusicPlayer>,
+    pub audio_player: Option<MusicPlayer>,
     generate_local_world: bool,
     pub network_handler: Option<NetworkHandler>,
     seed_ip: Option<String>,
@@ -35,6 +35,15 @@ pub struct App {
 }
 
 impl App {
+    async fn conditional_audio_event(
+        audio_player: &Option<MusicPlayer>,
+    ) -> Option<StreamDownload<TempStorageProvider>> {
+        match audio_player.as_ref() {
+            Some(player) => Some(player.next_streaming_event().ok()?),
+            None => None,
+        }
+    }
+
     pub async fn conditional_network_event(
         network_handler: &mut Option<NetworkHandler>,
     ) -> Option<SwarmEvent<libp2p::gossipsub::Event, Void>> {
@@ -46,9 +55,18 @@ impl App {
 
     pub fn toggle_audio_player(&mut self) -> AppResult<()> {
         if let Some(player) = self.audio_player.as_mut() {
-            futures::executor::block_on(player.toggle())?;
+            player.toggle()?;
         } else {
             info!("No audio player, cannot toggle it");
+        }
+        Ok(())
+    }
+
+    pub fn next_sample_audio_player(&mut self) -> AppResult<()> {
+        if let Some(player) = self.audio_player.as_mut() {
+            player.next_audio_sample()?;
+        } else {
+            info!("No audio player, cannot select next sample");
         }
         Ok(())
     }
@@ -80,9 +98,9 @@ impl App {
         let audio_player = if disable_audio {
             None
         } else {
-            let try_audio_player =
-                futures::executor::block_on(audio::music_player::MusicPlayer::new());
-            if let Ok(player) = try_audio_player {
+            // let try_audio_player =
+            //     futures::executor::block_on(audio::music_player::MusicPlayer::new());
+            if let Ok(player) = audio::music_player::MusicPlayer::new() {
                 info!("Audio player created succesfully");
                 Some(player)
             } else {
@@ -113,12 +131,6 @@ impl App {
 
         let mut last_network_handler_init = 0;
 
-        let stream = HttpStream::<Client>::create(
-            "https://us2.internet-radio.com/proxy/mattjohnsonradio?mp=/stream".parse()?,
-        )
-        .await?;
-
-        log::info!("Success! {:?}", stream);
         while self.running {
             let now = Tick::now();
             if self.network_handler.is_none()
@@ -133,9 +145,10 @@ impl App {
             }
 
             select! {
-                // music_player = tokio::task::spawn(audio::music_player::MusicPlayer::new()).fuse() => self.audio_player = Some(music_player??),
+                // music_player = tokio::task::spawn(audio::music_player::MusicPlayer::play()).fuse() => self.audio_player = Some(music_player??),
+                Some(streaming_data) = Self::conditional_audio_event(& self.audio_player) =>  self.handle_streaming_data(streaming_data)?,
                 Some(swarm_event) = Self::conditional_network_event(&mut self.network_handler) =>  self.handle_network_events(swarm_event)?,
-                app_event = tui.events.next().await? => match app_event{
+                app_event = tui.events.next()? => match app_event{
                     TerminalEvent::Tick {tick} => {
                             self.handle_tick_events(tick)?;
                             tui.draw(&mut self.ui, &self.world, self.audio_player.as_ref())?;
@@ -184,8 +197,8 @@ impl App {
                     }
                 }
             }
-            Err(_) => {
-                panic!("Failed to simulate world");
+            Err(e) => {
+                panic!("Failed to simulate world: {}", e);
             }
         }
         self.world.serialized_size =
@@ -396,6 +409,16 @@ impl App {
                     }
                 }
             }
+        }
+        Ok(())
+    }
+
+    fn handle_streaming_data(
+        &mut self,
+        data: StreamDownload<TempStorageProvider>,
+    ) -> AppResult<()> {
+        if let Some(audio_player) = &mut self.audio_player {
+            audio_player.handle_streaming_ready(data)?;
         }
         Ok(())
     }

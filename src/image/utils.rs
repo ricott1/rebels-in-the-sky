@@ -3,7 +3,7 @@ use crate::store::ASSETS_DIR;
 use crate::types::AppResult;
 use anyhow::anyhow;
 use image::error::{ParameterError, ParameterErrorKind};
-use image::io::Reader as ImageReader;
+use image::ImageReader;
 use image::{ImageBuffer, ImageError, ImageResult, Rgba, RgbaImage};
 use std::io::Cursor;
 

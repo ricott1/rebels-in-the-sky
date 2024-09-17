@@ -1,10 +1,13 @@
 use super::{
     action::{ActionOutput, ActionSituation, Advantage, EngineAction},
-    constants::{TirednessCost, ADV_ATTACK_LIMIT, ADV_DEFENSE_LIMIT, ADV_NEUTRAL_LIMIT},
+    constants::*,
     game::Game,
     types::{GameStats, Possession},
 };
-use crate::world::skill::GameSkill;
+use crate::world::{
+    constants::{MoraleModifier, TirednessCost},
+    skill::GameSkill,
+};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
@@ -117,7 +120,9 @@ impl EngineAction for Isolation {
             },
             _ => {
                 iso_update.turnovers = 1;
+                iso_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
                 defender_update.steals = 1;
+                defender_update.extra_morale += MoraleModifier::MEDIUM_BONUS;
 
                 ActionOutput {
                     situation: ActionSituation::Turnover,

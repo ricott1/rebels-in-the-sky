@@ -1,16 +1,16 @@
-use crate::{
-    engine::{
-        constants::{TirednessCost, ADV_DEFENSE_LIMIT},
-        types::*,
-    },
-    world::{player::Player, skill::GameSkill},
-};
-
 use super::{
     action::{ActionOutput, ActionSituation, Advantage, EngineAction},
     constants::ShotDifficulty,
     game::Game,
     types::GameStats,
+};
+use crate::{
+    engine::{constants::*, types::*},
+    world::{
+        constants::{MoraleModifier, TirednessCost},
+        player::Player,
+        skill::GameSkill,
+    },
 };
 use rand::{seq::SliceRandom, Rng};
 use rand_chacha::ChaCha8Rng;
@@ -333,6 +333,8 @@ fn execute_shot(
 
     if result.score_change > 0 {
         shooter_update.points = result.score_change;
+        shooter_update.extra_morale += MoraleModifier::HIGH_BONUS;
+
         match shot {
             ShotDifficulty::Close => shooter_update.made_2pt = 1,
 
@@ -346,6 +348,8 @@ fn execute_shot(
             let passer_id = attacking_players[input.assist_from?].id;
             attack_stats_update.insert(passer_id, passer_update);
         }
+    } else {
+        shooter_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
     }
 
     attack_stats_update.insert(shooter.id, shooter_update);

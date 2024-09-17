@@ -7,6 +7,8 @@ The only way to be free is to join a pirate crew and start plundering the galaxy
 
 Now it's your turn to go out there and make a name for yourself. Create your crew and start wondering the galaxy in search of worthy basketball opponents.
 
+The game is under heavy development and breaking changes are often introduced. If you can't continue an old game because the save file is invalid, you probably need to start a new one or open an issue to check if the save file can be migrated.
+
 ## Just try it out!
 
 Connect via SSH to try the game.
@@ -19,7 +21,7 @@ Compiled binaries of the last release can be downloaded at https://rebels.frittu
 
 ## Music
 
-Previous versions had the option to play music directly in the game, but this was removed to limit the binary size. Nevertheless, you can still listen to the game soundtrack by connecting to `https://radio.frittura.org/rebels.ogg`!
+Previous versions had the option to play music directly in the game, but this was removed to reduce the binary size. Nevertheless, you can still listen to the game soundtrack by connecting to `https://radio.frittura.org/rebels.ogg`!
 
 ### Distro Packages
 

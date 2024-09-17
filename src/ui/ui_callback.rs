@@ -13,10 +13,9 @@ use crate::{
     app::App,
     engine::{tactic::Tactic, types::TeamInGame},
     image::color_map::{ColorMap, ColorPreset},
-    network::{challenge::Challenge, constants::DEFAULT_PORT},
+    network::{challenge::Challenge, constants::DEFAULT_PORT, trade::Trade},
     types::{
-        AppCallback, AppResult, GameId, IdSystem, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick,
-        SECONDS,
+        AppCallback, AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick, SECONDS,
     },
     world::{
         constants::*,
@@ -24,7 +23,7 @@ use crate::{
         player::Trait,
         resources::Resource,
         role::CrewRole,
-        skill::{GameSkill, MAX_SKILL},
+        skill::MAX_SKILL,
         spaceship::{Spaceship, SpaceshipUpgrade},
         team::Team,
         types::{PlayerLocation, TeamLocation, TrainingFocus},
@@ -52,6 +51,9 @@ pub enum UiCallbackPreset {
     },
     GoToPlayerTeam {
         player_id: PlayerId,
+    },
+    GoToGame {
+        game_id: GameId,
     },
     GoToHomePlanet {
         team_id: TeamId,
@@ -82,6 +84,19 @@ pub enum UiCallbackPreset {
     DeclineChallenge {
         challenge: Challenge,
     },
+    CreateTradeProposal {
+        proposer_player_id: PlayerId,
+        target_player_id: PlayerId,
+    },
+    AcceptTrade {
+        trade: Trade,
+    },
+    DeclineTrade {
+        trade: Trade,
+    },
+    GoToTrade {
+        trade: Trade,
+    },
     SetTeamColors {
         color: ColorPreset,
         channel: usize,
@@ -102,6 +117,7 @@ pub enum UiCallbackPreset {
     ContinueGame,
     QuitGame,
     ToggleAudio,
+    NextAudioSample,
     SetSwarmPanelTopic {
         topic: EventTopic,
     },
@@ -215,6 +231,27 @@ impl UiCallbackPreset {
         })
     }
 
+    fn go_to_trade(trade: Trade) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            app.ui.player_panel.update(&app.world)?;
+            app.ui.player_panel.reset_view();
+            if let Some(index) = app
+                .ui
+                .player_panel
+                .all_players
+                .iter()
+                .position(|&x| x == trade.target_player.id)
+            {
+                app.ui.player_panel.set_index(index);
+                app.ui.player_panel.locked_player_id = Some(trade.proposer_player.id.clone());
+                app.ui.player_panel.selected_player_id = trade.target_player.id.clone();
+                app.ui.switch_to(super::ui::UiTab::Players);
+            }
+
+            Ok(None)
+        })
+    }
+
     fn go_to_player_team(player_id: PlayerId) -> AppCallback {
         Box::new(move |app: &mut App| {
             let team_id = app
@@ -234,6 +271,17 @@ impl UiCallbackPreset {
                     .unwrap_or_default();
                 app.ui.team_panel.player_index = player_index;
                 app.ui.switch_to(super::ui::UiTab::Teams);
+            }
+
+            Ok(None)
+        })
+    }
+
+    fn go_to_game(game_id: GameId) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            if let Some(index) = app.ui.game_panel.games.iter().position(|&x| x == game_id) {
+                app.ui.game_panel.set_index(index);
+                app.ui.switch_to(super::ui::UiTab::Games);
             }
 
             Ok(None)
@@ -384,33 +432,21 @@ impl UiCallbackPreset {
 
     fn challenge_team(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            if !app.world.has_own_team() {
-                return Err(anyhow!("No own team"));
-            }
-
-            let own_team_id = app.world.own_team_id;
-            let own_team = app.world.get_team_or_err(own_team_id)?;
-
+            let own_team = app.world.get_own_team()?;
             let team = app.world.get_team_or_err(team_id)?;
-
             own_team.can_challenge_team(team)?;
 
             if let Some(peer_id) = team.peer_id {
-                // if !app
-                //     .network_handler
-                //     .as_ref()
-                //     .unwrap()
-                //     .swarm
-                //     .is_connected(&peer_id)
-                // {
-                //     return Err(anyhow!("Team is not connected"));
-                // }
                 app.network_handler
                     .as_mut()
                     .ok_or(anyhow!("Network handler is not initialized"))?
-                    .send_new_challenge(&app.world, peer_id)?;
+                    .send_new_challenge(&app.world, peer_id, team.id)?;
+
+                //FIXME: should display somehow that we challenged the team
                 return Ok(Some("Challenge sent".to_string()));
             }
+
+            let own_team_id = app.world.own_team_id;
             let (home_team_in_game, away_team_in_game) = match rand::thread_rng().gen_range(0..=1) {
                 0 => (
                     TeamInGame::from_team_id(own_team_id, &app.world.teams, &app.world.players)
@@ -427,9 +463,7 @@ impl UiCallbackPreset {
                 ),
             };
 
-            let game_id = GameId::new();
-            app.world.generate_game(
-                game_id,
+            let game_id = app.world.generate_game(
                 home_team_in_game,
                 away_team_in_game,
                 Tick::now() + 30 * SECONDS,
@@ -447,14 +481,49 @@ impl UiCallbackPreset {
 
             app.ui.game_panel.set_index(index);
             app.ui.switch_to(super::ui::UiTab::Games);
-            // if let Some(network_handler) = app.network_handler.as_mut() {
-            //     network_handler.decline_all_challenges()?;
-            //     app.ui.swarm_panel.remove_all_challenges();
-            // }
             return Ok(Some("Challenge accepted".to_string()));
         })
     }
 
+    fn trade_players(proposer_player_id: PlayerId, target_player_id: PlayerId) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let own_team = app.world.get_own_team()?;
+
+            let target_player = app.world.get_player_or_err(target_player_id)?;
+            let target_team = if let Some(team_id) = target_player.team {
+                app.world.get_team_or_err(team_id)?
+            } else {
+                return Err(anyhow!("Target player has no team"));
+            };
+
+            let proposer_player = app.world.get_player_or_err(proposer_player_id)?;
+            own_team.can_trade_players(proposer_player, target_player, target_team)?;
+
+            if let Some(peer_id) = target_team.peer_id {
+                app.network_handler
+                    .as_mut()
+                    .ok_or(anyhow!("Network handler is not initialized"))?
+                    .send_new_trade(&app.world, peer_id, proposer_player_id, target_player_id)?;
+
+                return Ok(Some("Trade offer sent".to_string()));
+            }
+
+            if proposer_player.bare_value() >= target_player.bare_value() {
+                app.world
+                    .swap_players_team(proposer_player_id, target_player_id)?;
+
+                let locked_id = app.ui.player_panel.locked_player_id;
+                let selected_id = app.ui.player_panel.selected_player_id;
+                app.ui.player_panel.locked_player_id = Some(selected_id);
+                if let Some(player_id) = locked_id {
+                    app.ui.player_panel.selected_player_id = player_id;
+                }
+
+                return Ok(Some("Trade accepted".to_string()));
+            }
+            return Ok(Some("Trade Rejected".to_string()));
+        })
+    }
     fn next_ui_tab() -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.next_tab();
@@ -494,7 +563,7 @@ impl UiCallbackPreset {
         })
     }
 
-    fn generate_player_team(
+    fn generate_own_team(
         name: String,
         home_planet: PlanetId,
         jersey_style: JerseyStyle,
@@ -504,7 +573,7 @@ impl UiCallbackPreset {
         spaceship: Spaceship,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.world.generate_player_team(
+            app.world.generate_own_team(
                 name.clone(),
                 home_planet,
                 jersey_style,
@@ -518,7 +587,7 @@ impl UiCallbackPreset {
         })
     }
 
-    fn cancel_generate_player_team() -> AppCallback {
+    fn cancel_generate_own_team() -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.new_team_screen.set_state(CreationState::Players);
             app.ui.new_team_screen.clear_selected_players();
@@ -615,7 +684,7 @@ impl UiCallbackPreset {
             // show the fuel consumption as the team travels in world.tick_travel,
             // but this would require more operations and checks in the tick function.
             let fuel_consumed =
-                (duration as f32 * own_team.spaceship.fuel_consumption()).max(1.0) as u32;
+                (duration as f32 * own_team.spaceship_fuel_consumption()).max(1.0) as u32;
             own_team.remove_resource(Resource::FUEL, fuel_consumed)?;
 
             info!(
@@ -623,7 +692,7 @@ impl UiCallbackPreset {
                 own_team.id,
                 current_planet.id,
                 target_planet.id,
-                duration as f32 * own_team.spaceship.fuel_consumption()
+                duration as f32 * own_team.spaceship_fuel_consumption()
             );
 
             current_planet.team_ids.retain(|&x| x != own_team.id);
@@ -673,7 +742,7 @@ impl UiCallbackPreset {
             // but this would require more operations and checks in the tick function.
             own_team.remove_resource(
                 Resource::FUEL,
-                (duration as f32 * own_team.spaceship.fuel_consumption()).max(1.0) as u32,
+                (duration as f32 * own_team.spaceship_fuel_consumption()).max(1.0) as u32,
             )?;
 
             around_planet.team_ids.retain(|&x| x != own_team.id);
@@ -836,6 +905,7 @@ impl UiCallbackPreset {
             UiCallbackPreset::GoToPlayerTeam { player_id } => {
                 Self::go_to_player_team(*player_id)(app)
             }
+            UiCallbackPreset::GoToGame { game_id } => Self::go_to_game(*game_id)(app),
             UiCallbackPreset::GoToHomePlanet { team_id } => Self::go_to_home_planet(*team_id)(app),
             UiCallbackPreset::GoToCurrentTeamPlanet { team_id } => {
                 Self::go_to_current_team_planet(*team_id)(app)
@@ -888,13 +958,8 @@ impl UiCallbackPreset {
                     .ok_or(anyhow!("Network handler is not initialized"))?
                     .accept_challenge(&&app.world, challenge.clone())?;
 
-                app.ui.swarm_panel.remove_challenge(&challenge.home_peer_id);
-
-                // app.network_handler
-                //     .as_mut()
-                //     .unwrap()
-                //     .decline_all_challenges()?;
-                // app.ui.swarm_panel.remove_all_challenges();
+                let own_team = app.world.get_own_team_mut()?;
+                own_team.remove_challenge(&challenge.home_team_in_game.team_id);
                 Ok(None)
             }
             UiCallbackPreset::DeclineChallenge { challenge } => {
@@ -902,9 +967,35 @@ impl UiCallbackPreset {
                     .as_mut()
                     .ok_or(anyhow!("Network handler is not initialized"))?
                     .decline_challenge(challenge.clone())?;
-                app.ui.swarm_panel.remove_challenge(&challenge.home_peer_id);
+                let own_team = app.world.get_own_team_mut()?;
+                own_team.remove_challenge(&challenge.home_team_in_game.team_id);
                 Ok(None)
             }
+            UiCallbackPreset::CreateTradeProposal {
+                proposer_player_id,
+                target_player_id,
+            } => Self::trade_players(*proposer_player_id, *target_player_id)(app),
+            UiCallbackPreset::AcceptTrade { trade } => {
+                app.network_handler
+                    .as_mut()
+                    .ok_or(anyhow!("Network handler is not initialized"))?
+                    .accept_trade(&&app.world, trade.clone())?;
+
+                let own_team = app.world.get_own_team_mut()?;
+                own_team.remove_trade(trade);
+
+                Ok(None)
+            }
+            UiCallbackPreset::DeclineTrade { trade } => {
+                app.network_handler
+                    .as_mut()
+                    .ok_or(anyhow!("Network handler is not initialized"))?
+                    .decline_trade(trade.clone())?;
+                let own_team = app.world.get_own_team_mut()?;
+                own_team.remove_trade(trade);
+                Ok(None)
+            }
+            UiCallbackPreset::GoToTrade { trade } => Self::go_to_trade(trade.clone())(app),
             UiCallbackPreset::NextUiTab => Self::next_ui_tab()(app),
             UiCallbackPreset::PreviousUiTab => Self::previous_ui_tab()(app),
             UiCallbackPreset::SetUiTab { ui_tab } => Self::set_ui_tab(*ui_tab)(app),
@@ -934,6 +1025,10 @@ impl UiCallbackPreset {
             }
             UiCallbackPreset::ToggleAudio => {
                 app.toggle_audio_player()?;
+                Ok(None)
+            }
+            UiCallbackPreset::NextAudioSample => {
+                app.next_sample_audio_player()?;
                 Ok(None)
             }
             UiCallbackPreset::SetSwarmPanelTopic { topic } => {
@@ -987,7 +1082,7 @@ impl UiCallbackPreset {
                     MORALE_DRINK_BONUS
                 };
 
-                player.morale = (player.morale + morale_bonus).bound();
+                player.add_morale(morale_bonus);
                 player.add_tiredness(TIREDNESS_DRINK_MALUS);
 
                 let mut team = app
@@ -1076,7 +1171,7 @@ impl UiCallbackPreset {
                 players,
                 balance,
                 spaceship,
-            } => Self::generate_player_team(
+            } => Self::generate_own_team(
                 name.clone(),
                 *home_planet,
                 *jersey_style,
@@ -1085,7 +1180,7 @@ impl UiCallbackPreset {
                 *balance,
                 spaceship.clone(),
             )(app),
-            UiCallbackPreset::CancelGeneratePlayerTeam => Self::cancel_generate_player_team()(app),
+            UiCallbackPreset::CancelGeneratePlayerTeam => Self::cancel_generate_own_team()(app),
             UiCallbackPreset::AssignBestTeamPositions => Self::assign_best_team_positions()(app),
             UiCallbackPreset::SwapPlayerPositions {
                 player_id,

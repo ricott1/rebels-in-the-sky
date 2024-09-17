@@ -224,7 +224,7 @@ impl PopupMessage {
                 );
 
                 frame.render_widget(
-                    popup_input.widget(),
+                    &popup_input.clone(),
                     message_split[1].inner(Margin {
                         horizontal: 1,
                         vertical: 0,

@@ -1,97 +1,135 @@
+use crate::store::ASSETS_DIR;
 use crate::types::AppResult;
-use anyhow::anyhow;
 use rodio::OutputStream;
 use rodio::{OutputStreamHandle, Sink};
-use stream_download::http::reqwest::Client;
-use stream_download::http::HttpStream;
-use stream_download::source::SourceStream;
+use serde::Deserialize;
+use std::sync::mpsc;
+use std::time::Duration;
 use stream_download::storage::temp::TempStorageProvider;
 use stream_download::{Settings, StreamDownload};
 use url::Url;
 
-const DEFAULT_RADIO_URL: &'static str = "https://radio.frittura.org/rebels.ogg";
+const STREAMING_TIMEOUT_MILLIS: u64 = 2_000;
+
+#[derive(Deserialize)]
+struct Stream {
+    name: String,
+    url_string: String,
+}
+
+impl Stream {
+    pub fn url(&self) -> AppResult<Url> {
+        Ok(self.url_string.parse::<Url>()?)
+    }
+}
 
 pub struct MusicPlayer {
     _stream: OutputStream,
     _stream_handle: OutputStreamHandle,
     sink: Sink,
-    pub is_playing: bool,
-    currently_playing: Option<Url>,
+    sender: mpsc::Sender<StreamDownload<TempStorageProvider>>,
+    receiver: mpsc::Receiver<StreamDownload<TempStorageProvider>>,
+    streams: Vec<Stream>,
+    index: usize,
 }
 
 unsafe impl Send for MusicPlayer {}
 unsafe impl Sync for MusicPlayer {}
 
 impl MusicPlayer {
-    async fn load_stream(&mut self, url: Url) -> AppResult<()> {
-        let stream = HttpStream::<Client>::create(url.clone()).await?;
-
-        log::info!("content type={:?}", stream.content_type());
-
-        let reader =
-            StreamDownload::from_stream(stream, TempStorageProvider::new(), Settings::default())
-                .await?;
-
-        self.sink.append(rodio::Decoder::new(reader)?);
-        self.currently_playing = Some(url);
-
-        Ok(())
+    fn current_url(&self) -> AppResult<Url> {
+        Ok(self.streams[self.index].url()?)
     }
 
-    async fn play(&mut self) -> AppResult<()> {
-        if self.sink.empty() {
-            let url: Url = DEFAULT_RADIO_URL.parse()?;
-            if let Err(e) = self.load_stream(url.clone()).await {
-                return Err(anyhow!("Error loading stream from {url}: {e}"));
-            }
-        }
-        self.sink.play();
-        self.is_playing = true;
-        Ok(())
-    }
-
-    fn pause(&mut self) {
-        self.sink.pause();
-        self.is_playing = false;
-    }
-
-    pub async fn new() -> AppResult<MusicPlayer> {
+    pub fn new() -> AppResult<MusicPlayer> {
         let (_stream, _stream_handle) = OutputStream::try_default()?;
         let sink = rodio::Sink::try_new(&_stream_handle)?;
+        sink.pause();
 
-        let mut player = MusicPlayer {
+        let (sender, receiver) = mpsc::channel();
+
+        let file = ASSETS_DIR
+            .get_file("data/stream_data.json")
+            .expect("Could not find stream_data.json");
+        let data = file
+            .contents_utf8()
+            .expect("Could not read stream_data.json");
+        let streams = serde_json::from_str(&data).unwrap_or_else(|e| {
+            panic!("Could not parse stream_data.json: {}", e);
+        });
+
+        Ok(MusicPlayer {
             sink,
             _stream,
             _stream_handle,
-            is_playing: true,
-            currently_playing: None,
-        };
-
-        // Start in paused state.
-        player.pause();
-
-        let url: Url = DEFAULT_RADIO_URL.parse()?;
-        player
-            .load_stream(url.clone())
-            .await
-            .unwrap_or_else(|e| log::error!("Error loading stream from {url}: {e}"));
-
-        Ok(player)
+            sender,
+            receiver,
+            streams,
+            index: 0,
+        })
     }
 
-    pub async fn toggle(&mut self) -> AppResult<()> {
-        if self.is_playing {
-            self.pause();
+    pub fn is_playing(&self) -> bool {
+        !self.sink.is_paused()
+    }
+
+    pub fn next_audio_sample(&mut self) -> AppResult<()> {
+        self.index = (self.index + 1) % self.streams.len();
+        if self.is_playing() {
+            self.sink.clear();
+            self.toggle()?;
         } else {
-            self.play().await?;
+            self.sink.clear();
         }
+        Ok(())
+    }
+
+    pub fn toggle(&mut self) -> AppResult<()> {
+        if self.is_playing() {
+            self.sink.pause();
+        } else {
+            if self.sink.empty() {
+                let url = self.current_url()?.clone();
+                let sender = self.sender.clone();
+                tokio::spawn(tokio::time::timeout(
+                    Duration::from_millis(STREAMING_TIMEOUT_MILLIS),
+                    async move {
+                        if let Ok(data) = StreamDownload::new_http(
+                            url,
+                            TempStorageProvider::default(),
+                            Settings::default(),
+                        )
+                        .await
+                        {
+                            sender.send(data).unwrap_or(log::error!(
+                                "Audio stream error: Cannot send reader data"
+                            ));
+                        } else {
+                            log::error!("Unable to play stream");
+                        }
+                    },
+                ));
+            } else {
+                self.sink.play();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn next_streaming_event(&self) -> AppResult<StreamDownload<TempStorageProvider>> {
+        Ok(self.receiver.recv_timeout(Duration::from_millis(10))?)
+    }
+
+    pub fn handle_streaming_ready(
+        &mut self,
+        data: StreamDownload<TempStorageProvider>,
+    ) -> AppResult<()> {
+        self.sink.append(rodio::Decoder::new(data)?);
+        self.sink.play();
         Ok(())
     }
 
     pub fn currently_playing(&self) -> Option<String> {
-        match self.currently_playing.as_ref() {
-            Some(url) => Some(url.as_str().replace("https://", "").replace("http://", "")),
-            None => None,
-        }
+        Some(self.streams[self.index].name.clone())
     }
 }

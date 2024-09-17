@@ -4,24 +4,22 @@ use super::constants::{UiText, LEFT_PANEL_WIDTH};
 use super::gif_map::GifMap;
 use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
-use super::utils::validate_textarea_input;
+use super::utils::{format_satoshi, validate_textarea_input};
 use super::{
     constants::UiStyle,
     traits::Screen,
     utils::{img_to_lines, input_from_key_event},
     widgets::{default_block, render_player_description, selectable_list},
 };
-use crate::image::color_map::ColorPreset;
-use crate::image::spaceship::SPACESHIP_IMAGE_WIDTH;
-use crate::types::{AppResult, AU, HOURS};
-use crate::world::constants::{CURRENCY_SYMBOL, INITIAL_TEAM_BALANCE};
-use crate::world::spaceship::{Spaceship, SpaceshipPrefab};
+use crate::image::{color_map::ColorPreset, spaceship::SPACESHIP_IMAGE_WIDTH};
 use crate::{
     image::color_map::ColorMap,
-    types::{PlanetId, PlayerId},
+    types::{AppResult, PlanetId, PlayerId, AU, HOURS},
     world::{
+        constants::INITIAL_TEAM_BALANCE,
         jersey::{Jersey, JerseyStyle},
         skill::Rated,
+        spaceship::{Spaceship, SpaceshipPrefab},
         world::World,
     },
 };
@@ -48,6 +46,11 @@ use strum::IntoEnumIterator;
 use tui_textarea::{CursorMove, TextArea};
 
 const INITIAL_TEAM_SIZE: usize = 5;
+const SPACESHIP_MODELS: [SpaceshipPrefab; 3] = [
+    SpaceshipPrefab::Bresci,
+    SpaceshipPrefab::Orwell,
+    SpaceshipPrefab::Ibarruri,
+];
 
 #[derive(Debug, Default, PartialOrd, PartialEq)]
 pub enum CreationState {
@@ -100,7 +103,6 @@ pub struct NewTeamScreen {
     tick: usize,
     team_name_textarea: TextArea<'static>,
     ship_name_textarea: TextArea<'static>,
-    spaceship_models: Vec<SpaceshipPrefab>,
     spaceship_model_index: usize,
     planet_index: usize,
     planet_ids: Vec<PlanetId>,
@@ -147,14 +149,13 @@ impl NewTeamScreen {
         let jersey_styles = JerseyStyle::iter()
             .filter(|jersey_style| jersey_style.is_available_at_creation())
             .collect_vec();
-        let spaceship_models = SpaceshipPrefab::iter().collect_vec();
+
         Self {
             team_name_textarea,
             ship_name_textarea,
             red_color_preset,
             green_color_preset,
             blue_color_preset,
-            spaceship_models,
             jersey_styles,
             callback_registry,
             gif_map,
@@ -163,7 +164,7 @@ impl NewTeamScreen {
     }
 
     fn selected_ship(&self) -> Spaceship {
-        let prefab = self.spaceship_models[self.spaceship_model_index];
+        let prefab = SPACESHIP_MODELS[self.spaceship_model_index];
         let name = self.ship_name_textarea.lines()[0].clone();
         let color_map = self.get_team_colors();
         prefab.spaceship(name, color_map)
@@ -239,11 +240,12 @@ impl NewTeamScreen {
             );
         }
         let spaceship = self.selected_ship();
+        let storage_units = 0;
         let spaceship_info = Paragraph::new(vec![
             Line::from(format!("Ship name: {}", spaceship.name.to_string())),
             Line::from(format!(
-                "Speed: {:.3} AU/h",
-                spaceship.speed() * HOURS as f32 / AU as f32
+                "Max speed: {:.3} AU/h",
+                spaceship.speed(storage_units) * HOURS as f32 / AU as f32
             )),
             Line::from(format!("Crew: {}", spaceship.crew_capacity())),
             Line::from(format!("Storage: {}/{}", 0, spaceship.storage_capacity())),
@@ -253,14 +255,14 @@ impl NewTeamScreen {
                 spaceship.fuel_capacity()
             )),
             Line::from(format!(
-                "Consumption: {:.2} t/h",
-                spaceship.fuel_consumption() * HOURS as f32
+                "Bare consumption: {:.2} t/h",
+                spaceship.fuel_consumption(storage_units) * HOURS as f32
             )),
             Line::from(format!(
                 "Max distance: {:.2} AU",
                 spaceship.max_distance(spaceship.fuel_capacity()) / AU as f32
             )),
-            Line::from(format!("Cost: {} {}", spaceship.cost(), CURRENCY_SYMBOL)),
+            Line::from(format!("Cost: {}", format_satoshi(spaceship.cost()))),
         ]);
 
         frame.render_widget(
@@ -277,7 +279,7 @@ impl NewTeamScreen {
 
     fn render_spaceship_selection(&self, frame: &mut Frame, area: Rect) {
         if self.state > CreationState::ShipModel {
-            let selected_ship = self.spaceship_models[self.spaceship_model_index];
+            let selected_ship = SPACESHIP_MODELS[self.spaceship_model_index];
             frame.render_widget(
                 Paragraph::new(format!(" {}", selected_ship)).block(
                     default_block()
@@ -287,10 +289,11 @@ impl NewTeamScreen {
                 area,
             );
         } else if self.state == CreationState::ShipModel {
-            let options = SpaceshipPrefab::iter()
+            let options = SPACESHIP_MODELS
+                .iter()
                 .map(|ship| {
                     (
-                        format!("{:<12} {:>6} {}", ship, ship.cost(), CURRENCY_SYMBOL),
+                        format!("{:<12} {:>6}", ship, format_satoshi(ship.cost())),
                         UiStyle::DEFAULT,
                     )
                 })
@@ -616,14 +619,16 @@ impl NewTeamScreen {
         let ship_cost = self.selected_ship().cost();
         INITIAL_TEAM_BALANCE as i32 - hiring_costs - ship_cost as i32
     }
+
     fn render_remaining_balance(&mut self, frame: &mut Frame, area: Rect) {
+        let remaining_balance = self.get_remaining_balance();
         let text = format!(
-            " Remaining balance: {:>}{}",
-            self.get_remaining_balance(),
-            CURRENCY_SYMBOL
+            " Remaining balance: {}{:>}",
+            if remaining_balance >= 0 { "" } else { "-" },
+            format_satoshi(remaining_balance.abs() as u32)
         );
 
-        let style = if self.get_remaining_balance() >= 0 {
+        let style = if remaining_balance >= 0 {
             UiStyle::OK
         } else {
             UiStyle::ERROR
@@ -667,14 +672,14 @@ impl NewTeamScreen {
                     return ("".to_string(), style);
                 }
                 let player = world.get_player(player_id).unwrap();
-
+                let full_name = format!("{} {}", player.info.first_name, player.info.last_name);
+                let name = if full_name.len() <= 23 {
+                    full_name
+                } else {
+                    player.info.shortened_name()
+                };
                 (
-                    format!(
-                        "{:23} {:>5} {}",
-                        format!("{} {}", player.info.first_name, player.info.last_name),
-                        player.hire_cost(0.0),
-                        CURRENCY_SYMBOL
-                    ),
+                    format!("{:23} {:>9}", name, format_satoshi(player.hire_cost(0.0),)),
                     style,
                 )
             })
@@ -856,7 +861,7 @@ impl Screen for NewTeamScreen {
         };
 
         let ship_split_height = if self.state == CreationState::ShipModel {
-            self.spaceship_models.len() as u16 + 2
+            SPACESHIP_MODELS.len() as u16 + 2
         } else {
             3
         };
@@ -882,12 +887,12 @@ impl Screen for NewTeamScreen {
 
         self.render_remaining_balance(frame, h_split[0]);
 
-        frame.render_widget(self.team_name_textarea.widget(), h_split[1]);
+        frame.render_widget(&self.team_name_textarea, h_split[1]);
         if self.state == CreationState::TeamName {
             self.render_intro(frame, v_split[2]);
         }
 
-        frame.render_widget(self.ship_name_textarea.widget(), h_split[2]);
+        frame.render_widget(&self.ship_name_textarea, h_split[2]);
         if self.state == CreationState::ShipName {
             self.render_intro(frame, v_split[2]);
         }
@@ -1185,7 +1190,7 @@ impl SplitPanel for NewTeamScreen {
         match self.state {
             CreationState::Planet => self.planet_ids.len(),
             CreationState::Jersey => self.jersey_styles.len(),
-            CreationState::ShipModel => self.spaceship_models.len(),
+            CreationState::ShipModel => SPACESHIP_MODELS.len(),
             CreationState::Players => {
                 let planet_id = self.planet_ids[self.planet_index];
                 let planet_players = self.planet_players.get(&planet_id).unwrap();

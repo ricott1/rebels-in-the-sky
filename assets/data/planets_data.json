@@ -65,10 +65,15 @@
         "version": 0,
         "name": "Proxima b",
         "populations": {
-            "1": 60,
-            "2": 50
+            "1": 6,
+            "2": 5
         },
-        "resources": {},
+        "resources": {
+            "1": 1,
+            "2": 11,
+            "3": 1,
+            "4": 2
+        },
         "filename": "weird",
         "rotation_period": 18,
         "revolution_period": 180,
@@ -86,17 +91,21 @@
         "version": 0,
         "name": "Proxima d",
         "populations": {
-            "2": 60,
-            "3": 50
+            "2": 6,
+            "3": 5
         },
-        "resources": {},
+        "resources": {
+            "1": 1,
+            "2": 8,
+            "3": 5,
+            "4": 1},
         "filename": "redgreen",
         "rotation_period": 18,
         "revolution_period": 360,
         "gravity": 3,
         "asteroid_probability": 0.1,
         "planet_type": 8,
-        "satellites": ["71a43700-0000-0000-0003-000000000003"],
+        "satellites": ["71a43700-0000-0000-0003-000000000003", "71a43700-0000-0000-0003-000000000004"],
         "satellite_of": "71a43700-0000-0000-0001-000000000001",
         "axis": [68.0, 24.0],
         "team_ids": []
@@ -106,9 +115,9 @@
         "peer_id": null,
         "version": 0,
         "name": "Frittura",
-        "populations": { "4": 110 },
+        "populations": { "4": 11 },
         "resources": {
-            "1": 4,
+            "1": 2,
             "2": 4,
             "3": 1,
             "4": 10
@@ -125,24 +134,47 @@
         "team_ids": []
     },
     {
+        "id": "71a43700-0000-0000-0003-000000000004",
+        "peer_id": null,
+        "version": 0,
+        "name": "Mizu",
+        "populations": {"6": 16},
+        "resources": {
+            "1": 4,
+            "2": 3,
+            "3": 8,
+            "4": 2
+        },
+        "filename": "water",
+        "rotation_period": 6,
+        "revolution_period": 360,
+        "gravity": 2,
+        "asteroid_probability": 0.15,
+        "planet_type": 8,
+        "satellites": [],
+        "satellite_of": "71a43700-0000-0000-0002-000000000006",
+        "axis": [40.0, 46.0],
+        "team_ids": []
+    },
+    {
         "id": "71a43700-0000-0000-0002-000000000000",
         "peer_id": null,
         "version": 0,
         "name": "Earth",
         "populations": {
-            "100": 10,
-            "101": 10,
-            "102": 10,
-            "103": 10,
-            "104": 10,
-            "105": 10,
-            "107": 10,
-            "108": 10,
-            "109": 10
+            "100": 2,
+            "101": 2,
+            "102": 2,
+            "103": 2,
+            "104": 2,
+            "105": 2,
+            "107": 2,
+            "108": 2,
+            "109": 2
         },
         "resources": {
-            "1": 10,
-            "2": 10,
+            "1": 1,
+            "2": 16,
             "4": 4
         },
         "filename": "earth",
@@ -162,14 +194,14 @@
         "version": 0,
         "name": "Mars",
         "populations": {
-            "2": 90,
-            "102": 30,
-            "109": 10
+            "2": 9,
+            "102": 3,
+            "109": 1
         },
         "resources": {
-            "1": 12,
+            "1": 1,
             "2": 5,
-            "4": 6
+            "3": 6
         },
         "filename": "lava",
         "rotation_period": 12,
@@ -187,9 +219,10 @@
         "peer_id": null,
         "version": 0,
         "name": "Jupiter",
-        "populations": { "1": 110, "109": 5 },
+        "populations": { "1": 11, "109": 1 },
         "resources": {
-            "2": 12,
+            "1": 1,
+            "2": 7,
             "3": 16
         },
         "filename": "gas",
@@ -209,13 +242,14 @@
         "version": 0,
         "name": "Saturn",
         "populations": {
-            "1": 60,
-            "3": 30,
-            "102": 20
+            "1": 6,
+            "3": 3,
+            "102": 2
         },
         "resources": {
+            "1": 2,
             "2": 12,
-            "3": 16
+            "3": 8
         },
         "filename": "ring",
         "rotation_period": 18,
@@ -233,11 +267,11 @@
         "peer_id": null,
         "version": 0,
         "name": "Uranus",
-        "populations": { "3": 90 },
+        "populations": { "3": 9 },
         "resources": {
-            "1": 6,
+            "1": 2,
             "2": 6,
-            "3": 7
+            "3": 4
         },
         "filename": "ice",
         "rotation_period": 18,
@@ -256,14 +290,13 @@
         "version": 0,
         "name": "Moon",
         "populations": {
-            "101": 60,
-            "1": 50,
-            "5": 30
+            "101": 6,
+            "1": 5,
+            "5": 3
         },
         "resources": {
-            "1": 8,
-            "2": 9,
-            "3": 1,
+            "2": 11,
+            "3": 2,
             "4": 3
         },
         "filename": "rocky",
@@ -283,12 +316,16 @@
         "version": 0,
         "name": "Phobos",
         "populations": {
-            "107": 20,
-            "108": 20,
-            "2": 40,
-            "5": 10
+            "107": 2,
+            "108": 2,
+            "2": 4,
+            "5": 1
         },
-        "resources": {},
+        "resources": {
+            "1": 4,
+            "2": 2,
+            "4": 2
+        },
         "filename": "phobos",
         "rotation_period": 12,
         "revolution_period": 120,
@@ -306,11 +343,15 @@
         "version": 0,
         "name": "Deimos",
         "populations": {
-            "1": 10,
-            "2": 70,
-            "5": 10
+            "1": 1,
+            "2": 7,
+            "5": 1
         },
-        "resources": {},
+        "resources": {
+            "2": 2,
+            "3": 18,
+            "4": 2
+        },
         "filename": "deimos",
         "rotation_period": 12,
         "revolution_period": 180,

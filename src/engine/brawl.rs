@@ -1,10 +1,13 @@
 use super::{
     action::{ActionOutput, EngineAction},
-    constants::TirednessCost,
     game::Game,
     types::GameStats,
 };
-use crate::world::{player::Trait, skill::GameSkill};
+use crate::world::{
+    constants::{MoraleModifier, TirednessCost},
+    player::Trait,
+    skill::GameSkill,
+};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
@@ -83,6 +86,9 @@ impl EngineAction for Brawl {
 
         let description = match atk_result as i16 - def_result as i16 {
             x if x > 0 => {
+                defender_update.extra_morale += MoraleModifier::SEVERE_MALUS;
+                attacker_update.extra_morale += MoraleModifier::SEVERE_BONUS;
+
                 if attacker.has_hook() {
                     defender_update.extra_tiredness += TirednessCost::CRITICAL;
                     format!(
@@ -100,6 +106,8 @@ impl EngineAction for Brawl {
             x if x == 0 => {
                 attacker_update.extra_tiredness += TirednessCost::HIGH;
                 defender_update.extra_tiredness += TirednessCost::HIGH;
+                defender_update.extra_morale += MoraleModifier::SMALL_MALUS;
+                attacker_update.extra_morale += MoraleModifier::SMALL_MALUS;
                 match rng.gen_range(0..=1) {
                     0 => format!(
                         "A brawl between {} and {}! They both got some damage.",
@@ -112,6 +120,8 @@ impl EngineAction for Brawl {
                 }
             }
             _ => {
+                defender_update.extra_morale += MoraleModifier::SEVERE_BONUS;
+                attacker_update.extra_morale += MoraleModifier::SEVERE_MALUS;
                 if defender.has_hook() {
                     attacker_update.extra_tiredness += TirednessCost::CRITICAL;
                     format!(

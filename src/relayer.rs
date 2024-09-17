@@ -1,4 +1,4 @@
-use crate::network::constants::{SubscriptionTopic, DEFAULT_SEED_PORT};
+use crate::network::constants::{DEFAULT_SEED_PORT, TOPIC};
 use crate::network::{handler::NetworkHandler, types::SeedInfo};
 use crate::types::AppResult;
 use futures::StreamExt;
@@ -43,7 +43,7 @@ impl Relayer {
         println!("Received network event: {:?}", network_event);
         match network_event {
             SwarmEvent::Behaviour(gossipsub::Event::Subscribed { peer_id, topic }) => {
-                if topic == IdentTopic::new(SubscriptionTopic::SEED_INFO).hash() {
+                if topic == IdentTopic::new(TOPIC).hash() {
                     println!("Sending info to {}", peer_id);
                     self.network_handler.send_seed_info(SeedInfo::new(
                         self.network_handler.swarm.connected_peers().count(),

@@ -19,6 +19,8 @@ pub enum BeardImage {
     Beard3,
     Beard4,
     Beard5,
+    Octobeard1,
+    Octobeard2,
 }
 
 impl ImageComponent for BeardImage {
@@ -63,6 +65,8 @@ pub enum HeadImage {
     Gald2,
     Pupparoll1,
     Pupparoll2,
+    Octopulp1,
+    Octopulp2,
 }
 
 impl ImageComponent for HeadImage {
@@ -81,6 +85,7 @@ pub enum BodyImage {
     Polpett,
     Pupparoll,
     Yardalaim,
+    Octopulp,
     Normal,
 }
 
@@ -89,6 +94,7 @@ impl ImageComponent for BodyImage {
         let name = match self {
             Self::Pupparoll => "pupparoll",
             Self::Yardalaim => "yardalaim",
+            Self::Octopulp => "octopulp",
             _ => "normal",
         };
         let number = match size {
@@ -107,6 +113,7 @@ impl ImageComponent for BodyImage {
         let name = match self {
             Self::Pupparoll => "pupparoll",
             Self::Polpett => "polpett",
+            Self::Octopulp => "octopulp",
             _ => "normal",
         };
         let number = match size {
@@ -127,6 +134,7 @@ impl ImageComponent for BodyImage {
 pub enum LegsImage {
     Polpett,
     Pupparoll,
+    Octopulp,
     Normal,
 }
 

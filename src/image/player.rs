@@ -43,12 +43,14 @@ impl PlayerImage {
             Population::Polpett => BodyImage::Polpett,
             Population::Pupparoll => BodyImage::Pupparoll,
             Population::Yardalaim => BodyImage::Yardalaim,
+            Population::Octopulp => BodyImage::Octopulp,
             _ => BodyImage::Normal,
         };
 
         let legs = match info.population {
             Population::Polpett => LegsImage::Polpett,
             Population::Pupparoll => LegsImage::Pupparoll,
+            Population::Octopulp => LegsImage::Octopulp,
             _ => LegsImage::Normal,
         };
 
@@ -59,6 +61,7 @@ impl PlayerImage {
                 Population::Yardalaim => HeadImage::Yardalaim1,
                 Population::Juppa => HeadImage::Juppa1,
                 Population::Pupparoll => HeadImage::Pupparoll1,
+                Population::Octopulp => HeadImage::Octopulp1,
                 _ => HeadImage::Human1,
             },
             _ => match info.population {
@@ -67,6 +70,7 @@ impl PlayerImage {
                 Population::Yardalaim => HeadImage::Yardalaim2,
                 Population::Juppa => HeadImage::Juppa2,
                 Population::Pupparoll => HeadImage::Pupparoll2,
+                Population::Octopulp => HeadImage::Octopulp2,
                 _ => HeadImage::Human2,
             },
         };
@@ -82,6 +86,8 @@ impl PlayerImage {
                 0 => Some(HairImage::Hair8),
                 _ => None,
             }
+        } else if info.population == Population::Octopulp {
+            None
         } else {
             let max_hair = if info.pronouns == Pronoun::She { 9 } else { 10 };
             match rng.gen_range(0..=max_hair) {
@@ -126,6 +132,11 @@ impl PlayerImage {
                 2 => Some(BeardImage::Beard4),
                 3 => Some(BeardImage::Beard5),
                 _ => None,
+            }
+        } else if info.population == Population::Octopulp {
+            match rng.gen_range(0..=1) {
+                0 => Some(BeardImage::Octobeard1),
+                _ => Some(BeardImage::Octobeard2),
             }
         } else {
             match rng.gen_range(1..=6) {
@@ -470,7 +481,11 @@ impl PlayerImage {
         if let Some(beard) = self.beard.clone() {
             let mut other = read_image(beard.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
-            other.apply_color_map(hair_color_map);
+            if info.population == Population::Octopulp {
+                other.apply_color_map(skin_color_map);
+            } else {
+                other.apply_color_map(hair_color_map);
+            }
             base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
             blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
         }

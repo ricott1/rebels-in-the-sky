@@ -10,12 +10,11 @@ use crate::{
     image::color_map::SkinColorMap,
     types::{AppResult, PlanetId, TeamId, Tick},
 };
-use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, WeightedIndex};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use strum::Display;
+use strum::{Display, FromRepr};
 use strum_macros::EnumIter;
 
 pub type Size = u8;
@@ -82,6 +81,7 @@ pub enum Population {
     Juppa,
     Galdari,
     Pupparoll,
+    Octopulp,
 }
 
 impl Serialize for Population {
@@ -95,6 +95,7 @@ impl Serialize for Population {
             Self::Juppa => 3,
             Self::Galdari => 4,
             Self::Pupparoll => 5,
+            Self::Octopulp => 6,
         };
         value.serialize(serializer)
     }
@@ -111,6 +112,7 @@ impl<'de> Deserialize<'de> for Population {
             3 => Ok(Self::Juppa),
             4 => Ok(Self::Galdari),
             5 => Ok(Self::Pupparoll),
+            6 => Ok(Self::Octopulp),
             100..=109 => Ok(Self::Human {
                 region: (value - 100).into(),
             }),
@@ -136,11 +138,40 @@ impl Display for Population {
             Self::Juppa => write!(f, "Juppa"),
             Self::Galdari => write!(f, "Galdari"),
             Self::Pupparoll => write!(f, "Pupparoll"),
+            Self::Octopulp => write!(f, "Octopulp"),
         }
     }
 }
 
 impl Population {
+    pub fn relative_age(&self, age: f32) -> f32 {
+        (age - self.min_age()) / (self.max_age() - self.min_age())
+    }
+
+    pub fn min_age(&self) -> f32 {
+        match self {
+            Self::Human { .. } => 16.0,
+            Self::Yardalaim => 35.0,
+            Self::Polpett => 14.0,
+            Self::Juppa => 50.0,
+            Self::Galdari => 80.0,
+            Self::Pupparoll => 6.0,
+            Self::Octopulp => 3.0,
+        }
+    }
+
+    pub fn max_age(&self) -> f32 {
+        match self {
+            Self::Human { .. } => 65.0,
+            Self::Yardalaim => 120.0,
+            Self::Polpett => 41.0,
+            Self::Juppa => 110.0,
+            Self::Galdari => 350.0,
+            Self::Pupparoll => 45.0,
+            Self::Octopulp => 18.0,
+        }
+    }
+
     pub fn apply_skill_modifiers(&self, player: &mut Player) {
         match self {
             Population::Human { region } => match region {
@@ -157,31 +188,39 @@ impl Population {
             },
             Population::Yardalaim => {
                 player.info.weight = (player.info.weight * 1.5).min(255.0);
-                player.athletics.strength = (player.athletics.strength * 1.35).round().bound();
-                player.info.age -= 5.1;
+                player.offense.brawl = (player.offense.brawl * 1.2).bound();
+                player.athletics.strength = (player.athletics.strength * 1.35).bound();
+            }
+            Population::Polpett => {
+                player.info.height = player.info.height * 0.95;
+                player.mental.aggression = (player.mental.aggression * 1.35).bound();
+                player.defense.steal = (player.defense.steal * 1.2).bound();
             }
             Population::Juppa => {
                 player.info.height = (player.info.height * 1.09).min(225.0);
-                player.info.age += 15.5;
+                player.offense.long_range = (player.offense.long_range * 1.23).bound();
             }
             Population::Galdari => {
                 player.info.height = (player.info.height * 1.02).min(225.0);
-                player.mental.charisma = (player.mental.charisma * 1.15).round().bound();
-                player.mental.vision = (player.mental.vision * 1.5).round().bound();
-                player.defense.steal = (player.defense.steal * 1.2).round().bound();
-                player.info.age += 85.2;
+                player.mental.charisma = (player.mental.charisma * 1.15).bound();
+                player.mental.vision = (player.mental.vision * 1.5).bound();
+                player.defense.steal = (player.defense.steal * 1.2).bound();
             }
             Population::Pupparoll => {
-                player.athletics.quickness = (player.athletics.quickness * 1.05).round().bound();
-                player.technical.rebounds = (player.technical.rebounds * 1.25).round().bound();
-                player.mental.aggression = (player.mental.aggression * 0.85).round().bound();
-                player.offense.brawl = (player.offense.brawl * 1.25).round().bound();
+                player.athletics.quickness = (player.athletics.quickness * 1.05).bound();
+                player.technical.rebounds = (player.technical.rebounds * 1.25).bound();
+                player.mental.aggression = (player.mental.aggression * 0.85).bound();
+                player.offense.brawl = (player.offense.brawl * 1.25).bound();
             }
-            _ => {}
+            Population::Octopulp => {
+                player.athletics.quickness = (player.athletics.quickness * 0.95).bound();
+                player.defense.steal = (player.defense.steal * 1.2).bound();
+                player.offense.brawl = (player.offense.brawl * 1.1).bound();
+                player.offense.close_range = (player.offense.close_range * 1.1).bound();
+                player.info.weight = (player.info.weight * 1.3).min(255.0);
+            }
         }
     }
-
-    // pub random_hair_map(&self, rng: &mut ChaCha8Rng) -> HairColorMap {};
 
     pub fn random_skin_map(&self, rng: &mut ChaCha8Rng) -> SkinColorMap {
         let weights = match self {
@@ -272,6 +311,11 @@ impl Population {
                 (SkinColorMap::Dark, 0.05),
                 (SkinColorMap::Purple, 0.2),
             ],
+            Self::Octopulp => vec![
+                (SkinColorMap::LightPurple, 0.45),
+                (SkinColorMap::Dark, 0.01),
+                (SkinColorMap::LightBlue, 0.5),
+            ],
         };
 
         let dist = WeightedIndex::new(weights.iter().map(|(_, w)| w)).unwrap();
@@ -338,7 +382,7 @@ impl Default for TeamLocation {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, FromRepr)]
 #[repr(u8)]
 pub enum Pronoun {
     He,
@@ -348,12 +392,12 @@ pub enum Pronoun {
 }
 
 impl Pronoun {
-    pub fn random() -> Self {
-        match rand::thread_rng().gen_range(0..=4) {
-            0 | 1 => Self::He,
-            2 | 3 => Self::She,
-            _ => Self::They,
+    pub fn random(rng: &mut ChaCha8Rng) -> Self {
+        if let Some(dist) = WeightedIndex::new(&[8, 8, 1]).ok() {
+            return Self::from_repr(dist.sample(rng) as u8).unwrap_or_default();
         }
+
+        Self::default()
     }
 
     pub fn as_subject(&self) -> &'static str {
@@ -377,6 +421,20 @@ impl Pronoun {
             Self::He => "his",
             Self::She => "her",
             Self::They => "their",
+        }
+    }
+
+    pub fn to_be(&self) -> &'static str {
+        match self {
+            Self::He | Self::She => "is",
+            Self::They => "are",
+        }
+    }
+
+    pub fn to_have(&self) -> &'static str {
+        match self {
+            Self::He | Self::She => "has",
+            Self::They => "have",
         }
     }
 }

@@ -4,7 +4,7 @@ use super::gif_map::GifMap;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
 use super::utils::hover_text_target;
 use super::widgets::{
-    challenge_button, go_to_team_current_planet_button, render_spaceship_description,
+    go_to_team_current_planet_button, render_challenge_button, render_spaceship_description,
 };
 use super::{
     constants::{UiKey, UiStyle, LEFT_PANEL_WIDTH},
@@ -20,7 +20,6 @@ use crate::{
     image::pitch::floor_from_size,
     image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
     types::{PlayerId, TeamId},
-    ui::constants::PrintableKeyCode,
     world::{
         position::{GamePosition, Position},
         skill::Rated,
@@ -292,12 +291,10 @@ impl TeamListPanel {
                 frame.render_widget(Paragraph::new(lines).centered(), player_img_split[i + 1]);
             }
 
-            let name = format!(
-                "{}. {} ",
-                player.info.first_name.chars().next().unwrap_or_default(),
-                player.info.last_name,
+            frame.render_widget(
+                Paragraph::new(player.info.shortened_name()).centered(),
+                player_name_split[i + 1],
             );
-            frame.render_widget(Paragraph::new(name).centered(), player_name_split[i + 1]);
 
             frame.render_widget(
                 Paragraph::new(format!(
@@ -334,11 +331,7 @@ impl TeamListPanel {
 
             for (i, &player_id) in team.player_ids.iter().skip(5).enumerate() {
                 if let Some(player) = world.get_player(player_id) {
-                    let info = format!(
-                        "{}. {}\n",
-                        player.info.first_name.chars().next().unwrap_or_default(),
-                        player.info.last_name,
-                    );
+                    let info = format!("{}\n", player.info.shortened_name());
                     let skills = player.current_skill_array();
                     let best_role = Position::best(skills);
 
@@ -368,7 +361,7 @@ impl TeamListPanel {
         }
 
         let ship_buttons_split = Layout::vertical([
-            Constraint::Min(SPACESHIP_IMAGE_HEIGHT as u16 / 2 + 2), // ship
+            Constraint::Min(SPACESHIP_IMAGE_HEIGHT as u16 / 2 + 1), // ship
             Constraint::Length(3),                                  //button
         ])
         .split(bottom_split[1].inner(Margin {
@@ -390,15 +383,15 @@ impl TeamListPanel {
                 frame.render_widget(go_to_team_current_planet_button, button_split[0]);
             }
 
-            let challenge_button = challenge_button(
+            render_challenge_button(
                 world,
                 team,
                 &self.callback_registry,
                 hover_text_target,
                 true,
+                frame,
+                button_split[1],
             )?;
-
-            frame.render_widget(challenge_button, button_split[1])
         }
 
         render_spaceship_description(

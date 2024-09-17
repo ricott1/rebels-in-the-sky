@@ -3,10 +3,9 @@ use super::{
     game::Game,
     types::GameStats,
 };
-use crate::engine::{
-    action::Advantage,
-    constants::{TirednessCost, ADV_ATTACK_LIMIT},
-    types::GameStatsMap,
+use crate::{
+    engine::{action::Advantage, constants::*, types::GameStatsMap},
+    world::constants::TirednessCost,
 };
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
@@ -15,10 +14,11 @@ use std::{
     collections::HashMap,
 };
 
-const MIN_REBOUND_VALUE: u16 = 36;
+const MIN_REBOUND_VALUE: u16 = 42;
+const REBOUND_POSITION_SCALING: f32 = 12.0;
 
 fn position_rebound_bonus(idx: usize) -> f32 {
-    1.0 + idx as f32 / 12.0
+    1.0 + idx as f32 / REBOUND_POSITION_SCALING
 }
 
 #[derive(Debug, Default)]
@@ -78,8 +78,14 @@ impl EngineAction for Rebound {
             defense_rebounds[idx] += defending_players[idx].roll(rng) as u16;
         }
 
-        let attack_result = *attack_rebounds.iter().max().unwrap();
-        let defence_result = *defense_rebounds.iter().max().unwrap();
+        let attack_result = *attack_rebounds
+            .iter()
+            .max()
+            .expect("Attack rebounds should be non-empty");
+        let defence_result = *defense_rebounds
+            .iter()
+            .max()
+            .expect("Defense rebounds should be non-empty");
 
         let attack_rebounder_idx = attack_rebounds.iter().position(|&r| r == attack_result)?;
         let defence_rebounder_idx = defense_rebounds.iter().position(|&r| r == defence_result)?;
@@ -88,6 +94,12 @@ impl EngineAction for Rebound {
         let defence_rebounder = defending_players[defence_rebounder_idx];
 
         //FIXME: add more random situations
+        log::debug!(
+            "Rebound debugging: {} vs {}, to beat {}",
+            attack_result,
+            defence_result,
+            MIN_REBOUND_VALUE
+        );
         let result = match attack_result as i16 - defence_result as i16 {
             x if x > ADV_ATTACK_LIMIT
                 || (x > 0

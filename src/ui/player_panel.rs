@@ -2,21 +2,23 @@ use super::button::Button;
 use super::clickable_list::ClickableListState;
 use super::constants::*;
 use super::gif_map::GifMap;
-
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
-use super::utils::hover_text_target;
+use super::utils::{format_satoshi, hover_text_target};
 use super::{
     constants::{UiKey, IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
     traits::{Screen, SplitPanel},
     widgets::{default_block, render_player_description, selectable_list},
 };
+use crate::network::trade::Trade;
 use crate::types::AppResult;
-use crate::world::constants::CURRENCY_SYMBOL;
-use crate::world::team::Team;
-use crate::world::types::PlayerLocation;
 use crate::{
     types::{PlayerId, TeamId},
-    world::{player::Player, skill::Rated, world::World},
+    world::{
+        player::Player,
+        skill::Rated,
+        types::{PlayerLocation, TeamLocation},
+        world::World,
+    },
 };
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
@@ -27,8 +29,7 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
-use std::vec;
-use std::{sync::Arc, sync::Mutex};
+use std::{sync::Arc, sync::Mutex, vec};
 use strum_macros::Display;
 
 #[derive(Debug, Clone, Copy, Display, Default, PartialEq, Hash)]
@@ -36,6 +37,7 @@ pub enum PlayerView {
     #[default]
     All,
     FreePirates,
+    Tradable,
     OwnTeam,
 }
 
@@ -43,15 +45,68 @@ impl PlayerView {
     fn next(&self) -> Self {
         match self {
             PlayerView::All => PlayerView::FreePirates,
-            PlayerView::FreePirates => PlayerView::OwnTeam,
+            PlayerView::FreePirates => PlayerView::Tradable,
+            PlayerView::Tradable => PlayerView::OwnTeam,
             PlayerView::OwnTeam => PlayerView::All,
         }
     }
 
-    fn rule(&self, player: &Player, own_team: &Team) -> bool {
+    fn rule(&self, player: &Player, world: &World) -> bool {
+        let own_team = if let Ok(team) = world.get_own_team() {
+            team
+        } else {
+            return false;
+        };
+
         match self {
             PlayerView::All => true,
-            PlayerView::FreePirates => player.team.is_none(),
+            PlayerView::FreePirates => {
+                if player.team.is_some() {
+                    return false;
+                }
+
+                let player_planet_id = match player.current_location {
+                    PlayerLocation::OnPlanet { planet_id } => planet_id,
+                    _ => panic!("Free pirate must be PlayerLocation::OnPlanet"),
+                };
+
+                let own_team_planet_id = match own_team.current_location {
+                    TeamLocation::Exploring { around, .. } => around,
+                    TeamLocation::OnPlanet { planet_id } => planet_id,
+                    TeamLocation::Travelling { to, .. } => to,
+                };
+
+                player_planet_id == own_team_planet_id
+            }
+            PlayerView::Tradable => {
+                if player.team.is_none() {
+                    return false;
+                }
+
+                if player.team.unwrap() == own_team.id {
+                    return false;
+                }
+
+                let try_player_team = world.get_team_or_err(player.team.unwrap());
+                if try_player_team.is_err() {
+                    return false;
+                }
+
+                let player_team = try_player_team.unwrap();
+                let player_team_planet_id = match player_team.current_location {
+                    TeamLocation::Exploring { around, .. } => around,
+                    TeamLocation::OnPlanet { planet_id } => planet_id,
+                    TeamLocation::Travelling { to, .. } => to,
+                };
+
+                let own_team_planet_id = match own_team.current_location {
+                    TeamLocation::Exploring { around, .. } => around,
+                    TeamLocation::OnPlanet { planet_id } => planet_id,
+                    TeamLocation::Travelling { to, .. } => to,
+                };
+
+                player_team_planet_id == own_team_planet_id
+            }
             PlayerView::OwnTeam => player.team.is_some() && player.team.unwrap() == own_team.id,
         }
     }
@@ -60,6 +115,7 @@ impl PlayerView {
         match self {
             PlayerView::All => "All".to_string(),
             PlayerView::FreePirates => "Free pirates".to_string(),
+            PlayerView::Tradable => "Open for trade".to_string(),
             PlayerView::OwnTeam => "Own team".to_string(),
         }
     }
@@ -98,6 +154,7 @@ impl PlayerListPanel {
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
+            Constraint::Length(3),
             Constraint::Min(1),
         ])
         .split(area);
@@ -124,6 +181,16 @@ impl PlayerListPanel {
         .set_hotkey(UiKey::CYCLE_VIEW)
         .set_hover_text("View free pirates.".into(), hover_text_target);
 
+        let mut filter_tradable_button = Button::new(
+            format!("View: {}", PlayerView::Tradable.to_string()),
+            UiCallbackPreset::SetPlayerPanelView {
+                view: PlayerView::Tradable,
+            },
+            Arc::clone(&self.callback_registry),
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text("View pirates open for trade.".into(), hover_text_target);
+
         let mut filter_own_team_button = Button::new(
             format!("View: {}", PlayerView::OwnTeam.to_string()),
             UiCallbackPreset::SetPlayerPanelView {
@@ -136,12 +203,14 @@ impl PlayerListPanel {
         match self.view {
             PlayerView::All => filter_all_button.disable(None),
             PlayerView::FreePirates => filter_free_pirates_button.disable(None),
+            PlayerView::Tradable => filter_tradable_button.disable(None),
             PlayerView::OwnTeam => filter_own_team_button.disable(None),
         }
 
         frame.render_widget(filter_all_button, split[0]);
         frame.render_widget(filter_free_pirates_button, split[1]);
-        frame.render_widget(filter_own_team_button, split[2]);
+        frame.render_widget(filter_tradable_button, split[2]);
+        frame.render_widget(filter_own_team_button, split[3]);
 
         if self.players.len() > 0 {
             let mut options = vec![];
@@ -157,21 +226,23 @@ impl PlayerListPanel {
                 } else if player.peer_id.is_some() {
                     style = UiStyle::NETWORK;
                 }
-                let text = format!(
-                    "{:<26} {}",
-                    format!("{} {}", player.info.first_name, player.info.last_name),
-                    player.stars()
-                );
+                let full_name = format!("{} {}", player.info.first_name, player.info.last_name);
+                let name = if full_name.len() <= 26 {
+                    full_name
+                } else {
+                    player.info.shortened_name()
+                };
+                let text = format!("{:<26} {}", name, player.stars());
                 options.push((text, style));
             }
             let list = selectable_list(options, &self.callback_registry);
             frame.render_stateful_widget(
                 list.block(default_block().title("Players ↓/↑")),
-                split[3],
+                split[4],
                 &mut ClickableListState::default().with_selected(Some(self.index)),
             );
         } else {
-            frame.render_widget(default_block().title("Players"), split[3]);
+            frame.render_widget(default_block().title("Players"), split[4]);
         }
     }
 
@@ -192,52 +263,76 @@ impl PlayerListPanel {
         ])
         .split(v_split[1]);
 
-        if let Some(player) = world.get_player(self.selected_player_id) {
-            // NOTE: here it is okay if the search fails. This is a hack to handle
-            //       the FA refresh that could happen while the player panel is locked.
+        let player = world.get_player_or_err(self.selected_player_id)?;
+        let own_team = world.get_own_team()?;
+
+        // Display open trade if the selected and lock player are the two being traded.
+        let mut open_trade = None;
+
+        // First option: selected player is in own_team and locked player has a team
+        // and this team has sent an offer containing exactly these players.
+        if own_team.player_ids.contains(&player.id) {
+            if let Some(locked_player_id) = self.locked_player_id {
+                if let Some(trade) = own_team.open_trades.get(&(locked_player_id, player.id)) {
+                    open_trade = Some(trade);
+                }
+            }
+        }
+
+        // Second option: locked player is in own_team and selected player has a team
+        // and this team has sent an offer containing exactly these players.
+        if let Some(locked_player_id) = self.locked_player_id {
+            if own_team.player_ids.contains(&locked_player_id) {
+                if let Some(trade) = own_team.open_trades.get(&(player.id, locked_player_id)) {
+                    open_trade = Some(trade);
+                }
+            }
+        }
+
+        render_player_description(
+            player,
+            &self.gif_map,
+            &self.callback_registry,
+            self.tick,
+            frame,
+            world,
+            h_split[0],
+        );
+        self.render_buttons(
+            player,
+            open_trade,
+            frame,
+            world,
+            button_split[0].inner(Margin {
+                horizontal: 1,
+                vertical: 0,
+            }),
+        )?;
+
+        // If there is an open trade for the locked and selected players,
+        // display a button to accept
+
+        if let Some(locked_player_id) = self.locked_player_id {
+            let locked_player = world.get_player_or_err(locked_player_id)?;
             render_player_description(
-                player,
+                locked_player,
                 &self.gif_map,
                 &self.callback_registry,
                 self.tick,
                 frame,
                 world,
-                h_split[0],
+                h_split[1],
             );
             self.render_buttons(
-                player,
+                locked_player,
+                open_trade,
                 frame,
                 world,
-                button_split[0].inner(Margin {
+                button_split[1].inner(Margin {
                     horizontal: 1,
                     vertical: 0,
                 }),
             )?;
-        }
-
-        if let Some(locked_player_id) = self.locked_player_id {
-            // NOTE: here it is okay if the search fails. This is a hack to handle
-            //       the FA refresh that could happen while the player panel is locked.
-            if let Some(locked_player) = world.get_player(locked_player_id) {
-                render_player_description(
-                    locked_player,
-                    &self.gif_map,
-                    &self.callback_registry,
-                    self.tick,
-                    frame,
-                    world,
-                    h_split[1],
-                );
-                self.render_buttons(
-                    locked_player,
-                    frame,
-                    world,
-                    button_split[1].inner(Margin {
-                        horizontal: 1,
-                        vertical: 0,
-                    }),
-                )?;
-            }
         }
 
         Ok(())
@@ -246,6 +341,7 @@ impl PlayerListPanel {
     fn render_buttons(
         &self,
         player: &Player,
+        open_trade: Option<&Trade>,
         frame: &mut Frame,
         world: &World,
         area: Rect,
@@ -253,9 +349,9 @@ impl PlayerListPanel {
         let own_team = world.get_own_team()?;
 
         let buttons_split = Layout::vertical([
-            Constraint::Length(3), //location
-            Constraint::Length(3), //hire/release button
-            Constraint::Length(3), //refresh info for FA
+            Constraint::Length(3), //team
+            Constraint::Length(3), //Lock/Unlock
+            Constraint::Length(3), //hire info for FA or optionally trade
             Constraint::Min(1),
         ])
         .split(area);
@@ -327,14 +423,14 @@ impl PlayerListPanel {
             let hire_cost = player.hire_cost(own_team.reputation);
 
             let mut button = Button::new(
-                format!("Hire -{} {}", hire_cost, CURRENCY_SYMBOL),
+                format!("Hire -{}", format_satoshi(hire_cost)),
                 UiCallbackPreset::HirePlayer {
                     player_id: player.id,
                 },
                 Arc::clone(&self.callback_registry),
             )
             .set_hover_text(
-                format!("Hire the free agent for {} {}", hire_cost, CURRENCY_SYMBOL),
+                format!("Hire the free agent for {}", format_satoshi(hire_cost)),
                 hover_text_target,
             )
             .set_hotkey(UiKey::HIRE);
@@ -344,26 +440,95 @@ impl PlayerListPanel {
 
             frame.render_widget(button, buttons_split[2]);
         }
-        // Add release button for own players
-        //FIXME: decide if we want to allow this.
-        // else if player.team.is_some() && player.team.unwrap() == world.own_team_id {
-        //     let can_release = own_team.can_release_player(&player);
+        // or if a trade exists and player is part of it, add trade buttons
+        else if let Some(trade) = open_trade {
+            let proposer_player = &trade.proposer_player;
+            let target_player = &trade.target_player;
+            if player.id == self.selected_player_id {
+                let proposer_team = world
+                    .get_team_or_err(proposer_player.team.expect("Player should have a team"))?;
+                let mut button = Button::new(
+                    "Accept trade".into(),
+                    UiCallbackPreset::AcceptTrade {
+                        trade: trade.clone(),
+                    },
+                    Arc::clone(&self.callback_registry),
+                )
+                .set_hover_text(
+                    format!(
+                        "Accept to trade {} for {}",
+                        target_player.info.shortened_name(),
+                        proposer_player.info.shortened_name(),
+                    ),
+                    hover_text_target,
+                )
+                .set_hotkey(UiKey::ACCEPT_TRADE);
 
-        //     let mut button = Button::new(
-        //         "Release".into(),
-        //         UiCallbackPreset::ReleasePlayer {
-        //             player_id: player.id,
-        //         },
-        //         Arc::clone(&self.callback_registry),
-        //     )
-        //     .set_hover_text(format!("Fire the player from the team"), hover_text_target)
-        //     .set_hotkey(UiKey::FIRE);
-        //     if can_release.is_err() {
-        //         button.disable(Some(format!("{}", can_release.unwrap_err().to_string())));
-        //     }
+                let can_trade =
+                    proposer_team.can_trade_players(proposer_player, target_player, own_team);
 
-        //     frame.render_widget(button, buttons_split[2]);
-        // }
+                if can_trade.is_err() {
+                    button.disable(Some(format!("{}", can_trade.unwrap_err().to_string())));
+                }
+                frame.render_widget(button, buttons_split[2]);
+            } else if player.id == self.locked_player_id.expect("One player should be locked") {
+                let button = Button::new(
+                    "Decline trade".into(),
+                    UiCallbackPreset::DeclineTrade {
+                        trade: trade.clone(),
+                    },
+                    Arc::clone(&self.callback_registry),
+                )
+                .set_hover_text(
+                    format!(
+                        "Decline to trade {} for {}",
+                        target_player.info.shortened_name(),
+                        proposer_player.info.shortened_name(),
+                    ),
+                    hover_text_target,
+                )
+                .set_hotkey(UiKey::DECLINE_TRADE);
+
+                frame.render_widget(button, buttons_split[2]);
+            };
+        }
+        // or finally if either the selected or locked player are part of own_team (but not both)
+        // add button to propose a trade.
+        else if let Some(locked_player_id) = self.locked_player_id {
+            //If player is selected and part of own team
+            if own_team.player_ids.contains(&player.id) && player.id == self.selected_player_id {
+                let proposer_player = world.get_player_or_err(player.id)?;
+                let target_player = world.get_player_or_err(locked_player_id)?;
+                if let Some(target_team_id) = target_player.team {
+                    let target_team = world.get_team_or_err(target_team_id)?;
+                    if own_team
+                        .can_trade_players(proposer_player, target_player, target_team)
+                        .is_ok()
+                    {
+                        let button = Button::new(
+                            "Propose trade".into(),
+                            UiCallbackPreset::CreateTradeProposal {
+                                proposer_player_id: proposer_player.id,
+                                target_player_id: target_player.id,
+                            },
+                            Arc::clone(&self.callback_registry),
+                        )
+                        .set_hover_text(
+                            format!(
+                                "Propose to trade {} for {}",
+                                proposer_player.info.shortened_name(),
+                                target_player.info.shortened_name(),
+                            ),
+                            hover_text_target,
+                        )
+                        .set_hotkey(UiKey::CREATE_TRADE);
+
+                        frame.render_widget(button, buttons_split[2]);
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -387,7 +552,9 @@ impl Screen for PlayerListPanel {
                 let a = world.get_player(*a).unwrap();
                 let b = world.get_player(*b).unwrap();
                 if a.rating() == b.rating() {
-                    b.total_skills().cmp(&a.total_skills())
+                    b.average_skill()
+                        .partial_cmp(&a.average_skill())
+                        .expect("Skill value should exist")
                 } else {
                     b.rating().cmp(&a.rating())
                 }
@@ -395,13 +562,12 @@ impl Screen for PlayerListPanel {
             self.update_view = true;
         }
         if self.update_view {
-            let own_team = world.get_own_team()?;
             self.players = self
                 .all_players
                 .iter()
                 .filter(|&&player_id| {
                     let player = world.get_player(player_id).unwrap();
-                    self.view.rule(player, own_team)
+                    self.view.rule(player, &world)
                 })
                 .map(|&player_id| player_id)
                 .collect();
@@ -412,9 +578,9 @@ impl Screen for PlayerListPanel {
             self.set_index(self.players.len() - 1);
         }
 
-        if self.index < self.players.len() {
+        if self.index < self.players.len() && self.players.len() > 0 {
             self.selected_player_id = self.players[self.index];
-            self.selected_team_id = world.get_player(self.selected_player_id).unwrap().team;
+            self.selected_team_id = world.get_player_or_err(self.selected_player_id)?.team;
         }
         Ok(())
     }

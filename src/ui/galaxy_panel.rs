@@ -1,5 +1,4 @@
 use super::button::{Button, RadioButton};
-use super::clickable_list::ClickableListState;
 use super::constants::{UiStyle, LEFT_PANEL_WIDTH};
 use super::gif_map::{GifMap, ImageResizeInGalaxyGif};
 use super::traits::SplitPanel;
@@ -7,13 +6,11 @@ use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
 use super::utils::hover_text_target;
 use super::widgets::quick_explore_button;
-use super::{
-    traits::Screen,
-    widgets::{default_block, selectable_list},
-};
+use super::{traits::Screen, widgets::default_block};
 use crate::types::{AppResult, SystemTimeTick, AU};
 use crate::ui::constants::UiKey;
-use crate::world::skill::Rated;
+use crate::world::skill::{GameSkill, Rated};
+use crate::world::types::PlayerLocation;
 use crate::{
     types::{PlanetId, PlanetMap},
     world::{
@@ -22,6 +19,7 @@ use crate::{
 };
 use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
+use itertools::Itertools;
 use ratatui::layout::Constraint;
 use ratatui::widgets::{List, ListItem};
 use ratatui::{
@@ -131,7 +129,7 @@ impl GalaxyPanel {
         Ok(())
     }
 
-    fn render_team_list(
+    fn render_planet_buttons(
         &mut self,
         frame: &mut Frame,
         planet: &Planet,
@@ -205,7 +203,6 @@ impl GalaxyPanel {
                 }
                 _ => {
                     let travel_time = world.travel_time_to_planet(own_team.id, planet.id);
-
                     let (can_travel, button_text, hover_text) = match travel_time {
                         Ok(time) => {
                             let distance_text = match own_team.current_location {
@@ -229,7 +226,7 @@ impl GalaxyPanel {
                                     planet.name,
                                     distance_text,
                                     time.formatted(),
-                                    (time as f32 * own_team.spaceship.fuel_consumption()) as u32,
+                                    (time as f32 * own_team.spaceship_fuel_consumption()) as u32,
                                 ),
                             )
                         }
@@ -261,66 +258,171 @@ impl GalaxyPanel {
                 }
             }
         }
+
         let mut constraints = vec![Constraint::Length(3)].repeat(buttons.len());
         constraints.push(Constraint::Length(target.team_ids.len() as u16 + 2));
         constraints.push(Constraint::Min(0));
 
-        let width = (LEFT_PANEL_WIDTH).min(area.width);
-        let height = (3 * buttons.len() as u16 + target.team_ids.len() as u16 + 2)
-            .max(14)
-            .min(area.height);
-
-        let rect = Rect {
-            x: area.x,
-            y: area.y,
-            width,
-            height,
-        };
-
-        let split = Layout::vertical(constraints).split(rect);
-
-        frame.render_widget(Clear, rect);
-
+        let split = Layout::vertical(constraints).split(area);
         for (idx, button) in buttons.iter().enumerate() {
+            frame.render_widget(Clear, split[idx]);
             frame.render_widget(button.clone(), split[idx]);
         }
 
-        if target.team_ids.len() > 0 {
-            let mut options = vec![];
-            for &team_id in target.team_ids.iter() {
-                if let Some(team) = world.get_team(team_id) {
-                    let mut style = UiStyle::DEFAULT;
-                    if team_id == world.own_team_id {
-                        style = UiStyle::OWN_TEAM;
-                    } else if team.peer_id.is_some() {
-                        style = UiStyle::NETWORK;
-                    }
-                    let text = format!("{:<14} {}", team.name, world.team_rating(team.id).stars());
-                    options.push((text, style));
-                }
-            }
-            if self.zoom_level == ZoomLevel::In {
-                let list = selectable_list(options, &self.callback_registry);
+        Ok(())
+    }
 
-                frame.render_stateful_widget(
-                    list.block(default_block().title("Teams")),
-                    split[buttons.len()],
-                    &mut ClickableListState::default().with_selected(self.team_index),
+    fn render_planet_lists(
+        &mut self,
+        frame: &mut Frame,
+        planet: &Planet,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
+        let target = if self.planet_index == 0 {
+            planet
+        } else {
+            world.get_planet_or_err(planet.satellites[self.planet_index - 1])?
+        };
+
+        let team_options = target
+            .team_ids
+            .iter()
+            .filter(|&&team_id| world.get_team_or_err(team_id).is_ok())
+            .sorted_by(|&&a, &&b| {
+                world
+                    .team_rating(b)
+                    .value()
+                    .cmp(&world.team_rating(a).value())
+            })
+            .map(|&team_id| {
+                let team = world
+                    .get_team_or_err(team_id)
+                    .expect("Team should be part of the world");
+                let mut style = UiStyle::DEFAULT;
+                if team_id == world.own_team_id {
+                    style = UiStyle::OWN_TEAM;
+                } else if team.peer_id.is_some() {
+                    style = UiStyle::NETWORK;
+                }
+                let text = format!("{:<14} {}", team.name, world.team_rating(team.id).stars());
+                (text, style)
+            })
+            .take(10)
+            .collect::<Vec<(String, Style)>>();
+
+        let player_options = world
+            .players
+            .values()
+            .filter(|player| {
+                if player.team.is_some() {
+                    return false;
+                }
+
+                let player_planet_id = match player.current_location {
+                    PlayerLocation::OnPlanet { planet_id } => planet_id,
+                    _ => panic!("Free pirate must be PlayerLocation::OnPlanet"),
+                };
+
+                let team_planet_id = target.id;
+
+                player_planet_id == team_planet_id.clone()
+            })
+            .sorted_by(|a, b| b.rating().cmp(&a.rating()))
+            .map(|player| {
+                let text = format!(
+                    "{:<26} {}",
+                    format!("{} {}", player.info.first_name, player.info.last_name),
+                    player.stars()
                 );
-            } else {
-                frame.render_widget(
-                    List::new(
-                        options
-                            .iter()
-                            .map(|(text, style)| {
-                                ListItem::new(Span::styled(format!(" {}", text), *style))
-                            })
-                            .collect::<Vec<ListItem>>(),
-                    )
-                    .block(default_block().title("Teams")),
-                    split[buttons.len()],
-                );
-            }
+                (text, UiStyle::DEFAULT)
+            })
+            .take(10)
+            .collect::<Vec<(String, Style)>>();
+
+        let resource_options = target
+            .resources
+            .iter()
+            .sorted_by(|a, b| b.1.cmp(&a.1))
+            .map(|(resource, &amount)| {
+                let text = format!("{:<7} {}", resource.to_string(), (amount as f32).stars(),);
+                (text, UiStyle::DEFAULT)
+            })
+            .collect::<Vec<(String, Style)>>();
+
+        let team_list_height = if team_options.len() > 0 {
+            team_options.len() as u16 + 2
+        } else {
+            0
+        };
+
+        let player_list_height = if player_options.len() > 0 {
+            player_options.len() as u16 + 2
+        } else {
+            0
+        };
+
+        let resource_list_height = if resource_options.len() > 0 {
+            resource_options.len() as u16 + 2
+        } else {
+            0
+        };
+
+        let split = Layout::vertical([
+            Constraint::Length(15),
+            Constraint::Length(team_list_height),
+            Constraint::Length(player_list_height),
+            Constraint::Length(resource_list_height),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+        if team_options.len() > 0 {
+            frame.render_widget(Clear, split[1]);
+            frame.render_widget(
+                List::new(
+                    team_options
+                        .iter()
+                        .map(|(text, style)| {
+                            ListItem::new(Span::styled(format!(" {}", text), *style))
+                        })
+                        .collect::<Vec<ListItem>>(),
+                )
+                .block(default_block().title("Teams")),
+                split[1],
+            );
+        }
+
+        if player_options.len() > 0 {
+            frame.render_widget(Clear, split[2]);
+            frame.render_widget(
+                List::new(
+                    player_options
+                        .iter()
+                        .map(|(text, style)| {
+                            ListItem::new(Span::styled(format!(" {}", text), *style))
+                        })
+                        .collect::<Vec<ListItem>>(),
+                )
+                .block(default_block().title("Top free pirates")),
+                split[2],
+            );
+        }
+
+        if resource_options.len() > 0 {
+            frame.render_widget(Clear, split[3]);
+            frame.render_widget(
+                List::new(
+                    resource_options
+                        .iter()
+                        .map(|(text, style)| {
+                            ListItem::new(Span::styled(format!(" {}", text), *style))
+                        })
+                        .collect::<Vec<ListItem>>(),
+                )
+                .block(default_block().title("Resources")),
+                split[3],
+            );
         }
 
         Ok(())
@@ -431,7 +533,12 @@ impl Screen for GalaxyPanel {
         };
 
         self.render_planet_gif(frame, world, area)?;
-        self.render_team_list(frame, planet, world, area)?;
+
+        let split =
+            Layout::horizontal([Constraint::Max(LEFT_PANEL_WIDTH), Constraint::Min(0)]).split(area);
+
+        self.render_planet_buttons(frame, planet, world, split[0])?;
+        self.render_planet_lists(frame, planet, world, split[0])?;
 
         if self.zoom_level == ZoomLevel::Out {
             let rects = (0..planet.satellites.len() + 1)
@@ -459,7 +566,7 @@ impl Screen for GalaxyPanel {
                 .set_box_hover_style(UiStyle::NETWORK)
                 .set_box_hover_title(planet_name);
                 let rect = rects[idx];
-                let frame_rect = frame.size();
+                let frame_rect = frame.area();
                 if rect.x + rect.width <= frame_rect.width
                     && rect.y + rect.height <= frame_rect.height
                 {

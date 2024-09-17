@@ -78,7 +78,7 @@ pub struct GameStats {
     pub plus_minus: i16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub morale: u8,
+    pub extra_morale: f32,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub extra_tiredness: f32,
@@ -110,7 +110,6 @@ impl GameStats {
         self.steals += stats.steals;
         self.blocks += stats.blocks;
         self.turnovers += stats.turnovers;
-        self.morale += stats.morale;
         self.shot_positions
             .append(&mut stats.shot_positions.clone());
         for (idx, exp) in stats.experience_at_position.iter().enumerate() {
@@ -135,6 +134,7 @@ pub struct TeamInGame {
     // because the player tiredness is updated during the game.
     // The order is the same as initial_positions
     pub initial_tiredness: Vec<f32>,
+    pub initial_morale: Vec<f32>,
     pub players: PlayerMap,
     pub stats: GameStatsMap,
     pub tactic: Tactic,
@@ -159,6 +159,11 @@ impl<'game> TeamInGame {
             .iter()
             .map(|id| players.get(id).unwrap().tiredness)
             .collect();
+        let initial_morale = team
+            .player_ids
+            .iter()
+            .map(|id| players.get(id).unwrap().morale)
+            .collect();
         Self {
             team_id: team.id,
             peer_id: team.peer_id,
@@ -166,6 +171,7 @@ impl<'game> TeamInGame {
             name: team.name.clone(),
             initial_positions: team.player_ids.clone(),
             initial_tiredness,
+            initial_morale,
             version: team.version,
             players,
             stats,
@@ -323,7 +329,7 @@ fn test_gamestats_serde() {
     stats.blocks = 15;
     stats.turnovers = 0;
     stats.plus_minus = 17;
-    stats.morale = 18;
+    stats.extra_morale = 18.0;
     stats.extra_tiredness = 19.0;
     stats.shot_positions = vec![(1, 2, true), (3, 4, false)];
     stats.experience_at_position = [1, 2, 3, 4, 5];

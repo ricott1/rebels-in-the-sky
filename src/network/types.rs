@@ -12,9 +12,41 @@ use anyhow::anyhow;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::Debug;
 use strum_macros::Display;
 
-#[derive(Debug, Clone, Display, Default, Serialize, Deserialize, PartialEq, Hash)]
+use super::challenge::Challenge;
+use super::trade::Trade;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[repr(u8)]
+pub(crate) enum NetworkData {
+    Team(Tick, NetworkTeam),
+    Challenge(Tick, Challenge),
+    Trade(Tick, Trade),
+    Message(Tick, String),
+    Game(Tick, NetworkGame),
+    SeedInfo(Tick, SeedInfo),
+    FailedRequest(Tick, String),
+}
+
+impl TryFrom<Vec<u8>> for NetworkData {
+    type Error = anyhow::Error;
+    fn try_from(item: Vec<u8>) -> AppResult<Self> {
+        let network_data = serde_json::from_slice::<NetworkData>(item.as_slice())?;
+        Ok(network_data)
+    }
+}
+
+impl TryInto<Vec<u8>> for NetworkData {
+    type Error = anyhow::Error;
+    fn try_into(self) -> AppResult<Vec<u8>> {
+        let data = serde_json::to_vec(&self)?;
+        Ok(data)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Display, Default, Serialize, Deserialize, PartialEq, Hash)]
 pub enum NetworkRequestState {
     #[default]
     Syn,
@@ -90,12 +122,15 @@ impl NetworkGame {
             }
             stats.insert(player_id.clone(), player_stats.clone());
 
-            // Reset tiredness to initial one
-            let tiredness = home_team_in_game.initial_tiredness[idx];
             let player = home_team_in_game.players.get_mut(player_id).ok_or(anyhow!(
                 "Cannot get player for home team in game".to_string()
             ))?;
+            // Reset tiredness to initial one
+            let tiredness = home_team_in_game.initial_tiredness[idx];
             player.tiredness = tiredness;
+            // Reset morale to initial one
+            let morale = home_team_in_game.initial_morale[idx];
+            player.morale = morale;
         }
         home_team_in_game.stats = stats;
 
@@ -108,11 +143,15 @@ impl NetworkGame {
             }
             stats.insert(player_id.clone(), player_stats.clone());
 
-            let tiredness = away_team_in_game.initial_tiredness[idx];
             let player = away_team_in_game.players.get_mut(player_id).ok_or(anyhow!(
                 "Cannot get player for away team in game".to_string()
             ))?;
+            // Reset tiredness to initial one
+            let tiredness = away_team_in_game.initial_tiredness[idx];
             player.tiredness = tiredness;
+            // Reset morale to initial one
+            let morale = away_team_in_game.initial_morale[idx];
+            player.morale = morale;
         }
         away_team_in_game.stats = stats;
 

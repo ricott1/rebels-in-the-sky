@@ -131,7 +131,7 @@ pub fn hover_text_target(frame: &Frame) -> Rect {
         Constraint::Min(0),
         Constraint::Length(1), //bottom margin
     ])
-    .split(frame.size());
+    .split(frame.area());
     split[1]
 }
 
@@ -150,5 +150,33 @@ pub fn validate_textarea_input(textarea: &mut TextArea<'_>, title: String) -> bo
         textarea.set_style(UiStyle::DEFAULT);
         textarea.set_block(default_block().title(title));
         true
+    }
+}
+
+pub fn format_satoshi(amount: u32) -> String {
+    const SATOSHI_PER_BITCOIN: u32 = 100_000_000;
+    if amount >= 100_000 {
+        let f_amount = (amount as f32 / SATOSHI_PER_BITCOIN as f32 * 100_000.0).round() / 100_000.0;
+        return format!("{} BTC", f_amount);
+    }
+
+    format!("{amount} sat")
+}
+
+#[cfg(test)]
+mod test {
+    use super::format_satoshi;
+
+    #[test]
+    fn test_format_satoshi() {
+        assert_eq!(format_satoshi(1), "1 sat");
+        assert_eq!(format_satoshi(10), "10 sat");
+        assert_eq!(format_satoshi(1_000), "1000 sat");
+        assert_eq!(format_satoshi(99_999), "99999 sat");
+        assert_eq!(format_satoshi(100_000), "0.001 BTC");
+        assert_eq!(format_satoshi(1_000_000), "0.01 BTC");
+        assert_eq!(format_satoshi(2_345_678), "0.02346 BTC");
+        assert_eq!(format_satoshi(100_000_000), "1 BTC");
+        assert_eq!(format_satoshi(1_234_567_890), "12.34568 BTC");
     }
 }
