@@ -1,9 +1,11 @@
 use crate::store::ASSETS_DIR;
 use crate::types::AppResult;
+use anyhow::anyhow;
 use rodio::OutputStream;
 use rodio::{OutputStreamHandle, Sink};
 use serde::Deserialize;
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use stream_download::storage::temp::TempStorageProvider;
 use stream_download::{Settings, StreamDownload};
@@ -26,6 +28,7 @@ impl Stream {
 pub struct MusicPlayer {
     _stream: OutputStream,
     _stream_handle: OutputStreamHandle,
+    is_buffering: Arc<AtomicBool>,
     sink: Sink,
     sender: mpsc::Sender<StreamDownload<TempStorageProvider>>,
     receiver: mpsc::Receiver<StreamDownload<TempStorageProvider>>,
@@ -59,9 +62,10 @@ impl MusicPlayer {
         });
 
         Ok(MusicPlayer {
-            sink,
             _stream,
             _stream_handle,
+            is_buffering: Arc::new(AtomicBool::new(false)),
+            sink,
             sender,
             receiver,
             streams,
@@ -89,26 +93,33 @@ impl MusicPlayer {
             self.sink.pause();
         } else {
             if self.sink.empty() {
-                let url = self.current_url()?.clone();
-                let sender = self.sender.clone();
-                tokio::spawn(tokio::time::timeout(
-                    Duration::from_millis(STREAMING_TIMEOUT_MILLIS),
-                    async move {
-                        if let Ok(data) = StreamDownload::new_http(
-                            url,
-                            TempStorageProvider::default(),
-                            Settings::default(),
-                        )
-                        .await
-                        {
-                            sender.send(data).unwrap_or(log::error!(
-                                "Audio stream error: Cannot send reader data"
-                            ));
-                        } else {
-                            log::error!("Unable to play stream");
-                        }
-                    },
-                ));
+                let is_buffering = self.is_buffering.clone();
+                if !is_buffering.load(Ordering::Relaxed) {
+                    let url = self.current_url()?.clone();
+                    let sender = self.sender.clone();
+                    is_buffering.store(true, Ordering::Relaxed);
+
+                    tokio::spawn(tokio::time::timeout(
+                        Duration::from_millis(STREAMING_TIMEOUT_MILLIS),
+                        async move {
+                            if let Ok(data) = StreamDownload::new_http(
+                                url,
+                                TempStorageProvider::default(),
+                                Settings::default(),
+                            )
+                            .await
+                            {
+                                sender.send(data)?;
+                                is_buffering.store(false, Ordering::Relaxed);
+                                return Ok(());
+                            } else {
+                                log::error!("Unable to play stream");
+                                is_buffering.store(false, Ordering::Relaxed);
+                                return Err(anyhow!("Unable to start stream"));
+                            }
+                        },
+                    ));
+                }
             } else {
                 self.sink.play();
             }

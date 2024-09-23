@@ -2,7 +2,8 @@ use crate::app::App;
 use crate::event::TerminalEvent;
 use crate::network::constants::DEFAULT_PORT;
 use crate::store::world_exists;
-use crate::types::{AppResult, SystemTimeTick, Tick, SECONDS};
+use crate::types::{AppResult, SystemTimeTick, Tick};
+use crate::world::constants::SECONDS;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use crossterm::event::KeyModifiers;
@@ -14,6 +15,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::net::TcpListener;
 use std::sync::Arc;
 use tokio::select;
 use tokio::sync::Mutex;
@@ -45,6 +47,17 @@ fn load_keys() -> AppResult<ed25519_dalek::SigningKey> {
     let mut buf: [u8; 32] = [0; 32];
     buffer.read(&mut buf)?;
     Ok(ed25519_dalek::SigningKey::from_bytes(&buf))
+}
+
+fn get_available_port() -> Option<u16> {
+    (DEFAULT_PORT..MAX_SSH_CLIENT_PORT).find(|port| port_is_available(*port))
+}
+
+fn port_is_available(port: u16) -> bool {
+    match TcpListener::bind(("127.0.0.1", port)) {
+        Ok(_) => true,
+        Err(_) => false,
+    }
 }
 
 #[derive(Clone, Default)]
@@ -80,7 +93,6 @@ impl AppServer {
             let mut last_network_handler_init = 0;
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_millis(25)).await;
-                // let tick = Tick::now();
 
                 let mut to_remove = Vec::new();
                 let mut clients = clients.lock().await;
@@ -165,10 +177,13 @@ impl Server for AppServer {
     type Handler = Self;
     fn new_client(&mut self, _: Option<std::net::SocketAddr>) -> Self {
         let s = self.clone();
-        self.port += 1;
-        if self.port > MAX_SSH_CLIENT_PORT {
-            self.port = DEFAULT_PORT; //FIXME: we are hoping that the port is now free. We should instead keep track of this
-        }
+        self.port = if let Some(available_port) = get_available_port() {
+            available_port
+        } else {
+            // FIXME: here we should fail actually
+            DEFAULT_PORT
+        };
+
         s
     }
 }

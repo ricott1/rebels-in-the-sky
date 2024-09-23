@@ -1,10 +1,7 @@
-use std::{
-    collections::HashMap,
-    hash::{DefaultHasher, Hash, Hasher},
-    time::SystemTime,
-};
-
+use super::constants::HOURS;
 use super::{resources::Resource, skill::MAX_SKILL, types::Population};
+use crate::types::{SystemTimeTick, Tick};
+use crate::world::utils::is_default;
 use crate::{
     types::{PlanetId, TeamId},
     world::skill::GameSkill,
@@ -15,11 +12,15 @@ use rand_chacha::ChaCha8Rng;
 use rand_distr::Distribution;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::{
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
+};
 use strum_macros::{Display, EnumIter};
 
 const TRADE_DELTA_SCARCITY: f32 = 3.0;
-const TRADE_DELTA_BUY_SELL: f32 = 0.12;
-const RESOURCE_PRICE_REFRESH_RATE_SECS: u64 = 60 * 60 * 2;
+const TRADE_DELTA_BUY_SELL: f32 = 0.07;
+const RESOURCE_PRICE_REFRESH_RATE_MILLIS: Tick = 2 * HOURS;
 
 #[derive(Debug, Display, Clone, Serialize_repr, Deserialize_repr, PartialEq, Default, EnumIter)]
 #[repr(u8)]
@@ -50,11 +51,13 @@ pub struct Planet {
     pub rotation_period: usize,
     pub revolution_period: usize,
     pub gravity: usize,
-    pub asteroid_probability: f32,
+    pub asteroid_probability: f64,
     pub planet_type: PlanetType,
     pub satellites: Vec<PlanetId>,
     pub satellite_of: Option<PlanetId>,
     pub axis: (f32, f32),
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub team_ids: Vec<TeamId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
@@ -72,13 +75,8 @@ impl Planet {
         let amount_modifier =
             relative_amount / TRADE_DELTA_SCARCITY + (1.0 - relative_amount) * TRADE_DELTA_SCARCITY;
 
-        let unix_secs = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("Time flows bacwards")
-            .as_secs();
-
         let random_fluctuation =
-            0.2 * ((unix_secs / RESOURCE_PRICE_REFRESH_RATE_SECS) as f32).sin();
+            0.2 * ((Tick::now() / RESOURCE_PRICE_REFRESH_RATE_MILLIS) as f32).sin();
 
         let mut s = DefaultHasher::new();
         self.name.hash(&mut s);
@@ -142,18 +140,21 @@ impl Planet {
         Some(weights[dist.sample(rng)].0)
     }
 
-    pub fn asteroid(id: PlanetId, name: String, satellite_of: PlanetId) -> Self {
+    pub fn asteroid(name: String, filename: String, satellite_of: PlanetId) -> Self {
         let rng = &mut ChaCha8Rng::from_entropy();
-        let revolution_period = vec![120, 180, 360].choose(rng).unwrap().clone() as usize;
+        let revolution_period: usize = vec![120, 180, 360]
+            .choose(rng)
+            .copied()
+            .expect("Should select a random value");
 
         Self {
-            id,
+            id: PlanetId::new_v4(),
             peer_id: None,
             version: 0,
             name,
             populations: HashMap::new(),
             resources: HashMap::new(),
-            filename: format!("asteroid{}", rng.gen_range(0..=29)),
+            filename,
             rotation_period: rng.gen_range(1..24),
             revolution_period,
             gravity: rng.gen_range(1..4),
@@ -163,7 +164,7 @@ impl Planet {
             satellite_of: Some(satellite_of),
             axis: (rng.gen_range(10.0..60.0), rng.gen_range(10.0..60.0)),
             team_ids: vec![],
-            //FIXME: add option to customize asteroid radio stream
+            //TODO: add option to customize asteroid radio stream
             custom_radio_stream: None,
         }
     }

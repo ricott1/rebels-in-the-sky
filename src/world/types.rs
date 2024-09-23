@@ -214,9 +214,10 @@ impl Population {
             }
             Population::Octopulp => {
                 player.athletics.quickness = (player.athletics.quickness * 0.95).bound();
+                player.mental.vision = (player.mental.vision * 0.75).bound();
                 player.defense.steal = (player.defense.steal * 1.2).bound();
                 player.offense.brawl = (player.offense.brawl * 1.1).bound();
-                player.offense.close_range = (player.offense.close_range * 1.1).bound();
+                player.offense.close_range = (player.offense.close_range * 1.35).bound();
                 player.info.weight = (player.info.weight * 1.3).min(255.0);
             }
         }
@@ -325,6 +326,12 @@ impl Population {
 
 #[derive(Debug, Clone, Copy, Display, Serialize, Deserialize)]
 pub enum PlayerLocation {
+    WithTeam,
+    OnPlanet { planet_id: PlanetId },
+}
+
+#[derive(Debug, Clone, Copy, Display, Serialize, Deserialize, PartialEq)]
+pub enum KartoffelLocation {
     WithTeam,
     OnPlanet { planet_id: PlanetId },
 }
@@ -554,13 +561,12 @@ impl TeamBonus {
 #[cfg(test)]
 
 mod tests {
-    use crate::types::IdSystem;
 
     #[test]
     fn test_team_location_eq() {
         use super::TeamLocation;
         use crate::types::PlanetId;
-        let planet_id = PlanetId::new();
+        let planet_id = PlanetId::new_v4();
         let team_location = TeamLocation::OnPlanet { planet_id };
         let team_location2 = TeamLocation::OnPlanet { planet_id };
         assert_eq!(team_location, team_location2);
@@ -570,8 +576,8 @@ mod tests {
     fn test_team_location_ne() {
         use super::TeamLocation;
         use crate::types::PlanetId;
-        let planet_id = PlanetId::new();
-        let planet_id2 = PlanetId::new();
+        let planet_id = PlanetId::new_v4();
+        let planet_id2 = PlanetId::new_v4();
         let team_location = TeamLocation::OnPlanet { planet_id };
         let team_location2 = TeamLocation::OnPlanet {
             planet_id: planet_id2,

@@ -14,7 +14,7 @@ use libp2p::gossipsub::{self, IdentTopic, MessageId};
 use libp2p::swarm::{Config, SwarmEvent};
 use libp2p::{identity, noise, tcp, yamux, PeerId, Transport};
 use libp2p::{Multiaddr, Swarm};
-use log::info;
+use log::{error, info};
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
@@ -164,16 +164,12 @@ impl NetworkHandler {
         self._send(NetworkData::Trade(Tick::now(), trade))
     }
 
-    pub fn send_failed_request(&mut self, error_message: String) -> AppResult<MessageId> {
-        self._send(NetworkData::FailedRequest(Tick::now(), error_message))
-    }
-
     pub fn send_new_challenge(
         &mut self,
         world: &World,
         peer_id: PeerId,
         team_id: TeamId,
-    ) -> AppResult<()> {
+    ) -> AppResult<Challenge> {
         self.send_own_team(world)?;
         let mut home_team_in_game =
             TeamInGame::from_team_id(world.own_team_id, &world.teams, &world.players)
@@ -190,8 +186,8 @@ impl NetworkHandler {
             away_team_in_game,
         );
 
-        self.send_challenge(challenge)?;
-        Ok(())
+        self.send_challenge(challenge.clone())?;
+        Ok(challenge)
     }
 
     pub fn send_new_trade(
@@ -200,7 +196,7 @@ impl NetworkHandler {
         target_peer_id: PeerId,
         proposer_player_id: PlayerId,
         target_player_id: PlayerId,
-    ) -> AppResult<()> {
+    ) -> AppResult<Trade> {
         self.send_own_team(world)?;
 
         let proposer_player = world.get_player_or_err(proposer_player_id)?.clone();
@@ -214,8 +210,32 @@ impl NetworkHandler {
             0,
         );
 
-        self.send_trade(trade)?;
-        Ok(())
+        self.send_trade(trade.clone())?;
+        Ok(trade)
+    }
+
+    pub fn quit(&mut self) {
+        if let Err(e) = self
+            .swarm
+            .behaviour_mut()
+            .unsubscribe(&IdentTopic::new(TOPIC))
+        {
+            error!("Error unsubscribing from events: {e}");
+        }
+
+        let peers = self
+            .swarm
+            .connected_peers()
+            .map(|id| id.clone())
+            .collect::<Vec<PeerId>>();
+        for peer_id in peers {
+            if self.swarm.is_connected(&peer_id) {
+                let _ = self
+                    .swarm
+                    .disconnect_peer_id(peer_id)
+                    .map_err(|e| error!("Error disconnecting peer id {}: {:?}", peer_id, e));
+            }
+        }
     }
 
     pub fn accept_challenge(&mut self, world: &World, challenge: Challenge) -> AppResult<()> {
@@ -243,14 +263,22 @@ impl NetworkHandler {
         };
 
         if let Err(err) = handle_syn() {
-            self.send_failed_request(err.to_string())?;
+            let mut challenge = challenge.clone();
+            challenge.state = NetworkRequestState::Failed {
+                error_message: err.to_string(),
+            };
+            self.send_challenge(challenge)?;
             return Err(anyhow!(err.to_string()));
         }
         Ok(())
     }
 
-    pub fn decline_challenge(&mut self, _challenge: Challenge) -> AppResult<()> {
-        self.send_failed_request("Challenge declined".into())?;
+    pub fn decline_challenge(&mut self, challenge: Challenge) -> AppResult<()> {
+        let mut challenge = challenge.clone();
+        challenge.state = NetworkRequestState::Failed {
+            error_message: "Challenge declined".to_string(),
+        };
+        self.send_challenge(challenge)?;
         Ok(())
     }
 
@@ -282,14 +310,22 @@ impl NetworkHandler {
         };
 
         if let Err(err) = handle_syn() {
-            self.send_failed_request(err.to_string())?;
+            let mut trade = trade.clone();
+            trade.state = NetworkRequestState::Failed {
+                error_message: err.to_string(),
+            };
+            self.send_trade(trade)?;
             return Err(anyhow!(err.to_string()));
         }
         Ok(())
     }
 
-    pub fn decline_trade(&mut self, _trade: Trade) -> AppResult<()> {
-        self.send_failed_request("Trade declined".into())?;
+    pub fn decline_trade(&mut self, trade: Trade) -> AppResult<()> {
+        let mut trade = trade.clone();
+        trade.state = NetworkRequestState::Failed {
+            error_message: "Trade declined".to_string(),
+        };
+        self.send_trade(trade)?;
         Ok(())
     }
 

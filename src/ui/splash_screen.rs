@@ -8,7 +8,7 @@ use super::{
 };
 use crate::store::world_file_data;
 use crate::types::{AppResult, SystemTimeTick, Tick};
-use crate::world::constants::SOL_ID;
+use crate::world::constants::{DEBUG_TIME_MULTIPLIER, SOL_ID};
 use crate::{store::world_exists, world::world::World};
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
@@ -111,14 +111,16 @@ impl SplashScreen {
         selection_text.push("Music: On ".to_string());
         selection_text.push("Quit".to_string());
 
-        let quote = QUOTES.choose(&mut rand::thread_rng());
+        let quote = QUOTES
+            .choose(&mut rand::thread_rng())
+            .expect("There should be a quote");
         let index = if can_load_world { 0 } else { 1 };
         let title = big_text(&TITLE);
 
         Self {
             index,
             title,
-            quote: quote.as_deref().unwrap(),
+            quote,
             selection_text,
             tick: 0,
             can_load_world,
@@ -176,7 +178,16 @@ impl Screen for SplashScreen {
 
         frame.render_widget(self.title.clone(), title[1]);
         frame.render_widget(
-            Paragraph::new(format!("Version {VERSION}")).centered(),
+            Paragraph::new(format!(
+                "Version {} {}",
+                VERSION,
+                if DEBUG_TIME_MULTIPLIER == 1 {
+                    ""
+                } else {
+                    "DEBUG MODE"
+                }
+            ))
+            .centered(),
             split[2].inner(Margin {
                 vertical: 1,
                 horizontal: 0,
@@ -283,7 +294,9 @@ impl Screen for SplashScreen {
                 _ => {}
             },
             KeyCode::Char('r') => {
-                self.quote = QUOTES.choose(&mut rand::thread_rng()).as_deref().unwrap();
+                self.quote = QUOTES
+                    .choose(&mut rand::thread_rng())
+                    .expect("There should be a quote");
             }
 
             _ => {}

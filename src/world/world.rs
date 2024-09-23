@@ -17,7 +17,9 @@ use crate::image::color_map::ColorMap;
 use crate::network::types::{NetworkGame, NetworkTeam};
 use crate::store::save_game;
 use crate::types::*;
+use crate::ui::popup_message::PopupMessage;
 use crate::ui::ui_callback::UiCallbackPreset;
+use crate::world::utils::is_default;
 use anyhow::anyhow;
 use itertools::Itertools;
 use libp2p::PeerId;
@@ -27,7 +29,6 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::u64;
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -41,10 +42,23 @@ pub struct World {
     pub last_tick_medium_interval: Tick,
     pub last_tick_long_interval: Tick,
     pub own_team_id: TeamId,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub teams: TeamMap,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub players: PlayerMap,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub planets: PlanetMap,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub games: GameMap,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub kartoffeln: KartoffelMap,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub past_games: GameSummaryMap,
 }
 
@@ -58,10 +72,7 @@ impl World {
 
         Self {
             seed: seed.unwrap_or(rand::random()),
-            last_tick_short_interval: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("Time went backwards")
-                .as_millis(),
+            last_tick_short_interval: Tick::now(),
             planets,
             ..Default::default()
         }
@@ -133,7 +144,7 @@ impl World {
         team_name: String,
         ship_name: String,
     ) -> AppResult<TeamId> {
-        let team_id = TeamId::new();
+        let team_id = TeamId::new_v4();
         let mut team = Team::random(team_id, home_planet_id, team_name);
         team.spaceship.name = ship_name;
         let home_planet_id = team.home_planet_id.clone();
@@ -185,7 +196,7 @@ impl World {
         balance: u32,
         spaceship: Spaceship,
     ) -> AppResult<TeamId> {
-        let team_id = TeamId::new();
+        let team_id = TeamId::new_v4();
         let current_location = TeamLocation::OnPlanet {
             planet_id: home_planet_id,
         };
@@ -238,9 +249,10 @@ impl World {
     pub fn generate_team_asteroid(
         &mut self,
         name: String,
+        filename: String,
         satellite_of: PlanetId,
     ) -> AppResult<PlanetId> {
-        let asteroid = Planet::asteroid(PlanetId::new(), name, satellite_of);
+        let asteroid = Planet::asteroid(name, filename, satellite_of);
         let asteroid_id = asteroid.id;
         self.planets.insert(asteroid_id, asteroid);
 
@@ -260,7 +272,7 @@ impl World {
         home_planet_id: PlanetId,
         base_level: f32,
     ) -> PlayerId {
-        let player_id = PlayerId::new();
+        let player_id = PlayerId::new_v4();
         let planet = self.get_planet_or_err(home_planet_id).unwrap();
         let mut player = Player::random(rng, player_id, position, &planet, base_level);
         if team.is_some() {
@@ -289,12 +301,10 @@ impl World {
 
     pub fn set_team_crew_role(&mut self, role: CrewRole, player_id: PlayerId) -> AppResult<()> {
         let mut player = self.get_player_or_err(player_id)?.clone();
-        if player.team.is_none() {
-            return Err(anyhow!("Player {:?} is not in a team", player_id,));
-        }
+        let mut team = if let Some(team_id) = player.team {self.get_team_or_err(team_id)?.clone()}else {
+            return Err(anyhow!("Player {:?} is not in a team", player_id));
+        };
 
-        let team_id = player.team.unwrap();
-        let mut team = self.get_team_or_err(team_id)?.clone();
         team.can_set_crew_role(&player, role)?;
 
         let previous_spaceship_speed_bonus = TeamBonus::SpaceshipSpeed
@@ -318,19 +328,28 @@ impl World {
             team.jersey.clone()
         };
 
+        info!("Setting {} to {}", player.info.shortened_name(), role);
         // Demote previous crew role player to mozzo.
-        if current_role_player.is_some() {
+        if let Some(crew_player_id) = current_role_player {
+            if crew_player_id == player_id {
+                return Err(anyhow!("Player {:?} is already {}", player_id, role));
+            }
+
             let mut current_role_player = self
-                .get_player_or_err(current_role_player.unwrap())?
+                .get_player_or_err(crew_player_id)?
                 .clone();
+
+            info!("Removing {} from {}", current_role_player.info.shortened_name(), role);
             current_role_player.info.crew_role = CrewRole::Mozzo;
-            // Demoted player is a bit demoralized :(
-            current_role_player.morale =
-                (current_role_player.morale - MORALE_DEMOTION_MALUS).bound();
             team.crew_roles.mozzo.push(current_role_player.id);
+            // Demoted player is a bit demoralized :(
+
+            current_role_player.morale =
+                (current_role_player.morale + MORALE_DEMOTION_MALUS).bound();
+
             current_role_player.set_jersey(&jersey);
             self.players
-                .insert(current_role_player.id, current_role_player);
+                .insert(crew_player_id, current_role_player);
         }
 
         // Empty previous role of player.
@@ -522,46 +541,23 @@ impl World {
         Ok(())
     }
 
-    pub fn generate_game(
+     fn generate_game_no_checks(
         &mut self,
         mut home_team_in_game: TeamInGame,
         mut away_team_in_game: TeamInGame,
-        starting_at: Tick,
+        starting_at:Tick,
+        location: PlanetId
+
     ) -> AppResult<GameId> {
-        let mut home_team = self.get_team_or_err(home_team_in_game.team_id)?.clone();
-        let mut away_team = self.get_team_or_err(away_team_in_game.team_id)?.clone();
-
-        home_team.can_challenge_team(&away_team)?;
-
-        let location = match home_team.current_location {
-            TeamLocation::OnPlanet { planet_id } => planet_id,
-            _ => {
-                panic!("Should have failed in can_challenge_team")
-            }
-        };
-
         // Generate deterministic game id from team IDs and starting time.
         // Two games starting at u64::MAX milliseconds apart ~ 584_942_417 years
         // would have the same ID, we assume this can't happen.
-        let mut rng_seed = ((home_team.id.as_u64_pair().0 as u128
-            + away_team.id.as_u64_pair().0 as u128)
+        let mut rng_seed = ((home_team_in_game.team_id.as_u64_pair().0 as u128
+            + away_team_in_game.team_id.as_u64_pair().0 as u128)
             % (u64::MAX as u128)) as u64;
         rng_seed = ((rng_seed as u128 + starting_at) % (u64::MAX as u128)) as u64;
         let rng = &mut ChaCha8Rng::seed_from_u64(rng_seed);
         let game_id = GameId::from_u128(rng.gen());
-
-        home_team.current_game = Some(game_id);
-        away_team.current_game = Some(game_id);
-        self.dirty = true;
-        self.dirty_ui = true;
-
-        if home_team.id == self.own_team_id || away_team.id == self.own_team_id {
-            // Update network that game has started.
-            self.dirty_network = true;
-        }
-
-        self.teams.insert(home_team.id, home_team);
-        self.teams.insert(away_team.id, away_team);
 
         let planet = self.get_planet_or_err(location)?;
 
@@ -594,6 +590,94 @@ impl World {
             planet,
         );
         self.games.insert(game.id, game);
+
+        Ok(game_id)
+    }
+
+
+    pub fn generate_network_game(
+        &mut self,
+        home_team_in_game: TeamInGame,
+        away_team_in_game: TeamInGame,
+        starting_at: Tick
+    ) -> AppResult<GameId> {
+        let mut home_team = self.get_team_or_err(home_team_in_game.team_id)?.clone();
+        let mut away_team = self.get_team_or_err(away_team_in_game.team_id)?.clone();
+
+        // For a network game we run different checks.
+        home_team.can_challenge_team_over_network(&away_team)?;
+
+        let location = match home_team.current_location {
+            TeamLocation::OnPlanet { planet_id } => planet_id,
+            _ => {
+                panic!("Should have failed in can_challenge_team")
+            }
+        };
+
+       let game_id =  self.generate_game_no_checks(home_team_in_game,away_team_in_game,starting_at, location)?;
+
+       if let Some(previous_game_id) = home_team.current_game {
+        if game_id != previous_game_id {
+            return Err(anyhow!("Team is already playing another game"));
+        }
+    }
+
+    if let Some(previous_game_id) = away_team.current_game {
+        if game_id != previous_game_id {
+            return Err(anyhow!("Opponent is already playing another game"));
+        }
+    }
+
+       home_team.current_game = Some(game_id);
+        away_team.current_game = Some(game_id);
+        self.dirty = true;
+        self.dirty_ui = true;
+
+        if home_team.id == self.own_team_id || away_team.id == self.own_team_id {
+            // Update network that game has started.
+            self.dirty_network = true;
+        }
+
+        self.teams.insert(home_team.id, home_team);
+        self.teams.insert(away_team.id, away_team);
+
+        Ok(game_id)
+    }
+
+
+    pub fn generate_game(
+        &mut self,
+        home_team_in_game: TeamInGame,
+        away_team_in_game: TeamInGame,
+
+    ) -> AppResult<GameId> {
+        let starting_at = Tick::now() + GAME_START_DELAY;
+        let mut home_team = self.get_team_or_err(home_team_in_game.team_id)?.clone();
+        let mut away_team = self.get_team_or_err(away_team_in_game.team_id)?.clone();
+
+        home_team.can_challenge_team(&away_team)?;
+
+        let location = match home_team.current_location {
+            TeamLocation::OnPlanet { planet_id } => planet_id,
+            _ => {
+                panic!("Should have failed in can_challenge_team")
+            }
+        };
+
+       let game_id =  self.generate_game_no_checks(home_team_in_game,away_team_in_game,starting_at, location)?;
+
+       home_team.current_game = Some(game_id);
+        away_team.current_game = Some(game_id);
+        self.dirty = true;
+        self.dirty_ui = true;
+
+        if home_team.id == self.own_team_id || away_team.id == self.own_team_id {
+            // Update network that game has started.
+            self.dirty_network = true;
+        }
+
+        self.teams.insert(home_team.id, home_team);
+        self.teams.insert(away_team.id, away_team);
 
         Ok(game_id)
     }
@@ -646,7 +730,17 @@ impl World {
                 "Cannot receive team without peer_id over the network."
             ));
         }
+        if team.id == self.own_team_id {
+            return Err(anyhow!(
+                "Cannot receive own team over the network."
+            ));
+        }
 
+        // Check if we are receiving a team with which we have an open challenge.
+        // Note: there could be a race condition where we receive a team over the network right after
+        //       accepting the challenge but before the challenge has been finalized on our side.
+        //       In this case, the received team would have current_game set to some (set to the challenge game
+        //       they just started) and the challenge would fail on our hand since the challenge team must have no game.
         let own_team = self.get_own_team()?;
         for player in &players {
             // Check if any player in the team is part of own team, in which case fail.
@@ -777,17 +871,17 @@ impl World {
         self.get_game(id).ok_or(anyhow!("Game {:?} not found", id))
     }
 
-    pub fn team_rating(&self, team_id: TeamId) -> f32 {
-        let team = self.get_team_or_err(team_id).unwrap();
+    pub fn team_rating(&self, team_id: TeamId) -> AppResult<f32> {
+        let team = self.get_team_or_err(team_id)?;
         if team.player_ids.len() == 0 {
-            return 0.0;
+            return Ok(0.0);
         }
-        team.player_ids
+        Ok(team.player_ids
             .iter()
             .filter(|&&id| self.get_player(id).is_some())
             .map(|&id| self.get_player(id).unwrap().rating())
             .sum::<u8>() as f32
-            / team.player_ids.len() as f32
+            / team.player_ids.len() as f32)
     }
 
     pub fn simulate_until_now(&mut self) -> AppResult<Vec<UiCallbackPreset>> {
@@ -830,7 +924,7 @@ impl World {
             // The exploration bonus makes the random range larger, which is positive in expectation
             // since we clamp at 0.
             let base = ((2.0_f32).powf(amount as f32 / 2.0) * bonus) as i32;
-            for _ in 0..(duration / (1 * HOURS)) {
+            for _ in 0..(duration / QUICK_EXPLORATION_TIME) {
                 found_amount += rng.gen_range(-base..base).max(0) as u32;
             }
             resources.insert(resource, found_amount);
@@ -886,7 +980,7 @@ impl World {
                 callbacks.push(callback);
             }
             self.last_tick_short_interval += TickInterval::SHORT;
-            // Round up to the TickInterval::SHORT
+            // Round up to the TickInterval::SHORT to keep these ticks synchronous across network.
             self.last_tick_short_interval -= self.last_tick_short_interval % TickInterval::SHORT;
         }
 
@@ -905,6 +999,7 @@ impl World {
             }
 
             self.last_tick_medium_interval += TickInterval::MEDIUM;
+            
         }
 
         if current_timestamp >= self.last_tick_long_interval + TickInterval::LONG {
@@ -1037,6 +1132,18 @@ impl World {
                     None => (1, 1),
                 };
 
+                // Update to team game records.
+                let (home_team_record, away_team_record) = match game.winner {
+                    Some(winner) => {
+                        if winner == game.home_team_in_game.team_id {
+                            ([1,0,0], [0,1,0])
+                        } else {
+                            ([0,1,0], [1,0,0])
+                        }
+                    }
+                    None => ([0,0,1], [0,0,1])
+                };
+
                 // Set playing teams current game to None and assign income, reputation, and rum.
                 if let Ok(res) = self.get_team_or_err(game.home_team_in_game.team_id) {
                     let mut home_team = res.clone();
@@ -1044,6 +1151,13 @@ impl World {
                     home_team.add_resource(Resource::SATOSHI, home_team_income);
                     home_team.reputation = (home_team.reputation + home_team_reputation).bound();
                     home_team.add_resource(Resource::RUM, home_team_rum);
+                    if game.home_team_in_game.peer_id.is_some() &&game.away_team_in_game.peer_id.is_some() {
+                        // If it's a network game, update the network game record,
+                        home_team.network_game_record = [home_team.network_game_record[0] + home_team_record[0],home_team.network_game_record[1] + home_team_record[1],home_team.network_game_record[2] + home_team_record[2]];
+                    } else {
+                        // else update the game record.
+                        home_team.game_record = [home_team.game_record[0] + home_team_record[0],home_team.game_record[1] + home_team_record[1],home_team.game_record[2] + home_team_record[2]];
+                    }
                     self.teams.insert(home_team.id, home_team.clone());
                 }
 
@@ -1054,6 +1168,13 @@ impl World {
                     away_team.reputation = (away_team.reputation + away_team_reputation).bound();
                     away_team.add_resource(Resource::RUM, away_team_rum);
 
+                    if game.home_team_in_game.peer_id.is_some() &&game.away_team_in_game.peer_id.is_some() {
+                        // If it's a network game, update the network game record,
+                        away_team.network_game_record = [away_team.network_game_record[0] + away_team_record[0],away_team.network_game_record[1] + away_team_record[1],away_team.network_game_record[2] + away_team_record[2]];
+                    } else {
+                        // else update the game record.
+                        away_team.game_record = [away_team.game_record[0] + away_team_record[0],away_team.game_record[1] + away_team_record[1],away_team.game_record[2] + away_team_record[2]];
+                    }
                     self.teams.insert(away_team.id, away_team.clone());
                 }
 
@@ -1106,6 +1227,7 @@ impl World {
                     team.current_location = TeamLocation::OnPlanet { planet_id: to };
                     let mut planet = self.get_planet_or_err(to)?.clone();
                     let planet_name = planet.name.clone();
+                    let planet_filename = planet.filename.clone();
 
                     planet.team_ids.push(team.id);
 
@@ -1127,8 +1249,10 @@ impl World {
                     self.dirty_network = true;
                     self.dirty_ui = true;
                     return Ok(Some(UiCallbackPreset::PushUiPopup {
-                        popup_message: crate::ui::popup_message::PopupMessage::Ok(
-                            format!("{} has landed on planet {}", team_name, planet_name),
+                        popup_message: PopupMessage::TeamLanded(
+                            team_name,
+                            planet_name,
+                            planet_filename,
                             Tick::now(),
                         ),
                     }));
@@ -1155,28 +1279,28 @@ impl World {
 
                     // If the home planet is an asteroid, it means an asteroid has already been found.
                     let duration_bonus = duration as f64 / (1.0 * HOURS as f64);
+                    // If team has already MAX_NUM_ASTEROID_PER_TEAM, it cannot find another one. Finding asteroids
+                    // becomes progressively more difficult.
+                    let team_asteroid_modifier = (MAX_NUM_ASTEROID_PER_TEAM - team.asteroid_ids.len()) as f64 / MAX_NUM_ASTEROID_PER_TEAM as f64;
                     if home_planet.planet_type != PlanetType::Asteroid
                         && rng.gen_bool(
                             (ASTEROID_DISCOVERY_PROBABILITY
-                                * around_planet.asteroid_probability as f64
-                                * duration_bonus)
+                                * around_planet.asteroid_probability 
+                                * duration_bonus
+                                *team_asteroid_modifier)
                                 .min(1.0),
                         )
                     {
                         // We temporarily set the team back on the exploration base planet,
                         // until the asteroid is accepted and generated.
                         team.current_location = TeamLocation::OnPlanet { planet_id: around };
-
                         self.teams.insert(team.id, team);
                         self.dirty = true;
                         self.dirty_network = true;
                         self.dirty_ui = true;
 
                         return Ok(Some(UiCallbackPreset::PushUiPopup {
-                            popup_message:
-                                crate::ui::popup_message::PopupMessage::AsteroidNameDialog(
-                                    Tick::now(),
-                                ),
+                            popup_message: PopupMessage::AsteroidNameDialog(Tick::now()),
                         }));
                     }
 
@@ -1194,52 +1318,27 @@ impl World {
                         team.add_resource(resource.clone(), amount);
                     }
 
-                    let found_free_pirates =
-                        self.free_pirates_found_after_exploration(&around_planet, duration);
+                    let found_pirates = self
+                        .free_pirates_found_after_exploration(&around_planet, duration)
+                        .iter()
+                        .map(|&player_id| {
+                            self.get_player_or_err(player_id)
+                                .expect("Player should be part of world")
+                                .clone()
+                        })
+                        .collect_vec();
 
-                    let mut exploration_result_text = "".to_string();
-                    for (resource, &amount) in found_resources.iter() {
-                        if amount > 0 {
-                            exploration_result_text.push_str(
-                                format!("  {} {}\n", amount, resource.to_string().to_lowercase())
-                                    .as_str(),
-                            );
-                        }
-                    }
-
-                    if found_free_pirates.len() > 0 {
-                        exploration_result_text.push_str(
-                            format! {"\nFound {} stranded pirate{}:\n", found_free_pirates.len(), if found_free_pirates.len() > 1 {
-                                "s"
-                            }else{""}}.as_str(),
-                        );
-                        for &player_id in found_free_pirates.iter() {
-                            let player = self.get_player_or_err(player_id)?;
-                            let text = format!(
-                                "  {:<16} {}\n",
-                                player.info.shortened_name(),
-                                player.stars()
-                            );
-                            exploration_result_text.push_str(text.as_str());
-                        }
-                    }
                     self.planets.insert(around_planet.id, around_planet);
-
                     self.teams.insert(team.id, team);
+
                     self.dirty = true;
                     self.dirty_network = true;
                     self.dirty_ui = true;
 
-                    if exploration_result_text.len() == 0 {
-                        exploration_result_text.push_str("Nothing found!")
-                    }
-
                     return Ok(Some(UiCallbackPreset::PushUiPopup {
-                        popup_message: crate::ui::popup_message::PopupMessage::Ok(
-                            format!(
-                                "Team has returned from exploration:\n\n{}",
-                                exploration_result_text
-                            ),
+                        popup_message: PopupMessage::ExplorationResult(
+                            found_resources,
+                            found_pirates,
                             Tick::now(),
                         ),
                     }));
@@ -1299,10 +1398,7 @@ impl World {
             self.populate_planet(rng, planet);
         }
         Ok(UiCallbackPreset::PushUiPopup {
-            popup_message: crate::ui::popup_message::PopupMessage::Ok(
-                "Free pirates refreshed".into(),
-                Tick::now(),
-            ),
+            popup_message: PopupMessage::Ok("Free pirates refreshed".into(), false, Tick::now()),
         })
     }
 
@@ -1318,7 +1414,8 @@ impl World {
             player.info.age = player.info.age + AGE_INCREASE_PER_LONG_TICK;
             if player.team.is_some() {
                 // Pirates slightly dislike being part of a team.
-                player.morale = (player.morale - MORALE_DECREASE_PER_LONG_TICK).bound();
+                // This is counteracted by the morale boost pirates get by playing games.
+                player.morale = (player.morale + MORALE_DECREASE_PER_LONG_TICK).bound();
             }
             player.reputation = (player.reputation - REPUTATION_DECREASE_PER_LONG_TICK).bound();
 
@@ -1338,6 +1435,7 @@ impl World {
                 }
                 // Increase player skills from training
                 player.modify_skill(idx, player.skills_training[idx]);
+                player.skills_training[idx] = 0.0;
             }
             player.previous_skills = player.current_skill_array();
         }
@@ -1399,13 +1497,13 @@ impl World {
                 ) {
                     releasing_player_ids.push(player_id);
                     messages.push(UiCallbackPreset::PushUiPopup {
-                        popup_message: crate::ui::popup_message::PopupMessage::Ok(
+                        popup_message: PopupMessage::Ok(
                             format!(
                                 "{} {} left the crew!\n{} morale was too low...",
                                 player.info.first_name,
                                 player.info.last_name,
                                 player.info.pronouns.as_possessive()
-                            ),
+                            ),false, 
                             Tick::now(),
                         ),
                     })
@@ -1413,14 +1511,14 @@ impl World {
             } else if player.info.relative_age() > rng.gen_range(MIN_RELATIVE_RETIREMENT_AGE..1.0) {
                 releasing_player_ids.push(player_id);
                 messages.push(UiCallbackPreset::PushUiPopup {
-                    popup_message: crate::ui::popup_message::PopupMessage::Ok(
+                    popup_message: PopupMessage::Ok(
                         format!(
                             "{} {} left the crew and retired to cultivate turnips\n{} {} been a great pirate...",
                             player.info.first_name,
                             player.info.last_name,
                             player.info.pronouns.as_subject(),
                             player.info.pronouns.to_have(),
-                        ),
+                        ),false, 
                         Tick::now(),
                     ),
                 })
@@ -1480,9 +1578,8 @@ impl World {
                 TeamInGame::from_team_id(teams[1].id, &self.teams, &self.players)
                     .ok_or(anyhow!("Team {:?} not found in world", teams[1].id))?;
 
-            let starting_at = Tick::now() + BASE_GAME_START_DELAY * rng.gen_range(1..=6);
 
-            self.generate_game(home_team_in_game, away_team_in_game, starting_at)?;
+            self.generate_game(home_team_in_game, away_team_in_game)?;
             return Ok(());
         }
 
@@ -1500,10 +1597,16 @@ impl World {
             self.planets
                 .retain(|_, planet| planet.peer_id.is_none() || planet.peer_id.unwrap() != peer_id);
             own_team
-                .open_challenges
+                .sent_challenges
+                .retain(|_, challenge| challenge.target_peer_id != peer_id);
+            own_team
+                .received_challenges
                 .retain(|_, challenge| challenge.proposer_peer_id != peer_id);
             own_team
-                .open_trades
+                .sent_trades
+                .retain(|_, trade| trade.target_peer_id != peer_id);
+            own_team
+                .received_trades
                 .retain(|_, trade| trade.proposer_peer_id != peer_id);
         } else {
             // Filter all data that has a peer_id (i.e. keep only local data)
@@ -1539,10 +1642,10 @@ impl World {
         let from = match team.current_location {
             TeamLocation::OnPlanet { planet_id } => planet_id,
             TeamLocation::Travelling { .. } => {
-                return Err(anyhow!("Team {} is travelling", team.name))
+                return Err(anyhow!("Team is travelling"))
             }
             TeamLocation::Exploring { .. } => {
-                return Err(anyhow!("Team {} is exploring", team.name))
+                return Err(anyhow!("Team is exploring"))
             }
         };
 
@@ -1658,7 +1761,7 @@ mod test {
             skill::Rated,
             types::{TeamBonus, TeamLocation},
             utils::PLANET_DATA,
-            world::{ASTEROID_DISCOVERY_PROBABILITY, AU, HOURS, LONG_EXPLORATION_TIME},
+            world::{ASTEROID_DISCOVERY_PROBABILITY, AU, HOURS, LONG_EXPLORATION_TIME, MAX_NUM_ASTEROID_PER_TEAM},
         },
     };
     use rand::{seq::IteratorRandom, Rng, SeedableRng};
@@ -1775,12 +1878,13 @@ mod test {
                 player.stars()
             );
         }
-
+        
+        let team_asteroid_modifier = (MAX_NUM_ASTEROID_PER_TEAM - team.asteroid_ids.len()) as f64 / MAX_NUM_ASTEROID_PER_TEAM as f64;
         if planet.planet_type != PlanetType::Asteroid
             && rng.gen_bool(
                 (ASTEROID_DISCOVERY_PROBABILITY
-                    * planet.asteroid_probability as f64
-                    * duration_bonus)
+                    * planet.asteroid_probability 
+                    * duration_bonus*team_asteroid_modifier)
                     .min(1.0),
             )
         {
@@ -1805,12 +1909,12 @@ mod test {
                 player.stars()
             );
         }
-
+        let team_asteroid_modifier = (MAX_NUM_ASTEROID_PER_TEAM - team.asteroid_ids.len()) as f64 / MAX_NUM_ASTEROID_PER_TEAM as f64;
         if planet.planet_type != PlanetType::Asteroid
             && rng.gen_bool(
                 (ASTEROID_DISCOVERY_PROBABILITY
-                    * planet.asteroid_probability as f64
-                    * duration_bonus)
+                    * planet.asteroid_probability 
+                    * duration_bonus*team_asteroid_modifier)
                     .min(1.0),
             )
         {

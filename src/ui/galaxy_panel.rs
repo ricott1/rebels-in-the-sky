@@ -7,9 +7,9 @@ use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
 use super::utils::hover_text_target;
 use super::widgets::quick_explore_button;
 use super::{traits::Screen, widgets::default_block};
-use crate::types::{AppResult, SystemTimeTick, AU};
+use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId};
 use crate::ui::constants::UiKey;
-use crate::world::skill::{GameSkill, Rated};
+use crate::world::skill::Rated;
 use crate::world::types::PlayerLocation;
 use crate::{
     types::{PlanetId, PlanetMap},
@@ -20,7 +20,7 @@ use crate::{
 use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
 use itertools::Itertools;
-use ratatui::layout::Constraint;
+use ratatui::layout::{Constraint, Margin};
 use ratatui::widgets::{List, ListItem};
 use ratatui::{
     layout::Layout,
@@ -292,8 +292,9 @@ impl GalaxyPanel {
             .sorted_by(|&&a, &&b| {
                 world
                     .team_rating(b)
-                    .value()
-                    .cmp(&world.team_rating(a).value())
+                    .unwrap_or_default()
+                    .partial_cmp(&world.team_rating(a).unwrap_or_default())
+                    .expect("Value should be some")
             })
             .map(|&team_id| {
                 let team = world
@@ -305,11 +306,15 @@ impl GalaxyPanel {
                 } else if team.peer_id.is_some() {
                     style = UiStyle::NETWORK;
                 }
-                let text = format!("{:<14} {}", team.name, world.team_rating(team.id).stars());
-                (text, style)
+                let text = format!(
+                    "{:<12} {}",
+                    team.name,
+                    world.team_rating(team.id).unwrap_or_default().stars()
+                );
+                (team.id, text, style)
             })
             .take(10)
-            .collect::<Vec<(String, Style)>>();
+            .collect::<Vec<(TeamId, String, Style)>>();
 
         let player_options = world
             .players
@@ -335,10 +340,10 @@ impl GalaxyPanel {
                     format!("{} {}", player.info.first_name, player.info.last_name),
                     player.stars()
                 );
-                (text, UiStyle::DEFAULT)
+                (player.id, text, UiStyle::DEFAULT)
             })
             .take(10)
-            .collect::<Vec<(String, Style)>>();
+            .collect::<Vec<(PlayerId, String, Style)>>();
 
         let resource_options = target
             .resources
@@ -379,34 +384,54 @@ impl GalaxyPanel {
 
         if team_options.len() > 0 {
             frame.render_widget(Clear, split[1]);
-            frame.render_widget(
-                List::new(
-                    team_options
-                        .iter()
-                        .map(|(text, style)| {
-                            ListItem::new(Span::styled(format!(" {}", text), *style))
-                        })
-                        .collect::<Vec<ListItem>>(),
-                )
-                .block(default_block().title("Teams")),
-                split[1],
-            );
+            let l_split = Layout::vertical([Constraint::Length(1)].repeat(team_options.len()))
+                .split(split[1].inner(Margin {
+                    horizontal: 2,
+                    vertical: 1,
+                }));
+
+            for (idx, (team_id, text, style)) in team_options.iter().enumerate() {
+                frame.render_widget(
+                    Button::no_box(
+                        Span::styled(text.clone(), style.clone())
+                            .into_left_aligned_line()
+                            .into(),
+                        UiCallbackPreset::GoToTeam {
+                            team_id: team_id.clone(),
+                        },
+                        Arc::clone(&self.callback_registry),
+                    )
+                    .set_hover_style(UiStyle::HIGHLIGHT),
+                    l_split[idx],
+                );
+            }
+            frame.render_widget(default_block().title("Teams "), split[1]);
         }
 
         if player_options.len() > 0 {
             frame.render_widget(Clear, split[2]);
-            frame.render_widget(
-                List::new(
-                    player_options
-                        .iter()
-                        .map(|(text, style)| {
-                            ListItem::new(Span::styled(format!(" {}", text), *style))
-                        })
-                        .collect::<Vec<ListItem>>(),
-                )
-                .block(default_block().title("Top free pirates")),
-                split[2],
-            );
+            let l_split = Layout::vertical([Constraint::Length(1)].repeat(player_options.len()))
+                .split(split[2].inner(Margin {
+                    horizontal: 2,
+                    vertical: 1,
+                }));
+
+            for (idx, (player_id, text, style)) in player_options.iter().enumerate() {
+                frame.render_widget(
+                    Button::no_box(
+                        Span::styled(text.clone(), style.clone())
+                            .into_left_aligned_line()
+                            .into(),
+                        UiCallbackPreset::GoToPlayer {
+                            player_id: player_id.clone(),
+                        },
+                        Arc::clone(&self.callback_registry),
+                    )
+                    .set_hover_style(UiStyle::HIGHLIGHT),
+                    l_split[idx],
+                );
+            }
+            frame.render_widget(default_block().title("Top free pirates "), split[2]);
         }
 
         if resource_options.len() > 0 {
@@ -420,7 +445,7 @@ impl GalaxyPanel {
                         })
                         .collect::<Vec<ListItem>>(),
                 )
-                .block(default_block().title("Resources")),
+                .block(default_block().title("Resources ")),
                 split[3],
             );
         }
@@ -638,25 +663,32 @@ impl Screen for GalaxyPanel {
     }
 
     fn footer_spans(&self) -> Vec<Span> {
-        let spans = vec![
-            Span::styled(
-                " ↑/↓ ",
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(" Select ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                " Enter ",
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(" Zoom in ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                " Backspace ",
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(" Zoom out ", Style::default().fg(Color::DarkGray)),
-        ];
-
-        spans
+        match self.zoom_level {
+            ZoomLevel::In => vec![
+                Span::styled(
+                    " Backspace ",
+                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
+                ),
+                Span::styled(" Zoom out ", Style::default().fg(Color::DarkGray)),
+            ],
+            ZoomLevel::Out => vec![
+                Span::styled(
+                    " ↑/↓ ",
+                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
+                ),
+                Span::styled(" Select ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    " Enter ",
+                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
+                ),
+                Span::styled(" Zoom in ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    " Backspace ",
+                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
+                ),
+                Span::styled(" Zoom out ", Style::default().fg(Color::DarkGray)),
+            ],
+        }
     }
 }
 

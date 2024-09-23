@@ -46,7 +46,7 @@ pub enum ActionSituation {
     LongShot,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ActionOutput {
     pub random_seed: [u8; 32],
     pub advantage: Advantage,
@@ -67,7 +67,7 @@ pub struct ActionOutput {
     pub possession: Possession,
 }
 
-#[derive(Debug, Serialize_repr, Deserialize_repr, Clone, Default)]
+#[derive(Debug, Serialize_repr, Deserialize_repr, Clone, Default, PartialEq)]
 #[repr(u8)]
 pub enum Action {
     #[default]

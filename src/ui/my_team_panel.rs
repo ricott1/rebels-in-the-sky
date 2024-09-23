@@ -15,7 +15,6 @@ use crate::{
     types::{AppResult, GameId, PlayerId, SystemTimeTick, Tick},
     world::{
         constants::*,
-        planet::PlanetType,
         position::{GamePosition, Position, MAX_POSITION},
         skill::Rated,
         spaceship::{SpaceshipComponent, SpaceshipUpgrade},
@@ -35,7 +34,7 @@ use ratatui::{
     layout::Margin,
     prelude::{Constraint, Layout, Rect},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Paragraph, Wrap},
     Frame,
 };
 use std::{
@@ -50,6 +49,7 @@ pub enum MyTeamView {
     Games,
     Market,
     Shipyard,
+    Asteroids,
 }
 
 impl MyTeamView {
@@ -58,7 +58,8 @@ impl MyTeamView {
             MyTeamView::Info => MyTeamView::Games,
             MyTeamView::Games => MyTeamView::Market,
             MyTeamView::Market => MyTeamView::Shipyard,
-            MyTeamView::Shipyard => MyTeamView::Info,
+            MyTeamView::Shipyard => MyTeamView::Asteroids,
+            MyTeamView::Asteroids => MyTeamView::Info,
         }
     }
 }
@@ -76,6 +77,7 @@ pub struct MyTeamPanel {
     game_index: Option<usize>,
     planet_index: Option<usize>,
     upgrade_index: usize,
+    asteroid_index: Option<usize>,
     view: MyTeamView,
     active_list: PanelList,
     players: Vec<PlayerId>,
@@ -83,6 +85,7 @@ pub struct MyTeamPanel {
     loaded_games: HashMap<GameId, Game>,
     planet_markets: Vec<PlanetId>,
     challenge_teams: Vec<TeamId>,
+    asteroid_ids: Vec<PlanetId>,
     own_team_id: TeamId,
     current_planet_id: Option<PlanetId>,
     tick: usize,
@@ -102,7 +105,7 @@ impl MyTeamPanel {
         }
     }
 
-    fn render_view_buttons(&mut self, frame: &mut Frame, area: Rect) {
+    fn render_view_buttons(&self, frame: &mut Frame, area: Rect) -> AppResult<()> {
         let hover_text_target = hover_text_target(frame);
         let mut view_info_button = Button::new(
             "View: Info".into(),
@@ -150,14 +153,29 @@ impl MyTeamPanel {
             hover_text_target,
         );
 
+        let mut view_asteroids_button = Button::new(
+            format!("View: Asteroids ({})", self.asteroid_ids.len()),
+            UiCallbackPreset::SetMyTeamPanelView {
+                view: MyTeamView::Asteroids,
+            },
+            Arc::clone(&self.callback_registry),
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text(
+            "View asteorids found during exploration.".into(),
+            hover_text_target,
+        );
+
         match self.view {
             MyTeamView::Info => view_info_button.disable(None),
             MyTeamView::Games => view_games_button.disable(None),
             MyTeamView::Market => view_market_button.disable(None),
             MyTeamView::Shipyard => view_shipyard_button.disable(None),
+            MyTeamView::Asteroids => view_asteroids_button.disable(None),
         }
 
         let split = Layout::vertical([
+            Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
@@ -170,6 +188,9 @@ impl MyTeamPanel {
         frame.render_widget(view_games_button, split[1]);
         frame.render_widget(view_market_button, split[2]);
         frame.render_widget(view_shipyard_button, split[3]);
+        frame.render_widget(view_asteroids_button, split[4]);
+
+        Ok(())
     }
 
     fn render_market(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
@@ -443,7 +464,7 @@ impl MyTeamPanel {
 
             let max_buy_amount = team.max_resource_buy_amount(*resource, buy_unit_cost);
             for (idx, amount) in [1, 10, max_buy_amount as i32].iter().enumerate() {
-                if let Ok(btn) = trade_button(
+                if let Ok(btn) = trade_resource_button(
                     &world,
                     *resource,
                     *amount,
@@ -462,7 +483,7 @@ impl MyTeamPanel {
 
             let max_sell_amount = team.max_resource_sell_amount(*resource);
             for (idx, amount) in [1, 10, max_sell_amount as i32].iter().enumerate() {
-                if let Ok(btn) = trade_button(
+                if let Ok(btn) = trade_resource_button(
                     &world,
                     *resource,
                     -*amount,
@@ -480,17 +501,15 @@ impl MyTeamPanel {
             }
         }
 
-        let storage_spans = get_storage_spans(team);
-        let fuel_spans = get_fuel_spans(team);
-
+        let mut info_spans = vec![];
+        info_spans.append(&mut get_fuel_spans(team));
+        info_spans.push(Span::raw("  "));
+        info_spans.append(&mut get_storage_spans(team));
         frame.render_widget(
             Paragraph::new(vec![
-                Line::from(Span::raw(format!(
-                    "Treasury {}",
-                    format_satoshi(team.balance())
-                ))),
-                Line::from(storage_spans),
-                Line::from(fuel_spans),
+                Line::from(""),
+                Line::from(format!("Treasury: {}", format_satoshi(team.balance()))),
+                Line::from(info_spans),
             ]),
             button_split[5].inner(Margin {
                 horizontal: 1,
@@ -501,29 +520,38 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_info(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_info(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let team = world.get_own_team()?;
         let hover_text_target = hover_text_target(&frame);
 
         let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
-        let storage_spans = get_storage_spans(team);
-        let fuel_spans = get_fuel_spans(team);
-
-        let home_planet = world.get_planet_or_err(team.home_planet_id)?;
-        let asteroid_name = if home_planet.planet_type == PlanetType::Asteroid {
-            home_planet.name.clone()
-        } else {
-            "None".into()
-        };
 
         let info = Paragraph::new(vec![
             Line::from(""),
-            Line::from(format!("Rating {}", world.team_rating(team.id).stars())),
-            Line::from(format!("Reputation {}", team.reputation.stars())),
-            Line::from(format!("Treasury {}", format_satoshi(team.balance()))),
-            Line::from(format!("Asteroid: {}", asteroid_name)),
-            Line::from(fuel_spans),
-            Line::from(storage_spans),
+            Line::from(format!(
+                "Rating {:5}  Reputation {:5}",
+                world.team_rating(team.id).unwrap_or_default().stars(),
+                team.reputation.stars(),
+            )),
+            Line::from(vec![
+                Span::raw(format!(
+                    "Game record: W{}/L{}/D{}  ",
+                    team.game_record[0], team.game_record[1], team.game_record[2]
+                )),
+                Span::styled(
+                    format!(
+                        "Network: W{}/L{}/D{} ",
+                        team.network_game_record[0],
+                        team.network_game_record[1],
+                        team.network_game_record[2]
+                    ),
+                    UiStyle::NETWORK,
+                ),
+            ]),
+            Line::from(format!("Treasury: {:<10}", format_satoshi(team.balance()),)),
+            Line::from(get_crew_spans(team)),
+            Line::from(get_fuel_spans(team)),
+            Line::from(get_storage_spans(team)),
             Line::from(vec![
                 Span::styled("   Gold", UiStyle::STORAGE_GOLD),
                 Span::raw(format!(
@@ -687,7 +715,7 @@ impl MyTeamPanel {
     }
 
     fn render_challenge_teams(
-        &mut self,
+        &self,
         frame: &mut Frame,
         world: &World,
         area: Rect,
@@ -720,7 +748,7 @@ impl MyTeamPanel {
             };
             frame.render_widget(
                 Button::new(
-                    format!("Current game - {}", game_text),
+                    format!("Playing - {}", game_text),
                     UiCallbackPreset::GoToGame { game_id },
                     Arc::clone(&self.callback_registry),
                 )
@@ -760,7 +788,7 @@ impl MyTeamPanel {
                 Paragraph::new(format!(
                     "{:<12} {}",
                     team.name,
-                    world.team_rating(team_id).stars()
+                    world.team_rating(team_id).unwrap_or_default().stars()
                 )),
                 left_split[idx].inner(Margin {
                     horizontal: 1,
@@ -886,28 +914,38 @@ impl MyTeamPanel {
                 Line::from(""),
                 Line::from(Span::styled(
                     format!(
-                        "{:12} {:02} {:02} {:02} {:02} {:05}",
+                        "{:12} {} {} {} {} {}",
                         "Team", "Q1", "Q2", "Q3", "Q4", "Total"
                     ),
                     UiStyle::HEADER,
                 )),
                 Line::from(format!(
-                    "{:12} {:02} {:02} {:02} {:02} {}",
+                    "{:12} {:02} {:02} {:02} {:02} {:<3} {}",
                     game.home_team_name,
                     game.home_quarters_score[0],
                     game.home_quarters_score[1],
                     game.home_quarters_score[2],
                     game.home_quarters_score[3],
-                    game.home_quarters_score.iter().sum::<u16>()
+                    game.home_quarters_score.iter().sum::<u16>(),
+                    if game.home_team_knocked_out {
+                        "knocked out"
+                    } else {
+                        ""
+                    }
                 )),
                 Line::from(format!(
-                    "{:12} {:02} {:02} {:02} {:02} {}",
+                    "{:12} {:02} {:02} {:02} {:02} {:<3} {}",
                     game.away_team_name,
                     game.away_quarters_score[0],
                     game.away_quarters_score[1],
                     game.away_quarters_score[2],
                     game.away_quarters_score[3],
-                    game.away_quarters_score.iter().sum::<u16>()
+                    game.away_quarters_score.iter().sum::<u16>(),
+                    if game.away_team_knocked_out {
+                        "knocked out"
+                    } else {
+                        ""
+                    }
                 )),
                 Line::from(format!("")),
                 Line::from(Span::styled(game.home_team_name.clone(), UiStyle::HEADER)),
@@ -1025,7 +1063,7 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_shipyard(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_shipyard(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
         self.render_shipyard_upgrades(frame, world, split[0])?;
 
@@ -1070,7 +1108,7 @@ impl MyTeamPanel {
     }
 
     fn render_shipyard_upgrades(
-        &mut self,
+        &self,
         frame: &mut Frame,
         world: &World,
         area: Rect,
@@ -1202,12 +1240,132 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_player_buttons(
-        &mut self,
+    fn render_asteroids(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+        let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
+        self.render_asteroid_list(frame, world, split[0])?;
+        self.render_selected_asteroid(frame, world, split[1])?;
+        Ok(())
+    }
+
+    fn render_asteroid_list(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+        frame.render_widget(default_block().title("Asteroids "), area);
+        let team = world.get_own_team()?;
+
+        if self.asteroid_ids.len() == 0 {
+            frame.render_widget(
+                Paragraph::new("No asteroid has been found yet, keep exploring!")
+                    .wrap(Wrap { trim: true }),
+                area.inner(Margin {
+                    horizontal: 2,
+                    vertical: 2,
+                }),
+            );
+            return Ok(());
+        }
+
+        let split = Layout::horizontal([Constraint::Length(12), Constraint::Length(30)]).split(
+            area.inner(Margin {
+                horizontal: 1,
+                vertical: 1,
+            }),
+        );
+
+        let options = self
+            .asteroid_ids
+            .iter()
+            .filter(|&&asteroid_id| world.get_planet_or_err(asteroid_id).is_ok())
+            .map(|&asteroid_id| {
+                let asteroid = world.get_planet_or_err(asteroid_id).unwrap();
+                let style = match team.current_location {
+                    TeamLocation::OnPlanet { planet_id } => {
+                        if planet_id == asteroid_id {
+                            UiStyle::OWN_TEAM
+                        } else {
+                            UiStyle::DEFAULT
+                        }
+                    }
+                    _ => UiStyle::DEFAULT,
+                };
+                (asteroid.name.clone(), style)
+            })
+            .collect_vec();
+
+        let list = selectable_list(options, &self.callback_registry);
+
+        frame.render_stateful_widget(
+            list,
+            split[0].inner(Margin {
+                horizontal: 1,
+                vertical: 1,
+            }),
+            &mut ClickableListState::default().with_selected(self.asteroid_index),
+        );
+
+        Ok(())
+    }
+
+    fn render_selected_asteroid(
+        &self,
         frame: &mut Frame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
+        if self.asteroid_ids.len() == 0 {
+            frame.render_widget(default_block(), area);
+            return Ok(());
+        }
+
+        let asteroid =
+            world.get_planet_or_err(self.asteroid_ids[self.asteroid_index.unwrap_or_default()])?;
+
+        frame.render_widget(default_block().title(format!("{} ", asteroid.name)), area);
+
+        let split = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(
+            area.inner(Margin {
+                horizontal: 1,
+                vertical: 1,
+            }),
+        );
+
+        let img_lines = self
+            .gif_map
+            .lock()
+            .unwrap()
+            .planet_zoom_out_frame_lines(asteroid, 0, world)?;
+        frame.render_widget(
+            Paragraph::new(img_lines).centered(),
+            split[0].inner(Margin {
+                horizontal: 0,
+                vertical: 1,
+            }),
+        );
+
+        let b_split =
+            Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(split[1]);
+
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "No kartoffeln to plant",
+                UiStyle::DISCONNECTED,
+            ))
+            .centered()
+            .block(default_block()),
+            b_split[0],
+        );
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "No kartoffeln to harvest",
+                UiStyle::DISCONNECTED,
+            ))
+            .centered()
+            .block(default_block()),
+            b_split[1],
+        );
+
+        Ok(())
+    }
+
+    fn render_player_buttons(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let team = world.get_own_team()?;
         if self.player_index.is_none() {
             return Ok(());
@@ -1307,7 +1465,7 @@ impl MyTeamPanel {
         let can_release = team.can_release_player(&player);
         let mut release_button = Button::new(
             format!("Fire {}", player.info.shortened_name()),
-            UiCallbackPreset::ReleasePlayer { player_id },
+            UiCallbackPreset::PromptReleasePlayer { player_id },
             Arc::clone(&self.callback_registry),
         )
         .set_hover_text("Fire pirate from the crew!".into(), hover_text_target)
@@ -1453,12 +1611,7 @@ impl MyTeamPanel {
         Ok(table)
     }
 
-    fn render_players_top(
-        &mut self,
-        frame: &mut Frame,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn render_players_top(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
         let hover_text_target = hover_text_target(frame);
         let team = world.get_own_team()?;
         let top_split =
@@ -1470,7 +1623,7 @@ impl MyTeamPanel {
             table.block(default_block().title(format!(
                 "{} {} ↓/↑",
                 team.name.clone(),
-                world.team_rating(team.id).stars()
+                world.team_rating(team.id).unwrap_or_default().stars()
             ))),
             top_split[0],
             &mut ClickableTableState::default().with_selected(self.player_index),
@@ -1561,7 +1714,7 @@ impl MyTeamPanel {
     }
 
     fn render_on_planet_spaceship(
-        &mut self,
+        &self,
         frame: &mut Frame,
         world: &World,
         area: Rect,
@@ -1594,7 +1747,7 @@ impl MyTeamPanel {
     }
 
     fn render_upgrading_spaceship(
-        &mut self,
+        &self,
         frame: &mut Frame,
         world: &World,
         area: Rect,
@@ -1631,7 +1784,7 @@ impl MyTeamPanel {
     }
 
     fn render_in_shipyard_spaceship(
-        &mut self,
+        &self,
         frame: &mut Frame,
         world: &World,
         area: Rect,
@@ -1705,7 +1858,7 @@ impl MyTeamPanel {
     }
 
     fn render_travelling_spaceship(
-        &mut self,
+        &self,
         frame: &mut Frame,
         world: &World,
         area: Rect,
@@ -1745,7 +1898,7 @@ impl MyTeamPanel {
     }
 
     fn render_exploring_spaceship(
-        &mut self,
+        &self,
         frame: &mut Frame,
         world: &World,
         area: Rect,
@@ -1804,7 +1957,7 @@ impl Screen for MyTeamPanel {
             _ => None,
         };
 
-        if self.players.len() != world.get_own_team()?.player_ids.len() || world.dirty_ui {
+        if self.players.len() != own_team.player_ids.len() || world.dirty_ui {
             self.players = own_team.player_ids.clone();
             self.players.sort_by(|a, b| {
                 let a = world.get_player(*a).unwrap();
@@ -1831,6 +1984,20 @@ impl Screen for MyTeamPanel {
                 self.planet_index = Some(0);
             }
         }
+
+        if self.asteroid_ids.len() != own_team.asteroid_ids.len() || world.dirty_ui {
+            self.asteroid_ids = own_team.asteroid_ids.clone();
+        }
+
+        self.asteroid_index = if self.asteroid_ids.len() > 0 {
+            if let Some(index) = self.asteroid_index {
+                Some(index % self.asteroid_ids.len())
+            } else {
+                Some(0)
+            }
+        } else {
+            None
+        };
 
         self.player_index = if self.players.len() > 0 {
             if let Some(index) = self.player_index {
@@ -1872,7 +2039,8 @@ impl Screen for MyTeamPanel {
                 let b = world.get_team_or_err(*b).unwrap();
                 world
                     .team_rating(b.id)
-                    .partial_cmp(&world.team_rating(a.id))
+                    .unwrap_or_default()
+                    .partial_cmp(&world.team_rating(a.id).unwrap_or_default())
                     .unwrap()
             });
         }
@@ -1904,13 +2072,14 @@ impl Screen for MyTeamPanel {
         let bottom_split =
             Layout::horizontal([Constraint::Length(32), Constraint::Min(40)]).split(split[1]);
 
-        self.render_view_buttons(frame, bottom_split[0]);
+        self.render_view_buttons(frame, bottom_split[0])?;
 
         match self.view {
             MyTeamView::Info => self.render_info(frame, world, bottom_split[1])?,
             MyTeamView::Games => self.render_games(frame, world, bottom_split[1])?,
             MyTeamView::Market => self.render_market(frame, world, bottom_split[1])?,
             MyTeamView::Shipyard => self.render_shipyard(frame, world, bottom_split[1])?,
+            MyTeamView::Asteroids => self.render_asteroids(frame, world, bottom_split[1])?,
         }
 
         Ok(())
@@ -1956,6 +2125,8 @@ impl SplitPanel for MyTeamPanel {
             return self.planet_index.unwrap_or_default();
         } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Shipyard {
             return self.upgrade_index;
+        } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Asteroids {
+            return self.asteroid_index.unwrap_or_default();
         }
 
         // we should always have at least 1 player
@@ -1969,6 +2140,8 @@ impl SplitPanel for MyTeamPanel {
             return self.planet_markets.len();
         } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Shipyard {
             return 3;
+        } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Asteroids {
+            return self.asteroid_ids.len();
         }
         self.players.len()
     }
@@ -1981,6 +2154,8 @@ impl SplitPanel for MyTeamPanel {
                 self.planet_index = None;
             } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Shipyard {
                 panic!("Max upgrade_index should be 3");
+            } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Asteroids {
+                self.asteroid_index = None;
             } else {
                 self.player_index = None;
             }
@@ -1991,6 +2166,8 @@ impl SplitPanel for MyTeamPanel {
                 self.planet_index = Some(index % self.max_index());
             } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Shipyard {
                 self.upgrade_index = index % self.max_index();
+            } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Asteroids {
+                self.asteroid_index = Some(index % self.max_index());
             } else {
                 self.player_index = Some(index % self.max_index());
             }

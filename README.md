@@ -5,7 +5,7 @@
 It's the year 2101. Corporations have taken over the world.
 The only way to be free is to join a pirate crew and start plundering the galaxy. The only mean of survival is to play basketball.
 
-Now it's your turn to go out there and make a name for yourself. Create your crew and start wondering the galaxy in search of worthy basketball opponents.
+Now it's your turn to go out there and make a name for yourself. Create your crew and start wandering the galaxy in search of worthy basketball opponents.
 
 The game is under heavy development and breaking changes are often introduced. If you can't continue an old game because the save file is invalid, you probably need to start a new one or open an issue to check if the save file can be migrated.
 
@@ -17,11 +17,13 @@ Connect via SSH to try the game.
 
 ## Download
 
-Compiled binaries of the last release can be downloaded at https://rebels.frittura.org.
+Compiled binaries of the last release can be also downloaded at https://rebels.frittura.org.
 
 ## Music
 
-Previous versions had the option to play music directly in the game, but this was removed to reduce the binary size. Nevertheless, you can still listen to the game soundtrack by connecting to `https://radio.frittura.org/rebels.ogg`!
+Previous versions had the option to play music directly in the game, but this was removed to reduce the binary size and now music is streamed from internet radios. Nevertheless, you can still listen to the game soundtrack directly by connecting to `https://radio.frittura.org/rebels.ogg`!
+
+You can add more radio stations by including them in `assets/data/stream_data.json`. 
 
 ### Distro Packages
 

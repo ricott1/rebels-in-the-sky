@@ -4,7 +4,7 @@ use super::{
     new_team_screen::CreationState,
     player_panel::PlayerView,
     popup_message::PopupMessage,
-    swarm_panel::EventTopic,
+    swarm_panel::SwarmView,
     team_panel::TeamView,
     traits::{Screen, SplitPanel},
     ui::{UiState, UiTab},
@@ -14,9 +14,7 @@ use crate::{
     engine::{tactic::Tactic, types::TeamInGame},
     image::color_map::{ColorMap, ColorPreset},
     network::{challenge::Challenge, constants::DEFAULT_PORT, trade::Trade},
-    types::{
-        AppCallback, AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick, SECONDS,
-    },
+    types::{AppCallback, AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick},
     world::{
         constants::*,
         jersey::{Jersey, JerseyStyle},
@@ -118,8 +116,8 @@ pub enum UiCallbackPreset {
     QuitGame,
     ToggleAudio,
     NextAudioSample,
-    SetSwarmPanelTopic {
-        topic: EventTopic,
+    SetSwarmPanelView {
+        topic: SwarmView,
     },
     SetMyTeamPanelView {
         view: MyTeamView,
@@ -131,6 +129,9 @@ pub enum UiCallbackPreset {
         view: TeamView,
     },
     HirePlayer {
+        player_id: PlayerId,
+    },
+    PromptReleasePlayer {
         player_id: PlayerId,
     },
     ReleasePlayer {
@@ -161,6 +162,8 @@ pub enum UiCallbackPreset {
         player_id: PlayerId,
         position: usize,
     },
+    TogglePitchView,
+    TogglePlayerStatusView,
     NextTrainingFocus {
         team_id: TeamId,
     },
@@ -185,6 +188,7 @@ pub enum UiCallbackPreset {
     },
     NameAndAcceptAsteroid {
         name: String,
+        filename: String,
     },
     SetUpgradeSpaceship {
         upgrade: SpaceshipUpgrade,
@@ -235,16 +239,27 @@ impl UiCallbackPreset {
         Box::new(move |app: &mut App| {
             app.ui.player_panel.update(&app.world)?;
             app.ui.player_panel.reset_view();
+
+            // Display trade differently depending on who is the proposer.
+            let (selected_player_id, locked_player_id) =
+                if trade.proposer_player.team.expect("Should have a team") == app.world.own_team_id
+                {
+                    (trade.proposer_player.id, trade.target_player.id)
+                } else {
+                    (trade.target_player.id, trade.proposer_player.id)
+                };
+
             if let Some(index) = app
                 .ui
                 .player_panel
                 .all_players
                 .iter()
-                .position(|&x| x == trade.target_player.id)
+                .position(|&x| x == selected_player_id)
             {
                 app.ui.player_panel.set_index(index);
-                app.ui.player_panel.locked_player_id = Some(trade.proposer_player.id.clone());
-                app.ui.player_panel.selected_player_id = trade.target_player.id.clone();
+
+                app.ui.player_panel.locked_player_id = Some(locked_player_id);
+                app.ui.player_panel.selected_player_id = selected_player_id;
                 app.ui.switch_to(super::ui::UiTab::Players);
             }
 
@@ -437,12 +452,15 @@ impl UiCallbackPreset {
             own_team.can_challenge_team(team)?;
 
             if let Some(peer_id) = team.peer_id {
-                app.network_handler
+                let challenge = app
+                    .network_handler
                     .as_mut()
                     .ok_or(anyhow!("Network handler is not initialized"))?
                     .send_new_challenge(&app.world, peer_id, team.id)?;
 
-                //FIXME: should display somehow that we challenged the team
+                let own_team = app.world.get_own_team_mut()?;
+                own_team.add_sent_challenge(challenge);
+
                 return Ok(Some("Challenge sent".to_string()));
             }
 
@@ -463,11 +481,9 @@ impl UiCallbackPreset {
                 ),
             };
 
-            let game_id = app.world.generate_game(
-                home_team_in_game,
-                away_team_in_game,
-                Tick::now() + 30 * SECONDS,
-            )?;
+            let game_id = app
+                .world
+                .generate_game(home_team_in_game, away_team_in_game)?;
 
             app.ui.game_panel.update(&app.world)?;
 
@@ -500,11 +516,13 @@ impl UiCallbackPreset {
             own_team.can_trade_players(proposer_player, target_player, target_team)?;
 
             if let Some(peer_id) = target_team.peer_id {
-                app.network_handler
+                let trade = app
+                    .network_handler
                     .as_mut()
                     .ok_or(anyhow!("Network handler is not initialized"))?
                     .send_new_trade(&app.world, peer_id, proposer_player_id, target_player_id)?;
-
+                let own_team = app.world.get_own_team_mut()?;
+                own_team.add_sent_trade(trade);
                 return Ok(Some("Trade offer sent".to_string()));
             }
 
@@ -809,13 +827,20 @@ impl UiCallbackPreset {
         })
     }
 
-    fn name_and_accept_asteorid(name: String) -> AppCallback {
+    fn name_and_accept_asteroid(name: String, filename: String) -> AppCallback {
         Box::new(move |app: &mut App| {
             let mut team = app.world.get_own_team()?.clone();
+            if team.asteroid_ids.len() > MAX_NUM_ASTEROID_PER_TEAM {
+                return Err(anyhow!("Team has reached max number of asteroids."));
+            }
 
             match team.current_location {
                 TeamLocation::OnPlanet { planet_id } => {
-                    let asteroid_id = app.world.generate_team_asteroid(name.clone(), planet_id)?;
+                    let asteroid_id = app.world.generate_team_asteroid(
+                        name.clone(),
+                        filename.clone(),
+                        planet_id,
+                    )?;
                     team.current_location = TeamLocation::OnPlanet {
                         planet_id: asteroid_id,
                     };
@@ -824,7 +849,7 @@ impl UiCallbackPreset {
                     asteroid.team_ids.push(team.id);
                     asteroid.version += 1;
 
-                    team.home_planet_id = asteroid_id;
+                    team.asteroid_ids.push(asteroid_id);
                     team.version += 1;
 
                     app.world.planets.insert(asteroid.id, asteroid);
@@ -878,8 +903,9 @@ impl UiCallbackPreset {
 
             app.world.teams.insert(team.id, team);
 
-            app.ui.set_popup(PopupMessage::Ok(
+            app.ui.push_popup(PopupMessage::Ok(
                 "Spaceship upgrade completed!".into(),
+                true,
                 Tick::now(),
             ));
 
@@ -951,6 +977,14 @@ impl UiCallbackPreset {
                 app.world.dirty_network = true;
                 Ok(None)
             }
+            UiCallbackPreset::TogglePitchView => {
+                app.ui.game_panel.toggle_pitch_view();
+                Ok(None)
+            }
+            UiCallbackPreset::TogglePlayerStatusView => {
+                app.ui.game_panel.toggle_player_status_view();
+                Ok(None)
+            }
             UiCallbackPreset::ChallengeTeam { team_id } => Self::challenge_team(*team_id)(app),
             UiCallbackPreset::AcceptChallenge { challenge } => {
                 app.network_handler
@@ -959,7 +993,10 @@ impl UiCallbackPreset {
                     .accept_challenge(&&app.world, challenge.clone())?;
 
                 let own_team = app.world.get_own_team_mut()?;
-                own_team.remove_challenge(&challenge.home_team_in_game.team_id);
+                own_team.remove_challenge(
+                    challenge.home_team_in_game.team_id,
+                    challenge.away_team_in_game.team_id,
+                );
                 Ok(None)
             }
             UiCallbackPreset::DeclineChallenge { challenge } => {
@@ -968,7 +1005,10 @@ impl UiCallbackPreset {
                     .ok_or(anyhow!("Network handler is not initialized"))?
                     .decline_challenge(challenge.clone())?;
                 let own_team = app.world.get_own_team_mut()?;
-                own_team.remove_challenge(&challenge.home_team_in_game.team_id);
+                own_team.remove_challenge(
+                    challenge.home_team_in_game.team_id,
+                    challenge.away_team_in_game.team_id,
+                );
                 Ok(None)
             }
             UiCallbackPreset::CreateTradeProposal {
@@ -982,8 +1022,7 @@ impl UiCallbackPreset {
                     .accept_trade(&&app.world, trade.clone())?;
 
                 let own_team = app.world.get_own_team_mut()?;
-                own_team.remove_trade(trade);
-
+                own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
                 Ok(None)
             }
             UiCallbackPreset::DeclineTrade { trade } => {
@@ -992,7 +1031,7 @@ impl UiCallbackPreset {
                     .ok_or(anyhow!("Network handler is not initialized"))?
                     .decline_trade(trade.clone())?;
                 let own_team = app.world.get_own_team_mut()?;
-                own_team.remove_trade(trade);
+                own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
                 Ok(None)
             }
             UiCallbackPreset::GoToTrade { trade } => Self::go_to_trade(trade.clone())(app),
@@ -1031,8 +1070,8 @@ impl UiCallbackPreset {
                 app.next_sample_audio_player()?;
                 Ok(None)
             }
-            UiCallbackPreset::SetSwarmPanelTopic { topic } => {
-                app.ui.swarm_panel.set_current_topic(*topic);
+            UiCallbackPreset::SetSwarmPanelView { topic } => {
+                app.ui.swarm_panel.set_view(*topic);
                 Ok(None)
             }
             UiCallbackPreset::SetMyTeamPanelView { view } => {
@@ -1051,6 +1090,16 @@ impl UiCallbackPreset {
                 app.world
                     .hire_player_for_team(*player_id, app.world.own_team_id)?;
 
+                Ok(None)
+            }
+            UiCallbackPreset::PromptReleasePlayer { player_id } => {
+                let player = app.world.get_player_or_err(*player_id)?;
+                let player_name = format!("{} {}", player.info.first_name, player.info.last_name);
+                app.ui.push_popup(PopupMessage::ReleasePlayer(
+                    player_name,
+                    *player_id,
+                    Tick::now(),
+                ));
                 Ok(None)
             }
             UiCallbackPreset::ReleasePlayer { player_id } => {
@@ -1145,11 +1194,9 @@ impl UiCallbackPreset {
                             distance,
                         };
 
-                        app.ui.set_popup(PopupMessage::Ok(
-                            format!(
-                                "{} got drunk while driving and accidentaly found a portal to {}!",
-                                player.info.last_name, portal_target.name
-                            ),
+                        app.ui.push_popup(PopupMessage::PortalFound(
+                            player.info.shortened_name(),
+                            portal_target.name.clone(),
                             Tick::now(),
                         ));
                     }
@@ -1202,11 +1249,11 @@ impl UiCallbackPreset {
             UiCallbackPreset::Sync => Self::sync()(app),
             UiCallbackPreset::SendMessage { message } => Self::send(message.clone())(app),
             UiCallbackPreset::PushUiPopup { popup_message } => {
-                app.ui.set_popup(popup_message.clone());
+                app.ui.push_popup(popup_message.clone());
                 Ok(None)
             }
-            UiCallbackPreset::NameAndAcceptAsteroid { name } => {
-                Self::name_and_accept_asteorid(name.clone())(app)
+            UiCallbackPreset::NameAndAcceptAsteroid { name, filename } => {
+                Self::name_and_accept_asteroid(name.clone(), filename.clone())(app)
             }
             UiCallbackPreset::SetUpgradeSpaceship { upgrade } => {
                 Self::set_upgrade_spaceship(upgrade.clone())(app)
@@ -1266,7 +1313,6 @@ impl CallbackRegistry {
     }
 
     pub fn is_hovering(&self, rect: Rect) -> bool {
-        //FIXME: should only say yes if top
         Self::contains(&rect, self.hovering.0, self.hovering.1)
     }
 
@@ -1277,13 +1323,13 @@ impl CallbackRegistry {
     pub fn handle_mouse_event(&self, event: &MouseEvent) -> Option<UiCallbackPreset> {
         if let Some(mouse_callbacks) = self.mouse_callbacks.get(&event.kind) {
             for (rect, callback) in mouse_callbacks.iter() {
-                if rect.is_none() {
-                    return Some(callback.clone());
-                } else {
-                    let rect = rect.as_ref().unwrap();
-                    if Self::contains(rect, event.column, event.row) {
+                if let Some(r) = rect {
+                    if Self::contains(r, event.column, event.row) {
                         return Some(callback.clone());
                     }
+                } else {
+                    // Callbacks with no rect are global callbacks.
+                    return Some(callback.clone());
                 }
             }
         }

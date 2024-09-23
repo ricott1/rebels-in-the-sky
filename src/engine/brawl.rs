@@ -32,7 +32,7 @@ impl EngineAction for Brawl {
             })
             .collect::<Vec<u8>>()
             .try_into()
-            .unwrap();
+            .ok()?;
 
         // This will return None if all players are knocked out
         let attacker_idx = Self::sample(rng, weights)?;
@@ -50,7 +50,7 @@ impl EngineAction for Brawl {
             })
             .collect::<Vec<u8>>()
             .try_into()
-            .unwrap();
+            .ok()?;
 
         // This will return None if all players are knocked out
         let defender_idx = Self::sample(rng, weights)?;

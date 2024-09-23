@@ -93,7 +93,7 @@ impl EngineAction for Rebound {
         let attack_rebounder = attacking_players[attack_rebounder_idx];
         let defence_rebounder = defending_players[defence_rebounder_idx];
 
-        //FIXME: add more random situations
+        //TODO: add more random situations
         log::debug!(
             "Rebound debugging: {} vs {}, to beat {}",
             attack_result,

@@ -1,5 +1,6 @@
 pub mod constants;
 pub mod jersey;
+pub mod kartoffel;
 pub mod planet;
 pub mod player;
 pub mod position;

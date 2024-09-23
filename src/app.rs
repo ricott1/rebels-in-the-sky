@@ -4,13 +4,14 @@ use crate::event::{EventHandler, TerminalEvent};
 use crate::network::handler::NetworkHandler;
 use crate::store::{get_world_size, load_world, reset, save_world};
 use crate::tui::Tui;
-use crate::types::{AppResult, SystemTimeTick, Tick, SECONDS};
+use crate::types::{AppResult, SystemTimeTick, Tick};
+use crate::ui::popup_message::PopupMessage;
 use crate::ui::ui::Ui;
 use crate::ui::utils::SwarmPanelEvent;
+use crate::world::constants::SECONDS;
 use crate::world::world::World;
 use crossterm::event::{KeyCode, KeyModifiers};
 use futures::StreamExt;
-use libp2p::PeerId;
 use libp2p::{gossipsub, swarm::SwarmEvent};
 use log::{error, info, warn};
 use ratatui::backend::CrosstermBackend;
@@ -185,10 +186,7 @@ impl App {
                     match callback.call(self) {
                         Ok(Some(text)) => {
                             self.ui
-                                .set_popup(crate::ui::popup_message::PopupMessage::Ok(
-                                    text,
-                                    Tick::now(),
-                                ));
+                                .push_popup(PopupMessage::Ok(text, true, Tick::now()));
                         }
                         Ok(None) => {}
                         Err(e) => {
@@ -216,19 +214,7 @@ impl App {
 
         // close network connections
         if let Some(network_handler) = &mut self.network_handler {
-            let peers = network_handler
-                .swarm
-                .connected_peers()
-                .map(|id| id.clone())
-                .collect::<Vec<PeerId>>();
-            for peer_id in peers {
-                if network_handler.swarm.is_connected(&peer_id) {
-                    let _ = network_handler
-                        .swarm
-                        .disconnect_peer_id(peer_id)
-                        .map_err(|e| error!("Error disconnecting peer id {}: {:?}", peer_id, e));
-                }
-            }
+            network_handler.quit();
         }
 
         Ok(())
@@ -254,28 +240,25 @@ impl App {
                         match callback.call(self) {
                             Ok(Some(text)) => {
                                 self.ui
-                                    .set_popup(crate::ui::popup_message::PopupMessage::Ok(
-                                        text,
-                                        Tick::now(),
-                                    ));
+                                    .push_popup(PopupMessage::Ok(text, true, Tick::now()));
                             }
                             Ok(None) => {}
                             Err(e) => {
-                                self.ui
-                                    .set_popup(crate::ui::popup_message::PopupMessage::Error(
-                                        e.to_string(),
-                                        Tick::now(),
-                                    ));
+                                self.ui.push_popup(PopupMessage::Error(
+                                    e.to_string(),
+                                    true,
+                                    Tick::now(),
+                                ));
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    self.ui
-                        .set_popup(crate::ui::popup_message::PopupMessage::Error(
-                            format!("Tick error\n{}", e.to_string()),
-                            Tick::now(),
-                        ));
+                    self.ui.push_popup(PopupMessage::Error(
+                        format!("Tick error\n{}", e.to_string()),
+                        true,
+                        Tick::now(),
+                    ));
                 }
             }
         }
@@ -344,18 +327,15 @@ impl App {
                     match callback.call(self) {
                         Ok(Some(text)) => {
                             self.ui
-                                .set_popup(crate::ui::popup_message::PopupMessage::Ok(
-                                    text,
-                                    Tick::now(),
-                                ));
+                                .push_popup(PopupMessage::Ok(text, true, Tick::now()));
                         }
                         Ok(None) => {}
                         Err(e) => {
-                            self.ui
-                                .set_popup(crate::ui::popup_message::PopupMessage::Error(
-                                    e.to_string(),
-                                    Tick::now(),
-                                ));
+                            self.ui.push_popup(PopupMessage::Error(
+                                e.to_string(),
+                                true,
+                                Tick::now(),
+                            ));
                         }
                     }
                 }
@@ -371,16 +351,12 @@ impl App {
         if let Some(callback) = self.ui.handle_mouse_events(mouse_event) {
             match callback.call(self) {
                 Ok(Some(cb)) => {
-                    self.ui
-                        .set_popup(crate::ui::popup_message::PopupMessage::Ok(cb, Tick::now()));
+                    self.ui.push_popup(PopupMessage::Ok(cb, true, Tick::now()));
                 }
                 Ok(None) => {}
                 Err(e) => {
                     self.ui
-                        .set_popup(crate::ui::popup_message::PopupMessage::Error(
-                            e.to_string(),
-                            Tick::now(),
-                        ));
+                        .push_popup(PopupMessage::Error(e.to_string(), true, Tick::now()));
                 }
             }
         }
@@ -395,8 +371,7 @@ impl App {
             if let Some(callback) = network_handler.handle_network_events(network_event) {
                 match callback.call(self) {
                     Ok(Some(cb)) => {
-                        self.ui
-                            .set_popup(crate::ui::popup_message::PopupMessage::Ok(cb, Tick::now()));
+                        self.ui.push_popup(PopupMessage::Ok(cb, true, Tick::now()));
                     }
                     Ok(None) => {}
                     Err(e) => {

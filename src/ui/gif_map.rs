@@ -23,9 +23,30 @@ const MAX_GIF_HEIGHT: u32 = 140;
 pub const FRAMES_PER_REVOLUTION: usize = 360;
 
 pub static UNIVERSE_BACKGROUND: Lazy<RgbaImage> =
-    Lazy::new(|| read_image("planets/background.png").unwrap());
-pub static TRAVELLING_BACKGROUND: Lazy<RgbaImage> =
-    Lazy::new(|| read_image("planets/travelling_background.png").unwrap());
+    Lazy::new(|| read_image("planets/background.png").expect("Cannot open background.png."));
+pub static TRAVELLING_BACKGROUND: Lazy<RgbaImage> = Lazy::new(|| {
+    read_image("planets/travelling_background.png").expect("Cannot open travelling_background.png.")
+});
+
+pub static PORTAL_GIFS: Lazy<Vec<GifLines>> = Lazy::new(|| {
+    vec![
+        Gif::open("portal/portal_blue.gif".into())
+            .expect("Cannot open portal_blue.gif.")
+            .to_lines(),
+        Gif::open("portal/portal_pink.gif".into())
+            .expect("Cannot open portal_pink.gif.")
+            .to_lines(),
+        Gif::open("portal/portal_red.gif".into())
+            .expect("Cannot open portal_red.gif.")
+            .to_lines(),
+    ]
+});
+
+pub static TREASURE_GIF: Lazy<GifLines> = Lazy::new(|| {
+    Gif::open("treasure/treasure.gif".into())
+        .expect("Cannot open treasure.gif.")
+        .to_lines()
+});
 
 pub enum ImageResizeInGalaxyGif {
     ZoomOutCentral { planet_type: PlanetType },
@@ -91,7 +112,7 @@ impl GifMap {
         Ok(line)
     }
 
-    fn planet_zoom_in(&mut self, planet: &Planet) -> AppResult<Gif> {
+    fn planet_zoom_in(planet: &Planet) -> AppResult<Gif> {
         // just picked those randomly, we could do better by using some deterministic position
         let x_blit = MAX_GIF_WIDTH / 2 + planet.axis.0 as u32;
         let y_blit = MAX_GIF_HEIGHT / 2 + planet.axis.1 as u32;
@@ -139,14 +160,35 @@ impl GifMap {
             .get_planet(planet_id)
             .ok_or(anyhow!("World: Planet not found."))?;
 
-        let gif = self.planet_zoom_in(planet)?;
+        let gif = Self::planet_zoom_in(planet)?;
         let lines = gif.to_lines();
         self.planets_zoom_in_lines.insert(planet.id, lines.clone());
         Ok(lines[tick % lines.len()].clone())
     }
 
-    fn planet_zoom_out(&mut self, planet_id: PlanetId, world: &World) -> AppResult<Gif> {
-        let planet = world.get_planet_or_err(planet_id)?;
+    // We handle the asteroid as a special case because we have no zoomout iamges for them.
+    pub fn asteroid_zoom_out(filename: &str) -> AppResult<Gif> {
+        let mut img = read_image(format!("asteroids/{filename}.png",).as_str())?;
+        let color_map = AsteroidColorMap::Base.color_map();
+
+        let size = ImageResizeInGalaxyGif::ZoomOutCentral {
+            planet_type: PlanetType::Asteroid,
+        }
+        .size();
+        img.apply_color_map(color_map);
+
+        img = resize(
+            &img,
+            2 * size,
+            2 * size,
+            image::imageops::FilterType::Triangle,
+        );
+        img = resize(&img, size, size, image::imageops::FilterType::Nearest);
+
+        Ok(vec![img] as Gif)
+    }
+
+    fn planet_zoom_out(planet: &Planet, world: &World) -> AppResult<Gif> {
         let base_images = if planet.satellite_of.is_none() {
             let galaxy_gif = Gif::open("planets/galaxy.gif".to_string())?;
             let mut base_gif = vec![];
@@ -306,7 +348,11 @@ impl GifMap {
             }
         }
 
-        let gif = self.planet_zoom_out(planet.id, world)?;
+        let gif = if planet.planet_type == PlanetType::Asteroid {
+            Self::asteroid_zoom_out(&planet.filename)?
+        } else {
+            Self::planet_zoom_out(&planet, world)?
+        };
         let lines = gif.to_lines();
         self.planets_zoom_out_lines
             .insert(planet.id, (planet.version, lines.clone()));

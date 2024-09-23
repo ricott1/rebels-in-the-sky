@@ -8,6 +8,7 @@ use crate::{
         skill::{Athletics, Defense, Mental, Offense, Technical},
         team::Team,
         types::TrainingFocus,
+        utils::is_default,
     },
 };
 use libp2p::PeerId;
@@ -15,10 +16,6 @@ use once_cell::sync::Lazy;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, ops::Not};
-
-fn is_default<T: Default + PartialOrd>(v: &T) -> bool {
-    *v == T::default()
-}
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GameStats {
@@ -84,7 +81,12 @@ pub struct GameStats {
     pub extra_tiredness: f32,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub shot_positions: Vec<(u8, u8, bool)>, //x, y, is_made
+    // Contains all the shots made by the player as a tuple (x, y, is_made)
+    pub shots: Vec<(u8, u8, bool)>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    // Indicates whether the player shot in the last action
+    pub last_action_shot: Option<(u8, u8, bool)>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub experience_at_position: [u16; 5],
@@ -110,8 +112,11 @@ impl GameStats {
         self.steals += stats.steals;
         self.blocks += stats.blocks;
         self.turnovers += stats.turnovers;
-        self.shot_positions
-            .append(&mut stats.shot_positions.clone());
+        if let Some(shot) = stats.last_action_shot {
+            self.shots.push(shot);
+            assert!(self.shots.len() > 0);
+        }
+        self.last_action_shot = stats.last_action_shot;
         for (idx, exp) in stats.experience_at_position.iter().enumerate() {
             self.experience_at_position[idx] += exp;
         }
@@ -331,7 +336,8 @@ fn test_gamestats_serde() {
     stats.plus_minus = 17;
     stats.extra_morale = 18.0;
     stats.extra_tiredness = 19.0;
-    stats.shot_positions = vec![(1, 2, true), (3, 4, false)];
+    stats.shots = vec![(1, 2, true), (3, 4, false)];
+    stats.last_action_shot = None;
     stats.experience_at_position = [1, 2, 3, 4, 5];
 
     let serialized = serde_json::to_string(&stats).unwrap();

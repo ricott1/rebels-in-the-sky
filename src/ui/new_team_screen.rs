@@ -14,9 +14,9 @@ use super::{
 use crate::image::{color_map::ColorPreset, spaceship::SPACESHIP_IMAGE_WIDTH};
 use crate::{
     image::color_map::ColorMap,
-    types::{AppResult, PlanetId, PlayerId, AU, HOURS},
+    types::{AppResult, PlanetId, PlayerId},
     world::{
-        constants::INITIAL_TEAM_BALANCE,
+        constants::*,
         jersey::{Jersey, JerseyStyle},
         skill::Rated,
         spaceship::{Spaceship, SpaceshipPrefab},
@@ -247,13 +247,9 @@ impl NewTeamScreen {
                 "Max speed: {:.3} AU/h",
                 spaceship.speed(storage_units) * HOURS as f32 / AU as f32
             )),
-            Line::from(format!("Crew: {}", spaceship.crew_capacity())),
-            Line::from(format!("Storage: {}/{}", 0, spaceship.storage_capacity())),
-            Line::from(format!(
-                "Tank: {}/{} t",
-                spaceship.fuel_capacity(),
-                spaceship.fuel_capacity()
-            )),
+            Line::from(format!("Max Crew: {}", spaceship.crew_capacity())),
+            Line::from(format!("Max Storage: {}", spaceship.storage_capacity())),
+            Line::from(format!("Max Tank: {} t", spaceship.fuel_capacity())),
             Line::from(format!(
                 "Bare consumption: {:.2} t/h",
                 spaceship.fuel_consumption(storage_units) * HOURS as f32
@@ -493,8 +489,6 @@ impl NewTeamScreen {
                 }),
             );
         }
-
-        //FIXME:color selection is broken
 
         frame.render_widget(
             default_block()

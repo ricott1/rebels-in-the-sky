@@ -278,53 +278,53 @@ fn execute_shot(
         ShotDifficulty::Close => {
             shooter_update.attempted_2pt = 1;
             shooter_update.extra_tiredness = TirednessCost::MEDIUM;
-            shooter_update.shot_positions = match game.possession {
+            shooter_update.last_action_shot = match game.possession {
                 Possession::Home => {
                     let (x, y) = HOME_CLOSE_SHOT_POSITIONS.choose(rng)?.clone();
-                    vec![(x, y, result.score_change > 0)]
+                    Some((x, y, result.score_change > 0))
                 }
                 Possession::Away => {
                     let (x, y) = AWAY_CLOSE_SHOT_POSITIONS.choose(rng)?.clone();
-                    vec![(x, y, result.score_change > 0)]
+                    Some((x, y, result.score_change > 0))
                 }
             }
         }
         ShotDifficulty::Medium => {
             shooter_update.attempted_2pt = 1;
             shooter_update.extra_tiredness = TirednessCost::MEDIUM;
-            shooter_update.shot_positions = match game.possession {
+            shooter_update.last_action_shot = match game.possession {
                 Possession::Home => {
                     let (x, y) = HOME_MEDIUM_SHOT_POSITIONS.choose(rng)?.clone();
-                    vec![(x, y, result.score_change > 0)]
+                    Some((x, y, result.score_change > 0))
                 }
                 Possession::Away => {
                     let (x, y) = AWAY_MEDIUM_SHOT_POSITIONS.choose(rng)?.clone();
-                    vec![(x, y, result.score_change > 0)]
+                    Some((x, y, result.score_change > 0))
                 }
             }
         }
         ShotDifficulty::Long => {
             shooter_update.attempted_3pt = 1;
             shooter_update.extra_tiredness = TirednessCost::MEDIUM;
-            shooter_update.shot_positions = match input.advantage {
+            shooter_update.last_action_shot = match input.advantage {
                 Advantage::Defense => match game.possession {
                     Possession::Home => {
                         let (x, y) = HOME_IMPOSSIBLE_SHOT_POSITIONS.choose(rng)?.clone();
-                        vec![(x, y, result.score_change > 0)]
+                        Some((x, y, result.score_change > 0))
                     }
                     Possession::Away => {
                         let (x, y) = AWAY_IMPOSSIBLE_SHOT_POSITIONS.choose(rng)?.clone();
-                        vec![(x, y, result.score_change > 0)]
+                        Some((x, y, result.score_change > 0))
                     }
                 },
                 _ => match game.possession {
                     Possession::Home => {
                         let (x, y) = HOME_LONG_SHOT_POSITIONS.choose(rng)?.clone();
-                        vec![(x, y, result.score_change > 0)]
+                        Some((x, y, result.score_change > 0))
                     }
                     Possession::Away => {
                         let (x, y) = AWAY_LONG_SHOT_POSITIONS.choose(rng)?.clone();
-                        vec![(x, y, result.score_change > 0)]
+                        Some((x, y, result.score_change > 0))
                     }
                 },
             }

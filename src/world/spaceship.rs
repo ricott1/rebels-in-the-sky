@@ -105,12 +105,12 @@ impl SpaceshipComponent for Hull {
     }
     fn crew_capacity(&self) -> u8 {
         match self {
-            Self::ShuttleSmall => MIN_PLAYERS_PER_TEAM as u8 + 2,
-            Self::ShuttleStandard => MIN_PLAYERS_PER_TEAM as u8 + 3,
-            Self::ShuttleLarge => MIN_PLAYERS_PER_TEAM as u8 + 4,
-            Self::PincherStandard => MIN_PLAYERS_PER_TEAM as u8 + 3,
-            Self::PincherLarge => MIN_PLAYERS_PER_TEAM as u8 + 4,
-            Self::JesterStandard => MIN_PLAYERS_PER_TEAM as u8 + 3,
+            Self::ShuttleSmall => MIN_PLAYERS_PER_GAME as u8 + 2,
+            Self::ShuttleStandard => MIN_PLAYERS_PER_GAME as u8 + 3,
+            Self::ShuttleLarge => MIN_PLAYERS_PER_GAME as u8 + 4,
+            Self::PincherStandard => MIN_PLAYERS_PER_GAME as u8 + 3,
+            Self::PincherLarge => MIN_PLAYERS_PER_GAME as u8 + 4,
+            Self::JesterStandard => MIN_PLAYERS_PER_GAME as u8 + 3,
         }
     }
 
@@ -757,8 +757,8 @@ mod tests {
     use itertools::Itertools;
 
     use crate::{
-        types::{IdSystem, SystemTimeTick, TeamId, AU, HOURS},
-        world::{team::Team, types::TeamLocation, world::World},
+        types::{SystemTimeTick, TeamId},
+        world::{constants::*, team::Team, types::TeamLocation, world::World},
     };
 
     use super::*;
@@ -818,7 +818,7 @@ mod tests {
         let planet_ids = world.planets.keys().collect_vec();
         let from = planet_ids[0].clone();
         let to = planet_ids[1].clone();
-        let mut team = Team::random(TeamId::new(), from.clone(), "test".into());
+        let mut team = Team::random(TeamId::new_v4(), from.clone(), "test".into());
         team.spaceship = spaceship;
         team.current_location = TeamLocation::Travelling {
             from,

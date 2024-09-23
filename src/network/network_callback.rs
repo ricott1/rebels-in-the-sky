@@ -2,8 +2,10 @@ use super::challenge::Challenge;
 use super::trade::Trade;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::engine::types::TeamInGame;
-use crate::types::{AppResult, SystemTimeTick, Tick, MINUTES};
+use crate::types::{AppResult, SystemTimeTick, Tick};
+use crate::ui::popup_message::PopupMessage;
 use crate::ui::utils::SwarmPanelEvent;
+use crate::world::constants::NETWORK_GAME_START_DELAY;
 use crate::{app::App, types::AppCallback};
 use anyhow::anyhow;
 use libp2p::gossipsub::TopicHash;
@@ -104,8 +106,8 @@ impl NetworkCallbackPreset {
         Box::new(move |app: &mut App| {
             let event = SwarmPanelEvent {
                 timestamp: Tick::now(),
-                peer_id: None,
-                text: format!("Unsubscribed from topic: {}", topic),
+                peer_id: Some(peer_id),
+                text: format!("Unsubscribed from topic: {topic}"),
             };
             app.ui.swarm_panel.push_log_event(event);
             app.world.filter_peer_data(Some(peer_id))?;
@@ -129,7 +131,8 @@ impl NetworkCallbackPreset {
                     text: format!("Closing connection: {}", peer_id),
                 };
                 app.ui.swarm_panel.push_log_event(event);
-                // app.world.filter_peer_data(Some(peer_id))?;
+                // // FIXME: read connection protocol and understand when this is called
+                // // for example, we could check that num_established >0 or that cause = None
             }
             Ok(None)
         })
@@ -215,8 +218,7 @@ impl NetworkCallbackPreset {
             app.ui.swarm_panel.push_log_event(event);
 
             if let Some(msg) = seed_info.message.clone() {
-                app.ui
-                    .set_popup(crate::ui::popup_message::PopupMessage::Ok(msg, timestamp));
+                app.ui.push_popup(PopupMessage::Ok(msg, false, timestamp));
             }
 
             let own_version_major = env!("CARGO_PKG_VERSION_MAJOR").parse()?;
@@ -234,28 +236,14 @@ impl NetworkCallbackPreset {
                     "New version {}.{}.{} available. Download at https://rebels.frittura.org",
                     seed_info.version_major, seed_info.version_minor, seed_info.version_patch,
                 );
-                app.ui
-                    .set_popup(crate::ui::popup_message::PopupMessage::Ok(text, timestamp));
+                app.ui.push_popup(PopupMessage::Ok(text, false, timestamp));
             }
 
+            app.ui
+                .swarm_panel
+                .update_team_ranking(&seed_info.team_ranking);
+
             app.world.dirty_network = true;
-            Ok(None)
-        })
-    }
-
-    fn handle_failed_request(
-        peer_id: Option<PeerId>,
-        timestamp: Tick,
-        error_message: String,
-    ) -> AppCallback {
-        Box::new(move |app: &mut App| {
-            let event = SwarmPanelEvent {
-                timestamp,
-                peer_id,
-                text: format!("Failed request: {}", error_message),
-            };
-            app.ui.swarm_panel.push_log_event(event);
-
             Ok(None)
         })
     }
@@ -282,7 +270,7 @@ impl NetworkCallbackPreset {
                 .expect("The should be a network handler");
 
             let self_peer_id = network_handler.swarm.local_peer_id();
-            match trade.state {
+            match &trade.state {
                 NetworkRequestState::Syn => {
                     if trade.proposer_peer_id == *self_peer_id {
                         return Err(anyhow!("Team is trade sender (should be receiver)"));
@@ -293,7 +281,7 @@ impl NetworkCallbackPreset {
                     }
 
                     let own_team = app.world.get_own_team_mut()?;
-                    own_team.add_trade(trade.clone());
+                    own_team.add_received_trade(trade.clone());
 
                     return Ok(Some("Trade received.\nCheck the swarm panel".to_string()));
                 }
@@ -341,6 +329,9 @@ impl NetworkCallbackPreset {
                         app.world
                             .swap_players_team(trade.proposer_player.id, trade.target_player.id)?;
 
+                        let own_team = app.world.get_own_team_mut()?;
+                        own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
+
                         let event = SwarmPanelEvent {
                             timestamp,
                             peer_id,
@@ -348,8 +339,9 @@ impl NetworkCallbackPreset {
                         };
                         app.ui.swarm_panel.push_log_event(event);
 
-                        app.ui.set_popup(crate::ui::popup_message::PopupMessage::Ok(
+                        app.ui.push_popup(PopupMessage::Ok(
                             format!("Trade accepted, players swapped."),
+                            false,
                             Tick::now(),
                         ));
                         trade.state = NetworkRequestState::Ack;
@@ -358,7 +350,11 @@ impl NetworkCallbackPreset {
                     };
 
                     if let Err(err) = handle_syn_ack() {
-                        network_handler.send_failed_request(err.to_string())?;
+                        let mut trade = trade.clone();
+                        trade.state = NetworkRequestState::Failed {
+                            error_message: err.to_string(),
+                        };
+                        network_handler.send_trade(trade)?;
                         return Err(anyhow!(err.to_string()));
                     }
                 }
@@ -417,6 +413,9 @@ impl NetworkCallbackPreset {
                         app.world
                             .swap_players_team(trade.proposer_player.id, trade.target_player.id)?;
 
+                        let own_team = app.world.get_own_team_mut()?;
+                        own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
+
                         let event = SwarmPanelEvent {
                             timestamp,
                             peer_id,
@@ -424,20 +423,25 @@ impl NetworkCallbackPreset {
                         };
                         app.ui.swarm_panel.push_log_event(event);
 
-                        app.ui.set_popup(crate::ui::popup_message::PopupMessage::Ok(
+                        app.ui.push_popup(PopupMessage::Ok(
                             format!("Trade accepted, players swapped."),
+                            false,
                             Tick::now(),
                         ));
                         Ok(())
                     };
 
                     if let Err(err) = handle_ack() {
-                        network_handler.send_failed_request(err.to_string())?;
+                        let mut trade = trade.clone();
+                        trade.state = NetworkRequestState::Failed {
+                            error_message: err.to_string(),
+                        };
+                        network_handler.send_trade(trade)?;
                         return Err(anyhow!(err.to_string()));
                     }
                 }
 
-                NetworkRequestState::Failed => {
+                NetworkRequestState::Failed { error_message } => {
                     if trade.proposer_peer_id != *self_peer_id
                         && trade.target_peer_id != *self_peer_id
                     {
@@ -445,15 +449,15 @@ impl NetworkCallbackPreset {
                     }
 
                     let own_team = app.world.get_own_team_mut()?;
-                    own_team.remove_trade(&trade);
+                    own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
 
-                    app.ui
-                        .set_popup(crate::ui::popup_message::PopupMessage::Error(
-                            format!("Trade failed",),
-                            Tick::now(),
-                        ));
+                    app.ui.push_popup(PopupMessage::Error(
+                        format!("Trade failed: {}", error_message),
+                        true,
+                        Tick::now(),
+                    ));
 
-                    return Err(anyhow!("Trade failed",))?;
+                    return Err(anyhow!(format!("Trade failed: {}", error_message)))?;
                 }
             }
 
@@ -480,7 +484,7 @@ impl NetworkCallbackPreset {
             app.ui.swarm_panel.push_log_event(event);
 
             let self_peer_id = network_handler.swarm.local_peer_id();
-            match challenge.state {
+            match &challenge.state {
                 NetworkRequestState::Syn => {
                     if challenge.proposer_peer_id == *self_peer_id {
                         return Err(anyhow!("Team is challenge sender (should be receiver)"));
@@ -491,7 +495,7 @@ impl NetworkCallbackPreset {
                     }
 
                     let own_team = app.world.get_own_team_mut()?;
-                    own_team.add_challenge(challenge.clone());
+                    own_team.add_received_challenge(challenge.clone());
 
                     return Ok(Some(
                         "Challenge received.\nCheck the swarm panel".to_string(),
@@ -521,7 +525,7 @@ impl NetworkCallbackPreset {
 
                         let mut challenge = challenge.clone();
                         challenge.home_team_in_game = home_team_in_game;
-                        let starting_at = Tick::now() + 2 * MINUTES;
+                        let starting_at = Tick::now() + NETWORK_GAME_START_DELAY;
                         challenge.state = NetworkRequestState::Ack;
                         challenge.starting_at = Some(starting_at);
 
@@ -532,17 +536,27 @@ impl NetworkCallbackPreset {
                         };
                         app.ui.swarm_panel.push_log_event(event);
 
-                        if let Err(err) = app.world.generate_game(
+                        if let Err(err) = app.world.generate_network_game(
                             challenge.home_team_in_game.clone(),
                             challenge.away_team_in_game.clone(),
                             starting_at,
                         ) {
-                            network_handler.send_failed_request(err.to_string())?;
+                            challenge.state = NetworkRequestState::Failed {
+                                error_message: err.to_string(),
+                            };
+                            network_handler.send_challenge(challenge)?;
                             return Err(anyhow!(err.to_string()));
                         }
 
-                        app.ui.set_popup(crate::ui::popup_message::PopupMessage::Ok(
+                        let own_team = app.world.get_own_team_mut()?;
+                        own_team.remove_challenge(
+                            challenge.home_team_in_game.team_id,
+                            challenge.away_team_in_game.team_id,
+                        );
+
+                        app.ui.push_popup(PopupMessage::Ok(
                             format!("Challenge accepted, game is starting."),
+                            false,
                             Tick::now(),
                         ));
 
@@ -551,7 +565,12 @@ impl NetworkCallbackPreset {
                     };
 
                     if let Err(err) = handle_syn_ack() {
-                        network_handler.send_failed_request(err.to_string())?;
+                        let mut challenge = challenge.clone();
+
+                        challenge.state = NetworkRequestState::Failed {
+                            error_message: err.to_string(),
+                        };
+                        network_handler.send_challenge(challenge)?;
                         return Err(anyhow!(err.to_string()));
                     }
                 }
@@ -569,7 +588,7 @@ impl NetworkCallbackPreset {
                         app.ui.swarm_panel.push_log_event(event);
 
                         if let Some(starting_at) = challenge.starting_at {
-                            app.world.generate_game(
+                            app.world.generate_network_game(
                                 challenge.home_team_in_game.clone(),
                                 challenge.away_team_in_game.clone(),
                                 starting_at,
@@ -598,8 +617,13 @@ impl NetworkCallbackPreset {
                         app.ui.swarm_panel.push_log_event(event);
 
                         if let Some(starting_at) = challenge.starting_at {
-                            // in generate_game we check again if the challenge is valid
-                            app.world.generate_game(
+                            // In generate_game we check again if the challenge is valid.
+                            // Note: there could be a race condition where we receive a team over the network right after
+                            //       accepting the challenge but before the challenge has been finalized on our side.
+                            //       In this case, the received team would have current_game set to some (set to the challenge game
+                            //       they just started) and the challenge would fail on our hand since the challenge team must have no game.
+                            //       Because of this, we accept the challenge by running a special set of checks.
+                            app.world.generate_network_game(
                                 challenge.home_team_in_game.clone(),
                                 challenge.away_team_in_game.clone(),
                                 starting_at,
@@ -608,20 +632,25 @@ impl NetworkCallbackPreset {
                             return Err(anyhow!("Cannot generate game, starting_at not set"));
                         }
 
-                        app.ui.set_popup(crate::ui::popup_message::PopupMessage::Ok(
+                        app.ui.push_popup(PopupMessage::Ok(
                             format!("Challenge accepted, game is starting."),
+                            false,
                             Tick::now(),
                         ));
                         Ok(())
                     };
 
                     if let Err(err) = handle_ack() {
-                        network_handler.send_failed_request(err.to_string())?;
+                        let mut challenge = challenge.clone();
+                        challenge.state = NetworkRequestState::Failed {
+                            error_message: err.to_string(),
+                        };
+                        network_handler.send_challenge(challenge)?;
                         return Err(anyhow!(err.to_string()));
                     }
                 }
 
-                NetworkRequestState::Failed => {
+                NetworkRequestState::Failed { error_message } => {
                     if challenge.proposer_peer_id != *self_peer_id
                         && challenge.target_peer_id != *self_peer_id
                     {
@@ -629,15 +658,18 @@ impl NetworkCallbackPreset {
                     }
 
                     let own_team = app.world.get_own_team_mut()?;
-                    own_team.remove_challenge(&challenge.home_team_in_game.team_id);
+                    own_team.remove_challenge(
+                        challenge.home_team_in_game.team_id,
+                        challenge.away_team_in_game.team_id,
+                    );
 
-                    app.ui
-                        .set_popup(crate::ui::popup_message::PopupMessage::Error(
-                            format!("Challenge failed",),
-                            Tick::now(),
-                        ));
+                    app.ui.push_popup(PopupMessage::Error(
+                        format!("Challenge failed: {}", error_message),
+                        true,
+                        Tick::now(),
+                    ));
 
-                    return Err(anyhow!("Challenge failed",))?;
+                    return Err(anyhow!("Challenge failed: {}", error_message))?;
                 }
             }
 
@@ -698,9 +730,6 @@ impl NetworkCallbackPreset {
                     }
                     NetworkData::SeedInfo(timestamp, seed_info) => {
                         Self::handle_seed_topic(peer_id, timestamp, seed_info)(app)
-                    }
-                    NetworkData::FailedRequest(timestamp, error_message) => {
-                        Self::handle_failed_request(peer_id, timestamp, error_message)(app)
                     }
                 }
             }

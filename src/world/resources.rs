@@ -24,13 +24,6 @@ impl Display for Resource {
 }
 
 impl Resource {
-    pub const SATOSHI_STORING_SPACE: u32 = 0;
-    // Fuel is stored in the spaceship tank
-    pub const FUEL_STORING_SPACE: u32 = 0;
-    pub const GOLD_STORING_SPACE: u32 = 2;
-    pub const RUM_STORING_SPACE: u32 = 1;
-    pub const SCRAPS_STORING_SPACE: u32 = 10;
-
     pub fn base_price(&self) -> f32 {
         match self {
             Resource::SATOSHI => 1.0,
@@ -43,11 +36,11 @@ impl Resource {
 
     pub fn to_storing_space(&self) -> u32 {
         match self {
-            Resource::SATOSHI => Self::SATOSHI_STORING_SPACE,
-            Resource::GOLD => Self::GOLD_STORING_SPACE,
-            Resource::SCRAPS => Self::SCRAPS_STORING_SPACE,
-            Resource::FUEL => Self::FUEL_STORING_SPACE,
-            Resource::RUM => Self::RUM_STORING_SPACE,
+            Resource::SATOSHI => 0,
+            Resource::GOLD => 2,
+            Resource::SCRAPS => 10,
+            Resource::FUEL => 0, // Fuel is stored in the spaceship tank
+            Resource::RUM => 1,
         }
     }
 

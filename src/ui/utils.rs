@@ -115,7 +115,7 @@ pub fn big_text<'a>(text: &'a [&str]) -> Paragraph<'a> {
             let mut spans = vec![];
             for c in line.chars() {
                 if c == '█' {
-                    spans.push(Span::styled("█", UiStyle::FANCY));
+                    spans.push(Span::styled("█", UiStyle::SHADOW));
                 } else {
                     spans.push(Span::styled(c.to_string(), UiStyle::HIGHLIGHT));
                 }

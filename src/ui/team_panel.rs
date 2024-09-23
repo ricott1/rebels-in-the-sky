@@ -193,7 +193,11 @@ impl TeamListPanel {
                 } else if team.peer_id.is_some() {
                     style = UiStyle::NETWORK;
                 }
-                let text = format!("{:<12} {}", team.name, world.team_rating(team.id).stars());
+                let text = format!(
+                    "{:<12} {}",
+                    team.name,
+                    world.team_rating(team.id).unwrap_or_default().stars()
+                );
                 options.push((text, style));
             }
             let list = selectable_list(options, &self.callback_registry);
@@ -440,8 +444,9 @@ impl Screen for TeamListPanel {
                 let b = world.get_team_or_err(*b).unwrap();
                 world
                     .team_rating(b.id)
-                    .partial_cmp(&world.team_rating(a.id))
-                    .unwrap()
+                    .unwrap_or_default()
+                    .partial_cmp(&world.team_rating(a.id).unwrap_or_default())
+                    .expect("Rating should exists")
             });
             self.update_view = true;
         }
@@ -532,10 +537,6 @@ impl Screen for TeamListPanel {
                 Style::default().bg(Color::Gray).fg(Color::DarkGray),
             ),
             Span::styled(" Select player ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                format!(" {} ", KeyCode::Backspace.to_string()),
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
         ]
     }
 }

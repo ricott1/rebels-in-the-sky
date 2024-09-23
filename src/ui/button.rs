@@ -88,12 +88,12 @@ impl<'a> Button<'a> {
     }
 
     pub fn no_box(
-        text: String,
+        text: Text<'a>,
         on_click: UiCallbackPreset,
         callback_registry: Arc<Mutex<CallbackRegistry>>,
     ) -> Self {
         Self {
-            text: text.into(),
+            text,
             hotkey: None,
             on_click,
             callback_registry,

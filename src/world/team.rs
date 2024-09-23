@@ -1,5 +1,5 @@
 use super::{
-    constants::{MIN_PLAYERS_PER_TEAM, MORALE_RELEASE_MALUS},
+    constants::{MIN_PLAYERS_PER_GAME, MORALE_RELEASE_MALUS},
     jersey::Jersey,
     planet::Planet,
     player::Player,
@@ -13,8 +13,8 @@ use super::{
 use crate::{
     engine::tactic::Tactic,
     network::{challenge::Challenge, trade::Trade},
-    types::{AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick},
-    world::constants::MAX_PLAYERS_PER_TEAM,
+    types::{AppResult, GameId, KartoffelId, PlanetId, PlayerId, TeamId, Tick},
+    world::{constants::MAX_PLAYERS_PER_TEAM, utils::is_default},
 };
 use anyhow::anyhow;
 use itertools::Itertools;
@@ -36,21 +36,39 @@ pub struct Team {
     pub version: u64,
     pub name: String,
     pub reputation: f32,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub player_ids: Vec<PlayerId>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub kartoffel_ids: Vec<KartoffelId>,
     pub crew_roles: CrewRoles,
     pub jersey: Jersey,
     pub resources: HashMap<Resource, u32>,
     pub spaceship: Spaceship,
     pub home_planet_id: PlanetId,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub asteroid_ids: Vec<PlanetId>,
     pub current_location: TeamLocation,
     pub peer_id: Option<PeerId>,
     pub current_game: Option<GameId>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub game_record: [u32; 3], // Stores game record as wins/losses/draws
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub network_game_record: [u32; 3], // Stores game record as wins/losses/draws
     pub game_tactic: Tactic,
     pub training_focus: Option<TrainingFocus>,
     #[serde(skip)]
-    pub open_trades: HashMap<(PlayerId, PlayerId), Trade>,
+    pub sent_trades: HashMap<(PlayerId, PlayerId), Trade>,
     #[serde(skip)]
-    pub open_challenges: HashMap<TeamId, Challenge>,
+    pub received_trades: HashMap<(PlayerId, PlayerId), Trade>,
+    #[serde(skip)]
+    pub sent_challenges: HashMap<TeamId, Challenge>,
+    #[serde(skip)]
+    pub received_challenges: HashMap<TeamId, Challenge>,
 }
 
 impl Team {
@@ -72,31 +90,51 @@ impl Team {
         }
     }
 
-    pub fn add_challenge(&mut self, challenge: Challenge) {
-        self.open_challenges
+    pub fn add_sent_challenge(&mut self, challenge: Challenge) {
+        self.sent_challenges
+            .insert(challenge.away_team_in_game.team_id, challenge);
+    }
+
+    pub fn add_received_challenge(&mut self, challenge: Challenge) {
+        self.received_challenges
             .insert(challenge.home_team_in_game.team_id, challenge);
     }
 
-    pub fn remove_challenge(&mut self, team_id: &TeamId) {
-        self.open_challenges.remove(team_id);
+    pub fn remove_challenge(&mut self, home_team_id: TeamId, away_team_id: TeamId) {
+        let team_id = if home_team_id == self.id {
+            away_team_id
+        } else {
+            home_team_id
+        };
+        self.sent_challenges.remove(&team_id);
+        self.received_challenges.remove(&team_id);
     }
 
     pub fn clear_challenges(&mut self) {
-        self.open_challenges.clear();
+        self.sent_challenges.clear();
+        self.received_challenges.clear();
     }
 
-    pub fn add_trade(&mut self, trade: Trade) {
-        self.open_trades
+    pub fn add_sent_trade(&mut self, trade: Trade) {
+        self.sent_trades
             .insert((trade.proposer_player.id, trade.target_player.id), trade);
     }
 
-    pub fn remove_trade(&mut self, trade: &Trade) {
-        self.open_trades
-            .remove(&(trade.proposer_player.id, trade.target_player.id));
+    pub fn add_received_trade(&mut self, trade: Trade) {
+        self.received_trades
+            .insert((trade.proposer_player.id, trade.target_player.id), trade);
+    }
+
+    pub fn remove_trade(&mut self, proposer_player_id: PlayerId, target_player_id: PlayerId) {
+        self.sent_trades
+            .remove(&(proposer_player_id, target_player_id));
+        self.received_trades
+            .remove(&(proposer_player_id, target_player_id));
     }
 
     pub fn clear_trades(&mut self) {
-        self.open_trades.clear();
+        self.sent_trades.clear();
+        self.received_trades.clear();
     }
 
     pub fn balance(&self) -> u32 {
@@ -164,6 +202,13 @@ impl Team {
         Ok(())
     }
 
+    pub fn is_on_planet(&self) -> Option<PlanetId> {
+        match self.current_location {
+            TeamLocation::OnPlanet { planet_id } => Some(planet_id),
+            _ => None,
+        }
+    }
+
     pub fn can_add_player(&self, player: &Player) -> AppResult<()> {
         if player.team.is_some() {
             return Err(anyhow!("Already in a team"));
@@ -174,25 +219,8 @@ impl Team {
         }
 
         // Player must be on same planet as team current_location
-        match self.current_location {
-            TeamLocation::OnPlanet {
-                planet_id: team_planet_id,
-            } => match player.current_location {
-                PlayerLocation::OnPlanet { planet_id } => {
-                    if planet_id != team_planet_id {
-                        return Err(anyhow!("Not on team planet"));
-                    }
-                }
-                PlayerLocation::WithTeam => {
-                    return Err(anyhow!("Already in a team"));
-                }
-            },
-            TeamLocation::Travelling { .. } => {
-                return Err(anyhow!("Team is travelling"));
-            }
-            TeamLocation::Exploring { .. } => {
-                return Err(anyhow!("Team is exploring"));
-            }
+        if self.is_on_planet() != player.is_on_planet() {
+            return Err(anyhow!("Not on the same planet"));
         }
 
         Ok(())
@@ -217,11 +245,8 @@ impl Team {
             return Err(anyhow!("Player is not in a team"));
         }
 
-        match self.current_location {
-            TeamLocation::Travelling { .. } => {
-                return Err(anyhow!("Team is travelling"));
-            }
-            _ => {}
+        if self.is_on_planet().is_none() {
+            return Err(anyhow!("Team is not on a planet"));
         }
 
         if self.current_game.is_some() {
@@ -265,23 +290,31 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_challenge_team(&self, team: &Team) -> AppResult<()> {
+    pub fn can_challenge_team_over_network(&self, team: &Team) -> AppResult<()> {
+        // This function runs checks similar to can_challenge_team,
+        // but crucially skips the checks about the current_game.
+        // This is to go around a race condition described in the challenge SynAck protocol.
+
         if self.id == team.id {
             return Err(anyhow!("Cannot challenge self"));
         }
 
-        if matches!(self.current_location, TeamLocation::Travelling { .. }) {
-            return Err(anyhow!("Team is travelling"));
-        }
-
-        if matches!(team.current_location, TeamLocation::Travelling { .. }) {
-            return Err(anyhow!("Opponent is travelling"));
-        }
-
-        if self.current_location != team.current_location {
+        if self.is_on_planet() != team.is_on_planet() {
             return Err(anyhow!("Not on the same planet"));
         }
 
+        if self.player_ids.len() < MIN_PLAYERS_PER_GAME {
+            return Err(anyhow!("Team does not have enough players"));
+        }
+
+        if team.player_ids.len() < MIN_PLAYERS_PER_GAME {
+            return Err(anyhow!("Opponent does not have enough players"));
+        }
+
+        Ok(())
+    }
+
+    pub fn can_challenge_team(&self, team: &Team) -> AppResult<()> {
         if self.current_game.is_some() {
             return Err(anyhow!("Team is already playing"));
         }
@@ -290,15 +323,7 @@ impl Team {
             return Err(anyhow!("Opponent is already playing"));
         }
 
-        if self.player_ids.len() < MIN_PLAYERS_PER_TEAM {
-            return Err(anyhow!("Team does not have enough players"));
-        }
-
-        if team.player_ids.len() < MIN_PLAYERS_PER_TEAM {
-            return Err(anyhow!("Opponent does not have enough players"));
-        }
-
-        Ok(())
+        self.can_challenge_team_over_network(team)
     }
 
     pub fn can_trade_players(
@@ -324,18 +349,7 @@ impl Team {
             return Err(anyhow!("Target player is in team"));
         }
 
-        if matches!(self.current_location, TeamLocation::Travelling { .. }) {
-            return Err(anyhow!("Team is travelling"));
-        }
-
-        if matches!(
-            target_team.current_location,
-            TeamLocation::Travelling { .. }
-        ) {
-            return Err(anyhow!("Other team is travelling"));
-        }
-
-        if self.current_location != target_team.current_location {
+        if self.is_on_planet() != target_team.is_on_planet() {
             return Err(anyhow!("Not on the same planet"));
         }
 
@@ -359,34 +373,12 @@ impl Team {
             return Err(anyhow!("Team needs at least one pirate to travel"));
         }
 
-        match self.current_location {
-            TeamLocation::OnPlanet {
-                planet_id: current_planet_id,
-            } => {
-                if planet.id == current_planet_id {
-                    return Err(anyhow!("Already on this planet"));
-                }
+        if let Some(current_planet_id) = self.is_on_planet() {
+            if planet.id == current_planet_id {
+                return Err(anyhow!("Already on this planet"));
             }
-            TeamLocation::Travelling {
-                from: _from,
-                to: _to,
-                started,
-                duration,
-                ..
-            } => {
-                let current = Tick::now();
-                if started + duration > current {
-                    return Err(anyhow!(
-                        "Travelling ({})",
-                        (started + duration - current).formatted()
-                    ));
-                } else {
-                    return Err(anyhow!("Landing..."));
-                };
-            }
-            TeamLocation::Exploring { .. } => {
-                return Err(anyhow!("Exploring"));
-            }
+        } else {
+            return Err(anyhow!("Already in space"));
         }
 
         if self.spaceship.pending_upgrade.is_some() {
@@ -428,34 +420,12 @@ impl Team {
             return Err(anyhow!("Team needs at least one pirate to explore"));
         }
 
-        match self.current_location {
-            TeamLocation::OnPlanet {
-                planet_id: current_planet_id,
-            } => {
-                if planet.id != current_planet_id {
-                    return Err(anyhow!("Not on this planet"));
-                }
+        if let Some(current_planet_id) = self.is_on_planet() {
+            if planet.id != current_planet_id {
+                return Err(anyhow!("Not on this planet"));
             }
-            TeamLocation::Travelling {
-                from: _from,
-                to: _to,
-                started,
-                duration,
-                ..
-            } => {
-                let current = Tick::now();
-                if started + duration > current {
-                    return Err(anyhow!(
-                        "Travelling ({})",
-                        (started + duration - current).formatted()
-                    ));
-                } else {
-                    return Err(anyhow!("Landing..."));
-                };
-            }
-            TeamLocation::Exploring { .. } => {
-                return Err(anyhow!("Exploring"));
-            }
+        } else {
+            return Err(anyhow!("Already in space"));
         }
 
         if self.spaceship.pending_upgrade.is_some() {
@@ -528,9 +498,8 @@ impl Team {
     }
 
     pub fn can_set_upgrade_spaceship(&self, upgrade: SpaceshipUpgrade) -> AppResult<()> {
-        match self.current_location {
-            TeamLocation::OnPlanet { .. } => {}
-            _ => return Err(anyhow!("Can only upgrade on a planet")),
+        if self.is_on_planet().is_none() {
+            return Err(anyhow!("Can only upgrade on a planet"));
         }
 
         for (resource, amount) in upgrade.cost.iter() {
@@ -592,7 +561,7 @@ impl Team {
 
         player.info.crew_role = CrewRole::Mozzo;
         // Removed player is a bit demoralized :(
-        player.morale = (player.morale - MORALE_RELEASE_MALUS).bound();
+        player.morale = (player.morale + MORALE_RELEASE_MALUS).bound();
 
         player.image.remove_jersey();
         player.compose_image()?;
@@ -668,14 +637,14 @@ impl Team {
 #[cfg(test)]
 mod tests {
     use crate::{
-        types::{IdSystem, TeamId},
+        types::TeamId,
         world::{planet::Planet, utils::TEAM_DATA},
     };
 
     #[test]
     fn test_team_random() {
         let (name, _) = TEAM_DATA[0].clone();
-        let team = super::Team::random(TeamId::new(), Planet::default().id, name);
+        let team = super::Team::random(TeamId::new_v4(), Planet::default().id, name);
         println!("{:?}", team);
     }
 }

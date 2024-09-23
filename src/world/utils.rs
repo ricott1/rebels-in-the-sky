@@ -72,6 +72,10 @@ pub fn ellipse_coords(axis: (f32, f32), theta: f32) -> (f32, f32) {
     )
 }
 
+pub fn is_default<T: Default + PartialEq>(v: &T) -> bool {
+    *v == T::default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::skill_linear_interpolation;

@@ -1,7 +1,6 @@
+use crate::world::position::Position;
 use crossterm::event::KeyCode;
 use ratatui::style::{Color, Modifier, Style};
-
-use crate::world::position::Position;
 
 pub const LEFT_PANEL_WIDTH: u16 = 36;
 pub const IMG_FRAME_WIDTH: u16 = 80;
@@ -37,6 +36,7 @@ impl UiKey {
     pub const SET_DOCTOR: KeyCode = KeyCode::Char('d');
     pub const SET_PILOT: KeyCode = KeyCode::Char('p');
     pub const PITCH_VIEW: KeyCode = KeyCode::Char('v');
+    pub const PLAYER_STATUS_VIEW: KeyCode = KeyCode::Char('s');
     pub const TRAVEL: KeyCode = KeyCode::Char('T');
     pub const QUICK_EXPLORE: KeyCode = KeyCode::Char('x');
     pub const LONG_EXPLORE: KeyCode = KeyCode::Char('X');
@@ -88,7 +88,7 @@ impl UiStyle {
     pub const HEADER: Style = DEFAULT_STYLE.fg(Color::LightBlue);
     pub const NETWORK: Style = DEFAULT_STYLE.fg(Color::Rgb(204, 144, 184));
     pub const DISCONNECTED: Style = DEFAULT_STYLE.fg(Color::DarkGray);
-    pub const FANCY: Style = DEFAULT_STYLE.fg(Color::Rgb(244, 255, 232));
+    pub const SHADOW: Style = DEFAULT_STYLE.fg(Color::Rgb(244, 255, 232));
     pub const HIGHLIGHT: Style = DEFAULT_STYLE.fg(Color::Rgb(118, 213, 192));
     pub const OK: Style = DEFAULT_STYLE.fg(Color::Green);
     pub const WARNING: Style = DEFAULT_STYLE.fg(Color::Yellow);

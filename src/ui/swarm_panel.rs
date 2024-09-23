@@ -7,14 +7,16 @@ use super::{
     utils::input_from_key_event,
     widgets::default_block,
 };
+use crate::network::types::TeamRanking;
 use crate::types::{AppResult, SystemTimeTick, TeamId, Tick};
 use crate::ui::constants::UiKey;
+use crate::world::constants::MIN_PLAYERS_PER_GAME;
 use crate::world::{skill::Rated, world::World};
 use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
+use itertools::Itertools;
 use libp2p::PeerId;
 use ratatui::layout::Margin;
-use ratatui::style::{Color, Style};
 use ratatui::{
     layout::{Constraint, Layout},
     prelude::Rect,
@@ -28,19 +30,21 @@ use strum_macros::Display;
 use tui_textarea::{CursorMove, TextArea};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display, Hash, Default)]
-pub enum EventTopic {
-    Log,
-    Requests,
+pub enum SwarmView {
     #[default]
     Chat,
+    Requests,
+    Log,
+    TeamRanking,
 }
 
-impl EventTopic {
-    fn next(&self) -> EventTopic {
+impl SwarmView {
+    fn next(&self) -> SwarmView {
         match self {
-            EventTopic::Log => EventTopic::Chat,
-            EventTopic::Requests => EventTopic::Log,
-            EventTopic::Chat => EventTopic::Requests,
+            SwarmView::Chat => SwarmView::Requests,
+            SwarmView::Requests => SwarmView::Log,
+            SwarmView::Log => SwarmView::TeamRanking,
+            SwarmView::TeamRanking => SwarmView::Chat,
         }
     }
 }
@@ -48,21 +52,22 @@ impl EventTopic {
 #[derive(Debug, Default)]
 pub struct SwarmPanel {
     pub index: usize,
-    events: HashMap<EventTopic, Vec<SwarmPanelEvent>>,
-    current_topic: EventTopic,
+    events: HashMap<SwarmView, Vec<SwarmPanelEvent>>,
+    view: SwarmView,
     textarea: TextArea<'static>,
     connected_peers: Vec<PeerId>,
     team_id_to_peer_id: HashMap<TeamId, PeerId>,
     peer_id_to_team_id: HashMap<PeerId, TeamId>,
+    team_ranking: HashMap<TeamId, TeamRanking>,
     callback_registry: Arc<Mutex<CallbackRegistry>>,
 }
 
 impl SwarmPanel {
     pub fn new(callback_registry: Arc<Mutex<CallbackRegistry>>) -> Self {
         let mut events = HashMap::new();
-        events.insert(EventTopic::Log, vec![]);
-        events.insert(EventTopic::Requests, vec![]);
-        events.insert(EventTopic::Chat, vec![]);
+        events.insert(SwarmView::Log, vec![]);
+        events.insert(SwarmView::Requests, vec![]);
+        events.insert(SwarmView::Chat, vec![]);
         Self {
             callback_registry,
             events,
@@ -70,12 +75,33 @@ impl SwarmPanel {
         }
     }
 
+    pub fn update_team_ranking(&mut self, team_ranking: &HashMap<TeamId, TeamRanking>) {
+        for (team_id, ranking) in team_ranking.iter() {
+            match self.team_ranking.get(team_id) {
+                Some(current_ranking) => {
+                    if current_ranking.timestamp < ranking.timestamp {
+                        self.team_ranking.insert(*team_id, ranking.clone());
+                    }
+                }
+                None => {
+                    self.team_ranking.insert(*team_id, ranking.clone());
+                }
+            }
+        }
+    }
+
     pub fn push_log_event(&mut self, event: SwarmPanelEvent) {
-        self.events.get_mut(&EventTopic::Log).unwrap().push(event);
+        self.events
+            .get_mut(&SwarmView::Log)
+            .expect("Should have Log events")
+            .push(event);
     }
 
     pub fn push_chat_event(&mut self, event: SwarmPanelEvent) {
-        self.events.get_mut(&EventTopic::Chat).unwrap().push(event);
+        self.events
+            .get_mut(&SwarmView::Chat)
+            .expect("Should have Chat events")
+            .push(event);
     }
 
     pub fn add_peer_id(&mut self, peer_id: PeerId, team_id: TeamId) {
@@ -98,7 +124,8 @@ impl SwarmPanel {
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Min(1),
+            Constraint::Length(3),
+            Constraint::Min(3),
             Constraint::Length(3),
         ])
         .split(area);
@@ -107,8 +134,8 @@ impl SwarmPanel {
 
         let mut chat_button = Button::new(
             "View:Chat".to_string(),
-            UiCallbackPreset::SetSwarmPanelTopic {
-                topic: EventTopic::Chat,
+            UiCallbackPreset::SetSwarmPanelView {
+                topic: SwarmView::Chat,
             },
             Arc::clone(&self.callback_registry),
         )
@@ -120,8 +147,8 @@ impl SwarmPanel {
 
         let mut challenges_button = Button::new(
             "View:Requests".to_string(),
-            UiCallbackPreset::SetSwarmPanelTopic {
-                topic: EventTopic::Requests,
+            UiCallbackPreset::SetSwarmPanelView {
+                topic: SwarmView::Requests,
             },
             Arc::clone(&self.callback_registry),
         )
@@ -133,8 +160,8 @@ impl SwarmPanel {
 
         let mut log_button = Button::new(
             "View:Log".to_string(),
-            UiCallbackPreset::SetSwarmPanelTopic {
-                topic: EventTopic::Log,
+            UiCallbackPreset::SetSwarmPanelView {
+                topic: SwarmView::Log,
             },
             Arc::clone(&self.callback_registry),
         )
@@ -143,40 +170,61 @@ impl SwarmPanel {
             "View log and system info from the network.".into(),
             hover_text_target,
         );
-        match self.current_topic {
-            EventTopic::Log => {
-                log_button.disable(None);
+
+        let mut team_ranking_button = Button::new(
+            "View:Ranking".to_string(),
+            UiCallbackPreset::SetSwarmPanelView {
+                topic: SwarmView::TeamRanking,
+            },
+            Arc::clone(&self.callback_registry),
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text(
+            "View ranking of best teams in the network.".into(),
+            hover_text_target,
+        );
+
+        match self.view {
+            SwarmView::Chat => {
+                chat_button.disable(None);
             }
-            EventTopic::Requests => {
+            SwarmView::Requests => {
                 challenges_button.disable(None);
             }
-            EventTopic::Chat => {
-                chat_button.disable(None);
+            SwarmView::Log => {
+                log_button.disable(None);
+            }
+            SwarmView::TeamRanking => {
+                team_ranking_button.disable(None);
             }
         }
 
         frame.render_widget(chat_button, split[0]);
         frame.render_widget(challenges_button, split[1]);
         frame.render_widget(log_button, split[2]);
+        frame.render_widget(team_ranking_button, split[3]);
 
         let mut items: Vec<ListItem> = vec![];
 
-        for (team_id, peer_id) in self.team_id_to_peer_id.iter() {
-            let team = world.get_team_or_err(*team_id);
-            if team.is_ok() {
+        for (&team_id, peer_id) in self.team_id_to_peer_id.iter() {
+            if let Ok(team) = world.get_team_or_err(team_id) {
                 let style = if self.connected_peers.contains(peer_id) {
                     UiStyle::NETWORK
                 } else {
                     UiStyle::DISCONNECTED
                 };
                 items.push(ListItem::new(Span::styled(
-                    team.unwrap().name.clone(),
+                    format!(
+                        "{} ({})",
+                        team.name.clone(),
+                        peer_id.to_base58().chars().take(6).collect::<String>()
+                    ),
                     style,
                 )));
             }
         }
         let list = List::new(items);
-        frame.render_widget(list.block(default_block().title("Peers")), split[3]);
+        frame.render_widget(list.block(default_block().title("Peers")), split[4]);
 
         let dial_button = Button::new(
             "Ping".into(),
@@ -186,33 +234,45 @@ impl SwarmPanel {
             Arc::clone(&self.callback_registry),
         )
         .set_hotkey(UiKey::PING);
-        frame.render_widget(dial_button, split[4]);
+        frame.render_widget(dial_button, split[5]);
     }
 
     fn build_challenge_list(
-        &mut self,
+        &self,
+        is_sent: bool,
         frame: &mut Frame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
-        frame.render_widget(default_block().title("Challenges"), area);
-        let own_team = world.get_own_team()?;
+        let title = if is_sent {
+            "Challenges sent"
+        } else {
+            "Challenges received"
+        };
 
-        let mut constraints = [Constraint::Length(3)].repeat(own_team.open_challenges.len());
+        frame.render_widget(default_block().title(title), area);
+        let own_team = world.get_own_team()?;
+        let challenges = if is_sent {
+            &own_team.sent_challenges
+        } else {
+            &own_team.received_challenges
+        };
+
+        let mut constraints = [Constraint::Length(3)].repeat(challenges.len());
         constraints.push(Constraint::Min(0));
         let split = Layout::vertical(constraints).split(area.inner(Margin {
             horizontal: 1,
             vertical: 1,
         }));
 
-        for (idx, (team_id, challenge)) in own_team.open_challenges.iter().enumerate() {
+        for (idx, (team_id, challenge)) in challenges.iter().enumerate() {
             let peer_id = self.team_id_to_peer_id.get(team_id);
             if peer_id.is_none() {
                 continue;
             }
 
             let line_split = Layout::horizontal([
-                Constraint::Length(24),
+                Constraint::Length(32),
                 Constraint::Length(6),
                 Constraint::Length(6),
                 Constraint::Min(0),
@@ -221,18 +281,22 @@ impl SwarmPanel {
 
             let hover_text_target = hover_text_target(frame);
 
-            let team = &challenge.home_team_in_game;
+            let team = if is_sent {
+                &challenge.away_team_in_game
+            } else {
+                &challenge.home_team_in_game
+            };
             frame.render_widget(
                 Button::new(
                     format!(
                         "{} {} ({})",
                         team.name,
-                        world.team_rating(team.team_id).stars(),
+                        world.team_rating(team.team_id).unwrap_or_default().stars(),
                         peer_id
                             .unwrap()
                             .to_base58()
                             .chars()
-                            .take(4)
+                            .take(6)
                             .collect::<String>()
                     ),
                     UiCallbackPreset::GoToTeam {
@@ -242,54 +306,74 @@ impl SwarmPanel {
                 ),
                 line_split[0],
             );
-            let mut accept_button = Button::new(
-                format!("{:6^}", UiText::YES),
-                UiCallbackPreset::AcceptChallenge {
-                    challenge: challenge.clone(),
-                },
-                Arc::clone(&self.callback_registry),
-            )
-            .set_box_style(UiStyle::OK)
-            .set_hover_text(
-                format!("Accept the challenge from {} and start a game.", team.name),
-                hover_text_target,
-            );
-            if idx == 0 {
-                accept_button = accept_button.set_hotkey(UiKey::YES_TO_DIALOG);
+
+            if !is_sent {
+                let mut accept_button = Button::new(
+                    format!("{:6^}", UiText::YES),
+                    UiCallbackPreset::AcceptChallenge {
+                        challenge: challenge.clone(),
+                    },
+                    Arc::clone(&self.callback_registry),
+                )
+                .set_box_style(UiStyle::OK)
+                .set_hover_text(
+                    format!("Accept the challenge from {} and start a game.", team.name),
+                    hover_text_target,
+                );
+                if idx == 0 {
+                    accept_button = accept_button.set_hotkey(UiKey::YES_TO_DIALOG);
+                }
+                frame.render_widget(accept_button, line_split[1]);
+                let mut decline_button = Button::new(
+                    format!("{:6^}", UiText::NO),
+                    UiCallbackPreset::DeclineChallenge {
+                        challenge: challenge.clone(),
+                    },
+                    Arc::clone(&self.callback_registry),
+                )
+                .set_box_style(UiStyle::ERROR)
+                .set_hover_text(
+                    format!("Decline the challenge from {}.", team.name),
+                    hover_text_target,
+                );
+                if idx == 0 {
+                    decline_button = decline_button.set_hotkey(UiKey::NO_TO_DIALOG);
+                }
+                frame.render_widget(decline_button, line_split[2]);
             }
-            frame.render_widget(accept_button, line_split[1]);
-            let mut decline_button = Button::new(
-                format!("{:6^}", UiText::NO),
-                UiCallbackPreset::DeclineChallenge {
-                    challenge: challenge.clone(),
-                },
-                Arc::clone(&self.callback_registry),
-            )
-            .set_box_style(UiStyle::ERROR)
-            .set_hover_text(
-                format!("Decline the challenge from {}.", team.name),
-                hover_text_target,
-            );
-            if idx == 0 {
-                decline_button = decline_button.set_hotkey(UiKey::NO_TO_DIALOG);
-            }
-            frame.render_widget(decline_button, line_split[2]);
         }
         Ok(())
     }
 
-    fn build_trade_list(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
-        frame.render_widget(default_block().title("Trades"), area);
-        let own_team = world.get_own_team()?;
+    fn build_trade_list(
+        &self,
+        is_sent: bool,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
+        let title = if is_sent {
+            "Trade offers sent"
+        } else {
+            "Trade offers received"
+        };
 
-        let mut constraints = [Constraint::Length(3)].repeat(own_team.open_trades.len());
+        frame.render_widget(default_block().title(title), area);
+        let own_team = world.get_own_team()?;
+        let trades = if is_sent {
+            &own_team.sent_trades
+        } else {
+            &own_team.received_trades
+        };
+
+        let mut constraints = [Constraint::Length(3)].repeat(trades.len());
         constraints.push(Constraint::Min(0));
         let split = Layout::vertical(constraints).split(area.inner(Margin {
             horizontal: 1,
             vertical: 1,
         }));
 
-        for (idx, (_, trade)) in own_team.open_trades.iter().enumerate() {
+        for (idx, (_, trade)) in trades.iter().enumerate() {
             let line_split = Layout::horizontal([
                 Constraint::Length(46),
                 Constraint::Length(6),
@@ -317,48 +401,116 @@ impl SwarmPanel {
                 ),
                 line_split[0],
             );
-            let mut accept_button = Button::new(
-                format!("{:6^}", UiText::YES),
-                UiCallbackPreset::AcceptTrade {
-                    trade: trade.clone(),
-                },
-                Arc::clone(&self.callback_registry),
-            )
-            .set_box_style(UiStyle::OK)
-            .set_hover_text(
-                format!(
-                    "Accept to trade {} for {}.",
-                    target_player.info.shortened_name(),
-                    proposer_player.info.shortened_name()
-                ),
-                hover_text_target,
-            );
-            if idx == 0 {
-                accept_button = accept_button.set_hotkey(UiKey::YES_TO_DIALOG);
+            if !is_sent {
+                let mut accept_button = Button::new(
+                    format!("{:6^}", UiText::YES),
+                    UiCallbackPreset::AcceptTrade {
+                        trade: trade.clone(),
+                    },
+                    Arc::clone(&self.callback_registry),
+                )
+                .set_box_style(UiStyle::OK)
+                .set_hover_text(
+                    format!(
+                        "Accept to trade {} for {}.",
+                        target_player.info.shortened_name(),
+                        proposer_player.info.shortened_name()
+                    ),
+                    hover_text_target,
+                );
+                if idx == 0 {
+                    accept_button = accept_button.set_hotkey(UiKey::YES_TO_DIALOG);
+                }
+                frame.render_widget(accept_button, line_split[1]);
+                let mut decline_button = Button::new(
+                    format!("{:6^}", UiText::NO),
+                    UiCallbackPreset::DeclineTrade {
+                        trade: trade.clone(),
+                    },
+                    Arc::clone(&self.callback_registry),
+                )
+                .set_box_style(UiStyle::ERROR)
+                .set_hover_text(
+                    format!(
+                        "Decline to trade {} for {}.",
+                        target_player.info.shortened_name(),
+                        proposer_player.info.shortened_name()
+                    ),
+                    hover_text_target,
+                );
+                if idx == 0 {
+                    decline_button = decline_button.set_hotkey(UiKey::NO_TO_DIALOG);
+                }
+                frame.render_widget(decline_button, line_split[2]);
             }
-            frame.render_widget(accept_button, line_split[1]);
-            let mut decline_button = Button::new(
-                format!("{:6^}", UiText::NO),
-                UiCallbackPreset::DeclineTrade {
-                    trade: trade.clone(),
-                },
-                Arc::clone(&self.callback_registry),
-            )
-            .set_box_style(UiStyle::ERROR)
-            .set_hover_text(
-                format!(
-                    "Decline to trade {} for {}.",
-                    target_player.info.shortened_name(),
-                    proposer_player.info.shortened_name()
-                ),
-                hover_text_target,
-            );
-            if idx == 0 {
-                decline_button = decline_button.set_hotkey(UiKey::NO_TO_DIALOG);
-            }
-            frame.render_widget(decline_button, line_split[2]);
         }
         Ok(())
+    }
+
+    fn render_team_ranking(&self, frame: &mut Frame, world: &World, area: Rect) {
+        frame.render_widget(default_block().title("Team ranking"), area);
+        let hover_text_target = hover_text_target(frame);
+        let mut constraints = [Constraint::Length(1)].repeat(self.team_ranking.len());
+        constraints.push(Constraint::Min(0));
+        let split = Layout::vertical(constraints).split(area.inner(Margin {
+            horizontal: 1,
+            vertical: 1,
+        }));
+        for (idx, (&team_id, ranking)) in self
+            .team_ranking
+            .iter()
+            .sorted_by(|(_, a), (_, b)| {
+                b.reputation
+                    .partial_cmp(&a.reputation)
+                    .expect("Reputation should exist")
+            })
+            .enumerate()
+        {
+            let mut rating = ranking
+                .player_ratings
+                .iter()
+                .take(MIN_PLAYERS_PER_GAME)
+                .sum::<f32>()
+                / MIN_PLAYERS_PER_GAME as f32;
+
+            if let Ok(r) = world.team_rating(team_id) {
+                rating = r;
+            }
+
+            let text = format!(
+                " Ranking {:5} Reputation {:5} {:<12} {:12} ({})",
+                rating.stars(),
+                ranking.reputation.stars(),
+                ranking.name.clone(),
+                format!(
+                    "W{}/L{}/D{}",
+                    ranking.record[0], ranking.record[1], ranking.record[2]
+                ),
+                ranking.timestamp.formatted_as_date()
+            );
+            if world.get_team(team_id).is_some() {
+                frame.render_widget(
+                    Button::no_box(
+                        Span::styled(text, UiStyle::NETWORK)
+                            .into_left_aligned_line()
+                            .into(),
+                        UiCallbackPreset::GoToTeam { team_id },
+                        Arc::clone(&self.callback_registry),
+                    )
+                    .set_hover_text(
+                        format!(
+                            "Go to team {} (Reputation {:.2})",
+                            ranking.name, ranking.reputation
+                        ),
+                        hover_text_target,
+                    ),
+                    // .set_hover_style(UiStyle::HIGHLIGHT),
+                    split[idx],
+                );
+            } else {
+                frame.render_widget(Span::styled(text, UiStyle::DISCONNECTED), split[idx]);
+            };
+        }
     }
 
     fn build_right_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
@@ -367,21 +519,39 @@ impl SwarmPanel {
         self.textarea.set_block(default_block());
         frame.render_widget(&self.textarea, split[1]);
 
-        if self.current_topic == EventTopic::Requests {
+        if self.view == SwarmView::Requests {
             let h_split = Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
                 .split(split[0]);
-            self.build_challenge_list(frame, world, h_split[0])?;
-            self.build_trade_list(frame, world, h_split[1])?;
+            let challenge_split =
+                Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                    .split(h_split[0]);
+            self.build_challenge_list(false, frame, world, challenge_split[0])?;
+            self.build_challenge_list(true, frame, world, challenge_split[1])?;
+            let trade_split = Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                .split(h_split[1]);
+            self.build_trade_list(false, frame, world, trade_split[0])?;
+            self.build_trade_list(true, frame, world, trade_split[1])?;
             return Ok(());
         }
+
+        if self.view == SwarmView::TeamRanking {
+            self.render_team_ranking(frame, world, split[0]);
+            return Ok(());
+        }
+
         let mut items = vec![];
-        for event in self.events.get(&self.current_topic).unwrap().iter().rev() {
+        for event in self
+            .events
+            .get(&self.view)
+            .expect("Should have current topic events")
+            .iter()
+            .rev()
+        {
             match event.peer_id {
                 Some(peer_id) => {
-                    let from = if let Some(team_id) = self.peer_id_to_team_id.get(&peer_id) {
-                        let team = world.get_team_or_err(*team_id);
-                        if team.is_ok() {
-                            team.unwrap().name.clone()
+                    let from = if let Some(&team_id) = self.peer_id_to_team_id.get(&peer_id) {
+                        if let Ok(team) = world.get_team_or_err(team_id) {
+                            team.name.clone()
                         } else {
                             "Unknown".to_string()
                         }
@@ -399,7 +569,7 @@ impl SwarmPanel {
                     ]));
                 }
                 None => {
-                    let own_message = if self.current_topic == EventTopic::Log {
+                    let own_message = if self.view == SwarmView::Log {
                         "System"
                     } else {
                         "You"
@@ -419,14 +589,14 @@ impl SwarmPanel {
         frame.render_widget(
             Paragraph::new(items)
                 .wrap(Wrap { trim: true })
-                .block(default_block().title(self.current_topic.to_string())),
+                .block(default_block().title(self.view.to_string())),
             split[0],
         );
         Ok(())
     }
 
-    pub fn set_current_topic(&mut self, topic: EventTopic) {
-        self.current_topic = topic;
+    pub fn set_view(&mut self, topic: SwarmView) {
+        self.view = topic;
     }
 }
 
@@ -454,8 +624,8 @@ impl Screen for SwarmPanel {
             KeyCode::Down => self.next_index(),
             UiKey::CYCLE_VIEW => {
                 //FIXME: this means the chat can't use the capital V
-                return Some(UiCallbackPreset::SetSwarmPanelTopic {
-                    topic: self.current_topic.next(),
+                return Some(UiCallbackPreset::SetSwarmPanelView {
+                    topic: self.view.next(),
                 });
             }
             UiKey::PING => {
@@ -479,9 +649,8 @@ impl Screen for SwarmPanel {
 
                 match command {
                     "/dial" => {
-                        let next = split_input.skip(1).next();
-                        let address = if next.is_some() {
-                            next.unwrap().to_string()
+                        let address = if let Some(next) = split_input.skip(1).next() {
+                            next.to_string()
                         } else {
                             "seed".to_string()
                         };
@@ -520,16 +689,6 @@ impl Screen for SwarmPanel {
             }
         }
         None
-    }
-
-    fn footer_spans(&self) -> Vec<Span> {
-        vec![
-            Span::styled(
-                format!(" {} ", UiKey::CYCLE_VIEW.to_string()),
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(" Cycle topic ", Style::default().fg(Color::DarkGray)),
-        ]
     }
 }
 

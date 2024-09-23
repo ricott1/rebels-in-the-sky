@@ -79,6 +79,11 @@ impl PlayerView {
                 player_planet_id == own_team_planet_id
             }
             PlayerView::Tradable => {
+                let own_team_planet_id = match own_team.current_location {
+                    TeamLocation::OnPlanet { planet_id } => planet_id,
+                    _ => return false,
+                };
+
                 if player.team.is_none() {
                     return false;
                 }
@@ -94,15 +99,8 @@ impl PlayerView {
 
                 let player_team = try_player_team.unwrap();
                 let player_team_planet_id = match player_team.current_location {
-                    TeamLocation::Exploring { around, .. } => around,
                     TeamLocation::OnPlanet { planet_id } => planet_id,
-                    TeamLocation::Travelling { to, .. } => to,
-                };
-
-                let own_team_planet_id = match own_team.current_location {
-                    TeamLocation::Exploring { around, .. } => around,
-                    TeamLocation::OnPlanet { planet_id } => planet_id,
-                    TeamLocation::Travelling { to, .. } => to,
+                    _ => return false,
                 };
 
                 player_team_planet_id == own_team_planet_id
@@ -269,21 +267,18 @@ impl PlayerListPanel {
         // Display open trade if the selected and lock player are the two being traded.
         let mut open_trade = None;
 
-        // First option: selected player is in own_team and locked player has a team
-        // and this team has sent an offer containing exactly these players.
-        if own_team.player_ids.contains(&player.id) {
-            if let Some(locked_player_id) = self.locked_player_id {
-                if let Some(trade) = own_team.open_trades.get(&(locked_player_id, player.id)) {
+        if let Some(locked_player_id) = self.locked_player_id {
+            // First option: selected player is in own_team and locked player has a team
+            // and this team has sent an offer containing exactly these players.
+            if own_team.player_ids.contains(&player.id) {
+                if let Some(trade) = own_team.received_trades.get(&(locked_player_id, player.id)) {
                     open_trade = Some(trade);
                 }
             }
-        }
-
-        // Second option: locked player is in own_team and selected player has a team
-        // and this team has sent an offer containing exactly these players.
-        if let Some(locked_player_id) = self.locked_player_id {
+            // Second option: locked player is in own_team and selected player has a team
+            // and this team has sent an offer containing exactly these players.
             if own_team.player_ids.contains(&locked_player_id) {
-                if let Some(trade) = own_team.open_trades.get(&(player.id, locked_player_id)) {
+                if let Some(trade) = own_team.received_trades.get(&(player.id, locked_player_id)) {
                     open_trade = Some(trade);
                 }
             }
@@ -505,7 +500,7 @@ impl PlayerListPanel {
                         .can_trade_players(proposer_player, target_player, target_team)
                         .is_ok()
                     {
-                        let button = Button::new(
+                        let mut trade_button = Button::new(
                             "Propose trade".into(),
                             UiCallbackPreset::CreateTradeProposal {
                                 proposer_player_id: proposer_player.id,
@@ -523,7 +518,15 @@ impl PlayerListPanel {
                         )
                         .set_hotkey(UiKey::CREATE_TRADE);
 
-                        frame.render_widget(button, buttons_split[2]);
+                        if own_team
+                            .sent_trades
+                            .get(&(proposer_player.id, target_player.id))
+                            .is_some()
+                        {
+                            trade_button.disable(Some("Trade already proposed".into()));
+                        }
+
+                        frame.render_widget(trade_button, buttons_split[2]);
                     }
                 }
             }

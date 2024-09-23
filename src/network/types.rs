@@ -1,22 +1,23 @@
+use super::challenge::Challenge;
+use super::trade::Trade;
 use crate::engine::timer::Timer;
 use crate::engine::types::GameStats;
-use crate::types::{PlanetId, Tick};
+use crate::types::{KartoffelId, PlanetId, Tick};
 use crate::world::planet::{Planet, PlanetType};
 use crate::world::position::{Position, MAX_POSITION};
+use crate::world::skill::Skill;
 use crate::{
     engine::types::TeamInGame,
     types::{AppResult, GameId, TeamId},
     world::{player::Player, team::Team, world::World},
 };
 use anyhow::anyhow;
+use itertools::Itertools;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use strum_macros::Display;
-
-use super::challenge::Challenge;
-use super::trade::Trade;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[repr(u8)]
@@ -27,7 +28,6 @@ pub(crate) enum NetworkData {
     Message(Tick, String),
     Game(Tick, NetworkGame),
     SeedInfo(Tick, SeedInfo),
-    FailedRequest(Tick, String),
 }
 
 impl TryFrom<Vec<u8>> for NetworkData {
@@ -46,13 +46,15 @@ impl TryInto<Vec<u8>> for NetworkData {
     }
 }
 
-#[derive(Debug, Clone, Copy, Display, Default, Serialize, Deserialize, PartialEq, Hash)]
+#[derive(Debug, Clone, Display, Default, Serialize, Deserialize, PartialEq, Hash)]
 pub enum NetworkRequestState {
     #[default]
     Syn,
     SynAck,
     Ack,
-    Failed,
+    Failed {
+        error_message: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -168,22 +170,55 @@ impl NetworkGame {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TeamRanking {
+    pub timestamp: Tick,
+    pub name: String,
+    pub reputation: Skill,
+    pub player_ratings: Vec<Skill>,
+    pub record: [u32; 3],
+    pub kartoffel_ids: Vec<KartoffelId>,
+}
+
+impl TeamRanking {
+    pub fn from_network_team(timestamp: Tick, network_team: &NetworkTeam) -> Self {
+        Self {
+            timestamp,
+            name: network_team.team.name.clone(),
+            reputation: network_team.team.reputation,
+            player_ratings: network_team
+                .players
+                .iter()
+                .map(|p| p.average_skill())
+                .collect_vec(),
+            record: network_team.team.network_game_record,
+            kartoffel_ids: network_team.team.kartoffel_ids.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SeedInfo {
     pub connected_peers_count: usize,
     pub version_major: usize,
     pub version_minor: usize,
     pub version_patch: usize,
     pub message: Option<String>,
+    pub team_ranking: HashMap<TeamId, TeamRanking>,
 }
 
 impl SeedInfo {
-    pub fn new(connected_peers_count: usize, message: Option<String>) -> AppResult<Self> {
+    pub fn new(
+        connected_peers_count: usize,
+        message: Option<String>,
+        team_ranking: HashMap<TeamId, TeamRanking>,
+    ) -> AppResult<Self> {
         Ok(Self {
             connected_peers_count,
             version_major: env!("CARGO_PKG_VERSION_MAJOR").parse()?,
             version_minor: env!("CARGO_PKG_VERSION_MINOR").parse()?,
             version_patch: env!("CARGO_PKG_VERSION_PATCH").parse()?,
             message,
+            team_ranking,
         })
     }
 }

@@ -1,17 +1,19 @@
 use crate::{
     engine::game::Game,
-    types::{AppResult, GameId},
+    network::types::TeamRanking,
+    types::{AppResult, GameId, TeamId},
     world::world::World,
 };
 use anyhow::anyhow;
 use directories;
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
-use std::{fs::File, path::PathBuf};
+use std::{collections::HashMap, fs::File, path::PathBuf};
 
 pub static ASSETS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/assets/");
 pub static PERSISTED_WORLD_FILENAME: &str = "world.json";
 pub static PERSISTED_GAMES_PREFIX: &str = "game_";
+pub static PERSISTED_TEAM_RANKING_FILENAME: &str = "team_ranking.json";
 
 fn path_from_prefix(store_prefix: &str) -> String {
     format!("{}_{}", store_prefix, PERSISTED_WORLD_FILENAME)
@@ -54,6 +56,22 @@ pub fn save_game(game: &Game) -> AppResult<()> {
 
 pub fn load_game(game_id: GameId) -> AppResult<Game> {
     load_from_json(format!("{}{}.json", PERSISTED_GAMES_PREFIX, game_id).as_str())
+}
+
+pub fn save_team_ranking(
+    team_ranking: &HashMap<TeamId, TeamRanking>,
+    with_backup: bool,
+) -> AppResult<()> {
+    save_to_json(&PERSISTED_TEAM_RANKING_FILENAME, &team_ranking)?;
+    if with_backup {
+        let backup_filename = format!("{}.back", PERSISTED_TEAM_RANKING_FILENAME);
+        save_to_json(&backup_filename, &team_ranking)?;
+    }
+    Ok(())
+}
+
+pub fn load_team_ranking() -> AppResult<HashMap<TeamId, TeamRanking>> {
+    load_from_json(&PERSISTED_TEAM_RANKING_FILENAME)
 }
 
 pub fn get_world_size(store_prefix: &str) -> AppResult<u64> {

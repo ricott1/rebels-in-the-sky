@@ -6,20 +6,19 @@ use super::popup_message::PopupMessage;
 use super::splash_screen::{AudioPlayerState, SplashScreen};
 use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
-use super::widgets::{default_block, popup_rect};
+use super::widgets::default_block;
 use super::{
     game_panel::GamePanel, my_team_panel::MyTeamPanel, new_team_screen::NewTeamScreen,
     player_panel::PlayerListPanel, swarm_panel::SwarmPanel, team_panel::TeamListPanel,
     traits::Screen,
 };
-use crate::audio::{self};
+use crate::audio::music_player::MusicPlayer;
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::world::world::World;
 use core::fmt::Debug;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style, Styled};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
 use ratatui::{
     layout::{Constraint, Layout},
     Frame,
@@ -28,7 +27,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use std::vec;
 use strum_macros::Display;
-use tui_textarea::TextArea;
+use tui_textarea::{CursorMove, TextArea};
 
 const MAX_POPUP_MESSAGES: usize = 8;
 
@@ -121,7 +120,7 @@ impl Ui {
         }
     }
 
-    pub fn set_popup(&mut self, popup_message: PopupMessage) {
+    pub fn push_popup(&mut self, popup_message: PopupMessage) {
         self.popup_messages.push(popup_message);
         if self.popup_messages.len() >= MAX_POPUP_MESSAGES {
             for index in 0..self.popup_messages.len() {
@@ -196,8 +195,6 @@ impl Ui {
                 self.data_view = !self.data_view;
                 None
             }
-            UiKey::TOGGLE_AUDIO => Some(UiCallbackPreset::ToggleAudio),
-            UiKey::NEXT_AUDIO_SAMPLE => Some(UiCallbackPreset::NextAudioSample),
 
             UiKey::NEXT_TAB => {
                 self.next_tab();
@@ -211,6 +208,8 @@ impl Ui {
                 if self.popup_messages.len() > 0 {
                     return self.popup_messages[0].consumes_input(&mut self.popup_input, key_event);
                 }
+                self.popup_input.move_cursor(CursorMove::End);
+                self.popup_input.delete_line_by_head();
 
                 if let Some(callback) = self
                     .get_active_screen_mut()
@@ -249,11 +248,7 @@ impl Ui {
         self.tab_index = (self.tab_index + self.ui_tabs.len() - 1) % self.ui_tabs.len();
     }
 
-    pub fn update(
-        &mut self,
-        world: &World,
-        audio_player: Option<&audio::music_player::MusicPlayer>,
-    ) -> AppResult<()> {
+    pub fn update(&mut self, world: &World, audio_player: Option<&MusicPlayer>) -> AppResult<()> {
         self.callback_registry.lock().unwrap().clear();
         match self.state {
             UiState::Splash => {
@@ -288,12 +283,7 @@ impl Ui {
     }
 
     /// Renders the user interface widgets.
-    pub fn render(
-        &mut self,
-        frame: &mut Frame,
-        world: &World,
-        audio_player: Option<&audio::music_player::MusicPlayer>,
-    ) {
+    pub fn render(&mut self, frame: &mut Frame, world: &World, audio_player: Option<&MusicPlayer>) {
         self.callback_registry.lock().unwrap().clear();
         if self.popup_messages.len() > 0 {
             self.callback_registry.lock().unwrap().set_max_layer(1);
@@ -301,13 +291,14 @@ impl Ui {
         let area = frame.area();
         let split = Layout::vertical([
             Constraint::Min(6),    // body
-            Constraint::Length(2), //footer
+            Constraint::Length(1), // footer
+            Constraint::Length(1), // hover text
         ])
         .split(area);
 
         // Render footer
         // We render the footer first because hover text is displayed in the footer (and thus must overwrite it)
-        frame.render_widget(self.footer(world, audio_player), split[1]);
+        self.render_footer(frame, world, audio_player, split[1]);
 
         // render selected tab
         let render_result = match self.state {
@@ -325,8 +316,8 @@ impl Ui {
                     self.get_active_screen_mut()
                         .render(frame, world, tab_main_split[1]);
 
-                let mut constraints = [Constraint::Length(12)].repeat(self.ui_tabs.len());
-                constraints.push(Constraint::Min(1));
+                let mut constraints = [Constraint::Length(16)].repeat(self.ui_tabs.len());
+                constraints.push(Constraint::Min(0));
                 let tab_split = Layout::horizontal(constraints).split(tab_main_split[0]);
 
                 for (idx, &tab) in self.ui_tabs.iter().enumerate() {
@@ -340,7 +331,7 @@ impl Ui {
                         tab.to_string()
                     };
                     let mut button = Button::no_box(
-                        tab_name,
+                        tab_name.into(),
                         UiCallbackPreset::SetUiTab {
                             ui_tab: self.ui_tabs[idx],
                         },
@@ -363,15 +354,17 @@ impl Ui {
             }
         };
         if render_result.is_err() {
-            self.set_popup(PopupMessage::Error(
+            self.push_popup(PopupMessage::Error(
                 format!("Render error\n{}", render_result.err().unwrap().to_string()),
+                true,
                 Tick::now(),
             ));
         }
 
         if self.render_popup_messages(frame, area).is_err() {
-            self.set_popup(PopupMessage::Error(
+            self.push_popup(PopupMessage::Error(
                 "Popup render error".into(),
+                true,
                 Tick::now(),
             ));
         }
@@ -381,10 +374,9 @@ impl Ui {
     fn render_popup_messages(&mut self, frame: &mut Frame, area: Rect) -> AppResult<()> {
         // Render popup message
         if self.popup_messages.len() > 0 {
-            let popup_rect = popup_rect(area);
             self.popup_messages[0].render(
                 frame,
-                popup_rect,
+                area,
                 &mut self.popup_input,
                 &self.callback_registry,
             )?;
@@ -401,11 +393,20 @@ impl Ui {
         }
     }
 
-    fn footer(
-        &mut self,
+    fn render_footer<'a>(
+        &'a self,
+        frame: &mut Frame,
         world: &World,
-        audio_player: Option<&audio::music_player::MusicPlayer>,
-    ) -> Paragraph {
+        audio_player: Option<&MusicPlayer>,
+        area: Rect,
+    ) {
+        let split = Layout::horizontal([
+            Constraint::Min(50),
+            Constraint::Length(22),
+            Constraint::Length(20),
+        ])
+        .split(area);
+
         let mut spans = vec![
             Span::styled(
                 " Esc ",
@@ -427,32 +428,6 @@ impl Ui {
                 ),
                 Span::styled(" Next tab ", Style::default().fg(Color::DarkGray)),
             ]);
-        }
-
-        if audio_player.is_some() {
-            spans.push(Span::styled(
-                format!(" {} ", UiKey::TOGGLE_AUDIO.to_string()),
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ));
-            spans.push(Span::styled(
-                format!(
-                    " Toggle radio: {} ",
-                    if audio_player.is_some() && audio_player.as_ref().unwrap().is_playing() {
-                        "ON "
-                    } else {
-                        "OFF"
-                    },
-                ),
-                Style::default().fg(Color::DarkGray),
-            ));
-            spans.push(Span::styled(
-                format!(" {} ", UiKey::NEXT_AUDIO_SAMPLE.to_string()),
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ));
-            spans.push(Span::styled(
-                format!(" Next radio ",),
-                Style::default().fg(Color::DarkGray),
-            ));
         }
 
         let extra_spans = if self.data_view {
@@ -498,6 +473,37 @@ impl Ui {
         };
         spans.extend(extra_spans);
 
-        Paragraph::new(Line::from(spans)).centered()
+        frame.render_widget(Line::from(spans).left_aligned(), split[0]);
+
+        if audio_player.is_some() {
+            frame.render_widget(
+                Button::no_box(
+                    format!(
+                        " {}: Toggle radio {} ",
+                        UiKey::TOGGLE_AUDIO.to_string(),
+                        if audio_player.is_some() && audio_player.as_ref().unwrap().is_playing() {
+                            "ON "
+                        } else {
+                            "OFF"
+                        }
+                    )
+                    .into(),
+                    UiCallbackPreset::ToggleAudio,
+                    Arc::clone(&self.callback_registry),
+                )
+                .set_hotkey(UiKey::TOGGLE_AUDIO),
+                split[1],
+            );
+
+            frame.render_widget(
+                Button::no_box(
+                    format!(" {}: Next radio ", UiKey::NEXT_AUDIO_SAMPLE.to_string(),).into(),
+                    UiCallbackPreset::NextAudioSample,
+                    Arc::clone(&self.callback_registry),
+                )
+                .set_hotkey(UiKey::NEXT_AUDIO_SAMPLE),
+                split[2],
+            );
+        }
     }
 }

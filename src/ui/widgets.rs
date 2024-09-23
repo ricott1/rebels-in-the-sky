@@ -12,7 +12,7 @@ use super::{
 use crate::{
     engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
     image::{player::PLAYER_IMAGE_WIDTH, spaceship::SPACESHIP_IMAGE_WIDTH},
-    types::{AppResult, PlayerId, SystemTimeTick, Tick, AU, HOURS, SECONDS},
+    types::{AppResult, PlayerId, SystemTimeTick, Tick},
     world::{
         constants::*,
         player::{Player, Trait},
@@ -36,8 +36,6 @@ use ratatui::{
 };
 use std::{sync::Arc, sync::Mutex};
 
-const POPUP_WIDTH: u16 = 48;
-const POPUP_HEIGHT: u16 = 20;
 pub const UP_ARROW_SPAN: Lazy<Span<'static>> = Lazy::new(|| Span::styled("↑", UiStyle::OK));
 pub const DOWN_ARROW_SPAN: Lazy<Span<'static>> = Lazy::new(|| Span::styled("↓", UiStyle::ERROR));
 pub const SWITCH_ARROW_SPAN: Lazy<Span<'static>> =
@@ -51,33 +49,6 @@ pub fn default_block() -> Block<'static> {
 
 pub fn default_list() -> List<'static> {
     List::new::<Vec<String>>(vec![])
-}
-
-pub fn popup_rect(area: Rect) -> Rect {
-    let x = if area.width < POPUP_WIDTH {
-        0
-    } else {
-        (area.width - POPUP_WIDTH) / 2
-    };
-    let y = if area.height < POPUP_HEIGHT {
-        0
-    } else {
-        (area.height - POPUP_HEIGHT) / 2
-    };
-
-    let width = if area.width < x + POPUP_WIDTH {
-        area.width
-    } else {
-        POPUP_WIDTH
-    };
-
-    let height = if area.height < y + POPUP_HEIGHT {
-        area.height
-    } else {
-        POPUP_HEIGHT
-    };
-
-    Rect::new(x, y, width, height)
 }
 
 pub fn selectable_list<'a>(
@@ -128,16 +99,9 @@ pub fn go_to_team_current_planet_button<'a>(
             } else {
                 "Landing".into()
             };
-            let countdown = if started + duration > world.last_tick_short_interval {
-                (started + duration - world.last_tick_short_interval).formatted()
-            } else {
-                (0 as Tick).formatted()
-            };
-            let mut button = Button::new(
-                format!("{} {}", text, countdown),
-                UiCallbackPreset::None,
-                Arc::clone(&callback_registry),
-            );
+
+            let mut button =
+                Button::new(text, UiCallbackPreset::None, Arc::clone(&callback_registry));
             button.disable(None);
             button.set_hover_text(format!("Travelling to planet {}", to), hover_text_target)
         }
@@ -232,7 +196,7 @@ pub fn render_challenge_button<'a>(
     let own_team = world.get_own_team()?;
     let can_challenge = own_team.can_challenge_team(team);
 
-    if let Some(challenge) = own_team.open_challenges.get(&team.id) {
+    if let Some(challenge) = own_team.received_challenges.get(&team.id) {
         let c_split = Layout::horizontal([
             Constraint::Min(10),
             Constraint::Length(6),
@@ -276,35 +240,64 @@ pub fn render_challenge_button<'a>(
         frame.render_widget(accept_button, c_split[1]);
         frame.render_widget(decline_button, c_split[2]);
     } else {
-        let mut button = Button::new(
-            "Challenge".into(),
-            UiCallbackPreset::ChallengeTeam { team_id: team.id },
-            Arc::clone(&callback_registry),
-        )
-        .set_hover_text(
-            format!("Challenge {} to a game", team.name),
-            hover_text_target,
-        );
-
-        if hotkey {
-            button = button.set_hotkey(UiKey::CHALLENGE_TEAM)
-        }
-        if can_challenge.is_err() {
-            button.disable(Some(format!("{}", can_challenge.unwrap_err().to_string())));
-        } else {
-            button = if team.peer_id.is_some() {
-                button.set_box_style(UiStyle::NETWORK)
+        let challenge_button = if let Some(game_id) = team.current_game {
+            let game = world.get_game_or_err(game_id)?;
+            let game_text = if let Some(action) = game.action_results.last() {
+                format!(
+                    "{} {:>3}-{:<3} {}",
+                    game.home_team_in_game.name,
+                    action.home_score,
+                    action.away_score,
+                    game.away_team_in_game.name,
+                )
             } else {
-                button.set_box_style(UiStyle::OK)
+                format!(
+                    "{}   0-0   {}",
+                    game.home_team_in_game.name, game.away_team_in_game.name,
+                )
             };
-        }
-        frame.render_widget(button, area)
+            Button::new(
+                format!("Playing - {}", game_text),
+                UiCallbackPreset::GoToGame { game_id },
+                Arc::clone(&callback_registry),
+            )
+            .set_hover_text("Go to team's game".into(), hover_text_target)
+            .set_hotkey(UiKey::GO_TO_GAME)
+        } else {
+            let mut button = Button::new(
+                "Challenge".into(),
+                UiCallbackPreset::ChallengeTeam { team_id: team.id },
+                Arc::clone(&callback_registry),
+            )
+            .set_hover_text(
+                format!("Challenge {} to a game", team.name),
+                hover_text_target,
+            );
+
+            if hotkey {
+                button = button.set_hotkey(UiKey::CHALLENGE_TEAM)
+            }
+
+            if own_team.sent_challenges.get(&team.id).is_some() {
+                button.disable(Some("Already challenged".into()));
+            } else if can_challenge.is_err() {
+                button.disable(Some(format!("{}", can_challenge.unwrap_err().to_string())));
+            } else {
+                button = if team.peer_id.is_some() {
+                    button.set_box_style(UiStyle::NETWORK)
+                } else {
+                    button.set_box_style(UiStyle::OK)
+                };
+            }
+            button
+        };
+        frame.render_widget(challenge_button, area)
     }
 
     Ok(())
 }
 
-pub fn trade_button<'a>(
+pub fn trade_resource_button<'a>(
     world: &World,
     resource: Resource,
     amount: i32,
@@ -378,7 +371,7 @@ fn explore_button<'a>(
             let explore_text = if duration == QUICK_EXPLORATION_TIME {
                 "Explore"
             } else {
-                "eXplore"
+                "eXplore a lot"
             };
             let hotkey = if duration == QUICK_EXPLORATION_TIME {
                 UiKey::QUICK_EXPLORE
@@ -419,16 +412,9 @@ fn explore_button<'a>(
             } else {
                 "Landing".into()
             };
-            let countdown = if started + duration > world.last_tick_short_interval {
-                (started + duration - world.last_tick_short_interval).formatted()
-            } else {
-                (0 as Tick).formatted()
-            };
-            let mut button = Button::new(
-                format!("{} {}", text, countdown,),
-                UiCallbackPreset::None,
-                Arc::clone(&callback_registry),
-            );
+
+            let mut button =
+                Button::new(text, UiCallbackPreset::None, Arc::clone(&callback_registry));
             button.disable(None);
             button.set_hover_text(format!("Travelling to planet {}", to), hover_text_target)
         }
@@ -604,19 +590,47 @@ pub fn upgrade_spaceship_button<'a>(
 pub fn get_storage_spans(team: &Team) -> Vec<Span> {
     if let [gold_length, scraps_length, rum_length, free_bars] = get_storage_lengths(team)[..4] {
         vec![
-            Span::raw(format!(
-                "Storage: {:>04}/{:<04} ",
-                team.used_storage_capacity(),
-                team.max_storage_capacity(),
-            )),
+            Span::raw(format!("Stiva: ",)),
             Span::styled("▰".repeat(gold_length), UiStyle::STORAGE_GOLD),
             Span::styled("▰".repeat(scraps_length), UiStyle::STORAGE_SCRAPS),
             Span::styled("▰".repeat(rum_length), UiStyle::STORAGE_RUM),
             Span::raw("▱".repeat(free_bars)),
+            Span::raw(format!(
+                " {:>04}/{:<04} ",
+                team.used_storage_capacity(),
+                team.max_storage_capacity(),
+            )),
         ]
     } else {
         vec![Span::raw("")]
     }
+}
+
+pub fn get_crew_spans(team: &Team) -> Vec<Span> {
+    let bars_length = team.spaceship.crew_capacity() as usize;
+    let crew_length = team.player_ids.len();
+
+    let crew_bars = format!(
+        "{}{}",
+        "▰".repeat(crew_length),
+        "▱".repeat(bars_length - crew_length),
+    );
+
+    let crew_style = match crew_length {
+        x if x < MIN_PLAYERS_PER_GAME => UiStyle::ERROR,
+        x if x < team.spaceship.crew_capacity() as usize => UiStyle::WARNING,
+        _ => UiStyle::OK,
+    };
+
+    vec![
+        Span::raw(format!("Crew:  ")),
+        Span::styled(crew_bars, crew_style),
+        Span::raw(format!(
+            " {}/{}  ",
+            team.player_ids.len(),
+            team.spaceship.crew_capacity()
+        )),
+    ]
 }
 
 pub fn get_fuel_spans(team: &Team) -> Vec<Span> {
@@ -636,11 +650,13 @@ pub fn get_fuel_spans(team: &Team) -> Vec<Span> {
         .style();
 
     vec![
-        Span::raw(format!(
-            "Tank: {:<11}  ",
-            format!("{}/{} t", team.fuel(), team.spaceship.fuel_capacity()),
-        )),
+        Span::raw(format!("Tank:  ",)),
         Span::styled(fuel_bars, fuel_style),
+        Span::raw(format!(
+            " {}/{} t",
+            team.fuel(),
+            team.spaceship.fuel_capacity()
+        )),
     ]
 }
 
@@ -682,11 +698,7 @@ pub fn render_spaceship_description(
                 "Speed: {:.3} AU/h",
                 team.spaceship_speed() * HOURS as f32 / AU as f32
             )),
-            Line::from(format!(
-                "Crew: {}/{}",
-                team.player_ids.len(),
-                team.spaceship.crew_capacity()
-            )),
+            Line::from(get_crew_spans(team)),
             Line::from(get_fuel_spans(team)),
             Line::from(get_storage_spans(team)),
             Line::from(format!(
@@ -705,13 +717,17 @@ pub fn render_spaceship_description(
         ])
     } else {
         Paragraph::new(vec![
-            Line::from(format!("Reputation {}", team.reputation.stars())),
-            Line::from(format!("Treasury {}", format_satoshi(team.balance()))),
             Line::from(format!(
-                "Crew: {}/{}",
-                team.player_ids.len(),
-                team.spaceship.crew_capacity()
+                "Rating {}",
+                world.team_rating(team.id).unwrap_or_default().stars()
             )),
+            Line::from(format!("Reputation {}", team.reputation.stars())),
+            Line::from(format!("Treasury: {}", format_satoshi(team.balance()))),
+            Line::from(format!(
+                "Game record: W{}/L{}/D{}",
+                team.game_record[0], team.game_record[1], team.game_record[2]
+            )),
+            Line::from(get_crew_spans(team)),
         ])
     };
 
@@ -1079,52 +1095,6 @@ pub fn render_player_description(
 
     let bars_length = 25;
 
-    let mut tiredness = player.tiredness;
-    // Check if player is currently playing.
-    // In this case, read current tiredness from game.
-    if let Some(team_id) = player.team {
-        if let Ok(team) = world.get_team_or_err(team_id) {
-            if let Some(game_id) = team.current_game {
-                if let Ok(game) = world.get_game_or_err(game_id) {
-                    if let Some(p) = if game.home_team_in_game.team_id == team_id {
-                        game.home_team_in_game.players.get(&player.id)
-                    } else {
-                        game.away_team_in_game.players.get(&player.id)
-                    } {
-                        tiredness = p.tiredness;
-                    }
-                }
-            }
-        }
-    }
-
-    let tiredness_length = (tiredness / MAX_TIREDNESS * bars_length as f32).round() as usize;
-    let energy_string = format!(
-        "{}{}",
-        "▰".repeat(bars_length - tiredness_length),
-        "▱".repeat(tiredness_length),
-    );
-    let energy_style = match player.tiredness {
-        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::OK,
-        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
-        x if x < MAX_TIREDNESS => UiStyle::ERROR,
-        _ => UiStyle::UNSELECTABLE,
-    };
-
-    frame.render_widget(
-        HoverTextLine::from(vec![
-            HoverTextSpan::new(
-                Span::raw("Energy ".to_string()),
-                format!("Energy affects player's performance in a game. When the energy goes to 0, the player is exhausted and will fail most game actions. (current value {:.2})", (MAX_TIREDNESS-tiredness)),
-                hover_text_target,
-                Arc::clone(&callback_registry)
-            ),
-            HoverTextSpan::new(Span::styled(format!("{}", energy_string), energy_style),"", hover_text_target,
-            Arc::clone(&callback_registry)),
-        ]),
-        header_body_stats[2],
-    );
-
     let mut morale = player.morale;
     // Check if player is currently playing.
     // In this case, read current morale from game.
@@ -1169,11 +1139,57 @@ pub fn render_player_description(
                 Arc::clone(&callback_registry),
             ),
             HoverTextSpan::new(
-                Span::styled(format!("{}", morale_string), morale_style),
+                Span::styled(morale_string, morale_style),
                 "",
                 hover_text_target,
                 Arc::clone(&callback_registry),
             ),
+        ]),
+        header_body_stats[2],
+    );
+
+    let mut tiredness = player.tiredness;
+    // Check if player is currently playing.
+    // In this case, read current tiredness from game.
+    if let Some(team_id) = player.team {
+        if let Ok(team) = world.get_team_or_err(team_id) {
+            if let Some(game_id) = team.current_game {
+                if let Ok(game) = world.get_game_or_err(game_id) {
+                    if let Some(p) = if game.home_team_in_game.team_id == team_id {
+                        game.home_team_in_game.players.get(&player.id)
+                    } else {
+                        game.away_team_in_game.players.get(&player.id)
+                    } {
+                        tiredness = p.tiredness;
+                    }
+                }
+            }
+        }
+    }
+
+    let tiredness_length = (tiredness / MAX_TIREDNESS * bars_length as f32).round() as usize;
+    let energy_string = format!(
+        "{}{}",
+        "▰".repeat(bars_length - tiredness_length),
+        "▱".repeat(tiredness_length),
+    );
+    let energy_style = match tiredness {
+        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::OK,
+        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
+        x if x < MAX_TIREDNESS => UiStyle::ERROR,
+        _ => UiStyle::UNSELECTABLE,
+    };
+
+    frame.render_widget(
+        HoverTextLine::from(vec![
+            HoverTextSpan::new(
+                Span::raw("Energy ".to_string()),
+                format!("Energy affects player's performance in a game. When the energy goes to 0, the player is exhausted and will fail most game actions. (current value {:.2})", (MAX_TIREDNESS-tiredness)),
+                hover_text_target,
+                Arc::clone(&callback_registry)
+            ),
+            HoverTextSpan::new(Span::styled( energy_string, energy_style),"", hover_text_target,
+            Arc::clone(&callback_registry)),
         ]),
         header_body_stats[3],
     );
@@ -1340,14 +1356,14 @@ fn format_player_data(player: &Player) -> Vec<Line> {
 mod tests {
     use crate::{
         image::color_map::ColorMap,
-        types::{IdSystem, PlanetId, TeamId},
+        types::{PlanetId, TeamId},
         ui::widgets::get_storage_lengths,
         world::{resources::Resource, spaceship::SpaceshipPrefab, team::Team},
     };
 
     #[test]
     fn test_storage_spans() {
-        let mut team = Team::random(TeamId::new(), PlanetId::new(), "test".into());
+        let mut team = Team::random(TeamId::new_v4(), PlanetId::new_v4(), "test".into());
         team.spaceship = SpaceshipPrefab::Bresci.spaceship("test".into(), ColorMap::random());
 
         let bars_length = 25;

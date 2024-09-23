@@ -1,5 +1,4 @@
 use super::utils::read_image;
-use crate::engine::types::GameStatsMap;
 use crate::types::AppResult;
 use image::{Rgba, RgbaImage};
 use std::cmp::min;
@@ -8,6 +7,7 @@ use std::collections::HashMap;
 pub const FLOOR_COLOR: Rgba<u8> = Rgba([254, 229, 165, 255]);
 pub const PITCH_WIDTH: u16 = 75;
 pub const PITCH_HEIGHT: u16 = 41;
+const BLINKING_STEP: usize = 15;
 
 pub fn floor_from_size(width: u32, height: u32) -> RgbaImage {
     RgbaImage::from_pixel(width, height, FLOOR_COLOR)
@@ -47,45 +47,50 @@ impl PitchStyle {
     pub fn image(&self) -> AppResult<RgbaImage> {
         read_image(self.asset_filename())
     }
-}
 
-pub fn set_shot_pixels(mut pitch_image: RgbaImage, stats_map: &GameStatsMap) -> RgbaImage {
-    let mut shots_map: HashMap<(u32, u32), (u8, u8)> = HashMap::new();
-    for stats in stats_map.values() {
-        let shots = stats.shot_positions.clone();
-        for shot in shots {
-            let x = shot.0 as u32;
-            let y = shot.1 as u32;
-            if x < PITCH_WIDTH as u32 && y < PITCH_WIDTH as u32 {
-                if let Some(count) = shots_map.get(&(x, y)) {
-                    let new_count = if shot.2 {
-                        (count.0, count.1 + 1)
-                    } else {
-                        (count.0 + 1, count.1)
-                    };
-                    shots_map.insert((x, y), new_count);
+    pub fn image_with_shot_pixels(
+        &self,
+        shots_map: HashMap<(u32, u32), (u8, u8)>,
+        last_shot: Option<(u8, u8, bool)>,
+        tick: usize,
+    ) -> AppResult<RgbaImage> {
+        let mut img = self.image()?;
+        for (position, count) in shots_map.iter() {
+            let x = position.0;
+            let y = position.1;
+            // Blink the indicator at last shot position by selectively not displaying the shot.
+            let pixel = if let Some(shot) = last_shot {
+                if x == shot.0 as u32 && y == shot.1 as u32 {
+                    if (tick / BLINKING_STEP) % 2 == 0 {
+                        continue;
+                    }
+                    // If last shot was made, add green pixel,
+                    if shot.2 {
+                        image::Rgba([0, 255, 0, 255])
+                    }
+                    // Else add a red pixel.
+                    else {
+                        image::Rgba([255, 0, 0, 255])
+                    }
                 } else {
-                    let new_count = if shot.2 { (0, 1) } else { (1, 0) };
-                    shots_map.insert((x, y), new_count);
+                    image::Rgba([
+                        (255.0 * count.0 as f32 / (count.0 as f32 + count.1 as f32)).round() as u8,
+                        (255.0 * count.1 as f32 / (count.0 as f32 + count.1 as f32)).round() as u8,
+                        0,
+                        min(255, 100 + count.0 as u16 + count.1 as u16) as u8,
+                    ])
                 }
-            }
-        }
-    }
-    for (position, count) in shots_map.iter() {
-        let x = position.0 as u32;
-        let y = position.1 as u32;
-        if x < PITCH_WIDTH as u32 && y < PITCH_WIDTH as u32 {
-            pitch_image.put_pixel(
-                x,
-                y,
+            } else {
                 image::Rgba([
                     (255.0 * count.0 as f32 / (count.0 as f32 + count.1 as f32)).round() as u8,
                     (255.0 * count.1 as f32 / (count.0 as f32 + count.1 as f32)).round() as u8,
                     0,
                     min(255, 100 + count.0 as u16 + count.1 as u16) as u8,
-                ]),
-            );
+                ])
+            };
+
+            img.put_pixel(x as u32, y as u32, pixel);
         }
+        Ok(img)
     }
-    pitch_image
 }

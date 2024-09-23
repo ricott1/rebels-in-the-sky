@@ -1,9 +1,18 @@
 use super::button::Button;
 use super::constants::{UiKey, UiStyle, UiText};
+use super::gif_map::{self, TREASURE_GIF};
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
-use super::utils::{hover_text_target, input_from_key_event, validate_textarea_input};
+use super::utils::{
+    hover_text_target, img_to_lines, input_from_key_event, validate_textarea_input,
+};
 use super::widgets::default_block;
-use crate::types::{AppResult, SystemTimeTick, Tick};
+use crate::image::types::{Gif, PrintableGif};
+use crate::types::{AppResult, PlayerId, SystemTimeTick, Tick};
+use crate::ui::gif_map::PORTAL_GIFS;
+use crate::world::player::Player;
+use crate::world::resources::Resource;
+use crate::world::skill::Rated;
+use anyhow::anyhow;
 use core::fmt::Debug;
 use ratatui::layout::{Margin, Rect};
 use ratatui::widgets::{Clear, Paragraph, Wrap};
@@ -11,25 +20,73 @@ use ratatui::{
     layout::{Constraint, Layout},
     Frame,
 };
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use strum_macros::Display;
 use tui_textarea::TextArea;
 
+const FRAME_DURATION_MILLIS: Tick = 150;
+const TREASURE_GIF_ANIMATION_DELAY: Tick = 450;
+
 #[derive(Debug, Display, Clone, PartialEq)]
 pub enum PopupMessage {
-    Error(String, Tick),
-    Ok(String, Tick),
+    Error(String, bool, Tick),
+    Ok(String, bool, Tick),
     Dialog(String, Vec<(String, UiCallbackPreset)>, Tick),
+    ReleasePlayer(String, PlayerId, Tick),
     AsteroidNameDialog(Tick),
+    PortalFound(String, String, Tick),
+    ExplorationResult(HashMap<Resource, u32>, Vec<Player>, Tick),
+    TeamLanded(String, String, String, Tick),
 }
 
 impl PopupMessage {
+    fn rect(&self, area: Rect) -> Rect {
+        let (width, height) = match self {
+            PopupMessage::AsteroidNameDialog(..) => (54, 28),
+            PopupMessage::PortalFound(..) => (54, 44),
+            PopupMessage::ExplorationResult(resources, ..) => {
+                if resources.get(&&Resource::GOLD).copied().unwrap_or_default() > 0 {
+                    (54, 26)
+                } else {
+                    (54, 16)
+                }
+            }
+            PopupMessage::TeamLanded(..) => (54, 26),
+            _ => (48, 16),
+        };
+
+        let x = if area.width < width {
+            0
+        } else {
+            (area.width - width) / 2
+        };
+
+        let y = if area.height < height {
+            0
+        } else {
+            (area.height - height) / 2
+        };
+
+        let rect_width = if area.width < x + width {
+            area.width
+        } else {
+            width
+        };
+
+        let rect_height = if area.height < y + height {
+            area.height
+        } else {
+            height
+        };
+
+        Rect::new(x, y, rect_width, rect_height)
+    }
+
     pub fn is_skippable(&self) -> bool {
         match self {
-            PopupMessage::Error { .. } => true,
-            PopupMessage::Ok { .. } => true,
-            PopupMessage::Dialog { .. } => false,
-            PopupMessage::AsteroidNameDialog { .. } => false,
+            PopupMessage::Error(_, skippable, _) | PopupMessage::Ok(_, skippable, _) => *skippable,
+            _ => false,
         }
     }
     pub fn consumes_input(
@@ -38,7 +95,7 @@ impl PopupMessage {
         key_event: crossterm::event::KeyEvent,
     ) -> Option<UiCallbackPreset> {
         match self {
-            PopupMessage::AsteroidNameDialog { .. } => {
+            PopupMessage::AsteroidNameDialog(tick) => {
                 if key_event.code == UiKey::YES_TO_DIALOG {
                     let mut name = popup_input.lines()[0].clone();
                     name = name
@@ -47,7 +104,8 @@ impl PopupMessage {
                         .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
                         .collect();
                     if validate_textarea_input(popup_input, "Asteroid name".into()) {
-                        return Some(UiCallbackPreset::NameAndAcceptAsteroid { name });
+                        let filename = format!("asteroid{}", tick % 30);
+                        return Some(UiCallbackPreset::NameAndAcceptAsteroid { name, filename });
                     }
                 } else if key_event.code == UiKey::NO_TO_DIALOG {
                     if popup_input.lines()[0].len() == 0 {
@@ -59,9 +117,7 @@ impl PopupMessage {
                 }
             }
             _ => {
-                if key_event.code == UiKey::YES_TO_DIALOG {
-                    return Some(UiCallbackPreset::CloseUiPopup);
-                } else if key_event.code == UiKey::NO_TO_DIALOG {
+                if key_event.code == UiKey::YES_TO_DIALOG || key_event.code == UiKey::NO_TO_DIALOG {
                     return Some(UiCallbackPreset::CloseUiPopup);
                 }
             }
@@ -72,25 +128,27 @@ impl PopupMessage {
     pub fn render(
         &self,
         frame: &mut Frame,
-        popup_rect: Rect,
+        area: Rect,
         popup_input: &mut TextArea<'static>,
         callback_registry: &Arc<Mutex<CallbackRegistry>>,
     ) -> AppResult<()> {
+        let rect = self.rect(area);
+
         let split = Layout::vertical([
             Constraint::Length(3), //header
             Constraint::Min(3),    //message
             Constraint::Length(3), //button
         ])
-        .split(popup_rect.inner(Margin {
+        .split(rect.inner(Margin {
             vertical: 1,
             horizontal: 1,
         }));
 
-        frame.render_widget(Clear, popup_rect);
-        frame.render_widget(default_block(), popup_rect);
+        frame.render_widget(Clear, rect);
+        frame.render_widget(default_block(), rect);
         let hover_text_target = hover_text_target(frame);
         match self {
-            PopupMessage::Ok(message, tick) => {
+            PopupMessage::Ok(message, _, tick) => {
                 frame.render_widget(
                     Paragraph::new(format!("Message: {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::OK))
@@ -124,7 +182,8 @@ impl PopupMessage {
                     }),
                 );
             }
-            PopupMessage::Error(message, tick) => {
+
+            PopupMessage::Error(message, _, tick) => {
                 frame.render_widget(
                     Paragraph::new(format!("Error: {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::ERROR))
@@ -158,6 +217,7 @@ impl PopupMessage {
                     }),
                 );
             }
+
             PopupMessage::Dialog(message, options, tick) => {
                 frame.render_widget(
                     Paragraph::new(format!("Conundrum! {}", tick.formatted_as_date()))
@@ -192,16 +252,81 @@ impl PopupMessage {
                 }
             }
 
+            PopupMessage::ReleasePlayer(player_name, player_id, _) => {
+                frame.render_widget(
+                    Paragraph::new(format!("Attention!"))
+                        .block(default_block().border_style(UiStyle::NETWORK))
+                        .centered(),
+                    split[0],
+                );
+                frame.render_widget(
+                    Paragraph::new(format!(
+                        "Are you sure you want to release {} from the crew?",
+                        player_name
+                    ))
+                    .centered()
+                    .wrap(Wrap { trim: true }),
+                    split[1].inner(Margin {
+                        horizontal: 1,
+                        vertical: 1,
+                    }),
+                );
+
+                let buttons_split =
+                    Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                        .split(split[2]);
+
+                let confirm_button = Button::new(
+                    UiText::YES.into(),
+                    UiCallbackPreset::ReleasePlayer {
+                        player_id: player_id.clone(),
+                    },
+                    Arc::clone(&callback_registry),
+                )
+                .set_hover_text(
+                    format!("Confirm releasing {}.", player_name),
+                    hover_text_target,
+                )
+                .set_hotkey(UiKey::YES_TO_DIALOG)
+                .set_box_style(UiStyle::OK)
+                .set_layer(1);
+
+                frame.render_widget(confirm_button, buttons_split[0]);
+
+                let no_button = Button::new(
+                    UiText::NO.into(),
+                    UiCallbackPreset::CloseUiPopup,
+                    Arc::clone(&callback_registry),
+                )
+                .set_hover_text(format!("Don't release {}", player_name), hover_text_target)
+                .set_hotkey(UiKey::NO_TO_DIALOG)
+                .set_box_style(UiStyle::ERROR)
+                .set_layer(1);
+
+                frame.render_widget(no_button, buttons_split[1]);
+            }
+
             PopupMessage::AsteroidNameDialog(tick) => {
                 frame.render_widget(
-                    Paragraph::new(format!("Asteorid discovered! {}", tick.formatted_as_date()))
+                    Paragraph::new(format!("Asteroid discovered: {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::NETWORK))
                         .centered(),
                     split[0],
                 );
 
-                let message_split = Layout::vertical([
+                let filename = format!("asteroid{}", tick % 30);
+                let asteroid_img = img_to_lines(&gif_map::GifMap::asteroid_zoom_out(&filename)?[0]);
+
+                if asteroid_img.len() == 0 {
+                    return Err(anyhow!("Invalid asteroid image"));
+                }
+
+                let asteroid_image_height = asteroid_img.len() as u16;
+
+                let m_split = Layout::vertical([
                     Constraint::Length(4), //message
+                    Constraint::Length(asteroid_image_height),
+                    Constraint::Min(0),
                     Constraint::Length(3), //input
                 ])
                 .split(split[1]);
@@ -210,11 +335,13 @@ impl PopupMessage {
                     Paragraph::new("Do you want to set up base on this asteroid?\nYou will need a proper name for it!")
                         .centered()
                         .wrap(Wrap { trim: true }),
-                        message_split[0].inner(Margin {
+                        m_split[0].inner(Margin {
                         horizontal: 1,
                         vertical: 1,
                     }),
                 );
+
+                frame.render_widget(Paragraph::new(asteroid_img).centered(), m_split[1]);
 
                 popup_input.set_cursor_style(UiStyle::SELECTED);
                 popup_input.set_block(
@@ -225,7 +352,7 @@ impl PopupMessage {
 
                 frame.render_widget(
                     &popup_input.clone(),
-                    message_split[1].inner(Margin {
+                    m_split[3].inner(Margin {
                         horizontal: 1,
                         vertical: 0,
                     }),
@@ -244,7 +371,7 @@ impl PopupMessage {
 
                 let mut ok_button = Button::new(
                     UiText::YES.into(),
-                    UiCallbackPreset::NameAndAcceptAsteroid { name },
+                    UiCallbackPreset::NameAndAcceptAsteroid { name, filename },
                     Arc::clone(&callback_registry),
                 )
                 .set_hover_text(
@@ -272,6 +399,244 @@ impl PopupMessage {
                 .set_layer(1);
 
                 frame.render_widget(no_button, buttons_split[1]);
+            }
+
+            PopupMessage::PortalFound(player_name, portal_target, tick) => {
+                frame.render_widget(
+                    Paragraph::new(format!("Portal: {}", tick.formatted_as_date()))
+                        .block(default_block().border_style(UiStyle::HIGHLIGHT))
+                        .centered(),
+                    split[0],
+                );
+
+                // Select a portal pseudorandomly.
+                let portal = &PORTAL_GIFS[*tick as usize % PORTAL_GIFS.len()];
+
+                if portal.len() == 0 {
+                    return Err(anyhow!("Invalid portal gif"));
+                }
+
+                let portal_image_height = portal[0].len() as u16;
+
+                let m_split = Layout::vertical([
+                    Constraint::Length(3),
+                    Constraint::Length(portal_image_height),
+                    Constraint::Min(0),
+                ])
+                .split(split[1]);
+
+                let text = format!(
+                    "{} got drunk while driving and accidentally found a portal to {}!",
+                    player_name, portal_target
+                );
+                frame.render_widget(
+                    Paragraph::new(text).centered().wrap(Wrap { trim: true }),
+                    m_split[0].inner(Margin {
+                        horizontal: 1,
+                        vertical: 1,
+                    }),
+                );
+
+                // Tick::now() returns time as milliseconds. To implement the wanted framerate,
+                // we need to divide by the frame duration in milliseconds
+                let current_frame =
+                    ((Tick::now() - tick) / FRAME_DURATION_MILLIS) as usize % portal.len();
+
+                frame.render_widget(
+                    Paragraph::new(portal[current_frame].clone()).centered(),
+                    m_split[1],
+                );
+
+                let button = Button::new(
+                    UiText::YES.into(),
+                    UiCallbackPreset::CloseUiPopup,
+                    Arc::clone(&callback_registry),
+                )
+                .set_hover_text("Close the popup".into(), hover_text_target)
+                .set_hotkey(UiKey::YES_TO_DIALOG)
+                .set_box_style(UiStyle::OK)
+                .set_layer(1);
+
+                frame.render_widget(
+                    button,
+                    split[2].inner(Margin {
+                        vertical: 0,
+                        horizontal: 8,
+                    }),
+                );
+            }
+
+            PopupMessage::ExplorationResult(found_resources, found_pirates, tick) => {
+                frame.render_widget(
+                    Paragraph::new(format!("Exploration result: {}", tick.formatted_as_date()))
+                        .block(default_block().border_style(UiStyle::HIGHLIGHT))
+                        .centered(),
+                    split[0],
+                );
+
+                let treasure = &TREASURE_GIF;
+
+                if treasure.len() == 0 {
+                    return Err(anyhow!("Invalid treasure gif"));
+                }
+
+                let treasure_image_height = if found_resources
+                    .get(&Resource::GOLD)
+                    .copied()
+                    .unwrap_or_default()
+                    > 0
+                {
+                    treasure[0].len() as u16
+                } else {
+                    0
+                };
+
+                let m_split = Layout::vertical([
+                    Constraint::Min(3),
+                    Constraint::Length(treasure_image_height),
+                ])
+                .split(split[1]);
+
+                let mut text = "".to_string();
+                for (resource, &amount) in found_resources.iter() {
+                    if amount > 0 {
+                        text.push_str(
+                            format!("  {} {}\n", amount, resource.to_string().to_lowercase())
+                                .as_str(),
+                        );
+                    }
+                }
+
+                if found_pirates.len() > 0 {
+                    text.push_str(
+                    format! {"\nFound {} stranded pirate{}:\n", found_pirates.len(), if found_pirates.len() > 1 {
+                        "s"
+                    }else{""}}.as_str(),
+                );
+                    for player in found_pirates.iter() {
+                        let p_text = format!(
+                            "  {:<16} {}\n",
+                            player.info.shortened_name(),
+                            player.stars()
+                        );
+                        text.push_str(p_text.as_str());
+                    }
+                }
+
+                if text.len() == 0 {
+                    text.push_str("Nothing found!")
+                }
+
+                frame.render_widget(
+                    Paragraph::new(text).centered().wrap(Wrap { trim: true }),
+                    m_split[0].inner(Margin {
+                        horizontal: 1,
+                        vertical: 1,
+                    }),
+                );
+
+                if found_resources
+                    .get(&Resource::GOLD)
+                    .copied()
+                    .unwrap_or_default()
+                    > 0
+                {
+                    // Tick::now() returns time as milliseconds. To implement the wanted framerate,
+                    // we need to divide by the frame duration in milliseconds. After the last frame,
+                    // we just leave the treasure open rather than looping.
+                    let current_frame = if Tick::now() - tick > TREASURE_GIF_ANIMATION_DELAY {
+                        (((Tick::now() - tick - TREASURE_GIF_ANIMATION_DELAY)
+                            / FRAME_DURATION_MILLIS) as usize)
+                            .min(treasure.len() - 1)
+                    } else {
+                        0
+                    };
+
+                    frame.render_widget(
+                        Paragraph::new(treasure[current_frame].clone()).centered(),
+                        m_split[1],
+                    );
+                }
+
+                let button = Button::new(
+                    UiText::YES.into(),
+                    UiCallbackPreset::CloseUiPopup,
+                    Arc::clone(&callback_registry),
+                )
+                .set_hover_text("Close the popup".into(), hover_text_target)
+                .set_hotkey(UiKey::YES_TO_DIALOG)
+                .set_box_style(UiStyle::OK)
+                .set_layer(1);
+
+                frame.render_widget(
+                    button,
+                    split[2].inner(Margin {
+                        vertical: 0,
+                        horizontal: 8,
+                    }),
+                );
+            }
+
+            PopupMessage::TeamLanded(team_name, planet_name, planet_filename, tick) => {
+                frame.render_widget(
+                    Paragraph::new(format!("Team landed: {}", tick.formatted_as_date()))
+                        .block(default_block().border_style(UiStyle::HIGHLIGHT))
+                        .centered(),
+                    split[0],
+                );
+
+                let planet_gif =
+                    Gif::open(format!("planets/{}_zoomout.gif", planet_filename))?.to_lines();
+
+                if planet_gif.len() == 0 {
+                    return Err(anyhow!("Invalid planet gif"));
+                }
+
+                let planet_image_height = planet_gif[0].len() as u16;
+
+                let m_split = Layout::vertical([
+                    Constraint::Length(3),
+                    Constraint::Length(planet_image_height),
+                    Constraint::Min(0),
+                ])
+                .split(split[1]);
+
+                let text = format!("{} landed on planet {}.", team_name, planet_name);
+                frame.render_widget(
+                    Paragraph::new(text).centered().wrap(Wrap { trim: true }),
+                    m_split[0].inner(Margin {
+                        horizontal: 1,
+                        vertical: 1,
+                    }),
+                );
+
+                // Tick::now() returns time as milliseconds. To implement the wanted framerate,
+                // we need to divide by the frame duration in milliseconds
+                let current_frame =
+                    ((Tick::now() - tick) / FRAME_DURATION_MILLIS) as usize % planet_gif.len();
+
+                frame.render_widget(
+                    Paragraph::new(planet_gif[current_frame].clone()).centered(),
+                    m_split[1],
+                );
+
+                let button = Button::new(
+                    UiText::YES.into(),
+                    UiCallbackPreset::CloseUiPopup,
+                    Arc::clone(&callback_registry),
+                )
+                .set_hover_text("Close the popup".into(), hover_text_target)
+                .set_hotkey(UiKey::YES_TO_DIALOG)
+                .set_box_style(UiStyle::OK)
+                .set_layer(1);
+
+                frame.render_widget(
+                    button,
+                    split[2].inner(Margin {
+                        vertical: 0,
+                        horizontal: 8,
+                    }),
+                );
             }
         }
         Ok(())

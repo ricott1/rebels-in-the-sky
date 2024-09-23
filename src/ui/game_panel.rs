@@ -1,7 +1,9 @@
+use super::button::Button;
 use super::clickable_list::ClickableListState;
 use super::constants::UiStyle;
 use super::gif_map::GifMap;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::utils::hover_text_target;
 use super::{
     big_numbers::{hyphen, BigNumberFont},
     constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
@@ -11,6 +13,7 @@ use super::{
 };
 use crate::engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE;
 use crate::types::AppResult;
+use crate::world::constants::{MAX_MORALE, MORALE_THRESHOLD_FOR_LEAVING};
 use crate::{
     engine::{
         action::{ActionOutput, ActionSituation, Advantage},
@@ -18,7 +21,7 @@ use crate::{
         timer::{Period, Timer},
         types::{GameStatsMap, Possession},
     },
-    image::pitch::{set_shot_pixels, PitchStyle, PITCH_HEIGHT},
+    image::pitch::{PitchStyle, PITCH_HEIGHT},
     image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
     types::GameId,
     ui::constants::UiKey,
@@ -42,25 +45,16 @@ use ratatui::{
     widgets::{Cell, Paragraph, Row, Table, Wrap},
     Frame,
 };
+use std::collections::HashMap;
 use std::{sync::Arc, sync::Mutex};
-use strum_macros::Display;
-
-#[derive(Default, Debug, Clone, PartialEq, Display)]
-enum PitchViewFilter {
-    #[default]
-    All,
-    First,
-    Second,
-    Third,
-    Fourth,
-}
 
 #[derive(Debug, Default)]
 pub struct GamePanel {
     pub index: usize,
     pub games: Vec<GameId>,
     pitch_view: bool,
-    pitch_view_filter: PitchViewFilter,
+    pitch_view_filter: Option<Period>,
+    player_status_view: bool,
     commentary_index: usize,
     action_results: Vec<ActionOutput>,
     tick: usize,
@@ -94,7 +88,12 @@ impl GamePanel {
             Constraint::Min(IMG_FRAME_WIDTH),
         ])
         .split(area);
-        self.build_game_list(frame, world, split[0]);
+
+        let game_button_split =
+            Layout::vertical([Constraint::Min(3), Constraint::Length(3)]).split(split[0]);
+        self.build_game_list(frame, world, game_button_split[0]);
+        self.build_game_buttons(frame, game_button_split[1]);
+
         if let Some(game) = self.selected_game(world) {
             self.build_score_panel(frame, world, game, split[1])?;
         }
@@ -141,6 +140,61 @@ impl GamePanel {
             area,
             &mut ClickableListState::default().with_selected(Some(self.index)),
         );
+    }
+
+    fn build_game_buttons(&mut self, frame: &mut Frame, area: Rect) {
+        let b_split =
+            Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(area);
+        let hover_text_target = hover_text_target(frame);
+        let text = if self.pitch_view {
+            "Commentary view"
+        } else {
+            "Game view"
+        };
+        let pitch_button = Button::new(
+            text.into(),
+            UiCallbackPreset::TogglePitchView,
+            Arc::clone(&self.callback_registry),
+        )
+        .set_hover_text(
+            format!(
+                "Change to {} view",
+                if self.pitch_view {
+                    "commentary"
+                } else {
+                    "pitch"
+                }
+            ),
+            hover_text_target,
+        )
+        .set_hotkey(UiKey::PITCH_VIEW);
+
+        frame.render_widget(pitch_button, b_split[0]);
+
+        let text = if self.player_status_view {
+            "Game stats"
+        } else {
+            "Player status"
+        };
+        let player_status_button = Button::new(
+            text.into(),
+            UiCallbackPreset::TogglePlayerStatusView,
+            Arc::clone(&self.callback_registry),
+        )
+        .set_hover_text(
+            format!(
+                "Change to {} view",
+                if self.player_status_view {
+                    "game box"
+                } else {
+                    "player status"
+                }
+            ),
+            hover_text_target,
+        )
+        .set_hotkey(UiKey::PLAYER_STATUS_VIEW);
+
+        frame.render_widget(player_status_button, b_split[1]);
     }
 
     fn build_score_panel(
@@ -330,7 +384,13 @@ impl GamePanel {
         Ok(())
     }
 
-    fn build_pitch_panel(&self, frame: &mut Frame, world: &World, game: &Game, area: Rect) {
+    fn build_pitch_panel(
+        &self,
+        frame: &mut Frame,
+        world: &World,
+        game: &Game,
+        area: Rect,
+    ) -> AppResult<()> {
         frame.render_widget(default_block().title("Shots map"), area);
         let split = Layout::vertical([
             Constraint::Length(PITCH_HEIGHT / 2 + 8), // pitch
@@ -341,43 +401,57 @@ impl GamePanel {
             vertical: 1,
         }));
 
-        let planet = world.get_planet_or_err(game.location).unwrap();
+        let planet = world.get_planet_or_err(game.location)?;
         let pitch_style = match planet.planet_type {
             PlanetType::Earth => PitchStyle::PitchBall,
             _ => PitchStyle::PitchClassic,
         };
 
-        let mut pitch_image = pitch_style.image().unwrap();
         let max_index = self.action_results.len() - self.commentary_index;
-        for result in game.action_results.iter().take(max_index).rev() {
-            // add quarter filter here
+
+        // These map will contain every shot up to the max_index action.
+        let mut shots_map: HashMap<(u32, u32), (u8, u8)> = HashMap::new();
+        let mut last_shot = None;
+        for result in game.action_results.iter().take(max_index) {
             match self.pitch_view_filter {
-                PitchViewFilter::All => {}
-                PitchViewFilter::First => {
-                    if result.start_at.period() != Period::Q1 {
+                Some(period) => {
+                    if result.start_at.period() == period.next() {
+                        last_shot = None;
+                        break;
+                    }
+
+                    if result.start_at.period() != period {
                         continue;
                     }
                 }
-                PitchViewFilter::Second => {
-                    if result.start_at.period() != Period::Q2 {
-                        continue;
-                    }
-                }
-                PitchViewFilter::Third => {
-                    if result.start_at.period() != Period::Q3 {
-                        continue;
-                    }
-                }
-                PitchViewFilter::Fourth => {
-                    if result.start_at.period() != Period::Q4 {
-                        continue;
-                    }
-                }
+                None => {}
             }
+
+            // Data about the shots (missed/made/position) is stored in the attack_stats_update.
             if let Some(stats_map) = &result.attack_stats_update {
-                pitch_image = set_shot_pixels(pitch_image, stats_map);
+                // Loop over players stats.
+                for player_stats in stats_map.values() {
+                    if let Some(shot) = player_stats.last_action_shot {
+                        let x = shot.0 as u32;
+                        let y = shot.1 as u32;
+                        if let Some(count) = shots_map.get(&(x, y)) {
+                            let new_count = if shot.2 {
+                                (count.0, count.1 + 1)
+                            } else {
+                                (count.0 + 1, count.1)
+                            };
+                            shots_map.insert((x, y), new_count);
+                        } else {
+                            let new_count = if shot.2 { (0, 1) } else { (1, 0) };
+                            shots_map.insert((x, y), new_count);
+                        }
+                        last_shot = Some(shot);
+                    }
+                }
             }
         }
+
+        let pitch_image = pitch_style.image_with_shot_pixels(shots_map, last_shot, self.tick)?;
 
         frame.render_widget(
             Paragraph::new(img_to_lines(&pitch_image)).centered(),
@@ -385,11 +459,12 @@ impl GamePanel {
         );
 
         let quarter = match self.pitch_view_filter {
-            PitchViewFilter::All => "Full game",
-            PitchViewFilter::First => "Quarter 1",
-            PitchViewFilter::Second => "Quarter 2",
-            PitchViewFilter::Third => "Quarter 3",
-            PitchViewFilter::Fourth => "Quarter 4",
+            Some(Period::Q1) => "1st Quarter",
+            Some(Period::Q2) => "2nd Quarter",
+            Some(Period::Q3) => "3rd Quarter",
+            Some(Period::Q4) => "4th Quarter",
+            None => "Full game",
+            _ => "Invalid filter",
         };
 
         let line = Line::from(vec![
@@ -399,24 +474,34 @@ impl GamePanel {
         ]);
 
         frame.render_widget(Paragraph::new(line).centered(), split[1]);
+
+        Ok(())
     }
 
-    fn build_bottom_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
+    fn build_bottom_panel(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Min(8), Constraint::Length(73)]).split(area);
 
         if let Some(game) = self.selected_game(world) {
             if self.pitch_view {
-                self.build_pitch_panel(frame, world, game, split[0]);
+                self.build_pitch_panel(frame, world, game, split[0])?;
             } else {
                 self.build_commentary(frame, split[0]);
             }
         }
-        let game = self.selected_game(world);
-        if game.is_none() {
-            return;
+        if let Some(game) = self.selected_game(world) {
+            if self.player_status_view {
+                Self::build_status_box(game, frame, split[1]);
+            } else {
+                Self::build_stats_box(game, frame, split[1]);
+            }
         }
-        let game = game.unwrap();
-        Self::build_statbox(game, frame, split[1]);
+
+        Ok(())
     }
 
     fn format_commentary(
@@ -474,7 +559,7 @@ impl GamePanel {
         )
     }
 
-    fn build_stat_table<'a>(players_data: &'a GameStatsMap, players: Vec<&Player>) -> Table<'a> {
+    fn build_stats_table<'a>(players_data: &'a GameStatsMap, players: Vec<&Player>) -> Table<'a> {
         let mut rows: Vec<Row<'_>> = vec![];
 
         let mut points_total = 0;
@@ -595,6 +680,81 @@ impl GamePanel {
         )
     }
 
+    fn build_player_status_table<'a>(
+        players_data: &'a GameStatsMap,
+        players: Vec<&Player>,
+    ) -> Table<'a> {
+        let mut rows: Vec<Row<'_>> = vec![];
+        let bars_length = 25;
+
+        for player in players.iter() {
+            let player_data = players_data[&player.id].clone();
+
+            let role = match player_data.position {
+                Some(p) => (p as Position).as_str().to_string(),
+                None => "".to_string(),
+            };
+
+            let name_span = {
+                let style = match player.tiredness {
+                    x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::DEFAULT,
+                    x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
+                    x if x < MAX_TIREDNESS => UiStyle::ERROR,
+                    _ => UiStyle::UNSELECTABLE,
+                };
+
+                Span::styled(player.info.shortened_name(), style)
+            };
+
+            let morale_length = (player.morale / MAX_MORALE * bars_length as f32).round() as usize;
+            let morale_string = format!(
+                "{}{}",
+                "▰".repeat(morale_length),
+                "▱".repeat(bars_length - morale_length),
+            );
+            let morale_style = match player.morale {
+                x if x > 1.75 * MORALE_THRESHOLD_FOR_LEAVING => UiStyle::OK,
+                x if x > MORALE_THRESHOLD_FOR_LEAVING => UiStyle::WARNING,
+                x if x > 0.0 => UiStyle::ERROR,
+                _ => UiStyle::UNSELECTABLE,
+            };
+            let morale_span = Span::styled(morale_string, morale_style);
+
+            let tiredness_length =
+                (player.tiredness / MAX_TIREDNESS * bars_length as f32).round() as usize;
+            let energy_string = format!(
+                "{}{}",
+                "▰".repeat(bars_length - tiredness_length),
+                "▱".repeat(tiredness_length),
+            );
+            let energy_style = match player.tiredness {
+                x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::OK,
+                x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
+                x if x < MAX_TIREDNESS => UiStyle::ERROR,
+                _ => UiStyle::UNSELECTABLE,
+            };
+            let energy_span = Span::styled(energy_string, energy_style);
+
+            let cells = vec![
+                Cell::from(format!("{:<2}", role,)),
+                Cell::from(name_span),
+                Cell::from(morale_span),
+                Cell::from(energy_span),
+            ];
+            rows.push(Row::new(cells).height(1));
+        }
+
+        Table::new(
+            rows,
+            [
+                Constraint::Length(2),
+                Constraint::Length(14),
+                Constraint::Length(bars_length as u16),
+                Constraint::Length(bars_length as u16),
+            ],
+        )
+    }
+
     fn build_timer_lines(&self, world: &World, game: &Game) -> Vec<Line<'static>> {
         let timer = if self.commentary_index > 0 {
             self.action_results[self.action_results.len() - 1 - self.commentary_index].start_at
@@ -625,7 +785,67 @@ impl GamePanel {
         timer_lines
     }
 
-    pub fn build_statbox(game: &Game, frame: &mut Frame, area: Rect) {
+    fn build_status_box(game: &Game, frame: &mut Frame, area: Rect) {
+        let header_cells_home = [
+            "  ",
+            game.home_team_in_game.name.as_str(),
+            "Morale",
+            "Tiredness",
+        ];
+
+        let header_cells_away = [
+            "  ",
+            game.away_team_in_game.name.as_str(),
+            "Morale",
+            "Tiredness",
+        ];
+
+        let home_players = game
+            .home_team_in_game
+            .initial_positions
+            .iter()
+            .map(|id| game.home_team_in_game.players.get(id).unwrap())
+            .collect::<Vec<&Player>>();
+        let away_players = game
+            .away_team_in_game
+            .initial_positions
+            .iter()
+            .map(|id| game.away_team_in_game.players.get(id).unwrap())
+            .collect::<Vec<&Player>>();
+
+        let constraint = &[
+            Constraint::Length(2),   //role
+            Constraint::Length(16),  //player
+            Constraint::Ratio(1, 2), //morale
+            Constraint::Ratio(1, 2), //tiredness
+        ];
+
+        let home_table =
+            Self::build_player_status_table(&game.home_team_in_game.stats, home_players)
+                .header(Row::new(header_cells_home).style(UiStyle::HEADER).height(1))
+                .widths(constraint);
+
+        let away_table =
+            Self::build_player_status_table(&game.away_team_in_game.stats, away_players)
+                .header(Row::new(header_cells_away).style(UiStyle::HEADER).height(1))
+                .widths(constraint);
+
+        let box_area = Layout::vertical([
+            Constraint::Length(game.home_team_in_game.players.len() as u16 + 2),
+            Constraint::Max(1),
+            Constraint::Length(game.away_team_in_game.players.len() as u16 + 2),
+            Constraint::Min(0),
+        ])
+        .split(area.inner(Margin {
+            horizontal: 1,
+            vertical: 0,
+        }));
+
+        frame.render_widget(home_table, box_area[0]);
+        frame.render_widget(away_table, box_area[2]);
+    }
+
+    fn build_stats_box(game: &Game, frame: &mut Frame, area: Rect) {
         let header_cells_home = [
             "  ",
             game.home_team_in_game.name.as_str(),
@@ -684,11 +904,11 @@ impl GamePanel {
             Constraint::Length(3), //plus minus
         ];
 
-        let home_table = Self::build_stat_table(&game.home_team_in_game.stats, home_players)
+        let home_table = Self::build_stats_table(&game.home_team_in_game.stats, home_players)
             .header(Row::new(header_cells_home).style(UiStyle::HEADER).height(1))
             .widths(constraint);
 
-        let away_table = Self::build_stat_table(&game.away_team_in_game.stats, away_players)
+        let away_table = Self::build_stats_table(&game.away_team_in_game.stats, away_players)
             .header(Row::new(header_cells_away).style(UiStyle::HEADER).height(1))
             .widths(constraint);
 
@@ -709,6 +929,10 @@ impl GamePanel {
 
     pub fn toggle_pitch_view(&mut self) {
         self.pitch_view = !self.pitch_view;
+    }
+
+    pub fn toggle_player_status_view(&mut self) {
+        self.player_status_view = !self.player_status_view;
     }
 }
 
@@ -770,7 +994,8 @@ impl Screen for GamePanel {
         ])
         .split(area);
         self.build_top_panel(frame, world, split[0])?;
-        self.build_bottom_panel(frame, world, split[1]);
+        self.build_bottom_panel(frame, world, split[1])?;
+
         Ok(())
     }
 
@@ -793,24 +1018,21 @@ impl Screen for GamePanel {
                 }
             }
             KeyCode::Enter => self.commentary_index = 0,
-            UiKey::PITCH_VIEW => {
-                self.toggle_pitch_view();
-            }
 
             KeyCode::Char('0') => {
-                self.pitch_view_filter = PitchViewFilter::All;
+                self.pitch_view_filter = None;
             }
             KeyCode::Char('1') => {
-                self.pitch_view_filter = PitchViewFilter::First;
+                self.pitch_view_filter = Some(Period::Q1);
             }
             KeyCode::Char('2') => {
-                self.pitch_view_filter = PitchViewFilter::Second;
+                self.pitch_view_filter = Some(Period::Q2);
             }
             KeyCode::Char('3') => {
-                self.pitch_view_filter = PitchViewFilter::Third;
+                self.pitch_view_filter = Some(Period::Q3);
             }
             KeyCode::Char('4') => {
-                self.pitch_view_filter = PitchViewFilter::Fourth;
+                self.pitch_view_filter = Some(Period::Q4);
             }
             _ => {}
         };
@@ -818,17 +1040,7 @@ impl Screen for GamePanel {
     }
 
     fn footer_spans(&self) -> Vec<Span> {
-        let next_view = if self.pitch_view { "Score" } else { "Pitch" };
-        let mut v = vec![
-            Span::styled(
-                format!(" {} ", UiKey::PITCH_VIEW.to_string()),
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(
-                format!(" Change view: {} ", next_view),
-                Style::default().fg(Color::DarkGray),
-            ),
-        ];
+        let mut v = vec![];
 
         if self.pitch_view {
             v.append(&mut vec![
@@ -837,7 +1049,14 @@ impl Screen for GamePanel {
                     Style::default().bg(Color::Gray).fg(Color::DarkGray),
                 ),
                 Span::styled(
-                    format!(" Filter: {:<6} ", self.pitch_view_filter),
+                    format!(
+                        " Filter: {:<6} ",
+                        if let Some(period) = self.pitch_view_filter {
+                            period.to_string()
+                        } else {
+                            "Full game".to_string()
+                        }
+                    ),
                     Style::default().fg(Color::DarkGray),
                 ),
             ])
@@ -887,7 +1106,8 @@ impl SplitPanel for GamePanel {
 mod tests {
     use crate::{
         engine::timer::Timer,
-        types::{SystemTimeTick, Tick, SECONDS},
+        types::{SystemTimeTick, Tick},
+        world::constants::*,
     };
     use std::{io::Write, thread, time::Duration};
 

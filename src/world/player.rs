@@ -647,6 +647,13 @@ impl Player {
         player
     }
 
+    pub fn is_on_planet(&self) -> Option<PlanetId> {
+        match self.current_location {
+            PlayerLocation::OnPlanet { planet_id } => Some(planet_id),
+            _ => None,
+        }
+    }
+
     fn apply_info_modifiers(&mut self) {
         self.athletics.quickness = skill_linear_interpolation(
             self.athletics.quickness,
@@ -849,8 +856,9 @@ impl Player {
         training_bonus: f32,
         training_focus: Option<TrainingFocus>,
     ) {
-        // Players below their potential improve faster, above their potential improve slower.
-        let potential_modifier = 1.0 - (self.potential - self.average_skill()) / 20.0;
+        // potential_modifier has a value ranging from 0.0 to 1.0.
+        // Players with skills below their potential improve faster, above their potential improve slower.
+        let potential_modifier = 1.0 + (self.potential - self.average_skill()) / 20.0;
         for p in 0..MAX_POSITION {
             for (idx, &w) in p.weights().iter().enumerate() {
                 let training_focus_bonus = match training_focus {
@@ -937,7 +945,7 @@ impl InfoStats {
         };
         let last_name = p_data.last_names.choose(rng).unwrap().to_string();
         let age = population.min_age()
-            + rng.gen_range(0.0..0.95) * (population.max_age() - population.min_age());
+            + rng.gen_range(0.0..0.55) * (population.max_age() - population.min_age());
         let height = match position {
             Some(x) => Normal::new(192.0 + 3.5 * x as f32, 5.0)
                 .unwrap()

@@ -279,10 +279,12 @@ impl PlayerImage {
                 1 => Some(EyePatchImage::RightLow),
                 _ => Some(EyePatchImage::Central),
             },
-            Population::Polpett | Population::Yardalaim => match rng.gen_range(0..=1) {
-                0 => Some(EyePatchImage::LeftLow),
-                _ => Some(EyePatchImage::RightLow),
-            },
+            Population::Polpett | Population::Yardalaim | Population::Octopulp => {
+                match rng.gen_range(0..=1) {
+                    0 => Some(EyePatchImage::LeftLow),
+                    _ => Some(EyePatchImage::RightLow),
+                }
+            }
             Population::Pupparoll => Some(EyePatchImage::Pupparoll),
             _ => match rng.gen_range(0..=1) {
                 0 => Some(EyePatchImage::LeftLow),

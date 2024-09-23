@@ -12,7 +12,7 @@ impl EngineAction for EndOfQuarter {
     fn execute(input: &ActionOutput, game: &Game, _rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         // This is executed at the beginning of a break
         let mut description = match game.timer.period() {
-            Period::B1 => "It's the end of the first quarter.".to_string(), //FIXME: this gets printed twice somehow
+            Period::B1 => "It's the end of the first quarter.".to_string(),
             Period::B2 => "It's the end of the second quarter. Halftime!".to_string(),
             Period::B3 => "It's the end of the third quarter.".to_string(),
             Period::B4 => "It's the end of the game.".to_string(),

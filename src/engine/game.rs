@@ -22,13 +22,17 @@ use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GameSummary {
     pub id: GameId,
     pub home_team_id: TeamId,
     pub away_team_id: TeamId,
     pub home_team_name: String,
     pub away_team_name: String,
+    #[serde(default)]
+    pub home_team_knocked_out: bool,
+    #[serde(default)]
+    pub away_team_knocked_out: bool,
     pub home_quarters_score: [u16; 4],
     pub away_quarters_score: [u16; 4],
     pub location: PlanetId,
@@ -43,24 +47,24 @@ impl GameSummary {
         let mut home_quarters_score = [0 as u16; 4];
         let mut away_quarters_score = [0 as u16; 4];
         for action in game.action_results.iter() {
-            // The first action of the break period will update only the correct element of the partial score.
+            // We need to loop over every action to cover the case in which the game ends abrutly because one team is knocked out.
             // For quarters>1, we need to remove previous quarters score to get only the partial score of the quarter.
             match action.start_at.period() {
-                Period::B1 => {
+                Period::Q1 => {
                     home_quarters_score[0] = action.home_score;
                     away_quarters_score[0] = action.away_score;
                 }
-                Period::B2 => {
+                Period::Q2 => {
                     home_quarters_score[1] = action.home_score - home_quarters_score[0];
                     away_quarters_score[1] = action.away_score - away_quarters_score[0];
                 }
-                Period::B3 => {
+                Period::Q3 => {
                     home_quarters_score[2] =
                         action.home_score - home_quarters_score[0] - home_quarters_score[1];
                     away_quarters_score[2] =
                         action.away_score - away_quarters_score[0] - away_quarters_score[1];
                 }
-                Period::B4 => {
+                Period::Q4 => {
                     home_quarters_score[3] = action.home_score
                         - home_quarters_score[0]
                         - home_quarters_score[1]
@@ -80,6 +84,8 @@ impl GameSummary {
             away_team_id: game.away_team_in_game.team_id,
             home_team_name: game.home_team_in_game.name.clone(),
             away_team_name: game.away_team_in_game.name.clone(),
+            home_team_knocked_out: game.is_team_knocked_out(Possession::Home),
+            away_team_knocked_out: game.is_team_knocked_out(Possession::Away),
             home_quarters_score,
             away_quarters_score,
             location: game.location,
@@ -91,14 +97,14 @@ impl GameSummary {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GameMVPSummary {
     pub name: String,
     pub score: u32,
     pub best_stats: [(String, u8, u32); 3],
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Game {
     pub id: GameId,
     pub home_team_in_game: TeamInGame,
@@ -262,7 +268,6 @@ impl<'game> Game {
     }
 
     fn pick_action(&self, rng: &mut ChaCha8Rng) -> Action {
-        //FIXME: Actions should be picked based on the team tactic/players
         let situation = self.action_results[self.action_results.len() - 1]
             .situation
             .clone();
@@ -316,18 +321,18 @@ impl<'game> Game {
         defense_stats: Option<GameStatsMap>,
         score_change: u8,
     ) {
-        let (home_stats, away_stats) = match self.possession {
+        let (mut home_stats, mut away_stats) = match self.possession {
             Possession::Home => (attack_stats, defense_stats),
             Possession::Away => (defense_stats, attack_stats),
         };
 
-        if let Some(updates) = home_stats {
+        if let Some(updates) = &mut home_stats {
             for (id, player_stats) in self.home_team_in_game.stats.iter_mut() {
                 let player = self.home_team_in_game.players.get_mut(&id).unwrap();
-                if let Some(update) = updates.get(&id) {
-                    player_stats.update(update);
-                    player.add_tiredness(update.extra_tiredness);
-                    player.add_morale(update.extra_morale);
+                if let Some(stats) = updates.get_mut(&id) {
+                    player_stats.update(stats);
+                    player.add_tiredness(stats.extra_tiredness);
+                    player.add_morale(stats.extra_morale);
                 }
                 // Add morale if team scored
                 if score_change > 0 {
@@ -339,14 +344,14 @@ impl<'game> Game {
                 }
             }
         }
-        if let Some(updates) = away_stats {
+        if let Some(updates) = &mut away_stats {
             for (id, player_stats) in self.away_team_in_game.stats.iter_mut() {
                 let player = self.away_team_in_game.players.get_mut(&id).unwrap();
 
-                if let Some(update) = updates.get(&id) {
-                    player_stats.update(update);
-                    player.add_tiredness(update.extra_tiredness);
-                    player.add_morale(update.extra_morale);
+                if let Some(stats) = updates.get_mut(&id) {
+                    player_stats.update(stats);
+                    player.add_tiredness(stats.extra_tiredness);
+                    player.add_morale(stats.extra_morale);
                 }
                 // Add morale if team scored
                 if score_change > 0 {
@@ -732,7 +737,7 @@ impl<'game> Game {
 mod tests {
     use super::Game;
     use crate::engine::types::TeamInGame;
-    use crate::types::{GameId, IdSystem};
+    use crate::types::GameId;
     use crate::types::{SystemTimeTick, Tick};
     use crate::world::constants::DEFAULT_PLANET_ID;
     use crate::world::world::World;
@@ -779,7 +784,7 @@ mod tests {
         let away_team_in_game = TeamInGame::from_team_id(id1, &world.teams, &world.players);
 
         let mut game = Game::new(
-            GameId::new(),
+            GameId::new_v4(),
             home_team_in_game.unwrap(),
             away_team_in_game.unwrap(),
             Tick::now(),
