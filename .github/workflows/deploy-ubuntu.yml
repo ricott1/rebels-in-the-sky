@@ -28,7 +28,7 @@ jobs:
       run: sudo apt-get install -y libasound2-dev
 
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose --release
 
     - name: Run tests
       run: cargo test --verbose
