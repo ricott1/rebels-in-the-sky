@@ -8,8 +8,12 @@ on:
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   build-and-upload:
+    
     name: Build and upload
     runs-on: ${{ matrix.os }}
 
@@ -27,10 +31,6 @@ jobs:
           - build: windows
             os: windows-latest
             target: x86_64-pc-windows-gnu
-          
-          - build: linux
-            os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
 
     steps:
       - uses: actions/checkout@v4
@@ -38,10 +38,6 @@ jobs:
       - name: Get the release version from the tag
         shell: bash
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-      
-      - name: Install alsa.pc on Ubuntu
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y libasound2-dev libudev-dev librust-alsa-sys-dev && export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig/
 
       - name: Install Rust
         # Or @nightly if you want
@@ -52,7 +48,11 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --verbose --release --target ${{ matrix.target }}
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --verbose --release --target ${{ matrix.target }}
 
       - name: Run tests
         run: cargo test --verbose

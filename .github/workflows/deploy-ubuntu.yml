@@ -1,0 +1,51 @@
+name: Deploy Ubuntu
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-upload:
+
+    name: Build and upload
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Get the release version from the tag
+      shell: bash
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+    - name: Install alsa.pc
+      run: sudo apt-get install -y libasound2-dev
+
+    - name: Build
+      run: cargo build --verbose
+
+    - name: Run tests
+      run: cargo test --verbose
+
+    - name: Build archive
+      shell: bash
+      run: |
+        binary_name="rebels"
+
+        dirname="$binary_name-${{ env.VERSION }}-x86_64-unknown-linux-gnu"
+        mkdir "$dirname"
+        mv "target/release/$binary_name" "$dirname"
+        tar -czf "$dirname.tar.gz" "$dirname"
+        echo "ASSET=$dirname.tar.gz" >> $GITHUB_ENV
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          ${{ env.ASSET }}
