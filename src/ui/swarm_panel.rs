@@ -217,7 +217,12 @@ impl SwarmPanel {
                     format!(
                         "{} ({})",
                         team.name.clone(),
-                        peer_id.to_base58().chars().take(6).collect::<String>()
+                        peer_id
+                            .to_base58()
+                            .chars()
+                            .skip(8)
+                            .take(8)
+                            .collect::<String>()
                     ),
                     style,
                 )));
@@ -271,6 +276,8 @@ impl SwarmPanel {
                 continue;
             }
 
+            let peer_id = peer_id.unwrap();
+
             let line_split = Layout::horizontal([
                 Constraint::Length(32),
                 Constraint::Length(6),
@@ -293,10 +300,10 @@ impl SwarmPanel {
                         team.name,
                         world.team_rating(team.team_id).unwrap_or_default().stars(),
                         peer_id
-                            .unwrap()
                             .to_base58()
                             .chars()
-                            .take(6)
+                            .skip(8)
+                            .take(8)
                             .collect::<String>()
                     ),
                     UiCallbackPreset::GoToTeam {

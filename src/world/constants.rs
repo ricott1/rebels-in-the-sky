@@ -93,8 +93,8 @@ pub const SOL_ID: Lazy<PlanetId> = Lazy::new(|| PlanetId::try_parse(SOL_STR).unw
 pub struct TirednessCost;
 impl TirednessCost {
     pub const NONE: f32 = 0.0;
-    pub const LOW: f32 = 0.0075;
-    pub const MEDIUM: f32 = 0.175;
+    pub const LOW: f32 = 0.005;
+    pub const MEDIUM: f32 = 0.15;
     pub const HIGH: f32 = 0.5;
     pub const SEVERE: f32 = 2.5;
     pub const CRITICAL: f32 = 5.0;

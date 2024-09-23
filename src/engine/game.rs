@@ -396,11 +396,14 @@ impl<'game> Game {
     fn apply_tiredness_update(&mut self) {
         for team in [&mut self.home_team_in_game, &mut self.away_team_in_game] {
             for (id, player) in team.players.iter_mut() {
-                let stats = team.stats.get_mut(&id).unwrap();
+                let stats = team.stats.get_mut(&id).expect("Player should have stats");
                 if stats.is_playing() && !self.timer.is_break() {
                     stats.seconds_played += 1;
                     if !player.is_knocked_out() {
-                        stats.experience_at_position[stats.position.unwrap() as usize] += 1;
+                        stats.experience_at_position[stats
+                            .position
+                            .expect("Playing player should have a position")
+                            as usize] += 1;
                         player.add_tiredness(TirednessCost::LOW);
                     }
                 } else if player.tiredness > RECOVERING_TIREDNESS_PER_SHORT_TICK

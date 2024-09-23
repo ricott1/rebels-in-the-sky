@@ -241,20 +241,24 @@ pub fn render_challenge_button<'a>(
         frame.render_widget(decline_button, c_split[2]);
     } else {
         let challenge_button = if let Some(game_id) = team.current_game {
-            let game = world.get_game_or_err(game_id)?;
-            let game_text = if let Some(action) = game.action_results.last() {
-                format!(
-                    "{} {:>3}-{:<3} {}",
-                    game.home_team_in_game.name,
-                    action.home_score,
-                    action.away_score,
-                    game.away_team_in_game.name,
-                )
+            // The game is not necessarily part of the world if it's a network game.
+            let game_text = if let Ok(game) = world.get_game_or_err(game_id) {
+                if let Some(action) = game.action_results.last() {
+                    format!(
+                        "{} {:>3}-{:<3} {}",
+                        game.home_team_in_game.name,
+                        action.home_score,
+                        action.away_score,
+                        game.away_team_in_game.name,
+                    )
+                } else {
+                    format!(
+                        "{}   0-0   {}",
+                        game.home_team_in_game.name, game.away_team_in_game.name,
+                    )
+                }
             } else {
-                format!(
-                    "{}   0-0   {}",
-                    game.home_team_in_game.name, game.away_team_in_game.name,
-                )
+                "Unknown game".to_string()
             };
             Button::new(
                 format!("Playing - {}", game_text),

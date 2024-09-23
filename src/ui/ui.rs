@@ -6,6 +6,7 @@ use super::popup_message::PopupMessage;
 use super::splash_screen::{AudioPlayerState, SplashScreen};
 use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::utils::SwarmPanelEvent;
 use super::widgets::default_block;
 use super::{
     game_panel::GamePanel, my_team_panel::MyTeamPanel, new_team_screen::NewTeamScreen,
@@ -353,20 +354,22 @@ impl Ui {
                 active_render
             }
         };
-        if render_result.is_err() {
-            self.push_popup(PopupMessage::Error(
-                format!("Render error\n{}", render_result.err().unwrap().to_string()),
-                true,
-                Tick::now(),
-            ));
+        if let Err(err) = render_result {
+            let event = SwarmPanelEvent {
+                timestamp: Tick::now(),
+                peer_id: None,
+                text: format!("Render error\n{}", err.to_string()),
+            };
+            self.swarm_panel.push_log_event(event);
         }
 
-        if self.render_popup_messages(frame, area).is_err() {
-            self.push_popup(PopupMessage::Error(
-                "Popup render error".into(),
-                true,
-                Tick::now(),
-            ));
+        if let Err(err) = self.render_popup_messages(frame, area) {
+            let event = SwarmPanelEvent {
+                timestamp: Tick::now(),
+                peer_id: None,
+                text: format!("Popup render error\n{}", err.to_string()),
+            };
+            self.swarm_panel.push_log_event(event);
         }
         self.last_update = Instant::now();
     }
