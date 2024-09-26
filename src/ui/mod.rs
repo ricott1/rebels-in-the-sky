@@ -12,6 +12,7 @@ mod my_team_panel;
 mod new_team_screen;
 mod player_panel;
 pub mod popup_message;
+mod space_screen;
 mod splash_screen;
 mod swarm_panel;
 mod team_panel;

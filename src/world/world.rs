@@ -15,6 +15,7 @@ use crate::engine::game::{Game, GameSummary};
 use crate::engine::types::{Possession, TeamInGame};
 use crate::image::color_map::ColorMap;
 use crate::network::types::{NetworkGame, NetworkTeam};
+use crate::space_adventure::space::Space;
 use crate::store::save_game;
 use crate::types::*;
 use crate::ui::popup_message::PopupMessage;
@@ -31,13 +32,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::u64;
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct World {
     pub dirty: bool,
     pub dirty_network: bool,
     pub dirty_ui: bool,
     pub serialized_size: u64,
     pub seed: u64,
+    pub last_tick_min_interval: Tick,
     pub last_tick_short_interval: Tick,
     pub last_tick_medium_interval: Tick,
     pub last_tick_long_interval: Tick,
@@ -60,6 +62,9 @@ pub struct World {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub past_games: GameSummaryMap,
+    #[serde(skip)]
+    pub space: Option<Space>,
+
 }
 
 impl World {
@@ -72,11 +77,11 @@ impl World {
 
         Self {
             seed: seed.unwrap_or(rand::random()),
-            last_tick_short_interval: Tick::now(),
             planets,
             ..Default::default()
         }
     }
+
     pub fn initialize(&mut self, generate_local_world: bool) -> AppResult<()> {
         let rng = &mut ChaCha8Rng::seed_from_u64(self.seed);
         for planet in PLANET_DATA.iter() {
@@ -88,9 +93,10 @@ impl World {
 
         let now = Tick::now();
 
+        self.last_tick_min_interval = now;
         self.last_tick_short_interval = now;
         // We round up to the beginning of the next TickInterval::SHORT to ensure
-        // that online games don't drift too much.
+        // that online games don't drift.
         self.last_tick_short_interval -= self.last_tick_short_interval % TickInterval::SHORT;
         self.last_tick_medium_interval = now;
         self.last_tick_long_interval = now;
@@ -547,7 +553,6 @@ impl World {
         mut away_team_in_game: TeamInGame,
         starting_at:Tick,
         location: PlanetId
-
     ) -> AppResult<GameId> {
         // Generate deterministic game id from team IDs and starting time.
         // Two games starting at u64::MAX milliseconds apart ~ 584_942_417 years
@@ -657,16 +662,10 @@ impl World {
 
         home_team.can_challenge_team(&away_team)?;
 
-        let location = match home_team.current_location {
-            TeamLocation::OnPlanet { planet_id } => planet_id,
-            _ => {
-                panic!("Should have failed in can_challenge_team")
-            }
-        };
+        let location = home_team.is_on_planet().expect("Should have failed in can_challenge_team");
+        let game_id =  self.generate_game_no_checks(home_team_in_game,away_team_in_game,starting_at, location)?;
 
-       let game_id =  self.generate_game_no_checks(home_team_in_game,away_team_in_game,starting_at, location)?;
-
-       home_team.current_game = Some(game_id);
+        home_team.current_game = Some(game_id);
         away_team.current_game = Some(game_id);
         self.dirty = true;
         self.dirty_ui = true;
@@ -698,8 +697,7 @@ impl World {
             ));
         }
 
-        let db_game = self.get_game(network_game.id);
-        if db_game.is_none() {
+        if self.get_game(network_game.id).is_none() {
             let mut game = Game::new(
                 network_game.id,
                 network_game.home_team_in_game,
@@ -967,6 +965,12 @@ impl World {
     ) -> AppResult<Vec<UiCallbackPreset>> {
         let mut callbacks: Vec<UiCallbackPreset> = vec![];
 
+        if let Some(space) = self.space.as_mut() {
+            let deltatime = current_timestamp - self.last_tick_min_interval;
+            space.update(deltatime)?;
+            self.last_tick_min_interval = current_timestamp;
+        }
+
         if current_timestamp >= self.last_tick_short_interval + TickInterval::SHORT {
             if self.games.len() > 0 {
                 self.tick_games(current_timestamp)?;
@@ -979,6 +983,9 @@ impl World {
             if let Some(callback) = self.tick_spaceship_upgrade(current_timestamp, is_simulating)? {
                 callbacks.push(callback);
             }
+
+            
+
             self.last_tick_short_interval += TickInterval::SHORT;
             // Round up to the TickInterval::SHORT to keep these ticks synchronous across network.
             self.last_tick_short_interval -= self.last_tick_short_interval % TickInterval::SHORT;

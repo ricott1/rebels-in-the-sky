@@ -3,6 +3,7 @@ use super::constants::{UiKey, UiStyle};
 use super::galaxy_panel::GalaxyPanel;
 use super::gif_map::GifMap;
 use super::popup_message::PopupMessage;
+use super::space_screen::SpaceScreen;
 use super::splash_screen::{AudioPlayerState, SplashScreen};
 use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
@@ -38,6 +39,7 @@ pub enum UiState {
     Splash,
     NewTeam,
     Main,
+    SpaceAdventure,
 }
 
 #[derive(Debug, Clone, Copy, Hash, Display, PartialEq)]
@@ -58,6 +60,7 @@ pub struct Ui {
     last_update: Instant,
     pub splash_screen: SplashScreen,
     pub new_team_screen: NewTeamScreen,
+    pub space_screen: SpaceScreen,
     pub player_panel: PlayerListPanel,
     pub team_panel: TeamListPanel,
     pub game_panel: GamePanel,
@@ -101,6 +104,8 @@ impl Ui {
             ui_tabs.push(UiTab::Swarm);
         }
 
+        let space_screen = SpaceScreen::new(Arc::clone(&callback_registry));
+
         Self {
             state: UiState::default(),
             ui_tabs,
@@ -109,6 +114,7 @@ impl Ui {
             last_update: Instant::now(),
             splash_screen,
             new_team_screen,
+            space_screen,
             player_panel,
             team_panel,
             game_panel,
@@ -145,7 +151,7 @@ impl Ui {
         match self.state {
             UiState::Splash => &self.splash_screen,
             UiState::NewTeam => &self.new_team_screen,
-            _ => match self.ui_tabs[self.tab_index] {
+            UiState::Main => match self.ui_tabs[self.tab_index] {
                 UiTab::MyTeam => &self.my_team_panel,
                 UiTab::Teams => &self.team_panel,
                 UiTab::Players => &self.player_panel,
@@ -153,6 +159,7 @@ impl Ui {
                 UiTab::Games => &self.game_panel,
                 UiTab::Swarm => &self.swarm_panel,
             },
+            UiState::SpaceAdventure => &self.space_screen,
         }
     }
 
@@ -175,7 +182,7 @@ impl Ui {
         match self.state {
             UiState::Splash => &mut self.splash_screen,
             UiState::NewTeam => &mut self.new_team_screen,
-            _ => match self.ui_tabs[self.tab_index] {
+            UiState::Main => match self.ui_tabs[self.tab_index] {
                 UiTab::MyTeam => &mut self.my_team_panel,
                 UiTab::Teams => &mut self.team_panel,
                 UiTab::Players => &mut self.player_panel,
@@ -183,6 +190,7 @@ impl Ui {
                 UiTab::Games => &mut self.game_panel,
                 UiTab::Swarm => &mut self.swarm_panel,
             },
+            UiState::SpaceAdventure => &mut self.space_screen,
         }
     }
 
@@ -197,12 +205,20 @@ impl Ui {
                 None
             }
 
-            UiKey::NEXT_TAB => {
+            UiKey::NEXT_TAB if self.state == UiState::Main => {
                 self.next_tab();
                 None
             }
-            UiKey::PREVIOUS_TAB => {
+            UiKey::PREVIOUS_TAB if self.state == UiState::Main => {
                 self.previous_tab();
+                None
+            }
+            UiKey::START_SPACE_ADVENTURE => {
+                if self.state == UiState::Main {
+                    return Some(UiCallbackPreset::StartSpaceAdventure);
+                } else if self.state == UiState::SpaceAdventure {
+                    return Some(UiCallbackPreset::StopSpaceAdventure);
+                }
                 None
             }
             _ => {
@@ -266,7 +282,7 @@ impl Ui {
                 self.splash_screen.update(world)?
             }
             UiState::NewTeam => self.new_team_screen.update(world)?,
-            _ => {
+            UiState::Main => {
                 // Update panels. Can we get away updating only the active one?
                 // self.get_active_screen_mut().update(world)?;
                 self.my_team_panel.update(world)?;
@@ -275,11 +291,9 @@ impl Ui {
                 self.game_panel.update(world)?;
                 self.galaxy_panel.update(world)?;
             }
+            UiState::SpaceAdventure => self.space_screen.update(world)?,
         }
 
-        // if let Some(player) = audio_player.as_ref() {
-        //     player.check_if_next();
-        // }
         Ok(())
     }
 
@@ -305,7 +319,7 @@ impl Ui {
         let render_result = match self.state {
             UiState::Splash => self.splash_screen.render(frame, world, split[0]),
             UiState::NewTeam => self.new_team_screen.render(frame, world, split[0]),
-            _ => {
+            UiState::Main => {
                 // Render tabs at top
                 let tab_main_split = Layout::vertical([
                     Constraint::Length(3), // tabs
@@ -353,7 +367,9 @@ impl Ui {
 
                 active_render
             }
+            UiState::SpaceAdventure => self.space_screen.render(frame, world, split[0]),
         };
+
         if let Err(err) = render_result {
             let event = SwarmPanelEvent {
                 timestamp: Tick::now(),
@@ -418,7 +434,7 @@ impl Ui {
             Span::styled(" Quit ", Style::default().fg(Color::DarkGray)),
         ];
 
-        if !self.data_view {
+        if !self.data_view && self.state == UiState::Main {
             spans.extend(vec![
                 Span::styled(
                     format!(" {} ", UiKey::PREVIOUS_TAB.to_string()),

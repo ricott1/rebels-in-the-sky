@@ -2,13 +2,12 @@ use super::button::{Button, RadioButton};
 use super::constants::{UiStyle, LEFT_PANEL_WIDTH};
 use super::gif_map::{GifMap, ImageResizeInGalaxyGif};
 use super::traits::SplitPanel;
-
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
 use super::utils::hover_text_target;
 use super::widgets::quick_explore_button;
 use super::{traits::Screen, widgets::default_block};
 use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId};
-use crate::ui::constants::UiKey;
+use crate::ui::constants::*;
 use crate::world::skill::Rated;
 use crate::world::types::PlayerLocation;
 use crate::{
@@ -307,7 +306,7 @@ impl GalaxyPanel {
                     style = UiStyle::NETWORK;
                 }
                 let text = format!(
-                    "{:<12} {}",
+                    "{:<MAX_NAME_LENGTH$} {}",
                     team.name,
                     world.team_rating(team.id).unwrap_or_default().stars()
                 );

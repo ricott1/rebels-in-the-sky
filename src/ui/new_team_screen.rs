@@ -1,6 +1,6 @@
 use super::button::Button;
 use super::clickable_list::ClickableListState;
-use super::constants::{UiText, LEFT_PANEL_WIDTH};
+use super::constants::*;
 use super::gif_map::GifMap;
 use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
@@ -289,7 +289,11 @@ impl NewTeamScreen {
                 .iter()
                 .map(|ship| {
                     (
-                        format!("{:<12} {:>6}", ship, format_satoshi(ship.cost())),
+                        format!(
+                            "{:MAX_NAME_LENGTH$} {:>6}",
+                            ship,
+                            format_satoshi(ship.cost())
+                        ),
                         UiStyle::DEFAULT,
                     )
                 })

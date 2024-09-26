@@ -1,8 +1,8 @@
 use crate::{
     image::{
         color_map::AsteroidColorMap,
-        types::{FrameLines, Gif, GifLines, PrintableGif},
-        utils::{read_image, ExtraImageUtils},
+        types::*,
+        utils::{read_image, ExtraImageUtils, TRAVELLING_BACKGROUND, UNIVERSE_BACKGROUND},
     },
     types::{AppResult, PlanetId, PlayerId, TeamId},
     world::{
@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use anyhow::anyhow;
-use image::{imageops::resize, GenericImageView, ImageBuffer, Rgba, RgbaImage};
+use image::{imageops::resize, GenericImageView, Rgba, RgbaImage};
 use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -21,12 +21,6 @@ use std::collections::HashMap;
 const MAX_GIF_WIDTH: u32 = 160;
 const MAX_GIF_HEIGHT: u32 = 140;
 pub const FRAMES_PER_REVOLUTION: usize = 360;
-
-pub static UNIVERSE_BACKGROUND: Lazy<RgbaImage> =
-    Lazy::new(|| read_image("planets/background.png").expect("Cannot open background.png."));
-pub static TRAVELLING_BACKGROUND: Lazy<RgbaImage> = Lazy::new(|| {
-    read_image("planets/travelling_background.png").expect("Cannot open travelling_background.png.")
-});
 
 pub static PORTAL_GIFS: Lazy<Vec<GifLines>> = Lazy::new(|| {
     vec![
@@ -125,7 +119,7 @@ impl GifMap {
         } else {
             Gif::open(format!("planets/{}_full.gif", planet.filename.clone()))?
                 .iter()
-                .map(|img: &ImageBuffer<Rgba<u8>, Vec<u8>>| {
+                .map(|img: &GifFrame| {
                     let base = &mut UNIVERSE_BACKGROUND.clone();
 
                     // Blit img on base
@@ -233,7 +227,7 @@ impl GifMap {
                     ))?
                 };
 
-                let g: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> = gif
+                let g: Vec<GifFrame> = gif
                     .iter()
                     .map(|img| {
                         //We resize twice to try to get nicer looking results
@@ -408,7 +402,7 @@ impl GifMap {
         let team = world.get_team_or_err(team_id)?;
         let ship_gif = team.spaceship.compose_image()?;
         let base = TRAVELLING_BACKGROUND.clone();
-        let mut gif: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> = vec![];
+        let mut gif: Vec<GifFrame> = vec![];
         // 160 frames
         let mut idx = 0;
         loop {
@@ -458,7 +452,7 @@ impl GifMap {
         let team = world.get_team_or_err(team_id)?;
         let ship_gif = team.spaceship.compose_image()?;
         let base = TRAVELLING_BACKGROUND.clone();
-        let mut gif: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> = vec![];
+        let mut gif: Vec<GifFrame> = vec![];
         // 160 frames
         let mut idx = 0;
         loop {

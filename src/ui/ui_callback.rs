@@ -14,6 +14,7 @@ use crate::{
     engine::{tactic::Tactic, types::TeamInGame},
     image::color_map::{ColorMap, ColorPreset},
     network::{challenge::Challenge, constants::DEFAULT_PORT, trade::Trade},
+    space_adventure::space::Space,
     types::{AppCallback, AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick},
     world::{
         constants::*,
@@ -196,6 +197,12 @@ pub enum UiCallbackPreset {
     UpgradeSpaceship {
         upgrade: SpaceshipUpgrade,
     },
+    StartSpaceAdventure,
+    StopSpaceAdventure,
+    MovePlayerLeft,
+    MovePlayerRight,
+    MovePlayerDown,
+    MovePlayerUp,
 }
 
 impl UiCallbackPreset {
@@ -1260,6 +1267,46 @@ impl UiCallbackPreset {
             }
             UiCallbackPreset::UpgradeSpaceship { upgrade } => {
                 Self::upgrade_spaceship(upgrade.clone())(app)
+            }
+            UiCallbackPreset::StartSpaceAdventure => {
+                app.ui.set_state(UiState::SpaceAdventure);
+                let spaceship = &app.world.get_own_team()?.spaceship;
+                let space = Space::new()?.with_spaceship(spaceship)?;
+                app.world.space = Some(space);
+                Ok(None)
+            }
+            UiCallbackPreset::StopSpaceAdventure => {
+                app.ui.set_state(UiState::Main);
+                app.world.space = None;
+                Ok(None)
+            }
+            UiCallbackPreset::MovePlayerLeft => {
+                if let Some(space) = app.world.space.as_mut() {
+                    space.player_mut().set_accelleration([-1.0, 0.0]);
+                }
+
+                Ok(None)
+            }
+            UiCallbackPreset::MovePlayerRight => {
+                if let Some(space) = app.world.space.as_mut() {
+                    space.player_mut().set_accelleration([1.0, 0.0]);
+                }
+
+                Ok(None)
+            }
+            UiCallbackPreset::MovePlayerDown => {
+                if let Some(space) = app.world.space.as_mut() {
+                    space.player_mut().set_accelleration([0.0, 1.0]);
+                }
+
+                Ok(None)
+            }
+            UiCallbackPreset::MovePlayerUp => {
+                if let Some(space) = app.world.space.as_mut() {
+                    space.player_mut().set_accelleration([0.0, -1.0]);
+                }
+
+                Ok(None)
             }
         }
     }

@@ -7,7 +7,7 @@ use super::widgets::{
     go_to_team_current_planet_button, render_challenge_button, render_spaceship_description,
 };
 use super::{
-    constants::{UiKey, UiStyle, LEFT_PANEL_WIDTH},
+    constants::*,
     traits::{Screen, SplitPanel},
     utils::img_to_lines,
     widgets::{default_block, selectable_list},
@@ -194,7 +194,7 @@ impl TeamListPanel {
                     style = UiStyle::NETWORK;
                 }
                 let text = format!(
-                    "{:<12} {}",
+                    "{:<MAX_NAME_LENGTH$} {}",
                     team.name,
                     world.team_rating(team.id).unwrap_or_default().stars()
                 );

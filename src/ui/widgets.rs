@@ -1,7 +1,7 @@
 use super::{
     button::Button,
     clickable_list::{ClickableList, ClickableListItem},
-    constants::{UiKey, UiStyle, UiText},
+    constants::*,
     gif_map::GifMap,
     hover_text_line::HoverTextLine,
     hover_text_span::HoverTextSpan,
@@ -1266,7 +1266,11 @@ fn format_player_data(player: &Player) -> Vec<Line> {
         ));
 
         spans.push(Span::styled(
-            format!("   {:<12}{:02} ", SKILL_NAMES[i], skills[i].value(),),
+            format!(
+                "   {:<MAX_NAME_LENGTH$}{:02} ",
+                SKILL_NAMES[i],
+                skills[i].value(),
+            ),
             skills[i].style(),
         ));
         spans.push(improvement_indicator(
@@ -1301,7 +1305,7 @@ fn format_player_data(player: &Player) -> Vec<Line> {
 
         spans.push(Span::styled(
             format!(
-                "    {:<12}{:02} ",
+                "    {:<MAX_NAME_LENGTH$}{:02} ",
                 SKILL_NAMES[i + 8],
                 skills[i + 8].value(),
             ),
@@ -1339,7 +1343,7 @@ fn format_player_data(player: &Player) -> Vec<Line> {
 
         spans.push(Span::styled(
             format!(
-                "    {:<12}{:02} ",
+                "    {:<MAX_NAME_LENGTH$}{:02} ",
                 SKILL_NAMES[i + 16],
                 skills[i + 16].value(),
             ),

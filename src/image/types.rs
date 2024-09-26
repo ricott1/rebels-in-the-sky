@@ -1,10 +1,10 @@
+use crate::{store::ASSETS_DIR, types::AppResult, ui::utils::img_to_lines};
 use anyhow::anyhow;
 use image::{ImageBuffer, Rgba};
 use ratatui::text::Line;
 
-use crate::{store::ASSETS_DIR, types::AppResult, ui::utils::img_to_lines};
-
-pub type Gif = Vec<ImageBuffer<Rgba<u8>, Vec<u8>>>;
+pub type GifFrame = ImageBuffer<Rgba<u8>, Vec<u8>>;
+pub type Gif = Vec<GifFrame>;
 pub type FrameLines = Vec<Line<'static>>;
 pub type GifLines = Vec<FrameLines>;
 

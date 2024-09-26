@@ -1,5 +1,5 @@
 use super::button::Button;
-use super::constants::{UiStyle, UiText, LEFT_PANEL_WIDTH};
+use super::constants::*;
 use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
 use super::utils::{hover_text_target, SwarmPanelEvent};
 use super::{
@@ -10,7 +10,7 @@ use super::{
 use crate::network::types::TeamRanking;
 use crate::types::{AppResult, SystemTimeTick, TeamId, Tick};
 use crate::ui::constants::UiKey;
-use crate::world::constants::MIN_PLAYERS_PER_GAME;
+use crate::world::constants::{MIN_PLAYERS_PER_GAME, SECONDS};
 use crate::world::{skill::Rated, world::World};
 use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -28,6 +28,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use strum_macros::Display;
 use tui_textarea::{CursorMove, TextArea};
+
+const EVENT_DUPLICATE_DELAY: Tick = 10 * SECONDS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display, Hash, Default)]
 pub enum SwarmView {
@@ -91,6 +93,21 @@ impl SwarmPanel {
     }
 
     pub fn push_log_event(&mut self, event: SwarmPanelEvent) {
+        if let Some(last_event) = self
+            .events
+            .get(&SwarmView::Log)
+            .expect("Should have Log events")
+            .last()
+        {
+            // If we recently pushed the same event, don't push it again.
+            if last_event.peer_id == event.peer_id
+                && last_event.text == event.text
+                && event.timestamp - last_event.timestamp <= EVENT_DUPLICATE_DELAY
+            {
+                return;
+            }
+        }
+
         self.events
             .get_mut(&SwarmView::Log)
             .expect("Should have Log events")
@@ -485,10 +502,10 @@ impl SwarmPanel {
             }
 
             let text = format!(
-                " Ranking {:5} Reputation {:5} {:<12} {:12} ({})",
-                rating.stars(),
-                ranking.reputation.stars(),
+                " {:<MAX_NAME_LENGTH$}  Reputation {:5}  Ranking {:5}  {:12} ({})",
                 ranking.name.clone(),
+                ranking.reputation.stars(),
+                rating.stars(),
                 format!(
                     "W{}/L{}/D{}",
                     ranking.record[0], ranking.record[1], ranking.record[2]

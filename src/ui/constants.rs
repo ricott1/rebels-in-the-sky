@@ -54,6 +54,11 @@ impl UiKey {
     pub const ACCEPT_TRADE: KeyCode = KeyCode::Char('A');
     pub const DECLINE_TRADE: KeyCode = KeyCode::Char('D');
     pub const PING: KeyCode = KeyCode::Char('P');
+    pub const START_SPACE_ADVENTURE: KeyCode = KeyCode::Char('+');
+    pub const MOVE_LEFT: KeyCode = KeyCode::Left;
+    pub const MOVE_RIGHT: KeyCode = KeyCode::Right;
+    pub const MOVE_DOWN: KeyCode = KeyCode::Down;
+    pub const MOVE_UP: KeyCode = KeyCode::Up;
     pub const YES_TO_DIALOG: KeyCode = KeyCode::Enter;
     pub const NO_TO_DIALOG: KeyCode = KeyCode::Backspace;
     pub const fn set_player_position(position: Position) -> KeyCode {

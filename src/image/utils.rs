@@ -1,28 +1,31 @@
 use super::color_map::ColorMap;
+use super::types::GifFrame;
 use crate::store::ASSETS_DIR;
 use crate::types::AppResult;
 use anyhow::anyhow;
 use image::error::{ParameterError, ParameterErrorKind};
 use image::ImageReader;
-use image::{ImageBuffer, ImageError, ImageResult, Rgba, RgbaImage};
+use image::{ImageError, ImageResult, Rgba, RgbaImage};
+use once_cell::sync::Lazy;
 use std::io::Cursor;
 
+pub static UNIVERSE_BACKGROUND: Lazy<RgbaImage> =
+    Lazy::new(|| read_image("planets/background.png").expect("Cannot open background.png."));
+pub static TRAVELLING_BACKGROUND: Lazy<RgbaImage> = Lazy::new(|| {
+    read_image("planets/travelling_background.png").expect("Cannot open travelling_background.png.")
+});
+
 pub trait ExtraImageUtils {
-    fn copy_non_trasparent_from(
-        &mut self,
-        other: &ImageBuffer<Rgba<u8>, Vec<u8>>,
-        x: u32,
-        y: u32,
-    ) -> ImageResult<()>;
-    fn apply_color_map(&mut self, color_map: ColorMap) -> &ImageBuffer<Rgba<u8>, Vec<u8>>;
+    fn copy_non_trasparent_from(&mut self, other: &GifFrame, x: u32, y: u32) -> ImageResult<()>;
+    fn apply_color_map(&mut self, color_map: ColorMap) -> &GifFrame;
     fn apply_color_map_with_shadow_mask(
         &mut self,
         color_map: ColorMap,
-        mask: &ImageBuffer<Rgba<u8>, Vec<u8>>,
-    ) -> &ImageBuffer<Rgba<u8>, Vec<u8>>;
+        mask: &GifFrame,
+    ) -> &GifFrame;
 }
 
-impl ExtraImageUtils for ImageBuffer<Rgba<u8>, Vec<u8>> {
+impl ExtraImageUtils for GifFrame {
     /// Copies all non-transparent the pixels from another image into this image.
     ///
     /// The other image is copied with the top-left corner of the
@@ -38,12 +41,7 @@ impl ExtraImageUtils for ImageBuffer<Rgba<u8>, Vec<u8>> {
     ///
     /// [`GenericImageView::view`]: trait.GenericImageView.html#method.view
     /// [`FlatSamples`]: flat/struct.FlatSamples.html
-    fn copy_non_trasparent_from(
-        &mut self,
-        other: &ImageBuffer<Rgba<u8>, Vec<u8>>,
-        x: u32,
-        y: u32,
-    ) -> ImageResult<()> {
+    fn copy_non_trasparent_from(&mut self, other: &GifFrame, x: u32, y: u32) -> ImageResult<()> {
         // Do bounds checking here so we can use the non-bounds-checking
         // functions to copy pixels.
         if self.width() < other.width() + x || self.height() < other.height() + y {
@@ -62,7 +60,7 @@ impl ExtraImageUtils for ImageBuffer<Rgba<u8>, Vec<u8>> {
         }
         Ok(())
     }
-    fn apply_color_map(&mut self, color_map: ColorMap) -> &ImageBuffer<Rgba<u8>, Vec<u8>> {
+    fn apply_color_map(&mut self, color_map: ColorMap) -> &GifFrame {
         for k in 0..self.height() {
             for i in 0..self.width() {
                 let p = self.get_pixel(i, k);
@@ -93,8 +91,8 @@ impl ExtraImageUtils for ImageBuffer<Rgba<u8>, Vec<u8>> {
     fn apply_color_map_with_shadow_mask(
         &mut self,
         color_map: ColorMap,
-        mask: &ImageBuffer<Rgba<u8>, Vec<u8>>,
-    ) -> &ImageBuffer<Rgba<u8>, Vec<u8>> {
+        mask: &GifFrame,
+    ) -> &GifFrame {
         for k in 0..self.height() {
             for i in 0..self.width() {
                 let p = self.get_pixel(i, k);

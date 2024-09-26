@@ -17,9 +17,11 @@ pub trait Screen {
 
     fn handle_key_events(
         &mut self,
-        key_event: crossterm::event::KeyEvent,
-        world: &World,
-    ) -> Option<UiCallbackPreset>;
+        _key_event: crossterm::event::KeyEvent,
+        _world: &World,
+    ) -> Option<UiCallbackPreset> {
+        None
+    }
 
     fn footer_spans(&self) -> Vec<Span> {
         vec![]

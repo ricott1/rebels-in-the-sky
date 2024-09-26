@@ -2,7 +2,7 @@ use super::{
     button::Button,
     clickable_list::ClickableListState,
     clickable_table::{ClickableCell, ClickableRow, ClickableTable, ClickableTableState},
-    constants::{UiKey, UiStyle},
+    constants::*,
     gif_map::GifMap,
     traits::{PercentageRating, Screen, SplitPanel, UiStyled},
     ui_callback::{CallbackRegistry, UiCallbackPreset},
@@ -786,7 +786,7 @@ impl MyTeamPanel {
 
             frame.render_widget(
                 Paragraph::new(format!(
-                    "{:<12} {}",
+                    "{:<MAX_NAME_LENGTH$} {}",
                     team.name,
                     world.team_rating(team_id).unwrap_or_default().stars()
                 )),
