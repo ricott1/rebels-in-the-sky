@@ -1,21 +1,19 @@
 use crate::audio;
 use crate::audio::music_player::MusicPlayer;
-use crate::event::{EventHandler, TerminalEvent};
 use crate::network::handler::NetworkHandler;
 use crate::store::{get_world_size, load_world, reset, save_world};
-use crate::tui::Tui;
+use crate::tui::{EventHandler, TerminalEvent};
+use crate::tui::{Tui, WriterProxy};
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::ui::popup_message::PopupMessage;
-use crate::ui::ui::Ui;
+use crate::ui::ui::{Ui, UiState};
 use crate::ui::utils::SwarmPanelEvent;
-use crate::world::constants::SECONDS;
+use crate::world::constants::{TickInterval, SECONDS};
 use crate::world::world::World;
 use crossterm::event::{KeyCode, KeyModifiers};
 use futures::StreamExt;
 use libp2p::{gossipsub, swarm::SwarmEvent};
 use log::{error, info, warn};
-use ratatui::backend::CrosstermBackend;
-use std::io::{self};
 use stream_download::storage::temp::TempStorageProvider;
 use stream_download::StreamDownload;
 use tokio::select;
@@ -23,9 +21,17 @@ use void::Void;
 
 const NETWORK_HANDLER_INIT_INTERVAL: u128 = 10 * SECONDS;
 
+#[derive(Debug, PartialEq)]
+pub enum AppState {
+    Started,
+    Simulating,
+    Quitting,
+}
+
+#[derive(Debug)]
 pub struct App {
     pub world: World,
-    pub running: bool,
+    pub state: AppState,
     pub ui: Ui,
     pub audio_player: Option<MusicPlayer>,
     generate_local_world: bool,
@@ -36,6 +42,119 @@ pub struct App {
 }
 
 impl App {
+    pub async fn simulate_loaded_world<W: WriterProxy, E: EventHandler>(
+        &mut self,
+        tui: &mut Tui<W, E>,
+    ) {
+        let mut callbacks = vec![];
+        let mut simulation_tick = 0;
+        info!(
+            "Simulation started, must simulate {}",
+            (Tick::now() - self.world.last_tick_short_interval).formatted()
+        );
+        while self.world.is_simulating() {
+            // Give a visual feedback by drawing.
+            let should_draw = if (Tick::now() - self.world.last_tick_short_interval).as_days() > 0
+                && simulation_tick % (tui.fps() as u16 * 60 * 60 * 24) == 0
+            {
+                true
+            } else if (Tick::now() - self.world.last_tick_short_interval).as_hours() > 0
+                && simulation_tick % (tui.fps() as u16 * 60 * 60) == 0
+            {
+                true
+            } else if (Tick::now() - self.world.last_tick_short_interval).as_minutes() > 0
+                && simulation_tick % (tui.fps() as u16 * 60) == 0
+            {
+                true
+            } else {
+                false
+            };
+
+            if should_draw {
+                if let Err(e) = self.ui.update(&self.world, self.audio_player.as_ref()) {
+                    error!("Error updating TUI during simulation: {e}")
+                };
+                if let Err(e) = tui
+                    .draw(&mut self.ui, &self.world, self.audio_player.as_ref())
+                    .await
+                {
+                    error!("Error drawing TUI during simulation: {e}")
+                };
+            }
+
+            let mut cb = match self
+                .world
+                .handle_tick_events(self.world.last_tick_short_interval + TickInterval::SHORT)
+            {
+                Ok(callbacks) => callbacks,
+                Err(e) => panic!("Failed to simulate world: {}", e),
+            };
+            callbacks.append(&mut cb);
+            simulation_tick += 1;
+        }
+
+        self.world.serialized_size =
+            get_world_size(&self.store_prefix).expect("Failed to get world size");
+
+        self.state = AppState::Started;
+        self.ui.set_state(UiState::Main);
+
+        for callback in callbacks.iter() {
+            match callback.call(self) {
+                Ok(Some(text)) => {
+                    self.ui
+                        .push_popup(PopupMessage::Ok(text, true, Tick::now()));
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    panic!("Failed to simulate world: {}", e);
+                }
+            }
+        }
+    }
+
+    // pub fn simulate_loaded_world_no_tui(&mut self) {
+    //     let mut callbacks = vec![];
+    //     info!(
+    //         "Simulation started, must simulate {}",
+    //         (Tick::now() - self.world.last_tick_short_interval).formatted()
+    //     );
+    //     while self.world.is_simulating() {
+    //         let mut cb = match self
+    //             .world
+    //             .handle_tick_events(self.world.last_tick_short_interval + TickInterval::SHORT)
+    //         {
+    //             Ok(callbacks) => callbacks,
+    //             Err(e) => panic!("Failed to simulate world: {}", e),
+    //         };
+    //         callbacks.append(&mut cb);
+
+    //         info!(
+    //             "Simulation ongoing: {}",
+    //             (Tick::now() - self.world.last_tick_short_interval).formatted()
+    //         );
+    //     }
+
+    //     self.world.serialized_size =
+    //         get_world_size(&self.store_prefix).expect("Failed to get world size");
+
+    //     self.state = AppState::Started;
+    //     self.ui.set_state(UiState::Main);
+
+    //     for callback in callbacks.iter() {
+    //         match callback.call(self) {
+    //             Ok(Some(text)) => {
+    //                 self.ui
+    //                     .push_popup(PopupMessage::Ok(text, true, Tick::now()));
+    //             }
+    //             Ok(None) => {}
+    //             Err(e) => {
+    //                 panic!("Failed to simulate world: {}", e);
+    //             }
+    //         }
+    //     }
+    // }
+
     async fn conditional_audio_event(
         audio_player: &Option<MusicPlayer>,
     ) -> Option<StreamDownload<TempStorageProvider>> {
@@ -73,8 +192,12 @@ impl App {
     }
 
     pub fn initialize_network_handler(&mut self) -> AppResult<()> {
-        let handler = NetworkHandler::new(self.seed_ip.clone(), self.network_port)?;
-        self.network_handler = Some(handler);
+        if let Some(tcp_port) = self.network_port {
+            let handler = NetworkHandler::new(self.seed_ip.clone(), tcp_port)?;
+            self.network_handler = Some(handler);
+        } else {
+            error!("Cannot initialize network handler: TCP port not set.")
+        }
         Ok(())
     }
 
@@ -99,8 +222,6 @@ impl App {
         let audio_player = if disable_audio {
             None
         } else {
-            // let try_audio_player =
-            //     futures::executor::block_on(audio::music_player::MusicPlayer::new());
             if let Ok(player) = audio::music_player::MusicPlayer::new() {
                 info!("Audio player created succesfully");
                 Some(player)
@@ -112,7 +233,7 @@ impl App {
 
         Self {
             world: World::new(seed),
-            running: true,
+            state: AppState::Started,
             ui,
             audio_player,
             generate_local_world,
@@ -123,18 +244,22 @@ impl App {
         }
     }
 
-    pub async fn run(&mut self) -> AppResult<()> {
-        // Initialize the terminal user interface.
-        let writer = io::stdout();
-        let events = EventHandler::handler();
-        let backend = CrosstermBackend::new(writer);
-        let mut tui = Tui::new(backend, events)?;
-
+    pub async fn run<W: WriterProxy, E: EventHandler>(
+        &mut self,
+        mut tui: Tui<W, E>,
+    ) -> AppResult<()> {
         let mut last_network_handler_init = 0;
 
-        while self.running {
+        while self.state != AppState::Quitting {
             let now = Tick::now();
-            if self.network_handler.is_none()
+
+            if self.state == AppState::Simulating {
+                info!("Starting world simulation...");
+                self.simulate_loaded_world(&mut tui).await;
+            }
+
+            if self.network_port.is_some()
+                && self.network_handler.is_none()
                 && self.world.has_own_team()
                 && now - last_network_handler_init > NETWORK_HANDLER_INIT_INTERVAL
             {
@@ -146,22 +271,36 @@ impl App {
             }
 
             select! {
-                // music_player = tokio::task::spawn(audio::music_player::MusicPlayer::play()).fuse() => self.audio_player = Some(music_player??),
                 Some(streaming_data) = Self::conditional_audio_event(& self.audio_player) =>  self.handle_streaming_data(streaming_data)?,
                 Some(swarm_event) = Self::conditional_network_event(&mut self.network_handler) =>  self.handle_network_events(swarm_event)?,
-                app_event = tui.events.next()? => match app_event{
-                    TerminalEvent::Tick {tick} => {
-                            self.handle_tick_events(tick)?;
-                            tui.draw(&mut self.ui, &self.world, self.audio_player.as_ref())?;
+                app_event = tui.events.next() => {
+
+                    match app_event{
+                        TerminalEvent::Tick {tick} => {
+                                self.handle_tick_events(tick)?;
+                            if let Err(e) = tui.draw(&mut self.ui, &self.world, self.audio_player.as_ref()).await {
+                                error!("Drawing error: {e}");
+                            }
+                        }
+                        TerminalEvent::Key(key_event) => {
+                            self.handle_key_events(key_event)?;
+                            if let Err(e) = tui.draw(&mut self.ui, &self.world, self.audio_player.as_ref()).await {
+                                error!("Drawing error: {e}");
+                            }
+                            },
+                        TerminalEvent::Mouse(mouse_event) => {self.handle_mouse_events(mouse_event)?;
+                            if let Err(e) = tui.draw(&mut self.ui, &self.world, self.audio_player.as_ref()).await {
+                                error!("Drawing error: {e}");
+                            }
+                            },
+                        TerminalEvent::Resize(w, h) => tui.resize((w, h))?,
+                        TerminalEvent::Quit => self.quit()?,
                     }
-                    TerminalEvent::Key(key_event) => self.handle_key_events(key_event)?,
-                    TerminalEvent::Mouse(mouse_event) => self.handle_mouse_events(mouse_event)?,
-                    TerminalEvent::Resize(_, _) => {}
                 }
             }
         }
         info!("Game loop closed");
-        tui.exit()?;
+        tui.exit().await?;
         Ok(())
     }
 
@@ -177,35 +316,12 @@ impl App {
             Ok(w) => self.world = w,
             Err(e) => panic!("Failed to load world: {}", e),
         }
-
-        let simulation = self.world.simulate_until_now();
-
-        match simulation {
-            Ok(callbacks) => {
-                for callback in callbacks.iter() {
-                    match callback.call(self) {
-                        Ok(Some(text)) => {
-                            self.ui
-                                .push_popup(PopupMessage::Ok(text, true, Tick::now()));
-                        }
-                        Ok(None) => {}
-                        Err(e) => {
-                            panic!("Failed to load world: {}", e);
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                panic!("Failed to simulate world: {}", e);
-            }
-        }
-        self.world.serialized_size =
-            get_world_size(&self.store_prefix).expect("Failed to get world size");
+        self.state = AppState::Simulating;
     }
 
     /// Set running to false to quit the application.
     pub fn quit(&mut self) -> AppResult<()> {
-        self.running = false;
+        self.state = AppState::Quitting;
 
         // save world and backup
         if self.world.has_own_team() {
@@ -230,11 +346,9 @@ impl App {
     }
 
     /// Handles the tick event of the terminal.
-    pub fn handle_tick_events(&mut self, current_timestamp: Tick) -> AppResult<()> {
+    pub fn handle_tick_events(&mut self, current_tick: Tick) -> AppResult<()> {
         if self.world.has_own_team() {
-            let tick_result = self.world.handle_tick_events(current_timestamp, false);
-
-            match tick_result {
+            match self.world.handle_tick_events(current_tick) {
                 Ok(callbacks) => {
                     for callback in callbacks.iter() {
                         match callback.call(self) {
@@ -244,11 +358,8 @@ impl App {
                             }
                             Ok(None) => {}
                             Err(e) => {
-                                self.ui.push_popup(PopupMessage::Error(
-                                    e.to_string(),
-                                    true,
-                                    Tick::now(),
-                                ));
+                                self.ui
+                                    .push_popup(PopupMessage::Error(e.to_string(), Tick::now()));
                             }
                         }
                     }
@@ -256,7 +367,6 @@ impl App {
                 Err(e) => {
                     self.ui.push_popup(PopupMessage::Error(
                         format!("Tick error\n{}", e.to_string()),
-                        true,
                         Tick::now(),
                     ));
                 }
@@ -278,9 +388,6 @@ impl App {
 
         if self.world.dirty && self.world.has_own_team() {
             self.world.dirty = false;
-            let mut own_team = self.world.get_own_team()?.clone();
-            own_team.version += 1;
-            self.world.teams.insert(own_team.id, own_team);
             save_world(&self.world, false, &self.store_prefix).expect("Failed to save world");
             self.world.serialized_size =
                 get_world_size(&self.store_prefix).expect("Failed to get world size");
@@ -331,11 +438,8 @@ impl App {
                         }
                         Ok(None) => {}
                         Err(e) => {
-                            self.ui.push_popup(PopupMessage::Error(
-                                e.to_string(),
-                                true,
-                                Tick::now(),
-                            ));
+                            self.ui
+                                .push_popup(PopupMessage::Error(e.to_string(), Tick::now()));
                         }
                     }
                 }
@@ -356,7 +460,7 @@ impl App {
                 Ok(None) => {}
                 Err(e) => {
                     self.ui
-                        .push_popup(PopupMessage::Error(e.to_string(), true, Tick::now()));
+                        .push_popup(PopupMessage::Error(e.to_string(), Tick::now()));
                 }
             }
         }

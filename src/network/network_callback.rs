@@ -1,7 +1,7 @@
 use super::challenge::Challenge;
 use super::trade::Trade;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
-use crate::engine::types::TeamInGame;
+use crate::game_engine::types::TeamInGame;
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::ui::popup_message::PopupMessage;
 use crate::ui::utils::SwarmPanelEvent;
@@ -12,7 +12,7 @@ use libp2p::gossipsub::TopicHash;
 use libp2p::{gossipsub::Message, Multiaddr, PeerId};
 
 #[derive(Debug, Clone)]
-pub enum NetworkCallbackPreset {
+pub enum NetworkCallback {
     PushSwarmPanelChat {
         timestamp: Tick,
         peer_id: PeerId,
@@ -43,7 +43,7 @@ pub enum NetworkCallbackPreset {
         message: Message,
     },
 }
-impl NetworkCallbackPreset {
+impl NetworkCallback {
     fn push_swarm_panel_message(timestamp: Tick, peer_id: PeerId, text: String) -> AppCallback {
         Box::new(move |app: &mut App| {
             let event = SwarmPanelEvent {
@@ -453,7 +453,6 @@ impl NetworkCallbackPreset {
 
                     app.ui.push_popup(PopupMessage::Error(
                         format!("Trade failed: {}", error_message),
-                        true,
                         Tick::now(),
                     ));
 
@@ -665,7 +664,6 @@ impl NetworkCallbackPreset {
 
                     app.ui.push_popup(PopupMessage::Error(
                         format!("Challenge failed: {}", error_message),
-                        true,
                         Tick::now(),
                     ));
 

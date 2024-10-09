@@ -1,7 +1,7 @@
 use super::button::Button;
 use super::constants::{UiKey, UiStyle, UiText};
 use super::gif_map::{self, TREASURE_GIF};
-use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::utils::{
     hover_text_target, img_to_lines, input_from_key_event, validate_textarea_input,
 };
@@ -30,17 +30,19 @@ const TREASURE_GIF_ANIMATION_DELAY: Tick = 450;
 
 #[derive(Debug, Display, Clone, PartialEq)]
 pub enum PopupMessage {
-    Error(String, bool, Tick),
+    Error(String, Tick),
     Ok(String, bool, Tick),
-    Dialog(String, Vec<(String, UiCallbackPreset)>, Tick),
+    Dialog(String, Vec<(String, UiCallback)>, Tick),
     ReleasePlayer(String, PlayerId, Tick),
     AsteroidNameDialog(Tick),
     PortalFound(String, String, Tick),
     ExplorationResult(HashMap<Resource, u32>, Vec<Player>, Tick),
     TeamLanded(String, String, String, Tick),
+    Tutorial(usize, Tick),
 }
 
 impl PopupMessage {
+    const MAX_TUTORIAL_PAGE: usize = 2;
     fn rect(&self, area: Rect) -> Rect {
         let (width, height) = match self {
             PopupMessage::AsteroidNameDialog(..) => (54, 28),
@@ -85,15 +87,19 @@ impl PopupMessage {
 
     pub fn is_skippable(&self) -> bool {
         match self {
-            PopupMessage::Error(_, skippable, _) | PopupMessage::Ok(_, skippable, _) => *skippable,
+            PopupMessage::Error(..) => true,
+            PopupMessage::Ok(_, skippable, _) => *skippable,
             _ => false,
         }
     }
+
+    // This function is necessary because we want to consume some inputs on the textarea (like backspaces).
+    // COuldn't find a better way at the moment.
     pub fn consumes_input(
         &self,
         popup_input: &mut TextArea<'static>,
         key_event: crossterm::event::KeyEvent,
-    ) -> Option<UiCallbackPreset> {
+    ) -> Option<UiCallback> {
         match self {
             PopupMessage::AsteroidNameDialog(tick) => {
                 if key_event.code == UiKey::YES_TO_DIALOG {
@@ -105,20 +111,32 @@ impl PopupMessage {
                         .collect();
                     if validate_textarea_input(popup_input, "Asteroid name".into()) {
                         let filename = format!("asteroid{}", tick % 30);
-                        return Some(UiCallbackPreset::NameAndAcceptAsteroid { name, filename });
+                        return Some(UiCallback::NameAndAcceptAsteroid { name, filename });
                     }
                 } else if key_event.code == UiKey::NO_TO_DIALOG {
                     if popup_input.lines()[0].len() == 0 {
-                        return Some(UiCallbackPreset::CloseUiPopup);
+                        return Some(UiCallback::CloseUiPopup);
                     }
                     popup_input.input(input_from_key_event(key_event));
                 } else {
                     popup_input.input(input_from_key_event(key_event));
                 }
             }
+
+            PopupMessage::Tutorial(index, _) => {
+                if key_event.code == UiKey::YES_TO_DIALOG
+                    && *index == PopupMessage::MAX_TUTORIAL_PAGE
+                {
+                    return Some(UiCallback::CloseUiPopup);
+                } else if key_event.code == UiKey::YES_TO_DIALOG {
+                    return Some(UiCallback::PushTutorialPage { index: index + 1 });
+                } else if key_event.code == UiKey::NO_TO_DIALOG {
+                    return Some(UiCallback::CloseUiPopup);
+                }
+            }
             _ => {
                 if key_event.code == UiKey::YES_TO_DIALOG || key_event.code == UiKey::NO_TO_DIALOG {
-                    return Some(UiCallbackPreset::CloseUiPopup);
+                    return Some(UiCallback::CloseUiPopup);
                 }
             }
         }
@@ -166,7 +184,7 @@ impl PopupMessage {
                 );
                 let button = Button::new(
                     UiText::YES.into(),
-                    UiCallbackPreset::CloseUiPopup,
+                    UiCallback::CloseUiPopup,
                     Arc::clone(&callback_registry),
                 )
                 .set_hover_text("Close the popup".into(), hover_text_target)
@@ -183,7 +201,7 @@ impl PopupMessage {
                 );
             }
 
-            PopupMessage::Error(message, _, tick) => {
+            PopupMessage::Error(message, tick) => {
                 frame.render_widget(
                     Paragraph::new(format!("Error: {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::ERROR))
@@ -201,7 +219,7 @@ impl PopupMessage {
                 );
                 let button = Button::new(
                     UiText::YES.into(),
-                    UiCallbackPreset::CloseUiPopup,
+                    UiCallback::CloseUiPopup,
                     Arc::clone(&callback_registry),
                 )
                 .set_hover_text("Close the popup".into(), hover_text_target)
@@ -241,7 +259,7 @@ impl PopupMessage {
                 .split(split[2]);
                 for idx in 0..options.len() {
                     let (text, callback) = options[idx].clone();
-                    let button = Button::new(text, callback, Arc::clone(&callback_registry))
+                    let button = Button::new(text.into(), callback, Arc::clone(&callback_registry))
                         .set_hover_text(
                             "Choose this option and close the popup".into(),
                             hover_text_target,
@@ -278,7 +296,7 @@ impl PopupMessage {
 
                 let confirm_button = Button::new(
                     UiText::YES.into(),
-                    UiCallbackPreset::ReleasePlayer {
+                    UiCallback::ConfirmReleasePlayer {
                         player_id: player_id.clone(),
                     },
                     Arc::clone(&callback_registry),
@@ -295,7 +313,7 @@ impl PopupMessage {
 
                 let no_button = Button::new(
                     UiText::NO.into(),
-                    UiCallbackPreset::CloseUiPopup,
+                    UiCallback::CloseUiPopup,
                     Arc::clone(&callback_registry),
                 )
                 .set_hover_text(format!("Don't release {}", player_name), hover_text_target)
@@ -371,7 +389,7 @@ impl PopupMessage {
 
                 let mut ok_button = Button::new(
                     UiText::YES.into(),
-                    UiCallbackPreset::NameAndAcceptAsteroid { name, filename },
+                    UiCallback::NameAndAcceptAsteroid { name, filename },
                     Arc::clone(&callback_registry),
                 )
                 .set_hover_text(
@@ -390,7 +408,7 @@ impl PopupMessage {
 
                 let no_button = Button::new(
                     UiText::NO.into(),
-                    UiCallbackPreset::CloseUiPopup,
+                    UiCallback::CloseUiPopup,
                     Arc::clone(&callback_registry),
                 )
                 .set_hover_text("Leave the asteroid alone!".into(), hover_text_target)
@@ -449,7 +467,7 @@ impl PopupMessage {
 
                 let button = Button::new(
                     UiText::YES.into(),
-                    UiCallbackPreset::CloseUiPopup,
+                    UiCallback::CloseUiPopup,
                     Arc::clone(&callback_registry),
                 )
                 .set_hover_text("Close the popup".into(), hover_text_target)
@@ -560,7 +578,7 @@ impl PopupMessage {
 
                 let button = Button::new(
                     UiText::YES.into(),
-                    UiCallbackPreset::CloseUiPopup,
+                    UiCallback::CloseUiPopup,
                     Arc::clone(&callback_registry),
                 )
                 .set_hover_text("Close the popup".into(), hover_text_target)
@@ -622,7 +640,7 @@ impl PopupMessage {
 
                 let button = Button::new(
                     UiText::YES.into(),
-                    UiCallbackPreset::CloseUiPopup,
+                    UiCallback::CloseUiPopup,
                     Arc::clone(&callback_registry),
                 )
                 .set_hover_text("Close the popup".into(), hover_text_target)
@@ -637,6 +655,66 @@ impl PopupMessage {
                         horizontal: 8,
                     }),
                 );
+            }
+
+            PopupMessage::Tutorial(index, _) => {
+                frame.render_widget(
+                    Paragraph::new(format!(
+                        "Tutorial {}/{}",
+                        index + 1,
+                        PopupMessage::MAX_TUTORIAL_PAGE + 1
+                    ))
+                    .block(default_block().border_style(UiStyle::NETWORK))
+                    .centered(),
+                    split[0],
+                );
+
+                let message = match index {
+                    0 => "Hello pirate! This is your team page.\nHere you can check your pirates and ship and interact with the market.",
+                    1 => "To start, you can try to challenge another team to a game,\nor maybe explore around your planet to gather resources.",
+                    _ => "Have fun!"
+                };
+
+                frame.render_widget(
+                    Paragraph::new(message).centered().wrap(Wrap { trim: true }),
+                    split[1].inner(Margin {
+                        horizontal: 1,
+                        vertical: 1,
+                    }),
+                );
+
+                let next_button = Button::new(
+                    "Next >>".into(),
+                    UiCallback::PushTutorialPage { index: index + 1 },
+                    Arc::clone(&callback_registry),
+                )
+                .set_hover_text("Next tutorial".into(), hover_text_target)
+                .set_hotkey(UiKey::YES_TO_DIALOG)
+                .set_box_style(UiStyle::OK)
+                .set_layer(1);
+
+                let close_button = Button::new(
+                    "Close".into(),
+                    UiCallback::CloseUiPopup,
+                    Arc::clone(&callback_registry),
+                )
+                .set_hover_text("Skip the tutorial".into(), hover_text_target)
+                .set_hotkey(UiKey::NO_TO_DIALOG)
+                .set_box_style(UiStyle::ERROR)
+                .set_layer(1);
+
+                match index {
+                    x if *x < PopupMessage::MAX_TUTORIAL_PAGE => {
+                        let buttons_split =
+                            Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                                .split(split[2]);
+                        frame.render_widget(next_button, buttons_split[0]);
+                        frame.render_widget(close_button, buttons_split[1]);
+                    }
+                    _ => {
+                        frame.render_widget(close_button, split[2]);
+                    }
+                }
             }
         }
         Ok(())

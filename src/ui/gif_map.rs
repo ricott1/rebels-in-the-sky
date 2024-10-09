@@ -2,7 +2,7 @@ use crate::{
     image::{
         color_map::AsteroidColorMap,
         types::*,
-        utils::{read_image, ExtraImageUtils, TRAVELLING_BACKGROUND, UNIVERSE_BACKGROUND},
+        utils::{open_image, ExtraImageUtils, TRAVELLING_BACKGROUND, UNIVERSE_BACKGROUND},
     },
     types::{AppResult, PlanetId, PlayerId, TeamId},
     world::{
@@ -21,6 +21,45 @@ use std::collections::HashMap;
 const MAX_GIF_WIDTH: u32 = 160;
 const MAX_GIF_HEIGHT: u32 = 140;
 pub const FRAMES_PER_REVOLUTION: usize = 360;
+
+pub static SPINNING_BALL_GIF: Lazy<GifLines> = Lazy::new(|| {
+    Gif::open("game/spinning_ball.gif".to_string())
+        .expect("Left shot gif should open")
+        .iter()
+        .map(|img: &RgbaImage| {
+            let base = &mut UNIVERSE_BACKGROUND.clone();
+            // FIXME: Hardcoded from assets file, should be taken from Sol planet.
+            let x_blit = MAX_GIF_WIDTH / 2 + 30;
+            let y_blit = MAX_GIF_HEIGHT / 2 + 20;
+
+            // Blit img on base
+            base.copy_non_trasparent_from(&mut img.clone(), x_blit, y_blit)
+                .unwrap();
+
+            let center = (x_blit + img.width() / 2, y_blit + img.height() / 2);
+            base.view(
+                center.0 - MAX_GIF_WIDTH / 2,
+                center.1 - MAX_GIF_HEIGHT / 2,
+                MAX_GIF_WIDTH,
+                MAX_GIF_HEIGHT,
+            )
+            .to_image()
+        })
+        .collect::<Gif>()
+        .to_lines()
+});
+
+pub static LEFT_SHOT_GIF: Lazy<GifLines> = Lazy::new(|| {
+    Gif::open("game/left_shot.gif".to_string())
+        .expect("Left shot gif should open")
+        .to_lines()
+});
+
+pub static RIGHT_SHOT_GIF: Lazy<GifLines> = Lazy::new(|| {
+    Gif::open("game/right_shot.gif".to_string())
+        .expect("Right shot gif should open")
+        .to_lines()
+});
 
 pub static PORTAL_GIFS: Lazy<Vec<GifLines>> = Lazy::new(|| {
     vec![
@@ -89,7 +128,7 @@ impl GifMap {
         player.compose_image()
     }
 
-    pub fn player_frame_lines(&mut self, player: &Player, tick: usize) -> AppResult<FrameLines> {
+    pub fn player_frame_lines(&mut self, player: &Player, tick: usize) -> AppResult<ImageLines> {
         if let Some((version, lines)) = self.players_lines.get(&player.id) {
             if player.version == *version {
                 return Ok(lines[(tick / 8) % lines.len()].clone());
@@ -112,14 +151,14 @@ impl GifMap {
         let y_blit = MAX_GIF_HEIGHT / 2 + planet.axis.1 as u32;
         let gif = if planet.planet_type == PlanetType::Asteroid {
             let mut img =
-                read_image(format!("asteroids/{}.png", planet.filename.clone()).as_str())?;
+                open_image(format!("asteroids/{}.png", planet.filename.clone()).as_str())?;
 
             let color_map = AsteroidColorMap::Base.color_map();
             vec![img.apply_color_map(color_map).clone()]
         } else {
             Gif::open(format!("planets/{}_full.gif", planet.filename.clone()))?
                 .iter()
-                .map(|img: &GifFrame| {
+                .map(|img: &RgbaImage| {
                     let base = &mut UNIVERSE_BACKGROUND.clone();
 
                     // Blit img on base
@@ -145,7 +184,7 @@ impl GifMap {
         planet_id: PlanetId,
         tick: usize,
         world: &World,
-    ) -> AppResult<FrameLines> {
+    ) -> AppResult<ImageLines> {
         if let Some(lines) = self.planets_zoom_in_lines.get(&planet_id) {
             return Ok(lines[tick % lines.len()].clone());
         }
@@ -162,7 +201,7 @@ impl GifMap {
 
     // We handle the asteroid as a special case because we have no zoomout iamges for them.
     pub fn asteroid_zoom_out(filename: &str) -> AppResult<Gif> {
-        let mut img = read_image(format!("asteroids/{filename}.png",).as_str())?;
+        let mut img = open_image(format!("asteroids/{filename}.png",).as_str())?;
         let color_map = AsteroidColorMap::Base.color_map();
 
         let size = ImageResizeInGalaxyGif::ZoomOutCentral {
@@ -215,7 +254,7 @@ impl GifMap {
                 .size();
 
                 let gif = if satellite.planet_type == PlanetType::Asteroid {
-                    let mut img = read_image(
+                    let mut img = open_image(
                         format!("asteroids/{}.png", satellite.filename.clone()).as_str(),
                     )?;
                     let color_map = AsteroidColorMap::Base.color_map();
@@ -227,7 +266,7 @@ impl GifMap {
                     ))?
                 };
 
-                let g: Vec<GifFrame> = gif
+                let g: Vec<RgbaImage> = gif
                     .iter()
                     .map(|img| {
                         //We resize twice to try to get nicer looking results
@@ -335,7 +374,7 @@ impl GifMap {
         planet: &Planet,
         tick: usize,
         world: &World,
-    ) -> AppResult<FrameLines> {
+    ) -> AppResult<ImageLines> {
         if let Some((version, lines)) = self.planets_zoom_out_lines.get(&planet.id) {
             if planet.version == *version {
                 return Ok(lines[tick % lines.len()].clone());
@@ -358,7 +397,7 @@ impl GifMap {
         team_id: TeamId,
         tick: usize,
         world: &World,
-    ) -> AppResult<FrameLines> {
+    ) -> AppResult<ImageLines> {
         if let Some(lines) = self.on_planet_spaceship_lines.get(&team_id) {
             return Ok(lines[tick % lines.len()].clone());
         }
@@ -376,7 +415,7 @@ impl GifMap {
         team_id: TeamId,
         tick: usize,
         world: &World,
-    ) -> AppResult<FrameLines> {
+    ) -> AppResult<ImageLines> {
         if let Some(lines) = self.in_shipyard_spaceship_lines.get(&team_id) {
             return Ok(lines[tick % lines.len()].clone());
         }
@@ -394,7 +433,7 @@ impl GifMap {
         team_id: TeamId,
         tick: usize,
         world: &World,
-    ) -> AppResult<FrameLines> {
+    ) -> AppResult<ImageLines> {
         if let Some(lines) = self.travelling_spaceship_lines.get(&team_id) {
             return Ok(lines[tick % lines.len()].clone());
         }
@@ -402,7 +441,7 @@ impl GifMap {
         let team = world.get_team_or_err(team_id)?;
         let ship_gif = team.spaceship.compose_image()?;
         let base = TRAVELLING_BACKGROUND.clone();
-        let mut gif: Vec<GifFrame> = vec![];
+        let mut gif: Vec<RgbaImage> = vec![];
         // 160 frames
         let mut idx = 0;
         loop {
@@ -444,7 +483,7 @@ impl GifMap {
         team_id: TeamId,
         tick: usize,
         world: &World,
-    ) -> AppResult<FrameLines> {
+    ) -> AppResult<ImageLines> {
         if let Some(lines) = self.exploring_spaceship_lines.get(&team_id) {
             return Ok(lines[tick % lines.len()].clone());
         }
@@ -452,7 +491,7 @@ impl GifMap {
         let team = world.get_team_or_err(team_id)?;
         let ship_gif = team.spaceship.compose_image()?;
         let base = TRAVELLING_BACKGROUND.clone();
-        let mut gif: Vec<GifFrame> = vec![];
+        let mut gif: Vec<RgbaImage> = vec![];
         // 160 frames
         let mut idx = 0;
         loop {

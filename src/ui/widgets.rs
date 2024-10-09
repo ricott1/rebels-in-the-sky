@@ -6,11 +6,11 @@ use super::{
     hover_text_line::HoverTextLine,
     hover_text_span::HoverTextSpan,
     traits::UiStyled,
-    ui_callback::{CallbackRegistry, UiCallbackPreset},
+    ui_callback::{CallbackRegistry, UiCallback},
     utils::{format_satoshi, hover_text_target},
 };
 use crate::{
-    engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
+    game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
     image::{player::PLAYER_IMAGE_WIDTH, spaceship::SPACESHIP_IMAGE_WIDTH},
     types::{AppResult, PlayerId, SystemTimeTick, Tick},
     world::{
@@ -76,8 +76,8 @@ pub fn go_to_team_current_planet_button<'a>(
 ) -> AppResult<Button<'a>> {
     let go_to_team_current_planet_button = match team.current_location {
         TeamLocation::OnPlanet { planet_id } => Button::new(
-            format!("On planet {}", world.get_planet_or_err(planet_id)?.name),
-            UiCallbackPreset::GoToCurrentTeamPlanet { team_id: team.id },
+            format!("On planet {}", world.get_planet_or_err(planet_id)?.name).into(),
+            UiCallback::GoToCurrentTeamPlanet { team_id: team.id },
             Arc::clone(&callback_registry),
         )
         .set_hover_text(
@@ -95,13 +95,12 @@ pub fn go_to_team_current_planet_button<'a>(
         } => {
             let to = world.get_planet_or_err(to)?.name.to_string();
             let text = if started + duration > world.last_tick_short_interval + 3 * SECONDS {
-                format!("Travelling to {}", to)
+                format!("Travelling to {}", to).into()
             } else {
                 "Landing".into()
             };
 
-            let mut button =
-                Button::new(text, UiCallbackPreset::None, Arc::clone(&callback_registry));
+            let mut button = Button::new(text, UiCallback::None, Arc::clone(&callback_registry));
             button.disable(None);
             button.set_hover_text(format!("Travelling to planet {}", to), hover_text_target)
         }
@@ -122,8 +121,8 @@ pub fn go_to_team_current_planet_button<'a>(
                 (0 as Tick).formatted()
             };
             let mut button = Button::new(
-                format!("{} {}", text, countdown),
-                UiCallbackPreset::None,
+                format!("{} {}", text, countdown).into(),
+                UiCallback::None,
                 Arc::clone(&callback_registry),
             );
             button.disable(None);
@@ -148,7 +147,7 @@ pub fn drink_button<'a>(
 
     let mut button = Button::new(
         "Drink!".into(),
-        UiCallbackPreset::Drink { player_id },
+        UiCallback::Drink { player_id },
         Arc::clone(&callback_registry),
     )
     .set_hotkey(UiKey::DRINK)
@@ -173,8 +172,8 @@ pub fn go_to_team_home_planet_button<'a>(
 ) -> AppResult<Button<'a>> {
     let planet_name = world.get_planet_or_err(team.home_planet_id)?.name.clone();
     Ok(Button::new(
-        format!("Home planet: {planet_name}",),
-        UiCallbackPreset::GoToHomePlanet { team_id: team.id },
+        format!("Home planet: {planet_name}").into(),
+        UiCallback::GoToHomePlanet { team_id: team.id },
         Arc::clone(&callback_registry),
     )
     .set_hover_text(
@@ -205,8 +204,8 @@ pub fn render_challenge_button<'a>(
         .split(area);
 
         let accept_button = Button::new(
-            format!("{:6^}", UiText::YES),
-            UiCallbackPreset::AcceptChallenge {
+            format!("{:6^}", UiText::YES).into(),
+            UiCallback::AcceptChallenge {
                 challenge: challenge.clone(),
             },
             Arc::clone(&callback_registry),
@@ -218,8 +217,8 @@ pub fn render_challenge_button<'a>(
         );
 
         let decline_button = Button::new(
-            format!("{:6^}", UiText::NO),
-            UiCallbackPreset::DeclineChallenge {
+            format!("{:6^}", UiText::NO).into(),
+            UiCallback::DeclineChallenge {
                 challenge: challenge.clone(),
             },
             Arc::clone(&callback_registry),
@@ -261,8 +260,8 @@ pub fn render_challenge_button<'a>(
                 "Unknown game".to_string()
             };
             Button::new(
-                format!("Playing - {}", game_text),
-                UiCallbackPreset::GoToGame { game_id },
+                format!("Playing - {}", game_text).into(),
+                UiCallback::GoToGame { game_id },
                 Arc::clone(&callback_registry),
             )
             .set_hover_text("Go to team's game".into(), hover_text_target)
@@ -270,7 +269,7 @@ pub fn render_challenge_button<'a>(
         } else {
             let mut button = Button::new(
                 "Challenge".into(),
-                UiCallbackPreset::ChallengeTeam { team_id: team.id },
+                UiCallback::ChallengeTeam { team_id: team.id },
                 Arc::clone(&callback_registry),
             )
             .set_hover_text(
@@ -319,8 +318,8 @@ pub fn trade_resource_button<'a>(
     };
 
     let mut button = Button::new(
-        format!("{amount:^+}"),
-        UiCallbackPreset::TradeResource {
+        format!("{amount:^+}").into(),
+        UiCallback::TradeResource {
             resource,
             amount,
             unit_cost,
@@ -384,8 +383,8 @@ fn explore_button<'a>(
             };
 
             let mut button = Button::new(
-                format!("{} ({})",explore_text, duration.formatted()),
-                UiCallbackPreset::ExploreAroundPlanet { duration },
+                format!("{} ({})",explore_text, duration.formatted()).into(),
+                UiCallback::ExploreAroundPlanet { duration },
                 Arc::clone(&callback_registry),
             )
             .set_hover_text(
@@ -412,13 +411,12 @@ fn explore_button<'a>(
         } => {
             let to = world.get_planet_or_err(to)?.name.to_string();
             let text = if started + duration > world.last_tick_short_interval + 3 * SECONDS {
-                format!("Travelling to {}", to)
+                format!("Travelling to {}", to).into()
             } else {
                 "Landing".into()
             };
 
-            let mut button =
-                Button::new(text, UiCallbackPreset::None, Arc::clone(&callback_registry));
+            let mut button = Button::new(text, UiCallback::None, Arc::clone(&callback_registry));
             button.disable(None);
             button.set_hover_text(format!("Travelling to planet {}", to), hover_text_target)
         }
@@ -439,8 +437,8 @@ fn explore_button<'a>(
                 (0 as Tick).formatted()
             };
             let mut button = Button::new(
-                format!("{} {}", text, countdown),
-                UiCallbackPreset::None,
+                format!("{} {}", text, countdown).into(),
+                UiCallback::None,
                 Arc::clone(&callback_registry),
             );
             button.disable(None);
@@ -483,8 +481,7 @@ pub fn long_explore_button<'a>(
         LONG_EXPLORATION_TIME,
     )
 }
-pub(crate) fn get_storage_lengths(team: &Team) -> Vec<usize> {
-    let bars_length = 25;
+pub(crate) fn get_storage_lengths(team: &Team, bars_length: usize) -> Vec<usize> {
     let gold = team
         .resources
         .get(&Resource::GOLD)
@@ -573,8 +570,9 @@ pub fn upgrade_spaceship_button<'a>(
             "Upgrade {} ({})",
             upgrade.target()?,
             upgrade.duration.formatted()
-        ),
-        UiCallbackPreset::SetUpgradeSpaceship {
+        )
+        .into(),
+        UiCallback::SetUpgradeSpaceship {
             upgrade: upgrade.clone(),
         },
         Arc::clone(&callback_registry),
@@ -591,8 +589,10 @@ pub fn upgrade_spaceship_button<'a>(
     Ok(upgrade_button)
 }
 
-pub fn get_storage_spans(team: &Team) -> Vec<Span> {
-    if let [gold_length, scraps_length, rum_length, free_bars] = get_storage_lengths(team)[..4] {
+pub fn get_storage_spans(team: &Team, bars_length: usize) -> Vec<Span> {
+    if let [gold_length, scraps_length, rum_length, free_bars] =
+        get_storage_lengths(team, bars_length)[..4]
+    {
         vec![
             Span::raw(format!("Stiva: ",)),
             Span::styled("▰".repeat(gold_length), UiStyle::STORAGE_GOLD),
@@ -637,30 +637,22 @@ pub fn get_crew_spans(team: &Team) -> Vec<Span> {
     ]
 }
 
-pub fn get_fuel_spans(team: &Team) -> Vec<Span> {
-    let bars_length = 25;
-
-    let fuel_length = (team.fuel() as f32 / team.spaceship.fuel_capacity() as f32
-        * bars_length as f32)
-        .round() as usize;
+pub fn get_fuel_spans<'a>(fuel: u32, fuel_capacity: u32, bars_length: usize) -> Vec<Span<'a>> {
+    let fuel_length = (fuel as f32 / fuel_capacity as f32 * bars_length as f32).round() as usize;
     let fuel_bars = format!(
         "{}{}",
         "▰".repeat(fuel_length),
         "▱".repeat(bars_length - fuel_length),
     );
 
-    let fuel_style = (20.0 * (team.fuel() as f32 / team.spaceship.fuel_capacity() as f32))
+    let fuel_style = (20.0 * (fuel as f32 / fuel_capacity as f32))
         .bound()
         .style();
 
     vec![
         Span::raw(format!("Tank:  ",)),
         Span::styled(fuel_bars, fuel_style),
-        Span::raw(format!(
-            " {}/{} t",
-            team.fuel(),
-            team.spaceship.fuel_capacity()
-        )),
+        Span::raw(format!(" {}/{} t", fuel, fuel_capacity)),
     ]
 }
 
@@ -703,8 +695,12 @@ pub fn render_spaceship_description(
                 team.spaceship_speed() * HOURS as f32 / AU as f32
             )),
             Line::from(get_crew_spans(team)),
-            Line::from(get_fuel_spans(team)),
-            Line::from(get_storage_spans(team)),
+            Line::from(get_fuel_spans(
+                team.fuel(),
+                team.spaceship.fuel_capacity(),
+                BARS_LENGTH,
+            )),
+            Line::from(get_storage_spans(team, BARS_LENGTH)),
             Line::from(format!(
                 "Consumption: {:.2} t/h",
                 team.spaceship_fuel_consumption() * HOURS as f32
@@ -1080,7 +1076,7 @@ pub fn render_player_description(
                 "Reputation {}  ",
                 player.reputation.stars()
             )),
-            format!("Reputation indicates how much the player is known and respected in the galaxy. It influences special trait bonuses and the player's hiring cost. (current value {})", player.reputation.value()),
+            format!("Reputation indicates how much the player is respected in the galaxy. It influences special bonuses and hiring cost. (current value {})", player.reputation.value()),
             hover_text_target,
             Arc::clone(&callback_registry),
         ),
@@ -1096,8 +1092,6 @@ pub fn render_player_description(
         )
     ]);
     frame.render_widget(line, header_body_stats[1]);
-
-    let bars_length = 25;
 
     let mut morale = player.morale;
     // Check if player is currently playing.
@@ -1118,11 +1112,11 @@ pub fn render_player_description(
         }
     }
 
-    let morale_length = (morale / MAX_MORALE * bars_length as f32).round() as usize;
+    let morale_length = (morale / MAX_MORALE * BARS_LENGTH as f32).round() as usize;
     let morale_string = format!(
         "{}{}",
         "▰".repeat(morale_length),
-        "▱".repeat(bars_length - morale_length),
+        "▱".repeat(BARS_LENGTH - morale_length),
     );
     let morale_style = match morale {
         x if x > 1.75 * MORALE_THRESHOLD_FOR_LEAVING => UiStyle::OK,
@@ -1171,10 +1165,10 @@ pub fn render_player_description(
         }
     }
 
-    let tiredness_length = (tiredness / MAX_TIREDNESS * bars_length as f32).round() as usize;
+    let tiredness_length = (tiredness / MAX_TIREDNESS * BARS_LENGTH as f32).round() as usize;
     let energy_string = format!(
         "{}{}",
-        "▰".repeat(bars_length - tiredness_length),
+        "▰".repeat(BARS_LENGTH - tiredness_length),
         "▱".repeat(tiredness_length),
     );
     let energy_style = match tiredness {
@@ -1369,13 +1363,21 @@ mod tests {
         world::{resources::Resource, spaceship::SpaceshipPrefab, team::Team},
     };
 
+    use super::BARS_LENGTH;
+
     #[test]
     fn test_storage_spans() {
-        let mut team = Team::random(TeamId::new_v4(), PlanetId::new_v4(), "test".into());
+        let mut team = Team::random(
+            TeamId::new_v4(),
+            PlanetId::new_v4(),
+            "test".into(),
+            "test".into(),
+        );
         team.spaceship = SpaceshipPrefab::Bresci.spaceship("test".into(), ColorMap::random());
 
-        let bars_length = 25;
-        if let [gold_length, scraps_length, rum_length, free_bars] = get_storage_lengths(&team)[..4]
+        let bars_length = BARS_LENGTH;
+        if let [gold_length, scraps_length, rum_length, free_bars] =
+            get_storage_lengths(&team, bars_length)[..4]
         {
             println!("{:?}", team.resources);
             println!(
@@ -1402,7 +1404,8 @@ mod tests {
         team.add_resource(Resource::SCRAPS, 178);
         team.add_resource(Resource::RUM, 11);
 
-        if let [gold_length, scraps_length, rum_length, free_bars] = get_storage_lengths(&team)[..4]
+        if let [gold_length, scraps_length, rum_length, free_bars] =
+            get_storage_lengths(&team, bars_length)[..4]
         {
             println!("{:?}", team.resources);
             println!(
@@ -1428,7 +1431,8 @@ mod tests {
         team.add_resource(Resource::SCRAPS, 24);
         team.add_resource(Resource::GOLD, 1);
 
-        if let [gold_length, scraps_length, rum_length, free_bars] = get_storage_lengths(&team)[..4]
+        if let [gold_length, scraps_length, rum_length, free_bars] =
+            get_storage_lengths(&team, bars_length)[..4]
         {
             println!("{:?}", team.resources);
             println!(

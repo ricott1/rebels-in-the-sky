@@ -187,6 +187,7 @@ pub enum ShirtImage {
     Stripe,
     Pirate,
     PirateAlt,
+    PirateGald,
 }
 
 impl ImageComponent for ShirtImage {
@@ -225,6 +226,7 @@ pub enum ShortsImage {
     Stripe,
     Pirate,
     PirateAlt,
+    PirateGald,
     Pupparoll,
 }
 

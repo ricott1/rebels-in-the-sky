@@ -1,7 +1,7 @@
 use super::color_map::{ColorMap, ColorPreset};
 use super::components::*;
 use super::types::Gif;
-use super::utils::{read_image, ExtraImageUtils};
+use super::utils::{open_image, ExtraImageUtils};
 use crate::types::AppResult;
 use crate::world::spaceship::{Engine, Hull, SpaceshipComponent, Storage};
 use image::RgbaImage;
@@ -35,8 +35,8 @@ impl SpaceshipImage {
     ) -> AppResult<Gif> {
         let mut gif = Gif::new();
 
-        let mut hull_img = read_image(hull.select_file(size).as_str())?;
-        let mask = read_image(hull.select_mask_file(size).as_str())?;
+        let mut hull_img = open_image(hull.select_file(size).as_str())?;
+        let mask = open_image(hull.select_mask_file(size).as_str())?;
         hull_img.apply_color_map_with_shadow_mask(self.color_map, &mask);
         let hull_x = (SPACESHIP_IMAGE_WIDTH - hull_img.width()) / 2;
         let hull_y = (SPACESHIP_IMAGE_HEIGHT - hull_img.height()) / 2;
@@ -61,7 +61,7 @@ impl SpaceshipImage {
                 blue: color_presets[2].to_rgb(),
             };
 
-            let mut engine = read_image(engine.select_file(size).as_str())?;
+            let mut engine = open_image(engine.select_file(size).as_str())?;
             let eng_x = (SPACESHIP_IMAGE_WIDTH - engine.width()) / 2;
             let eng_y = 0;
             engine.apply_color_map(color_map);
@@ -72,8 +72,8 @@ impl SpaceshipImage {
             match storage {
                 Storage::PincherNone | Storage::ShuttleNone | Storage::JesterNone => {}
                 _ => {
-                    let mut storage_img = read_image(storage.select_file(size).as_str())?;
-                    let mask = read_image(storage.select_mask_file(size).as_str())?;
+                    let mut storage_img = open_image(storage.select_file(size).as_str())?;
+                    let mask = open_image(storage.select_mask_file(size).as_str())?;
                     storage_img.apply_color_map_with_shadow_mask(self.color_map, &mask);
                     let stg_x = (SPACESHIP_IMAGE_WIDTH - storage_img.width()) / 2;
                     let stg_y = (SPACESHIP_IMAGE_HEIGHT - storage_img.height()) / 2;
@@ -84,7 +84,7 @@ impl SpaceshipImage {
             base.copy_non_trasparent_from(&hull_img, hull_x, hull_y)?;
 
             if in_shipyard {
-                let shipyard_img = read_image(
+                let shipyard_img = open_image(
                     format!(
                         "hull/shipyard_{}.png",
                         hull.style().to_string().to_lowercase()

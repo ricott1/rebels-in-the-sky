@@ -1,13 +1,13 @@
 use super::challenge::Challenge;
 use super::trade::Trade;
-use crate::engine::timer::Timer;
-use crate::engine::types::GameStats;
+use crate::game_engine::timer::Timer;
+use crate::game_engine::types::GameStats;
 use crate::types::{KartoffelId, PlanetId, Tick};
 use crate::world::planet::{Planet, PlanetType};
 use crate::world::position::{Position, MAX_POSITION};
 use crate::world::skill::Skill;
 use crate::{
-    engine::types::TeamInGame,
+    game_engine::types::TeamInGame,
     types::{AppResult, GameId, TeamId},
     world::{player::Player, team::Team, world::World},
 };

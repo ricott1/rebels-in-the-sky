@@ -1,69 +1,156 @@
 use crate::app::App;
 use crate::audio;
-use crate::event::EventHandler;
-use crate::types::AppResult;
+use crate::crossterm_event_handler::CrosstermEventHandler;
+use crate::ssh::SSHEventHandler;
+use crate::ssh::SSHWriterProxy;
+use crate::types::{AppResult, Tick};
 use crate::ui::ui::Ui;
 use crate::world::world::World;
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
+use crossterm::cursor::{Hide, Show};
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture, KeyEvent, MouseEvent};
+use crossterm::terminal::Clear;
+use crossterm::terminal::SetTitle;
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
-use log::error;
+use futures::Future;
 use ratatui::layout::Rect;
+use ratatui::prelude::CrosstermBackend;
 use ratatui::Terminal;
+use ratatui::TerminalOptions;
+use ratatui::Viewport;
 use std::io::{self};
 use std::panic;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
-/// Representation of a terminal user interface.
-///
-/// It is responsible for setting up the terminal,
-/// initializing the interface and handling the draw events.
-#[derive(Debug)]
-pub struct Tui<B>
-where
-    B: ratatui::backend::Backend,
-{
-    /// Interface to the Terminal.
-    pub terminal: Terminal<B>,
-    /// Terminal event handler.
-    pub events: EventHandler,
+pub trait WriterProxy: io::Write + std::fmt::Debug {
+    fn send(&mut self) -> impl std::future::Future<Output = std::io::Result<usize>> + Send {
+        async { Ok(0) }
+    }
 }
 
-impl<B> Tui<B>
+impl WriterProxy for io::Stdout {}
+
+#[derive(Clone, Copy, Debug)]
+pub enum TerminalEvent {
+    Tick { tick: Tick },
+    Key(KeyEvent),
+    Mouse(MouseEvent),
+    Resize(u16, u16),
+    Quit,
+}
+
+impl Future for TerminalEvent {
+    type Output = Self;
+    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Poll::Ready(*self)
+    }
+}
+
+pub trait EventHandler: Send + Sync {
+    fn next(&mut self) -> impl std::future::Future<Output = TerminalEvent> + Send;
+    fn fps(&self) -> u8;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum TuiType {
+    Local,
+    SSH,
+}
+
+#[derive(Debug)]
+pub struct Tui<W, E>
 where
-    B: ratatui::backend::Backend,
+    W: WriterProxy,
+    E: EventHandler,
 {
-    /// Constructs a new instance of [`Tui`].
-    pub fn new(backend: B, events: EventHandler) -> AppResult<Self> {
+    tui_type: TuiType,
+    pub terminal: Terminal<CrosstermBackend<W>>,
+    pub events: E,
+}
+
+impl Tui<io::Stdout, CrosstermEventHandler> {
+    pub fn new_local(events: CrosstermEventHandler) -> AppResult<Self> {
+        let backend = CrosstermBackend::new(io::stdout());
         let terminal = Terminal::new(backend)?;
-        let mut tui = Self { terminal, events };
+        let mut tui = Self {
+            tui_type: TuiType::Local,
+            terminal,
+            events,
+        };
         tui.init()?;
         Ok(tui)
     }
+}
 
-    /// Initializes the terminal interface.
-    ///
-    /// It enables the raw mode and sets terminal properties.
+impl Tui<SSHWriterProxy, SSHEventHandler> {
+    pub fn new_ssh(writer: SSHWriterProxy, events: SSHEventHandler) -> AppResult<Self> {
+        let backend = CrosstermBackend::new(writer);
+        let opts = TerminalOptions {
+            viewport: Viewport::Fixed(Rect {
+                x: 0,
+                y: 0,
+                width: 160,
+                height: 48,
+            }),
+        };
+
+        let terminal = Terminal::with_options(backend, opts)?;
+        let mut tui = Self {
+            tui_type: TuiType::SSH,
+            terminal,
+            events,
+        };
+
+        tui.init()?;
+        Ok(tui)
+    }
+}
+
+impl<W, E> Tui<W, E>
+where
+    W: WriterProxy,
+    E: EventHandler,
+{
     fn init(&mut self) -> AppResult<()> {
-        terminal::enable_raw_mode()?;
-        crossterm::execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+        if self.tui_type == TuiType::Local {
+            terminal::enable_raw_mode()?;
+        }
+
+        crossterm::execute!(
+            self.terminal.backend_mut(),
+            EnterAlternateScreen,
+            EnableMouseCapture,
+            SetTitle("Rebels in the sky"),
+            Clear(crossterm::terminal::ClearType::All),
+            Hide
+        )?;
 
         // Define a custom panic hook to reset the terminal properties.
         // This way, you won't have your terminal messed up if an unexpected error happens.
         let panic_hook = panic::take_hook();
-        panic::set_hook(Box::new(move |panic| {
-            Self::reset().expect("failed to reset the terminal");
-            panic_hook(panic);
-        }));
+        if self.tui_type == TuiType::Local {
+            panic::set_hook(Box::new(move |panic| {
+                Self::reset().expect("failed to reset the terminal");
+                panic_hook(panic);
+            }));
+        }
 
-        self.terminal.hide_cursor()?;
-        self.terminal.clear()?;
         Ok(())
     }
 
-    /// [`Draw`] the terminal interface by [`rendering`] the widgets.
-    ///
-    /// [`Draw`]: ratatui::Terminal::draw
-    /// [`rendering`]: crate::ui:render
-    pub fn draw(
+    fn reset() -> AppResult<()> {
+        crossterm::execute!(
+            io::stdout(),
+            LeaveAlternateScreen,
+            DisableMouseCapture,
+            Clear(crossterm::terminal::ClearType::All),
+            Show
+        )?;
+        terminal::disable_raw_mode()?;
+        Ok(())
+    }
+
+    pub async fn draw(
         &mut self,
         ui: &mut Ui,
         world: &World,
@@ -71,35 +158,45 @@ where
     ) -> AppResult<()> {
         self.terminal
             .draw(|frame| App::render(ui, world, audio_player, frame))?;
+
+        if self.tui_type == TuiType::SSH {
+            self.terminal.backend_mut().writer_mut().send().await?;
+        }
+
         Ok(())
     }
 
-    /// Resets the terminal interface.
-    ///
-    /// This function is also used for the panic hook to revert
-    /// the terminal properties if unexpected errors occur.
-    fn reset() -> AppResult<()> {
-        crossterm::execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
-        terminal::disable_raw_mode()?;
+    pub fn fps(&self) -> u8 {
+        self.events.fps()
+    }
+
+    pub fn resize(&mut self, size: (u16, u16)) -> AppResult<()> {
+        self.terminal.resize(Rect {
+            x: 0,
+            y: 0,
+            width: size.0,
+            height: size.1,
+        })?;
         Ok(())
     }
 
-    pub fn resize(&mut self, rect: Rect) -> AppResult<()> {
-        self.terminal.resize(rect)?;
-        Ok(())
-    }
+    pub async fn exit(&mut self) -> AppResult<()> {
+        crossterm::execute!(
+            self.terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture,
+            Clear(crossterm::terminal::ClearType::All),
+            Show
+        )?;
 
-    /// Exits the terminal interface.
-    ///
-    /// It disables the raw mode and reverts back the terminal properties.
-    pub fn exit(&mut self) -> AppResult<()> {
-        Self::reset().unwrap_or_else(|e| error!("Error resetting tui: {e}"));
-        self.terminal
-            .clear()
-            .unwrap_or_else(|e| error!("Error clearing terminal: {e}"));
-        self.terminal
-            .show_cursor()
-            .unwrap_or_else(|e| error!("Error showing cursor: {e}"));
+        if self.tui_type == TuiType::Local {
+            terminal::disable_raw_mode()?;
+        }
+
+        if self.tui_type == TuiType::SSH {
+            self.terminal.backend_mut().writer_mut().send().await?;
+        }
+
         Ok(())
     }
 }

@@ -1,5 +1,5 @@
 use super::constants::UiStyle;
-use super::ui_callback::UiCallbackPreset;
+use super::ui_callback::UiCallback;
 use crate::world::resources::Resource;
 use crate::world::world::World;
 use crate::{types::AppResult, world::skill::Rated};
@@ -7,23 +7,28 @@ use core::fmt::Debug;
 use ratatui::{
     prelude::Rect,
     style::{Color, Style},
-    text::Span,
     Frame,
 };
 
 pub trait Screen {
     fn update(&mut self, _world: &World) -> AppResult<()>;
-    fn render(&mut self, _frame: &mut Frame, _world: &World, _area: Rect) -> AppResult<()>;
+    fn render(
+        &mut self,
+        _frame: &mut Frame,
+        _world: &World,
+        _area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()>;
 
     fn handle_key_events(
         &mut self,
         _key_event: crossterm::event::KeyEvent,
         _world: &World,
-    ) -> Option<UiCallbackPreset> {
+    ) -> Option<UiCallback> {
         None
     }
 
-    fn footer_spans(&self) -> Vec<Span> {
+    fn footer_spans(&self) -> Vec<String> {
         vec![]
     }
 }

@@ -2,7 +2,7 @@ use super::button::{Button, RadioButton};
 use super::constants::{UiStyle, LEFT_PANEL_WIDTH};
 use super::gif_map::{GifMap, ImageResizeInGalaxyGif};
 use super::traits::SplitPanel;
-use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::utils::hover_text_target;
 use super::widgets::quick_explore_button;
 use super::{traits::Screen, widgets::default_block};
@@ -24,7 +24,7 @@ use ratatui::widgets::{List, ListItem};
 use ratatui::{
     layout::Layout,
     prelude::Rect,
-    style::{Color, Style},
+    style::Style,
     text::Span,
     widgets::{Clear, Paragraph},
     Frame,
@@ -147,8 +147,8 @@ impl GalaxyPanel {
             let parent_id = world.get_planet_or_err(current_id)?.satellite_of.unwrap();
             let parent = world.get_planet_or_err(parent_id)?;
             let button = Button::new(
-                format!("{}", parent.name.clone()),
-                UiCallbackPreset::GoToPlanetZoomOut {
+                format!("{}", parent.name).into(),
+                UiCallback::GoToPlanetZoomOut {
                     planet_id: parent_id,
                 },
                 Arc::clone(&self.callback_registry),
@@ -162,16 +162,16 @@ impl GalaxyPanel {
 
         let target_button = if target.satellites.len() > 0 {
             Button::new(
-                target.name.clone(),
-                UiCallbackPreset::GoToPlanetZoomOut {
+                target.name.clone().into(),
+                UiCallback::GoToPlanetZoomOut {
                     planet_id: target.id,
                 },
                 Arc::clone(&self.callback_registry),
             )
         } else if let Some(parent_id) = target.satellite_of {
             Button::new(
-                target.name.clone(),
-                UiCallbackPreset::GoToPlanetZoomOut {
+                target.name.clone().into(),
+                UiCallback::GoToPlanetZoomOut {
                     planet_id: parent_id,
                 },
                 Arc::clone(&self.callback_registry),
@@ -240,8 +240,8 @@ impl GalaxyPanel {
                     };
 
                     let mut go_to_planet_button = Button::new(
-                        format!("Travel ({})", button_text),
-                        UiCallbackPreset::TravelToPlanet {
+                        format!("Travel ({})", button_text).into(),
+                        UiCallback::TravelToPlanet {
                             planet_id: planet.id,
                         },
                         Arc::clone(&self.callback_registry),
@@ -334,11 +334,7 @@ impl GalaxyPanel {
             })
             .sorted_by(|a, b| b.rating().cmp(&a.rating()))
             .map(|player| {
-                let text = format!(
-                    "{:<26} {}",
-                    format!("{} {}", player.info.first_name, player.info.last_name),
-                    player.stars()
-                );
+                let text = format!("{:<26} {}", player.info.full_name(), player.stars());
                 (player.id, text, UiStyle::DEFAULT)
             })
             .take(10)
@@ -395,7 +391,7 @@ impl GalaxyPanel {
                         Span::styled(text.clone(), style.clone())
                             .into_left_aligned_line()
                             .into(),
-                        UiCallbackPreset::GoToTeam {
+                        UiCallback::GoToTeam {
                             team_id: team_id.clone(),
                         },
                         Arc::clone(&self.callback_registry),
@@ -421,7 +417,7 @@ impl GalaxyPanel {
                         Span::styled(text.clone(), style.clone())
                             .into_left_aligned_line()
                             .into(),
-                        UiCallbackPreset::GoToPlayer {
+                        UiCallback::GoToPlayer {
                             player_id: player_id.clone(),
                         },
                         Arc::clone(&self.callback_registry),
@@ -519,19 +515,19 @@ impl GalaxyPanel {
         }
     }
 
-    fn select_target(&mut self) -> Option<UiCallbackPreset> {
+    fn select_target(&mut self) -> Option<UiCallback> {
         let target = self.planets.get(&self.planet_id)?;
 
         match self.zoom_level {
             ZoomLevel::In => {
                 if self.team_index.is_some() {
                     let team_id = target.team_ids[self.team_index?].clone();
-                    return Some(UiCallbackPreset::GoToTeam { team_id });
+                    return Some(UiCallback::GoToTeam { team_id });
                 }
             }
             ZoomLevel::Out => {
                 let planet_id = self.planet_id.clone();
-                return Some(UiCallbackPreset::ZoomInToPlanet { planet_id });
+                return Some(UiCallback::ZoomInToPlanet { planet_id });
             }
         }
         None
@@ -546,7 +542,13 @@ impl Screen for GalaxyPanel {
         }
         Ok(())
     }
-    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
         let planet = world.get_planet_or_err(self.planet_id)?;
         // Ensure that rendering area has even width and odd height for correct rect centering
         let area = Rect {
@@ -579,8 +581,8 @@ impl Screen for GalaxyPanel {
                         .clone()
                 };
                 let button = RadioButton::box_on_hover(
-                    "".to_string(),
-                    UiCallbackPreset::ZoomInToPlanet {
+                    "".into(),
+                    UiCallback::ZoomInToPlanet {
                         planet_id: self.planet_id,
                     },
                     Arc::clone(&self.callback_registry),
@@ -601,11 +603,7 @@ impl Screen for GalaxyPanel {
         Ok(())
     }
 
-    fn handle_key_events(
-        &mut self,
-        key_event: KeyEvent,
-        _world: &World,
-    ) -> Option<UiCallbackPreset> {
+    fn handle_key_events(&mut self, key_event: KeyEvent, _world: &World) -> Option<UiCallback> {
         let target = self.planets.get(&self.planet_id);
         if target.is_none() {
             return None;
@@ -661,31 +659,16 @@ impl Screen for GalaxyPanel {
         None
     }
 
-    fn footer_spans(&self) -> Vec<Span> {
+    fn footer_spans(&self) -> Vec<String> {
         match self.zoom_level {
-            ZoomLevel::In => vec![
-                Span::styled(
-                    " Backspace ",
-                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
-                ),
-                Span::styled(" Zoom out ", Style::default().fg(Color::DarkGray)),
-            ],
+            ZoomLevel::In => vec![" Backspace ".to_string(), " Zoom out ".to_string()],
             ZoomLevel::Out => vec![
-                Span::styled(
-                    " ↑/↓ ",
-                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
-                ),
-                Span::styled(" Select ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    " Enter ",
-                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
-                ),
-                Span::styled(" Zoom in ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    " Backspace ",
-                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
-                ),
-                Span::styled(" Zoom out ", Style::default().fg(Color::DarkGray)),
+                " ↑/↓ ".to_string(),
+                " Select ".to_string(),
+                " Enter ".to_string(),
+                " Zoom in ".to_string(),
+                " Backspace ".to_string(),
+                " Zoom out ".to_string(),
             ],
         }
     }

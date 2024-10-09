@@ -4,6 +4,7 @@ use anyhow::anyhow;
 use rodio::OutputStream;
 use rodio::{OutputStreamHandle, Sink};
 use serde::Deserialize;
+use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
@@ -13,7 +14,7 @@ use url::Url;
 
 const STREAMING_TIMEOUT_MILLIS: u64 = 2_000;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Stream {
     name: String,
     url_string: String,
@@ -38,6 +39,19 @@ pub struct MusicPlayer {
 
 unsafe impl Send for MusicPlayer {}
 unsafe impl Sync for MusicPlayer {}
+
+impl Debug for MusicPlayer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MusicPlayer")
+            .field("is_buffering", &self.is_buffering)
+            .field("sink length", &self.sink.len())
+            .field("sender", &self.sender)
+            .field("receiver", &self.receiver)
+            .field("streams", &self.streams)
+            .field("index", &self.index)
+            .finish()
+    }
+}
 
 impl MusicPlayer {
     fn current_url(&self) -> AppResult<Url> {

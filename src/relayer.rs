@@ -32,7 +32,7 @@ impl Relayer {
         };
         Self {
             running: true,
-            network_handler: NetworkHandler::new(None, Some(DEFAULT_SEED_PORT))
+            network_handler: NetworkHandler::new(None, DEFAULT_SEED_PORT)
                 .expect("Failed to initialize network handler"),
             last_seed_info_tick: Tick::now(),
             team_ranking,

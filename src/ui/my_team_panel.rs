@@ -5,12 +5,12 @@ use super::{
     constants::*,
     gif_map::GifMap,
     traits::{PercentageRating, Screen, SplitPanel, UiStyled},
-    ui_callback::{CallbackRegistry, UiCallbackPreset},
+    ui_callback::{CallbackRegistry, UiCallback},
     utils::{format_satoshi, hover_text_target},
     widgets::*,
 };
 use crate::{
-    engine::game::Game,
+    game_engine::game::Game,
     store::load_game,
     types::{AppResult, GameId, PlayerId, SystemTimeTick, Tick},
     world::{
@@ -109,7 +109,7 @@ impl MyTeamPanel {
         let hover_text_target = hover_text_target(frame);
         let mut view_info_button = Button::new(
             "View: Info".into(),
-            UiCallbackPreset::SetMyTeamPanelView {
+            UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Info,
             },
             Arc::clone(&self.callback_registry),
@@ -119,7 +119,7 @@ impl MyTeamPanel {
 
         let mut view_games_button = Button::new(
             "View: Games".into(),
-            UiCallbackPreset::SetMyTeamPanelView {
+            UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Games,
             },
             Arc::clone(&self.callback_registry),
@@ -129,7 +129,7 @@ impl MyTeamPanel {
 
         let mut view_market_button = Button::new(
             "View: Market".into(),
-            UiCallbackPreset::SetMyTeamPanelView {
+            UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Market,
             },
             Arc::clone(&self.callback_registry),
@@ -142,7 +142,7 @@ impl MyTeamPanel {
 
         let mut view_shipyard_button = Button::new(
             "View: Shipyard".into(),
-            UiCallbackPreset::SetMyTeamPanelView {
+            UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Shipyard,
             },
             Arc::clone(&self.callback_registry),
@@ -154,8 +154,8 @@ impl MyTeamPanel {
         );
 
         let mut view_asteroids_button = Button::new(
-            format!("View: Asteroids ({})", self.asteroid_ids.len()),
-            UiCallbackPreset::SetMyTeamPanelView {
+            format!("View: Asteroids ({})", self.asteroid_ids.len()).into(),
+            UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Asteroids,
             },
             Arc::clone(&self.callback_registry),
@@ -502,9 +502,13 @@ impl MyTeamPanel {
         }
 
         let mut info_spans = vec![];
-        info_spans.append(&mut get_fuel_spans(team));
+        info_spans.append(&mut get_fuel_spans(
+            team.fuel(),
+            team.spaceship.fuel_capacity(),
+            BARS_LENGTH,
+        ));
         info_spans.push(Span::raw("  "));
-        info_spans.append(&mut get_storage_spans(team));
+        info_spans.append(&mut get_storage_spans(team, BARS_LENGTH));
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(""),
@@ -550,8 +554,12 @@ impl MyTeamPanel {
             ]),
             Line::from(format!("Treasury: {:<10}", format_satoshi(team.balance()),)),
             Line::from(get_crew_spans(team)),
-            Line::from(get_fuel_spans(team)),
-            Line::from(get_storage_spans(team)),
+            Line::from(get_fuel_spans(
+                team.fuel(),
+                team.spaceship.fuel_capacity(),
+                BARS_LENGTH,
+            )),
+            Line::from(get_storage_spans(team, BARS_LENGTH)),
             Line::from(vec![
                 Span::styled("   Gold", UiStyle::STORAGE_GOLD),
                 Span::raw(format!(
@@ -607,8 +615,8 @@ impl MyTeamPanel {
                 .split(btm_split[1]);
 
         let offense_tactic_button = Button::new(
-            format!("tactic: {}", team.game_tactic),
-            UiCallbackPreset::SetTeamTactic {
+            format!("tactic: {}", team.game_tactic).into(),
+            UiCallback::SetTeamTactic {
                 tactic: team.game_tactic.next(),
             },
             Arc::clone(&self.callback_registry),
@@ -633,8 +641,9 @@ impl MyTeamPanel {
                 } else {
                     "General".to_string()
                 }
-            ),
-            UiCallbackPreset::NextTrainingFocus { team_id: team.id },
+            )
+            .into(),
+            UiCallback::NextTrainingFocus { team_id: team.id },
             Arc::clone(&self.callback_registry),
         )
         .set_hover_text(
@@ -748,8 +757,8 @@ impl MyTeamPanel {
             };
             frame.render_widget(
                 Button::new(
-                    format!("Playing - {}", game_text),
-                    UiCallbackPreset::GoToGame { game_id },
+                    format!("Playing - {}", game_text).into(),
+                    UiCallback::GoToGame { game_id },
                     Arc::clone(&self.callback_registry),
                 )
                 .set_hover_text("Go to current game".into(), hover_text_target)
@@ -1388,7 +1397,7 @@ impl MyTeamPanel {
         let can_set_as_captain = team.can_set_crew_role(&player, CrewRole::Captain);
         let mut captain_button = Button::new(
             "captain".into(),
-            UiCallbackPreset::SetCrewRole {
+            UiCallback::SetCrewRole {
                 player_id,
                 role: CrewRole::Captain,
             },
@@ -1414,7 +1423,7 @@ impl MyTeamPanel {
 
         let mut pilot_button = Button::new(
             "pilot".into(),
-            UiCallbackPreset::SetCrewRole {
+            UiCallback::SetCrewRole {
                 player_id,
                 role: CrewRole::Pilot,
             },
@@ -1440,7 +1449,7 @@ impl MyTeamPanel {
 
         let mut doctor_button = Button::new(
             "doctor".into(),
-            UiCallbackPreset::SetCrewRole {
+            UiCallback::SetCrewRole {
                 player_id,
                 role: CrewRole::Doctor,
             },
@@ -1464,8 +1473,8 @@ impl MyTeamPanel {
 
         let can_release = team.can_release_player(&player);
         let mut release_button = Button::new(
-            format!("Fire {}", player.info.shortened_name()),
-            UiCallbackPreset::PromptReleasePlayer { player_id },
+            format!("Fire {}", player.info.shortened_name()).into(),
+            UiCallback::PromptReleasePlayer { player_id },
             Arc::clone(&self.callback_registry),
         )
         .set_hover_text("Fire pirate from the crew!".into(), hover_text_target)
@@ -1485,7 +1494,7 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn build_players_table(&self, world: &World) -> AppResult<ClickableTable> {
+    fn build_players_table(&self, world: &World, table_width: u16) -> AppResult<ClickableTable> {
         let team = world.get_own_team().unwrap();
         let header_cells = [
             " Name",
@@ -1495,11 +1504,15 @@ impl MyTeamPanel {
             "Best",
             "Role",
             "Crew bonus",
-            "Crew bonus",
         ]
         .iter()
         .map(|h| ClickableCell::from(*h).style(UiStyle::HEADER));
         let header = ClickableRow::new(header_cells);
+
+        // Calculate the available space for the players name in order to display the
+        // full or shortened version.
+        let name_header_width = table_width - (9 + 10 + 10 + 10 + 9 + 15 + 17);
+
         let rows = self
             .players
             .iter()
@@ -1552,32 +1565,35 @@ impl MyTeamPanel {
                     CrewRole::Pilot => {
                         let skill = TeamBonus::Exploration.as_skill(player)?;
                         Span::styled(
-                            format!("{} +{}%", TeamBonus::Exploration, skill.percentage()),
+                            format!(" {} +{}%", TeamBonus::Exploration, skill.percentage()),
                             skill.style(),
                         )
                     }
                     CrewRole::Captain => {
                         let skill = TeamBonus::TradePrice.as_skill(player)?;
                         Span::styled(
-                            format!("{} +{}%", TeamBonus::TradePrice, skill.percentage()),
+                            format!(" {} +{}%", TeamBonus::TradePrice, skill.percentage()),
                             skill.style(),
                         )
                     }
                     CrewRole::Doctor => {
                         let skill = TeamBonus::Training.as_skill(player)?;
                         Span::styled(
-                            format!("{} +{}%", TeamBonus::Training, skill.percentage()),
+                            format!(" {} +{}%", TeamBonus::Training, skill.percentage()),
                             skill.style(),
                         )
                     }
-                    _ => Span::raw(""),
+                    _ => Span::raw(" "),
+                };
+
+                let name = if name_header_width >= 2 * MAX_NAME_LENGTH as u16 + 2 {
+                    player.info.full_name()
+                } else {
+                    player.info.shortened_name()
                 };
 
                 let cells = [
-                    ClickableCell::from(format!(
-                        " {} {}",
-                        player.info.first_name, player.info.last_name
-                    )),
+                    ClickableCell::from(name),
                     ClickableCell::from(overall),
                     ClickableCell::from(potential),
                     ClickableCell::from(current_role),
@@ -1593,18 +1609,20 @@ impl MyTeamPanel {
                 Ok(ClickableRow::new(cells))
             })
             .collect::<AppResult<Vec<ClickableRow>>>();
+
         let table = ClickableTable::new(rows?, Arc::clone(&self.callback_registry))
             .header(header)
             .hovering_style(UiStyle::HIGHLIGHT)
             .highlight_style(UiStyle::SELECTED)
+            ._column_spacing(0)
             .widths(&[
-                Constraint::Length(26),
+                Constraint::Min(MAX_NAME_LENGTH as u16 + 4),
                 Constraint::Length(9),
+                Constraint::Length(10),
+                Constraint::Length(10),
+                Constraint::Length(10),
                 Constraint::Length(9),
-                Constraint::Length(9),
-                Constraint::Length(9),
-                Constraint::Length(9),
-                Constraint::Length(17),
+                Constraint::Length(15),
                 Constraint::Length(17),
             ]);
 
@@ -1617,7 +1635,7 @@ impl MyTeamPanel {
         let top_split =
             Layout::horizontal([Constraint::Min(10), Constraint::Length(60)]).split(area);
 
-        let table = self.build_players_table(world)?;
+        let table = self.build_players_table(world, top_split[0].width)?;
 
         frame.render_stateful_widget(
             table.block(default_block().title(format!(
@@ -1676,8 +1694,8 @@ impl MyTeamPanel {
                 let position = idx as Position;
                 let rect = position_button_splits[idx];
                 let mut button = Button::new(
-                    format!("{}:{:<2}", (idx + 1), position.as_str()),
-                    UiCallbackPreset::SwapPlayerPositions {
+                    format!("{}:{:<2}", (idx + 1), position.as_str()).into(),
+                    UiCallback::SwapPlayerPositions {
                         player_id,
                         position: idx,
                     },
@@ -1698,7 +1716,7 @@ impl MyTeamPanel {
 
             let auto_assign_button = Button::new(
                 "Auto-assign positions".into(),
-                UiCallbackPreset::AssignBestTeamPositions,
+                UiCallback::AssignBestTeamPositions,
                 Arc::clone(&self.callback_registry),
             )
             .set_hover_text(
@@ -2058,7 +2076,13 @@ impl Screen for MyTeamPanel {
         Ok(())
     }
 
-    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
         let split = Layout::vertical([Constraint::Length(24), Constraint::Min(8)]).split(area);
 
         if self.callback_registry.lock().unwrap().is_hovering(split[0]) {
@@ -2089,7 +2113,7 @@ impl Screen for MyTeamPanel {
         &mut self,
         key_event: crossterm::event::KeyEvent,
         _world: &World,
-    ) -> Option<UiCallbackPreset> {
+    ) -> Option<UiCallback> {
         if self.players.is_empty() {
             return None;
         }
@@ -2102,7 +2126,7 @@ impl Screen for MyTeamPanel {
                 self.previous_index();
             }
             UiKey::CYCLE_VIEW => {
-                return Some(UiCallbackPreset::SetMyTeamPanelView {
+                return Some(UiCallback::SetMyTeamPanelView {
                     view: self.view.next(),
                 });
             }
@@ -2110,10 +2134,6 @@ impl Screen for MyTeamPanel {
         }
 
         None
-    }
-
-    fn footer_spans(&self) -> Vec<Span> {
-        vec![]
     }
 }
 

@@ -1,4 +1,4 @@
-use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::ui_callback::{CallbackRegistry, UiCallback};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -237,7 +237,7 @@ impl StatefulWidget for ClickableList<'_> {
                 .register_mouse_callback(
                     crossterm::event::MouseEventKind::ScrollDown,
                     None,
-                    UiCallbackPreset::NextPanelIndex,
+                    UiCallback::NextPanelIndex,
                 );
 
             self.callback_registry
@@ -246,7 +246,7 @@ impl StatefulWidget for ClickableList<'_> {
                 .register_mouse_callback(
                     crossterm::event::MouseEventKind::ScrollUp,
                     None,
-                    UiCallbackPreset::PreviousPanelIndex,
+                    UiCallback::PreviousPanelIndex,
                 );
         }
 
@@ -342,7 +342,7 @@ impl StatefulWidget for ClickableList<'_> {
                 .register_mouse_callback(
                     crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
                     Some(row_area),
-                    UiCallbackPreset::SetPanelIndex { index },
+                    UiCallback::SetPanelIndex { index },
                 );
         }
     }

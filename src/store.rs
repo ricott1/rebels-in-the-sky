@@ -1,5 +1,5 @@
 use crate::{
-    engine::game::Game,
+    game_engine::game::Game,
     network::types::TeamRanking,
     types::{AppResult, GameId, TeamId},
     world::world::World,

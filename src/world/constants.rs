@@ -25,11 +25,11 @@ pub const CALENDAR_OFFSET: i32 = 77;
 pub const MIN_PLAYERS_PER_GAME: usize = 5;
 pub const MAX_PLAYERS_PER_TEAM: usize = MIN_PLAYERS_PER_GAME + 5;
 
-pub const EXPERIENCE_PER_SKILL_MULTIPLIER: f32 = 0.00001;
+pub const EXPERIENCE_PER_SKILL_MULTIPLIER: f32 = 0.0000065;
 pub const REPUTATION_PER_EXPERIENCE: f32 = 0.0001;
 pub const REPUTATION_DECREASE_PER_LONG_TICK: f32 = 0.1;
 pub const AGE_INCREASE_PER_LONG_TICK: f32 = 0.1; // 1 year every 10 LONG_TICK
-pub const SKILL_DECREMENT_PER_LONG_TICK: f32 = -0.1;
+pub const SKILL_DECREMENT_PER_LONG_TICK: f32 = -0.035;
 
 pub const INCOME_PER_ATTENDEE_HOME: u32 = 36;
 pub const INCOME_PER_ATTENDEE_AWAY: u32 = 36;
@@ -40,7 +40,7 @@ pub const SPECIAL_TRAIT_VALUE_BONUS: f32 = 1.35;
 pub const SPACESHIP_UPGRADE_BASE_DURATION: Tick = 8 * HOURS;
 
 pub const AUTO_GENERATE_GAMES_NUMBER: usize = 3;
-pub const MAX_AVG_TIREDNESS_PER_AUTO_GAME: f32 = 3.0;
+pub const MAX_AVG_TIREDNESS_PER_AUTO_GAME: f32 = 2.0;
 
 pub const BASE_DISTANCES: [u128; 4] = [
     1 * LIGHT_YEAR,
@@ -51,7 +51,8 @@ pub const BASE_DISTANCES: [u128; 4] = [
 pub const BASE_TANK_CAPACITY: u32 = 60;
 pub const SPACESHIP_BASE_COST_MULTIPLIER: f32 = 1.1;
 
-pub const BASE_SPEED: f32 = 2_750_000_000.0 * KILOMETERS as f32 / HOURS as f32; // Very fast ;)
+pub const LIGHT_SPEED: f32 = 1_079_252_848.8 * KILOMETERS as f32 / HOURS as f32;
+pub const BASE_SPEED: f32 = 0.5 * LIGHT_SPEED; // Very fast ;)
 pub const BASE_FUEL_CONSUMPTION: f32 = 3.0 / HOURS as f32; // TONNES per HOURS
 pub const FUEL_CONSUMPTION_PER_UNIT_STORAGE: f32 = 0.0001; // 10_000 storage units double the fuel consumption
 pub const SPEED_PENALTY_PER_UNIT_STORAGE: f32 = 0.0001; // 10_000 storage units halves the speed
@@ -121,11 +122,12 @@ pub const MORALE_INCREASE_PER_GAME: f32 = MoraleModifier::SEVERE_BONUS;
 pub const MORALE_RELEASE_MALUS: f32 = MoraleModifier::MEDIUM_MALUS;
 pub const MORALE_THRESHOLD_FOR_LEAVING: f32 = 2.0;
 pub const LEAVING_PROBABILITY_MORALE_MODIFIER: f64 =
-    0.5 * (1.0 / MORALE_THRESHOLD_FOR_LEAVING) as f64;
+    0.025 * (1.0 / MORALE_THRESHOLD_FOR_LEAVING) as f64;
 pub const MORALE_DEMOTION_MALUS: f32 = MoraleModifier::MEDIUM_MALUS;
 pub const MORALE_GAME_POPULATION_MODIFIER: f32 = 0.5;
 pub const MORALE_DRINK_BONUS: f32 = MoraleModifier::HIGH_BONUS;
 pub const TIREDNESS_DRINK_MALUS: f32 = TirednessCost::SEVERE;
+pub const TIREDNESS_DRINK_MALUS_SPUGNA: f32 = TirednessCost::HIGH;
 pub const TRAIT_PROBABILITY: f64 = 0.25;
 
 pub const MIN_RELATIVE_RETIREMENT_AGE: f32 = 0.96;

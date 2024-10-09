@@ -1,5 +1,6 @@
 use crate::image::color_map::ColorMap;
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use strum::Display;
 use strum_macros::EnumIter;
@@ -18,7 +19,7 @@ pub enum JerseyStyle {
 
 impl JerseyStyle {
     pub fn random() -> Self {
-        match rand::thread_rng().gen_range(0..=3) {
+        match ChaCha8Rng::from_entropy().gen_range(0..=3) {
             0 => Self::Classic,
             1 => Self::Stripe,
             2 => Self::Fancy,

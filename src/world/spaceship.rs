@@ -297,7 +297,7 @@ impl SpaceshipComponent for Engine {
             Self::PincherDouble => 1.5,
             Self::PincherTriple => 2.0,
             Self::JesterDouble => 1.35,
-            Self::JesterQuadruple => 2.2,
+            Self::JesterQuadruple => 2.1,
         }
     }
 
@@ -309,8 +309,8 @@ impl SpaceshipComponent for Engine {
             Self::PincherSingle => 1.1,
             Self::PincherDouble => 1.75,
             Self::PincherTriple => 2.5,
-            Self::JesterDouble => 1.7,
-            Self::JesterQuadruple => 3.0,
+            Self::JesterDouble => 1.6,
+            Self::JesterQuadruple => 2.65,
         }
     }
 
@@ -818,7 +818,7 @@ mod tests {
         let planet_ids = world.planets.keys().collect_vec();
         let from = planet_ids[0].clone();
         let to = planet_ids[1].clone();
-        let mut team = Team::random(TeamId::new_v4(), from.clone(), "test".into());
+        let mut team = Team::random(TeamId::new_v4(), from.clone(), "test".into(), "test".into());
         team.spaceship = spaceship;
         team.current_location = TeamLocation::Travelling {
             from,
@@ -832,7 +832,7 @@ mod tests {
 
         world.teams.insert(team.id, team);
 
-        let mut current_timestamp = Tick::now();
+        let mut current_tick = Tick::now();
 
         loop {
             let own_team = world.get_own_team()?;
@@ -841,7 +841,7 @@ mod tests {
                     started, duration, ..
                 } => println!(
                     "Team is travelling: {} < {} + {} = {}\r",
-                    current_timestamp,
+                    current_tick,
                     started,
                     duration,
                     started + duration
@@ -853,7 +853,7 @@ mod tests {
                 }
             };
 
-            match world.tick_travel(current_timestamp, false) {
+            match world.tick_travel(current_tick) {
                 Ok(message_option) => {
                     if let Some(messages) = message_option {
                         println!("{:#?}", messages)
@@ -864,7 +864,7 @@ mod tests {
                     break;
                 }
             }
-            current_timestamp += 1;
+            current_tick += 1;
         }
 
         Ok(())

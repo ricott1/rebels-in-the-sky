@@ -137,7 +137,6 @@ pub fn hover_text_target(frame: &Frame) -> Rect {
 
 pub fn validate_textarea_input(textarea: &mut TextArea<'_>, title: String) -> bool {
     let text = textarea.lines()[0].trim();
-    // let current_block_title = textarea.block().unwrap().title().clone();
     if text.len() < MIN_NAME_LENGTH {
         textarea.set_style(UiStyle::ERROR);
         textarea.set_block(default_block().title(title).title("(too short)"));

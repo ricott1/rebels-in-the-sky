@@ -1,9 +1,9 @@
 use super::challenge::Challenge;
 use super::constants::*;
-use super::network_callback::NetworkCallbackPreset;
+use super::network_callback::NetworkCallback;
 use super::trade::Trade;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
-use crate::engine::types::TeamInGame;
+use crate::game_engine::types::TeamInGame;
 use crate::types::{AppResult, GameId};
 use crate::types::{PlayerId, TeamId};
 use crate::types::{SystemTimeTick, Tick};
@@ -36,7 +36,7 @@ impl Debug for NetworkHandler {
 }
 
 impl NetworkHandler {
-    pub fn new(seed_ip: Option<String>, port: Option<u16>) -> AppResult<Self> {
+    pub fn new(seed_ip: Option<String>, tcp_port: u16) -> AppResult<Self> {
         let local_key = identity::Keypair::generate_ed25519();
         let local_peer_id = PeerId::from(local_key.public());
 
@@ -78,7 +78,6 @@ impl NetworkHandler {
             Config::with_tokio_executor(),
         );
 
-        let tcp_port = port.unwrap_or(DEFAULT_PORT);
         swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{tcp_port}").parse()?)?;
 
         let seed_address = match seed_ip {
@@ -332,10 +331,10 @@ impl NetworkHandler {
     pub fn handle_network_events(
         &mut self,
         event: SwarmEvent<gossipsub::Event, Void>,
-    ) -> Option<NetworkCallbackPreset> {
+    ) -> Option<NetworkCallback> {
         match event {
             SwarmEvent::NewListenAddr { address, .. } => {
-                Some(NetworkCallbackPreset::BindAddress { address })
+                Some(NetworkCallback::BindAddress { address })
             }
             SwarmEvent::Behaviour(gossipsub::Event::Message {
                 propagation_source: _,
@@ -343,31 +342,31 @@ impl NetworkHandler {
                 message,
             }) => {
                 assert!(message.topic == IdentTopic::new(TOPIC).hash());
-                Some(NetworkCallbackPreset::HandleMessage { message })
+                Some(NetworkCallback::HandleMessage { message })
             }
             SwarmEvent::Behaviour(gossipsub::Event::Subscribed { peer_id, topic }) => {
                 assert!(topic == IdentTopic::new(TOPIC).hash());
-                Some(NetworkCallbackPreset::Subscribe { peer_id, topic })
+                Some(NetworkCallback::Subscribe { peer_id, topic })
             }
 
             SwarmEvent::Behaviour(gossipsub::Event::Unsubscribed { peer_id, topic }) => {
                 assert!(topic == IdentTopic::new(TOPIC).hash());
-                Some(NetworkCallbackPreset::Unsubscribe { peer_id, topic })
+                Some(NetworkCallback::Unsubscribe { peer_id, topic })
             }
             SwarmEvent::ExpiredListenAddr {
                 listener_id: _,
                 address,
-            } => Some(NetworkCallbackPreset::PushSwarmPanelLog {
+            } => Some(NetworkCallback::PushSwarmPanelLog {
                 timestamp: Tick::now(),
                 text: format!("Expired listen address: {}", address),
             }),
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                Some(NetworkCallbackPreset::HandleConnectionEstablished { peer_id })
+                Some(NetworkCallback::HandleConnectionEstablished { peer_id })
             }
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                Some(NetworkCallbackPreset::CloseConnection { peer_id })
+                Some(NetworkCallback::CloseConnection { peer_id })
             }
-            _ => Some(NetworkCallbackPreset::PushSwarmPanelLog {
+            _ => Some(NetworkCallback::PushSwarmPanelLog {
                 timestamp: Tick::now(),
                 text: format!("Event: {:?}", event),
             }),

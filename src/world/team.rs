@@ -1,17 +1,16 @@
 use super::{
-    constants::{MIN_PLAYERS_PER_GAME, MORALE_RELEASE_MALUS},
+    constants::{INITIAL_TEAM_BALANCE, MIN_PLAYERS_PER_GAME},
     jersey::Jersey,
     planet::Planet,
     player::Player,
     position::MAX_POSITION,
     resources::Resource,
     role::CrewRole,
-    skill::GameSkill,
     spaceship::{Spaceship, SpaceshipUpgrade},
-    types::{PlayerLocation, TeamLocation, TrainingFocus},
+    types::{TeamLocation, TrainingFocus},
 };
 use crate::{
-    engine::tactic::Tactic,
+    game_engine::tactic::Tactic,
     network::{challenge::Challenge, trade::Trade},
     types::{AppResult, GameId, KartoffelId, PlanetId, PlayerId, TeamId, Tick},
     world::{constants::MAX_PLAYERS_PER_TEAM, utils::is_default},
@@ -72,10 +71,11 @@ pub struct Team {
 }
 
 impl Team {
-    pub fn random(id: TeamId, home_planet_id: PlanetId, name: String) -> Self {
+    pub fn random(id: TeamId, home_planet_id: PlanetId, name: String, ship_name: String) -> Self {
         let jersey = Jersey::random();
-        let ship_name = format!("{}shipp", name);
         let ship_color = jersey.color;
+        let mut resources = HashMap::new();
+        resources.insert(Resource::SATOSHI, INITIAL_TEAM_BALANCE);
         Self {
             id,
             name,
@@ -86,6 +86,7 @@ impl Team {
             },
             spaceship: Spaceship::random(ship_name, ship_color),
             game_tactic: Tactic::random(),
+            resources,
             ..Default::default()
         }
     }
@@ -370,7 +371,7 @@ impl Team {
         }
 
         if self.player_ids.len() < 1 {
-            return Err(anyhow!("Team needs at least one pirate to travel"));
+            return Err(anyhow!("No pirate to travel"));
         }
 
         if let Some(current_planet_id) = self.is_on_planet() {
@@ -417,7 +418,7 @@ impl Team {
         exploration_time: Tick,
     ) -> AppResult<()> {
         if self.player_ids.len() < 1 {
-            return Err(anyhow!("Team needs at least one pirate to explore"));
+            return Err(anyhow!("No pirate to explore"));
         }
 
         if let Some(current_planet_id) = self.is_on_planet() {
@@ -536,44 +537,6 @@ impl Team {
         matches!(self.current_location, TeamLocation::Travelling { .. })
     }
 
-    pub fn add_player(&mut self, player: &mut Player) {
-        if self.player_ids.contains(&player.id) {
-            return;
-        }
-        player.team = Some(self.id);
-        player.current_location = PlayerLocation::WithTeam;
-        self.player_ids.push(player.id);
-        player.set_jersey(&self.jersey);
-        player.peer_id = self.peer_id;
-        player.version += 1;
-    }
-
-    pub fn remove_player(&mut self, player: &mut Player) -> AppResult<()> {
-        player.team = None;
-        self.player_ids.retain(|&p| p != player.id);
-
-        match player.info.crew_role {
-            CrewRole::Captain => self.crew_roles.captain = None,
-            CrewRole::Doctor => self.crew_roles.doctor = None,
-            CrewRole::Pilot => self.crew_roles.pilot = None,
-            CrewRole::Mozzo => self.crew_roles.mozzo.retain(|&p| p != player.id),
-        }
-
-        player.info.crew_role = CrewRole::Mozzo;
-        // Removed player is a bit demoralized :(
-        player.morale = (player.morale + MORALE_RELEASE_MALUS).bound();
-
-        player.image.remove_jersey();
-        player.compose_image()?;
-        match self.current_location {
-            TeamLocation::OnPlanet { planet_id } => {
-                player.current_location = PlayerLocation::OnPlanet { planet_id };
-            }
-            _ => return Err(anyhow!("Cannot release player while travelling")),
-        }
-        Ok(())
-    }
-
     pub fn best_position_assignment(mut players: Vec<&Player>) -> Vec<PlayerId> {
         if players.len() < MAX_POSITION as usize {
             return players.iter().map(|&p| p.id).collect();
@@ -644,7 +607,7 @@ mod tests {
     #[test]
     fn test_team_random() {
         let (name, _) = TEAM_DATA[0].clone();
-        let team = super::Team::random(TeamId::new_v4(), Planet::default().id, name);
+        let team = super::Team::random(TeamId::new_v4(), Planet::default().id, name, "test".into());
         println!("{:?}", team);
     }
 }

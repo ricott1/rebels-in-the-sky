@@ -11,10 +11,10 @@ use super::{
 };
 use crate::{
     app::App,
-    engine::{tactic::Tactic, types::TeamInGame},
+    game_engine::{tactic::Tactic, types::TeamInGame},
     image::color_map::{ColorMap, ColorPreset},
     network::{challenge::Challenge, constants::DEFAULT_PORT, trade::Trade},
-    space_adventure::space::Space,
+    space_adventure::{Body, Space},
     types::{AppCallback, AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick},
     world::{
         constants::*,
@@ -25,7 +25,7 @@ use crate::{
         skill::MAX_SKILL,
         spaceship::{Spaceship, SpaceshipUpgrade},
         team::Team,
-        types::{PlayerLocation, TeamLocation, TrainingFocus},
+        types::{PlayerLocation, TeamBonus, TeamLocation, TrainingFocus},
     },
 };
 use anyhow::anyhow;
@@ -37,8 +37,12 @@ use ratatui::layout::Rect;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum UiCallbackPreset {
+pub enum UiCallback {
     None,
+    PushTutorialPage {
+        index: usize,
+    },
+    ToggleUiDebugMode,
     SetPanelIndex {
         index: usize,
     },
@@ -135,7 +139,7 @@ pub enum UiCallbackPreset {
     PromptReleasePlayer {
         player_id: PlayerId,
     },
-    ReleasePlayer {
+    ConfirmReleasePlayer {
         player_id: PlayerId,
     },
     LockPlayerPanel {
@@ -154,7 +158,6 @@ pub enum UiCallbackPreset {
         jersey_style: JerseyStyle,
         jersey_colors: ColorMap,
         players: Vec<PlayerId>,
-        balance: u32,
         spaceship: Spaceship,
     },
     CancelGeneratePlayerTeam,
@@ -205,7 +208,7 @@ pub enum UiCallbackPreset {
     MovePlayerUp,
 }
 
-impl UiCallbackPreset {
+impl UiCallback {
     fn go_to_team(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.team_panel.reset_view();
@@ -472,21 +475,22 @@ impl UiCallbackPreset {
             }
 
             let own_team_id = app.world.own_team_id;
-            let (home_team_in_game, away_team_in_game) = match rand::thread_rng().gen_range(0..=1) {
-                0 => (
-                    TeamInGame::from_team_id(own_team_id, &app.world.teams, &app.world.players)
-                        .ok_or(anyhow!("Own team {:?} not found", own_team_id))?,
-                    TeamInGame::from_team_id(team_id, &app.world.teams, &app.world.players)
-                        .ok_or(anyhow!("Team {:?} not found", team_id))?,
-                ),
+            let (home_team_in_game, away_team_in_game) =
+                match ChaCha8Rng::from_entropy().gen_range(0..=1) {
+                    0 => (
+                        TeamInGame::from_team_id(own_team_id, &app.world.teams, &app.world.players)
+                            .ok_or(anyhow!("Own team {:?} not found", own_team_id))?,
+                        TeamInGame::from_team_id(team_id, &app.world.teams, &app.world.players)
+                            .ok_or(anyhow!("Team {:?} not found", team_id))?,
+                    ),
 
-                _ => (
-                    TeamInGame::from_team_id(team_id, &app.world.teams, &app.world.players)
-                        .ok_or(anyhow!("Team {:?} not found", team_id))?,
-                    TeamInGame::from_team_id(own_team_id, &app.world.teams, &app.world.players)
-                        .ok_or(anyhow!("Own team {:?} not found", own_team_id))?,
-                ),
-            };
+                    _ => (
+                        TeamInGame::from_team_id(team_id, &app.world.teams, &app.world.players)
+                            .ok_or(anyhow!("Team {:?} not found", team_id))?,
+                        TeamInGame::from_team_id(own_team_id, &app.world.teams, &app.world.players)
+                            .ok_or(anyhow!("Own team {:?} not found", own_team_id))?,
+                    ),
+                };
 
             let game_id = app
                 .world
@@ -594,7 +598,6 @@ impl UiCallbackPreset {
         jersey_style: JerseyStyle,
         jersey_colors: ColorMap,
         players: Vec<PlayerId>,
-        balance: u32,
         spaceship: Spaceship,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
@@ -604,10 +607,10 @@ impl UiCallbackPreset {
                 jersey_style,
                 jersey_colors,
                 players.clone(),
-                balance,
                 spaceship.clone(),
             )?;
             app.ui.set_state(UiState::Main);
+            app.ui.push_popup(PopupMessage::Tutorial(0, Tick::now()));
             Ok(None)
         })
     }
@@ -629,9 +632,11 @@ impl UiCallbackPreset {
                     .map(|id| app.world.players.get(id).unwrap())
                     .collect(),
             );
+
             app.world.teams.insert(team.id, team);
-            app.world.dirty = true;
-            app.world.dirty_ui = true;
+
+            // TODO: THis should probably be a different button?
+            // app.world.auto_assign_crew_roles(player_ids)?;
 
             Ok(None)
         })
@@ -926,45 +931,53 @@ impl UiCallbackPreset {
 
     pub fn call(&self, app: &mut App) -> AppResult<Option<String>> {
         match self {
-            UiCallbackPreset::None => Ok(None),
-            UiCallbackPreset::SetPanelIndex { index } => {
+            UiCallback::None => Ok(None),
+            UiCallback::PushTutorialPage { index } => {
+                app.ui.close_popup();
+                app.ui
+                    .push_popup(PopupMessage::Tutorial(*index, Tick::now()));
+                Ok(None)
+            }
+            UiCallback::ToggleUiDebugMode => {
+                app.ui.toggle_data_view();
+                Ok(None)
+            }
+            UiCallback::SetPanelIndex { index } => {
                 if let Some(panel) = app.ui.get_active_panel() {
                     panel.set_index(*index);
                 }
                 Ok(None)
             }
-            UiCallbackPreset::GoToTeam { team_id } => Self::go_to_team(*team_id)(app),
-            UiCallbackPreset::GoToPlayer { player_id } => Self::go_to_player(*player_id)(app),
-            UiCallbackPreset::GoToPlayerTeam { player_id } => {
-                Self::go_to_player_team(*player_id)(app)
-            }
-            UiCallbackPreset::GoToGame { game_id } => Self::go_to_game(*game_id)(app),
-            UiCallbackPreset::GoToHomePlanet { team_id } => Self::go_to_home_planet(*team_id)(app),
-            UiCallbackPreset::GoToCurrentTeamPlanet { team_id } => {
+            UiCallback::GoToTeam { team_id } => Self::go_to_team(*team_id)(app),
+            UiCallback::GoToPlayer { player_id } => Self::go_to_player(*player_id)(app),
+            UiCallback::GoToPlayerTeam { player_id } => Self::go_to_player_team(*player_id)(app),
+            UiCallback::GoToGame { game_id } => Self::go_to_game(*game_id)(app),
+            UiCallback::GoToHomePlanet { team_id } => Self::go_to_home_planet(*team_id)(app),
+            UiCallback::GoToCurrentTeamPlanet { team_id } => {
                 Self::go_to_current_team_planet(*team_id)(app)
             }
-            UiCallbackPreset::GoToCurrentPlayerPlanet { player_id } => {
+            UiCallback::GoToCurrentPlayerPlanet { player_id } => {
                 Self::go_to_current_player_planet(*player_id)(app)
             }
 
-            UiCallbackPreset::GoToPlanetZoomIn { planet_id } => {
+            UiCallback::GoToPlanetZoomIn { planet_id } => {
                 Self::go_to_planet_zoom_in(*planet_id)(app)
             }
-            UiCallbackPreset::GoToPlanetZoomOut { planet_id } => {
+            UiCallback::GoToPlanetZoomOut { planet_id } => {
                 Self::go_to_planet_zoom_out(*planet_id)(app)
             }
-            UiCallbackPreset::TradeResource {
+            UiCallback::TradeResource {
                 resource,
                 amount,
                 unit_cost,
             } => Self::trade_resource(*resource, *amount, *unit_cost)(app),
-            UiCallbackPreset::SetTeamColors { color, channel } => {
+            UiCallback::SetTeamColors { color, channel } => {
                 app.ui
                     .new_team_screen
                     .set_team_colors(color.clone(), channel.clone());
                 Ok(None)
             }
-            UiCallbackPreset::SetTeamTactic { tactic } => {
+            UiCallback::SetTeamTactic { tactic } => {
                 let own_team = app.world.get_own_team()?;
                 let mut team = own_team.clone();
                 team.game_tactic = tactic.clone();
@@ -974,7 +987,7 @@ impl UiCallbackPreset {
                 app.world.dirty_network = true;
                 Ok(None)
             }
-            UiCallbackPreset::SetNextTeamTactic => {
+            UiCallback::SetNextTeamTactic => {
                 let own_team = app.world.get_own_team()?;
                 let mut team = own_team.clone();
                 team.game_tactic = team.game_tactic.next();
@@ -984,16 +997,16 @@ impl UiCallbackPreset {
                 app.world.dirty_network = true;
                 Ok(None)
             }
-            UiCallbackPreset::TogglePitchView => {
+            UiCallback::TogglePitchView => {
                 app.ui.game_panel.toggle_pitch_view();
                 Ok(None)
             }
-            UiCallbackPreset::TogglePlayerStatusView => {
+            UiCallback::TogglePlayerStatusView => {
                 app.ui.game_panel.toggle_player_status_view();
                 Ok(None)
             }
-            UiCallbackPreset::ChallengeTeam { team_id } => Self::challenge_team(*team_id)(app),
-            UiCallbackPreset::AcceptChallenge { challenge } => {
+            UiCallback::ChallengeTeam { team_id } => Self::challenge_team(*team_id)(app),
+            UiCallback::AcceptChallenge { challenge } => {
                 app.network_handler
                     .as_mut()
                     .ok_or(anyhow!("Network handler is not initialized"))?
@@ -1006,7 +1019,7 @@ impl UiCallbackPreset {
                 );
                 Ok(None)
             }
-            UiCallbackPreset::DeclineChallenge { challenge } => {
+            UiCallback::DeclineChallenge { challenge } => {
                 app.network_handler
                     .as_mut()
                     .ok_or(anyhow!("Network handler is not initialized"))?
@@ -1018,11 +1031,11 @@ impl UiCallbackPreset {
                 );
                 Ok(None)
             }
-            UiCallbackPreset::CreateTradeProposal {
+            UiCallback::CreateTradeProposal {
                 proposer_player_id,
                 target_player_id,
             } => Self::trade_players(*proposer_player_id, *target_player_id)(app),
-            UiCallbackPreset::AcceptTrade { trade } => {
+            UiCallback::AcceptTrade { trade } => {
                 app.network_handler
                     .as_mut()
                     .ok_or(anyhow!("Network handler is not initialized"))?
@@ -1032,7 +1045,7 @@ impl UiCallbackPreset {
                 own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
                 Ok(None)
             }
-            UiCallbackPreset::DeclineTrade { trade } => {
+            UiCallback::DeclineTrade { trade } => {
                 app.network_handler
                     .as_mut()
                     .ok_or(anyhow!("Network handler is not initialized"))?
@@ -1041,79 +1054,74 @@ impl UiCallbackPreset {
                 own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
                 Ok(None)
             }
-            UiCallbackPreset::GoToTrade { trade } => Self::go_to_trade(trade.clone())(app),
-            UiCallbackPreset::NextUiTab => Self::next_ui_tab()(app),
-            UiCallbackPreset::PreviousUiTab => Self::previous_ui_tab()(app),
-            UiCallbackPreset::SetUiTab { ui_tab } => Self::set_ui_tab(*ui_tab)(app),
-            UiCallbackPreset::NextPanelIndex => Self::next_panel_index()(app),
-            UiCallbackPreset::PreviousPanelIndex => Self::previous_panel_index()(app),
-            UiCallbackPreset::CloseUiPopup => {
+            UiCallback::GoToTrade { trade } => Self::go_to_trade(trade.clone())(app),
+            UiCallback::NextUiTab => Self::next_ui_tab()(app),
+            UiCallback::PreviousUiTab => Self::previous_ui_tab()(app),
+            UiCallback::SetUiTab { ui_tab } => Self::set_ui_tab(*ui_tab)(app),
+            UiCallback::NextPanelIndex => Self::next_panel_index()(app),
+            UiCallback::PreviousPanelIndex => Self::previous_panel_index()(app),
+            UiCallback::CloseUiPopup => {
                 app.ui.close_popup();
                 Ok(None)
             }
-            UiCallbackPreset::NewGame => {
+            UiCallback::NewGame => {
                 app.ui.set_state(UiState::NewTeam);
                 app.new_world();
                 Ok(None)
             }
-            UiCallbackPreset::ContinueGame => {
+            UiCallback::ContinueGame => {
                 app.load_world();
-                if app.world.has_own_team() {
-                    app.ui.set_state(UiState::Main);
-                } else {
-                    app.ui.set_state(UiState::NewTeam);
-                }
                 Ok(None)
             }
-            UiCallbackPreset::QuitGame => {
+            UiCallback::QuitGame => {
                 app.quit()?;
                 Ok(None)
             }
-            UiCallbackPreset::ToggleAudio => {
+            UiCallback::ToggleAudio => {
                 app.toggle_audio_player()?;
                 Ok(None)
             }
-            UiCallbackPreset::NextAudioSample => {
+            UiCallback::NextAudioSample => {
                 app.next_sample_audio_player()?;
                 Ok(None)
             }
-            UiCallbackPreset::SetSwarmPanelView { topic } => {
+            UiCallback::SetSwarmPanelView { topic } => {
                 app.ui.swarm_panel.set_view(*topic);
                 Ok(None)
             }
-            UiCallbackPreset::SetMyTeamPanelView { view } => {
+            UiCallback::SetMyTeamPanelView { view } => {
                 app.ui.my_team_panel.set_view(*view);
                 Ok(None)
             }
-            UiCallbackPreset::SetPlayerPanelView { view } => {
+            UiCallback::SetPlayerPanelView { view } => {
                 app.ui.player_panel.set_view(*view);
                 Ok(None)
             }
-            UiCallbackPreset::SetTeamPanelView { view } => {
+            UiCallback::SetTeamPanelView { view } => {
                 app.ui.team_panel.set_view(*view);
                 Ok(None)
             }
-            UiCallbackPreset::HirePlayer { player_id } => {
+            UiCallback::HirePlayer { player_id } => {
                 app.world
                     .hire_player_for_team(*player_id, app.world.own_team_id)?;
 
                 Ok(None)
             }
-            UiCallbackPreset::PromptReleasePlayer { player_id } => {
+            UiCallback::PromptReleasePlayer { player_id } => {
                 let player = app.world.get_player_or_err(*player_id)?;
-                let player_name = format!("{} {}", player.info.first_name, player.info.last_name);
                 app.ui.push_popup(PopupMessage::ReleasePlayer(
-                    player_name,
+                    player.info.full_name(),
                     *player_id,
                     Tick::now(),
                 ));
                 Ok(None)
             }
-            UiCallbackPreset::ReleasePlayer { player_id } => {
+            UiCallback::ConfirmReleasePlayer { player_id } => {
                 app.world.release_player_from_team(*player_id)?;
+                app.ui.close_popup();
                 Ok(None)
             }
-            UiCallbackPreset::LockPlayerPanel { player_id } => {
+            UiCallback::LockPlayerPanel { player_id } => {
                 if app.ui.player_panel.locked_player_id.is_some()
                     && app.ui.player_panel.locked_player_id.unwrap() == *player_id
                 {
@@ -1123,12 +1131,12 @@ impl UiCallbackPreset {
                 }
                 Ok(None)
             }
-            UiCallbackPreset::SetCrewRole { player_id, role } => {
+            UiCallback::SetCrewRole { player_id, role } => {
                 app.world.set_team_crew_role(role.clone(), *player_id)?;
                 Ok(None)
             }
 
-            UiCallbackPreset::Drink { player_id } => {
+            UiCallback::Drink { player_id } => {
                 let mut player = app.world.get_player_or_err(*player_id)?.clone();
                 player.can_drink(&app.world)?;
 
@@ -1138,8 +1146,14 @@ impl UiCallbackPreset {
                     MORALE_DRINK_BONUS
                 };
 
+                let tiredness_malus = if matches!(player.special_trait, Some(Trait::Spugna)) {
+                    TIREDNESS_DRINK_MALUS_SPUGNA
+                } else {
+                    TIREDNESS_DRINK_MALUS
+                };
+
                 player.add_morale(morale_bonus);
-                player.add_tiredness(TIREDNESS_DRINK_MALUS);
+                player.add_tiredness(tiredness_malus);
 
                 let mut team = app
                     .world
@@ -1153,7 +1167,10 @@ impl UiCallbackPreset {
                 let rng = &mut ChaCha8Rng::from_entropy();
                 if matches!(player.special_trait, Some(Trait::Spugna))
                     && player.info.crew_role == CrewRole::Pilot
-                    && rng.gen_bool(PORTAL_DISCOVERY_PROBABILITY)
+                    && rng.gen_bool(
+                        PORTAL_DISCOVERY_PROBABILITY
+                            * TeamBonus::Exploration.current_player_bonus(&player)? as f64,
+                    )
                 {
                     let portal_target_id = match team.current_location {
                         TeamLocation::OnPlanet { .. } => None,
@@ -1192,7 +1209,7 @@ impl UiCallbackPreset {
                         };
 
                         let distance = app.world.distance_between_planets(from, to)?;
-                        // Notice that the team will arrive when  world.current_timestamp > started + duration.
+                        // Notice that the team will arrive when  world.last_tick_short_interval > started + duration.
                         team.current_location = TeamLocation::Travelling {
                             from,
                             to,
@@ -1217,13 +1234,12 @@ impl UiCallbackPreset {
 
                 Ok(None)
             }
-            UiCallbackPreset::GeneratePlayerTeam {
+            UiCallback::GeneratePlayerTeam {
                 name,
                 home_planet,
                 jersey_style,
                 jersey_colors,
                 players,
-                balance,
                 spaceship,
             } => Self::generate_own_team(
                 name.clone(),
@@ -1231,79 +1247,89 @@ impl UiCallbackPreset {
                 *jersey_style,
                 *jersey_colors,
                 players.clone(),
-                *balance,
                 spaceship.clone(),
             )(app),
-            UiCallbackPreset::CancelGeneratePlayerTeam => Self::cancel_generate_own_team()(app),
-            UiCallbackPreset::AssignBestTeamPositions => Self::assign_best_team_positions()(app),
-            UiCallbackPreset::SwapPlayerPositions {
+            UiCallback::CancelGeneratePlayerTeam => Self::cancel_generate_own_team()(app),
+            UiCallback::AssignBestTeamPositions => Self::assign_best_team_positions()(app),
+            UiCallback::SwapPlayerPositions {
                 player_id,
                 position,
             } => Self::swap_player_positions(*player_id, *position)(app),
-            UiCallbackPreset::NextTrainingFocus { team_id } => {
-                Self::next_training_focus(*team_id)(app)
-            }
-            UiCallbackPreset::TravelToPlanet { planet_id } => {
-                Self::travel_to_planet(*planet_id)(app)
-            }
-            UiCallbackPreset::ExploreAroundPlanet { duration } => {
+            UiCallback::NextTrainingFocus { team_id } => Self::next_training_focus(*team_id)(app),
+            UiCallback::TravelToPlanet { planet_id } => Self::travel_to_planet(*planet_id)(app),
+            UiCallback::ExploreAroundPlanet { duration } => {
                 Self::explore_around_planet(duration.clone())(app)
             }
-            UiCallbackPreset::ZoomInToPlanet { planet_id } => {
-                Self::zoom_in_to_planet(*planet_id)(app)
-            }
-            UiCallbackPreset::Dial { address } => Self::dial(address.clone())(app),
-            UiCallbackPreset::Sync => Self::sync()(app),
-            UiCallbackPreset::SendMessage { message } => Self::send(message.clone())(app),
-            UiCallbackPreset::PushUiPopup { popup_message } => {
+            UiCallback::ZoomInToPlanet { planet_id } => Self::zoom_in_to_planet(*planet_id)(app),
+            UiCallback::Dial { address } => Self::dial(address.clone())(app),
+            UiCallback::Sync => Self::sync()(app),
+            UiCallback::SendMessage { message } => Self::send(message.clone())(app),
+            UiCallback::PushUiPopup { popup_message } => {
                 app.ui.push_popup(popup_message.clone());
                 Ok(None)
             }
-            UiCallbackPreset::NameAndAcceptAsteroid { name, filename } => {
+            UiCallback::NameAndAcceptAsteroid { name, filename } => {
                 Self::name_and_accept_asteroid(name.clone(), filename.clone())(app)
             }
-            UiCallbackPreset::SetUpgradeSpaceship { upgrade } => {
+            UiCallback::SetUpgradeSpaceship { upgrade } => {
                 Self::set_upgrade_spaceship(upgrade.clone())(app)
             }
-            UiCallbackPreset::UpgradeSpaceship { upgrade } => {
+            UiCallback::UpgradeSpaceship { upgrade } => {
                 Self::upgrade_spaceship(upgrade.clone())(app)
             }
-            UiCallbackPreset::StartSpaceAdventure => {
+            UiCallback::StartSpaceAdventure => {
                 app.ui.set_state(UiState::SpaceAdventure);
-                let spaceship = &app.world.get_own_team()?.spaceship;
-                let space = Space::new()?.with_spaceship(spaceship)?;
+                let own_team = &app.world.get_own_team()?;
+                let space = Space::new()?.with_spaceship(
+                    &own_team.spaceship,
+                    own_team.used_storage_capacity(),
+                    own_team.fuel(),
+                )?;
+
                 app.world.space = Some(space);
                 Ok(None)
             }
-            UiCallbackPreset::StopSpaceAdventure => {
+            UiCallback::StopSpaceAdventure => {
                 app.ui.set_state(UiState::Main);
                 app.world.space = None;
                 Ok(None)
             }
-            UiCallbackPreset::MovePlayerLeft => {
+            UiCallback::MovePlayerLeft => {
                 if let Some(space) = app.world.space.as_mut() {
-                    space.player_mut().set_accelleration([-1.0, 0.0]);
+                    space
+                        .get_player_mut()
+                        .ok_or(anyhow!("No player set"))?
+                        .push_left();
                 }
 
                 Ok(None)
             }
-            UiCallbackPreset::MovePlayerRight => {
+            UiCallback::MovePlayerRight => {
                 if let Some(space) = app.world.space.as_mut() {
-                    space.player_mut().set_accelleration([1.0, 0.0]);
+                    space
+                        .get_player_mut()
+                        .ok_or(anyhow!("No player set"))?
+                        .push_right();
                 }
 
                 Ok(None)
             }
-            UiCallbackPreset::MovePlayerDown => {
+            UiCallback::MovePlayerDown => {
                 if let Some(space) = app.world.space.as_mut() {
-                    space.player_mut().set_accelleration([0.0, 1.0]);
+                    space
+                        .get_player_mut()
+                        .ok_or(anyhow!("No player set"))?
+                        .push_down();
                 }
 
                 Ok(None)
             }
-            UiCallbackPreset::MovePlayerUp => {
+            UiCallback::MovePlayerUp => {
                 if let Some(space) = app.world.space.as_mut() {
-                    space.player_mut().set_accelleration([0.0, -1.0]);
+                    space
+                        .get_player_mut()
+                        .ok_or(anyhow!("No player set"))?
+                        .push_up();
                 }
 
                 Ok(None)
@@ -1314,8 +1340,8 @@ impl UiCallbackPreset {
 
 #[derive(Default, Debug, PartialEq)]
 pub struct CallbackRegistry {
-    mouse_callbacks: HashMap<MouseEventKind, HashMap<Option<Rect>, UiCallbackPreset>>,
-    keyboard_callbacks: HashMap<KeyCode, UiCallbackPreset>,
+    mouse_callbacks: HashMap<MouseEventKind, HashMap<Option<Rect>, UiCallback>>,
+    keyboard_callbacks: HashMap<KeyCode, UiCallback>,
     hovering: (u16, u16),
     max_layer: u8,
 }
@@ -1341,7 +1367,7 @@ impl CallbackRegistry {
         &mut self,
         event_kind: MouseEventKind,
         rect: Option<Rect>,
-        callback: UiCallbackPreset,
+        callback: UiCallback,
     ) {
         self.mouse_callbacks
             .entry(event_kind)
@@ -1349,7 +1375,7 @@ impl CallbackRegistry {
             .insert(rect, callback);
     }
 
-    pub fn register_keyboard_callback(&mut self, key_code: KeyCode, callback: UiCallbackPreset) {
+    pub fn register_keyboard_callback(&mut self, key_code: KeyCode, callback: UiCallback) {
         self.keyboard_callbacks.insert(key_code, callback);
     }
 
@@ -1367,7 +1393,7 @@ impl CallbackRegistry {
         self.hovering = (event.column, event.row);
     }
 
-    pub fn handle_mouse_event(&self, event: &MouseEvent) -> Option<UiCallbackPreset> {
+    pub fn handle_mouse_event(&self, event: &MouseEvent) -> Option<UiCallback> {
         if let Some(mouse_callbacks) = self.mouse_callbacks.get(&event.kind) {
             for (rect, callback) in mouse_callbacks.iter() {
                 if let Some(r) = rect {
@@ -1383,7 +1409,7 @@ impl CallbackRegistry {
         None
     }
 
-    pub fn handle_keyboard_event(&self, key_code: &KeyCode) -> Option<UiCallbackPreset> {
+    pub fn handle_keyboard_event(&self, key_code: &KeyCode) -> Option<UiCallback> {
         self.keyboard_callbacks.get(key_code).cloned()
     }
 }

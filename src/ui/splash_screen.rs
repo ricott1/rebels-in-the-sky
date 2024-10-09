@@ -1,6 +1,6 @@
 use super::button::RadioButton;
-use super::gif_map::GifMap;
-use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::gif_map::*;
+use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::utils::big_text;
 use super::{
     traits::{Screen, SplitPanel},
@@ -13,17 +13,17 @@ use crate::{store::world_exists, world::world::World};
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use rand::seq::SliceRandom;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use ratatui::layout::Margin;
 use ratatui::{
     prelude::{Constraint, Layout, Rect},
-    style::{Color, Style},
-    text::Span,
     widgets::{Paragraph, Wrap},
     Frame,
 };
 use std::sync::{Arc, Mutex};
-
 use std::vec;
+
 const TITLE_WIDTH: u16 = 71;
 const BUTTON_WIDTH: u16 = 36;
 
@@ -90,7 +90,7 @@ impl SplashScreen {
         gif_map: Arc<Mutex<GifMap>>,
     ) -> Self {
         let mut selection_text = vec![];
-        let can_load_world: bool;
+        let mut can_load_world = false;
         let mut continue_text = "Continue".to_string();
 
         if world_exists(store_prefix) {
@@ -103,8 +103,6 @@ impl SplashScreen {
                 }
             }
             can_load_world = true;
-        } else {
-            can_load_world = false;
         }
         selection_text.push(continue_text);
         selection_text.push("New Game".to_string());
@@ -112,7 +110,7 @@ impl SplashScreen {
         selection_text.push("Quit".to_string());
 
         let quote = QUOTES
-            .choose(&mut rand::thread_rng())
+            .choose(&mut ChaCha8Rng::from_entropy())
             .expect("There should be a quote");
         let index = if can_load_world { 0 } else { 1 };
         let title = big_text(&TITLE);
@@ -130,12 +128,12 @@ impl SplashScreen {
         }
     }
 
-    fn get_ui_preset_at_index(&self, index: usize) -> UiCallbackPreset {
+    fn get_ui_preset_at_index(&self, index: usize) -> UiCallback {
         match index {
-            0 => UiCallbackPreset::ContinueGame,
-            1 => UiCallbackPreset::NewGame,
-            2 => UiCallbackPreset::ToggleAudio,
-            _ => UiCallbackPreset::QuitGame,
+            0 => UiCallback::ContinueGame,
+            1 => UiCallback::NewGame,
+            2 => UiCallback::ToggleAudio,
+            _ => UiCallback::QuitGame,
         }
     }
 
@@ -154,7 +152,13 @@ impl Screen for SplashScreen {
         };
         Ok(())
     }
-    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+        debug_view: bool,
+    ) -> AppResult<()> {
         let split = Layout::vertical([
             Constraint::Length(2),                  //margin
             Constraint::Length(TITLE.len() as u16), //title
@@ -207,28 +211,33 @@ impl Screen for SplashScreen {
         ])
         .split(split[3]);
 
-        if let Ok(mut lines) = self.gif_map.lock().unwrap().planet_zoom_in_frame_lines(
-            SOL_ID.clone(),
-            self.tick / 3,
-            world,
-        ) {
-            let offset = if lines.len() > split[3].height as usize {
-                (lines.len() - split[3].height as usize) / 4
-            } else {
-                0
-            };
-            lines = lines[offset..offset + split[3].height as usize].to_vec();
+        let mut gif_lines = if debug_view {
+            SPINNING_BALL_GIF[(self.tick / 4) % SPINNING_BALL_GIF.len()].clone()
+        } else {
+            self.gif_map.lock().unwrap().planet_zoom_in_frame_lines(
+                SOL_ID.clone(),
+                self.tick / 3,
+                world,
+            )?
+        };
 
-            // Apply x-centering
-            if lines[0].spans.len() > split[3].width as usize {
-                let min_offset = (lines[0].spans.len() - split[3].width as usize) / 2;
-                let max_offset = (min_offset + split[3].width as usize).min(lines[0].spans.len());
-                for line in lines.iter_mut() {
-                    line.spans = line.spans[min_offset..max_offset].to_vec();
-                }
+        let offset = if gif_lines.len() > split[3].height as usize {
+            (gif_lines.len() - split[3].height as usize) / 5
+        } else {
+            0
+        };
+
+        gif_lines = gif_lines[offset..offset + split[3].height as usize].to_vec();
+        // Apply x-centering. Only necessary when screen is too narrow.
+        if gif_lines[0].spans.len() > split[3].width as usize {
+            let min_offset = (gif_lines[0].spans.len() - split[3].width as usize) / 2;
+            let max_offset = (min_offset + split[3].width as usize).min(gif_lines[0].spans.len());
+            for line in gif_lines.iter_mut() {
+                line.spans = line.spans[min_offset..max_offset].to_vec();
             }
-            frame.render_widget(Paragraph::new(lines).centered(), split[3]);
         }
+
+        frame.render_widget(Paragraph::new(gif_lines).centered(), split[3]);
 
         let selection_split = Layout::vertical::<Vec<Constraint>>(
             (0..=self.max_index())
@@ -237,9 +246,23 @@ impl Screen for SplashScreen {
         )
         .split(body[1]);
 
+        // if world is simulating, substitute text for continue button.
+        if world.is_simulating() {
+            let t = Tick::now() - world.last_tick_short_interval;
+
+            let time_ago = match t {
+                x if x.as_days() > 0 => format!("{} days", t.as_days()),
+                x if x.as_hours() > 0 => format!("{} hours", t.as_hours()),
+                x if x.as_minutes() > 0 => format!("{} minutes", t.as_minutes()),
+                _ => format!("{} seconds", t.as_secs()),
+            };
+
+            self.selection_text[0] = format!("Simulating {time_ago} ago",);
+        }
+
         for i in 0..selection_split.len() - 1 {
             let mut button = RadioButton::box_on_hover(
-                self.selection_text[i].clone(),
+                self.selection_text[i].clone().into(),
                 self.get_ui_preset_at_index(i),
                 Arc::clone(&self.callback_registry),
                 &mut self.index,
@@ -248,6 +271,8 @@ impl Screen for SplashScreen {
 
             // Disable continue button if no world exists
             if i == 0 && self.can_load_world == false {
+                button.disable();
+            } else if i > 0 && world.is_simulating() {
                 button.disable();
             }
             // Disable music button if audio is not supported
@@ -269,33 +294,37 @@ impl Screen for SplashScreen {
     fn handle_key_events(
         &mut self,
         key_event: crossterm::event::KeyEvent,
-        _world: &World,
-    ) -> Option<UiCallbackPreset> {
+        world: &World,
+    ) -> Option<UiCallback> {
+        if world.is_simulating() {
+            return None;
+        }
+
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
             KeyCode::Enter => match self.index {
                 // continue
                 0 => {
-                    return Some(UiCallbackPreset::ContinueGame);
+                    return Some(UiCallback::ContinueGame);
                 }
                 // new
                 1 => {
-                    return Some(UiCallbackPreset::NewGame);
+                    return Some(UiCallback::NewGame);
                 }
                 //options
                 2 => {
-                    return Some(UiCallbackPreset::ToggleAudio);
+                    return Some(UiCallback::ToggleAudio);
                 }
                 //quit
                 3 => {
-                    return Some(UiCallbackPreset::QuitGame);
+                    return Some(UiCallback::QuitGame);
                 }
                 _ => {}
             },
             KeyCode::Char('r') => {
                 self.quote = QUOTES
-                    .choose(&mut rand::thread_rng())
+                    .choose(&mut ChaCha8Rng::from_entropy())
                     .expect("There should be a quote");
             }
 
@@ -304,18 +333,12 @@ impl Screen for SplashScreen {
         None
     }
 
-    fn footer_spans(&self) -> Vec<Span> {
+    fn footer_spans(&self) -> Vec<String> {
         vec![
-            Span::styled(
-                " ↑/↓ ",
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(" Select option ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                " Enter ",
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(" Confirm ", Style::default().fg(Color::DarkGray)),
+            " ↑/↓ ".to_string(),
+            " Select option ".to_string(),
+            " Enter ".to_string(),
+            " Confirm ".to_string(),
         ]
     }
 }

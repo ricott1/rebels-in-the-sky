@@ -7,6 +7,8 @@ pub const IMG_FRAME_WIDTH: u16 = 80;
 pub const MIN_NAME_LENGTH: usize = 3;
 pub const MAX_NAME_LENGTH: usize = 12;
 
+pub const BARS_LENGTH: usize = 25;
+
 #[derive(Debug, Clone, Copy)]
 pub struct UiKey;
 
@@ -15,7 +17,7 @@ impl UiKey {
     pub const PREVIOUS_TAB: KeyCode = KeyCode::Left;
     pub const NEXT_SELECTION: KeyCode = KeyCode::Char(']');
     pub const PREVIOUS_SELECTION: KeyCode = KeyCode::Char('[');
-    pub const DATA_VIEW: KeyCode = KeyCode::Tab;
+    pub const UI_DEBUG_MODE: KeyCode = KeyCode::Tab;
     pub const TOGGLE_AUDIO: KeyCode = KeyCode::Char('|');
     pub const NEXT_AUDIO_SAMPLE: KeyCode = KeyCode::Char('>');
     pub const GO_TO_TEAM: KeyCode = KeyCode::Backspace;

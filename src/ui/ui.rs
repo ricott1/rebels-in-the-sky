@@ -6,7 +6,7 @@ use super::popup_message::PopupMessage;
 use super::space_screen::SpaceScreen;
 use super::splash_screen::{AudioPlayerState, SplashScreen};
 use super::traits::SplitPanel;
-use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::utils::SwarmPanelEvent;
 use super::widgets::default_block;
 use super::{
@@ -18,6 +18,7 @@ use crate::audio::music_player::MusicPlayer;
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::world::world::World;
 use core::fmt::Debug;
+use itertools::Itertools;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style, Styled};
 use ratatui::text::{Line, Span};
@@ -52,11 +53,12 @@ pub enum UiTab {
     Swarm,
 }
 
+#[derive(Debug)]
 pub struct Ui {
     state: UiState,
     ui_tabs: Vec<UiTab>,
     pub tab_index: usize,
-    data_view: bool,
+    debug_view: bool,
     last_update: Instant,
     pub splash_screen: SplashScreen,
     pub new_team_screen: NewTeamScreen,
@@ -110,7 +112,7 @@ impl Ui {
             state: UiState::default(),
             ui_tabs,
             tab_index: 0,
-            data_view: false,
+            debug_view: false,
             last_update: Instant::now(),
             splash_screen,
             new_team_screen,
@@ -145,6 +147,10 @@ impl Ui {
 
     pub fn set_state(&mut self, state: UiState) {
         self.state = state;
+    }
+
+    pub fn toggle_data_view(&mut self) {
+        self.debug_view = !self.debug_view;
     }
 
     fn get_active_screen(&self) -> &dyn Screen {
@@ -198,11 +204,10 @@ impl Ui {
         &mut self,
         key_event: crossterm::event::KeyEvent,
         world: &World,
-    ) -> Option<UiCallbackPreset> {
+    ) -> Option<UiCallback> {
         match key_event.code {
-            UiKey::DATA_VIEW => {
-                self.data_view = !self.data_view;
-                None
+            UiKey::UI_DEBUG_MODE => {
+                return Some(UiCallback::ToggleUiDebugMode);
             }
 
             UiKey::NEXT_TAB if self.state == UiState::Main => {
@@ -215,9 +220,9 @@ impl Ui {
             }
             UiKey::START_SPACE_ADVENTURE => {
                 if self.state == UiState::Main {
-                    return Some(UiCallbackPreset::StartSpaceAdventure);
+                    return Some(UiCallback::StartSpaceAdventure);
                 } else if self.state == UiState::SpaceAdventure {
-                    return Some(UiCallbackPreset::StopSpaceAdventure);
+                    return Some(UiCallback::StopSpaceAdventure);
                 }
                 None
             }
@@ -246,7 +251,7 @@ impl Ui {
     pub fn handle_mouse_events(
         &mut self,
         mouse_event: crossterm::event::MouseEvent,
-    ) -> Option<UiCallbackPreset> {
+    ) -> Option<UiCallback> {
         self.callback_registry
             .lock()
             .unwrap()
@@ -317,8 +322,13 @@ impl Ui {
 
         // render selected tab
         let render_result = match self.state {
-            UiState::Splash => self.splash_screen.render(frame, world, split[0]),
-            UiState::NewTeam => self.new_team_screen.render(frame, world, split[0]),
+            UiState::Splash => self
+                .splash_screen
+                .render(frame, world, split[0], self.debug_view),
+            UiState::NewTeam => {
+                self.new_team_screen
+                    .render(frame, world, split[0], self.debug_view)
+            }
             UiState::Main => {
                 // Render tabs at top
                 let tab_main_split = Layout::vertical([
@@ -327,9 +337,13 @@ impl Ui {
                 ])
                 .split(split[0]);
 
-                let active_render =
-                    self.get_active_screen_mut()
-                        .render(frame, world, tab_main_split[1]);
+                let debug_view = self.debug_view;
+                let active_render = self.get_active_screen_mut().render(
+                    frame,
+                    world,
+                    tab_main_split[1],
+                    debug_view,
+                );
 
                 let mut constraints = [Constraint::Length(16)].repeat(self.ui_tabs.len());
                 constraints.push(Constraint::Min(0));
@@ -347,7 +361,7 @@ impl Ui {
                     };
                     let mut button = Button::no_box(
                         tab_name.into(),
-                        UiCallbackPreset::SetUiTab {
+                        UiCallback::SetUiTab {
                             ui_tab: self.ui_tabs[idx],
                         },
                         Arc::clone(&self.callback_registry),
@@ -367,7 +381,10 @@ impl Ui {
 
                 active_render
             }
-            UiState::SpaceAdventure => self.space_screen.render(frame, world, split[0]),
+            UiState::SpaceAdventure => {
+                self.space_screen
+                    .render(frame, world, split[0], self.debug_view)
+            }
         };
 
         if let Err(err) = render_result {
@@ -412,8 +429,8 @@ impl Ui {
         }
     }
 
-    fn render_footer<'a>(
-        &'a self,
+    fn render_footer(
+        &self,
         frame: &mut Frame,
         world: &World,
         audio_player: Option<&MusicPlayer>,
@@ -426,63 +443,41 @@ impl Ui {
         ])
         .split(area);
 
-        let mut spans = vec![
-            Span::styled(
-                " Esc ",
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
-            ),
-            Span::styled(" Quit ", Style::default().fg(Color::DarkGray)),
-        ];
+        let mut spans = vec![" Esc ".to_string(), " Quit ".to_string()];
 
-        if !self.data_view && self.state == UiState::Main {
+        if !self.debug_view && self.state == UiState::Main {
             spans.extend(vec![
-                Span::styled(
-                    format!(" {} ", UiKey::PREVIOUS_TAB.to_string()),
-                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
-                ),
-                Span::styled(" Previous tab ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    format!(" {} ", UiKey::NEXT_TAB.to_string()),
-                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
-                ),
-                Span::styled(" Next tab ", Style::default().fg(Color::DarkGray)),
+                format!(" {} ", UiKey::PREVIOUS_TAB.to_string()),
+                " Previous tab ".to_string(),
+                format!(" {} ", UiKey::NEXT_TAB.to_string()),
+                " Next tab ".to_string(),
             ]);
         }
 
-        let extra_spans = if self.data_view {
+        let extra_spans = if self.debug_view {
             let fps = (1.0 / self.last_update.elapsed().as_secs_f64()).round() as u32;
             let world_size = world.serialized_size / 1024;
 
             let mut spans = vec![
-                Span::styled(
-                    format!("FPS {:03} ", fps),
-                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
-                ),
-                Span::styled(
-                    format!(" World size {:06} kb ", world_size),
-                    Style::default().fg(Color::DarkGray),
-                ),
-                Span::styled(
-                    format!(" Seed {} ", world.seed),
-                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
+                format!("FPS {:>4} ", fps),
+                format!(" World size {:06} kb ", world_size),
+                format!(" Seed {} ", world.seed),
+                format!(
+                    " Screen size {}x{} ",
+                    frame.area().width,
+                    frame.area().height
                 ),
             ];
             if world.has_own_team() {
-                spans.push(Span::styled(
-                    format!(
-                        " New FA in {} ",
-                        world.next_free_pirates_refresh().formatted()
-                    ),
-                    Style::default().fg(Color::DarkGray),
-                ))
+                spans.push(format!(
+                    " New FA in {} ",
+                    world.next_free_pirates_refresh().formatted()
+                ));
             }
             if let Some(audio_player) = &audio_player {
                 if audio_player.is_playing() {
                     if let Some(currently_playing) = audio_player.currently_playing() {
-                        spans.push(Span::styled(
-                            format!(" Playing: {} ", currently_playing),
-                            Style::default().bg(Color::Gray).fg(Color::DarkGray),
-                        ));
+                        spans.push(format!(" {currently_playing} "));
                     }
                 }
             }
@@ -492,7 +487,22 @@ impl Ui {
         };
         spans.extend(extra_spans);
 
-        frame.render_widget(Line::from(spans).left_aligned(), split[0]);
+        let styles = [
+            Style::default().bg(Color::Gray).fg(Color::DarkGray),
+            Style::default().fg(Color::DarkGray),
+        ];
+
+        frame.render_widget(
+            Line::from(
+                spans
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, content)| Span::styled(content, styles[idx % 2]))
+                    .collect_vec(),
+            )
+            .left_aligned(),
+            split[0],
+        );
 
         if audio_player.is_some() {
             frame.render_widget(
@@ -507,7 +517,7 @@ impl Ui {
                         }
                     )
                     .into(),
-                    UiCallbackPreset::ToggleAudio,
+                    UiCallback::ToggleAudio,
                     Arc::clone(&self.callback_registry),
                 )
                 .set_hotkey(UiKey::TOGGLE_AUDIO),
@@ -517,7 +527,7 @@ impl Ui {
             frame.render_widget(
                 Button::no_box(
                     format!(" {}: Next radio ", UiKey::NEXT_AUDIO_SAMPLE.to_string(),).into(),
-                    UiCallbackPreset::NextAudioSample,
+                    UiCallback::NextAudioSample,
                     Arc::clone(&self.callback_registry),
                 )
                 .set_hotkey(UiKey::NEXT_AUDIO_SAMPLE),

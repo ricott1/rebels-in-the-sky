@@ -1,5 +1,4 @@
 use super::color_map::ColorMap;
-use super::types::GifFrame;
 use crate::store::ASSETS_DIR;
 use crate::types::AppResult;
 use anyhow::anyhow;
@@ -10,22 +9,22 @@ use once_cell::sync::Lazy;
 use std::io::Cursor;
 
 pub static UNIVERSE_BACKGROUND: Lazy<RgbaImage> =
-    Lazy::new(|| read_image("planets/background.png").expect("Cannot open background.png."));
+    Lazy::new(|| open_image("planets/background.png").expect("Cannot open background.png."));
 pub static TRAVELLING_BACKGROUND: Lazy<RgbaImage> = Lazy::new(|| {
-    read_image("planets/travelling_background.png").expect("Cannot open travelling_background.png.")
+    open_image("planets/travelling_background.png").expect("Cannot open travelling_background.png.")
 });
 
 pub trait ExtraImageUtils {
-    fn copy_non_trasparent_from(&mut self, other: &GifFrame, x: u32, y: u32) -> ImageResult<()>;
-    fn apply_color_map(&mut self, color_map: ColorMap) -> &GifFrame;
+    fn copy_non_trasparent_from(&mut self, other: &RgbaImage, x: u32, y: u32) -> ImageResult<()>;
+    fn apply_color_map(&mut self, color_map: ColorMap) -> &RgbaImage;
     fn apply_color_map_with_shadow_mask(
         &mut self,
         color_map: ColorMap,
-        mask: &GifFrame,
-    ) -> &GifFrame;
+        mask: &RgbaImage,
+    ) -> &RgbaImage;
 }
 
-impl ExtraImageUtils for GifFrame {
+impl ExtraImageUtils for RgbaImage {
     /// Copies all non-transparent the pixels from another image into this image.
     ///
     /// The other image is copied with the top-left corner of the
@@ -41,7 +40,7 @@ impl ExtraImageUtils for GifFrame {
     ///
     /// [`GenericImageView::view`]: trait.GenericImageView.html#method.view
     /// [`FlatSamples`]: flat/struct.FlatSamples.html
-    fn copy_non_trasparent_from(&mut self, other: &GifFrame, x: u32, y: u32) -> ImageResult<()> {
+    fn copy_non_trasparent_from(&mut self, other: &RgbaImage, x: u32, y: u32) -> ImageResult<()> {
         // Do bounds checking here so we can use the non-bounds-checking
         // functions to copy pixels.
         if self.width() < other.width() + x || self.height() < other.height() + y {
@@ -60,7 +59,7 @@ impl ExtraImageUtils for GifFrame {
         }
         Ok(())
     }
-    fn apply_color_map(&mut self, color_map: ColorMap) -> &GifFrame {
+    fn apply_color_map(&mut self, color_map: ColorMap) -> &RgbaImage {
         for k in 0..self.height() {
             for i in 0..self.width() {
                 let p = self.get_pixel(i, k);
@@ -91,8 +90,8 @@ impl ExtraImageUtils for GifFrame {
     fn apply_color_map_with_shadow_mask(
         &mut self,
         color_map: ColorMap,
-        mask: &GifFrame,
-    ) -> &GifFrame {
+        mask: &RgbaImage,
+    ) -> &RgbaImage {
         for k in 0..self.height() {
             for i in 0..self.width() {
                 let p = self.get_pixel(i, k);
@@ -145,7 +144,7 @@ impl ExtraImageUtils for GifFrame {
     }
 }
 
-pub fn read_image(path: &str) -> AppResult<RgbaImage> {
+pub fn open_image(path: &str) -> AppResult<RgbaImage> {
     let file = ASSETS_DIR.get_file(path);
     if file.is_none() {
         return Err(anyhow!("File {} not found", path));

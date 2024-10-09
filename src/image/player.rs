@@ -1,7 +1,7 @@
 use super::color_map::{ColorMap, HairColorMap};
 use super::components::*;
 use super::types::Gif;
-use super::utils::{read_image, ExtraImageUtils};
+use super::utils::{open_image, ExtraImageUtils};
 use crate::types::AppResult;
 use crate::world::jersey::{Jersey, JerseyStyle};
 use crate::world::player::InfoStats;
@@ -190,7 +190,9 @@ impl PlayerImage {
             JerseyStyle::Gilet => Some(ShirtImage::Gilet),
             JerseyStyle::Stripe => Some(ShirtImage::Stripe),
             JerseyStyle::Pirate => {
-                if r == 0 {
+                if info.population == Population::Galdari {
+                    Some(ShirtImage::PirateGald)
+                } else if r == 0 {
                     Some(ShirtImage::PirateAlt)
                 } else {
                     Some(ShirtImage::Pirate)
@@ -207,7 +209,9 @@ impl PlayerImage {
                 JerseyStyle::Gilet => Some(ShortsImage::Gilet),
                 JerseyStyle::Stripe => Some(ShortsImage::Stripe),
                 JerseyStyle::Pirate => {
-                    if r == 0 {
+                    if info.population == Population::Galdari {
+                        Some(ShortsImage::PirateGald)
+                    } else if r == 0 {
                         Some(ShortsImage::PirateAlt)
                     } else {
                         Some(ShortsImage::Pirate)
@@ -317,8 +321,8 @@ impl PlayerImage {
         let hair_color_map = self.hair_color_map;
         let jersey_color_map = self.jersey_color_map;
 
-        let mut other = read_image(self.legs.select_file(size).as_str())?;
-        let mask = read_image(self.legs.select_mask_file(size).as_str())?;
+        let mut other = open_image(self.legs.select_file(size).as_str())?;
+        let mask = open_image(self.legs.select_mask_file(size).as_str())?;
 
         other.apply_color_map_with_shadow_mask(skin_color_map, &mask);
 
@@ -328,7 +332,7 @@ impl PlayerImage {
         blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
 
         if let Some(shoes) = self.shoes.clone() {
-            let mut other = read_image(shoes.select_file(size).as_str())?;
+            let mut other = open_image(shoes.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
             if let Some(color_map) = jersey_color_map {
                 other.apply_color_map(color_map);
@@ -338,10 +342,10 @@ impl PlayerImage {
         }
 
         if let Some(shorts) = self.shorts.clone() {
-            let mut other = read_image(shorts.select_file(size).as_str())?;
+            let mut other = open_image(shorts.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
             if let Some(color_map) = jersey_color_map {
-                let mask = read_image(shorts.select_mask_file(size).as_str())?;
+                let mask = open_image(shorts.select_mask_file(size).as_str())?;
                 other.apply_color_map_with_shadow_mask(color_map, &mask);
             }
             base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
@@ -357,7 +361,7 @@ impl PlayerImage {
             } else {
                 size
             };
-            let other = read_image(wooden_leg.select_file(leg_size).as_str())?;
+            let other = open_image(wooden_leg.select_file(leg_size).as_str())?;
             // Polpett have the wooden leg moved to the side
             let offset = if info.population == Population::Polpett {
                 if size >= SIZE_LARGE_OFFSET {
@@ -399,8 +403,8 @@ impl PlayerImage {
             blinking_base.copy_non_trasparent_from(&other, x, img_height - other.height())?;
         }
 
-        let mut other = read_image(self.body.select_file(size).as_str())?;
-        let mask = read_image(self.body.select_mask_file(size).as_str())?;
+        let mut other = open_image(self.body.select_file(size).as_str())?;
+        let mask = open_image(self.body.select_mask_file(size).as_str())?;
         offset_y += other.height() - 1;
         let body_x = (base.width() - other.width()) / 2;
         other.apply_color_map_with_shadow_mask(skin_color_map, &mask);
@@ -408,7 +412,7 @@ impl PlayerImage {
         blinking_base.copy_non_trasparent_from(&other, body_x, img_height - offset_y)?;
 
         if let Some(hook) = self.hook.clone() {
-            let mut hook_img = read_image(hook.select_file(size).as_str())?;
+            let mut hook_img = open_image(hook.select_file(size).as_str())?;
 
             if let Some(color_map) = jersey_color_map {
                 hook_img.apply_color_map(color_map);
@@ -436,19 +440,19 @@ impl PlayerImage {
         }
 
         if let Some(shirt) = self.shirt.clone() {
-            let mut other = read_image(shirt.select_file(size).as_str())?;
+            let mut other = open_image(shirt.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
             if let Some(color_map) = jersey_color_map {
-                let mask = read_image(shirt.select_mask_file(size).as_str())?;
+                let mask = open_image(shirt.select_mask_file(size).as_str())?;
                 other.apply_color_map_with_shadow_mask(color_map, &mask);
             }
             base.copy_non_trasparent_from(&other, x, img_height - offset_y + 1)?;
             blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y + 1)?;
         }
 
-        let mut other = read_image(self.head.select_file(size).as_str())?;
-        let mut blinking = read_image(self.head.select_file(size).as_str())?;
-        let mask = read_image(self.head.select_mask_file(size).as_str())?;
+        let mut other = open_image(self.head.select_file(size).as_str())?;
+        let mut blinking = open_image(self.head.select_file(size).as_str())?;
+        let mask = open_image(self.head.select_mask_file(size).as_str())?;
         offset_y += other.height() - 5;
         let x = (base.width() - other.width()) / 2;
         let mut cm = skin_color_map;
@@ -459,14 +463,14 @@ impl PlayerImage {
         blinking_base.copy_non_trasparent_from(&blinking, x, img_height - offset_y)?;
 
         if let Some(eye_patch) = self.eye_patch.clone() {
-            let other = read_image(eye_patch.select_file(size).as_str())?;
+            let other = open_image(eye_patch.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
             base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
             blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
         }
 
         if let Some(hair) = self.hair.clone() {
-            let mut other = read_image(hair.select_file(size).as_str())?;
+            let mut other = open_image(hair.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
             other.apply_color_map(hair_color_map);
 
@@ -481,7 +485,7 @@ impl PlayerImage {
         }
 
         if let Some(beard) = self.beard.clone() {
-            let mut other = read_image(beard.select_file(size).as_str())?;
+            let mut other = open_image(beard.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
             if info.population == Population::Octopulp {
                 other.apply_color_map(skin_color_map);
@@ -493,7 +497,7 @@ impl PlayerImage {
         }
 
         if let Some(hat) = self.hat.clone() {
-            let other = read_image(hat.select_file(size).as_str())?;
+            let other = open_image(hat.select_file(size).as_str())?;
             let x = (base.width() - other.width()) / 2;
             offset_y += 2;
             let y = if info.population == Population::Pupparoll {

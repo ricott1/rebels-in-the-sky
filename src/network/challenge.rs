@@ -1,5 +1,5 @@
 use super::types::NetworkRequestState;
-use crate::engine::types::TeamInGame;
+use crate::game_engine::types::TeamInGame;
 use crate::types::Tick;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};

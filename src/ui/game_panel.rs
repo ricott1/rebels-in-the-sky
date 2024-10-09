@@ -1,8 +1,8 @@
 use super::button::Button;
 use super::clickable_list::ClickableListState;
 use super::constants::UiStyle;
-use super::gif_map::GifMap;
-use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::gif_map::*;
+use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::utils::hover_text_target;
 use super::{
     big_numbers::{hyphen, BigNumberFont},
@@ -11,17 +11,17 @@ use super::{
     utils::img_to_lines,
     widgets::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
 };
-use crate::engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE;
-use crate::types::AppResult;
+use crate::game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE;
+use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::world::constants::{MAX_MORALE, MORALE_THRESHOLD_FOR_LEAVING};
 use crate::{
-    engine::{
+    game_engine::{
         action::{ActionOutput, ActionSituation, Advantage},
         game::Game,
         timer::{Period, Timer},
         types::{GameStatsMap, Possession},
     },
-    image::pitch::{PitchStyle, PITCH_HEIGHT},
+    image::game::{PitchStyle, PITCH_HEIGHT},
     image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
     types::GameId,
     ui::constants::UiKey,
@@ -40,7 +40,7 @@ use ratatui::layout::Margin;
 use ratatui::{
     layout::{Constraint, Layout},
     prelude::Rect,
-    style::{Color, Style, Stylize},
+    style::Stylize,
     text::{Line, Span},
     widgets::{Cell, Paragraph, Row, Table, Wrap},
     Frame,
@@ -153,7 +153,7 @@ impl GamePanel {
         };
         let pitch_button = Button::new(
             text.into(),
-            UiCallbackPreset::TogglePitchView,
+            UiCallback::TogglePitchView,
             Arc::clone(&self.callback_registry),
         )
         .set_hover_text(
@@ -178,7 +178,7 @@ impl GamePanel {
         };
         let player_status_button = Button::new(
             text.into(),
-            UiCallbackPreset::TogglePlayerStatusView,
+            UiCallback::TogglePlayerStatusView,
             Arc::clone(&self.callback_registry),
         )
         .set_hover_text(
@@ -485,14 +485,33 @@ impl GamePanel {
         area: Rect,
     ) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Min(8), Constraint::Length(73)]).split(area);
-
         if let Some(game) = self.selected_game(world) {
-            if self.pitch_view {
+            let mut shot_img = None;
+            if let Some(last_action) = game.action_results.last() {
+                if last_action.score_change == 3 {
+                    let shot_tick = game.starting_at + last_action.start_at.as_tick();
+                    let now = Tick::now();
+                    let shot_frame = (now - shot_tick) as usize / 140;
+                    if shot_frame < RIGHT_SHOT_GIF.len() {
+                        // After scoring the possesion is flipped, so the opposite team scored.
+                        if last_action.possession == Possession::Home {
+                            shot_img = Some(RIGHT_SHOT_GIF[shot_frame].clone());
+                        } else {
+                            shot_img = Some(LEFT_SHOT_GIF[shot_frame].clone());
+                        }
+                    }
+                }
+            }
+
+            if let Some(img) = shot_img {
+                frame.render_widget(Paragraph::new(img).centered(), split[0]);
+            } else if self.pitch_view {
                 self.build_pitch_panel(frame, world, game, split[0])?;
             } else {
                 self.build_commentary(frame, split[0]);
             }
         }
+
         if let Some(game) = self.selected_game(world) {
             if self.player_status_view {
                 Self::build_status_box(game, frame, split[1]);
@@ -978,7 +997,13 @@ impl Screen for GamePanel {
         Ok(())
     }
 
-    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
         if self.games.len() == 0 {
             frame.render_widget(
                 Paragraph::new(" No games at the moment!").block(default_block()),
@@ -1003,7 +1028,7 @@ impl Screen for GamePanel {
         &mut self,
         key_event: crossterm::event::KeyEvent,
         _world: &World,
-    ) -> Option<UiCallbackPreset> {
+    ) -> Option<UiCallback> {
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
@@ -1039,46 +1064,31 @@ impl Screen for GamePanel {
         None
     }
 
-    fn footer_spans(&self) -> Vec<Span> {
+    fn footer_spans(&self) -> Vec<String> {
         let mut v = vec![];
 
         if self.pitch_view {
             v.append(&mut vec![
-                Span::styled(
-                    " 0-4 ",
-                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
-                ),
-                Span::styled(
-                    format!(
-                        " Filter: {:<6} ",
-                        if let Some(period) = self.pitch_view_filter {
-                            period.to_string()
-                        } else {
-                            "Full game".to_string()
-                        }
-                    ),
-                    Style::default().fg(Color::DarkGray),
+                " 0-4 ".to_string(),
+                format!(
+                    " Filter: {:<6} ",
+                    if let Some(period) = self.pitch_view_filter {
+                        period.to_string()
+                    } else {
+                        "Full game".to_string()
+                    }
                 ),
             ])
         } else {
             v.append(&mut vec![
-                Span::styled(
-                    format!(
-                        " {}/{} ",
-                        UiKey::PREVIOUS_SELECTION.to_string(),
-                        UiKey::NEXT_SELECTION.to_string()
-                    ),
-                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
+                format!(
+                    " {}/{} ",
+                    UiKey::PREVIOUS_SELECTION.to_string(),
+                    UiKey::NEXT_SELECTION.to_string()
                 ),
-                Span::styled(" Scroll commentary ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    " Enter ",
-                    Style::default().bg(Color::Gray).fg(Color::DarkGray),
-                ),
-                Span::styled(
-                    " Scroll commentary to top ",
-                    Style::default().fg(Color::DarkGray),
-                ),
+                " Scroll commentary ".to_string(),
+                " Enter ".to_string(),
+                " Scroll commentary to top ".to_string(),
             ])
         };
         v
@@ -1105,7 +1115,7 @@ impl SplitPanel for GamePanel {
 #[cfg(test)]
 mod tests {
     use crate::{
-        engine::timer::Timer,
+        game_engine::timer::Timer,
         types::{SystemTimeTick, Tick},
         world::constants::*,
     };

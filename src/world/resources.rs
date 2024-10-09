@@ -27,7 +27,7 @@ impl Resource {
     pub fn base_price(&self) -> f32 {
         match self {
             Resource::SATOSHI => 1.0,
-            Resource::GOLD => 2000.0,
+            Resource::GOLD => 1750.0,
             Resource::SCRAPS => 40.0,
             Resource::FUEL => 30.0,
             Resource::RUM => 125.0,

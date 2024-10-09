@@ -4,15 +4,18 @@ use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use rebels::app::App;
+use rebels::crossterm_event_handler::CrosstermEventHandler;
+use rebels::network::constants::DEFAULT_PORT;
 use rebels::relayer::Relayer;
-use rebels::ssh::server::AppServer;
+use rebels::ssh::AppServer;
 use rebels::store::store_path;
+use rebels::tui::Tui;
 use rebels::types::AppResult;
 
 #[derive(Parser, Debug)]
 #[clap(name="Rebels in the sky", about = "P(lanet)2P(lanet) basketball", author, version, long_about = None)]
 struct Args {
-    #[clap(long, short = 's', action=ArgAction::Set, help = "Set random seed for team generation")]
+    #[clap(long,  action=ArgAction::Set, help = "Set random seed for team generation")]
     seed: Option<u64>,
     #[clap(long, short='l', action=ArgAction::SetTrue, help = "Run in local mode (disable networking)")]
     disable_network: bool,
@@ -30,9 +33,11 @@ struct Args {
     seed_ip: Option<String>,
     #[clap(long, short = 'p', action=ArgAction::Set, help = "Set network port")]
     network_port: Option<u16>,
+    #[clap(long,  action=ArgAction::Set, help = "Set target FPS")]
+    target_fps: Option<u8>,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> AppResult<()> {
     let logfile_path = store_path("rebels.log")?;
     let logfile = FileAppender::builder()
@@ -45,13 +50,35 @@ async fn main() -> AppResult<()> {
         .build(Root::builder().appender("logfile").build(LevelFilter::Info))?;
 
     log4rs::init_config(config)?;
-
     let args = Args::parse();
+
+    if let Some(fps) = args.target_fps {
+        if fps == 0 {
+            eprintln!(
+                "error: invalid value '{fps}' for '--target-fps <TARGET_FPS>': {fps} is not in 1..=255"
+            );
+            return Ok(());
+        }
+    }
+
     if args.ssh_server {
+        // tokio::runtime::Builder::new_multi_thread()
+        //     .enable_all()
+        //     .build()?
+        //     .spawn(AppServer::new().run())
         AppServer::new().run().await?;
     } else if args.relayer_mode {
         Relayer::new().run().await?;
     } else {
+        let network_port = if args.disable_network {
+            None
+        } else {
+            Some(args.network_port.unwrap_or(DEFAULT_PORT))
+        };
+
+        let events = CrosstermEventHandler::new(args.target_fps);
+        let tui = Tui::new_local(events)?;
+
         App::new(
             args.seed,
             args.disable_network,
@@ -59,10 +86,10 @@ async fn main() -> AppResult<()> {
             args.generate_local_world,
             args.reset_world,
             args.seed_ip,
-            args.network_port,
+            network_port,
             None,
         )
-        .run()
+        .run(tui)
         .await?;
     }
 

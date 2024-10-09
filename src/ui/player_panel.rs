@@ -2,7 +2,7 @@ use super::button::Button;
 use super::clickable_list::ClickableListState;
 use super::constants::*;
 use super::gif_map::GifMap;
-use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::utils::{format_satoshi, hover_text_target};
 use super::{
     constants::{UiKey, IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
@@ -160,8 +160,8 @@ impl PlayerListPanel {
         let hover_text_target = hover_text_target(frame);
 
         let mut filter_all_button = Button::new(
-            format!("View: {}", PlayerView::All.to_string()),
-            UiCallbackPreset::SetPlayerPanelView {
+            format!("View: {}", PlayerView::All.to_string()).into(),
+            UiCallback::SetPlayerPanelView {
                 view: PlayerView::All,
             },
             Arc::clone(&self.callback_registry),
@@ -170,8 +170,8 @@ impl PlayerListPanel {
         .set_hover_text("View all players.".into(), hover_text_target);
 
         let mut filter_free_pirates_button = Button::new(
-            format!("View: {}", PlayerView::FreePirates.to_string()),
-            UiCallbackPreset::SetPlayerPanelView {
+            format!("View: {}", PlayerView::FreePirates.to_string()).into(),
+            UiCallback::SetPlayerPanelView {
                 view: PlayerView::FreePirates,
             },
             Arc::clone(&self.callback_registry),
@@ -180,8 +180,8 @@ impl PlayerListPanel {
         .set_hover_text("View free pirates.".into(), hover_text_target);
 
         let mut filter_tradable_button = Button::new(
-            format!("View: {}", PlayerView::Tradable.to_string()),
-            UiCallbackPreset::SetPlayerPanelView {
+            format!("View: {}", PlayerView::Tradable.to_string()).into(),
+            UiCallback::SetPlayerPanelView {
                 view: PlayerView::Tradable,
             },
             Arc::clone(&self.callback_registry),
@@ -190,8 +190,8 @@ impl PlayerListPanel {
         .set_hover_text("View pirates open for trade.".into(), hover_text_target);
 
         let mut filter_own_team_button = Button::new(
-            format!("View: {}", PlayerView::OwnTeam.to_string()),
-            UiCallbackPreset::SetPlayerPanelView {
+            format!("View: {}", PlayerView::OwnTeam.to_string()).into(),
+            UiCallback::SetPlayerPanelView {
                 view: PlayerView::OwnTeam,
             },
             Arc::clone(&self.callback_registry),
@@ -224,12 +224,13 @@ impl PlayerListPanel {
                 } else if player.peer_id.is_some() {
                     style = UiStyle::NETWORK;
                 }
-                let full_name = format!("{} {}", player.info.first_name, player.info.last_name);
-                let name = if full_name.len() <= 26 {
+                let full_name = player.info.full_name();
+                let name = if full_name.len() <= 2 * MAX_NAME_LENGTH + 2 {
                     full_name
                 } else {
                     player.info.shortened_name()
                 };
+
                 let text = format!("{:<26} {}", name, player.stars());
                 options.push((text, style));
             }
@@ -357,8 +358,8 @@ impl PlayerListPanel {
             PlayerLocation::OnPlanet { planet_id } => {
                 let planet = world.get_planet_or_err(planet_id)?;
                 let button = Button::new(
-                    format!("Free pirate - On planet {}", planet.name),
-                    UiCallbackPreset::GoToPlanetZoomIn { planet_id },
+                    format!("Free pirate - On planet {}", planet.name).into(),
+                    UiCallback::GoToPlanetZoomIn { planet_id },
                     Arc::clone(&self.callback_registry),
                 )
                 .set_hover_text(
@@ -371,8 +372,8 @@ impl PlayerListPanel {
             PlayerLocation::WithTeam => {
                 let team = world.get_team_or_err(player.team.unwrap())?;
                 let button = Button::new(
-                    format!("team {}", team.name),
-                    UiCallbackPreset::GoToPlayerTeam {
+                    format!("team {}", team.name).into(),
+                    UiCallback::GoToPlayerTeam {
                         player_id: player.id,
                     },
                     Arc::clone(&self.callback_registry),
@@ -386,7 +387,7 @@ impl PlayerListPanel {
             if self.locked_player_id.is_some() && self.locked_player_id.unwrap() == player.id {
                 Button::new(
                     "Unlock".into(),
-                    UiCallbackPreset::LockPlayerPanel {
+                    UiCallback::LockPlayerPanel {
                         player_id: self.selected_player_id,
                     },
                     Arc::clone(&self.callback_registry),
@@ -399,7 +400,7 @@ impl PlayerListPanel {
             } else {
                 Button::new(
                     "Lock".into(),
-                    UiCallbackPreset::LockPlayerPanel {
+                    UiCallback::LockPlayerPanel {
                         player_id: self.selected_player_id,
                     },
                     Arc::clone(&self.callback_registry),
@@ -418,8 +419,8 @@ impl PlayerListPanel {
             let hire_cost = player.hire_cost(own_team.reputation);
 
             let mut button = Button::new(
-                format!("Hire -{}", format_satoshi(hire_cost)),
-                UiCallbackPreset::HirePlayer {
+                format!("Hire -{}", format_satoshi(hire_cost)).into(),
+                UiCallback::HirePlayer {
                     player_id: player.id,
                 },
                 Arc::clone(&self.callback_registry),
@@ -444,7 +445,7 @@ impl PlayerListPanel {
                     .get_team_or_err(proposer_player.team.expect("Player should have a team"))?;
                 let mut button = Button::new(
                     "Accept trade".into(),
-                    UiCallbackPreset::AcceptTrade {
+                    UiCallback::AcceptTrade {
                         trade: trade.clone(),
                     },
                     Arc::clone(&self.callback_registry),
@@ -469,7 +470,7 @@ impl PlayerListPanel {
             } else if player.id == self.locked_player_id.expect("One player should be locked") {
                 let button = Button::new(
                     "Decline trade".into(),
-                    UiCallbackPreset::DeclineTrade {
+                    UiCallback::DeclineTrade {
                         trade: trade.clone(),
                     },
                     Arc::clone(&self.callback_registry),
@@ -502,7 +503,7 @@ impl PlayerListPanel {
                     {
                         let mut trade_button = Button::new(
                             "Propose trade".into(),
-                            UiCallbackPreset::CreateTradeProposal {
+                            UiCallback::CreateTradeProposal {
                                 proposer_player_id: proposer_player.id,
                                 target_player_id: target_player.id,
                             },
@@ -587,7 +588,7 @@ impl Screen for PlayerListPanel {
         }
         Ok(())
     }
-    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect,_debug_view: bool) -> AppResult<()> {
         if self.all_players.len() == 0 {
             frame.render_widget(
                 Paragraph::new(" No player yet!"),
@@ -605,7 +606,7 @@ impl Screen for PlayerListPanel {
             .register_mouse_callback(
                 crossterm::event::MouseEventKind::ScrollDown,
                 None,
-                UiCallbackPreset::NextPanelIndex,
+                UiCallback::NextPanelIndex,
             );
 
         self.callback_registry
@@ -614,7 +615,7 @@ impl Screen for PlayerListPanel {
             .register_mouse_callback(
                 crossterm::event::MouseEventKind::ScrollUp,
                 None,
-                UiCallbackPreset::PreviousPanelIndex,
+                UiCallback::PreviousPanelIndex,
             );
 
         // Split into left and right panels
@@ -632,19 +633,19 @@ impl Screen for PlayerListPanel {
         &mut self,
         key_event: crossterm::event::KeyEvent,
         _world: &World,
-    ) -> Option<UiCallbackPreset> {
+    ) -> Option<UiCallback> {
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
             UiKey::GO_TO_TEAM => {
                 if let Some(_) = self.selected_team_id.clone() {
-                    return Some(UiCallbackPreset::GoToPlayerTeam {
+                    return Some(UiCallback::GoToPlayerTeam {
                         player_id: self.selected_player_id,
                     });
                 }
             }
             UiKey::CYCLE_VIEW => {
-                return Some(UiCallbackPreset::SetPlayerPanelView {
+                return Some(UiCallback::SetPlayerPanelView {
                     view: self.view.next(),
                 });
             }

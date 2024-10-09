@@ -1,12 +1,11 @@
 use crate::{store::ASSETS_DIR, types::AppResult, ui::utils::img_to_lines};
 use anyhow::anyhow;
-use image::{ImageBuffer, Rgba};
+use image::{ImageBuffer, RgbaImage};
 use ratatui::text::Line;
 
-pub type GifFrame = ImageBuffer<Rgba<u8>, Vec<u8>>;
-pub type Gif = Vec<GifFrame>;
-pub type FrameLines = Vec<Line<'static>>;
-pub type GifLines = Vec<FrameLines>;
+pub type Gif = Vec<RgbaImage>;
+pub type ImageLines = Vec<Line<'static>>;
+pub type GifLines = Vec<ImageLines>;
 
 pub trait PrintableGif: Sized {
     fn open(filename: String) -> AppResult<Self>;

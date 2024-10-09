@@ -1,6 +1,6 @@
 use super::{
     constants::UiStyle,
-    ui_callback::{CallbackRegistry, UiCallbackPreset},
+    ui_callback::{CallbackRegistry, UiCallback},
     widgets::default_block,
 };
 use crossterm::event::KeyCode;
@@ -16,7 +16,7 @@ use std::{sync::Arc, sync::Mutex};
 pub struct Button<'a> {
     text: Text<'a>,
     hotkey: Option<KeyCode>,
-    on_click: UiCallbackPreset,
+    on_click: UiCallback,
     callback_registry: Arc<Mutex<CallbackRegistry>>,
     disabled: bool,
     disabled_text: Option<String>,
@@ -42,12 +42,12 @@ impl<'a> Button<'a> {
             && self.layer == self.callback_registry.lock().unwrap().get_max_layer()
     }
     pub fn new(
-        text: String,
-        on_click: UiCallbackPreset,
+        text: Text<'a>,
+        on_click: UiCallback,
         callback_registry: Arc<Mutex<CallbackRegistry>>,
     ) -> Self {
         Self {
-            text: text.into(),
+            text,
             hotkey: None,
             on_click,
             callback_registry,
@@ -65,12 +65,12 @@ impl<'a> Button<'a> {
     }
 
     pub fn box_on_hover(
-        text: String,
-        on_click: UiCallbackPreset,
+        text: Text<'a>,
+        on_click: UiCallback,
         callback_registry: Arc<Mutex<CallbackRegistry>>,
     ) -> Self {
         Self {
-            text: text.into(),
+            text,
             hotkey: None,
             on_click,
             callback_registry,
@@ -89,7 +89,7 @@ impl<'a> Button<'a> {
 
     pub fn no_box(
         text: Text<'a>,
-        on_click: UiCallbackPreset,
+        on_click: UiCallback,
         callback_registry: Arc<Mutex<CallbackRegistry>>,
     ) -> Self {
         Self {
@@ -110,32 +110,9 @@ impl<'a> Button<'a> {
         }
     }
 
-    pub fn paragraph(
-        text: String,
-        on_click: UiCallbackPreset,
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-    ) -> Self {
-        Self {
-            text: text.into(),
-            hotkey: None,
-            on_click,
-            callback_registry,
-            disabled: false,
-            disabled_text: None,
-            text_alignemnt: ratatui::layout::Alignment::Left,
-            style: UiStyle::UNSELECTED,
-            hover_style: UiStyle::SELECTED,
-            box_style: None,
-            box_hover_style: None,
-            hover_text: None,
-            hover_text_target: None,
-            layer: 0,
-        }
-    }
-
     pub fn text(
         text: Text<'a>,
-        on_click: UiCallbackPreset,
+        on_click: UiCallback,
         callback_registry: Arc<Mutex<CallbackRegistry>>,
     ) -> Self {
         Self {
@@ -314,8 +291,8 @@ impl<'a> Widget for Button<'a> {
 
 #[derive(Debug)]
 pub struct RadioButton<'a> {
-    pub text: Text<'a>,
-    on_click: UiCallbackPreset,
+    text: Text<'a>,
+    on_click: UiCallback,
     callback_registry: Arc<Mutex<CallbackRegistry>>,
     disabled: bool,
     linked_index: &'a mut usize,
@@ -355,14 +332,14 @@ impl<'a> RadioButton<'a> {
     }
 
     pub fn new(
-        text: String,
-        on_click: UiCallbackPreset,
+        text: Text<'a>,
+        on_click: UiCallback,
         callback_registry: Arc<Mutex<CallbackRegistry>>,
         linked_index: &'a mut usize,
         index: usize,
     ) -> Self {
         Self {
-            text: text.into(),
+            text,
             on_click,
             callback_registry,
             disabled: false,
@@ -377,14 +354,14 @@ impl<'a> RadioButton<'a> {
         }
     }
     pub fn box_on_hover(
-        text: String,
-        on_click: UiCallbackPreset,
+        text: Text<'a>,
+        on_click: UiCallback,
         callback_registry: Arc<Mutex<CallbackRegistry>>,
         linked_index: &'a mut usize,
         index: usize,
     ) -> Self {
         Self {
-            text: text.into(),
+            text,
             on_click,
             callback_registry,
             disabled: false,
@@ -400,14 +377,14 @@ impl<'a> RadioButton<'a> {
     }
 
     pub fn no_box(
-        text: String,
-        on_click: UiCallbackPreset,
+        text: Text<'a>,
+        on_click: UiCallback,
         callback_registry: Arc<Mutex<CallbackRegistry>>,
         linked_index: &'a mut usize,
         index: usize,
     ) -> Self {
         Self {
-            text: text.into(),
+            text,
             on_click,
             callback_registry,
             disabled: false,

@@ -9,7 +9,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::ui_callback::{CallbackRegistry, UiCallback};
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
 pub struct ClickableCell<'a> {
@@ -396,7 +396,7 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
                 .register_mouse_callback(
                     crossterm::event::MouseEventKind::ScrollDown,
                     None,
-                    UiCallbackPreset::NextPanelIndex,
+                    UiCallback::NextPanelIndex,
                 );
 
             self.callback_registry
@@ -405,7 +405,7 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
                 .register_mouse_callback(
                     crossterm::event::MouseEventKind::ScrollUp,
                     None,
-                    UiCallbackPreset::PreviousPanelIndex,
+                    UiCallback::PreviousPanelIndex,
                 );
         }
 
@@ -473,7 +473,7 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
                 .register_mouse_callback(
                     crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
                     Some(area),
-                    UiCallbackPreset::SetPanelIndex { index },
+                    UiCallback::SetPanelIndex { index },
                 );
         }
     }

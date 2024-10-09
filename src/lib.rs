@@ -1,7 +1,7 @@
 pub mod app;
 pub mod audio;
-pub mod engine;
-pub mod event;
+pub mod crossterm_event_handler;
+pub mod game_engine;
 pub mod image;
 pub mod network;
 pub mod relayer;

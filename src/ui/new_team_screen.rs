@@ -3,7 +3,7 @@ use super::clickable_list::ClickableListState;
 use super::constants::*;
 use super::gif_map::GifMap;
 use super::traits::SplitPanel;
-use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::utils::{format_satoshi, validate_textarea_input};
 use super::{
     constants::UiStyle,
@@ -207,6 +207,7 @@ impl NewTeamScreen {
         Create your crew and start wondering the galaxy in search of worthy basketball opponents.
         
         Choose your team name, customize your ship, and select a worthy crew.
+        You won't keep any leftover money, so spend wisely!
 
         [Press enter to confirm selections.]"
         );
@@ -417,7 +418,7 @@ impl NewTeamScreen {
                     Line::from(Span::styled(" ".repeat(area.width as usize / 3), red_style)),
                 ]
                 .into(),
-                UiCallbackPreset::SetTeamColors {
+                UiCallback::SetTeamColors {
                     color: self.red_color_preset.next(),
                     channel: 0,
                 },
@@ -440,7 +441,7 @@ impl NewTeamScreen {
                     )),
                 ]
                 .into(),
-                UiCallbackPreset::SetTeamColors {
+                UiCallback::SetTeamColors {
                     color: self.green_color_preset.next(),
                     channel: 1,
                 },
@@ -464,7 +465,7 @@ impl NewTeamScreen {
                     )),
                 ]
                 .into(),
-                UiCallbackPreset::SetTeamColors {
+                UiCallback::SetTeamColors {
                     color: self.blue_color_preset.next(),
                     channel: 2,
                 },
@@ -606,14 +607,21 @@ impl NewTeamScreen {
     }
 
     fn get_remaining_balance(&self) -> i32 {
-        let planet_players = &self.planet_players[&self.planet_ids[self.planet_index]];
-        let mut hiring_costs = 0 as i32;
-        for (player_id, hire_cost) in planet_players.iter() {
-            if !self.selected_players.contains(player_id) {
-                continue;
+        let hiring_costs = if let Some(planet_players) =
+            &self.planet_players.get(&self.planet_ids[self.planet_index])
+        {
+            let mut hiring_costs = 0 as i32;
+            for (player_id, hire_cost) in planet_players.iter() {
+                if !self.selected_players.contains(player_id) {
+                    continue;
+                }
+                hiring_costs += *hire_cost as i32;
             }
-            hiring_costs += *hire_cost as i32;
-        }
+            hiring_costs
+        } else {
+            0
+        };
+
         let ship_cost = self.selected_ship().cost();
         INITIAL_TEAM_BALANCE as i32 - hiring_costs - ship_cost as i32
     }
@@ -670,8 +678,8 @@ impl NewTeamScreen {
                     return ("".to_string(), style);
                 }
                 let player = world.get_player(player_id).unwrap();
-                let full_name = format!("{} {}", player.info.first_name, player.info.last_name);
-                let name = if full_name.len() <= 23 {
+                let full_name = player.info.full_name();
+                let name = if full_name.len() <= 2 * MAX_NAME_LENGTH + 2 {
                     full_name
                 } else {
                     player.info.shortened_name()
@@ -767,13 +775,12 @@ impl NewTeamScreen {
 
         let yes_button = Button::new(
             UiText::YES.into(),
-            UiCallbackPreset::GeneratePlayerTeam {
+            UiCallback::GeneratePlayerTeam {
                 name: self.team_name_textarea.lines()[0].clone(),
                 home_planet: self.planet_ids[self.planet_index].clone(),
                 jersey_style: self.jersey_styles[self.jersey_style_index],
                 jersey_colors: self.get_team_colors(),
                 players: self.selected_players.clone(),
-                balance: self.get_remaining_balance() as u32,
                 spaceship: self.selected_ship(),
             },
             Arc::clone(&self.callback_registry),
@@ -783,7 +790,7 @@ impl NewTeamScreen {
 
         let no_button = Button::new(
             UiText::NO.into(),
-            UiCallbackPreset::CancelGeneratePlayerTeam,
+            UiCallback::CancelGeneratePlayerTeam,
             Arc::clone(&self.callback_registry),
         )
         .set_style(UiStyle::ERROR);
@@ -837,7 +844,16 @@ impl Screen for NewTeamScreen {
 
         Ok(())
     }
-    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
+        if self.planet_ids.len() == 0 {
+            return Ok(());
+        }
         let v_split = Layout::horizontal([
             Constraint::Length(1),
             Constraint::Length(LEFT_PANEL_WIDTH), //selections
@@ -937,11 +953,7 @@ impl Screen for NewTeamScreen {
         Ok(())
     }
 
-    fn handle_key_events(
-        &mut self,
-        key_event: KeyEvent,
-        _world: &World,
-    ) -> Option<UiCallbackPreset> {
+    fn handle_key_events(&mut self, key_event: KeyEvent, _world: &World) -> Option<UiCallback> {
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
@@ -1075,19 +1087,19 @@ impl Screen for NewTeamScreen {
                         }
 
                         KeyCode::Char('r') => {
-                            return Some(UiCallbackPreset::SetTeamColors {
+                            return Some(UiCallback::SetTeamColors {
                                 color: self.red_color_preset.next(),
                                 channel: 0,
                             });
                         }
                         KeyCode::Char('g') => {
-                            return Some(UiCallbackPreset::SetTeamColors {
+                            return Some(UiCallback::SetTeamColors {
                                 color: self.green_color_preset.next(),
                                 channel: 1,
                             });
                         }
                         KeyCode::Char('b') => {
-                            return Some(UiCallbackPreset::SetTeamColors {
+                            return Some(UiCallback::SetTeamColors {
                                 color: self.blue_color_preset.next(),
                                 channel: 2,
                             });
@@ -1101,19 +1113,19 @@ impl Screen for NewTeamScreen {
                         }
 
                         KeyCode::Char('r') => {
-                            return Some(UiCallbackPreset::SetTeamColors {
+                            return Some(UiCallback::SetTeamColors {
                                 color: self.red_color_preset.next(),
                                 channel: 0,
                             });
                         }
                         KeyCode::Char('g') => {
-                            return Some(UiCallbackPreset::SetTeamColors {
+                            return Some(UiCallback::SetTeamColors {
                                 color: self.green_color_preset.next(),
                                 channel: 1,
                             });
                         }
                         KeyCode::Char('b') => {
-                            return Some(UiCallbackPreset::SetTeamColors {
+                            return Some(UiCallback::SetTeamColors {
                                 color: self.blue_color_preset.next(),
                                 channel: 2,
                             });
@@ -1143,19 +1155,18 @@ impl Screen for NewTeamScreen {
                     },
                     CreationState::Done => match key_event.code {
                         KeyCode::Enter => {
-                            return Some(UiCallbackPreset::GeneratePlayerTeam {
+                            return Some(UiCallback::GeneratePlayerTeam {
                                 name: self.team_name_textarea.lines()[0].clone(),
                                 home_planet: self.planet_ids[self.planet_index].clone(),
                                 jersey_style: self.jersey_styles[self.jersey_style_index],
                                 jersey_colors: self.get_team_colors(),
                                 players: self.selected_players.clone(),
-                                balance: self.get_remaining_balance() as u32,
                                 spaceship: self.selected_ship().clone(),
                             });
                         }
                         KeyCode::Backspace => {
                             self.set_index(0);
-                            return Some(UiCallbackPreset::CancelGeneratePlayerTeam);
+                            return Some(UiCallback::CancelGeneratePlayerTeam);
                         }
                         KeyCode::Left => {
                             self.confirm = ConfirmChoice::Yes;

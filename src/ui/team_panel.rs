@@ -1,7 +1,7 @@
 use super::button::{Button, RadioButton};
 use super::clickable_list::ClickableListState;
 use super::gif_map::GifMap;
-use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::utils::hover_text_target;
 use super::widgets::{
     go_to_team_current_planet_button, render_challenge_button, render_spaceship_description,
@@ -17,7 +17,7 @@ use crate::types::AppResult;
 use crate::world::position::MAX_POSITION;
 use crate::world::team::Team;
 use crate::{
-    image::pitch::floor_from_size,
+    image::game::floor_from_size,
     image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
     types::{PlayerId, TeamId},
     world::{
@@ -32,8 +32,6 @@ use ratatui::layout::Margin;
 use ratatui::{
     layout::{Alignment, Constraint, Layout},
     prelude::Rect,
-    style::{Color, Style},
-    text::Span,
     widgets::Paragraph,
     Frame,
 };
@@ -134,8 +132,8 @@ impl TeamListPanel {
         let hover_text_target = hover_text_target(frame);
 
         let mut filter_all_button = Button::new(
-            format!("View: {}", TeamView::All.to_string()),
-            UiCallbackPreset::SetTeamPanelView {
+            format!("View: {}", TeamView::All.to_string()).into(),
+            UiCallback::SetTeamPanelView {
                 view: TeamView::All,
             },
             Arc::clone(&self.callback_registry),
@@ -144,8 +142,8 @@ impl TeamListPanel {
         .set_hover_text("View all teams.".into(), hover_text_target);
 
         let mut filter_challenge_button = Button::new(
-            format!("View: {}", TeamView::OpenToChallenge.to_string()),
-            UiCallbackPreset::SetTeamPanelView {
+            format!("View: {}", TeamView::OpenToChallenge.to_string()).into(),
+            UiCallback::SetTeamPanelView {
                 view: TeamView::OpenToChallenge,
             },
             Arc::clone(&self.callback_registry),
@@ -157,8 +155,8 @@ impl TeamListPanel {
         );
 
         let mut filter_peers_button = Button::new(
-            format!("View: {}", TeamView::Peers.to_string()),
-            UiCallbackPreset::SetTeamPanelView {
+            format!("View: {}", TeamView::Peers.to_string()).into(),
+            UiCallback::SetTeamPanelView {
                 view: TeamView::Peers,
             },
             Arc::clone(&self.callback_registry),
@@ -274,8 +272,8 @@ impl TeamListPanel {
             };
 
             let button = RadioButton::no_box(
-                "".to_string(),
-                UiCallbackPreset::GoToPlayer {
+                "".into(),
+                UiCallback::GoToPlayer {
                     player_id: team.player_ids[i],
                 },
                 Arc::clone(&self.callback_registry),
@@ -345,8 +343,8 @@ impl TeamListPanel {
                         best_role.player_rating(skills).stars()
                     );
                     let button = RadioButton::new(
-                        format!("{}{}", info, role_info),
-                        UiCallbackPreset::GoToPlayer {
+                        format!("{}{}", info, role_info).into(),
+                        UiCallback::GoToPlayer {
                             player_id: team.player_ids[i + 5],
                         },
                         Arc::clone(&self.callback_registry),
@@ -479,7 +477,13 @@ impl Screen for TeamListPanel {
         }
         Ok(())
     }
-    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
         if self.all_teams.len() == 0 {
             frame.render_widget(
                 Paragraph::new(" No team yet!"),
@@ -506,37 +510,34 @@ impl Screen for TeamListPanel {
         &mut self,
         key_event: crossterm::event::KeyEvent,
         _world: &World,
-    ) -> Option<UiCallbackPreset> {
+    ) -> Option<UiCallback> {
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
             UiKey::NEXT_SELECTION => self.next_player_index(),
             UiKey::PREVIOUS_SELECTION => self.previous_player_index(),
             UiKey::CYCLE_VIEW => {
-                return Some(UiCallbackPreset::SetTeamPanelView {
+                return Some(UiCallback::SetTeamPanelView {
                     view: self.view.next(),
                 });
             }
             KeyCode::Enter => {
                 let player_id = self.selected_player_id.clone();
-                return Some(UiCallbackPreset::GoToPlayer { player_id });
+                return Some(UiCallback::GoToPlayer { player_id });
             }
             _ => {}
         }
         None
     }
 
-    fn footer_spans(&self) -> Vec<Span> {
+    fn footer_spans(&self) -> Vec<String> {
         vec![
-            Span::styled(
-                format!(
-                    " {}/{} ",
-                    UiKey::PREVIOUS_SELECTION.to_string(),
-                    UiKey::NEXT_SELECTION.to_string()
-                ),
-                Style::default().bg(Color::Gray).fg(Color::DarkGray),
+            format!(
+                " {}/{} ",
+                UiKey::PREVIOUS_SELECTION.to_string(),
+                UiKey::NEXT_SELECTION.to_string()
             ),
-            Span::styled(" Select player ", Style::default().fg(Color::DarkGray)),
+            " Select player ".to_string(),
         ]
     }
 }

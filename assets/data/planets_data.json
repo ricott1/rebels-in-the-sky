@@ -88,7 +88,8 @@
         "name": "Proxima d",
         "populations": {
             "2": 6,
-            "3": 5
+            "3": 5,
+            "100": 1
         },
         "resources": {
             "1": 1,
@@ -132,7 +133,7 @@
         "peer_id": null,
         "version": 0,
         "name": "Mizu",
-        "populations": {"6": 16},
+        "populations": {"6": 16, "103": 1},
         "resources": {
             "1": 4,
             "2": 3,
@@ -186,8 +187,10 @@
         "version": 0,
         "name": "Mars",
         "populations": {
-            "2": 9,
+            "2": 8,
             "102": 3,
+            "104": 1,
+            "105": 1,
             "109": 1
         },
         "resources": {
@@ -210,7 +213,7 @@
         "peer_id": null,
         "version": 0,
         "name": "Jupiter",
-        "populations": { "1": 11, "109": 1 },
+        "populations": { "1": 8, "106": 1 ,"107": 1 ,"109": 1 },
         "resources": {
             "1": 1,
             "2": 7,
@@ -234,7 +237,8 @@
         "populations": {
             "1": 6,
             "3": 3,
-            "102": 2
+            "102": 2,
+            "104": 2
         },
         "resources": {
             "1": 2,
@@ -256,7 +260,7 @@
         "peer_id": null,
         "version": 0,
         "name": "Uranus",
-        "populations": { "3": 9 },
+        "populations": { "3": 9, "101": 1 },
         "resources": {
             "1": 2,
             "2": 6,
@@ -278,7 +282,10 @@
         "version": 0,
         "name": "Moon",
         "populations": {
-            "101": 6,
+            "101": 5,
+            "102": 3,
+            "103": 2,
+            "106": 1,
             "1": 5,
             "5": 3
         },
@@ -305,6 +312,7 @@
         "populations": {
             "107": 2,
             "108": 2,
+            "109": 1,
             "2": 4,
             "5": 1
         },
@@ -331,7 +339,8 @@
         "populations": {
             "1": 1,
             "2": 7,
-            "5": 1
+            "5": 1,
+            "102": 1
         },
         "resources": {
             "2": 2,

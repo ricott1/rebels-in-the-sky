@@ -1,6 +1,6 @@
 use crate::{
     app::App,
-    engine::{
+    game_engine::{
         game::{Game, GameSummary},
         types::GameStatsMap,
     },
@@ -76,6 +76,7 @@ pub trait SystemTimeTick {
     fn as_secs(&self) -> Tick;
     fn as_minutes(&self) -> Tick;
     fn as_hours(&self) -> Tick;
+    fn as_days(&self) -> Tick;
     fn as_system_time(&self) -> SystemTime;
     fn formatted_as_time(&self) -> String;
     fn formatted_as_date(&self) -> String;
@@ -106,6 +107,10 @@ impl SystemTimeTick for Tick {
 
     fn as_hours(&self) -> Tick {
         self / HOURS
+    }
+
+    fn as_days(&self) -> Tick {
+        self / DAYS
     }
 
     fn as_system_time(&self) -> SystemTime {

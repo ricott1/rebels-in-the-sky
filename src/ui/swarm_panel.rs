@@ -1,6 +1,6 @@
 use super::button::Button;
 use super::constants::*;
-use super::ui_callback::{CallbackRegistry, UiCallbackPreset};
+use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::utils::{hover_text_target, SwarmPanelEvent};
 use super::{
     traits::{Screen, SplitPanel},
@@ -150,8 +150,8 @@ impl SwarmPanel {
         let hover_text_target = hover_text_target(frame);
 
         let mut chat_button = Button::new(
-            "View:Chat".to_string(),
-            UiCallbackPreset::SetSwarmPanelView {
+            "View:Chat".into(),
+            UiCallback::SetSwarmPanelView {
                 topic: SwarmView::Chat,
             },
             Arc::clone(&self.callback_registry),
@@ -163,8 +163,8 @@ impl SwarmPanel {
         );
 
         let mut challenges_button = Button::new(
-            "View:Requests".to_string(),
-            UiCallbackPreset::SetSwarmPanelView {
+            "View:Requests".into(),
+            UiCallback::SetSwarmPanelView {
                 topic: SwarmView::Requests,
             },
             Arc::clone(&self.callback_registry),
@@ -176,8 +176,8 @@ impl SwarmPanel {
         );
 
         let mut log_button = Button::new(
-            "View:Log".to_string(),
-            UiCallbackPreset::SetSwarmPanelView {
+            "View:Log".into(),
+            UiCallback::SetSwarmPanelView {
                 topic: SwarmView::Log,
             },
             Arc::clone(&self.callback_registry),
@@ -189,8 +189,8 @@ impl SwarmPanel {
         );
 
         let mut team_ranking_button = Button::new(
-            "View:Ranking".to_string(),
-            UiCallbackPreset::SetSwarmPanelView {
+            "View:Ranking".into(),
+            UiCallback::SetSwarmPanelView {
                 topic: SwarmView::TeamRanking,
             },
             Arc::clone(&self.callback_registry),
@@ -250,7 +250,7 @@ impl SwarmPanel {
 
         let dial_button = Button::new(
             "Ping".into(),
-            UiCallbackPreset::Dial {
+            UiCallback::Dial {
                 address: "seed".into(),
             },
             Arc::clone(&self.callback_registry),
@@ -322,8 +322,9 @@ impl SwarmPanel {
                             .skip(8)
                             .take(8)
                             .collect::<String>()
-                    ),
-                    UiCallbackPreset::GoToTeam {
+                    )
+                    .into(),
+                    UiCallback::GoToTeam {
                         team_id: team.team_id,
                     },
                     Arc::clone(&self.callback_registry),
@@ -333,8 +334,8 @@ impl SwarmPanel {
 
             if !is_sent {
                 let mut accept_button = Button::new(
-                    format!("{:6^}", UiText::YES),
-                    UiCallbackPreset::AcceptChallenge {
+                    format!("{:6^}", UiText::YES).into(),
+                    UiCallback::AcceptChallenge {
                         challenge: challenge.clone(),
                     },
                     Arc::clone(&self.callback_registry),
@@ -349,8 +350,8 @@ impl SwarmPanel {
                 }
                 frame.render_widget(accept_button, line_split[1]);
                 let mut decline_button = Button::new(
-                    format!("{:6^}", UiText::NO),
-                    UiCallbackPreset::DeclineChallenge {
+                    format!("{:6^}", UiText::NO).into(),
+                    UiCallback::DeclineChallenge {
                         challenge: challenge.clone(),
                     },
                     Arc::clone(&self.callback_registry),
@@ -417,8 +418,9 @@ impl SwarmPanel {
                         target_player.stars(),
                         proposer_player.info.shortened_name(),
                         proposer_player.stars()
-                    ),
-                    UiCallbackPreset::GoToTrade {
+                    )
+                    .into(),
+                    UiCallback::GoToTrade {
                         trade: trade.clone(),
                     },
                     Arc::clone(&self.callback_registry),
@@ -427,8 +429,8 @@ impl SwarmPanel {
             );
             if !is_sent {
                 let mut accept_button = Button::new(
-                    format!("{:6^}", UiText::YES),
-                    UiCallbackPreset::AcceptTrade {
+                    format!("{:6^}", UiText::YES).into(),
+                    UiCallback::AcceptTrade {
                         trade: trade.clone(),
                     },
                     Arc::clone(&self.callback_registry),
@@ -447,8 +449,8 @@ impl SwarmPanel {
                 }
                 frame.render_widget(accept_button, line_split[1]);
                 let mut decline_button = Button::new(
-                    format!("{:6^}", UiText::NO),
-                    UiCallbackPreset::DeclineTrade {
+                    format!("{:6^}", UiText::NO).into(),
+                    UiCallback::DeclineTrade {
                         trade: trade.clone(),
                     },
                     Arc::clone(&self.callback_registry),
@@ -518,7 +520,7 @@ impl SwarmPanel {
                         Span::styled(text, UiStyle::NETWORK)
                             .into_left_aligned_line()
                             .into(),
-                        UiCallbackPreset::GoToTeam { team_id },
+                        UiCallback::GoToTeam { team_id },
                         Arc::clone(&self.callback_registry),
                     )
                     .set_hover_text(
@@ -629,7 +631,13 @@ impl Screen for SwarmPanel {
         Ok(())
     }
 
-    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Min(1)])
             .split(area);
 
@@ -638,23 +646,19 @@ impl Screen for SwarmPanel {
         Ok(())
     }
 
-    fn handle_key_events(
-        &mut self,
-        key_event: KeyEvent,
-        _world: &World,
-    ) -> Option<UiCallbackPreset> {
+    fn handle_key_events(&mut self, key_event: KeyEvent, _world: &World) -> Option<UiCallback> {
         match key_event.code {
             KeyCode::Up => self.previous_index(),
             KeyCode::Down => self.next_index(),
             UiKey::CYCLE_VIEW => {
                 //FIXME: this means the chat can't use the capital V
-                return Some(UiCallbackPreset::SetSwarmPanelView {
+                return Some(UiCallback::SetSwarmPanelView {
                     topic: self.view.next(),
                 });
             }
             UiKey::PING => {
                 //FIXME: this means the chat can't use the capital P
-                return Some(UiCallbackPreset::Dial {
+                return Some(UiCallback::Dial {
                     address: "seed".into(),
                 });
             }
@@ -679,10 +683,10 @@ impl Screen for SwarmPanel {
                             "seed".to_string()
                         };
 
-                        return Some(UiCallbackPreset::Dial { address });
+                        return Some(UiCallback::Dial { address });
                     }
                     "/sync" => {
-                        return Some(UiCallbackPreset::Sync);
+                        return Some(UiCallback::Sync);
                     }
                     "/clear" => {
                         self.events.clear();
@@ -702,7 +706,7 @@ impl Screen for SwarmPanel {
                             peer_id: None,
                             text: lines[0].clone(),
                         });
-                        return Some(UiCallbackPreset::SendMessage {
+                        return Some(UiCallback::SendMessage {
                             message: lines[0].clone(),
                         });
                     }

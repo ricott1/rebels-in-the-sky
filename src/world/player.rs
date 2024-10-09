@@ -6,12 +6,12 @@ use super::{
     resources::Resource,
     role::CrewRole,
     skill::{GameSkill, Skill, MAX_SKILL, MIN_SKILL},
-    types::{PlayerLocation, Pronoun, TrainingFocus},
+    types::{PlayerLocation, Pronoun, Region, TrainingFocus},
     utils::PLAYER_DATA,
     world::World,
 };
 use crate::{
-    engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
+    game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
     image::{player::PlayerImage, types::Gif},
     types::{AppResult, PlanetId, PlayerId, TeamId},
     world::{
@@ -606,11 +606,7 @@ impl Player {
         };
 
         player.apply_info_modifiers();
-
-        player
-            .info
-            .population
-            .apply_skill_modifiers(&mut player.clone());
+        player.apply_skill_modifiers();
 
         if athletics.quickness < WOODEN_LEG_MAX_QUICKNESS {
             player.image.set_wooden_leg(rng);
@@ -645,6 +641,58 @@ impl Player {
             (player.average_skill() as f32 / 5.0 + player.info.relative_age() * 5.0).bound();
 
         player
+    }
+
+    fn apply_skill_modifiers(&mut self) {
+        match self.info.population {
+            Population::Human { region } => match region {
+                Region::Italy => self.info.height = (self.info.height * 1.02).min(225.0),
+                Region::Germany => self.info.height = (self.info.height * 1.05).min(225.0),
+                Region::Spain => self.info.height = (self.info.height * 1.00).min(225.0),
+                Region::Greece => self.info.height = (self.info.height * 0.96).min(225.0),
+                Region::Nigeria => self.info.height = (self.info.height * 1.05).min(225.0),
+                Region::India => self.info.height = (self.info.height * 0.95).min(225.0),
+                Region::Euskadi => self.info.height = (self.info.height * 0.98).min(225.0),
+                Region::Kurdistan => self.info.height = (self.info.height * 0.96).min(225.0),
+                Region::Palestine => self.info.height = (self.info.height * 0.96).min(225.0),
+                Region::Japan => self.info.height = (self.info.height * 0.94).min(225.0),
+            },
+            Population::Yardalaim => {
+                self.info.weight = (self.info.weight * 1.5).min(255.0);
+                self.offense.brawl = (self.offense.brawl * 1.2).bound();
+                self.athletics.strength = (self.athletics.strength * 1.35).bound();
+            }
+            Population::Polpett => {
+                self.info.height = self.info.height * 0.95;
+                self.mental.aggression = (self.mental.aggression * 1.35).bound();
+                self.defense.steal = (self.defense.steal * 1.2).bound();
+            }
+            Population::Juppa => {
+                self.info.height = (self.info.height * 1.09).min(225.0);
+                self.offense.long_range = (self.offense.long_range * 1.23).bound();
+            }
+            Population::Galdari => {
+                self.info.height = (self.info.height * 1.02).min(225.0);
+                self.mental.charisma = (self.mental.charisma * 1.15).bound();
+                self.mental.vision = (self.mental.vision * 1.5).bound();
+                self.defense.steal = (self.defense.steal * 1.2).bound();
+            }
+            Population::Pupparoll => {
+                self.athletics.quickness = (self.athletics.quickness * 0.95).bound();
+                self.athletics.vertical = (self.athletics.vertical * 1.25).bound();
+                self.technical.rebounds = (self.technical.rebounds * 1.25).bound();
+                self.mental.aggression = (self.mental.aggression * 0.85).bound();
+                self.offense.brawl = (self.offense.brawl * 1.25).bound();
+            }
+            Population::Octopulp => {
+                self.athletics.quickness = (self.athletics.quickness * 0.95).bound();
+                self.mental.vision = (self.mental.vision * 0.75).bound();
+                self.defense.steal = (self.defense.steal * 1.2).bound();
+                self.offense.brawl = (self.offense.brawl * 1.1).bound();
+                self.offense.close_range = (self.offense.close_range * 1.35).bound();
+                self.info.weight = (self.info.weight * 1.3).min(255.0);
+            }
+        }
     }
 
     pub fn is_on_planet(&self) -> Option<PlanetId> {
@@ -856,7 +904,7 @@ impl Player {
         training_bonus: f32,
         training_focus: Option<TrainingFocus>,
     ) {
-        // potential_modifier has a value ranging from 0.0 to 1.0.
+        // potential_modifier has a value ranging from 0.0 to 2.0.
         // Players with skills below their potential improve faster, above their potential improve slower.
         let potential_modifier = 1.0 + (self.potential - self.average_skill()) / 20.0;
         for p in 0..MAX_POSITION {
@@ -916,6 +964,11 @@ impl InfoStats {
             self.last_name
         )
     }
+
+    pub fn full_name(&self) -> String {
+        format!("{} {}", self.first_name, self.last_name)
+    }
+
     pub fn relative_age(&self) -> f32 {
         self.population.relative_age(self.age)
     }
@@ -936,14 +989,34 @@ impl InfoStats {
             Pronoun::random(rng)
         };
         let first_name = match pronouns {
-            Pronoun::He => p_data.first_names_he.choose(rng).unwrap().to_string(),
-            Pronoun::She => p_data.first_names_she.choose(rng).unwrap().to_string(),
+            Pronoun::He => p_data
+                .first_names_he
+                .choose(rng)
+                .expect("No available name")
+                .to_string(),
+            Pronoun::She => p_data
+                .first_names_she
+                .choose(rng)
+                .expect("No available name")
+                .to_string(),
             Pronoun::They => match rng.gen_range(0..2) {
-                0 => p_data.first_names_he.choose(rng).unwrap().to_string(),
-                _ => p_data.first_names_she.choose(rng).unwrap().to_string(),
+                0 => p_data
+                    .first_names_he
+                    .choose(rng)
+                    .expect("No available name")
+                    .to_string(),
+                _ => p_data
+                    .first_names_she
+                    .choose(rng)
+                    .expect("No available name")
+                    .to_string(),
             },
         };
-        let last_name = p_data.last_names.choose(rng).unwrap().to_string();
+        let last_name = p_data
+            .last_names
+            .choose(rng)
+            .expect("No available name")
+            .to_string();
         let age = population.min_age()
             + rng.gen_range(0.0..0.55) * (population.max_age() - population.min_age());
         let height = match position {

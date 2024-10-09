@@ -3,7 +3,7 @@ use std::fmt::Display;
 use super::{
     constants::DEFAULT_PLANET_ID,
     player::{InfoStats, Player},
-    skill::{GameSkill, MAX_SKILL},
+    skill::MAX_SKILL,
     world::World,
 };
 use crate::{
@@ -169,57 +169,6 @@ impl Population {
             Self::Galdari => 350.0,
             Self::Pupparoll => 45.0,
             Self::Octopulp => 18.0,
-        }
-    }
-
-    pub fn apply_skill_modifiers(&self, player: &mut Player) {
-        match self {
-            Population::Human { region } => match region {
-                Region::Italy => player.info.height = (player.info.height * 1.02).min(225.0),
-                Region::Germany => player.info.height = (player.info.height * 1.05).min(225.0),
-                Region::Spain => player.info.height = (player.info.height * 1.00).min(225.0),
-                Region::Greece => player.info.height = (player.info.height * 0.96).min(225.0),
-                Region::Nigeria => player.info.height = (player.info.height * 1.05).min(225.0),
-                Region::India => player.info.height = (player.info.height * 0.95).min(225.0),
-                Region::Euskadi => player.info.height = (player.info.height * 0.98).min(225.0),
-                Region::Kurdistan => player.info.height = (player.info.height * 0.96).min(225.0),
-                Region::Palestine => player.info.height = (player.info.height * 0.96).min(225.0),
-                Region::Japan => player.info.height = (player.info.height * 0.94).min(225.0),
-            },
-            Population::Yardalaim => {
-                player.info.weight = (player.info.weight * 1.5).min(255.0);
-                player.offense.brawl = (player.offense.brawl * 1.2).bound();
-                player.athletics.strength = (player.athletics.strength * 1.35).bound();
-            }
-            Population::Polpett => {
-                player.info.height = player.info.height * 0.95;
-                player.mental.aggression = (player.mental.aggression * 1.35).bound();
-                player.defense.steal = (player.defense.steal * 1.2).bound();
-            }
-            Population::Juppa => {
-                player.info.height = (player.info.height * 1.09).min(225.0);
-                player.offense.long_range = (player.offense.long_range * 1.23).bound();
-            }
-            Population::Galdari => {
-                player.info.height = (player.info.height * 1.02).min(225.0);
-                player.mental.charisma = (player.mental.charisma * 1.15).bound();
-                player.mental.vision = (player.mental.vision * 1.5).bound();
-                player.defense.steal = (player.defense.steal * 1.2).bound();
-            }
-            Population::Pupparoll => {
-                player.athletics.quickness = (player.athletics.quickness * 1.05).bound();
-                player.technical.rebounds = (player.technical.rebounds * 1.25).bound();
-                player.mental.aggression = (player.mental.aggression * 0.85).bound();
-                player.offense.brawl = (player.offense.brawl * 1.25).bound();
-            }
-            Population::Octopulp => {
-                player.athletics.quickness = (player.athletics.quickness * 0.95).bound();
-                player.mental.vision = (player.mental.vision * 0.75).bound();
-                player.defense.steal = (player.defense.steal * 1.2).bound();
-                player.offense.brawl = (player.offense.brawl * 1.1).bound();
-                player.offense.close_range = (player.offense.close_range * 1.35).bound();
-                player.info.weight = (player.info.weight * 1.3).min(255.0);
-            }
         }
     }
 

@@ -4,6 +4,14 @@
         "url_string": "https://radio.frittura.org/rebels.ogg"
     },
     {
+        "name": "Party Frittura",
+        "url_string": "https://radio.frittura.org/party.ogg"
+    },
+    {
+        "name": "LPAS Frittura",
+        "url_string": "https://radio.frittura.org/lpas.ogg"
+    },
+    {
         "name": "Matt Johnson radio",
         "url_string": "https://us2.internet-radio.com/proxy/mattjohnsonradio?mp=/stream"
     }
