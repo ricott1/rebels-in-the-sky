@@ -1,13 +1,15 @@
 use crate::{
     image::{
         color_map::AsteroidColorMap,
+        spaceship::SpaceshipImageId,
         types::*,
         utils::{open_image, ExtraImageUtils, TRAVELLING_BACKGROUND, UNIVERSE_BACKGROUND},
     },
-    types::{AppResult, PlanetId, PlayerId, TeamId},
+    types::{AppResult, PlanetId, PlayerId},
     world::{
         planet::{Planet, PlanetType},
         player::Player,
+        spaceship::Spaceship,
         utils::ellipse_coords,
         world::World,
     },
@@ -111,10 +113,10 @@ impl ImageResizeInGalaxyGif {
 #[derive(Debug, Default)]
 pub struct GifMap {
     players_lines: HashMap<PlayerId, (u64, GifLines)>,
-    on_planet_spaceship_lines: HashMap<TeamId, GifLines>,
-    in_shipyard_spaceship_lines: HashMap<TeamId, GifLines>,
-    travelling_spaceship_lines: HashMap<TeamId, GifLines>,
-    exploring_spaceship_lines: HashMap<TeamId, GifLines>,
+    on_planet_spaceship_lines: HashMap<SpaceshipImageId, GifLines>,
+    in_shipyard_spaceship_lines: HashMap<SpaceshipImageId, GifLines>,
+    travelling_spaceship_lines: HashMap<SpaceshipImageId, GifLines>,
+    exploring_spaceship_lines: HashMap<SpaceshipImageId, GifLines>,
     planets_zoom_in_lines: HashMap<PlanetId, GifLines>,
     planets_zoom_out_lines: HashMap<PlanetId, (u64, GifLines)>,
 }
@@ -394,52 +396,52 @@ impl GifMap {
 
     pub fn on_planet_spaceship_lines(
         &mut self,
-        team_id: TeamId,
+        spaceship: &Spaceship,
         tick: usize,
-        world: &World,
     ) -> AppResult<ImageLines> {
-        if let Some(lines) = self.on_planet_spaceship_lines.get(&team_id) {
+        let spacehip_image_id = spaceship.image_id();
+
+        if let Some(lines) = self.on_planet_spaceship_lines.get(&spacehip_image_id) {
             return Ok(lines[tick % lines.len()].clone());
         }
 
-        let team = world.get_team_or_err(team_id)?;
-        let gif = team.spaceship.compose_image()?;
+        let gif = spaceship.compose_image()?;
         let lines = gif.to_lines();
         self.on_planet_spaceship_lines
-            .insert(team_id, lines.clone());
+            .insert(spacehip_image_id, lines.clone());
         Ok(lines[tick % lines.len()].clone())
     }
 
     pub fn in_shipyard_spaceship_lines(
         &mut self,
-        team_id: TeamId,
+        spaceship: &Spaceship,
         tick: usize,
-        world: &World,
     ) -> AppResult<ImageLines> {
-        if let Some(lines) = self.in_shipyard_spaceship_lines.get(&team_id) {
+        let spacehip_image_id = spaceship.image_id();
+
+        if let Some(lines) = self.in_shipyard_spaceship_lines.get(&spacehip_image_id) {
             return Ok(lines[tick % lines.len()].clone());
         }
 
-        let team = world.get_team_or_err(team_id)?;
-        let gif = team.spaceship.compose_image_in_shipyard()?;
+        let gif = spaceship.compose_image_in_shipyard()?;
         let lines = gif.to_lines();
         self.in_shipyard_spaceship_lines
-            .insert(team_id, lines.clone());
+            .insert(spacehip_image_id, lines.clone());
         Ok(lines[tick % lines.len()].clone())
     }
 
     pub fn travelling_spaceship_lines(
         &mut self,
-        team_id: TeamId,
+        spaceship: &Spaceship,
         tick: usize,
-        world: &World,
     ) -> AppResult<ImageLines> {
-        if let Some(lines) = self.travelling_spaceship_lines.get(&team_id) {
+        let spacehip_image_id = spaceship.image_id();
+
+        if let Some(lines) = self.travelling_spaceship_lines.get(&spacehip_image_id) {
             return Ok(lines[tick % lines.len()].clone());
         }
 
-        let team = world.get_team_or_err(team_id)?;
-        let ship_gif = team.spaceship.compose_image()?;
+        let ship_gif = spaceship.compose_image()?;
         let base = TRAVELLING_BACKGROUND.clone();
         let mut gif: Vec<RgbaImage> = vec![];
         // 160 frames
@@ -474,22 +476,22 @@ impl GifMap {
 
         let lines = gif.to_lines();
         self.travelling_spaceship_lines
-            .insert(team_id, lines.clone());
+            .insert(spacehip_image_id, lines.clone());
         Ok(lines[tick % lines.len()].clone())
     }
 
     pub fn exploring_spaceship_lines(
         &mut self,
-        team_id: TeamId,
+        spaceship: &Spaceship,
         tick: usize,
-        world: &World,
     ) -> AppResult<ImageLines> {
-        if let Some(lines) = self.exploring_spaceship_lines.get(&team_id) {
+        let spacehip_image_id = spaceship.image_id();
+
+        if let Some(lines) = self.exploring_spaceship_lines.get(&spacehip_image_id) {
             return Ok(lines[tick % lines.len()].clone());
         }
 
-        let team = world.get_team_or_err(team_id)?;
-        let ship_gif = team.spaceship.compose_image()?;
+        let ship_gif = spaceship.compose_image()?;
         let base = TRAVELLING_BACKGROUND.clone();
         let mut gif: Vec<RgbaImage> = vec![];
         // 160 frames
@@ -522,7 +524,7 @@ impl GifMap {
 
         let lines = gif.to_lines();
         self.exploring_spaceship_lines
-            .insert(team_id, lines.clone());
+            .insert(spacehip_image_id, lines.clone());
         Ok(lines[tick % lines.len()].clone())
     }
 }

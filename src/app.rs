@@ -4,11 +4,12 @@ use crate::network::handler::NetworkHandler;
 use crate::store::{get_world_size, load_world, reset, save_world};
 use crate::tui::{EventHandler, TerminalEvent};
 use crate::tui::{Tui, WriterProxy};
-use crate::types::{AppResult, SystemTimeTick, Tick};
+use crate::types::{AppResult, ResourceMap, SystemTimeTick, Tick};
 use crate::ui::popup_message::PopupMessage;
 use crate::ui::ui::{Ui, UiState};
 use crate::ui::utils::SwarmPanelEvent;
 use crate::world::constants::{TickInterval, SECONDS};
+use crate::world::types::TeamLocation;
 use crate::world::world::World;
 use crossterm::event::{KeyCode, KeyModifiers};
 use futures::StreamExt;
@@ -47,30 +48,40 @@ impl App {
         tui: &mut Tui<W, E>,
     ) {
         let mut callbacks = vec![];
-        let mut simulation_tick = 0;
+        let mut last_tui_update = Tick::now();
         info!(
             "Simulation started, must simulate {}",
             (Tick::now() - self.world.last_tick_short_interval).formatted()
         );
+
+        // If team is on a space adventure, bring it back to base planet.
+        // This is an ad-hoc fix to avoid problems when the game is closed during a space adventure,
+        // since the space property of the world is not serialized and stored.
+        let mut own_team = self
+            .world
+            .get_own_team()
+            .expect("There should be an own team.")
+            .clone();
+        match own_team.current_location {
+            TeamLocation::OnSpaceAdventure { around } => {
+                // The team loses all resources and fuel, tough shit.
+                own_team.resources = ResourceMap::default();
+                own_team.spaceship.set_current_durability(0);
+                own_team.current_location = TeamLocation::OnPlanet { planet_id: around };
+
+                self.world.teams.insert(own_team.id, own_team);
+                self.ui
+                    .push_popup(PopupMessage::Ok{
+                       message: "The game was closed during a space adventure.\nAll the cargo and fuel have been lost.\nNext time go back to the base first!".to_string(), is_skippable:false,tick: Tick::now()});
+            }
+            _ => {}
+        }
+
         while self.world.is_simulating() {
             // Give a visual feedback by drawing.
-            let should_draw = if (Tick::now() - self.world.last_tick_short_interval).as_days() > 0
-                && simulation_tick % (tui.fps() as u16 * 60 * 60 * 24) == 0
-            {
-                true
-            } else if (Tick::now() - self.world.last_tick_short_interval).as_hours() > 0
-                && simulation_tick % (tui.fps() as u16 * 60 * 60) == 0
-            {
-                true
-            } else if (Tick::now() - self.world.last_tick_short_interval).as_minutes() > 0
-                && simulation_tick % (tui.fps() as u16 * 60) == 0
-            {
-                true
-            } else {
-                false
-            };
-
-            if should_draw {
+            let now = Tick::now();
+            if now - last_tui_update > tui.simulation_update_interval() {
+                last_tui_update = now;
                 if let Err(e) = self.ui.update(&self.world, self.audio_player.as_ref()) {
                     error!("Error updating TUI during simulation: {e}")
                 };
@@ -90,7 +101,6 @@ impl App {
                 Err(e) => panic!("Failed to simulate world: {}", e),
             };
             callbacks.append(&mut cb);
-            simulation_tick += 1;
         }
 
         self.world.serialized_size =
@@ -101,9 +111,12 @@ impl App {
 
         for callback in callbacks.iter() {
             match callback.call(self) {
-                Ok(Some(text)) => {
-                    self.ui
-                        .push_popup(PopupMessage::Ok(text, true, Tick::now()));
+                Ok(Some(message)) => {
+                    self.ui.push_popup(PopupMessage::Ok {
+                        message,
+                        is_skippable: true,
+                        tick: Tick::now(),
+                    });
                 }
                 Ok(None) => {}
                 Err(e) => {
@@ -112,48 +125,6 @@ impl App {
             }
         }
     }
-
-    // pub fn simulate_loaded_world_no_tui(&mut self) {
-    //     let mut callbacks = vec![];
-    //     info!(
-    //         "Simulation started, must simulate {}",
-    //         (Tick::now() - self.world.last_tick_short_interval).formatted()
-    //     );
-    //     while self.world.is_simulating() {
-    //         let mut cb = match self
-    //             .world
-    //             .handle_tick_events(self.world.last_tick_short_interval + TickInterval::SHORT)
-    //         {
-    //             Ok(callbacks) => callbacks,
-    //             Err(e) => panic!("Failed to simulate world: {}", e),
-    //         };
-    //         callbacks.append(&mut cb);
-
-    //         info!(
-    //             "Simulation ongoing: {}",
-    //             (Tick::now() - self.world.last_tick_short_interval).formatted()
-    //         );
-    //     }
-
-    //     self.world.serialized_size =
-    //         get_world_size(&self.store_prefix).expect("Failed to get world size");
-
-    //     self.state = AppState::Started;
-    //     self.ui.set_state(UiState::Main);
-
-    //     for callback in callbacks.iter() {
-    //         match callback.call(self) {
-    //             Ok(Some(text)) => {
-    //                 self.ui
-    //                     .push_popup(PopupMessage::Ok(text, true, Tick::now()));
-    //             }
-    //             Ok(None) => {}
-    //             Err(e) => {
-    //                 panic!("Failed to simulate world: {}", e);
-    //             }
-    //         }
-    //     }
-    // }
 
     async fn conditional_audio_event(
         audio_player: &Option<MusicPlayer>,
@@ -166,29 +137,11 @@ impl App {
 
     pub async fn conditional_network_event(
         network_handler: &mut Option<NetworkHandler>,
-    ) -> Option<SwarmEvent<libp2p::gossipsub::Event, Void>> {
+    ) -> Option<SwarmEvent<gossipsub::Event, Void>> {
         match network_handler.as_mut() {
             Some(handler) => Some(handler.swarm.select_next_some().await),
             None => None,
         }
-    }
-
-    pub fn toggle_audio_player(&mut self) -> AppResult<()> {
-        if let Some(player) = self.audio_player.as_mut() {
-            player.toggle()?;
-        } else {
-            info!("No audio player, cannot toggle it");
-        }
-        Ok(())
-    }
-
-    pub fn next_sample_audio_player(&mut self) -> AppResult<()> {
-        if let Some(player) = self.audio_player.as_mut() {
-            player.next_audio_sample()?;
-        } else {
-            info!("No audio player, cannot select next sample");
-        }
-        Ok(())
     }
 
     pub fn initialize_network_handler(&mut self) -> AppResult<()> {
@@ -352,23 +305,28 @@ impl App {
                 Ok(callbacks) => {
                     for callback in callbacks.iter() {
                         match callback.call(self) {
-                            Ok(Some(text)) => {
-                                self.ui
-                                    .push_popup(PopupMessage::Ok(text, true, Tick::now()));
+                            Ok(Some(message)) => {
+                                self.ui.push_popup(PopupMessage::Ok {
+                                    message,
+                                    is_skippable: true,
+                                    tick: Tick::now(),
+                                });
                             }
                             Ok(None) => {}
                             Err(e) => {
-                                self.ui
-                                    .push_popup(PopupMessage::Error(e.to_string(), Tick::now()));
+                                self.ui.push_popup(PopupMessage::Error {
+                                    message: e.to_string(),
+                                    tick: Tick::now(),
+                                });
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    self.ui.push_popup(PopupMessage::Error(
-                        format!("Tick error\n{}", e.to_string()),
-                        Tick::now(),
-                    ));
+                    self.ui.push_popup(PopupMessage::Error {
+                        message: format!("Tick error\n{}", e.to_string()),
+                        tick: Tick::now(),
+                    });
                 }
             }
         }
@@ -411,6 +369,14 @@ impl App {
                             text: format!("Failed to send own team to peers: {}", e),
                         });
                     }
+                } else {
+                    if let Err(e) = network_handler.dial_seed() {
+                        self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
+                            timestamp: Tick::now(),
+                            peer_id: None,
+                            text: format!("Failed to dial seed: {}", e),
+                        });
+                    }
                 }
             }
         }
@@ -420,10 +386,7 @@ impl App {
 
     pub fn handle_key_events(&mut self, key_event: crossterm::event::KeyEvent) -> AppResult<()> {
         match key_event.code {
-            KeyCode::Esc => {
-                self.quit()?;
-            }
-            // Exit application on `Ctrl-C`
+            // Exit application directly on `Ctrl-C`. `Esc` asks for confirmation first.
             KeyCode::Char('c') | KeyCode::Char('C')
                 if key_event.modifiers == KeyModifiers::CONTROL =>
             {
@@ -432,14 +395,19 @@ impl App {
             _ => {
                 if let Some(callback) = self.ui.handle_key_events(key_event, &self.world) {
                     match callback.call(self) {
-                        Ok(Some(text)) => {
-                            self.ui
-                                .push_popup(PopupMessage::Ok(text, true, Tick::now()));
+                        Ok(Some(message)) => {
+                            self.ui.push_popup(PopupMessage::Ok {
+                                message,
+                                is_skippable: true,
+                                tick: Tick::now(),
+                            });
                         }
                         Ok(None) => {}
                         Err(e) => {
-                            self.ui
-                                .push_popup(PopupMessage::Error(e.to_string(), Tick::now()));
+                            self.ui.push_popup(PopupMessage::Error {
+                                message: e.to_string(),
+                                tick: Tick::now(),
+                            });
                         }
                     }
                 }
@@ -454,13 +422,19 @@ impl App {
     ) -> AppResult<()> {
         if let Some(callback) = self.ui.handle_mouse_events(mouse_event) {
             match callback.call(self) {
-                Ok(Some(cb)) => {
-                    self.ui.push_popup(PopupMessage::Ok(cb, true, Tick::now()));
+                Ok(Some(message)) => {
+                    self.ui.push_popup(PopupMessage::Ok {
+                        message,
+                        is_skippable: true,
+                        tick: Tick::now(),
+                    });
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    self.ui
-                        .push_popup(PopupMessage::Error(e.to_string(), Tick::now()));
+                    self.ui.push_popup(PopupMessage::Error {
+                        message: e.to_string(),
+                        tick: Tick::now(),
+                    });
                 }
             }
         }
@@ -474,8 +448,12 @@ impl App {
         if let Some(network_handler) = &mut self.network_handler {
             if let Some(callback) = network_handler.handle_network_events(network_event) {
                 match callback.call(self) {
-                    Ok(Some(cb)) => {
-                        self.ui.push_popup(PopupMessage::Ok(cb, true, Tick::now()));
+                    Ok(Some(message)) => {
+                        self.ui.push_popup(PopupMessage::Ok {
+                            message,
+                            is_skippable: true,
+                            tick: Tick::now(),
+                        });
                     }
                     Ok(None) => {}
                     Err(e) => {

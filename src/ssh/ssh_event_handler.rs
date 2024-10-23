@@ -1,6 +1,7 @@
 use crate::ssh::utils::convert_data_to_crossterm_event;
 use crate::tui::{EventHandler, TerminalEvent};
 use crate::types::{SystemTimeTick, Tick};
+use crate::world::constants::MILLISECONDS;
 use crossterm::event::{Event as CrosstermEvent, KeyEventKind};
 use log::error;
 use std::time::Duration;
@@ -23,8 +24,8 @@ impl EventHandler for SSHEventHandler {
         self.receiver.recv().await.expect("Channel should be open")
     }
 
-    fn fps(&self) -> u8 {
-        self.fps
+    fn simulation_update_interval(&self) -> Tick {
+        500 * MILLISECONDS
     }
 }
 

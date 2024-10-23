@@ -12,12 +12,11 @@ use super::{
 use crate::{
     game_engine::game::Game,
     store::load_game,
-    types::{AppResult, GameId, PlayerId, SystemTimeTick, Tick},
+    types::{AppResult, GameId, PlayerId, StorableResourceMap, SystemTimeTick, Tick},
     world::{
-        constants::*,
         position::{GamePosition, Position, MAX_POSITION},
         skill::Rated,
-        spaceship::{SpaceshipComponent, SpaceshipUpgrade},
+        spaceship::{SpaceshipComponent, SpaceshipUpgrade, SpaceshipUpgradeTarget},
         types::{TeamBonus, TeamLocation},
         world::World,
     },
@@ -41,6 +40,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+use strum::IntoEnumIterator;
 
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub enum MyTeamView {
@@ -76,7 +76,7 @@ pub struct MyTeamPanel {
     player_index: Option<usize>,
     game_index: Option<usize>,
     planet_index: Option<usize>,
-    upgrade_index: usize,
+    spaceship_upgrade_index: usize,
     asteroid_index: Option<usize>,
     view: MyTeamView,
     active_list: PanelList,
@@ -248,7 +248,7 @@ impl MyTeamPanel {
                 Line::from(""),
                 Line::from(Span::styled(format!("Resource: Buy/Sell"), UiStyle::HEADER)),
                 Line::from(vec![
-                    Span::styled("Fuel      ", UiStyle::STORAGE_FUEL),
+                    Span::styled("Fuel      ", Resource::FUEL.style()),
                     Span::styled(
                         format!(
                             "{}",
@@ -266,7 +266,7 @@ impl MyTeamPanel {
                     ),
                 ]),
                 Line::from(vec![
-                    Span::styled("Gold      ", UiStyle::STORAGE_GOLD),
+                    Span::styled("Gold      ", Resource::GOLD.style()),
                     Span::styled(
                         format!(
                             "{}",
@@ -284,7 +284,7 @@ impl MyTeamPanel {
                     ),
                 ]),
                 Line::from(vec![
-                    Span::styled("Scraps    ", UiStyle::STORAGE_SCRAPS),
+                    Span::styled("Scraps    ", Resource::SCRAPS.style()),
                     Span::styled(
                         format!(
                             "{}",
@@ -302,7 +302,7 @@ impl MyTeamPanel {
                     ),
                 ]),
                 Line::from(vec![
-                    Span::styled("Rum       ", UiStyle::STORAGE_RUM),
+                    Span::styled("Rum       ", Resource::RUM.style()),
                     Span::styled(
                         format!(
                             "{}",
@@ -352,6 +352,9 @@ impl MyTeamPanel {
                     }),
                 );
                 return Ok(());
+            }
+            TeamLocation::OnSpaceAdventure { .. } => {
+                return Err(anyhow!("Team is on a space adventure"))
             }
         };
 
@@ -476,6 +479,7 @@ impl MyTeamPanel {
                     } else {
                         None
                     },
+                    UiStyle::OK,
                 ) {
                     frame.render_widget(btn, resource_split[idx + 1]);
                 }
@@ -495,6 +499,7 @@ impl MyTeamPanel {
                     } else {
                         None
                     },
+                    UiStyle::ERROR,
                 ) {
                     frame.render_widget(btn, resource_split[idx + 4]);
                 }
@@ -502,13 +507,18 @@ impl MyTeamPanel {
         }
 
         let mut info_spans = vec![];
+
         info_spans.append(&mut get_fuel_spans(
             team.fuel(),
             team.spaceship.fuel_capacity(),
             BARS_LENGTH,
         ));
         info_spans.push(Span::raw("  "));
-        info_spans.append(&mut get_storage_spans(team, BARS_LENGTH));
+        info_spans.append(&mut get_storage_spans(
+            &team.resources,
+            team.spaceship.storage_capacity(),
+            BARS_LENGTH,
+        ));
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(""),
@@ -554,41 +564,41 @@ impl MyTeamPanel {
             ]),
             Line::from(format!("Treasury: {:<10}", format_satoshi(team.balance()),)),
             Line::from(get_crew_spans(team)),
+            Line::from(get_durability_spans(
+                team.spaceship.current_durability(),
+                team.spaceship.durability(),
+                BARS_LENGTH,
+            )),
             Line::from(get_fuel_spans(
                 team.fuel(),
                 team.spaceship.fuel_capacity(),
                 BARS_LENGTH,
             )),
-            Line::from(get_storage_spans(team, BARS_LENGTH)),
+            Line::from(get_storage_spans(
+                &team.resources,
+                team.spaceship.storage_capacity(),
+                BARS_LENGTH,
+            )),
             Line::from(vec![
-                Span::styled("   Gold", UiStyle::STORAGE_GOLD),
-                Span::raw(format!(
-                    ":   {} Kg",
-                    team.resources
-                        .get(&Resource::GOLD)
-                        .copied()
-                        .unwrap_or_default()
-                )),
+                Span::styled(
+                    format!("{:>10}:", Resource::GOLD.to_string()),
+                    Resource::GOLD.style(),
+                ),
+                Span::raw(format!("{:>3} Kg  ", team.resources.value(&Resource::GOLD))),
+                Span::styled(format!("{:>10}:", "Kartoffeln"), UiStyle::STORAGE_KARTOFFEL),
+                Span::raw(format!("{:>3}", team.kartoffel_ids.len())),
             ]),
             Line::from(vec![
-                Span::styled("   Scraps", UiStyle::STORAGE_SCRAPS),
-                Span::raw(format!(
-                    ": {} t",
-                    team.resources
-                        .get(&Resource::SCRAPS)
-                        .copied()
-                        .unwrap_or_default()
-                )),
-            ]),
-            Line::from(vec![
-                Span::styled("   Rum", UiStyle::STORAGE_RUM),
-                Span::raw(format!(
-                    ":    {} l",
-                    team.resources
-                        .get(&Resource::RUM)
-                        .copied()
-                        .unwrap_or_default()
-                )),
+                Span::styled(
+                    format!("{:>10}:", Resource::RUM.to_string()),
+                    Resource::RUM.style(),
+                ),
+                Span::raw(format!("{:>3} l  ", team.resources.value(&Resource::RUM))),
+                Span::styled(
+                    format!("{:>10}:", Resource::SCRAPS.to_string()),
+                    Resource::SCRAPS.style(),
+                ),
+                Span::raw(format!("{:>3} t", team.resources.value(&Resource::SCRAPS))),
             ]),
         ]);
         frame.render_widget(default_block().title("Info"), split[0]);
@@ -711,6 +721,9 @@ impl MyTeamPanel {
                     (0 as Tick).formatted()
                 };
                 self.render_exploring_spaceship(frame, world, split[1], around, countdown)?
+            }
+            TeamLocation::OnSpaceAdventure { .. } => {
+                return Err(anyhow!("Team is on a space adventure"))
             }
         }
         Ok(())
@@ -1111,6 +1124,9 @@ impl MyTeamPanel {
                 };
                 self.render_exploring_spaceship(frame, world, split[1], around, countdown)?
             }
+            TeamLocation::OnSpaceAdventure { .. } => {
+                return Err(anyhow!("Team is on a space adventure"))
+            }
         }
 
         Ok(())
@@ -1131,27 +1147,42 @@ impl MyTeamPanel {
         let team = world.get_own_team()?;
         frame.render_widget(default_block().title("Upgrades "), area);
 
-        let hull_style = if team.spaceship.hull.can_be_upgraded() {
-            UiStyle::DEFAULT
-        } else {
-            UiStyle::UNSELECTABLE
-        };
-        let engine_style = if team.spaceship.engine.can_be_upgraded() {
-            UiStyle::DEFAULT
-        } else {
-            UiStyle::UNSELECTABLE
-        };
-        let storage_style = if team.spaceship.storage.can_be_upgraded() {
-            UiStyle::DEFAULT
-        } else {
-            UiStyle::UNSELECTABLE
+        let target = match self.spaceship_upgrade_index {
+            0 => SpaceshipUpgradeTarget::Hull {
+                component: team.spaceship.hull.next(),
+            },
+            1 => SpaceshipUpgradeTarget::Engine {
+                component: team.spaceship.engine.next(),
+            },
+            2 => SpaceshipUpgradeTarget::Storage {
+                component: team.spaceship.storage.next(),
+            },
+            3 => SpaceshipUpgradeTarget::Repairs {
+                amount: team.spaceship.durability() - team.spaceship.current_durability(),
+            },
+            _ => unreachable!(),
         };
 
-        let options = vec![
-            ("Hull".into(), hull_style),
-            ("Engine".into(), engine_style),
-            ("Storage".into(), storage_style),
-        ];
+        let can_be_upgraded = match self.spaceship_upgrade_index {
+            0 => team.spaceship.hull.can_be_upgraded(),
+            1 => team.spaceship.engine.can_be_upgraded(),
+            2 => team.spaceship.storage.can_be_upgraded(),
+            3 => team.spaceship.can_be_repaired(),
+            _ => unreachable!(),
+        };
+
+        let options = SpaceshipUpgradeTarget::iter()
+            .map(|upgrade_target| {
+                (
+                    upgrade_target.to_string(),
+                    if team.spaceship.can_be_upgraded(upgrade_target) {
+                        UiStyle::DEFAULT
+                    } else {
+                        UiStyle::UNSELECTABLE
+                    },
+                )
+            })
+            .collect_vec();
 
         let list = selectable_list(options, &self.callback_registry);
 
@@ -1161,76 +1192,66 @@ impl MyTeamPanel {
                 horizontal: 1,
                 vertical: 1,
             }),
-            &mut ClickableListState::default().with_selected(Some(self.upgrade_index)),
+            &mut ClickableListState::default().with_selected(Some(self.spaceship_upgrade_index)),
         );
 
-        let component = match self.upgrade_index {
-            0 => "Hull",
-            1 => "Engine",
-            2 => "Storage",
-            _ => panic!("Invalid upgrade index"),
-        };
-
-        let current = match self.upgrade_index {
+        let current = match self.spaceship_upgrade_index {
             0 => team.spaceship.hull.to_string(),
             1 => team.spaceship.engine.to_string(),
             2 => team.spaceship.storage.to_string(),
-            _ => panic!("Invalid upgrade index"),
+            3 => {
+                format!("Repairs {}", team.spaceship.current_durability())
+            }
+            _ => unreachable!(),
         };
-        let next = match self.upgrade_index {
+
+        let next = match self.spaceship_upgrade_index {
             0 => team.spaceship.hull.next().to_string(),
             1 => team.spaceship.engine.next().to_string(),
             2 => team.spaceship.storage.next().to_string(),
-            _ => panic!("Invalid upgrade index"),
+            3 => team.spaceship.durability().to_string(),
+            _ => unreachable!(),
         };
 
-        let upgrade_cost = match self.upgrade_index {
-            0 => team.spaceship.hull.upgrade_cost(),
-            1 => team.spaceship.engine.upgrade_cost(),
-            2 => team.spaceship.storage.upgrade_cost(),
-            _ => panic!("Invalid upgrade index"),
-        };
+        let is_being_upgraded = team.spaceship.pending_upgrade.is_some();
 
-        let can_be_upgraded = match self.upgrade_index {
-            0 => team.spaceship.hull.can_be_upgraded(),
-            1 => team.spaceship.engine.can_be_upgraded(),
-            2 => team.spaceship.storage.can_be_upgraded(),
-            _ => panic!("Invalid upgrade index"),
-        };
-
-        let is_being_upgraded = if let Some(upgrade) = team.spaceship.pending_upgrade.as_ref() {
-            match self.upgrade_index {
-                0 => upgrade.hull.is_some(),
-                1 => upgrade.engine.is_some(),
-                2 => upgrade.storage.is_some(),
-                _ => panic!("Invalid upgrade index"),
+        let upgrade_to_text = match team.spaceship.pending_upgrade.as_ref() {
+            Some(upgrade) => match upgrade.target {
+                SpaceshipUpgradeTarget::Repairs { .. } => "Currently repairing".to_string(),
+                _ => "Currently upgrading".to_string(),
+            },
+            None => {
+                if can_be_upgraded {
+                    format!("{} -> {}", current, next)
+                } else {
+                    if self.spaceship_upgrade_index == 3 {
+                        "Fully repaired".to_string()
+                    } else {
+                        "Fully upgraded".to_string()
+                    }
+                }
             }
-        } else {
-            false
         };
 
-        let upgrade_to_text = if is_being_upgraded {
-            "Currently upgrading".to_string()
-        } else if can_be_upgraded {
-            format!("{} -> {}", current, next)
-        } else {
-            "Fully upgraded".to_string()
+        let header_text = match self.spaceship_upgrade_index {
+            0 => "Upgrade Hull",
+            1 => "Upgrade Engine",
+            2 => "Upgrade Storage",
+            3 => "Repair",
+            _ => unreachable!(),
         };
 
         let mut lines = vec![
             Line::from(""),
-            Line::from(Span::styled(
-                format!("Upgrade {}", component),
-                UiStyle::HEADER,
-            ))
-            .centered(),
+            Line::from(Span::styled(header_text, UiStyle::HEADER)).centered(),
             Line::from(Span::raw(upgrade_to_text)).centered(),
             Line::from(""),
         ];
 
         if can_be_upgraded && !is_being_upgraded {
-            for (resource, amount) in upgrade_cost.iter() {
-                let have = team.resources.get(resource).copied().unwrap_or_default();
+            let upgrade = SpaceshipUpgrade::new(target);
+            for (resource, amount) in upgrade.cost().iter() {
+                let have = team.resources.value(resource);
                 let style = if amount.clone() > have {
                     UiStyle::ERROR
                 } else {
@@ -1238,7 +1259,7 @@ impl MyTeamPanel {
                 };
 
                 lines.push(Line::from(vec![
-                    Span::styled(format!("  {} ", resource.to_string()), resource.style()),
+                    Span::styled(format!("  {:<7} ", resource.to_string()), resource.style()),
                     Span::styled(format!("{}/{}", have, amount), style),
                 ]));
             }
@@ -1752,12 +1773,12 @@ impl MyTeamPanel {
         let explore_split =
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(split[1]);
         if let Ok(explore_button) =
-            quick_explore_button(world, team, &self.callback_registry, hover_text_target)
+            space_adventure_button(world, team, &self.callback_registry, hover_text_target)
         {
             frame.render_widget(explore_button, explore_split[0]);
         }
         if let Ok(explore_button) =
-            long_explore_button(world, team, &self.callback_registry, hover_text_target)
+            explore_button(world, team, &self.callback_registry, hover_text_target)
         {
             frame.render_widget(explore_button, explore_split[1]);
         }
@@ -1779,22 +1800,10 @@ impl MyTeamPanel {
             (0 as Tick).formatted()
         };
 
-        render_spaceship_upgrade(
-            &team,
-            &upgrade,
-            &self.gif_map,
-            self.tick,
-            world,
-            frame,
-            area,
-        );
+        render_spaceship_upgrade(&team, &upgrade, &self.gif_map, self.tick, frame, area);
 
         frame.render_widget(
-            default_block().title(format!(
-                "Upgrading Spaceship {} - {}",
-                upgrade.target()?,
-                countdown
-            )),
+            default_block().title(format!("{} - {}", upgrade.description(), countdown)),
             area,
         );
 
@@ -1811,65 +1820,42 @@ impl MyTeamPanel {
         let team = world.get_own_team()?;
         let hover_text_target = hover_text_target(&frame);
 
-        let split = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(
-            area.inner(Margin {
-                vertical: 1,
-                horizontal: 1,
+        let target = match self.spaceship_upgrade_index {
+            0 if team.spaceship.hull.can_be_upgraded() => Some(SpaceshipUpgradeTarget::Hull {
+                component: team.spaceship.hull.next(),
             }),
-        );
-
-        let mut upgrade = SpaceshipUpgrade {
-            hull: None,
-            engine: None,
-            storage: None,
-            cost: vec![],
-            started: Tick::now(),
-            duration: SPACESHIP_UPGRADE_BASE_DURATION,
+            1 if team.spaceship.engine.can_be_upgraded() => Some(SpaceshipUpgradeTarget::Engine {
+                component: team.spaceship.engine.next(),
+            }),
+            2 if team.spaceship.storage.can_be_upgraded() => {
+                Some(SpaceshipUpgradeTarget::Storage {
+                    component: team.spaceship.storage.next(),
+                })
+            }
+            3 if team.spaceship.can_be_repaired() => Some(SpaceshipUpgradeTarget::Repairs {
+                amount: team.spaceship.durability() - team.spaceship.current_durability(),
+            }),
+            _ => None,
         };
 
-        match self.upgrade_index {
-            0 => {
-                if team.spaceship.hull.can_be_upgraded() {
-                    upgrade.hull = Some(team.spaceship.hull.next());
-                    upgrade.cost = team.spaceship.hull.upgrade_cost();
-                }
-            }
-            1 => {
-                if team.spaceship.engine.can_be_upgraded() {
-                    upgrade.engine = Some(team.spaceship.engine.next());
-                    upgrade.cost = team.spaceship.engine.upgrade_cost();
-                }
-            }
-            2 => {
-                if team.spaceship.storage.can_be_upgraded() {
-                    upgrade.storage = Some(team.spaceship.storage.next());
-                    upgrade.cost = team.spaceship.storage.upgrade_cost();
-                }
-            }
-            _ => panic!("Invalid upgrade_index"),
-        };
+        if let Some(target) = target {
+            let upgrade = SpaceshipUpgrade::new(target);
+            render_spaceship_upgrade(&team, &upgrade, &self.gif_map, self.tick, frame, area);
+            frame.render_widget(default_block().title(upgrade.description()), area);
 
-        render_spaceship_upgrade(
-            &team,
-            &upgrade,
-            &self.gif_map,
-            self.tick,
-            world,
-            frame,
-            area,
-        );
-        frame.render_widget(
-            default_block().title(format!(
-                "Upgraded Spaceship {}",
-                upgrade.target().unwrap_or("None")
-            )),
-            area,
-        );
-
-        if let Ok(upgrade_button) =
-            upgrade_spaceship_button(team, &self.callback_registry, hover_text_target, upgrade)
-        {
-            frame.render_widget(upgrade_button, split[1]);
+            if let Ok(upgrade_button) =
+                upgrade_spaceship_button(team, &self.callback_registry, hover_text_target, upgrade)
+            {
+                let split = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(
+                    area.inner(Margin {
+                        vertical: 1,
+                        horizontal: 1,
+                    }),
+                );
+                frame.render_widget(upgrade_button, split[1]);
+            }
+        } else {
+            render_spaceship_description(&team, &self.gif_map, self.tick, world, frame, area);
         }
 
         Ok(())
@@ -1888,7 +1874,7 @@ impl MyTeamPanel {
             .gif_map
             .lock()
             .unwrap()
-            .travelling_spaceship_lines(team.id, self.tick, world)
+            .travelling_spaceship_lines(&team.spaceship, self.tick)
         {
             let rect = area.inner(Margin {
                 horizontal: 1,
@@ -1928,7 +1914,7 @@ impl MyTeamPanel {
             .gif_map
             .lock()
             .unwrap()
-            .exploring_spaceship_lines(team.id, self.tick, world)
+            .exploring_spaceship_lines(&team.spaceship, self.tick)
         {
             let rect = area.inner(Margin {
                 horizontal: 1,
@@ -2144,7 +2130,7 @@ impl SplitPanel for MyTeamPanel {
         } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Market {
             return self.planet_index.unwrap_or_default();
         } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Shipyard {
-            return self.upgrade_index;
+            return self.spaceship_upgrade_index;
         } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Asteroids {
             return self.asteroid_index.unwrap_or_default();
         }
@@ -2159,7 +2145,7 @@ impl SplitPanel for MyTeamPanel {
         } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Market {
             return self.planet_markets.len();
         } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Shipyard {
-            return 3;
+            return SpaceshipUpgradeTarget::MAX_INDEX;
         } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Asteroids {
             return self.asteroid_ids.len();
         }
@@ -2185,7 +2171,7 @@ impl SplitPanel for MyTeamPanel {
             } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Market {
                 self.planet_index = Some(index % self.max_index());
             } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Shipyard {
-                self.upgrade_index = index % self.max_index();
+                self.spaceship_upgrade_index = index % self.max_index();
             } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Asteroids {
                 self.asteroid_index = Some(index % self.max_index());
             } else {

@@ -133,6 +133,10 @@ impl<'a> Button<'a> {
         }
     }
 
+    pub fn set_text(&mut self, text: Text<'a>) {
+        self.text = text;
+    }
+
     pub fn disable(&mut self, text: Option<String>) {
         self.disabled = true;
         self.disabled_text = text;
@@ -212,34 +216,25 @@ impl<'a> Widget for Button<'a> {
             }
         }
 
-        let paragraph = if self.disabled {
-            let text = if self.disabled_text.is_some() {
-                self.disabled_text.clone().unwrap().into()
-            } else {
-                self.text.clone()
-            };
-            Paragraph::new(text).alignment(self.text_alignemnt)
-        } else {
-            if let Some(u) = self.hotkey {
-                let split = self
-                    .text
-                    .to_string()
-                    .splitn(2, &u.to_string())
-                    .map(|s| s.to_string())
-                    .collect::<Vec<String>>();
-                if split.len() > 1 {
-                    Paragraph::new(Line::from(vec![
-                        Span::raw(split[0].clone()),
-                        Span::styled(u.to_string(), UiStyle::DEFAULT.underlined()),
-                        Span::raw(split[1].clone()),
-                    ]))
-                    .alignment(self.text_alignemnt)
-                } else {
-                    Paragraph::new(self.text.clone()).alignment(self.text_alignemnt)
-                }
+        let paragraph = if let Some(u) = self.hotkey {
+            let split = self
+                .text
+                .to_string()
+                .splitn(2, &u.to_string())
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>();
+            if split.len() > 1 {
+                Paragraph::new(Line::from(vec![
+                    Span::raw(split[0].clone()),
+                    Span::styled(u.to_string(), UiStyle::DEFAULT.underlined()),
+                    Span::raw(split[1].clone()),
+                ]))
+                .alignment(self.text_alignemnt)
             } else {
                 Paragraph::new(self.text.clone()).alignment(self.text_alignemnt)
             }
+        } else {
+            Paragraph::new(self.text.clone()).alignment(self.text_alignemnt)
         };
 
         if area.height < 3 {
@@ -282,7 +277,18 @@ impl<'a> Widget for Button<'a> {
         }
 
         if self.hover_text.is_some() && self.hover_text_target.is_some() && self.is_hovered(area) {
-            let hover_text = Paragraph::new(self.hover_text.unwrap()).centered();
+            let mut spans = vec![Span::raw(self.hover_text.unwrap())];
+
+            if self.disabled {
+                if let Some(text) = self.disabled_text.as_ref() {
+                    spans.push(Span::styled(
+                        format!("  Disabled: {}", text),
+                        UiStyle::ERROR,
+                    ));
+                }
+            }
+
+            let hover_text = Paragraph::new(Line::from(spans)).centered();
             Clear.render(self.hover_text_target.unwrap(), buf);
             hover_text.render(self.hover_text_target.unwrap(), buf);
         }

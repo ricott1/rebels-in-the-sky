@@ -107,7 +107,11 @@ impl NetworkHandler {
         Ok(msg_id)
     }
 
-    pub fn dial(&mut self, address: Multiaddr) -> AppResult<()> {
+    pub fn dial_seed(&mut self) -> AppResult<()> {
+        self.dial(self.seed_address.clone())
+    }
+
+    fn dial(&mut self, address: Multiaddr) -> AppResult<()> {
         if address != self.address {
             self.swarm.dial(address)?;
         }

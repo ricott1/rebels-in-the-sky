@@ -22,6 +22,7 @@ use itertools::Itertools;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style, Styled};
 use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
 use ratatui::{
     layout::{Constraint, Layout},
     Frame,
@@ -206,6 +207,10 @@ impl Ui {
         world: &World,
     ) -> Option<UiCallback> {
         match key_event.code {
+            UiKey::ESC => {
+                return Some(UiCallback::PromptQuit);
+            }
+
             UiKey::UI_DEBUG_MODE => {
                 return Some(UiCallback::ToggleUiDebugMode);
             }
@@ -214,16 +219,9 @@ impl Ui {
                 self.next_tab();
                 None
             }
+
             UiKey::PREVIOUS_TAB if self.state == UiState::Main => {
                 self.previous_tab();
-                None
-            }
-            UiKey::START_SPACE_ADVENTURE => {
-                if self.state == UiState::Main {
-                    return Some(UiCallback::StartSpaceAdventure);
-                } else if self.state == UiState::SpaceAdventure {
-                    return Some(UiCallback::StopSpaceAdventure);
-                }
                 None
             }
             _ => {
@@ -438,8 +436,10 @@ impl Ui {
     ) {
         let split = Layout::horizontal([
             Constraint::Min(50),
-            Constraint::Length(22),
             Constraint::Length(20),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(26),
         ])
         .split(area);
 
@@ -474,13 +474,7 @@ impl Ui {
                     world.next_free_pirates_refresh().formatted()
                 ));
             }
-            if let Some(audio_player) = &audio_player {
-                if audio_player.is_playing() {
-                    if let Some(currently_playing) = audio_player.currently_playing() {
-                        spans.push(format!(" {currently_playing} "));
-                    }
-                }
-            }
+
             spans
         } else {
             self.get_active_screen().footer_spans()
@@ -504,16 +498,16 @@ impl Ui {
             split[0],
         );
 
-        if audio_player.is_some() {
+        if let Some(audio_player) = &audio_player {
             frame.render_widget(
                 Button::no_box(
                     format!(
-                        " {}: Toggle radio {} ",
+                        " {}: Turn radio {} ",
                         UiKey::TOGGLE_AUDIO.to_string(),
-                        if audio_player.is_some() && audio_player.as_ref().unwrap().is_playing() {
-                            "ON "
+                        if audio_player.is_playing() {
+                            "off"
                         } else {
-                            "OFF"
+                            "on "
                         }
                     )
                     .into(),
@@ -526,13 +520,28 @@ impl Ui {
 
             frame.render_widget(
                 Button::no_box(
-                    format!(" {}: Next radio ", UiKey::NEXT_AUDIO_SAMPLE.to_string(),).into(),
-                    UiCallback::NextAudioSample,
+                    format!(" {} ", UiKey::PREVIOUS_RADIO.to_string(),).into(),
+                    UiCallback::PreviousRadio,
                     Arc::clone(&self.callback_registry),
                 )
-                .set_hotkey(UiKey::NEXT_AUDIO_SAMPLE),
+                .set_hotkey(UiKey::PREVIOUS_RADIO),
                 split[2],
             );
+
+            frame.render_widget(
+                Button::no_box(
+                    format!(" {} ", UiKey::NEXT_RADIO.to_string(),).into(),
+                    UiCallback::NextRadio,
+                    Arc::clone(&self.callback_registry),
+                )
+                .set_hotkey(UiKey::NEXT_RADIO),
+                split[3],
+            );
+            if audio_player.is_playing() {
+                if let Some(currently_playing) = audio_player.currently_playing() {
+                    frame.render_widget(Paragraph::new(format!(" {currently_playing} ")), split[4]);
+                }
+            }
         }
     }
 }

@@ -4,7 +4,7 @@ use super::gif_map::{GifMap, ImageResizeInGalaxyGif};
 use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::utils::hover_text_target;
-use super::widgets::quick_explore_button;
+use super::widgets::space_adventure_button;
 use super::{traits::Screen, widgets::default_block};
 use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId};
 use crate::ui::constants::*;
@@ -191,7 +191,7 @@ impl GalaxyPanel {
                         planet_id: planet.id,
                     } =>
                 {
-                    if let Ok(explore_button) = quick_explore_button(
+                    if let Ok(explore_button) = space_adventure_button(
                         world,
                         own_team,
                         &self.callback_registry,
@@ -229,14 +229,11 @@ impl GalaxyPanel {
                                 ),
                             )
                         }
-                        Err(e) => {
-                            let err_string = e.to_string();
-                            (
-                                Err(e),
-                                "".to_string(),
-                                format!("Travel to {}: {}", planet.name, err_string),
-                            )
-                        }
+                        Err(e) => (
+                            Err(e),
+                            "unavailable".to_string(),
+                            format!("Travel to {}", planet.name),
+                        ),
                     };
 
                     let mut go_to_planet_button = Button::new(

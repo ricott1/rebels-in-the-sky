@@ -113,6 +113,6 @@ impl Server for AppServer {
         } else {
             None
         };
-        AppClient::new(network_port, self.shutdown.clone()).expect("Failed to create new client.")
+        AppClient::new(network_port, self.shutdown.clone())
     }
 }

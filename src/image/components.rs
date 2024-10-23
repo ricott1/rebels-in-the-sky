@@ -285,6 +285,8 @@ pub enum HatImage {
     MaskPolpett,
     MaskGaldari,
     MaskPupparoll,
+    MaskOctopulp1,
+    MaskOctopulp2,
 }
 
 impl ImageComponent for HatImage {

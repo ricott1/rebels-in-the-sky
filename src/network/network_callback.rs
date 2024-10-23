@@ -83,8 +83,7 @@ impl NetworkCallback {
                 .expect("Should have network handler");
             network_handler.address = address.clone();
 
-            let multiaddr = network_handler.seed_address.clone();
-            network_handler.dial(multiaddr)?;
+            network_handler.dial_seed()?;
             Ok(None)
         })
     }
@@ -217,8 +216,12 @@ impl NetworkCallback {
             };
             app.ui.swarm_panel.push_log_event(event);
 
-            if let Some(msg) = seed_info.message.clone() {
-                app.ui.push_popup(PopupMessage::Ok(msg, false, timestamp));
+            if let Some(message) = seed_info.message.clone() {
+                app.ui.push_popup(PopupMessage::Ok {
+                    message,
+                    is_skippable: false,
+                    tick: timestamp,
+                });
             }
 
             let own_version_major = env!("CARGO_PKG_VERSION_MAJOR").parse()?;
@@ -232,11 +235,15 @@ impl NetworkCallback {
                     && seed_info.version_minor == own_version_minor
                     && seed_info.version_patch > own_version_patch)
             {
-                let text = format!(
+                let message = format!(
                     "New version {}.{}.{} available. Download at https://rebels.frittura.org",
                     seed_info.version_major, seed_info.version_minor, seed_info.version_patch,
                 );
-                app.ui.push_popup(PopupMessage::Ok(text, false, timestamp));
+                app.ui.push_popup(PopupMessage::Ok {
+                    message,
+                    is_skippable: false,
+                    tick: timestamp,
+                });
             }
 
             app.ui
@@ -339,11 +346,11 @@ impl NetworkCallback {
                         };
                         app.ui.swarm_panel.push_log_event(event);
 
-                        app.ui.push_popup(PopupMessage::Ok(
-                            format!("Trade accepted, players swapped."),
-                            false,
-                            Tick::now(),
-                        ));
+                        app.ui.push_popup(PopupMessage::Ok {
+                            message: format!("Trade accepted, players swapped."),
+                            is_skippable: false,
+                            tick: Tick::now(),
+                        });
                         trade.state = NetworkRequestState::Ack;
                         network_handler.send_trade(trade)?;
                         Ok(())
@@ -423,11 +430,11 @@ impl NetworkCallback {
                         };
                         app.ui.swarm_panel.push_log_event(event);
 
-                        app.ui.push_popup(PopupMessage::Ok(
-                            format!("Trade accepted, players swapped."),
-                            false,
-                            Tick::now(),
-                        ));
+                        app.ui.push_popup(PopupMessage::Ok {
+                            message: format!("Trade accepted, players swapped."),
+                            is_skippable: false,
+                            tick: Tick::now(),
+                        });
                         Ok(())
                     };
 
@@ -451,10 +458,10 @@ impl NetworkCallback {
                     let own_team = app.world.get_own_team_mut()?;
                     own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
 
-                    app.ui.push_popup(PopupMessage::Error(
-                        format!("Trade failed: {}", error_message),
-                        Tick::now(),
-                    ));
+                    app.ui.push_popup(PopupMessage::Error {
+                        message: format!("Trade failed: {}", error_message),
+                        tick: Tick::now(),
+                    });
 
                     return Err(anyhow!(format!("Trade failed: {}", error_message)))?;
                 }
@@ -553,11 +560,11 @@ impl NetworkCallback {
                             challenge.away_team_in_game.team_id,
                         );
 
-                        app.ui.push_popup(PopupMessage::Ok(
-                            format!("Challenge accepted, game is starting."),
-                            false,
-                            Tick::now(),
-                        ));
+                        app.ui.push_popup(PopupMessage::Ok {
+                            message: format!("Challenge accepted, game is starting."),
+                            is_skippable: false,
+                            tick: Tick::now(),
+                        });
 
                         network_handler.send_challenge(challenge)?;
                         Ok(())
@@ -631,11 +638,11 @@ impl NetworkCallback {
                             return Err(anyhow!("Cannot generate game, starting_at not set"));
                         }
 
-                        app.ui.push_popup(PopupMessage::Ok(
-                            format!("Challenge accepted, game is starting."),
-                            false,
-                            Tick::now(),
-                        ));
+                        app.ui.push_popup(PopupMessage::Ok {
+                            message: format!("Challenge accepted, game is starting."),
+                            is_skippable: false,
+                            tick: Tick::now(),
+                        });
                         Ok(())
                     };
 
@@ -662,10 +669,10 @@ impl NetworkCallback {
                         challenge.away_team_in_game.team_id,
                     );
 
-                    app.ui.push_popup(PopupMessage::Error(
-                        format!("Challenge failed: {}", error_message),
-                        Tick::now(),
-                    ));
+                    app.ui.push_popup(PopupMessage::Error {
+                        message: format!("Challenge failed: {}", error_message),
+                        tick: Tick::now(),
+                    });
 
                     return Err(anyhow!("Challenge failed: {}", error_message))?;
                 }

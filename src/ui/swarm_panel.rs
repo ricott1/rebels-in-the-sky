@@ -162,7 +162,7 @@ impl SwarmPanel {
             hover_text_target,
         );
 
-        let mut challenges_button = Button::new(
+        let mut requests_button = Button::new(
             "View:Requests".into(),
             UiCallback::SetSwarmPanelView {
                 topic: SwarmView::Requests,
@@ -206,7 +206,7 @@ impl SwarmPanel {
                 chat_button.disable(None);
             }
             SwarmView::Requests => {
-                challenges_button.disable(None);
+                requests_button.disable(None);
             }
             SwarmView::Log => {
                 log_button.disable(None);
@@ -217,7 +217,7 @@ impl SwarmPanel {
         }
 
         frame.render_widget(chat_button, split[0]);
-        frame.render_widget(challenges_button, split[1]);
+        frame.render_widget(requests_button, split[1]);
         frame.render_widget(log_button, split[2]);
         frame.render_widget(team_ranking_button, split[3]);
 
@@ -250,12 +250,10 @@ impl SwarmPanel {
 
         let dial_button = Button::new(
             "Ping".into(),
-            UiCallback::Dial {
-                address: "seed".into(),
-            },
+            UiCallback::DialSeed,
             Arc::clone(&self.callback_registry),
-        )
-        .set_hotkey(UiKey::PING);
+        );
+
         frame.render_widget(dial_button, split[5]);
     }
 
@@ -622,7 +620,9 @@ impl SwarmPanel {
     }
 
     pub fn set_view(&mut self, topic: SwarmView) {
+        log::info!("Current view {}", self.view);
         self.view = topic;
+        log::info!("New view {}", self.view);
     }
 }
 
@@ -656,12 +656,6 @@ impl Screen for SwarmPanel {
                     topic: self.view.next(),
                 });
             }
-            UiKey::PING => {
-                //FIXME: this means the chat can't use the capital P
-                return Some(UiCallback::Dial {
-                    address: "seed".into(),
-                });
-            }
             KeyCode::Enter => {
                 let lines: Vec<String> = self
                     .textarea
@@ -677,13 +671,7 @@ impl Screen for SwarmPanel {
 
                 match command {
                     "/dial" => {
-                        let address = if let Some(next) = split_input.skip(1).next() {
-                            next.to_string()
-                        } else {
-                            "seed".to_string()
-                        };
-
-                        return Some(UiCallback::Dial { address });
+                        return Some(UiCallback::DialSeed);
                     }
                     "/sync" => {
                         return Some(UiCallback::Sync);

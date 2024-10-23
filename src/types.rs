@@ -4,8 +4,12 @@ use crate::{
         game::{Game, GameSummary},
         types::GameStatsMap,
     },
-    world::{constants::*, kartoffel::Kartoffel, planet::Planet, player::Player, team::Team},
+    world::{
+        constants::*, kartoffel::Kartoffel, planet::Planet, player::Player, resources::Resource,
+        team::Team,
+    },
 };
+use anyhow::anyhow;
 use chrono::{prelude::DateTime, Datelike, Local, Timelike};
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -31,6 +35,94 @@ pub type PlanetMap = HashMap<PlanetId, Planet>;
 pub type GameMap = HashMap<GameId, Game>;
 pub type GameSummaryMap = HashMap<GameId, GameSummary>;
 pub type KartoffelMap = HashMap<KartoffelId, Kartoffel>;
+pub type ResourceMap = HashMap<Resource, u32>;
+
+pub trait StorableResourceMap {
+    fn value(&self, resource: &Resource) -> u32;
+    fn used_storage_capacity(&self) -> u32;
+    fn update(&mut self, resource: Resource, amount: i32, max_capacity: u32) -> AppResult<()>;
+    fn add(&mut self, resource: Resource, amount: u32, max_capacity: u32) -> AppResult<()>;
+    fn saturating_add(&mut self, resource: Resource, amount: u32, max_capacity: u32);
+    fn sub(&mut self, resource: Resource, amount: u32) -> AppResult<()>;
+    fn saturating_sub(&mut self, resource: Resource, amount: u32);
+}
+impl StorableResourceMap for ResourceMap {
+    fn value(&self, resource: &Resource) -> u32 {
+        self.get(resource).copied().unwrap_or_default()
+    }
+
+    fn used_storage_capacity(&self) -> u32 {
+        self.iter().map(|(k, v)| k.to_storing_space() * v).sum()
+    }
+
+    fn update(&mut self, resource: Resource, amount: i32, max_capacity: u32) -> AppResult<()> {
+        if amount > 0 {
+            self.add(resource, amount as u32, max_capacity)?;
+        } else if amount < 0 {
+            self.sub(resource, (-amount) as u32)?;
+        }
+
+        Ok(())
+    }
+
+    fn add(&mut self, resource: Resource, amount: u32, max_capacity: u32) -> AppResult<()> {
+        if self.used_storage_capacity() + resource.to_storing_space() * amount > max_capacity {
+            log::info!(
+                "Adding {} {} used is {}, adding extra {}, max is {}",
+                amount,
+                resource,
+                self.used_storage_capacity(),
+                resource.to_storing_space() * amount,
+                max_capacity
+            );
+            return Err(anyhow!("Not enough storage to add resource"));
+        }
+
+        self.entry(resource)
+            .and_modify(|e| {
+                *e = e.saturating_add(amount);
+            })
+            .or_insert(amount);
+
+        Ok(())
+    }
+
+    fn saturating_add(&mut self, resource: Resource, amount: u32, max_capacity: u32) {
+        let max_amount = if resource.to_storing_space() == 0 {
+            amount
+        } else {
+            amount.min((max_capacity - self.used_storage_capacity()) / resource.to_storing_space())
+        };
+
+        self.entry(resource)
+            .and_modify(|e| {
+                *e = e.saturating_add(max_amount);
+            })
+            .or_insert(max_amount);
+    }
+
+    fn sub(&mut self, resource: Resource, amount: u32) -> AppResult<()> {
+        let current = self.get(&resource).copied().unwrap_or_default();
+        if current < amount {
+            return Err(anyhow!("Not enough resources to remove"));
+        }
+
+        self.entry(resource)
+            .and_modify(|e| {
+                *e = e.saturating_sub(amount);
+            })
+            .or_insert(0);
+        Ok(())
+    }
+
+    fn saturating_sub(&mut self, resource: Resource, amount: u32) {
+        self.entry(resource)
+            .and_modify(|e| {
+                *e = e.saturating_sub(amount);
+            })
+            .or_insert(0);
+    }
+}
 
 pub trait SortablePlayerMap {
     fn by_position(&self, stats: &GameStatsMap) -> Vec<&Player>;

@@ -1,10 +1,11 @@
 use super::constants::HOURS;
 use super::{resources::Resource, skill::MAX_SKILL, types::Population};
 use crate::types::{SystemTimeTick, Tick};
+use crate::world::skill::GameSkill;
 use crate::world::utils::is_default;
 use crate::{
+    types::*,
     types::{PlanetId, TeamId},
-    world::skill::GameSkill,
 };
 use libp2p::PeerId;
 use rand::{seq::SliceRandom, Rng, SeedableRng};
@@ -46,7 +47,7 @@ pub struct Planet {
     pub version: u64,
     pub name: String,
     pub populations: HashMap<Population, u32>,
-    pub resources: HashMap<Resource, u32>,
+    pub resources: ResourceMap,
     pub filename: String,
     pub rotation_period: usize,
     pub revolution_period: usize,
@@ -70,8 +71,7 @@ impl Planet {
     }
     fn resource_price(&self, resource: Resource) -> f32 {
         // Resource price follows a hyperbolic tangent curve
-        let relative_amount =
-            (self.resources.get(&resource).copied().unwrap_or_default() as f32).bound() / MAX_SKILL;
+        let relative_amount = (self.resources.value(&resource) as f32).bound() / MAX_SKILL;
         let amount_modifier =
             relative_amount / TRADE_DELTA_SCARCITY + (1.0 - relative_amount) * TRADE_DELTA_SCARCITY;
 

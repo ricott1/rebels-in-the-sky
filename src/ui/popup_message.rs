@@ -7,11 +7,9 @@ use super::utils::{
 };
 use super::widgets::default_block;
 use crate::image::types::{Gif, PrintableGif};
-use crate::types::{AppResult, PlayerId, SystemTimeTick, Tick};
+use crate::types::*;
 use crate::ui::gif_map::PORTAL_GIFS;
-use crate::world::player::Player;
-use crate::world::resources::Resource;
-use crate::world::skill::Rated;
+use crate::world::{player::Player, resources::Resource, skill::Rated};
 use anyhow::anyhow;
 use core::fmt::Debug;
 use ratatui::layout::{Margin, Rect};
@@ -20,7 +18,6 @@ use ratatui::{
     layout::{Constraint, Layout},
     Frame,
 };
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use strum_macros::Display;
 use tui_textarea::TextArea;
@@ -30,31 +27,63 @@ const TREASURE_GIF_ANIMATION_DELAY: Tick = 450;
 
 #[derive(Debug, Display, Clone, PartialEq)]
 pub enum PopupMessage {
-    Error(String, Tick),
-    Ok(String, bool, Tick),
-    Dialog(String, Vec<(String, UiCallback)>, Tick),
-    ReleasePlayer(String, PlayerId, Tick),
-    AsteroidNameDialog(Tick),
-    PortalFound(String, String, Tick),
-    ExplorationResult(HashMap<Resource, u32>, Vec<Player>, Tick),
-    TeamLanded(String, String, String, Tick),
-    Tutorial(usize, Tick),
+    Error {
+        message: String,
+        tick: Tick,
+    },
+    Ok {
+        message: String,
+        is_skippable: bool,
+        tick: Tick,
+    },
+    PromptQuit {
+        during_space_adventure: bool,
+        tick: Tick,
+    },
+    ReleasePlayer {
+        player_name: String,
+        player_id: PlayerId,
+        tick: Tick,
+    },
+    AsteroidNameDialog {
+        tick: Tick,
+    },
+    PortalFound {
+        player_name: String,
+        portal_target: String,
+        tick: Tick,
+    },
+    ExplorationResult {
+        resources: ResourceMap,
+        players: Vec<Player>,
+        tick: Tick,
+    },
+    TeamLanded {
+        team_name: String,
+        planet_name: String,
+        planet_filename: String,
+        tick: Tick,
+    },
+    Tutorial {
+        index: usize,
+        tick: Tick,
+    },
 }
 
 impl PopupMessage {
     const MAX_TUTORIAL_PAGE: usize = 2;
     fn rect(&self, area: Rect) -> Rect {
         let (width, height) = match self {
-            PopupMessage::AsteroidNameDialog(..) => (54, 28),
-            PopupMessage::PortalFound(..) => (54, 44),
-            PopupMessage::ExplorationResult(resources, ..) => {
-                if resources.get(&&Resource::GOLD).copied().unwrap_or_default() > 0 {
+            PopupMessage::AsteroidNameDialog { .. } => (54, 28),
+            PopupMessage::PortalFound { .. } => (54, 44),
+            PopupMessage::ExplorationResult { resources, .. } => {
+                if resources.value(&&Resource::GOLD) > 0 {
                     (54, 26)
                 } else {
                     (54, 16)
                 }
             }
-            PopupMessage::TeamLanded(..) => (54, 26),
+            PopupMessage::TeamLanded { .. } => (54, 26),
             _ => (48, 16),
         };
 
@@ -87,8 +116,8 @@ impl PopupMessage {
 
     pub fn is_skippable(&self) -> bool {
         match self {
-            PopupMessage::Error(..) => true,
-            PopupMessage::Ok(_, skippable, _) => *skippable,
+            PopupMessage::Error { .. } => true,
+            PopupMessage::Ok { is_skippable, .. } => *is_skippable,
             _ => false,
         }
     }
@@ -101,7 +130,7 @@ impl PopupMessage {
         key_event: crossterm::event::KeyEvent,
     ) -> Option<UiCallback> {
         match self {
-            PopupMessage::AsteroidNameDialog(tick) => {
+            PopupMessage::AsteroidNameDialog { tick } => {
                 if key_event.code == UiKey::YES_TO_DIALOG {
                     let mut name = popup_input.lines()[0].clone();
                     name = name
@@ -123,7 +152,25 @@ impl PopupMessage {
                 }
             }
 
-            PopupMessage::Tutorial(index, _) => {
+            PopupMessage::ReleasePlayer { player_id, .. } => {
+                if key_event.code == UiKey::YES_TO_DIALOG {
+                    return Some(UiCallback::ConfirmReleasePlayer {
+                        player_id: player_id.clone(),
+                    });
+                } else if key_event.code == UiKey::NO_TO_DIALOG {
+                    return Some(UiCallback::CloseUiPopup);
+                }
+            }
+
+            PopupMessage::PromptQuit { .. } => {
+                if key_event.code == UiKey::YES_TO_DIALOG {
+                    return Some(UiCallback::QuitGame);
+                } else if key_event.code == UiKey::NO_TO_DIALOG {
+                    return Some(UiCallback::CloseUiPopup);
+                }
+            }
+
+            PopupMessage::Tutorial { index, .. } => {
                 if key_event.code == UiKey::YES_TO_DIALOG
                     && *index == PopupMessage::MAX_TUTORIAL_PAGE
                 {
@@ -166,7 +213,7 @@ impl PopupMessage {
         frame.render_widget(default_block(), rect);
         let hover_text_target = hover_text_target(frame);
         match self {
-            PopupMessage::Ok(message, _, tick) => {
+            PopupMessage::Ok { message, tick, .. } => {
                 frame.render_widget(
                     Paragraph::new(format!("Message: {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::OK))
@@ -201,7 +248,7 @@ impl PopupMessage {
                 );
             }
 
-            PopupMessage::Error(message, tick) => {
+            PopupMessage::Error { message, tick } => {
                 frame.render_widget(
                     Paragraph::new(format!("Error: {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::ERROR))
@@ -236,41 +283,11 @@ impl PopupMessage {
                 );
             }
 
-            PopupMessage::Dialog(message, options, tick) => {
-                frame.render_widget(
-                    Paragraph::new(format!("Conundrum! {}", tick.formatted_as_date()))
-                        .block(default_block().border_style(UiStyle::NETWORK))
-                        .centered(),
-                    split[0],
-                );
-                frame.render_widget(
-                    Paragraph::new(message.clone())
-                        .centered()
-                        .wrap(Wrap { trim: true }),
-                    split[1].inner(Margin {
-                        horizontal: 1,
-                        vertical: 1,
-                    }),
-                );
-
-                let buttons_split = Layout::horizontal(
-                    [Constraint::Ratio(1, options.len() as u32)].repeat(options.len()),
-                )
-                .split(split[2]);
-                for idx in 0..options.len() {
-                    let (text, callback) = options[idx].clone();
-                    let button = Button::new(text.into(), callback, Arc::clone(&callback_registry))
-                        .set_hover_text(
-                            "Choose this option and close the popup".into(),
-                            hover_text_target,
-                        )
-                        .set_layer(1);
-
-                    frame.render_widget(button, buttons_split[idx]);
-                }
-            }
-
-            PopupMessage::ReleasePlayer(player_name, player_id, _) => {
+            PopupMessage::ReleasePlayer {
+                player_name,
+                player_id,
+                ..
+            } => {
                 frame.render_widget(
                     Paragraph::new(format!("Attention!"))
                         .block(default_block().border_style(UiStyle::NETWORK))
@@ -324,7 +341,63 @@ impl PopupMessage {
                 frame.render_widget(no_button, buttons_split[1]);
             }
 
-            PopupMessage::AsteroidNameDialog(tick) => {
+            PopupMessage::PromptQuit {
+                during_space_adventure,
+                ..
+            } => {
+                frame.render_widget(
+                    Paragraph::new(format!("Attention!"))
+                        .block(default_block().border_style(UiStyle::NETWORK))
+                        .centered(),
+                    split[0],
+                );
+
+                let text = if *during_space_adventure {
+                    format!("Are you sure you want to quit?\nYou will lose the whole cargo! Go back to the base first\n(Press '{}')", UiKey::SPACE_BACK_TO_BASE)
+                } else {
+                    "Are you sure you want to quit?".to_string()
+                };
+                frame.render_widget(
+                    Paragraph::new(text).centered().wrap(Wrap { trim: true }),
+                    split[1].inner(Margin {
+                        horizontal: 1,
+                        vertical: 1,
+                    }),
+                );
+
+                let buttons_split =
+                    Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                        .split(split[2]);
+
+                let confirm_button = Button::new(
+                    UiText::YES.into(),
+                    UiCallback::QuitGame,
+                    Arc::clone(&callback_registry),
+                )
+                .set_hover_text(format!("Confirm quitting."), hover_text_target)
+                .set_hotkey(UiKey::YES_TO_DIALOG)
+                .set_box_style(UiStyle::OK)
+                .set_layer(1);
+
+                frame.render_widget(confirm_button, buttons_split[0]);
+
+                let no_button = Button::new(
+                    UiText::NO.into(),
+                    UiCallback::CloseUiPopup,
+                    Arc::clone(&callback_registry),
+                )
+                .set_hover_text(
+                    format!("Please don't go, don't goooooo..."),
+                    hover_text_target,
+                )
+                .set_hotkey(UiKey::NO_TO_DIALOG)
+                .set_box_style(UiStyle::ERROR)
+                .set_layer(1);
+
+                frame.render_widget(no_button, buttons_split[1]);
+            }
+
+            PopupMessage::AsteroidNameDialog { tick } => {
                 frame.render_widget(
                     Paragraph::new(format!("Asteroid discovered: {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::NETWORK))
@@ -419,7 +492,11 @@ impl PopupMessage {
                 frame.render_widget(no_button, buttons_split[1]);
             }
 
-            PopupMessage::PortalFound(player_name, portal_target, tick) => {
+            PopupMessage::PortalFound {
+                player_name,
+                portal_target,
+                tick,
+            } => {
                 frame.render_widget(
                     Paragraph::new(format!("Portal: {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::HIGHLIGHT))
@@ -437,7 +514,7 @@ impl PopupMessage {
                 let portal_image_height = portal[0].len() as u16;
 
                 let m_split = Layout::vertical([
-                    Constraint::Length(3),
+                    Constraint::Length(5),
                     Constraint::Length(portal_image_height),
                     Constraint::Min(0),
                 ])
@@ -484,7 +561,11 @@ impl PopupMessage {
                 );
             }
 
-            PopupMessage::ExplorationResult(found_resources, found_pirates, tick) => {
+            PopupMessage::ExplorationResult {
+                resources,
+                players,
+                tick,
+            } => {
                 frame.render_widget(
                     Paragraph::new(format!("Exploration result: {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::HIGHLIGHT))
@@ -498,12 +579,7 @@ impl PopupMessage {
                     return Err(anyhow!("Invalid treasure gif"));
                 }
 
-                let treasure_image_height = if found_resources
-                    .get(&Resource::GOLD)
-                    .copied()
-                    .unwrap_or_default()
-                    > 0
-                {
+                let treasure_image_height = if resources.value(&Resource::GOLD) > 0 {
                     treasure[0].len() as u16
                 } else {
                     0
@@ -516,7 +592,7 @@ impl PopupMessage {
                 .split(split[1]);
 
                 let mut text = "".to_string();
-                for (resource, &amount) in found_resources.iter() {
+                for (resource, &amount) in resources.iter() {
                     if amount > 0 {
                         text.push_str(
                             format!("  {} {}\n", amount, resource.to_string().to_lowercase())
@@ -525,13 +601,13 @@ impl PopupMessage {
                     }
                 }
 
-                if found_pirates.len() > 0 {
+                if players.len() > 0 {
                     text.push_str(
-                    format! {"\nFound {} stranded pirate{}:\n", found_pirates.len(), if found_pirates.len() > 1 {
+                    format! {"\nFound {} stranded pirate{}:\n", players.len(), if players.len() > 1 {
                         "s"
                     }else{""}}.as_str(),
                 );
-                    for player in found_pirates.iter() {
+                    for player in players.iter() {
                         let p_text = format!(
                             "  {:<16} {}\n",
                             player.info.shortened_name(),
@@ -553,12 +629,7 @@ impl PopupMessage {
                     }),
                 );
 
-                if found_resources
-                    .get(&Resource::GOLD)
-                    .copied()
-                    .unwrap_or_default()
-                    > 0
-                {
+                if resources.value(&Resource::GOLD) > 0 {
                     // Tick::now() returns time as milliseconds. To implement the wanted framerate,
                     // we need to divide by the frame duration in milliseconds. After the last frame,
                     // we just leave the treasure open rather than looping.
@@ -595,7 +666,12 @@ impl PopupMessage {
                 );
             }
 
-            PopupMessage::TeamLanded(team_name, planet_name, planet_filename, tick) => {
+            PopupMessage::TeamLanded {
+                team_name,
+                planet_name,
+                planet_filename,
+                tick,
+            } => {
                 frame.render_widget(
                     Paragraph::new(format!("Team landed: {}", tick.formatted_as_date()))
                         .block(default_block().border_style(UiStyle::HIGHLIGHT))
@@ -657,7 +733,7 @@ impl PopupMessage {
                 );
             }
 
-            PopupMessage::Tutorial(index, _) => {
+            PopupMessage::Tutorial { index, .. } => {
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Tutorial {}/{}",

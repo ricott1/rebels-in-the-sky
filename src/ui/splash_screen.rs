@@ -157,7 +157,7 @@ impl Screen for SplashScreen {
         frame: &mut Frame,
         world: &World,
         area: Rect,
-        debug_view: bool,
+        _debug_view: bool,
     ) -> AppResult<()> {
         let split = Layout::vertical([
             Constraint::Length(2),                  //margin
@@ -180,7 +180,7 @@ impl Screen for SplashScreen {
         ])
         .split(split[1]);
 
-        frame.render_widget(self.title.clone(), title[1]);
+        frame.render_widget(&self.title, title[1]);
         frame.render_widget(
             Paragraph::new(format!(
                 "Version {} {}",
@@ -211,7 +211,7 @@ impl Screen for SplashScreen {
         ])
         .split(split[3]);
 
-        let mut gif_lines = if debug_view {
+        let mut gif_lines = if self.index == 0 {
             SPINNING_BALL_GIF[(self.tick / 4) % SPINNING_BALL_GIF.len()].clone()
         } else {
             self.gif_map.lock().unwrap().planet_zoom_in_frame_lines(

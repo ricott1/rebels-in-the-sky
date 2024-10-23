@@ -15,7 +15,7 @@ use crate::game_engine::game::{Game, GameSummary};
 use crate::game_engine::types::{Possession, TeamInGame};
 use crate::image::color_map::ColorMap;
 use crate::network::types::{NetworkGame, NetworkTeam};
-use crate::space_adventure::Space;
+use crate::space_adventure::SpaceAdventure;
 use crate::store::save_game;
 use crate::types::*;
 use crate::ui::popup_message::PopupMessage;
@@ -71,7 +71,7 @@ pub struct World {
     #[serde(default)]
     pub past_games: GameSummaryMap,
     #[serde(skip)]
-    pub space: Option<Space>,
+    pub space_adventure: Option<SpaceAdventure>,
 }
 
 impl World {
@@ -95,7 +95,6 @@ impl World {
             self.populate_planet(rng, planet)?;
         }
 
-        log::info!("GOt here");
         if generate_local_world {
             self.generate_local_world(rng)?;
         }
@@ -170,7 +169,7 @@ impl World {
         planet.team_ids.push(team_id);
         self.planets.insert(planet.id, planet);
 
-        let team_base_level = rng.gen_range(0..=5) as f32;
+        let team_base_level = rng.gen_range(0..=8) as f32;
         for position in 0..MAX_POSITION {
             let player_id =
                 self.generate_random_player(rng, Some(position), home_planet_id, team_base_level)?;
@@ -298,8 +297,6 @@ impl World {
             team_bonus.push((captain_bonus, pilot_bonus, doctor_bonus));
         }
 
-        log::info!("TEam bonus {:#?}", team_bonus);
-
         // Assign roles to best player for role, starting from captain, then pilot, then doctor.
         let (captain_idx, _) = team_bonus
             .iter()
@@ -308,8 +305,6 @@ impl World {
             .expect("There should be a max");
 
         self.set_team_crew_role(CrewRole::Captain, player_ids[captain_idx])?;
-
-        log::info!("TEam bonus {:#?}", team_bonus);
 
         let (pilot_idx, _) = team_bonus
             .iter()
@@ -524,7 +519,8 @@ impl World {
         let player = self.get_player(player_id).unwrap().clone();
         let mut team = self.get_team_or_err(team_id)?.clone();
         team.can_hire_player(&player)?;
-        team.remove_resource(Resource::SATOSHI, player.hire_cost(team.reputation))?;
+        team.resources
+            .sub(Resource::SATOSHI, player.hire_cost(team.reputation))?;
 
         self.players.insert(player.id, player);
         self.teams.insert(team.id, team);
@@ -665,6 +661,10 @@ impl World {
         let mut away_team = self.get_team_or_err(away_team_in_game.team_id)?.clone();
 
         // For a network game we run different checks.
+        // In particular, we do not check if the teams are already playing a game
+        // as this is done with an extra check if the current game is THIS game.
+        // This is necessary because of a race condition when a team can be received
+        // over the network before the challenge confirmation message.
         home_team.can_challenge_team_over_network(&away_team)?;
 
         let location = match home_team.current_location {
@@ -962,7 +962,7 @@ impl World {
         team: &Team,
         planet: &Planet,
         duration: u128,
-    ) -> AppResult<HashMap<Resource, u32>> {
+    ) -> AppResult<ResourceMap> {
         let mut rng = ChaCha8Rng::from_entropy();
         let mut resources = HashMap::new();
 
@@ -1013,15 +1013,10 @@ impl World {
         let mut callbacks: Vec<UiCallback> = vec![];
         let is_simulating = self.is_simulating();
 
-        if !is_simulating {
-            // This check should not be necessary, but better safe than sorry.
-            if let Some(space) = self.space.as_mut() {
-                let deltatime =
-                    (current_tick - self.last_tick_min_interval) as f64 / SECONDS as f64;
-                log::info!("Before update");
-                space.update(deltatime)?;
-                log::info!("After update");
-            }
+        if let Some(space) = self.space_adventure.as_mut() {
+            let deltatime = (current_tick - self.last_tick_min_interval) as f32 / SECONDS as f32;
+
+            callbacks.append(&mut space.update(deltatime)?);
         }
 
         self.last_tick_min_interval = current_tick;
@@ -1043,22 +1038,12 @@ impl World {
         }
 
         if current_tick >= self.last_tick_medium_interval + TickInterval::MEDIUM {
-            log::info!(
-                "Medium tick: {} >= {}",
-                current_tick,
-                self.last_tick_medium_interval + TickInterval::MEDIUM
-            );
             self.tick_tiredness_recovery()?;
 
             for cb in self.tick_player_leaving_team(current_tick)? {
                 callbacks.push(cb);
             }
 
-            log::info!(
-                "Generating games: {} < {}",
-                self.games.len(),
-                AUTO_GENERATE_GAMES_NUMBER
-            );
             if self.games.len() < AUTO_GENERATE_GAMES_NUMBER {
                 self.generate_random_games()?;
                 log::info!("Generated games: {}", self.games.len());
@@ -1233,9 +1218,18 @@ impl World {
             if let Ok(res) = self.get_team_or_err(game.home_team_in_game.team_id) {
                 let mut home_team = res.clone();
                 home_team.current_game = None;
-                home_team.add_resource(Resource::SATOSHI, home_team_income);
+
+                home_team.resources.saturating_add(
+                    Resource::SATOSHI,
+                    home_team_income,
+                    home_team.storage_capacity(),
+                );
                 home_team.reputation = (home_team.reputation + home_team_reputation).bound();
-                home_team.add_resource(Resource::RUM, home_team_rum);
+                home_team.resources.saturating_add(
+                    Resource::RUM,
+                    home_team_rum,
+                    home_team.storage_capacity(),
+                );
                 if game.home_team_in_game.peer_id.is_some()
                     && game.away_team_in_game.peer_id.is_some()
                 {
@@ -1259,9 +1253,17 @@ impl World {
             if let Ok(res) = self.get_team_or_err(game.away_team_in_game.team_id) {
                 let mut away_team = res.clone();
                 away_team.current_game = None;
-                away_team.add_resource(Resource::SATOSHI, away_team_income);
+                away_team.resources.saturating_add(
+                    Resource::SATOSHI,
+                    away_team_income,
+                    away_team.storage_capacity(),
+                );
                 away_team.reputation = (away_team.reputation + away_team_reputation).bound();
-                away_team.add_resource(Resource::RUM, away_team_rum);
+                away_team.resources.saturating_add(
+                    Resource::RUM,
+                    away_team_rum,
+                    away_team.storage_capacity(),
+                );
 
                 if game.home_team_in_game.peer_id.is_some()
                     && game.away_team_in_game.peer_id.is_some()
@@ -1314,7 +1316,6 @@ impl World {
 
     pub fn tick_travel(&mut self, current_tick: Tick) -> AppResult<Option<UiCallback>> {
         let own_team = self.get_own_team()?;
-
         match own_team.current_location {
             TeamLocation::Travelling {
                 from: _,
@@ -1351,12 +1352,12 @@ impl World {
                     self.dirty_network = true;
                     self.dirty_ui = true;
                     return Ok(Some(UiCallback::PushUiPopup {
-                        popup_message: PopupMessage::TeamLanded(
+                        popup_message: PopupMessage::TeamLanded {
                             team_name,
                             planet_name,
                             planet_filename,
-                            current_tick,
-                        ),
+                            tick: current_tick,
+                        },
                     }));
                 }
             }
@@ -1386,6 +1387,7 @@ impl World {
                     let team_asteroid_modifier =
                         (MAX_NUM_ASTEROID_PER_TEAM - team.asteroid_ids.len()) as f64
                             / MAX_NUM_ASTEROID_PER_TEAM as f64;
+
                     if home_planet.planet_type != PlanetType::Asteroid
                         && rng.gen_bool(
                             (ASTEROID_DISCOVERY_PROBABILITY
@@ -1404,7 +1406,7 @@ impl World {
                         self.dirty_ui = true;
 
                         return Ok(Some(UiCallback::PushUiPopup {
-                            popup_message: PopupMessage::AsteroidNameDialog(current_tick),
+                            popup_message: PopupMessage::AsteroidNameDialog { tick: current_tick },
                         }));
                     }
 
@@ -1415,11 +1417,17 @@ impl World {
                         self.resources_found_after_exploration(&team, &around_planet, duration)?;
                     // Try to add resources starting from the most expensive one,
                     // but still trying to add the others if they fit (notice that resources occupy a different amount of space).
-                    for (resource, &amount) in found_resources
+                    for (&resource, &amount) in found_resources
                         .iter()
                         .sorted_by(|(a, _), (b, _)| b.base_price().total_cmp(&a.base_price()))
                     {
-                        team.add_resource(resource.clone(), amount);
+                        let max_capacity = if resource == Resource::FUEL {
+                            team.fuel_capacity()
+                        } else {
+                            team.storage_capacity()
+                        };
+                        team.resources
+                            .saturating_add(resource, amount, max_capacity);
                     }
 
                     let found_pirates = self
@@ -1440,11 +1448,11 @@ impl World {
                     self.dirty_ui = true;
 
                     return Ok(Some(UiCallback::PushUiPopup {
-                        popup_message: PopupMessage::ExplorationResult(
-                            found_resources,
-                            found_pirates,
-                            current_tick,
-                        ),
+                        popup_message: PopupMessage::ExplorationResult {
+                            resources: found_resources,
+                            players: found_pirates,
+                            tick: current_tick,
+                        },
                     }));
                 }
             }
@@ -1498,7 +1506,11 @@ impl World {
             self.populate_planet(rng, planet)?;
         }
         Ok(UiCallback::PushUiPopup {
-            popup_message: PopupMessage::Ok("Free pirates refreshed".into(), false, current_tick),
+            popup_message: PopupMessage::Ok {
+                message: "Free pirates refreshed".into(),
+                is_skippable: false,
+                tick: current_tick,
+            },
         })
     }
 
@@ -1557,24 +1569,27 @@ impl World {
             // Reset player improvements for UI.
             player.previous_skills = player.current_skill_array();
             player.info.age = player.info.age + AGE_INCREASE_PER_LONG_TICK;
-            // if player.team == Some(self.own_team_id) {
-            //     // Pirates slightly dislike being part of a team.
-            //     // This is counteracted by the morale boost pirates get by playing games.
-            //     // We do not apply this to computer teams since no games are played during simulation,
-            //     // and hence it would result in all computer players to be completely demoralized.
-            //     player.morale = (player.morale + MORALE_DECREASE_PER_LONG_TICK).bound();
-            // }
+
+            // Pirates slightly dislike being part of a team.
+            // This is counteracted by the morale boost pirates get by playing games.
+            // We do not apply this to computer teams since no games are played during simulation,
+            // and hence it would result in all computer players to be completely demoralized.
+            // player.morale = (player.morale + MORALE_DECREASE_PER_LONG_TICK).bound();
             player.morale = (player.morale + MORALE_DECREASE_PER_LONG_TICK).bound();
             player.reputation = (player.reputation - REPUTATION_DECREASE_PER_LONG_TICK).bound();
 
             for idx in 0..player.skills_training.len() {
+                // Increase player skills from training
+                assert!(player.skills_training[idx] >= 0.0);
+                player.modify_skill(idx, player.skills_training[idx]);
+
                 // Reduce player skills. This is planned to counteract the effect of training by playing games.
                 // Mental abilities don't decrease for mature players.
                 if idx > 15 && player.info.relative_age() > 0.15 {
                     continue;
                 }
 
-                // potential_modifier has a value ranging from 0.0 to 4.0.
+                // The potential_modifier has a value ranging from 0.0 to 4.0.
                 // Players with skills below their potential decrease slower, above their potential decrease faster.
                 let potential_modifier =
                     (1.0 + (player.average_skill() - player.potential) / 20.0).powf(2.0);
@@ -1594,11 +1609,8 @@ impl World {
                             * player.info.relative_age(),
                     );
                 }
-                // Increase player skills from training
-                assert!(player.skills_training[idx] >= 0.0);
-                player.modify_skill(idx, player.skills_training[idx]);
-                player.skills_training[idx] = 0.0;
             }
+            player.skills_training = [0.0; 20];
         }
     }
 
@@ -1663,16 +1675,16 @@ impl World {
 
                     if player.team.expect("Team should be some") == self.own_team_id {
                         messages.push(UiCallback::PushUiPopup {
-                            popup_message: PopupMessage::Ok(
-                                format!(
+                            popup_message: PopupMessage::Ok {
+                                message: format!(
                                     "{} {} left the crew!\n{} morale was too low...",
                                     player.info.first_name,
                                     player.info.last_name,
                                     player.info.pronouns.as_possessive()
                                 ),
-                                false,
-                                current_tick,
-                            ),
+                                is_skippable: false,
+                                tick: current_tick,
+                            },
                         })
                     }
                 }
@@ -1683,17 +1695,17 @@ impl World {
 
                     if player.team.expect("Team should be some") == self.own_team_id {
                         messages.push(UiCallback::PushUiPopup {
-                    popup_message: PopupMessage::Ok(
-                        format!(
+                    popup_message: PopupMessage::Ok{
+                        message:format!(
                             "{} {} left the crew and retired to cultivate turnips\n{} {} been a great pirate...",
                             player.info.first_name,
                             player.info.last_name,
                             player.info.pronouns.as_subject(),
                             player.info.pronouns.to_have(),
                         ),
-                        false,
-                        current_tick
-                    ),
+                        is_skippable:false,
+                        tick:current_tick
+                    },
                 })
                     }
                 }
@@ -1820,6 +1832,9 @@ impl World {
             TeamLocation::OnPlanet { planet_id } => planet_id,
             TeamLocation::Travelling { .. } => return Err(anyhow!("Team is travelling")),
             TeamLocation::Exploring { .. } => return Err(anyhow!("Team is exploring")),
+            TeamLocation::OnSpaceAdventure { .. } => {
+                return Err(anyhow!("Team is on space adventure"))
+            }
         };
 
         let distance = self.distance_between_planets(from, to)?;
@@ -1927,7 +1942,7 @@ mod test {
     use super::{AppResult, World, QUICK_EXPLORATION_TIME};
     use crate::{
         app::App,
-        types::{SystemTimeTick, Tick},
+        types::{StorableResourceMap, SystemTimeTick, Tick},
         ui::ui_callback::UiCallback,
         world::{
             planet::PlanetType,
@@ -2001,31 +2016,11 @@ mod test {
     Scraps {}
     Fuel {}
     Rum {}",
-            planet
-                .resources
-                .get(&Resource::SATOSHI)
-                .copied()
-                .unwrap_or_default(),
-            planet
-                .resources
-                .get(&Resource::GOLD)
-                .copied()
-                .unwrap_or_default(),
-            planet
-                .resources
-                .get(&Resource::SCRAPS)
-                .copied()
-                .unwrap_or_default(),
-            planet
-                .resources
-                .get(&Resource::FUEL)
-                .copied()
-                .unwrap_or_default(),
-            planet
-                .resources
-                .get(&Resource::RUM)
-                .copied()
-                .unwrap_or_default()
+            planet.resources.value(&Resource::SATOSHI),
+            planet.resources.value(&Resource::GOLD),
+            planet.resources.value(&Resource::SCRAPS),
+            planet.resources.value(&Resource::FUEL),
+            planet.resources.value(&Resource::RUM)
         );
 
         let team_id =
@@ -2121,7 +2116,8 @@ mod test {
             world.generate_random_team(rng, planet.id, "test".into(), "testship".into())?;
 
         let team = &mut world.get_team_or_err(team_id)?.clone();
-        team.add_resource(Resource::RUM, 20);
+        team.resources
+            .add(Resource::RUM, 20, team.storage_capacity())?;
 
         let mut spugna = world.get_player_or_err(team.player_ids[0])?.clone();
         let spugna_id = spugna.id.clone();

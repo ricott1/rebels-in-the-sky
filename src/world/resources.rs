@@ -1,5 +1,6 @@
+use image::Rgba;
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::{collections::HashMap, fmt::Display, hash::Hash};
+use std::{fmt::Display, hash::Hash};
 
 #[derive(Debug, Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -24,6 +25,15 @@ impl Display for Resource {
 }
 
 impl Resource {
+    pub fn color(&self) -> Rgba<u8> {
+        match self {
+            Self::GOLD => Rgba([240, 230, 140, 255]),
+            Self::SCRAPS => Rgba([192, 192, 192, 255]),
+            Self::RUM => Rgba([114, 47, 55, 255]),
+            Self::FUEL => Rgba([64, 224, 208, 255]),
+            Self::SATOSHI => Rgba([255, 255, 255, 255]),
+        }
+    }
     pub fn base_price(&self) -> f32 {
         match self {
             Resource::SATOSHI => 1.0,
@@ -42,12 +52,5 @@ impl Resource {
             Resource::FUEL => 0, // Fuel is stored in the spaceship tank
             Resource::RUM => 1,
         }
-    }
-
-    pub fn used_storage_capacity(resources: &HashMap<Resource, u32>) -> u32 {
-        resources
-            .iter()
-            .map(|(k, v)| k.to_storing_space() * v)
-            .sum()
     }
 }

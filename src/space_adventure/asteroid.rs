@@ -1,256 +1,189 @@
 use super::space_callback::SpaceCallback;
+use super::visual_effects::VisualEffect;
 use super::{constants::*, traits::*};
 use crate::image::types::Gif;
 use crate::image::utils::open_image;
-use image::imageops::crop_imm;
-use image::{buffer::ConvertBuffer, GrayImage, Rgba, RgbaImage};
-use imageproc::{
-    contours::{find_contours, BorderType},
-    geometric_transformations::{rotate_about_center, Interpolation},
-};
+use crate::register_impl;
+use crate::space_adventure::utils::{body_data_from_image, EntityState};
+use crate::world::resources::Resource;
+use glam::{I16Vec2, Vec2};
+use image::imageops::{rotate180, rotate270, rotate90};
+use image::{Rgba, RgbaImage};
 use once_cell::sync::Lazy;
 use rand::seq::IteratorRandom;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use strum::{Display, EnumIter, IntoEnumIterator};
 
 const MAX_ASTEROID_TYPE_INDEX: usize = 3;
+const MAX_ROTATION: usize = 4;
 
 // Calculate astroid gifs, hit boxes, and contours once to be more efficient.
-static ASTEROID_IMAGE_DATA: Lazy<
-    HashMap<
-        (AsteroidSize, usize),
-        (
-            Gif,
-            Vec<HashMap<(i16, i16), bool>>,
-            Vec<HashSet<(i16, i16)>>,
-        ),
-    >,
-> = Lazy::new(|| {
-    fn asteroid_data(
-        size: AsteroidSize,
-        n_idx: usize,
-        rotation_idx: usize,
-    ) -> (RgbaImage, HashMap<(i16, i16), bool>, HashSet<(i16, i16)>) {
-        let path = format!(
-            "space_adventure/asteroid_{}{}.png",
-            size.to_string().to_ascii_lowercase(),
-            n_idx
-        );
-        let base_img = open_image(&path).expect("Should open asteroid image");
+static ASTEROID_IMAGE_DATA: Lazy<HashMap<(AsteroidSize, usize), (Gif, Vec<HitBox>)>> =
+    Lazy::new(|| {
+        let mut data = HashMap::new();
 
-        let mut image = rotate_about_center(
-            &base_img,
-            std::f32::consts::PI / 8.0 * rotation_idx as f32,
-            Interpolation::Nearest,
-            Rgba([0, 0, 0, 0]),
-        );
-
-        let gray_img = ConvertBuffer::<GrayImage>::convert(&image);
-        // Find contours to get minimum rect enclosing image.
-        let mut contours_vec = vec![];
-        for contour in find_contours::<i16>(&gray_img).iter() {
-            if contour.border_type == BorderType::Outer {
-                for &point in contour.points.iter() {
-                    contours_vec.push(point);
+        for size in AsteroidSize::iter() {
+            for n_idx in 1..=MAX_ASTEROID_TYPE_INDEX {
+                let mut gif = vec![];
+                let mut hit_boxes = vec![];
+                let path = format!(
+                    "space_adventure/asteroid_{}{}.png",
+                    size.to_string().to_ascii_lowercase(),
+                    n_idx
+                );
+                let base_img = open_image(&path).expect("Should open asteroid image");
+                for rotation_idx in 0..MAX_ROTATION {
+                    let image = match rotation_idx {
+                        0 => base_img.clone(),
+                        1 => rotate90(&base_img),
+                        2 => rotate180(&base_img),
+                        3 => rotate270(&base_img),
+                        _ => unreachable!(),
+                    };
+                    let (image, hit_box) = body_data_from_image(&image);
+                    gif.push(image);
+                    hit_boxes.push(hit_box);
                 }
+                data.insert((size, n_idx), (gif, hit_boxes));
             }
         }
 
-        let min_x = contours_vec
-            .iter()
-            .map(|p| p.x)
-            .min_by(|pa, pb| pa.cmp(&pb))
-            .unwrap_or_default();
-
-        let max_x = contours_vec
-            .iter()
-            .map(|p| p.x)
-            .max_by(|pa, pb| pa.cmp(&pb))
-            .unwrap_or_default();
-
-        let min_y = contours_vec
-            .iter()
-            .map(|p| p.y)
-            .min_by(|pa, pb| pa.cmp(&pb))
-            .unwrap_or_default();
-
-        let max_y = contours_vec
-            .iter()
-            .map(|p| p.y)
-            .max_by(|pa, pb| pa.cmp(&pb))
-            .unwrap_or_default();
-
-        // Crop image to minimum rect.
-        image = crop_imm(
-            &image,
-            min_x as u32,
-            min_y as u32,
-            (max_x - min_x) as u32 + 1,
-            (max_y - min_y) as u32 + 1,
-        )
-        .to_image();
-
-        // Translate contours.
-        let contour = contours_vec
-            .iter()
-            .map(|&point| (point.x - min_x, point.y - min_y))
-            .collect::<HashSet<_>>();
-
-        let mut hit_box = HashMap::new();
-
-        for x in 0..image.width() {
-            for y in 0..image.height() {
-                if let Some(pixel) = image.get_pixel_checked(x, y) {
-                    // If pixel is non-transparent.
-                    if pixel[3] > 0 {
-                        let is_border = contour.contains(&(x as i16, y as i16));
-                        hit_box.insert((x as i16, y as i16), is_border);
-                    }
-                }
-            }
-        }
-
-        (image, hit_box, contour)
-    }
-
-    let mut data = HashMap::new();
-
-    for size in AsteroidSize::iter() {
-        for n_idx in 1..=MAX_ASTEROID_TYPE_INDEX {
-            let mut gif = vec![];
-            let mut hit_boxes = vec![];
-            let mut contours = vec![];
-            for rotation_idx in 0..8 {
-                let (image, hit_box, contour) = asteroid_data(size, n_idx, rotation_idx);
-                gif.push(image);
-                hit_boxes.push(hit_box);
-                contours.push(contour);
-            }
-            data.insert((size, n_idx), (gif, hit_boxes, contours));
-        }
-    }
-
-    data
-});
+        data
+    });
 
 #[derive(Default, Debug, Display, EnumIter, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum AsteroidSize {
     #[default]
+    Huge,
     Big,
     Small,
-    Fragment,
 }
 
-#[derive(Default, Debug, Clone)]
+impl AsteroidSize {
+    pub fn collision_damage(&self) -> f32 {
+        match self {
+            AsteroidSize::Huge => 3.0,
+            AsteroidSize::Big => 1.0,
+            AsteroidSize::Small => 0.2,
+        }
+    }
+
+    pub fn durability(&self) -> f32 {
+        match self {
+            AsteroidSize::Huge => 24.0,
+            AsteroidSize::Big => 12.0,
+            AsteroidSize::Small => 3.0,
+        }
+    }
+}
+
+#[derive(Default, Debug)]
 pub struct AsteroidEntity {
     id: usize,
-    x: f64,
-    y: f64,
-    vx: f64,
-    vy: f64,
-    rotation_speed: f64,
-    pub size: AsteroidSize,
-    // Vector of contours set since we need a different contour for each frame in the gif.
-    contours: Vec<HashSet<(i16, i16)>>,
-    // Vector of hit_box maps since we need a different hit box for each frame in the gif.
-    // Maps with hit box points, Point -> is_border.
-    hit_boxes: Vec<HashMap<(i16, i16), bool>>,
+    previous_position: Vec2,
+    position: Vec2,
+    velocity: Vec2,
+    size: AsteroidSize,
+    image_type: usize,
+    durability: f32,
     tick: usize,
-    gif: Gif,
+    visual_effects: VisualEffectMap,
 }
 
 impl Body for AsteroidEntity {
-    fn is_collider(&self) -> bool {
-        true
-    }
-    fn bounds(&self) -> (Vector2D, Vector2D) {
-        let img = self.image();
-        (
-            [self.x as i16, self.y as i16],
-            [
-                self.x as i16 + img.width() as i16,
-                self.y as i16 + img.height() as i16,
-            ],
-        )
+    fn previous_position(&self) -> I16Vec2 {
+        self.previous_position.as_i16vec2()
     }
 
-    fn position(&self) -> Vector2D {
-        [self.x as i16, self.y as i16]
+    fn position(&self) -> I16Vec2 {
+        self.position.as_i16vec2()
     }
 
-    fn velocity(&self) -> Vector2D {
-        [self.vx as i16, self.vy as i16]
+    fn velocity(&self) -> I16Vec2 {
+        self.velocity.as_i16vec2()
     }
 
-    fn acceleration(&self) -> Vector2D {
-        [0, 0]
-    }
+    fn update_body(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
+        self.previous_position = self.position;
+        self.position = self.position + self.velocity * deltatime;
 
-    fn update_body(&mut self, deltatime: f64) -> Vec<SpaceCallback> {
-        self.tick += 1;
-
-        // Get current parameters
-        let [x, y] = [self.x, self.y];
-        let [vx, vy] = [self.vx, self.vy];
-
-        let callbacks = vec![];
-
-        let [mut nx, mut ny] = [(x + vx * deltatime), (y + vy * deltatime)];
-
-        // FIXME: When completely out of bounds, destroy it.
-        let bounds = self.bounds();
-        if nx < 0.0 {
-            nx = 0.0;
-        } else if bounds.1[0] > SCREEN_WIDTH as i16 {
-            nx = (SCREEN_WIDTH - self.image().width() as u16) as f64;
+        if self.position.x < 0.0 || self.position.x > MAX_SCREEN_WIDTH as f32 {
+            return vec![SpaceCallback::DestroyEntity { id: self.id() }];
         }
-        if ny < 0.0 {
-            ny = 0.0;
-        } else if bounds.1[1] > SCREEN_HEIGHT as i16 {
-            ny = (SCREEN_HEIGHT - self.image().height() as u16) as f64;
+        if self.position.y < 0.0 || self.position.y > MAX_SCREEN_HEIGHT as f32 {
+            return vec![SpaceCallback::DestroyEntity { id: self.id() }];
         }
 
-        // Update parameters
-        [self.x, self.y] = [nx, ny];
-
-        callbacks
+        vec![]
     }
 }
 
 impl Sprite for AsteroidEntity {
     fn layer(&self) -> usize {
-        match self.size {
-            AsteroidSize::Fragment => {
-                let rng = &mut rand::thread_rng();
-                rng.gen_range(0..=2)
-            }
-            _ => 1,
-        }
+        1
     }
 
     fn image(&self) -> &RgbaImage {
-        &self.gif[self.frame()]
+        let (gif, _) = ASTEROID_IMAGE_DATA
+            .get(&(self.size, self.image_type))
+            .expect("Asteroid image data should be available");
+
+        &gif[self.frame()]
     }
 
-    fn update_sprite(&mut self, _: f64) -> Vec<SpaceCallback> {
-        self.tick += 1;
+    fn hit_box(&self) -> &HitBox {
+        let (_, hit_boxes) = ASTEROID_IMAGE_DATA
+            .get(&(self.size, self.image_type))
+            .expect("Asteroid image data should be available");
+
+        &hit_boxes[self.frame()]
+    }
+
+    fn should_apply_visual_effects<'a>(&self) -> bool {
+        self.visual_effects.len() > 0
+    }
+
+    fn apply_visual_effects<'a>(&'a self, image: &'a RgbaImage) -> RgbaImage {
+        let mut image = image.clone();
+        if self.visual_effects.len() > 0 {
+            for (effect, time) in self.visual_effects.iter() {
+                effect.apply(self, &mut image, *time);
+            }
+        }
+        image
+    }
+
+    fn add_visual_effect(&mut self, duration: f32, effect: VisualEffect) {
+        self.visual_effects.insert(effect, duration);
+    }
+
+    fn remove_visual_effect(&mut self, effect: &VisualEffect) {
+        self.visual_effects.remove(&effect);
+    }
+
+    fn update_sprite(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
+        for (_, lifetime) in self.visual_effects.iter_mut() {
+            *lifetime -= deltatime;
+        }
+
+        self.visual_effects.retain(|_, lifetime| *lifetime > 0.0);
+
         vec![]
     }
+}
 
-    fn mask(&self) -> HashSet<(i16, i16)> {
-        self.contours[self.frame()]
-            .iter()
-            .map(|&p| (p.0 + self.x as i16, p.1 + self.y as i16))
-            .collect::<HashSet<_>>()
+register_impl!(!PlayerControlled for AsteroidEntity);
+register_impl!(!ResourceFragment for AsteroidEntity);
+
+impl Collider for AsteroidEntity {
+    fn collision_damage(&self) -> f32 {
+        self.size.collision_damage()
     }
 
-    fn hit_box(&self) -> HashMap<(i16, i16), bool> {
-        self.hit_boxes[self.frame()]
-            .iter()
-            .map(|(&p, &is_border)| ((p.0 + self.x as i16, p.1 + self.y as i16), is_border))
-            .collect::<HashMap<_, _>>()
+    fn collider_type(&self) -> ColliderType {
+        ColliderType::Asteroid
     }
 }
 
@@ -261,37 +194,179 @@ impl Entity for AsteroidEntity {
     fn id(&self) -> usize {
         self.id
     }
+
+    fn handle_space_callback(&mut self, callback: SpaceCallback) -> Vec<SpaceCallback> {
+        match callback {
+            SpaceCallback::DamageEntity { damage, .. } => {
+                self.add_damage(damage);
+                if self.durability() == 0.0 {
+                    return vec![SpaceCallback::DestroyEntity { id: self.id() }];
+                }
+
+                self.add_visual_effect(
+                    VisualEffect::COLOR_MASK_LIFETIME,
+                    VisualEffect::ColorMask {
+                        color: Rgba([255, 0, 0, 0]),
+                    },
+                );
+            }
+            SpaceCallback::DestroyEntity { .. } => {
+                let position = self.position().as_vec2();
+                let rng = &mut ChaCha8Rng::from_entropy();
+                let mut callbacks = vec![];
+                match self.size {
+                    AsteroidSize::Huge => {
+                        for _ in 0..3 {
+                            if rng.gen_bool(0.95) {
+                                callbacks.push(SpaceCallback::GenerateAsteroid {
+                                    position,
+                                    velocity: Vec2::new(
+                                        rng.gen_range(-4.5..4.5),
+                                        rng.gen_range(-4.5..4.5),
+                                    ),
+                                    size: AsteroidSize::Big,
+                                });
+                            }
+                        }
+
+                        for _ in 0..4 {
+                            if rng.gen_bool(0.75) {
+                                callbacks.push(SpaceCallback::GenerateAsteroid {
+                                    position,
+                                    velocity: Vec2::new(
+                                        rng.gen_range(-5.5..5.5),
+                                        rng.gen_range(-5.5..5.5),
+                                    ),
+                                    size: AsteroidSize::Small,
+                                });
+                            }
+                        }
+
+                        for _ in 0..8 {
+                            if rng.gen_bool(0.85) {
+                                callbacks.push(SpaceCallback::GenerateParticle {
+                                    position,
+                                    velocity: Vec2::new(
+                                        rng.gen_range(-3.5..3.5),
+                                        rng.gen_range(-3.5..3.5),
+                                    ),
+                                    color: Rgba([
+                                        55 + rng.gen_range(0..25),
+                                        55 + rng.gen_range(0..25),
+                                        55 + rng.gen_range(0..25),
+                                        255,
+                                    ]),
+                                    particle_state: EntityState::Decaying {
+                                        lifetime: 2.0 + rng.gen_range(0.0..1.5),
+                                    },
+                                    layer: rng.gen_range(0..=2),
+                                });
+                            }
+                            if rng.gen_bool(0.15) {
+                                callbacks.push(SpaceCallback::GenerateFragment {
+                                    position,
+                                    velocity: Vec2::new(
+                                        rng.gen_range(-3.5..3.5),
+                                        rng.gen_range(-3.5..3.5),
+                                    ),
+                                    resource: Resource::SCRAPS,
+                                    amount: rng.gen_range(1..=4),
+                                });
+                            }
+                        }
+                    }
+                    AsteroidSize::Big => {
+                        for _ in 0..3 {
+                            if rng.gen_bool(0.85) {
+                                callbacks.push(SpaceCallback::GenerateAsteroid {
+                                    position,
+                                    velocity: Vec2::new(
+                                        rng.gen_range(-4.5..4.5),
+                                        rng.gen_range(-4.5..4.5),
+                                    ),
+                                    size: AsteroidSize::Small,
+                                });
+                            }
+                        }
+
+                        for _ in 0..6 {
+                            if rng.gen_bool(0.65) {
+                                callbacks.push(SpaceCallback::GenerateParticle {
+                                    position,
+                                    velocity: Vec2::new(
+                                        rng.gen_range(-3.5..3.5),
+                                        rng.gen_range(-3.5..3.5),
+                                    ),
+                                    color: Rgba([
+                                        55 + rng.gen_range(0..25),
+                                        55 + rng.gen_range(0..25),
+                                        55 + rng.gen_range(0..25),
+                                        255,
+                                    ]),
+                                    particle_state: EntityState::Decaying {
+                                        lifetime: 2.0 + rng.gen_range(0.0..1.5),
+                                    },
+                                    layer: rng.gen_range(0..=2),
+                                });
+                            }
+                            if rng.gen_bool(0.75) {
+                                callbacks.push(SpaceCallback::GenerateFragment {
+                                    position,
+                                    velocity: Vec2::new(
+                                        rng.gen_range(-3.5..3.5),
+                                        rng.gen_range(-3.5..3.5),
+                                    ),
+                                    resource: Resource::SCRAPS,
+                                    amount: rng.gen_range(1..=4),
+                                });
+                            }
+                        }
+                    }
+                    AsteroidSize::Small => {
+                        for _ in 0..4 {
+                            if rng.gen_bool(0.75) {
+                                callbacks.push(SpaceCallback::GenerateFragment {
+                                    position,
+                                    velocity: Vec2::new(
+                                        rng.gen_range(-3.5..3.5),
+                                        rng.gen_range(-3.5..3.5),
+                                    ),
+                                    resource: Resource::SCRAPS,
+                                    amount: rng.gen_range(1..=4),
+                                });
+                            }
+                        }
+                    }
+                }
+                return callbacks;
+            }
+            _ => {}
+        }
+
+        vec![]
+    }
 }
 
 impl AsteroidEntity {
     fn frame(&self) -> usize {
-        (self.tick as f64 * self.rotation_speed) as usize % self.gif.len()
+        self.tick
     }
 
-    pub fn new(x: f64, y: f64, vx: f64, vy: f64, size: AsteroidSize) -> Self {
+    pub fn new(position: Vec2, velocity: Vec2, size: AsteroidSize) -> Self {
         let rng = &mut ChaCha8Rng::from_entropy();
+        let image_type = rng.gen_range(1..=MAX_ASTEROID_TYPE_INDEX);
 
-        let n_idx = rng.gen_range(1..=MAX_ASTEROID_TYPE_INDEX);
-        let (gif, hit_boxes, contours) = ASTEROID_IMAGE_DATA
-            .get(&(size, n_idx))
-            .expect("Asteroid image data should be available")
-            .clone();
-
-        // Smaller asteorid can rotate quicker.
-        let rotation_speed =
-            rng.gen_range(-0.075 * (size as u8 + 1) as f64..0.075 * (size as u8 + 1) as f64);
+        // TODO: decide if we like them rotating or not.
+        let tick = rng.gen_range(0..MAX_ROTATION);
 
         Self {
             id: 0,
+            tick,
             size,
-            gif,
-            contours,
-            hit_boxes,
-            x,
-            y,
-            vx,
-            vy,
-            rotation_speed,
+            image_type,
+            durability: size.durability(),
+            position,
+            velocity,
             ..Default::default()
         }
     }
@@ -303,11 +378,22 @@ impl AsteroidEntity {
             .choose_stable(rng)
             .expect("There should be at least an asteroid size");
 
-        let x = SCREEN_WIDTH as f64 - 4.0;
-        let y = rng.gen_range(0.15 * SCREEN_HEIGHT as f64..0.85 * SCREEN_HEIGHT as f64);
-        let vx = rng.gen_range(-0.35..-0.2);
+        let x = (SCREEN_WIDTH + 2) as f32;
+        let y = rng.gen_range(0.15 * SCREEN_HEIGHT as f32..0.85 * SCREEN_HEIGHT as f32);
+        let vx = rng.gen_range(-1.5..-0.5);
         let vy = rng.gen_range(-0.15..0.15);
 
-        Self::new(x, y, vx, vy, size)
+        let position = Vec2::new(x, y);
+        let velocity = Vec2::new(vx, vy);
+
+        Self::new(position, velocity, size)
+    }
+
+    pub fn durability(&self) -> f32 {
+        self.durability
+    }
+
+    pub fn add_damage(&mut self, damage: f32) {
+        self.durability = (self.durability - damage).max(0.0);
     }
 }

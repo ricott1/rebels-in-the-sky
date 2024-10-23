@@ -319,6 +319,9 @@ pub enum TeamLocation {
         started: Tick,
         duration: Tick,
     },
+    OnSpaceAdventure {
+        around: PlanetId,
+    },
 }
 
 impl PartialEq for TeamLocation {

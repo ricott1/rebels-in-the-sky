@@ -1,14 +1,18 @@
 use super::{constants::*, resources::Resource};
 use crate::{
-    image::{color_map::ColorMap, spaceship::SpaceshipImage, types::Gif},
-    types::{AppResult, Tick},
+    image::{
+        color_map::ColorMap,
+        spaceship::{SpaceshipImage, SpaceshipImageId},
+        types::Gif,
+    },
+    types::{AppResult, SystemTimeTick, Tick},
+    world::utils::is_default,
 };
-use anyhow::anyhow;
 use rand::{seq::IteratorRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::fmt::Display;
+use std::{fmt::Display, hash::Hash};
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
 
@@ -19,7 +23,7 @@ pub enum SpaceshipStyle {
     Jester,
 }
 
-pub trait SpaceshipComponent: Sized + Copy + PartialEq {
+pub trait SpaceshipComponent: Sized + Clone + Copy + PartialEq {
     fn next(&self) -> Self;
     fn previous(&self) -> Self;
     fn style(&self) -> SpaceshipStyle;
@@ -28,10 +32,11 @@ pub trait SpaceshipComponent: Sized + Copy + PartialEq {
     fn fuel_capacity(&self) -> u32;
     fn fuel_consumption(&self) -> f32;
     fn speed(&self) -> f32;
-    fn durability(&self) -> f32;
+    fn durability(&self) -> u32;
     fn cost(&self) -> u32;
     fn upgrade_cost(&self) -> Vec<(Resource, u32)>;
     fn can_be_upgraded(&self) -> bool {
+        // FIXME: not very stable method to check upgrades. Should be rather explicitly set.
         let next_component = self.next();
         if next_component.cost() < self.cost() {
             return false;
@@ -121,7 +126,7 @@ impl SpaceshipComponent for Hull {
             Self::ShuttleLarge => 5000,
             Self::PincherStandard => 2000,
             Self::PincherLarge => 3800,
-            Self::JesterStandard => 1000,
+            Self::JesterStandard => 1800,
         }
     }
 
@@ -157,14 +162,14 @@ impl SpaceshipComponent for Hull {
             Self::JesterStandard => 1.05,
         }
     }
-    fn durability(&self) -> f32 {
+    fn durability(&self) -> u32 {
         match self {
-            Self::ShuttleSmall => 16.0,
-            Self::ShuttleStandard => 18.0,
-            Self::ShuttleLarge => 19.0,
-            Self::PincherStandard => 18.0,
-            Self::PincherLarge => 20.0,
-            Self::JesterStandard => 16.0,
+            Self::ShuttleSmall => 16,
+            Self::ShuttleStandard => 18,
+            Self::ShuttleLarge => 19,
+            Self::PincherStandard => 18,
+            Self::PincherLarge => 20,
+            Self::JesterStandard => 16,
         }
     }
     fn cost(&self) -> u32 {
@@ -184,9 +189,9 @@ impl SpaceshipComponent for Hull {
         }
 
         let scraps_cost = match self.style() {
-            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 28,
-            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 32,
-            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 36,
+            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 36,
+            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 40,
+            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 44,
         };
 
         let mut cost = vec![
@@ -314,16 +319,16 @@ impl SpaceshipComponent for Engine {
         }
     }
 
-    fn durability(&self) -> f32 {
+    fn durability(&self) -> u32 {
         match self {
-            Self::ShuttleSingle => 8.0,
-            Self::ShuttleDouble => 7.0,
-            Self::ShuttleTriple => 6.0,
-            Self::PincherSingle => 8.0,
-            Self::PincherDouble => 7.0,
-            Self::PincherTriple => 6.0,
-            Self::JesterDouble => 6.0,
-            Self::JesterQuadruple => 5.0,
+            Self::ShuttleSingle => 8,
+            Self::ShuttleDouble => 7,
+            Self::ShuttleTriple => 6,
+            Self::PincherSingle => 8,
+            Self::PincherDouble => 7,
+            Self::PincherTriple => 6,
+            Self::JesterDouble => 6,
+            Self::JesterQuadruple => 5,
         }
     }
     fn cost(&self) -> u32 {
@@ -335,7 +340,7 @@ impl SpaceshipComponent for Engine {
             Self::PincherDouble => 11000,
             Self::PincherTriple => 18000,
             Self::JesterDouble => 10000,
-            Self::JesterQuadruple => 27000,
+            Self::JesterQuadruple => 25000,
         }
     }
 
@@ -347,7 +352,7 @@ impl SpaceshipComponent for Engine {
         let scraps_cost = match self.style() {
             SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 75,
             SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 70,
-            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 70,
+            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 100,
         };
 
         let mut cost = vec![
@@ -430,9 +435,9 @@ impl SpaceshipComponent for Storage {
 
     fn storage_capacity(&self) -> u32 {
         match self {
-            Self::ShuttleSingle => 1600,
-            Self::ShuttleDouble => 3200,
-            Self::PincherSingle => 4000,
+            Self::ShuttleSingle => 2000,
+            Self::ShuttleDouble => 4000,
+            Self::PincherSingle => 3000,
             _ => 0,
         }
     }
@@ -464,12 +469,12 @@ impl SpaceshipComponent for Storage {
         }
     }
 
-    fn durability(&self) -> f32 {
+    fn durability(&self) -> u32 {
         match self {
-            Self::ShuttleSingle => 10.0,
-            Self::ShuttleDouble => 11.0,
-            Self::PincherSingle => 7.0,
-            _ => 0.0,
+            Self::ShuttleSingle => 10,
+            Self::ShuttleDouble => 11,
+            Self::PincherSingle => 7,
+            _ => 0,
         }
     }
     fn cost(&self) -> u32 {
@@ -480,6 +485,7 @@ impl SpaceshipComponent for Storage {
             _ => 0,
         }
     }
+
     fn upgrade_cost(&self) -> Vec<(Resource, u32)> {
         if self.next().cost() < self.cost() {
             return vec![];
@@ -496,39 +502,101 @@ impl SpaceshipComponent for Storage {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Hash, EnumIter)]
+pub enum SpaceshipUpgradeTarget {
+    Hull { component: Hull },
+    Engine { component: Engine },
+    Storage { component: Storage },
+    Repairs { amount: u32 },
+}
+
+impl SpaceshipUpgradeTarget {
+    pub const MAX_INDEX: usize = 4; // = SpaceshipUpgradeTarget::iter().count();
+}
+
+impl Default for SpaceshipUpgradeTarget {
+    fn default() -> Self {
+        Self::Repairs { amount: 0 }
+    }
+}
+
+impl Display for SpaceshipUpgradeTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Hull { .. } => write!(f, "Hull"),
+            Self::Engine { .. } => write!(f, "Engine"),
+            Self::Storage { .. } => write!(f, "Storage"),
+            Self::Repairs { .. } => write!(f, "Repairs"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, Hash)]
 pub struct SpaceshipUpgrade {
-    pub hull: Option<Hull>,
-    pub engine: Option<Engine>,
-    pub storage: Option<Storage>,
-    pub cost: Vec<(Resource, u32)>,
+    pub target: SpaceshipUpgradeTarget,
     pub started: Tick,
     pub duration: Tick,
 }
 
 impl SpaceshipUpgrade {
-    pub fn target(&self) -> AppResult<&str> {
-        if self.hull.is_some() {
-            return Ok("Hull");
+    pub const REPAIR_BASE_COST: u32 = 120;
+    pub const REPAIR_BASE_DURATION: Tick = 2 * MINUTES;
+    pub const SPACESHIP_UPGRADE_BASE_DURATION: Tick = 8 * HOURS;
+
+    pub fn new(target: SpaceshipUpgradeTarget) -> Self {
+        let duration = match target {
+            SpaceshipUpgradeTarget::Repairs { amount } => {
+                amount as Tick * SpaceshipUpgrade::REPAIR_BASE_DURATION
+            }
+            _ => SpaceshipUpgrade::SPACESHIP_UPGRADE_BASE_DURATION,
+        };
+        SpaceshipUpgrade {
+            started: Tick::now(),
+            duration,
+            target,
         }
-        if self.engine.is_some() {
-            return Ok("Engine");
+    }
+
+    pub fn description(&self) -> String {
+        match self.target {
+            SpaceshipUpgradeTarget::Repairs { .. } => "Repairing spaceship".to_string(),
+            _ => format!("Upgrading {}", self.target),
         }
-        if self.storage.is_some() {
-            return Ok("Storage");
+    }
+
+    pub fn cost(&self) -> Vec<(Resource, u32)> {
+        match self.target {
+            SpaceshipUpgradeTarget::Hull { component } => component.previous().upgrade_cost(),
+            SpaceshipUpgradeTarget::Engine { component } => component.previous().upgrade_cost(),
+            SpaceshipUpgradeTarget::Storage { component } => component.previous().upgrade_cost(),
+            SpaceshipUpgradeTarget::Repairs { amount } => {
+                vec![
+                    (
+                        Resource::SATOSHI,
+                        amount * SpaceshipUpgrade::REPAIR_BASE_COST,
+                    ),
+                    (Resource::SCRAPS, amount),
+                ]
+            }
         }
-        return Err(anyhow!("Invalid upgrade"));
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, Hash)]
 pub struct Spaceship {
     pub name: String,
     pub hull: Hull,
     pub engine: Engine,
     pub storage: Storage,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    current_durability: u32,
     pub image: SpaceshipImage,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub total_travelled: u128,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub pending_upgrade: Option<SpaceshipUpgrade>,
 }
 
@@ -540,15 +608,23 @@ impl Spaceship {
         storage: Storage,
         color_map: ColorMap,
     ) -> Self {
-        Self {
+        let mut spaceship = Self {
             name,
             hull,
             engine,
             storage,
+            current_durability: 0,
             image: SpaceshipImage::new(color_map),
             total_travelled: 0,
             pending_upgrade: None,
-        }
+        };
+        spaceship.reset_durability();
+
+        spaceship
+    }
+
+    pub fn reset_durability(&mut self) {
+        self.current_durability = self.durability()
     }
 
     pub fn size(&self) -> u8 {
@@ -562,7 +638,20 @@ impl Spaceship {
         }
     }
 
-    pub fn random(name: String, color_map: ColorMap) -> Self {
+    pub fn can_be_repaired(&self) -> bool {
+        self.current_durability() < self.durability()
+    }
+
+    pub fn can_be_upgraded(&self, target: SpaceshipUpgradeTarget) -> bool {
+        match target {
+            SpaceshipUpgradeTarget::Hull { .. } => self.hull.can_be_upgraded(),
+            SpaceshipUpgradeTarget::Engine { .. } => self.engine.can_be_upgraded(),
+            SpaceshipUpgradeTarget::Storage { .. } => self.storage.can_be_upgraded(),
+            SpaceshipUpgradeTarget::Repairs { .. } => self.can_be_repaired(),
+        }
+    }
+
+    pub fn random(name: String) -> Self {
         let rng = &mut ChaCha8Rng::from_entropy();
         let style = SpaceshipStyle::iter().choose(rng).unwrap();
         let hull = Hull::iter()
@@ -578,20 +667,25 @@ impl Spaceship {
             .choose(rng)
             .expect("Should choose a valid component");
 
-        Self::new(name, hull, engine, storage, color_map)
+        Self::new(name, hull, engine, storage, ColorMap::random())
     }
 
     pub fn style(&self) -> SpaceshipStyle {
         self.hull.style()
     }
 
-    pub fn set_color_map(&mut self, color_map: ColorMap) {
+    pub fn with_color_map(mut self, color_map: ColorMap) -> Self {
         self.image.set_color_map(color_map);
+        self
     }
 
     pub fn compose_image(&self) -> AppResult<Gif> {
         self.image
             .compose(self.size(), self.hull, self.engine, self.storage, false)
+    }
+
+    pub fn image_id(&self) -> SpaceshipImageId {
+        self.image.id(self.hull, self.engine, self.storage)
     }
 
     pub fn compose_image_in_shipyard(&self) -> AppResult<Gif> {
@@ -602,7 +696,19 @@ impl Spaceship {
     pub fn speed(&self, storage_units: u32) -> f32 {
         // Returns the speed in Km/ms (Kilometers per Tick)
         BASE_SPEED * self.hull.speed() * self.engine.speed() * self.storage.speed()
-            / (1.0 + FUEL_CONSUMPTION_PER_UNIT_STORAGE * storage_units as f32)
+            / (1.0 + SPEED_PENALTY_PER_UNIT_STORAGE * storage_units as f32)
+    }
+
+    pub fn set_current_durability(&mut self, value: u32) {
+        self.current_durability = value.min(self.durability());
+    }
+
+    pub fn current_durability(&self) -> u32 {
+        self.current_durability
+    }
+
+    pub fn durability(&self) -> u32 {
+        self.hull.durability() + self.engine.durability() + self.storage.durability()
     }
 
     pub fn crew_capacity(&self) -> u8 {
@@ -685,69 +791,69 @@ impl SpaceshipPrefab {
         }
     }
 
-    pub fn spaceship(&self, name: String, color_map: ColorMap) -> Spaceship {
+    pub fn spaceship(&self, name: String) -> Spaceship {
         match self {
             Self::Yukawa => Spaceship::new(
                 name,
                 Hull::ShuttleSmall,
                 Engine::ShuttleTriple,
                 Storage::ShuttleNone,
-                color_map,
+                ColorMap::default(),
             ),
             Self::Milwaukee => Spaceship::new(
                 name,
                 Hull::ShuttleLarge,
                 Engine::ShuttleTriple,
                 Storage::ShuttleNone,
-                color_map,
+                ColorMap::default(),
             ),
             Self::Cafiero => Spaceship::new(
                 name,
                 Hull::ShuttleStandard,
                 Engine::ShuttleSingle,
                 Storage::ShuttleSingle,
-                color_map,
+                ColorMap::default(),
             ),
             Self::Bresci => Spaceship::new(
                 name,
                 Hull::ShuttleSmall,
                 Engine::ShuttleSingle,
                 Storage::ShuttleNone,
-                color_map,
+                ColorMap::default(),
             ),
             Self::Pincher => Spaceship::new(
                 name,
                 Hull::PincherStandard,
                 Engine::PincherTriple,
                 Storage::PincherSingle,
-                color_map,
+                ColorMap::default(),
             ),
             Self::Orwell => Spaceship::new(
                 name,
                 Hull::PincherStandard,
                 Engine::PincherSingle,
                 Storage::PincherNone,
-                color_map,
+                ColorMap::default(),
             ),
             Self::Ragnarok => Spaceship::new(
                 name,
                 Hull::PincherLarge,
                 Engine::PincherDouble,
                 Storage::PincherNone,
-                color_map,
+                ColorMap::default(),
             ),
             Self::Ibarruri => Spaceship::new(
                 name,
                 Hull::JesterStandard,
                 Engine::JesterDouble,
                 Storage::JesterNone,
-                color_map,
+                ColorMap::default(),
             ),
         }
     }
 
     pub fn cost(&self) -> u32 {
-        self.spaceship("".to_string(), ColorMap::default()).cost()
+        self.spaceship("".to_string()).cost()
     }
 }
 
@@ -765,9 +871,8 @@ mod tests {
 
     #[test]
     fn test_spaceship_prefab_data() {
-        let color_map = ColorMap::random();
         let name = "test".to_string();
-        let spaceship = SpaceshipPrefab::Yukawa.spaceship(name, color_map);
+        let spaceship = SpaceshipPrefab::Yukawa.spaceship(name);
         let speed = spaceship.speed(0);
         let crew_capacity = spaceship.crew_capacity();
         let storage_capacity = spaceship.storage_capacity();
@@ -807,9 +912,8 @@ mod tests {
 
     #[test]
     fn test_total_travelled_au() -> AppResult<()> {
-        let color_map = ColorMap::random();
         let name = "test".to_string();
-        let spaceship = SpaceshipPrefab::Yukawa.spaceship(name, color_map);
+        let spaceship = SpaceshipPrefab::Yukawa.spaceship(name);
 
         let mut world = World::new(None);
 

@@ -12,7 +12,7 @@ use super::{
 use crate::{
     game_engine::tactic::Tactic,
     network::{challenge::Challenge, trade::Trade},
-    types::{AppResult, GameId, KartoffelId, PlanetId, PlayerId, TeamId, Tick},
+    types::*,
     world::{constants::MAX_PLAYERS_PER_TEAM, utils::is_default},
 };
 use anyhow::anyhow;
@@ -43,7 +43,7 @@ pub struct Team {
     pub kartoffel_ids: Vec<KartoffelId>,
     pub crew_roles: CrewRoles,
     pub jersey: Jersey,
-    pub resources: HashMap<Resource, u32>,
+    pub resources: ResourceMap,
     pub spaceship: Spaceship,
     pub home_planet_id: PlanetId,
     #[serde(skip_serializing_if = "is_default")]
@@ -84,7 +84,7 @@ impl Team {
             current_location: TeamLocation::OnPlanet {
                 planet_id: home_planet_id,
             },
-            spaceship: Spaceship::random(ship_name, ship_color),
+            spaceship: Spaceship::random(ship_name).with_color_map(ship_color),
             game_tactic: Tactic::random(),
             resources,
             ..Default::default()
@@ -139,24 +139,22 @@ impl Team {
     }
 
     pub fn balance(&self) -> u32 {
-        self.resources
-            .get(&Resource::SATOSHI)
-            .copied()
-            .unwrap_or_default()
+        self.resources.value(&Resource::SATOSHI)
     }
 
     pub fn fuel(&self) -> u32 {
-        self.resources
-            .get(&Resource::FUEL)
-            .copied()
-            .unwrap_or_default()
+        self.resources.value(&Resource::FUEL)
+    }
+
+    pub fn fuel_capacity(&self) -> u32 {
+        self.spaceship.fuel_capacity()
     }
 
     pub fn used_storage_capacity(&self) -> u32 {
-        Resource::used_storage_capacity(&self.resources)
+        self.resources.used_storage_capacity()
     }
 
-    pub fn max_storage_capacity(&self) -> u32 {
+    pub fn storage_capacity(&self) -> u32 {
         self.spaceship.storage_capacity()
     }
 
@@ -167,40 +165,6 @@ impl Team {
     pub fn spaceship_fuel_consumption(&self) -> f32 {
         self.spaceship
             .fuel_consumption(self.used_storage_capacity())
-    }
-
-    pub fn add_resource(&mut self, resource: Resource, amount: u32) {
-        let max_amount = if resource == Resource::FUEL {
-            let current = self.fuel();
-            let max_storage_capacity = self.spaceship.fuel_capacity();
-            amount.min(max_storage_capacity - current)
-        } else {
-            if resource.to_storing_space() == 0 {
-                amount
-            } else {
-                let current = Resource::used_storage_capacity(&self.resources);
-                let max_storage_capacity = self.spaceship.storage_capacity();
-                amount.min((max_storage_capacity - current) / resource.to_storing_space())
-            }
-        };
-
-        self.resources
-            .entry(resource)
-            .and_modify(|e| {
-                *e = e.saturating_add(max_amount);
-            })
-            .or_insert(max_amount);
-    }
-
-    pub fn remove_resource(&mut self, resource: Resource, amount: u32) -> AppResult<()> {
-        self.can_trade_resource(resource, -(amount as i32), 0)?;
-        self.resources
-            .entry(resource)
-            .and_modify(|e| {
-                *e = e.saturating_sub(amount);
-            })
-            .or_insert(0);
-        Ok(())
     }
 
     pub fn is_on_planet(&self) -> Option<PlanetId> {
@@ -217,6 +181,22 @@ impl Team {
 
         if self.player_ids.len() >= self.spaceship.crew_capacity() as usize {
             return Err(anyhow!("Team is full"));
+        }
+
+        match self.current_location {
+            TeamLocation::Exploring { .. } => {
+                return Err(anyhow!("Team is exploring"));
+            }
+
+            TeamLocation::Travelling { .. } => {
+                return Err(anyhow!("Team is travelling"));
+            }
+
+            TeamLocation::OnSpaceAdventure { .. } => {
+                return Err(anyhow!("Team is on a space adventure"));
+            }
+
+            _ => {}
         }
 
         // Player must be on same planet as team current_location
@@ -298,6 +278,10 @@ impl Team {
 
         if self.id == team.id {
             return Err(anyhow!("Cannot challenge self"));
+        }
+
+        if self.is_on_planet().is_none() {
+            return Err(anyhow!("Team is in space"));
         }
 
         if self.is_on_planet() != team.is_on_planet() {
@@ -412,20 +396,12 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_explore_around_planet(
-        &self,
-        planet: &Planet,
-        exploration_time: Tick,
-    ) -> AppResult<()> {
+    pub fn can_start_space_adventure(&self) -> AppResult<()> {
         if self.player_ids.len() < 1 {
             return Err(anyhow!("No pirate to explore"));
         }
 
-        if let Some(current_planet_id) = self.is_on_planet() {
-            if planet.id != current_planet_id {
-                return Err(anyhow!("Not on this planet"));
-            }
-        } else {
+        if self.is_on_planet().is_none() {
             return Err(anyhow!("Already in space"));
         }
 
@@ -435,6 +411,30 @@ impl Team {
 
         if self.current_game.is_some() {
             return Err(anyhow!("Team is playing"));
+        }
+
+        if self.spaceship.current_durability() == 0 {
+            return Err(anyhow!("Spaceship needs reparations"));
+        }
+
+        if self.fuel() == 0 {
+            return Err(anyhow!("Not enough fuel"));
+        }
+
+        Ok(())
+    }
+
+    pub fn can_explore_around_planet(
+        &self,
+        planet: &Planet,
+        exploration_time: Tick,
+    ) -> AppResult<()> {
+        if let Err(err) = self.can_start_space_adventure() {
+            return Err(anyhow!(err));
+        }
+
+        if self.is_on_planet() != Some(planet.id) {
+            return Err(anyhow!("Not on this planet"));
         }
 
         //If we can't get there with full tank, than the planet is too far.
@@ -477,20 +477,20 @@ impl Team {
 
             if resource == Resource::FUEL {
                 let current = self.fuel();
-                let max_storage_capacity = self.spaceship.fuel_capacity();
-                if current + amount as u32 > max_storage_capacity {
+                let storage_capacity = self.spaceship.fuel_capacity();
+                if current + amount as u32 > storage_capacity {
                     return Err(anyhow!("Not enough storage capacity"));
                 }
             } else {
-                let current = Resource::used_storage_capacity(&self.resources);
-                let max_storage_capacity = self.spaceship.storage_capacity();
-                if current + resource.to_storing_space() * amount as u32 > max_storage_capacity {
+                let current = self.resources.used_storage_capacity();
+                let storage_capacity = self.spaceship.storage_capacity();
+                if current + resource.to_storing_space() * amount as u32 > storage_capacity {
                     return Err(anyhow!("Not enough storage capacity"));
                 }
             }
         } else if amount < 0 {
             // Selling. Check if enough resource
-            let current = self.resources.get(&resource).copied().unwrap_or_default();
+            let current = self.resources.value(&resource);
             if current < amount.abs() as u32 {
                 return Err(anyhow!("Not enough resource"));
             }
@@ -503,8 +503,8 @@ impl Team {
             return Err(anyhow!("Can only upgrade on a planet"));
         }
 
-        for (resource, amount) in upgrade.cost.iter() {
-            if self.resources.get(resource).copied().unwrap_or_default() < *amount {
+        for (resource, amount) in upgrade.cost().iter() {
+            if self.resources.value(resource) < *amount {
                 return Err(anyhow!("Insufficient resources"));
             }
         }
@@ -512,25 +512,41 @@ impl Team {
         Ok(())
     }
 
-    pub fn max_resource_buy_amount(&self, resource: Resource, unit_cost: u32) -> u32 {
-        let max_satoshi_amount = self.balance() / unit_cost;
-        let max_storage_amount = if resource == Resource::FUEL {
+    pub fn max_resource_storage_capacity(&self, resource: Resource) -> u32 {
+        if resource == Resource::FUEL {
             self.spaceship.fuel_capacity() - self.fuel()
         } else {
-            let free_storage_capacity = self.spaceship.storage_capacity()
-                - Resource::used_storage_capacity(&self.resources);
+            let free_storage_capacity =
+                self.spaceship.storage_capacity() - self.resources.used_storage_capacity();
             if resource.to_storing_space() == 0 {
                 u32::MAX
             } else {
                 free_storage_capacity / resource.to_storing_space()
             }
+        }
+    }
+
+    pub fn max_resource_buy_amount(&self, resource: Resource, unit_cost: u32) -> u32 {
+        if unit_cost == 0 {
+            return u32::MAX;
+        }
+
+        let max_satoshi_amount = self.balance() / unit_cost;
+        let max_storage_amount = if resource == Resource::FUEL {
+            self.spaceship.fuel_capacity() - self.fuel()
+        } else if resource.to_storing_space() == 0 {
+            u32::MAX
+        } else {
+            let free_storage_capacity =
+                self.spaceship.storage_capacity() - self.resources.used_storage_capacity();
+            free_storage_capacity / resource.to_storing_space()
         };
 
         max_satoshi_amount.min(max_storage_amount)
     }
 
     pub fn max_resource_sell_amount(&self, resource: Resource) -> u32 {
-        self.resources.get(&resource).copied().unwrap_or_default()
+        self.resources.value(&resource)
     }
 
     pub fn is_travelling(&self) -> bool {

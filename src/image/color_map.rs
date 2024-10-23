@@ -31,18 +31,7 @@ impl Serialize for ColorMap {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&format!(
-            "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            self.red[0],
-            self.red[1],
-            self.red[2],
-            self.green[0],
-            self.green[1],
-            self.green[2],
-            self.blue[0],
-            self.blue[1],
-            self.blue[2],
-        ))
+        serializer.serialize_str(&self.hex_format())
     }
 }
 
@@ -82,6 +71,21 @@ impl ColorMap {
             green: color_presets[1].to_rgb(),
             blue: color_presets[2].to_rgb(),
         }
+    }
+
+    pub fn hex_format(&self) -> String {
+        format!(
+            "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            self.red[0],
+            self.red[1],
+            self.red[2],
+            self.green[0],
+            self.green[1],
+            self.green[2],
+            self.blue[0],
+            self.blue[1],
+            self.blue[2],
+        )
     }
 }
 
@@ -264,9 +268,9 @@ impl SkinColorMap {
                 blue: Rgb([10, 10, 205]),
             },
             Self::LightPurple => ColorMap {
-                red: Rgb([128, 63, 154]),
-                green: Rgb([128, 167, 203]),
-                blue: Rgb([234, 170, 205]),
+                red: Rgb([205, 167, 203]),
+                green: Rgb([234, 170, 205]),
+                blue: Rgb([128, 63, 154]),
             },
             Self::Purple => ColorMap {
                 red: Rgb([88, 33, 134]),

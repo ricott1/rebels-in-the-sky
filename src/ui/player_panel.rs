@@ -71,9 +71,10 @@ impl PlayerView {
                 };
 
                 let own_team_planet_id = match own_team.current_location {
-                    TeamLocation::Exploring { around, .. } => around,
                     TeamLocation::OnPlanet { planet_id } => planet_id,
                     TeamLocation::Travelling { to, .. } => to,
+                    TeamLocation::Exploring { around, .. } => around,
+                    TeamLocation::OnSpaceAdventure { around, .. } => around,
                 };
 
                 player_planet_id == own_team_planet_id
@@ -388,7 +389,7 @@ impl PlayerListPanel {
                 Button::new(
                     "Unlock".into(),
                     UiCallback::LockPlayerPanel {
-                        player_id: self.selected_player_id,
+                        player_id: player.id,
                     },
                     Arc::clone(&self.callback_registry),
                 )
@@ -588,7 +589,13 @@ impl Screen for PlayerListPanel {
         }
         Ok(())
     }
-    fn render(&mut self, frame: &mut Frame, world: &World, area: Rect,_debug_view: bool) -> AppResult<()> {
+    fn render(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
         if self.all_players.len() == 0 {
             frame.render_widget(
                 Paragraph::new(" No player yet!"),

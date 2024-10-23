@@ -1,109 +1,147 @@
-use super::{asteroid::AsteroidSize, particle::ParticleState, space::Space, Body};
-use crate::types::AppResult;
-use image::Rgba;
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha8Rng;
+use crate::world::resources::Resource;
 
+use super::{
+    asteroid::AsteroidSize, space::SpaceAdventure, utils::EntityState, visual_effects::VisualEffect,
+};
+use glam::{I16Vec2, Vec2};
+use image::Rgba;
+
+#[derive(Debug, Clone, Copy)]
 pub enum SpaceCallback {
-    DestroyAsteroidEntity {
+    AccelerateEntity {
+        id: usize,
+        acceleration: I16Vec2,
+    },
+
+    AddVisualEffect {
+        id: usize,
+        effect: VisualEffect,
+        duration: f32,
+    },
+
+    CollectFragment {
+        id: usize,
+        resource: Resource,
+        amount: u32,
+    },
+
+    DamageEntity {
+        id: usize,
+        damage: f32,
+    },
+
+    DestroyEntity {
         id: usize,
     },
-    DestroyParticle {
-        id: usize,
+
+    GenerateAsteroid {
+        position: Vec2,
+        velocity: Vec2,
+        size: AsteroidSize,
+    },
+
+    GenerateFragment {
+        position: Vec2,
+        velocity: Vec2,
+        resource: Resource,
+        amount: u32,
     },
 
     GenerateParticle {
-        x: f64,
-        y: f64,
-        vx: f64,
-        vy: f64,
+        position: Vec2,
+        velocity: Vec2,
         color: Rgba<u8>,
-        particle_state: ParticleState,
+        particle_state: EntityState,
         layer: usize,
+    },
+
+    GenerateProjectile {
+        shot_by_id: usize,
+        position: Vec2,
+        velocity: Vec2,
+        color: Rgba<u8>,
+        damage: f32,
     },
 }
 
 impl SpaceCallback {
-    pub fn call(&self, space: &mut Space) -> AppResult<()> {
+    pub fn call(&self, space: &mut SpaceAdventure) {
+        let mut callbacks = vec![];
         match *self {
-            Self::DestroyAsteroidEntity { id } => {
-                if let Some(asteroid) = space.get_asteroid(&id) {
-                    match asteroid.size {
-                        AsteroidSize::Big => {
-                            let [x, y] = asteroid.position();
-                            let [vx, vy] = asteroid.velocity();
-                            let rng = &mut ChaCha8Rng::from_entropy();
-                            let [rx, ry] = [rng.gen_range(0.5..1.5), rng.gen_range(0.5..1.5)];
-                            let s = (rng.gen_range(0..=2) - 1) as f64;
-
-                            space.generate_asteroid(
-                                x as f64,
-                                y as f64,
-                                vx as f64 + rx,
-                                vy as f64 + s * ry,
-                                AsteroidSize::Small,
-                            );
-
-                            space.generate_asteroid(
-                                x as f64,
-                                y as f64,
-                                vx as f64 - rx,
-                                vy as f64 - s * ry,
-                                AsteroidSize::Small,
-                            );
-
-                            space.generate_asteroid(
-                                x as f64,
-                                y as f64,
-                                vx as f64 / 4.0,
-                                vy as f64 / 4.0,
-                                AsteroidSize::Fragment,
-                            );
-
-                            if rng.gen_bool(0.25) {
-                                space.generate_asteroid(
-                                    x as f64,
-                                    y as f64,
-                                    vx as f64 / 4.0 - ry / 2.0,
-                                    vy as f64 / 4.0 + s * rx / 2.0,
-                                    AsteroidSize::Fragment,
-                                );
-                            }
-                        }
-                        AsteroidSize::Small => {
-                            let [x, y] = asteroid.position();
-                            let [vx, vy] = asteroid.velocity();
-                            space.generate_asteroid(
-                                x as f64,
-                                y as f64,
-                                vx as f64,
-                                vy as f64,
-                                AsteroidSize::Fragment,
-                            );
-                        }
-                        AsteroidSize::Fragment => {}
-                    }
-
-                    space.remove_asteroid(&id);
+            Self::AccelerateEntity { id, .. } => {
+                if let Some(entity) = space.get_entity_mut(&id) {
+                    callbacks.append(&mut entity.handle_space_callback(*self));
                 }
             }
 
-            Self::DestroyParticle { id } => {
-                space.remove_particle(&id);
+            Self::AddVisualEffect {
+                id,
+                effect,
+                duration,
+            } => {
+                if let Some(entity) = space.get_entity_mut(&id) {
+                    entity.add_visual_effect(duration, effect);
+                }
+            }
+
+            Self::CollectFragment { id, .. } => {
+                if let Some(entity) = space.get_entity_mut(&id) {
+                    callbacks.append(&mut entity.handle_space_callback(*self));
+                }
+            }
+
+            Self::DamageEntity { id, .. } => {
+                if let Some(entity) = space.get_entity_mut(&id) {
+                    callbacks.append(&mut entity.handle_space_callback(*self));
+                }
+            }
+
+            Self::DestroyEntity { id } => {
+                if let Some(entity) = space.get_entity_mut(&id) {
+                    callbacks.append(&mut entity.handle_space_callback(*self));
+                    space.remove_entity(&id);
+                }
+            }
+
+            Self::GenerateAsteroid {
+                position,
+                velocity,
+                size,
+            } => {
+                space.generate_asteroid(position, velocity, size);
+            }
+
+            Self::GenerateFragment {
+                position,
+                velocity,
+                resource,
+                amount,
+            } => {
+                space.generate_fragment(position, velocity, resource, amount);
             }
 
             Self::GenerateParticle {
-                x,
-                y,
-                vx,
-                vy,
+                position,
+                velocity,
                 color,
                 particle_state,
                 layer,
             } => {
-                space.generate_particle(x, y, vx, vy, color, particle_state, layer);
+                space.generate_particle(position, velocity, color, particle_state, layer);
+            }
+
+            Self::GenerateProjectile {
+                shot_by_id,
+                position,
+                velocity,
+                color,
+                damage,
+            } => {
+                space.generate_projectile(shot_by_id, position, velocity, color, damage);
             }
         }
-        Ok(())
+        for callback in callbacks.iter() {
+            callback.call(space);
+        }
     }
 }

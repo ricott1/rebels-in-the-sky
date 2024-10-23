@@ -13,13 +13,15 @@ pub const BARS_LENGTH: usize = 25;
 pub struct UiKey;
 
 impl UiKey {
+    pub const ESC: KeyCode = KeyCode::Esc;
     pub const NEXT_TAB: KeyCode = KeyCode::Right;
     pub const PREVIOUS_TAB: KeyCode = KeyCode::Left;
     pub const NEXT_SELECTION: KeyCode = KeyCode::Char(']');
     pub const PREVIOUS_SELECTION: KeyCode = KeyCode::Char('[');
     pub const UI_DEBUG_MODE: KeyCode = KeyCode::Tab;
     pub const TOGGLE_AUDIO: KeyCode = KeyCode::Char('|');
-    pub const NEXT_AUDIO_SAMPLE: KeyCode = KeyCode::Char('>');
+    pub const PREVIOUS_RADIO: KeyCode = KeyCode::Char('<');
+    pub const NEXT_RADIO: KeyCode = KeyCode::Char('>');
     pub const GO_TO_TEAM: KeyCode = KeyCode::Backspace;
     pub const GO_TO_TEAM_ALTERNATIVE: KeyCode = KeyCode::Char('t');
     pub const GO_TO_GAME: KeyCode = KeyCode::Char('g');
@@ -40,10 +42,11 @@ impl UiKey {
     pub const PITCH_VIEW: KeyCode = KeyCode::Char('v');
     pub const PLAYER_STATUS_VIEW: KeyCode = KeyCode::Char('s');
     pub const TRAVEL: KeyCode = KeyCode::Char('T');
-    pub const QUICK_EXPLORE: KeyCode = KeyCode::Char('x');
-    pub const LONG_EXPLORE: KeyCode = KeyCode::Char('X');
+    pub const EXPLORE: KeyCode = KeyCode::Char('x');
+    pub const SPACE_ADVENTURE: KeyCode = KeyCode::Char('A');
     pub const DRINK: KeyCode = KeyCode::Char('D');
-    pub const SET_UPGRADE_SPACESHIP: KeyCode = KeyCode::Char('U');
+    pub const UPGRADE_SPACESHIP: KeyCode = KeyCode::Char('U');
+    pub const REPAIR_SPACESHIP: KeyCode = KeyCode::Char('R');
     pub const BUY_SCRAPS: KeyCode = KeyCode::Char('s');
     pub const BUY_FUEL: KeyCode = KeyCode::Char('u');
     pub const BUY_GOLD: KeyCode = KeyCode::Char('g');
@@ -55,12 +58,13 @@ impl UiKey {
     pub const CREATE_TRADE: KeyCode = KeyCode::Char('P');
     pub const ACCEPT_TRADE: KeyCode = KeyCode::Char('A');
     pub const DECLINE_TRADE: KeyCode = KeyCode::Char('D');
-    pub const PING: KeyCode = KeyCode::Char('P');
-    pub const START_SPACE_ADVENTURE: KeyCode = KeyCode::Char('+');
-    pub const MOVE_LEFT: KeyCode = KeyCode::Left;
-    pub const MOVE_RIGHT: KeyCode = KeyCode::Right;
-    pub const MOVE_DOWN: KeyCode = KeyCode::Down;
-    pub const MOVE_UP: KeyCode = KeyCode::Up;
+    pub const SPACE_MOVE_LEFT: KeyCode = KeyCode::Left;
+    pub const SPACE_MOVE_RIGHT: KeyCode = KeyCode::Right;
+    pub const SPACE_MOVE_DOWN: KeyCode = KeyCode::Down;
+    pub const SPACE_MOVE_UP: KeyCode = KeyCode::Up;
+    pub const SPACE_MAIN: KeyCode = KeyCode::Char('s');
+    pub const SPACE_SECOND: KeyCode = KeyCode::Char('a');
+    pub const SPACE_BACK_TO_BASE: KeyCode = KeyCode::Char('b');
     pub const YES_TO_DIALOG: KeyCode = KeyCode::Enter;
     pub const NO_TO_DIALOG: KeyCode = KeyCode::Backspace;
     pub const fn set_player_position(position: Position) -> KeyCode {
@@ -99,10 +103,7 @@ impl UiStyle {
     pub const HIGHLIGHT: Style = DEFAULT_STYLE.fg(Color::Rgb(118, 213, 192));
     pub const OK: Style = DEFAULT_STYLE.fg(Color::Green);
     pub const WARNING: Style = DEFAULT_STYLE.fg(Color::Yellow);
-    pub const STORAGE_GOLD: Style = DEFAULT_STYLE.fg(Color::Yellow);
-    pub const STORAGE_SCRAPS: Style = DEFAULT_STYLE.fg(Color::DarkGray);
-    pub const STORAGE_RUM: Style = DEFAULT_STYLE.fg(Color::LightRed);
-    pub const STORAGE_FUEL: Style = DEFAULT_STYLE.fg(Color::Cyan);
+    pub const STORAGE_KARTOFFEL: Style = DEFAULT_STYLE.fg(Color::Magenta);
     pub const TRAIT_KILLER: Style = DEFAULT_STYLE.fg(Color::Red);
     pub const TRAIT_SHOWPIRATE: Style = DEFAULT_STYLE.fg(Color::Magenta);
     pub const TRAIT_RELENTLESS: Style = DEFAULT_STYLE.fg(Color::Blue);

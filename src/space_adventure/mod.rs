@@ -1,12 +1,17 @@
 mod asteroid;
 mod constants;
+mod fragment;
 mod particle;
+mod projectile;
 mod space;
 mod space_callback;
 mod spaceship;
 mod traits;
-// mod wall;
+mod utils;
+mod visual_effects;
 
-pub use space::Space;
-pub use spaceship::SpaceshipEntity;
-pub use traits::{Body, Entity};
+pub use space::SpaceAdventure;
+pub use space_callback::SpaceCallback;
+pub use spaceship::{ShooterState, SpaceshipEntity};
+pub use traits::*;
+pub use utils::Direction;

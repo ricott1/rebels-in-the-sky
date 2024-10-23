@@ -91,7 +91,24 @@ impl MusicPlayer {
         !self.sink.is_paused()
     }
 
+    pub fn previous_audio_sample(&mut self) -> AppResult<()> {
+        if self.streams.len() == 0 {
+            return Err(anyhow!("No streams available"));
+        }
+        self.index = (self.index + self.streams.len() - 1) % self.streams.len();
+        if self.is_playing() {
+            self.sink.clear();
+            self.toggle()?;
+        } else {
+            self.sink.clear();
+        }
+        Ok(())
+    }
+
     pub fn next_audio_sample(&mut self) -> AppResult<()> {
+        if self.streams.len() == 0 {
+            return Err(anyhow!("No streams available"));
+        }
         self.index = (self.index + 1) % self.streams.len();
         if self.is_playing() {
             self.sink.clear();

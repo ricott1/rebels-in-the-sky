@@ -106,13 +106,8 @@ impl UiStyled for u8 {
 
 impl UiStyled for Resource {
     fn style(&self) -> Style {
-        match self {
-            Self::GOLD => UiStyle::STORAGE_GOLD,
-            Self::SCRAPS => UiStyle::STORAGE_SCRAPS,
-            Self::RUM => UiStyle::STORAGE_RUM,
-            Self::FUEL => UiStyle::STORAGE_FUEL,
-            Self::SATOSHI => UiStyle::DEFAULT,
-        }
+        let [r, g, b, _] = self.color().0;
+        UiStyle::DEFAULT.fg(Color::Rgb(r, g, b))
     }
 }
 

@@ -72,7 +72,7 @@
             "4": 2
         },
         "filename": "weird",
-        "rotation_period": 12,
+        "rotation_period": 6,
         "revolution_period": 180,
         "gravity": 2,
         "asteroid_probability": 0.3,
@@ -97,7 +97,7 @@
             "3": 5,
             "4": 1},
         "filename": "redgreen",
-        "rotation_period": 12,
+        "rotation_period": 9,
         "revolution_period": 360,
         "gravity": 3,
         "asteroid_probability": 0.1,
@@ -220,7 +220,7 @@
             "3": 16
         },
         "filename": "gas",
-        "rotation_period": 12,
+        "rotation_period": 9,
         "revolution_period": 360,
         "gravity": 25,
         "asteroid_probability": 0.95,
@@ -235,9 +235,9 @@
         "version": 0,
         "name": "Saturn",
         "populations": {
-            "1": 6,
-            "3": 3,
-            "102": 2,
+            "1": 2,
+            "3": 6,
+            "102": 1,
             "104": 2
         },
         "resources": {
@@ -246,7 +246,7 @@
             "3": 8
         },
         "filename": "ring",
-        "rotation_period": 12,
+        "rotation_period": 6,
         "revolution_period": 360,
         "gravity": 20,
         "asteroid_probability": 0.86,
@@ -267,7 +267,7 @@
             "3": 4
         },
         "filename": "ice",
-        "rotation_period": 12,
+        "rotation_period": 9,
         "revolution_period": 360,
         "gravity": 16,
         "asteroid_probability": 0.7,
@@ -295,7 +295,7 @@
             "4": 3
         },
         "filename": "rocky",
-        "rotation_period": 18,
+        "rotation_period": 9,
         "revolution_period": 120,
         "gravity": 2,
         "asteroid_probability": 0.0,
@@ -322,7 +322,7 @@
             "4": 2
         },
         "filename": "phobos",
-        "rotation_period": 12,
+        "rotation_period": 6,
         "revolution_period": 120,
         "gravity": 2,
         "asteroid_probability": 0.0,

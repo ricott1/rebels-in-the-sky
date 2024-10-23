@@ -1,78 +1,57 @@
-use super::{space_callback::SpaceCallback, traits::*};
-use crate::space_adventure::constants::*;
+use super::{space_callback::SpaceCallback, traits::*, utils::EntityState};
+use crate::{register_impl, space_adventure::constants::*};
+use glam::{I16Vec2, Vec2};
 use image::{Rgba, RgbaImage};
+use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy)]
-pub enum ParticleState {
-    Immortal,
-    Decaying { lifetime: f64 },
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ParticleEntity {
     id: usize,
-    x: f64,
-    y: f64,
-    vx: f64,
-    vy: f64,
-    particle_state: ParticleState,
+    previous_position: Vec2,
+    position: Vec2,
+    velocity: Vec2,
+    state: EntityState,
     image: RgbaImage,
     layer: usize,
+    hit_box: HitBox,
 }
 
 impl Body for ParticleEntity {
-    fn is_dynamical(&self) -> bool {
-        true
+    fn previous_position(&self) -> I16Vec2 {
+        self.previous_position.as_i16vec2()
     }
 
-    fn bounds(&self) -> (Vector2D, Vector2D) {
-        (
-            [self.x as i16, self.y as i16],
-            [self.x as i16, self.y as i16],
-        )
+    fn position(&self) -> I16Vec2 {
+        self.position.as_i16vec2()
     }
 
-    fn position(&self) -> Vector2D {
-        [self.x as i16, self.y as i16]
+    fn velocity(&self) -> I16Vec2 {
+        self.velocity.as_i16vec2()
     }
 
-    fn velocity(&self) -> Vector2D {
-        [self.vx as i16, self.vy as i16]
-    }
+    fn update_body(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
+        self.previous_position = self.position;
+        self.position = self.position + self.velocity * deltatime;
 
-    fn update_body(&mut self, deltatime: f64) -> Vec<SpaceCallback> {
-        let [x, y] = [self.x, self.y];
-        let [vx, vy] = [self.vx, self.vy];
-
-        let [nx, ny] = [(x + vx * deltatime), (y + vy * deltatime)];
-
-        let mut should_destroy = false;
-        if nx < 0.0 || nx > SCREEN_WIDTH as f64 {
-            should_destroy = true;
+        if self.position.x < 0.0 || self.position.x > SCREEN_WIDTH as f32 {
+            return vec![SpaceCallback::DestroyEntity { id: self.id() }];
         }
-        if ny < 0.0 || ny > SCREEN_HEIGHT as f64 {
-            should_destroy = true;
+        if self.position.y < 0.0 || self.position.y > SCREEN_HEIGHT as f32 {
+            return vec![SpaceCallback::DestroyEntity { id: self.id() }];
         }
 
-        // Update parameters
-        [self.x, self.y] = [nx, ny];
-
-        match self.particle_state {
-            ParticleState::Decaying { lifetime } => {
+        match self.state {
+            EntityState::Decaying { lifetime } => {
                 let new_lifetime = lifetime - deltatime;
                 if new_lifetime > 0.0 {
-                    self.particle_state = ParticleState::Decaying {
+                    self.state = EntityState::Decaying {
                         lifetime: new_lifetime,
                     };
                 } else {
-                    should_destroy = true;
+                    return vec![SpaceCallback::DestroyEntity { id: self.id() }];
                 }
             }
             _ => {}
-        }
-
-        if should_destroy {
-            return vec![SpaceCallback::DestroyParticle { id: self.id() }];
         }
 
         vec![]
@@ -86,7 +65,16 @@ impl Sprite for ParticleEntity {
     fn image(&self) -> &RgbaImage {
         &self.image
     }
+
+    fn hit_box(&self) -> &HitBox {
+        &self.hit_box
+    }
 }
+
+impl Collider for ParticleEntity {}
+
+register_impl!(!PlayerControlled for ParticleEntity);
+register_impl!(!ResourceFragment for ParticleEntity);
 
 impl Entity for ParticleEntity {
     fn set_id(&mut self, id: usize) {
@@ -99,24 +87,24 @@ impl Entity for ParticleEntity {
 
 impl ParticleEntity {
     pub fn new(
-        x: f64,
-        y: f64,
-        vx: f64,
-        vy: f64,
+        position: Vec2,
+        velocity: Vec2,
         color: Rgba<u8>,
-        particle_state: ParticleState,
+        state: EntityState,
         layer: usize,
     ) -> Self {
         let image = RgbaImage::from_pixel(1, 1, color);
+        let mut hit_box = HashMap::new();
+        hit_box.insert(I16Vec2::ZERO, true);
         Self {
             id: 0,
-            x,
-            y,
-            vx,
-            vy,
-            particle_state,
+            previous_position: position,
+            position,
+            velocity,
+            state,
             image,
             layer,
+            hit_box: hit_box.into(),
         }
     }
 }

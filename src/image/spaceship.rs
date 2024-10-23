@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use super::color_map::{ColorMap, ColorPreset};
 use super::components::*;
 use super::types::Gif;
@@ -7,9 +9,12 @@ use crate::world::spaceship::{Engine, Hull, SpaceshipComponent, Storage};
 use image::RgbaImage;
 use serde;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 pub const SPACESHIP_IMAGE_WIDTH: u32 = 30;
 pub const SPACESHIP_IMAGE_HEIGHT: u32 = 24;
+
+pub type SpaceshipImageId = Vec<u8>;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Hash, Default)]
 pub struct SpaceshipImage {
@@ -19,6 +24,20 @@ pub struct SpaceshipImage {
 impl SpaceshipImage {
     pub fn new(color_map: ColorMap) -> Self {
         Self { color_map }
+    }
+
+    pub fn id(&self, hull: Hull, engine: Engine, storage: Storage) -> SpaceshipImageId {
+        let mut hasher = Sha256::new();
+
+        hasher.update(format!(
+            "{}{}{}{}",
+            hull,
+            engine,
+            storage,
+            self.color_map.hex_format()
+        ));
+
+        hasher.finalize().to_vec()
     }
 
     pub fn set_color_map(&mut self, color_map: ColorMap) {

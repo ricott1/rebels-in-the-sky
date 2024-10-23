@@ -25,30 +25,13 @@ pub struct AppClient {
 }
 
 impl AppClient {
-    pub fn new(network_port: Option<u16>, shutdown: CancellationToken) -> AppResult<Self> {
-        // let terminal_handle = TerminalHandle {
-        //     handle: session.handle(),
-        //     sink: Vec::new(),
-        //     channel_id,
-        // };
-
-        // let backend = SSHBackend::new(terminal_handle, (160, 48));
-        // let events = TickEventHandler::handler(FPS);
-        // let mut tui = SSHTui::new(backend, events).map_err(|e| {
-        //     log::error!("Failed to create terminal interface: {}", e);
-        //     anyhow::anyhow!("Failed to create terminal interface: {}", e)
-        // })?;
-        // tui.terminal.clear().map_err(|e| {
-        //     log::error!("Failed to clear terminal: {}", e);
-        //     anyhow::anyhow!("Failed to clear terminal: {}", e)
-        // })?;
-
-        Ok(AppClient {
+    pub fn new(network_port: Option<u16>, shutdown: CancellationToken) -> Self {
+        AppClient {
             network_port,
             shutdown,
             channels: HashMap::new(),
             session_auth: SessionAuth::default(),
-        })
+        }
     }
 
     fn channel_mut(&mut self, id: ChannelId) -> AppResult<&mut AppChannel> {

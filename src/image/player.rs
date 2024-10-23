@@ -224,16 +224,18 @@ impl PlayerImage {
             self.shoes = Some(ShoesImage::Classic);
         }
 
-        if info.crew_role == CrewRole::Captain {
-            if r == 0 {
-                self.set_hat(Some(HatImage::Classic));
-            } else {
-                self.set_hat(Some(HatImage::Infernal));
+        match info.crew_role {
+            CrewRole::Captain => {
+                if r == 0 {
+                    self.set_hat(Some(HatImage::Classic));
+                } else {
+                    self.set_hat(Some(HatImage::Infernal));
+                }
             }
-        } else if info.crew_role == CrewRole::Doctor {
-            self.set_hat(Some(HatImage::Bandana));
-        } else if info.crew_role == CrewRole::Pilot {
-            match info.population {
+            CrewRole::Doctor => {
+                self.set_hat(Some(HatImage::Bandana));
+            }
+            CrewRole::Pilot => match info.population {
                 Population::Yardalaim => {
                     self.set_hat(Some(HatImage::MaskYardalaim));
                 }
@@ -246,12 +248,19 @@ impl PlayerImage {
                 Population::Pupparoll => {
                     self.set_hat(Some(HatImage::MaskPupparoll));
                 }
+
+                Population::Octopulp => {
+                    if self.head == HeadImage::Octopulp1 {
+                        self.set_hat(Some(HatImage::MaskOctopulp1));
+                    } else if self.head == HeadImage::Octopulp2 {
+                        self.set_hat(Some(HatImage::MaskOctopulp2));
+                    }
+                }
                 _ => {
                     self.set_hat(Some(HatImage::Mask));
                 }
-            }
-        } else {
-            self.set_hat(None);
+            },
+            CrewRole::Mozzo => self.set_hat(None),
         }
 
         self.jersey_color_map = Some(jersey.color);

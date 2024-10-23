@@ -25,11 +25,18 @@ pub const CALENDAR_OFFSET: i32 = 77;
 pub const MIN_PLAYERS_PER_GAME: usize = 5;
 pub const MAX_PLAYERS_PER_TEAM: usize = MIN_PLAYERS_PER_GAME + 5;
 
-pub const EXPERIENCE_PER_SKILL_MULTIPLIER: f32 = 0.0000065;
+// Try to keep these constants balanced.
+// By playing a game, a player can get at most 5*40*60 = 12000 (5 because of the role, times 40 minutes in seconds).
+// Then, with potential, focus, and doctor bonus, per game a skill can improve at most
+// by 12000 * 8 * EXPERIENCE_PER_SKILL_MULTIPLIER = 0.336.
+// More realistically, one should take a factor 10 less.
+pub const EXPERIENCE_PER_SKILL_MULTIPLIER: f32 = 0.0000035;
+pub const MAX_SKILL_INCREASE_PER_LONG_TICK: f32 = 0.75;
+pub const SKILL_DECREMENT_PER_LONG_TICK: f32 = -0.04;
+
 pub const REPUTATION_PER_EXPERIENCE: f32 = 0.0001;
 pub const REPUTATION_DECREASE_PER_LONG_TICK: f32 = 0.1;
 pub const AGE_INCREASE_PER_LONG_TICK: f32 = 0.1; // 1 year every 10 LONG_TICK
-pub const SKILL_DECREMENT_PER_LONG_TICK: f32 = -0.035;
 
 pub const INCOME_PER_ATTENDEE_HOME: u32 = 36;
 pub const INCOME_PER_ATTENDEE_AWAY: u32 = 36;
@@ -37,7 +44,6 @@ pub const INCOME_PER_ATTENDEE_AWAY: u32 = 36;
 pub const INITIAL_TEAM_BALANCE: u32 = 120_000;
 pub const COST_PER_VALUE: f32 = 120.0;
 pub const SPECIAL_TRAIT_VALUE_BONUS: f32 = 1.35;
-pub const SPACESHIP_UPGRADE_BASE_DURATION: Tick = 8 * HOURS;
 
 pub const AUTO_GENERATE_GAMES_NUMBER: usize = 3;
 pub const MAX_AVG_TIREDNESS_PER_AUTO_GAME: f32 = 2.0;
@@ -52,12 +58,12 @@ pub const BASE_TANK_CAPACITY: u32 = 60;
 pub const SPACESHIP_BASE_COST_MULTIPLIER: f32 = 1.1;
 
 pub const LIGHT_SPEED: f32 = 1_079_252_848.8 * KILOMETERS as f32 / HOURS as f32;
-pub const BASE_SPEED: f32 = 0.5 * LIGHT_SPEED; // Very fast ;)
-pub const BASE_FUEL_CONSUMPTION: f32 = 3.0 / HOURS as f32; // TONNES per HOURS
-pub const FUEL_CONSUMPTION_PER_UNIT_STORAGE: f32 = 0.0001; // 10_000 storage units double the fuel consumption
-pub const SPEED_PENALTY_PER_UNIT_STORAGE: f32 = 0.0001; // 10_000 storage units halves the speed
+pub const BASE_SPEED: f32 = 0.55 * LIGHT_SPEED; // Very fast ;)
+pub const BASE_FUEL_CONSUMPTION: f32 = 2.5 / HOURS as f32; // TONNES per HOURS
+pub const FUEL_CONSUMPTION_PER_UNIT_STORAGE: f32 = 1.0 / 3_000.0; // 3_000 storage units double the fuel consumption
+pub const SPEED_PENALTY_PER_UNIT_STORAGE: f32 = 1.0 / 5_000.0; // 5_000 storage units halves the speed
 
-pub const LANDING_TIME_OVERHEAD: Tick = 5 * MINUTES;
+pub const LANDING_TIME_OVERHEAD: Tick = 10 * MINUTES;
 
 pub const REPUTATION_BONUS_WINNER: f32 = 0.5;
 pub const REPUTATION_BONUS_LOSER: f32 = -0.2;

@@ -118,7 +118,9 @@ impl GameStats {
         }
         self.last_action_shot = stats.last_action_shot;
         for (idx, exp) in stats.experience_at_position.iter().enumerate() {
+            // This loop should not nothing at the moment, but could be used to give extra experience during actions.
             self.experience_at_position[idx] += exp;
+            assert!(*exp == 0);
         }
     }
 

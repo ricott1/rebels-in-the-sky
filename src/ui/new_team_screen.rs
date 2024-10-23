@@ -167,7 +167,7 @@ impl NewTeamScreen {
         let prefab = SPACESHIP_MODELS[self.spaceship_model_index];
         let name = self.ship_name_textarea.lines()[0].clone();
         let color_map = self.get_team_colors();
-        prefab.spaceship(name, color_map)
+        prefab.spaceship(name).with_color_map(color_map)
     }
 
     fn get_team_colors(&self) -> ColorMap {
@@ -679,13 +679,19 @@ impl NewTeamScreen {
                 }
                 let player = world.get_player(player_id).unwrap();
                 let full_name = player.info.full_name();
-                let name = if full_name.len() <= 2 * MAX_NAME_LENGTH + 2 {
+
+                let max_width = 2 * MAX_NAME_LENGTH;
+                let name = if full_name.len() <= max_width {
                     full_name
                 } else {
                     player.info.shortened_name()
                 };
                 (
-                    format!("{:23} {:>9}", name, format_satoshi(player.hire_cost(0.0),)),
+                    format!(
+                        "{:max_width$}{:>9}",
+                        name,
+                        format_satoshi(player.hire_cost(0.0),)
+                    ),
                     style,
                 )
             })

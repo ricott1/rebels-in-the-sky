@@ -1,5 +1,6 @@
 use crate::tui::{EventHandler, TerminalEvent};
 use crate::types::{SystemTimeTick, Tick};
+use crate::world::constants::MILLISECONDS;
 use crossterm::event::{self, Event as CrosstermEvent, KeyEventKind};
 use log::error;
 use std::time::Duration;
@@ -20,8 +21,8 @@ impl EventHandler for CrosstermEventHandler {
         self.receiver.recv().await.expect("Channel should be open")
     }
 
-    fn fps(&self) -> u8 {
-        self.fps
+    fn simulation_update_interval(&self) -> Tick {
+        250 * MILLISECONDS
     }
 }
 

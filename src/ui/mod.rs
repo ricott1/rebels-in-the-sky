@@ -16,7 +16,7 @@ mod space_screen;
 mod splash_screen;
 mod swarm_panel;
 mod team_panel;
-mod traits;
+pub(crate) mod traits;
 pub mod ui;
 pub mod ui_callback;
 pub mod utils;

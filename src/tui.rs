@@ -48,7 +48,7 @@ impl Future for TerminalEvent {
 
 pub trait EventHandler: Send + Sync {
     fn next(&mut self) -> impl std::future::Future<Output = TerminalEvent> + Send;
-    fn fps(&self) -> u8;
+    fn simulation_update_interval(&self) -> Tick;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -166,8 +166,8 @@ where
         Ok(())
     }
 
-    pub fn fps(&self) -> u8 {
-        self.events.fps()
+    pub fn simulation_update_interval(&self) -> Tick {
+        self.events.simulation_update_interval()
     }
 
     pub fn resize(&mut self, size: (u16, u16)) -> AppResult<()> {

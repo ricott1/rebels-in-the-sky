@@ -13,7 +13,7 @@ use super::{
 use crate::{
     game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
     image::{player::PlayerImage, types::Gif},
-    types::{AppResult, PlanetId, PlayerId, TeamId},
+    types::{AppResult, PlanetId, PlayerId, StorableResourceMap, TeamId},
     world::{
         constants::*,
         position::Position,
@@ -508,13 +508,7 @@ impl Player {
             return Err(anyhow!("No energy to drink"));
         }
 
-        if team
-            .resources
-            .get(&Resource::RUM)
-            .copied()
-            .unwrap_or_default()
-            == 0
-        {
+        if team.resources.value(&Resource::RUM) == 0 {
             return Err(anyhow!("No rum to drink"));
         }
 
@@ -634,7 +628,7 @@ impl Player {
 
         player.previous_skills = player.current_skill_array();
 
-        let normal = Normal::new(0.0, 1.8).expect("Should create valid normal distribution");
+        let normal = Normal::new(0.0, 6.50).expect("Should create valid normal distribution");
         let extra_potential = (normal.sample(rng) as f32).abs();
         player.potential = (player.average_skill() + extra_potential).bound();
         player.reputation =
@@ -859,7 +853,7 @@ impl Player {
             return;
         }
         // Charisma improves quicker if player has an eye patch
-        if self.has_eye_patch() && idx == 19 {
+        if self.has_eye_patch() && idx == 19 && value > 0.0 {
             value *= 1.5;
         }
 
@@ -868,7 +862,7 @@ impl Player {
             return;
         }
         // Strength improves quicker if player has a hook
-        if self.has_hook() && idx == 2 {
+        if self.has_hook() && idx == 2 && value > 0.0 {
             value *= 1.5;
         }
 
@@ -907,7 +901,12 @@ impl Player {
         // potential_modifier has a value ranging from 0.0 to 2.0.
         // Players with skills below their potential improve faster, above their potential improve slower.
         let potential_modifier = 1.0 + (self.potential - self.average_skill()) / 20.0;
+        log::info!("Previous Experience increase: {:#?}", self.skills_training);
         for p in 0..MAX_POSITION {
+            if experience_at_position[p as usize] == 0 {
+                continue;
+            }
+
             for (idx, &w) in p.weights().iter().enumerate() {
                 let training_focus_bonus = match training_focus {
                     Some(focus) => {
@@ -925,8 +924,30 @@ impl Player {
                     * training_bonus
                     * training_focus_bonus
                     * potential_modifier;
+
+                log::info!(
+                    "Experience increase: {:.3}={}x{}x{}x{}x{}x{:.2}",
+                    experience_at_position[p as usize] as f32
+                        * w
+                        * EXPERIENCE_PER_SKILL_MULTIPLIER
+                        * training_bonus
+                        * training_focus_bonus
+                        * potential_modifier,
+                    experience_at_position[p as usize] as f32,
+                    w,
+                    EXPERIENCE_PER_SKILL_MULTIPLIER,
+                    training_bonus,
+                    training_focus_bonus,
+                    potential_modifier
+                );
+
+                // Cap to maximum skill increase per day.
+                self.skills_training[idx] =
+                    self.skills_training[idx].min(MAX_SKILL_INCREASE_PER_LONG_TICK);
             }
         }
+
+        log::info!("Total Experience increase: {:#?}", self.skills_training);
     }
 
     pub fn tiredness_weighted_rating_at_position(&self, position: Position) -> f32 {
