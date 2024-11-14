@@ -1,9 +1,5 @@
-use super::ui_callback::CallbackRegistry;
-use ratatui::{
-    prelude::*,
-    widgets::{Clear, Paragraph, Widget},
-};
-use std::sync::{Arc, Mutex};
+use super::{traits::HoverableWidget, ui_callback::CallbackRegistry};
+use ratatui::{prelude::*, widgets::Widget};
 
 /// A ratatui Paragraph that can display hover text when the mouse hovers over it.
 #[derive(Debug, Default, Clone)]
@@ -14,9 +10,7 @@ pub struct HoverTextSpan<'a> {
     /// If the hover text is not empty, the hover text will be displayed when the mouse hovers over the paragraph
     /// If the hover text is empty, the hover text will not be displayed
     hover_text: Text<'a>,
-    /// Hover text render target
-    hover_text_target: Rect,
-    callback_registry: Arc<Mutex<CallbackRegistry>>,
+    layer: usize,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Hash)]
@@ -26,20 +20,14 @@ pub struct Wrap {
 }
 
 impl<'a> HoverTextSpan<'a> {
-    pub fn new<T>(
-        span: Span<'a>,
-        hover_text: T,
-        hover_text_target: Rect,
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-    ) -> HoverTextSpan<'a>
+    pub fn new<T>(span: Span<'a>, hover_text: T) -> HoverTextSpan<'a>
     where
         T: Into<Text<'a>>,
     {
         HoverTextSpan {
             span,
             hover_text: hover_text.into(),
-            hover_text_target,
-            callback_registry,
+            layer: 0,
         }
     }
 
@@ -51,16 +39,18 @@ impl<'a> HoverTextSpan<'a> {
 impl Widget for HoverTextSpan<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.span.render(area, buf);
+    }
+}
 
-        // Render hover text if the mouse is hovering over the paragraph
-        // and the hover text is not empty.
-        if self.callback_registry.lock().unwrap().is_hovering(area)
-            && self.hover_text.to_string().len() > 0
-        {
-            Clear.render(self.hover_text_target, buf);
-            let hover_text = Paragraph::new(self.hover_text).centered();
-            hover_text.render(self.hover_text_target, buf);
-        }
+impl HoverableWidget for HoverTextSpan<'_> {
+    fn layer(&self) -> usize {
+        self.layer
+    }
+
+    fn before_rendering(&mut self, _area: Rect, _callback_registry: &mut CallbackRegistry) {}
+
+    fn hover_text(&self) -> Text<'_> {
+        self.hover_text.clone().into()
     }
 }
 

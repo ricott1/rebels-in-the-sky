@@ -20,7 +20,7 @@ impl Direction {
     pub const DOWN: Vec2 = Vec2::Y;
 }
 
-pub fn body_data_from_image(image: &RgbaImage) -> (RgbaImage, HitBox) {
+pub fn body_data_from_image(image: &RgbaImage, should_crop: bool) -> (RgbaImage, HitBox) {
     let gray_img = ConvertBuffer::<GrayImage>::convert(image);
     // Find contours to get minimum rect enclosing image.
     let mut contours_vec = vec![];
@@ -56,15 +56,19 @@ pub fn body_data_from_image(image: &RgbaImage) -> (RgbaImage, HitBox) {
         .max_by(|pa, pb| pa.cmp(&pb))
         .unwrap_or_default();
 
-    // Crop image to minimum rect.
-    let cropped_image = crop_imm(
-        image,
-        min_x as u32,
-        min_y as u32,
-        (max_x - min_x) as u32 + 1,
-        (max_y - min_y) as u32 + 1,
-    )
-    .to_image();
+    let final_image = if should_crop {
+        // Crop image to minimum rect.
+        crop_imm(
+            image,
+            min_x as u32,
+            min_y as u32,
+            (max_x - min_x) as u32 + 1,
+            (max_y - min_y) as u32 + 1,
+        )
+        .to_image()
+    } else {
+        image.clone()
+    };
 
     // Translate contours.
     let contour = contours_vec
@@ -74,9 +78,9 @@ pub fn body_data_from_image(image: &RgbaImage) -> (RgbaImage, HitBox) {
 
     let mut hit_box = HashMap::new();
 
-    for x in 0..cropped_image.width() {
-        for y in 0..cropped_image.height() {
-            if let Some(pixel) = cropped_image.get_pixel_checked(x, y) {
+    for x in 0..final_image.width() {
+        for y in 0..final_image.height() {
+            if let Some(pixel) = final_image.get_pixel_checked(x, y) {
                 // If pixel is non-transparent.
                 if pixel[3] > 0 {
                     let point = I16Vec2::new(x as i16, y as i16);
@@ -87,5 +91,5 @@ pub fn body_data_from_image(image: &RgbaImage) -> (RgbaImage, HitBox) {
         }
     }
 
-    (cropped_image, hit_box.into())
+    (final_image, hit_box.into())
 }

@@ -15,8 +15,6 @@ use futures::Future;
 use ratatui::layout::Rect;
 use ratatui::prelude::CrosstermBackend;
 use ratatui::Terminal;
-use ratatui::TerminalOptions;
-use ratatui::Viewport;
 use std::io::{self};
 use std::panic;
 use std::pin::Pin;
@@ -85,16 +83,7 @@ impl Tui<io::Stdout, CrosstermEventHandler> {
 impl Tui<SSHWriterProxy, SSHEventHandler> {
     pub fn new_ssh(writer: SSHWriterProxy, events: SSHEventHandler) -> AppResult<Self> {
         let backend = CrosstermBackend::new(writer);
-        let opts = TerminalOptions {
-            viewport: Viewport::Fixed(Rect {
-                x: 0,
-                y: 0,
-                width: 160,
-                height: 48,
-            }),
-        };
-
-        let terminal = Terminal::with_options(backend, opts)?;
+        let terminal = Terminal::new(backend)?;
         let mut tui = Self {
             tui_type: TuiType::SSH,
             terminal,

@@ -1,3 +1,4 @@
+use super::ui_frame::UiFrame;
 use super::{
     button::Button,
     clickable_list::ClickableListState,
@@ -5,8 +6,8 @@ use super::{
     constants::*,
     gif_map::GifMap,
     traits::{PercentageRating, Screen, SplitPanel, UiStyled},
-    ui_callback::{CallbackRegistry, UiCallback},
-    utils::{format_satoshi, hover_text_target},
+    ui_callback::UiCallback,
+    utils::format_satoshi,
     widgets::*,
 };
 use crate::{
@@ -34,12 +35,8 @@ use ratatui::{
     prelude::{Constraint, Layout, Rect},
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
-    Frame,
 };
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
 use strum::IntoEnumIterator;
 
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
@@ -89,89 +86,66 @@ pub struct MyTeamPanel {
     own_team_id: TeamId,
     current_planet_id: Option<PlanetId>,
     tick: usize,
-    callback_registry: Arc<Mutex<CallbackRegistry>>,
-    gif_map: Arc<Mutex<GifMap>>,
+    gif_map: GifMap,
 }
 
 impl MyTeamPanel {
-    pub fn new(
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-        gif_map: Arc<Mutex<GifMap>>,
-    ) -> Self {
-        Self {
-            callback_registry,
-            gif_map,
-            ..Default::default()
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    fn render_view_buttons(&self, frame: &mut Frame, area: Rect) -> AppResult<()> {
-        let hover_text_target = hover_text_target(frame);
+    fn render_view_buttons(&self, frame: &mut UiFrame, area: Rect) -> AppResult<()> {
         let mut view_info_button = Button::new(
-            "View: Info".into(),
+            "View: Info",
             UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Info,
             },
-            Arc::clone(&self.callback_registry),
         )
         .set_hotkey(UiKey::CYCLE_VIEW)
-        .set_hover_text("View team information.".into(), hover_text_target);
+        .set_hover_text("View team information.");
 
         let mut view_games_button = Button::new(
-            "View: Games".into(),
+            "View: Games",
             UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Games,
             },
-            Arc::clone(&self.callback_registry),
         )
         .set_hotkey(UiKey::CYCLE_VIEW)
-        .set_hover_text("View recent games.".into(), hover_text_target);
+        .set_hover_text("View recent games.");
 
         let mut view_market_button = Button::new(
-            "View: Market".into(),
+            "View: Market",
             UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Market,
             },
-            Arc::clone(&self.callback_registry),
         )
         .set_hotkey(UiKey::CYCLE_VIEW)
-        .set_hover_text(
-            "View market, buy and sell resources.".into(),
-            hover_text_target,
-        );
+        .set_hover_text("View market, buy and sell resources.");
 
         let mut view_shipyard_button = Button::new(
-            "View: Shipyard".into(),
+            "View: Shipyard",
             UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Shipyard,
             },
-            Arc::clone(&self.callback_registry),
         )
         .set_hotkey(UiKey::CYCLE_VIEW)
-        .set_hover_text(
-            "View shipyard, improve your spaceship.".into(),
-            hover_text_target,
-        );
+        .set_hover_text("View shipyard, improve your spaceship.");
 
         let mut view_asteroids_button = Button::new(
-            format!("View: Asteroids ({})", self.asteroid_ids.len()).into(),
+            format!("View: Asteroids ({})", self.asteroid_ids.len()),
             UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Asteroids,
             },
-            Arc::clone(&self.callback_registry),
         )
         .set_hotkey(UiKey::CYCLE_VIEW)
-        .set_hover_text(
-            "View asteorids found during exploration.".into(),
-            hover_text_target,
-        );
+        .set_hover_text("View asteorids found during exploration.");
 
         match self.view {
-            MyTeamView::Info => view_info_button.disable(None),
-            MyTeamView::Games => view_games_button.disable(None),
-            MyTeamView::Market => view_market_button.disable(None),
-            MyTeamView::Shipyard => view_shipyard_button.disable(None),
-            MyTeamView::Asteroids => view_asteroids_button.disable(None),
+            MyTeamView::Info => view_info_button.select(),
+            MyTeamView::Games => view_games_button.select(),
+            MyTeamView::Market => view_market_button.select(),
+            MyTeamView::Shipyard => view_shipyard_button.select(),
+            MyTeamView::Asteroids => view_asteroids_button.select(),
         }
 
         let split = Layout::vertical([
@@ -184,16 +158,16 @@ impl MyTeamPanel {
         ])
         .split(area);
 
-        frame.render_widget(view_info_button, split[0]);
-        frame.render_widget(view_games_button, split[1]);
-        frame.render_widget(view_market_button, split[2]);
-        frame.render_widget(view_shipyard_button, split[3]);
-        frame.render_widget(view_asteroids_button, split[4]);
+        frame.render_hoverable(view_info_button, split[0]);
+        frame.render_hoverable(view_games_button, split[1]);
+        frame.render_hoverable(view_market_button, split[2]);
+        frame.render_hoverable(view_shipyard_button, split[3]);
+        frame.render_hoverable(view_asteroids_button, split[4]);
 
         Ok(())
     }
 
-    fn render_market(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_market(&self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
         self.render_planet_markets(frame, world, split[0])?;
         self.render_market_buttons(frame, world, split[1])?;
@@ -201,7 +175,12 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_planet_markets(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_planet_markets(
+        &self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         let team = world.get_own_team()?;
         frame.render_widget(default_block().title("Planet Markets"), area);
         let split = Layout::horizontal([Constraint::Length(20), Constraint::Length(30)]).split(
@@ -212,7 +191,7 @@ impl MyTeamPanel {
         );
 
         let mut options = vec![];
-        for &id in self.planet_markets.iter() {
+        for id in self.planet_markets.iter() {
             let planet = world.get_planet_or_err(id)?;
             let text = planet.name.clone();
             let style = match team.current_location {
@@ -228,9 +207,8 @@ impl MyTeamPanel {
             options.push((text, style));
         }
 
-        let list = selectable_list(options, &self.callback_registry);
-
-        frame.render_stateful_widget(
+        let list = selectable_list(options);
+        frame.render_stateful_hoverable(
             list,
             split[0].inner(Margin {
                 horizontal: 1,
@@ -240,8 +218,8 @@ impl MyTeamPanel {
         );
 
         let planet_id = self.planet_markets[self.planet_index.unwrap_or_default()];
-        let planet = world.get_planet_or_err(planet_id)?;
-        let merchant_bonus = TeamBonus::TradePrice.current_team_bonus(world, team.id)?;
+        let planet = world.get_planet_or_err(&planet_id)?;
+        let merchant_bonus = TeamBonus::TradePrice.current_team_bonus(world, &team.id)?;
 
         frame.render_widget(
             Paragraph::new(vec![
@@ -326,7 +304,12 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_market_buttons(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_market_buttons(
+        &self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         let team = world.get_own_team()?;
 
         let planet_id = match team.current_location {
@@ -358,7 +341,7 @@ impl MyTeamPanel {
             }
         };
 
-        let planet = world.get_planet_or_err(planet_id)?;
+        let planet = world.get_planet_or_err(&planet_id)?;
         frame.render_widget(
             default_block().title(format!("Planet {} Market", planet.name)),
             area,
@@ -375,7 +358,6 @@ impl MyTeamPanel {
             );
             return Ok(());
         }
-        let hover_text_target = hover_text_target(frame);
 
         let button_split = Layout::vertical([
             Constraint::Length(1),
@@ -432,7 +414,7 @@ impl MyTeamPanel {
             ])
             .split(button_split[button_split_idx + 1]);
 
-            let merchant_bonus = TeamBonus::TradePrice.current_team_bonus(world, team.id)?;
+            let merchant_bonus = TeamBonus::TradePrice.current_team_bonus(world, &team.id)?;
             let buy_unit_cost = planet.resource_buy_price(*resource, merchant_bonus);
             let sell_unit_cost = planet.resource_sell_price(*resource, merchant_bonus);
             frame.render_widget(
@@ -472,8 +454,6 @@ impl MyTeamPanel {
                     *resource,
                     *amount,
                     buy_unit_cost,
-                    &self.callback_registry,
-                    hover_text_target,
                     if idx == 0 {
                         Some(buy_ui_keys[button_split_idx])
                     } else {
@@ -481,7 +461,7 @@ impl MyTeamPanel {
                     },
                     UiStyle::OK,
                 ) {
-                    frame.render_widget(btn, resource_split[idx + 1]);
+                    frame.render_hoverable(btn, resource_split[idx + 1]);
                 }
             }
 
@@ -492,8 +472,6 @@ impl MyTeamPanel {
                     *resource,
                     -*amount,
                     sell_unit_cost,
-                    &self.callback_registry,
-                    hover_text_target,
                     if idx == 0 {
                         Some(sell_ui_keys[button_split_idx])
                     } else {
@@ -501,7 +479,7 @@ impl MyTeamPanel {
                     },
                     UiStyle::ERROR,
                 ) {
-                    frame.render_widget(btn, resource_split[idx + 4]);
+                    frame.render_hoverable(btn, resource_split[idx + 4]);
                 }
             }
         }
@@ -522,7 +500,7 @@ impl MyTeamPanel {
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(""),
-                Line::from(format!("Treasury: {}", format_satoshi(team.balance()))),
+                Line::from(format!("Treasury {}", format_satoshi(team.balance()))),
                 Line::from(info_spans),
             ]),
             button_split[5].inner(Margin {
@@ -534,27 +512,25 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_info(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_info(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         let team = world.get_own_team()?;
-        let hover_text_target = hover_text_target(&frame);
-
         let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
 
         let info = Paragraph::new(vec![
             Line::from(""),
             Line::from(format!(
                 "Rating {:5}  Reputation {:5}",
-                world.team_rating(team.id).unwrap_or_default().stars(),
+                world.team_rating(&team.id).unwrap_or_default().stars(),
                 team.reputation.stars(),
             )),
             Line::from(vec![
                 Span::raw(format!(
-                    "Game record: W{}/L{}/D{}  ",
+                    "Game record W{}/L{}/D{}  ",
                     team.game_record[0], team.game_record[1], team.game_record[2]
                 )),
                 Span::styled(
                     format!(
-                        "Network: W{}/L{}/D{} ",
+                        "Network W{}/L{}/D{} ",
                         team.network_game_record[0],
                         team.network_game_record[1],
                         team.network_game_record[2]
@@ -562,7 +538,7 @@ impl MyTeamPanel {
                     UiStyle::NETWORK,
                 ),
             ]),
-            Line::from(format!("Treasury: {:<10}", format_satoshi(team.balance()),)),
+            Line::from(format!("Treasury {:<10}", format_satoshi(team.balance()),)),
             Line::from(get_crew_spans(team)),
             Line::from(get_durability_spans(
                 team.spaceship.current_durability(),
@@ -581,21 +557,21 @@ impl MyTeamPanel {
             )),
             Line::from(vec![
                 Span::styled(
-                    format!("{:>10}:", Resource::GOLD.to_string()),
+                    format!("{:>10}", Resource::GOLD.to_string()),
                     Resource::GOLD.style(),
                 ),
                 Span::raw(format!("{:>3} Kg  ", team.resources.value(&Resource::GOLD))),
-                Span::styled(format!("{:>10}:", "Kartoffeln"), UiStyle::STORAGE_KARTOFFEL),
+                Span::styled(format!("{:>10}", "Kartoffeln"), UiStyle::STORAGE_KARTOFFEL),
                 Span::raw(format!("{:>3}", team.kartoffel_ids.len())),
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!("{:>10}:", Resource::RUM.to_string()),
+                    format!("{:>10}", Resource::RUM.to_string()),
                     Resource::RUM.style(),
                 ),
-                Span::raw(format!("{:>3} l  ", team.resources.value(&Resource::RUM))),
+                Span::raw(format!("{:>3} l   ", team.resources.value(&Resource::RUM))),
                 Span::styled(
-                    format!("{:>10}:", Resource::SCRAPS.to_string()),
+                    format!("{:>10}", Resource::SCRAPS.to_string()),
                     Resource::SCRAPS.style(),
                 ),
                 Span::raw(format!("{:>3} t", team.resources.value(&Resource::SCRAPS))),
@@ -625,22 +601,18 @@ impl MyTeamPanel {
                 .split(btm_split[1]);
 
         let offense_tactic_button = Button::new(
-            format!("tactic: {}", team.game_tactic).into(),
+            format!("tactic: {}", team.game_tactic),
             UiCallback::SetTeamTactic {
                 tactic: team.game_tactic.next(),
             },
-            Arc::clone(&self.callback_registry),
         )
-        .set_hover_text(
-            format!(
-                "Tactics affect the actions the team will choose during the game.\n{}: {}",
-                team.game_tactic,
-                team.game_tactic.description()
-            ),
-            hover_text_target,
-        )
+        .set_hover_text(format!(
+            "Tactics affect the actions the team will choose during the game. {}: {}",
+            team.game_tactic,
+            team.game_tactic.description()
+        ))
         .set_hotkey(UiKey::SET_TACTIC);
-        frame.render_widget(offense_tactic_button, top_button_split[0]);
+        frame.render_hoverable(offense_tactic_button, top_button_split[0]);
 
         let can_change_training_focus = team.can_change_training_focus();
         let mut training_button = Button::new(
@@ -651,15 +623,10 @@ impl MyTeamPanel {
                 } else {
                     "General".to_string()
                 }
-            )
-            .into(),
+            ),
             UiCallback::NextTrainingFocus { team_id: team.id },
-            Arc::clone(&self.callback_registry),
         )
-        .set_hover_text(
-            "Change the training focus, which affects how player skills increase.".into(),
-            hover_text_target,
-        )
+        .set_hover_text("Change the training focus, which affects how player skills increase.")
         .set_hotkey(UiKey::TRAINING_FOCUS);
         if can_change_training_focus.is_err() {
             training_button.disable(Some(format!(
@@ -667,33 +634,27 @@ impl MyTeamPanel {
                 can_change_training_focus.unwrap_err().to_string()
             )));
         }
-        frame.render_widget(training_button, top_button_split[1]);
+        frame.render_hoverable(training_button, top_button_split[1]);
 
         let btm_button_split =
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
                 .split(btm_split[2]);
 
-        if let Ok(go_to_team_current_planet_button) = go_to_team_current_planet_button(
-            world,
-            team,
-            &self.callback_registry,
-            hover_text_target,
-        ) {
-            frame.render_widget(go_to_team_current_planet_button, btm_button_split[0]);
+        if let Ok(go_to_team_current_planet_button) = go_to_team_current_planet_button(world, team)
+        {
+            frame.render_hoverable(go_to_team_current_planet_button, btm_button_split[0]);
         }
 
-        if let Ok(home_planet_button) =
-            go_to_team_home_planet_button(world, team, &self.callback_registry, hover_text_target)
-        {
-            frame.render_widget(home_planet_button, btm_button_split[1]);
+        if let Ok(home_planet_button) = go_to_team_home_planet_button(world, team) {
+            frame.render_hoverable(home_planet_button, btm_button_split[1]);
         }
 
         match team.current_location {
-            TeamLocation::OnPlanet { planet_id } => {
+            TeamLocation::OnPlanet { .. } => {
                 if let Some(upgrade) = &team.spaceship.pending_upgrade {
                     self.render_upgrading_spaceship(frame, world, split[1], upgrade)?
                 } else {
-                    self.render_on_planet_spaceship(frame, world, split[1], planet_id)?
+                    self.render_on_planet_spaceship(frame, world, split[1])?
                 }
             }
             TeamLocation::Travelling {
@@ -707,7 +668,7 @@ impl MyTeamPanel {
                 } else {
                     (0 as Tick).formatted()
                 };
-                self.render_travelling_spaceship(frame, world, split[1], to, countdown)?
+                self.render_travelling_spaceship(frame, world, split[1], &to, countdown)?
             }
             TeamLocation::Exploring {
                 around,
@@ -720,7 +681,7 @@ impl MyTeamPanel {
                 } else {
                     (0 as Tick).formatted()
                 };
-                self.render_exploring_spaceship(frame, world, split[1], around, countdown)?
+                self.render_exploring_spaceship(frame, world, split[1], &around, countdown)?
             }
             TeamLocation::OnSpaceAdventure { .. } => {
                 return Err(anyhow!("Team is on a space adventure"))
@@ -729,7 +690,7 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_games(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_games(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
         self.render_challenge_teams(frame, world, split[0])?;
         self.render_recent_games(frame, world, split[1])?;
@@ -738,7 +699,7 @@ impl MyTeamPanel {
 
     fn render_challenge_teams(
         &self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
@@ -751,9 +712,7 @@ impl MyTeamPanel {
             }),
         );
         if let Some(game_id) = team.current_game {
-            let game = world.get_game_or_err(game_id)?;
-            let hover_text_target = hover_text_target(frame);
-
+            let game = world.get_game_or_err(&game_id)?;
             let game_text = if let Some(action) = game.action_results.last() {
                 format!(
                     "{} {:>3}-{:<3} {}",
@@ -768,15 +727,14 @@ impl MyTeamPanel {
                     game.home_team_in_game.name, game.away_team_in_game.name,
                 )
             };
-            frame.render_widget(
+            frame.render_hoverable(
                 Button::new(
-                    format!("Playing - {}", game_text).into(),
+                    format!("Playing - {}", game_text),
                     UiCallback::GoToGame { game_id },
-                    Arc::clone(&self.callback_registry),
                 )
-                .set_hover_text("Go to current game".into(), hover_text_target)
+                .set_hover_text("Go to current game")
                 .set_hotkey(UiKey::GO_TO_GAME)
-                .set_box_style(UiStyle::OWN_TEAM),
+                .block(default_block().border_style(UiStyle::OWN_TEAM)),
                 split[0],
             );
             return Ok(());
@@ -796,9 +754,7 @@ impl MyTeamPanel {
         let right_split =
             Layout::vertical([Constraint::Length(3)].repeat(displayed_challenges)).split(split[1]);
 
-        let hover_text_target = hover_text_target(&frame);
-
-        for (idx, &team_id) in self
+        for (idx, team_id) in self
             .challenge_teams
             .iter()
             .take(displayed_challenges)
@@ -818,15 +774,7 @@ impl MyTeamPanel {
                 }),
             );
 
-            render_challenge_button(
-                world,
-                team,
-                &self.callback_registry,
-                hover_text_target,
-                idx == 0,
-                frame,
-                right_split[idx],
-            )?;
+            render_challenge_button(world, team, idx == 0, frame, right_split[idx])?;
         }
 
         Ok(())
@@ -834,7 +782,7 @@ impl MyTeamPanel {
 
     fn render_recent_games(
         &mut self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
@@ -878,9 +826,9 @@ impl MyTeamPanel {
                 options.push((text, style));
             }
         }
-        let list = selectable_list(options, &self.callback_registry);
+        let list = selectable_list(options);
 
-        frame.render_stateful_widget(
+        frame.render_stateful_hoverable(
             list,
             split[0].inner(Margin {
                 horizontal: 1,
@@ -890,10 +838,10 @@ impl MyTeamPanel {
         );
 
         let game_id = self.recent_games[self.game_index.unwrap()];
-        let summary = if let Ok(current_game) = world.get_game_or_err(game_id) {
+        let summary = if let Ok(current_game) = world.get_game_or_err(&game_id) {
             Paragraph::new(format!(
                 "Location {} - Attendance {}\nCurrently playing: {}",
-                world.get_planet_or_err(current_game.location)?.name,
+                world.get_planet_or_err(&current_game.location)?.name,
                 current_game.attendance,
                 current_game.timer.format(),
             ))
@@ -924,7 +872,7 @@ impl MyTeamPanel {
             let lines = vec![
                 Line::from(format!(
                     "Location {} - Attendance {}",
-                    world.get_planet_or_err(game.location)?.name,
+                    world.get_planet_or_err(&game.location)?.name,
                     game.attendance
                 )),
                 Line::from(format!(
@@ -1085,17 +1033,17 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_shipyard(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_shipyard(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
         self.render_shipyard_upgrades(frame, world, split[0])?;
 
         let team = world.get_own_team()?;
         match team.current_location {
-            TeamLocation::OnPlanet { planet_id } => {
+            TeamLocation::OnPlanet { .. } => {
                 if let Some(upgrade) = &team.spaceship.pending_upgrade {
                     self.render_upgrading_spaceship(frame, world, split[1], upgrade)?
                 } else {
-                    self.render_in_shipyard_spaceship(frame, world, split[1], planet_id)?
+                    self.render_in_shipyard_spaceship(frame, world, split[1])?
                 }
             }
             TeamLocation::Travelling {
@@ -1109,7 +1057,7 @@ impl MyTeamPanel {
                 } else {
                     (0 as Tick).formatted()
                 };
-                self.render_travelling_spaceship(frame, world, split[1], to, countdown)?
+                self.render_travelling_spaceship(frame, world, split[1], &to, countdown)?
             }
             TeamLocation::Exploring {
                 around,
@@ -1122,7 +1070,7 @@ impl MyTeamPanel {
                 } else {
                     (0 as Tick).formatted()
                 };
-                self.render_exploring_spaceship(frame, world, split[1], around, countdown)?
+                self.render_exploring_spaceship(frame, world, split[1], &around, countdown)?
             }
             TeamLocation::OnSpaceAdventure { .. } => {
                 return Err(anyhow!("Team is on a space adventure"))
@@ -1134,7 +1082,7 @@ impl MyTeamPanel {
 
     fn render_shipyard_upgrades(
         &self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
@@ -1157,7 +1105,10 @@ impl MyTeamPanel {
             2 => SpaceshipUpgradeTarget::Storage {
                 component: team.spaceship.storage.next(),
             },
-            3 => SpaceshipUpgradeTarget::Repairs {
+            3 => SpaceshipUpgradeTarget::Shooter {
+                component: team.spaceship.shooter.next(),
+            },
+            4 => SpaceshipUpgradeTarget::Repairs {
                 amount: team.spaceship.durability() - team.spaceship.current_durability(),
             },
             _ => unreachable!(),
@@ -1167,7 +1118,8 @@ impl MyTeamPanel {
             0 => team.spaceship.hull.can_be_upgraded(),
             1 => team.spaceship.engine.can_be_upgraded(),
             2 => team.spaceship.storage.can_be_upgraded(),
-            3 => team.spaceship.can_be_repaired(),
+            3 => team.spaceship.shooter.can_be_upgraded(),
+            4 => team.spaceship.can_be_repaired(),
             _ => unreachable!(),
         };
 
@@ -1184,9 +1136,9 @@ impl MyTeamPanel {
             })
             .collect_vec();
 
-        let list = selectable_list(options, &self.callback_registry);
+        let list = selectable_list(options);
 
-        frame.render_stateful_widget(
+        frame.render_stateful_hoverable(
             list,
             split[0].inner(Margin {
                 horizontal: 1,
@@ -1199,7 +1151,8 @@ impl MyTeamPanel {
             0 => team.spaceship.hull.to_string(),
             1 => team.spaceship.engine.to_string(),
             2 => team.spaceship.storage.to_string(),
-            3 => {
+            3 => team.spaceship.shooter.to_string(),
+            4 => {
                 format!("Repairs {}", team.spaceship.current_durability())
             }
             _ => unreachable!(),
@@ -1209,7 +1162,8 @@ impl MyTeamPanel {
             0 => team.spaceship.hull.next().to_string(),
             1 => team.spaceship.engine.next().to_string(),
             2 => team.spaceship.storage.next().to_string(),
-            3 => team.spaceship.durability().to_string(),
+            3 => team.spaceship.shooter.next().to_string(),
+            4 => team.spaceship.durability().to_string(),
             _ => unreachable!(),
         };
 
@@ -1224,7 +1178,7 @@ impl MyTeamPanel {
                 if can_be_upgraded {
                     format!("{} -> {}", current, next)
                 } else {
-                    if self.spaceship_upgrade_index == 3 {
+                    if self.spaceship_upgrade_index == SpaceshipUpgradeTarget::MAX_INDEX - 1 {
                         "Fully repaired".to_string()
                     } else {
                         "Fully upgraded".to_string()
@@ -1237,7 +1191,8 @@ impl MyTeamPanel {
             0 => "Upgrade Hull",
             1 => "Upgrade Engine",
             2 => "Upgrade Storage",
-            3 => "Repair",
+            3 => "Upgrade Shooter",
+            4 => "Repair",
             _ => unreachable!(),
         };
 
@@ -1260,7 +1215,7 @@ impl MyTeamPanel {
 
                 lines.push(Line::from(vec![
                     Span::styled(format!("  {:<7} ", resource.to_string()), resource.style()),
-                    Span::styled(format!("{}/{}", have, amount), style),
+                    Span::styled(format!("{}/{}", amount, have,), style),
                 ]));
             }
         }
@@ -1270,14 +1225,24 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_asteroids(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_asteroids(
+        &mut self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
         self.render_asteroid_list(frame, world, split[0])?;
         self.render_selected_asteroid(frame, world, split[1])?;
         Ok(())
     }
 
-    fn render_asteroid_list(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_asteroid_list(
+        &self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         frame.render_widget(default_block().title("Asteroids "), area);
         let team = world.get_own_team()?;
 
@@ -1303,9 +1268,9 @@ impl MyTeamPanel {
         let options = self
             .asteroid_ids
             .iter()
-            .filter(|&&asteroid_id| world.get_planet_or_err(asteroid_id).is_ok())
+            .filter(|&asteroid_id| world.get_planet_or_err(asteroid_id).is_ok())
             .map(|&asteroid_id| {
-                let asteroid = world.get_planet_or_err(asteroid_id).unwrap();
+                let asteroid = world.get_planet_or_err(&asteroid_id).unwrap();
                 let style = match team.current_location {
                     TeamLocation::OnPlanet { planet_id } => {
                         if planet_id == asteroid_id {
@@ -1320,9 +1285,9 @@ impl MyTeamPanel {
             })
             .collect_vec();
 
-        let list = selectable_list(options, &self.callback_registry);
+        let list = selectable_list(options);
 
-        frame.render_stateful_widget(
+        frame.render_stateful_hoverable(
             list,
             split[0].inner(Margin {
                 horizontal: 1,
@@ -1335,8 +1300,8 @@ impl MyTeamPanel {
     }
 
     fn render_selected_asteroid(
-        &self,
-        frame: &mut Frame,
+        &mut self,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
@@ -1346,7 +1311,7 @@ impl MyTeamPanel {
         }
 
         let asteroid =
-            world.get_planet_or_err(self.asteroid_ids[self.asteroid_index.unwrap_or_default()])?;
+            world.get_planet_or_err(&self.asteroid_ids[self.asteroid_index.unwrap_or_default()])?;
 
         frame.render_widget(default_block().title(format!("{} ", asteroid.name)), area);
 
@@ -1359,8 +1324,6 @@ impl MyTeamPanel {
 
         let img_lines = self
             .gif_map
-            .lock()
-            .unwrap()
             .planet_zoom_out_frame_lines(asteroid, 0, world)?;
         frame.render_widget(
             Paragraph::new(img_lines).centered(),
@@ -1395,14 +1358,18 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_player_buttons(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_player_buttons(
+        &self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         let team = world.get_own_team()?;
         if self.player_index.is_none() {
             return Ok(());
         }
         let player_id = self.players[self.player_index.unwrap()];
-        let player = world.get_player_or_err(player_id)?;
-        let hover_text_target = hover_text_target(frame);
+        let player = world.get_player_or_err(&player_id)?;
         let button_splits = Layout::horizontal([
             Constraint::Length(11),
             Constraint::Length(11),
@@ -1415,101 +1382,96 @@ impl MyTeamPanel {
             vertical: 0,
             horizontal: 1,
         }));
-        let can_set_as_captain = team.can_set_crew_role(&player, CrewRole::Captain);
+
+        let can_set_crew_role = team.can_set_crew_role(&player);
+
         let mut captain_button = Button::new(
-            "captain".into(),
+            "captain",
             UiCallback::SetCrewRole {
                 player_id,
                 role: CrewRole::Captain,
             },
-            Arc::clone(&self.callback_registry),
         )
-        .set_hover_text(
-            format!(
-                "Set player to captain role: {} +{}%, {} {}%",
-                TeamBonus::Reputation,
-                TeamBonus::Reputation.as_skill(player)?.percentage(),
-                TeamBonus::TradePrice,
-                TeamBonus::TradePrice.as_skill(player)?.percentage()
-            ),
-            hover_text_target,
-        )
+        .set_hover_text(format!(
+            "Set player to captain role: {} +{}%, {} {}%",
+            TeamBonus::Reputation,
+            TeamBonus::Reputation.as_skill(player)?.percentage(),
+            TeamBonus::TradePrice,
+            TeamBonus::TradePrice.as_skill(player)?.percentage()
+        ))
         .set_hotkey(UiKey::SET_CAPTAIN);
-        if can_set_as_captain.is_err() {
-            captain_button.disable(None);
+        if team.crew_roles.captain == Some(player.id) {
+            captain_button = captain_button
+                .set_hover_text(format!("Remove player from captain role"))
+                .selected();
+        } else if let Err(e) = can_set_crew_role.as_ref() {
+            captain_button.disable(Some(e.to_string()));
         }
-        frame.render_widget(captain_button, button_splits[0]);
-
-        let can_set_as_pilot = team.can_set_crew_role(&player, CrewRole::Pilot);
+        frame.render_hoverable(captain_button, button_splits[0]);
 
         let mut pilot_button = Button::new(
-            "pilot".into(),
+            "pilot",
             UiCallback::SetCrewRole {
                 player_id,
                 role: CrewRole::Pilot,
             },
-            Arc::clone(&self.callback_registry),
         )
-        .set_hover_text(
-            format!(
-                "Set player to pilot role: {} +{}%, {} {}%",
-                TeamBonus::SpaceshipSpeed,
-                TeamBonus::SpaceshipSpeed.as_skill(player)?.percentage(),
-                TeamBonus::Exploration,
-                TeamBonus::Exploration.as_skill(player)?.percentage()
-            ),
-            hover_text_target,
-        )
+        .set_hover_text(format!(
+            "Set player to pilot role: {} +{}%, {} {}%",
+            TeamBonus::SpaceshipSpeed,
+            TeamBonus::SpaceshipSpeed.as_skill(player)?.percentage(),
+            TeamBonus::Exploration,
+            TeamBonus::Exploration.as_skill(player)?.percentage()
+        ))
         .set_hotkey(UiKey::SET_PILOT);
-        if can_set_as_pilot.is_err() {
-            pilot_button.disable(None);
+        if team.crew_roles.pilot == Some(player.id) {
+            pilot_button = pilot_button
+                .set_hover_text(format!("Remove player from pilot role"))
+                .selected();
+        } else if let Err(e) = can_set_crew_role.as_ref() {
+            pilot_button.disable(Some(e.to_string()));
         }
-        frame.render_widget(pilot_button, button_splits[1]);
-
-        let can_set_as_doctor = team.can_set_crew_role(&player, CrewRole::Doctor);
+        frame.render_hoverable(pilot_button, button_splits[1]);
 
         let mut doctor_button = Button::new(
-            "doctor".into(),
+            "doctor",
             UiCallback::SetCrewRole {
                 player_id,
                 role: CrewRole::Doctor,
             },
-            Arc::clone(&self.callback_registry),
         )
-        .set_hover_text(
-            format!(
-                "Set player to doctor role: {} +{}%, {} {}%",
-                TeamBonus::TirednessRecovery,
-                TeamBonus::TirednessRecovery.as_skill(player)?.percentage(),
-                TeamBonus::Training,
-                TeamBonus::Training.as_skill(player)?.percentage()
-            ),
-            hover_text_target,
-        )
+        .set_hover_text(format!(
+            "Set player to doctor role: {} +{}%, {} {}%",
+            TeamBonus::TirednessRecovery,
+            TeamBonus::TirednessRecovery.as_skill(player)?.percentage(),
+            TeamBonus::Training,
+            TeamBonus::Training.as_skill(player)?.percentage()
+        ))
         .set_hotkey(UiKey::SET_DOCTOR);
-        if can_set_as_doctor.is_err() {
-            doctor_button.disable(None);
+        if team.crew_roles.doctor == Some(player.id) {
+            doctor_button = doctor_button
+                .set_hover_text(format!("Remove player from doctor role"))
+                .selected();
+        } else if let Err(e) = can_set_crew_role.as_ref() {
+            doctor_button.disable(Some(e.to_string()));
         }
-        frame.render_widget(doctor_button, button_splits[2]);
+        frame.render_hoverable(doctor_button, button_splits[2]);
 
         let can_release = team.can_release_player(&player);
         let mut release_button = Button::new(
-            format!("Fire {}", player.info.shortened_name()).into(),
+            format!("Fire {}", player.info.shortened_name()),
             UiCallback::PromptReleasePlayer { player_id },
-            Arc::clone(&self.callback_registry),
         )
-        .set_hover_text("Fire pirate from the crew!".into(), hover_text_target)
+        .set_hover_text("Fire pirate from the crew!")
         .set_hotkey(UiKey::FIRE);
         if can_release.is_err() {
             release_button.disable(Some(format!("{}", can_release.unwrap_err().to_string())));
         }
 
-        frame.render_widget(release_button, button_splits[3]);
+        frame.render_hoverable(release_button, button_splits[3]);
 
-        if let Ok(drink_button) =
-            drink_button(world, player_id, &self.callback_registry, hover_text_target)
-        {
-            frame.render_widget(drink_button, button_splits[4]);
+        if let Ok(drink_button) = drink_button(world, &player_id) {
+            frame.render_hoverable(drink_button, button_splits[4]);
         }
 
         Ok(())
@@ -1537,7 +1499,7 @@ impl MyTeamPanel {
         let rows = self
             .players
             .iter()
-            .map(|&id| {
+            .map(|id| {
                 let player = world.get_player(id).unwrap();
                 let skills = player.current_skill_array();
 
@@ -1551,7 +1513,7 @@ impl MyTeamPanel {
                             "".to_string()
                         }
                     ),
-                    None => "Free agent".to_string(),
+                    None => unreachable!("Player in MyTeam should have a position."),
                 };
                 let best_role = Position::best(skills);
                 let overall = player.average_skill().stars();
@@ -1631,11 +1593,9 @@ impl MyTeamPanel {
             })
             .collect::<AppResult<Vec<ClickableRow>>>();
 
-        let table = ClickableTable::new(rows?, Arc::clone(&self.callback_registry))
+        let table = ClickableTable::new(rows?)
             .header(header)
-            .hovering_style(UiStyle::HIGHLIGHT)
-            .highlight_style(UiStyle::SELECTED)
-            ._column_spacing(0)
+            .column_spacing(0)
             .widths(&[
                 Constraint::Min(MAX_NAME_LENGTH as u16 + 4),
                 Constraint::Length(9),
@@ -1650,19 +1610,22 @@ impl MyTeamPanel {
         Ok(table)
     }
 
-    fn render_players_top(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
-        let hover_text_target = hover_text_target(frame);
+    fn render_players_top(
+        &mut self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         let team = world.get_own_team()?;
         let top_split =
             Layout::horizontal([Constraint::Min(10), Constraint::Length(60)]).split(area);
 
         let table = self.build_players_table(world, top_split[0].width)?;
-
-        frame.render_stateful_widget(
+        frame.render_stateful_hoverable(
             table.block(default_block().title(format!(
                 "{} {} ↓/↑",
                 team.name.clone(),
-                world.team_rating(team.id).unwrap_or_default().stars()
+                world.team_rating(&team.id).unwrap_or_default().stars()
             ))),
             top_split[0],
             &mut ClickableTableState::default().with_selected(self.player_index),
@@ -1674,13 +1637,12 @@ impl MyTeamPanel {
         let player_id = self.players[self.player_index.unwrap()];
 
         let player = world
-            .get_player(player_id)
+            .get_player(&player_id)
             .ok_or(anyhow!("Player {:?} not found", player_id))?;
 
         render_player_description(
             player,
-            &self.gif_map,
-            &self.callback_registry,
+            &mut self.gif_map,
             self.tick,
             frame,
             world,
@@ -1715,37 +1677,30 @@ impl MyTeamPanel {
                 let position = idx as Position;
                 let rect = position_button_splits[idx];
                 let mut button = Button::new(
-                    format!("{}:{:<2}", (idx + 1), position.as_str()).into(),
+                    format!("{}:{:<2}", (idx + 1), position.as_str()),
                     UiCallback::SwapPlayerPositions {
                         player_id,
                         position: idx,
                     },
-                    Arc::clone(&self.callback_registry),
                 )
-                .set_hover_text(
-                    format!("Set player initial position to {}.", position.as_str()),
-                    hover_text_target,
-                )
+                .set_hover_text(format!(
+                    "Set player initial position to {}.",
+                    position.as_str()
+                ))
                 .set_hotkey(UiKey::set_player_position(idx as Position));
 
                 let position = team.player_ids.iter().position(|id| *id == player.id);
                 if position.is_some() && position.unwrap() == idx {
-                    button.disable(None);
+                    button.select();
                 }
-                frame.render_widget(button, rect);
+                frame.render_hoverable(button, rect);
             }
 
-            let auto_assign_button = Button::new(
-                "Auto-assign positions".into(),
-                UiCallback::AssignBestTeamPositions,
-                Arc::clone(&self.callback_registry),
-            )
-            .set_hover_text(
-                "Auto-assign players' initial position.".into(),
-                hover_text_target,
-            )
-            .set_hotkey(UiKey::AUTO_ASSIGN);
-            frame.render_widget(auto_assign_button, position_button_splits[6]);
+            let auto_assign_button =
+                Button::new("Auto-assign positions", UiCallback::AssignBestTeamPositions)
+                    .set_hover_text("Auto-assign players' initial position.")
+                    .set_hotkey(UiKey::AUTO_ASSIGN);
+            frame.render_hoverable(auto_assign_button, position_button_splits[6]);
             self.render_player_buttons(frame, world, table_bottom[2])?;
         }
 
@@ -1753,14 +1708,12 @@ impl MyTeamPanel {
     }
 
     fn render_on_planet_spaceship(
-        &self,
-        frame: &mut Frame,
+        &mut self,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
-        _planet_id: PlanetId,
     ) -> AppResult<()> {
         let team = world.get_own_team()?;
-        let hover_text_target = hover_text_target(&frame);
 
         let split = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(
             area.inner(Margin {
@@ -1768,26 +1721,22 @@ impl MyTeamPanel {
                 horizontal: 1,
             }),
         );
-        render_spaceship_description(&team, &self.gif_map, self.tick, world, frame, area);
+        render_spaceship_description(&team, &mut self.gif_map, self.tick, world, frame, area);
 
         let explore_split =
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(split[1]);
-        if let Ok(explore_button) =
-            space_adventure_button(world, team, &self.callback_registry, hover_text_target)
-        {
-            frame.render_widget(explore_button, explore_split[0]);
+        if let Ok(explore_button) = space_adventure_button(world, team) {
+            frame.render_hoverable(explore_button, explore_split[0]);
         }
-        if let Ok(explore_button) =
-            explore_button(world, team, &self.callback_registry, hover_text_target)
-        {
-            frame.render_widget(explore_button, explore_split[1]);
+        if let Ok(explore_button) = explore_button(world, team) {
+            frame.render_hoverable(explore_button, explore_split[1]);
         }
         Ok(())
     }
 
     fn render_upgrading_spaceship(
-        &self,
-        frame: &mut Frame,
+        &mut self,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
         upgrade: &SpaceshipUpgrade,
@@ -1799,8 +1748,15 @@ impl MyTeamPanel {
         } else {
             (0 as Tick).formatted()
         };
-
-        render_spaceship_upgrade(&team, &upgrade, &self.gif_map, self.tick, frame, area);
+        render_spaceship_upgrade(
+            &team,
+            &upgrade,
+            true,
+            &mut self.gif_map,
+            self.tick,
+            frame,
+            area,
+        );
 
         frame.render_widget(
             default_block().title(format!("{} - {}", upgrade.description(), countdown)),
@@ -1811,14 +1767,12 @@ impl MyTeamPanel {
     }
 
     fn render_in_shipyard_spaceship(
-        &self,
-        frame: &mut Frame,
+        &mut self,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
-        _planet_id: PlanetId,
     ) -> AppResult<()> {
         let team = world.get_own_team()?;
-        let hover_text_target = hover_text_target(&frame);
 
         let target = match self.spaceship_upgrade_index {
             0 if team.spaceship.hull.can_be_upgraded() => Some(SpaceshipUpgradeTarget::Hull {
@@ -1832,7 +1786,12 @@ impl MyTeamPanel {
                     component: team.spaceship.storage.next(),
                 })
             }
-            3 if team.spaceship.can_be_repaired() => Some(SpaceshipUpgradeTarget::Repairs {
+            3 if team.spaceship.shooter.can_be_upgraded() => {
+                Some(SpaceshipUpgradeTarget::Shooter {
+                    component: team.spaceship.shooter.next(),
+                })
+            }
+            4 if team.spaceship.can_be_repaired() => Some(SpaceshipUpgradeTarget::Repairs {
                 amount: team.spaceship.durability() - team.spaceship.current_durability(),
             }),
             _ => None,
@@ -1840,40 +1799,44 @@ impl MyTeamPanel {
 
         if let Some(target) = target {
             let upgrade = SpaceshipUpgrade::new(target);
-            render_spaceship_upgrade(&team, &upgrade, &self.gif_map, self.tick, frame, area);
+            render_spaceship_upgrade(
+                &team,
+                &upgrade,
+                false,
+                &mut self.gif_map,
+                self.tick,
+                frame,
+                area,
+            );
             frame.render_widget(default_block().title(upgrade.description()), area);
 
-            if let Ok(upgrade_button) =
-                upgrade_spaceship_button(team, &self.callback_registry, hover_text_target, upgrade)
-            {
+            if let Ok(upgrade_button) = upgrade_spaceship_button(team, upgrade) {
                 let split = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(
                     area.inner(Margin {
                         vertical: 1,
                         horizontal: 1,
                     }),
                 );
-                frame.render_widget(upgrade_button, split[1]);
+                frame.render_hoverable(upgrade_button, split[1]);
             }
         } else {
-            render_spaceship_description(&team, &self.gif_map, self.tick, world, frame, area);
+            render_spaceship_description(&team, &mut self.gif_map, self.tick, world, frame, area);
         }
 
         Ok(())
     }
 
     fn render_travelling_spaceship(
-        &self,
-        frame: &mut Frame,
+        &mut self,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
-        planet_id: PlanetId,
+        planet_id: &PlanetId,
         countdown: String,
     ) -> AppResult<()> {
         let team = world.get_own_team()?;
         if let Ok(mut lines) = self
             .gif_map
-            .lock()
-            .unwrap()
             .travelling_spaceship_lines(&team.spaceship, self.tick)
         {
             let rect = area.inner(Margin {
@@ -1902,18 +1865,16 @@ impl MyTeamPanel {
     }
 
     fn render_exploring_spaceship(
-        &self,
-        frame: &mut Frame,
+        &mut self,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
-        planet_id: PlanetId,
+        planet_id: &PlanetId,
         countdown: String,
     ) -> AppResult<()> {
         let team = world.get_own_team()?;
         if let Ok(mut lines) = self
             .gif_map
-            .lock()
-            .unwrap()
             .exploring_spaceship_lines(&team.spaceship, self.tick)
         {
             let rect = area.inner(Margin {
@@ -1964,8 +1925,8 @@ impl Screen for MyTeamPanel {
         if self.players.len() != own_team.player_ids.len() || world.dirty_ui {
             self.players = own_team.player_ids.clone();
             self.players.sort_by(|a, b| {
-                let a = world.get_player(*a).unwrap();
-                let b = world.get_player(*b).unwrap();
+                let a = world.get_player(a).unwrap();
+                let b = world.get_player(b).unwrap();
                 if a.rating() == b.rating() {
                     b.average_skill()
                         .partial_cmp(&a.average_skill())
@@ -2019,11 +1980,16 @@ impl Screen for MyTeamPanel {
                 games.push(current_game);
             }
 
-            for game in world.past_games.values().sorted_by(|g1, g2| {
-                g2.ended_at
-                    .unwrap_or_default()
-                    .cmp(&g1.ended_at.unwrap_or_default())
-            }) {
+            for game in world
+                .past_games
+                .values()
+                .filter(|g| g.home_team_id == own_team.id || g.away_team_id == own_team.id)
+                .sorted_by(|g1, g2| {
+                    g2.ended_at
+                        .unwrap_or_default()
+                        .cmp(&g1.ended_at.unwrap_or_default())
+                })
+            {
                 games.push(game.id);
             }
             self.recent_games = games;
@@ -2032,19 +1998,19 @@ impl Screen for MyTeamPanel {
                 .teams
                 .keys()
                 .into_iter()
-                .filter(|&&id| {
+                .filter(|&id| {
                     let team = world.get_team_or_err(id).unwrap();
                     team.can_challenge_team(own_team).is_ok()
                 })
                 .cloned()
                 .collect();
             self.challenge_teams.sort_by(|a, b| {
-                let a = world.get_team_or_err(*a).unwrap();
-                let b = world.get_team_or_err(*b).unwrap();
+                let a = world.get_team_or_err(a).unwrap();
+                let b = world.get_team_or_err(b).unwrap();
                 world
-                    .team_rating(b.id)
+                    .team_rating(&b.id)
                     .unwrap_or_default()
-                    .partial_cmp(&world.team_rating(a.id).unwrap_or_default())
+                    .partial_cmp(&world.team_rating(&a.id).unwrap_or_default())
                     .unwrap()
             });
         }
@@ -2064,14 +2030,15 @@ impl Screen for MyTeamPanel {
 
     fn render(
         &mut self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
+
         _debug_view: bool,
     ) -> AppResult<()> {
         let split = Layout::vertical([Constraint::Length(24), Constraint::Min(8)]).split(area);
 
-        if self.callback_registry.lock().unwrap().is_hovering(split[0]) {
+        if frame.is_hovering(split[0]) {
             self.active_list = PanelList::Top;
         } else {
             self.active_list = PanelList::Bottom;

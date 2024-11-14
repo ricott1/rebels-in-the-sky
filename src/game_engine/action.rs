@@ -39,6 +39,7 @@ pub enum ActionSituation {
     AfterOffensiveRebound,
     AfterLongOffensiveRebound,
     AfterDefensiveRebound,
+    AfterSubstitution,
     MissedShot,
     Turnover,
     CloseShot,

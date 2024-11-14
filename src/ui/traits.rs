@@ -1,20 +1,22 @@
 use super::constants::UiStyle;
-use super::ui_callback::UiCallback;
+use super::ui_callback::{CallbackRegistry, UiCallback};
+use super::ui_frame::UiFrame;
 use crate::world::resources::Resource;
 use crate::world::world::World;
 use crate::{types::AppResult, world::skill::Rated};
 use core::fmt::Debug;
+use ratatui::text::Text;
+use ratatui::widgets::{StatefulWidget, Widget};
 use ratatui::{
     prelude::Rect,
     style::{Color, Style},
-    Frame,
 };
 
 pub trait Screen {
     fn update(&mut self, _world: &World) -> AppResult<()>;
     fn render(
         &mut self,
-        _frame: &mut Frame,
+        _frame: &mut UiFrame,
         _world: &World,
         _area: Rect,
         _debug_view: bool,
@@ -119,4 +121,23 @@ impl PercentageRating for f32 {
     fn percentage(&self) -> u8 {
         (5.0 * self) as u8
     }
+}
+
+pub trait HoverableWidget: Widget {
+    fn layer(&self) -> usize;
+    //FIXME: we should split this trait into a Clickable trait.
+    fn before_rendering(&mut self, area: Rect, callback_registry: &mut CallbackRegistry);
+    fn hover_text(&self) -> Text<'_>;
+}
+
+pub trait HoverableStatefulWidget: StatefulWidget {
+    fn layer(&self) -> usize;
+    //FIXME: we should split this trait into a Clickable trait.
+    fn before_rendering(
+        &mut self,
+        area: Rect,
+        callback_registry: &mut CallbackRegistry,
+        state: &mut Self::State,
+    );
+    fn hover_text(&self) -> Text<'_>;
 }

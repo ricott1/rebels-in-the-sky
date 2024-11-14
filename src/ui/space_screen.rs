@@ -1,9 +1,10 @@
 use super::constants::BARS_LENGTH;
+use super::traits::Screen;
 use super::ui_callback::UiCallback;
+use super::ui_frame::UiFrame;
 use super::utils::{big_text, img_to_lines};
 use super::widgets::{get_charge_spans, get_durability_spans, get_fuel_spans, get_storage_spans};
-use super::{traits::Screen, ui_callback::CallbackRegistry};
-use crate::space_adventure::{PlayerControlled, ShooterState};
+use crate::space_adventure::{ControllableSpaceship, ShooterState};
 use crate::types::AppResult;
 use crate::ui::constants::UiKey;
 use crate::world::world::World;
@@ -11,15 +12,14 @@ use core::fmt::Debug;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::text::Line;
 use ratatui::widgets::Clear;
-use ratatui::{prelude::Rect, widgets::Paragraph, Frame};
-use std::sync::{Arc, Mutex};
+use ratatui::{prelude::Rect, widgets::Paragraph};
 
 const CONTROLS: [&'static str; 5] = [
-    "      ╔═════╗                                                                   ",
-    "      ║  ↑  ║                                                                   ",
-    "╔═════╬═════╬═════╗   ╔═════╗            ╔═════╗            ╔═════╗             ",
-    "║  ←  ║  ↓  ║  →  ║   ║  a  ║ autofire   ║  s  ║ shoot      ║  b  ║ back to base",
-    "╚═════╩═════╩═════╝   ╚═════╝            ╚═════╝            ╚═════╝             ",
+    "      ╔═════╗         ╔═════╗            ╔═════╗                     ",
+    "      ║  ↑  ║         ║  a  ║ autofire   ║  s  ║ release scraps      ",
+    "╔═════╬═════╬═════╗   ╚═════╝╔═════╗     ╚═════╝╔═════╗              ",
+    "║  ←  ║  ↓  ║  →  ║          ║  z  ║ shoot      ║  x  ║ return home  ",
+    "╚═════╩═════╩═════╝          ╚═════╝            ╚═════╝              ",
 ];
 
 #[derive(Debug, Default)]
@@ -27,14 +27,12 @@ pub struct SpaceScreen {
     tick: usize,
     entity_count: usize,
     controls: Paragraph<'static>,
-    _callback_registry: Arc<Mutex<CallbackRegistry>>,
 }
 
 impl SpaceScreen {
-    pub fn new(_callback_registry: Arc<Mutex<CallbackRegistry>>) -> Self {
+    pub fn new() -> Self {
         Self {
             controls: big_text(&CONTROLS).left_aligned(),
-            _callback_registry,
             ..Default::default()
         }
     }
@@ -53,7 +51,7 @@ impl Screen for SpaceScreen {
 
     fn render(
         &mut self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
         debug_view: bool,
@@ -65,10 +63,21 @@ impl Screen for SpaceScreen {
             return Ok(());
         };
 
-        let mut space_img_lines = img_to_lines(&space_adventure.image(debug_view)?);
-        space_img_lines.truncate(split[0].height as usize);
+        match space_adventure.image(
+            split[0].width as u32,
+            split[0].height as u32 * 2,
+            debug_view,
+        ) {
+            Ok(img) => {
+                let mut space_img_lines = img_to_lines(&img);
+                space_img_lines.truncate(split[0].height as usize);
+                frame.render_widget(Paragraph::new(space_img_lines), split[0]);
+            }
 
-        frame.render_widget(Paragraph::new(space_img_lines).centered(), split[0]);
+            Err(e) => {
+                frame.render_widget(Paragraph::new(e.to_string()).centered(), split[0]);
+            }
+        }
 
         let info_split = Layout::horizontal([
             Constraint::Ratio(1, 4),
@@ -81,9 +90,9 @@ impl Screen for SpaceScreen {
         if let Some(player) = space_adventure.get_player() {
             let bars_length = (area.width as usize / 4 - 20).min(BARS_LENGTH);
 
-            let description: &dyn PlayerControlled = player
+            let description: &dyn ControllableSpaceship = player
                 .as_trait_ref()
-                .expect("Player should implement PlayerControlled.");
+                .expect("Player should implement ControllableSpaceship.");
 
             frame.render_widget(
                 Line::from(get_durability_spans(
@@ -127,7 +136,7 @@ impl Screen for SpaceScreen {
                 info_split[3],
             );
         }
-        if space_adventure.is_starting() {
+        if space_adventure.is_starting() || debug_view {
             let v_split =
                 Layout::vertical([Constraint::Min(0), Constraint::Length(5)]).split(split[0]);
             frame.render_widget(Clear, v_split[1]);
@@ -147,9 +156,10 @@ impl Screen for SpaceScreen {
             UiKey::SPACE_MOVE_RIGHT => Some(UiCallback::SpaceMovePlayerRight),
             UiKey::SPACE_MOVE_DOWN => Some(UiCallback::SpaceMovePlayerDown),
             UiKey::SPACE_MOVE_UP => Some(UiCallback::SpaceMovePlayerUp),
-            UiKey::SPACE_MAIN => Some(UiCallback::SpaceMainButton),
-            UiKey::SPACE_SECOND => Some(UiCallback::SpaceSecondButton),
+            UiKey::SPACE_AUTOFIRE => Some(UiCallback::SpaceToggleAutofire),
+            UiKey::SPACE_SHOOT => Some(UiCallback::SpaceShoot),
             UiKey::SPACE_BACK_TO_BASE => Some(UiCallback::StopSpaceAdventure),
+            UiKey::SPACE_RELEASE_SCRAPS => Some(UiCallback::SpaceReleaseScraps),
             _ => None,
         };
     }

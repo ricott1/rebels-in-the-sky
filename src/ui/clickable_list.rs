@@ -1,4 +1,8 @@
-use super::ui_callback::{CallbackRegistry, UiCallback};
+use super::{
+    constants::UiStyle,
+    traits::HoverableStatefulWidget,
+    ui_callback::{CallbackRegistry, UiCallback},
+};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -7,13 +11,13 @@ use ratatui::{
     text::Text,
     widgets::{Block, HighlightSpacing, ListDirection, StatefulWidget, Widget},
 };
-use std::{sync::Arc, sync::Mutex};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
 pub struct ClickableListState {
     offset: usize,
     selected: Option<usize>,
+    hovered: Rect,
 }
 
 impl ClickableListState {
@@ -82,15 +86,14 @@ impl<'a> ClickableListItem<'a> {
 pub struct ClickableList<'a> {
     block: Option<Block<'a>>,
     items: Vec<ClickableListItem<'a>>,
-    callback_registry: Arc<Mutex<CallbackRegistry>>,
     /// Style used as a base style for the widget
     style: Style,
     /// List display direction
     direction: ListDirection,
     /// Style used to render selected item
-    highlight_style: Style,
+    select_style: Style,
     // Style used to render hovered item
-    hovering_style: Style,
+    hover_style: Style,
     /// Symbol in front of the selected item (Shift all items to the right)
     highlight_symbol: Option<&'a str>,
     /// Whether to repeat the highlight symbol for each line of the selected item
@@ -102,7 +105,7 @@ pub struct ClickableList<'a> {
 }
 
 impl<'a> ClickableList<'a> {
-    pub fn new<T>(items: T, callback_registry: Arc<Mutex<CallbackRegistry>>) -> ClickableList<'a>
+    pub fn new<T>(items: T) -> ClickableList<'a>
     where
         T: Into<Vec<ClickableListItem<'a>>>,
     {
@@ -110,8 +113,9 @@ impl<'a> ClickableList<'a> {
             block: None,
             style: Style::default(),
             items: items.into(),
-            callback_registry,
             direction: ListDirection::default(),
+            select_style: UiStyle::SELECTED,
+            hover_style: UiStyle::HIGHLIGHT,
             ..Self::default()
         }
     }
@@ -131,13 +135,13 @@ impl<'a> ClickableList<'a> {
         self
     }
 
-    pub fn highlight_style(mut self, style: Style) -> ClickableList<'a> {
-        self.highlight_style = style;
+    pub const fn set_select_style(mut self, style: Style) -> ClickableList<'a> {
+        self.select_style = style;
         self
     }
 
-    pub fn hovering_style(mut self, style: Style) -> ClickableList<'a> {
-        self.hovering_style = style;
+    pub const fn set_hover_style(mut self, style: Style) -> Self {
+        self.hover_style = style;
         self
     }
 
@@ -230,26 +234,6 @@ impl StatefulWidget for ClickableList<'_> {
             state.select(Some(self.items.len().saturating_sub(1)));
         }
 
-        if self.callback_registry.lock().unwrap().is_hovering(area) {
-            self.callback_registry
-                .lock()
-                .unwrap()
-                .register_mouse_callback(
-                    crossterm::event::MouseEventKind::ScrollDown,
-                    None,
-                    UiCallback::NextPanelIndex,
-                );
-
-            self.callback_registry
-                .lock()
-                .unwrap()
-                .register_mouse_callback(
-                    crossterm::event::MouseEventKind::ScrollUp,
-                    None,
-                    UiCallback::PreviousPanelIndex,
-                );
-        }
-
         let list_height = list_area.height as usize;
 
         let (first_visible_index, last_visible_index) =
@@ -265,7 +249,6 @@ impl StatefulWidget for ClickableList<'_> {
         let mut current_height = 0;
         let selection_spacing = state.selected.is_some();
 
-        let mut selected_element: Option<(Rect, usize)> = None;
         for (i, item) in self
             .items
             .iter()
@@ -325,25 +308,13 @@ impl StatefulWidget for ClickableList<'_> {
                     );
                 }
             }
-            if self.callback_registry.lock().unwrap().is_hovering(row_area) {
-                selected_element = Some((row_area, i));
-                buf.set_style(row_area, self.hovering_style);
+            if state.hovered == row_area {
+                buf.set_style(row_area, self.hover_style);
             }
 
             if is_selected {
-                buf.set_style(row_area, self.highlight_style);
+                buf.set_style(row_area, self.select_style);
             }
-        }
-
-        if let Some((row_area, index)) = selected_element {
-            self.callback_registry
-                .lock()
-                .unwrap()
-                .register_mouse_callback(
-                    crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
-                    Some(row_area),
-                    UiCallback::SetPanelIndex { index },
-                );
         }
     }
 }
@@ -364,5 +335,90 @@ impl<'a> Styled for ClickableList<'a> {
 
     fn set_style<S: Into<Style>>(self, style: S) -> Self::Item {
         self.style(style.into())
+    }
+}
+
+impl HoverableStatefulWidget for ClickableList<'_> {
+    fn layer(&self) -> usize {
+        0
+    }
+
+    fn hover_text(&self) -> Text<'_> {
+        "".into()
+    }
+
+    fn before_rendering(
+        &mut self,
+        area: Rect,
+        callback_registry: &mut CallbackRegistry,
+        state: &mut Self::State,
+    ) {
+        let list_area = self.block.inner_if_some(area);
+
+        if list_area.is_empty() {
+            return;
+        }
+
+        if callback_registry.is_hovering(area) {
+            callback_registry.register_mouse_callback(
+                crossterm::event::MouseEventKind::ScrollDown,
+                None,
+                UiCallback::NextPanelIndex,
+            );
+
+            callback_registry.register_mouse_callback(
+                crossterm::event::MouseEventKind::ScrollUp,
+                None,
+                UiCallback::PreviousPanelIndex,
+            );
+        }
+
+        let list_height = list_area.height as usize;
+
+        let (first_visible_index, last_visible_index) =
+            self.get_items_bounds(state.selected, state.offset, list_height);
+
+        // Important: this changes the state's offset to be the beginning of the now viewable items
+        state.offset = first_visible_index;
+
+        let mut current_height = 0;
+
+        let mut selected_element: Option<(Rect, usize)> = None;
+        for (i, item) in self
+            .items
+            .iter()
+            .enumerate()
+            .skip(state.offset)
+            .take(last_visible_index - first_visible_index)
+        {
+            let (x, y) = if self.direction == ListDirection::BottomToTop {
+                current_height += item.height() as u16;
+                (list_area.left(), list_area.bottom() - current_height)
+            } else {
+                let pos = (list_area.left(), list_area.top() + current_height);
+                current_height += item.height() as u16;
+                pos
+            };
+
+            let row_area = Rect {
+                x,
+                y,
+                width: list_area.width,
+                height: item.height() as u16,
+            };
+
+            if callback_registry.is_hovering(row_area) {
+                selected_element = Some((row_area, i));
+                state.hovered = row_area;
+            }
+        }
+
+        if let Some((row_area, index)) = selected_element {
+            callback_registry.register_mouse_callback(
+                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                Some(row_area),
+                UiCallback::SetPanelIndex { index },
+            );
+        }
     }
 }

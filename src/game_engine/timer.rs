@@ -154,10 +154,6 @@ impl Timer {
             return "Q4 00:00".to_string();
         }
 
-        // if !self.has_started() {
-        //     return "Q1 10:00".to_string();
-        // }
-
         if self.is_break() && self.value == self.period().end() {
             format!("{:2} 10:00", self.period().next(),)
         } else {

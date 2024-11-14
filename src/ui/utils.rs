@@ -7,11 +7,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use image::{Pixel, RgbaImage};
 use libp2p::PeerId;
 use ratatui::{
-    layout::{Constraint, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::Paragraph,
-    Frame,
+    widgets::{block::Title, Paragraph},
 };
 use tui_textarea::{Input, Key, TextArea};
 
@@ -126,16 +124,10 @@ pub fn big_text<'a>(text: &'a [&str]) -> Paragraph<'a> {
     Paragraph::new(lines).centered()
 }
 
-pub fn hover_text_target(frame: &Frame) -> Rect {
-    let split = Layout::vertical([
-        Constraint::Min(0),
-        Constraint::Length(1), //bottom margin
-    ])
-    .split(frame.area());
-    split[1]
-}
-
-pub fn validate_textarea_input(textarea: &mut TextArea<'_>, title: String) -> bool {
+pub fn validate_textarea_input<'a>(
+    textarea: &mut TextArea<'a>,
+    title: impl Into<Title<'a>>,
+) -> bool {
     let text = textarea.lines()[0].trim();
     if text.len() < MIN_NAME_LENGTH {
         textarea.set_style(UiStyle::ERROR);

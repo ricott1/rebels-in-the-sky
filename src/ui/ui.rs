@@ -1,12 +1,12 @@
 use super::button::Button;
-use super::constants::{UiKey, UiStyle};
+use super::constants::UiKey;
 use super::galaxy_panel::GalaxyPanel;
-use super::gif_map::GifMap;
 use super::popup_message::PopupMessage;
 use super::space_screen::SpaceScreen;
 use super::splash_screen::{AudioPlayerState, SplashScreen};
 use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallback};
+use super::ui_frame::UiFrame;
 use super::utils::SwarmPanelEvent;
 use super::widgets::default_block;
 use super::{
@@ -20,14 +20,13 @@ use crate::world::world::World;
 use core::fmt::Debug;
 use itertools::Itertools;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style, Styled};
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Clear, Paragraph};
 use ratatui::{
     layout::{Constraint, Layout},
     Frame,
 };
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use std::vec;
 use strum_macros::Display;
@@ -56,7 +55,7 @@ pub enum UiTab {
 
 #[derive(Debug)]
 pub struct Ui {
-    state: UiState,
+    pub state: UiState,
     ui_tabs: Vec<UiTab>,
     pub tab_index: usize,
     debug_view: bool,
@@ -72,28 +71,19 @@ pub struct Ui {
     pub galaxy_panel: GalaxyPanel,
     popup_messages: Vec<PopupMessage>,
     popup_input: TextArea<'static>,
-    callback_registry: Arc<Mutex<CallbackRegistry>>,
+    inner_registry: CallbackRegistry,
 }
 
 impl Ui {
     pub fn new(store_prefix: &str, disable_network: bool) -> Self {
-        let gif_map = Arc::new(Mutex::new(GifMap::new()));
-        let callback_registry = Arc::new(Mutex::new(CallbackRegistry::new()));
-
-        let splash_screen = SplashScreen::new(
-            store_prefix,
-            Arc::clone(&callback_registry),
-            Arc::clone(&gif_map),
-        );
-        let player_panel =
-            PlayerListPanel::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
-        let team_panel = TeamListPanel::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
-        let game_panel = GamePanel::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
-        let swarm_panel = SwarmPanel::new(Arc::clone(&callback_registry));
-        let my_team_panel = MyTeamPanel::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
-        let new_team_screen =
-            NewTeamScreen::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
-        let galaxy_panel = GalaxyPanel::new(Arc::clone(&callback_registry), Arc::clone(&gif_map));
+        let splash_screen = SplashScreen::new(store_prefix);
+        let player_panel = PlayerListPanel::new();
+        let team_panel = TeamListPanel::new();
+        let game_panel = GamePanel::new();
+        let swarm_panel = SwarmPanel::new();
+        let my_team_panel = MyTeamPanel::new();
+        let new_team_screen = NewTeamScreen::new();
+        let galaxy_panel = GalaxyPanel::new();
 
         let mut ui_tabs = vec![];
 
@@ -107,7 +97,7 @@ impl Ui {
             ui_tabs.push(UiTab::Swarm);
         }
 
-        let space_screen = SpaceScreen::new(Arc::clone(&callback_registry));
+        let space_screen = SpaceScreen::new();
 
         Self {
             state: UiState::default(),
@@ -126,11 +116,42 @@ impl Ui {
             galaxy_panel,
             popup_input: TextArea::default(),
             popup_messages: vec![],
-            callback_registry,
+            inner_registry: CallbackRegistry::new(),
         }
     }
 
     pub fn push_popup(&mut self, popup_message: PopupMessage) {
+        // Avoid pushing twice the same popup
+        if let Some(last_popup) = self.popup_messages.last().as_ref() {
+            match (&popup_message, last_popup) {
+                (
+                    PopupMessage::Error { message, .. },
+                    PopupMessage::Error {
+                        message: l_message, ..
+                    },
+                ) => {
+                    if *message == *l_message {
+                        return;
+                    }
+                }
+
+                (
+                    PopupMessage::Ok { message, .. },
+                    PopupMessage::Ok {
+                        message: l_message, ..
+                    },
+                ) => {
+                    if *message == *l_message {
+                        return;
+                    }
+                }
+
+                (PopupMessage::PromptQuit { .. }, PopupMessage::PromptQuit { .. }) => return,
+
+                _ => {}
+            }
+        }
+
         self.popup_messages.push(popup_message);
         if self.popup_messages.len() >= MAX_POPUP_MESSAGES {
             for index in 0..self.popup_messages.len() {
@@ -238,10 +259,7 @@ impl Ui {
                     return Some(callback);
                 }
 
-                self.callback_registry
-                    .lock()
-                    .unwrap()
-                    .handle_keyboard_event(&key_event.code)
+                self.inner_registry.handle_keyboard_event(&key_event.code)
             }
         }
     }
@@ -250,14 +268,9 @@ impl Ui {
         &mut self,
         mouse_event: crossterm::event::MouseEvent,
     ) -> Option<UiCallback> {
-        self.callback_registry
-            .lock()
-            .unwrap()
-            .set_hovering(mouse_event);
-        self.callback_registry
-            .lock()
-            .unwrap()
-            .handle_mouse_event(&mouse_event)
+        self.inner_registry
+            .set_hovering((mouse_event.column, mouse_event.row));
+        self.inner_registry.handle_mouse_event(&mouse_event)
     }
 
     pub(super) fn next_tab(&mut self) {
@@ -269,7 +282,7 @@ impl Ui {
     }
 
     pub fn update(&mut self, world: &World, audio_player: Option<&MusicPlayer>) -> AppResult<()> {
-        self.callback_registry.lock().unwrap().clear();
+        self.inner_registry.clear();
         match self.state {
             UiState::Splash => {
                 // This is only to get a nice view in the splash screen
@@ -302,30 +315,32 @@ impl Ui {
 
     /// Renders the user interface widgets.
     pub fn render(&mut self, frame: &mut Frame, world: &World, audio_player: Option<&MusicPlayer>) {
-        self.callback_registry.lock().unwrap().clear();
+        let mut ui_frame = UiFrame::new(frame);
+        ui_frame.set_hovering(self.inner_registry.hovering());
         if self.popup_messages.len() > 0 {
-            self.callback_registry.lock().unwrap().set_max_layer(1);
+            ui_frame.set_max_layer(1);
+        } else {
+            ui_frame.set_max_layer(0);
         }
-        let area = frame.area();
+
+        let screen_area = ui_frame.screen_area();
+
         let split = Layout::vertical([
             Constraint::Min(6),    // body
             Constraint::Length(1), // footer
             Constraint::Length(1), // hover text
         ])
-        .split(area);
-
-        // Render footer
-        // We render the footer first because hover text is displayed in the footer (and thus must overwrite it)
-        self.render_footer(frame, world, audio_player, split[1]);
+        .split(screen_area);
 
         // render selected tab
         let render_result = match self.state {
-            UiState::Splash => self
-                .splash_screen
-                .render(frame, world, split[0], self.debug_view),
+            UiState::Splash => {
+                self.splash_screen
+                    .render(&mut ui_frame, world, split[0], self.debug_view)
+            }
             UiState::NewTeam => {
                 self.new_team_screen
-                    .render(frame, world, split[0], self.debug_view)
+                    .render(&mut ui_frame, world, split[0], self.debug_view)
             }
             UiState::Main => {
                 // Render tabs at top
@@ -337,7 +352,7 @@ impl Ui {
 
                 let debug_view = self.debug_view;
                 let active_render = self.get_active_screen_mut().render(
-                    frame,
+                    &mut ui_frame,
                     world,
                     tab_main_split[1],
                     debug_view,
@@ -345,6 +360,9 @@ impl Ui {
 
                 let mut constraints = [Constraint::Length(16)].repeat(self.ui_tabs.len());
                 constraints.push(Constraint::Min(0));
+
+                ui_frame.render_widget(Clear, tab_main_split[0]);
+                ui_frame.render_widget(default_block(), tab_main_split[0]);
                 let tab_split = Layout::horizontal(constraints).split(tab_main_split[0]);
 
                 for (idx, &tab) in self.ui_tabs.iter().enumerate() {
@@ -357,31 +375,31 @@ impl Ui {
                     } else {
                         tab.to_string()
                     };
-                    let mut button = Button::no_box(
-                        tab_name.into(),
-                        UiCallback::SetUiTab {
-                            ui_tab: self.ui_tabs[idx],
-                        },
-                        Arc::clone(&self.callback_registry),
-                    )
-                    .set_hover_style(UiStyle::HIGHLIGHT);
+                    let button = if idx == self.tab_index {
+                        Button::new(
+                            tab_name,
+                            UiCallback::SetUiTab {
+                                ui_tab: self.ui_tabs[idx],
+                            },
+                        )
+                        .selected()
+                    } else {
+                        Button::no_box(
+                            tab_name,
+                            UiCallback::SetUiTab {
+                                ui_tab: self.ui_tabs[idx],
+                            },
+                        )
+                    };
 
-                    if idx == self.tab_index {
-                        button = button
-                            .set_style(UiStyle::SELECTED)
-                            .set_hover_style(UiStyle::SELECTED);
-                    }
-
-                    frame.render_widget(button, tab_split[idx]);
+                    ui_frame.render_hoverable(button, tab_split[idx]);
                 }
-
-                frame.render_widget(default_block(), tab_main_split[0]);
 
                 active_render
             }
             UiState::SpaceAdventure => {
                 self.space_screen
-                    .render(frame, world, split[0], self.debug_view)
+                    .render(&mut ui_frame, world, split[0], self.debug_view)
             }
         };
 
@@ -394,26 +412,27 @@ impl Ui {
             self.swarm_panel.push_log_event(event);
         }
 
-        if let Err(err) = self.render_popup_messages(frame, area) {
+        // Render footer
+        self.render_footer(&mut ui_frame, world, audio_player, split[1]);
+
+        if let Err(err) = self.render_popup_messages(&mut ui_frame, screen_area) {
             let event = SwarmPanelEvent {
                 timestamp: Tick::now(),
                 peer_id: None,
                 text: format!("Popup render error\n{}", err.to_string()),
             };
             self.swarm_panel.push_log_event(event);
+            log::error!("Popup render error\n{}", err.to_string());
         }
         self.last_update = Instant::now();
+
+        self.inner_registry = ui_frame.callback_registry().clone();
     }
 
-    fn render_popup_messages(&mut self, frame: &mut Frame, area: Rect) -> AppResult<()> {
+    fn render_popup_messages(&mut self, frame: &mut UiFrame, area: Rect) -> AppResult<()> {
         // Render popup message
         if self.popup_messages.len() > 0 {
-            self.popup_messages[0].render(
-                frame,
-                area,
-                &mut self.popup_input,
-                &self.callback_registry,
-            )?;
+            self.popup_messages[0].render(frame, area, &mut self.popup_input)?;
         }
         Ok(())
     }
@@ -429,11 +448,12 @@ impl Ui {
 
     fn render_footer(
         &self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         world: &World,
         audio_player: Option<&MusicPlayer>,
         area: Rect,
     ) {
+        frame.render_widget(Clear, area);
         let split = Layout::horizontal([
             Constraint::Min(50),
             Constraint::Length(20),
@@ -459,11 +479,11 @@ impl Ui {
             let world_size = world.serialized_size / 1024;
 
             let mut spans = vec![
-                format!("FPS {:>4} ", fps),
-                format!(" World size {:06} kb ", world_size),
+                format!(" FPS {:>4} ", fps),
+                format!(" World size {:04} kb ", world_size),
                 format!(" Seed {} ", world.seed),
                 format!(
-                    " Screen size {}x{} ",
+                    " Frame size {}x{} ",
                     frame.area().width,
                     frame.area().height
                 ),
@@ -499,7 +519,7 @@ impl Ui {
         );
 
         if let Some(audio_player) = &audio_player {
-            frame.render_widget(
+            frame.render_hoverable(
                 Button::no_box(
                     format!(
                         " {}: Turn radio {} ",
@@ -509,30 +529,26 @@ impl Ui {
                         } else {
                             "on "
                         }
-                    )
-                    .into(),
+                    ),
                     UiCallback::ToggleAudio,
-                    Arc::clone(&self.callback_registry),
                 )
                 .set_hotkey(UiKey::TOGGLE_AUDIO),
                 split[1],
             );
 
-            frame.render_widget(
+            frame.render_hoverable(
                 Button::no_box(
-                    format!(" {} ", UiKey::PREVIOUS_RADIO.to_string(),).into(),
+                    format!(" {} ", UiKey::PREVIOUS_RADIO.to_string()),
                     UiCallback::PreviousRadio,
-                    Arc::clone(&self.callback_registry),
                 )
                 .set_hotkey(UiKey::PREVIOUS_RADIO),
                 split[2],
             );
 
-            frame.render_widget(
+            frame.render_hoverable(
                 Button::no_box(
-                    format!(" {} ", UiKey::NEXT_RADIO.to_string(),).into(),
+                    format!(" {} ", UiKey::NEXT_RADIO.to_string()),
                     UiCallback::NextRadio,
-                    Arc::clone(&self.callback_registry),
                 )
                 .set_hotkey(UiKey::NEXT_RADIO),
                 split[3],

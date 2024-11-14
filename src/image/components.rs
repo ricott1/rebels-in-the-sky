@@ -1,13 +1,40 @@
+use image::RgbaImage;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::EnumIter;
 use strum_macros::Display;
 
-use crate::world::spaceship::{Engine, Hull, Storage};
+use crate::{
+    types::AppResult,
+    world::spaceship::{Engine, Hull, Shooter, Storage},
+};
+
+use super::utils::open_image;
 
 pub trait ImageComponent {
+    fn select_file(&self) -> String;
+    fn select_mask_file(&self) -> String {
+        self.select_file()
+    }
+    fn image(&self) -> AppResult<RgbaImage> {
+        open_image(&self.select_file())
+    }
+
+    fn mask(&self) -> AppResult<RgbaImage> {
+        open_image(&self.select_mask_file())
+    }
+}
+
+pub trait SizedImageComponent {
     fn select_file(&self, size: u8) -> String;
     fn select_mask_file(&self, size: u8) -> String {
         self.select_file(size)
+    }
+    fn image(&self, size: u8) -> AppResult<RgbaImage> {
+        open_image(&self.select_file(size))
+    }
+
+    fn mask(&self, size: u8) -> AppResult<RgbaImage> {
+        open_image(&self.select_mask_file(size))
     }
 }
 
@@ -24,7 +51,7 @@ pub enum BeardImage {
 }
 
 impl ImageComponent for BeardImage {
-    fn select_file(&self, _size: u8) -> String {
+    fn select_file(&self) -> String {
         format!("beard/{}.png", self.to_string().to_lowercase())
     }
 }
@@ -45,7 +72,7 @@ pub enum HairImage {
 }
 
 impl ImageComponent for HairImage {
-    fn select_file(&self, _size: u8) -> String {
+    fn select_file(&self) -> String {
         format!("hair/{}.png", self.to_string().to_lowercase())
     }
 }
@@ -70,11 +97,11 @@ pub enum HeadImage {
 }
 
 impl ImageComponent for HeadImage {
-    fn select_file(&self, _size: u8) -> String {
+    fn select_file(&self) -> String {
         format!("head/{}.png", self.to_string().to_lowercase())
     }
 
-    fn select_mask_file(&self, _size: u8) -> String {
+    fn select_mask_file(&self) -> String {
         format!("head/mask_{}.png", self.to_string().to_lowercase())
     }
 }
@@ -89,7 +116,7 @@ pub enum BodyImage {
     Normal,
 }
 
-impl ImageComponent for BodyImage {
+impl SizedImageComponent for BodyImage {
     fn select_file(&self, size: u8) -> String {
         let name = match self {
             Self::Pupparoll => "pupparoll",
@@ -138,7 +165,7 @@ pub enum LegsImage {
     Normal,
 }
 
-impl ImageComponent for LegsImage {
+impl SizedImageComponent for LegsImage {
     fn select_file(&self, size: u8) -> String {
         let number = match size {
             0 => 0,
@@ -190,7 +217,7 @@ pub enum ShirtImage {
     PirateGald,
 }
 
-impl ImageComponent for ShirtImage {
+impl SizedImageComponent for ShirtImage {
     fn select_file(&self, size: u8) -> String {
         let number = match size {
             x if x <= 2 => 0,
@@ -230,7 +257,7 @@ pub enum ShortsImage {
     Pupparoll,
 }
 
-impl ImageComponent for ShortsImage {
+impl SizedImageComponent for ShortsImage {
     fn select_file(&self, size: u8) -> String {
         if self == &ShortsImage::Pupparoll {
             return "shorts/pupparoll.png".into();
@@ -262,7 +289,7 @@ pub enum ShoesImage {
     Classic,
 }
 
-impl ImageComponent for ShoesImage {
+impl SizedImageComponent for ShoesImage {
     fn select_file(&self, size: u8) -> String {
         let number = match size {
             x if x < 7 => 0,
@@ -290,7 +317,7 @@ pub enum HatImage {
 }
 
 impl ImageComponent for HatImage {
-    fn select_file(&self, _size: u8) -> String {
+    fn select_file(&self) -> String {
         format!("hat/{}.png", self.to_string().to_lowercase())
     }
 }
@@ -302,11 +329,13 @@ pub enum WoodenLegImage {
     Right,
 }
 
-impl ImageComponent for WoodenLegImage {
+impl SizedImageComponent for WoodenLegImage {
     fn select_file(&self, size: u8) -> String {
-        match size {
-            x if x < 7 => "wooden_leg/slim.png".into(),
-            _ => "wooden_leg/large.png".into(),
+        match self {
+            Self::Left | Self::Right => match size {
+                x if x < 7 => "wooden_leg/slim.png".into(),
+                _ => "wooden_leg/large.png".into(),
+            },
         }
     }
 }
@@ -320,10 +349,11 @@ pub enum EyePatchImage {
     RightHigh,
     Central,
     Pupparoll,
+    OctopulpCentral,
 }
 
 impl ImageComponent for EyePatchImage {
-    fn select_file(&self, _size: u8) -> String {
+    fn select_file(&self) -> String {
         match self {
             EyePatchImage::LeftLow => "accessories/eye_patch_left_low.png".into(),
             EyePatchImage::RightLow => "accessories/eye_patch_right_low.png".into(),
@@ -331,6 +361,7 @@ impl ImageComponent for EyePatchImage {
             EyePatchImage::RightHigh => "accessories/eye_patch_right_high.png".into(),
             EyePatchImage::Central => "accessories/eye_patch_central.png".into(),
             EyePatchImage::Pupparoll => "accessories/eye_patch_pupparoll.png".into(),
+            EyePatchImage::OctopulpCentral => "accessories/eye_patch_octopulp_central.png".into(),
         }
     }
 }
@@ -345,7 +376,7 @@ pub enum HookImage {
 }
 
 impl ImageComponent for HookImage {
-    fn select_file(&self, _size: u8) -> String {
+    fn select_file(&self) -> String {
         match self {
             HookImage::Left => "accessories/hook_left.png".into(),
             HookImage::Right => "accessories/hook_right.png".into(),
@@ -356,7 +387,7 @@ impl ImageComponent for HookImage {
 }
 
 impl ImageComponent for Hull {
-    fn select_file(&self, _size: u8) -> String {
+    fn select_file(&self) -> String {
         match self {
             Hull::ShuttleSmall => "hull/shuttle_small.png".into(),
             Hull::ShuttleStandard => "hull/shuttle_standard.png".into(),
@@ -367,7 +398,7 @@ impl ImageComponent for Hull {
         }
     }
 
-    fn select_mask_file(&self, _size: u8) -> String {
+    fn select_mask_file(&self) -> String {
         match self {
             Hull::ShuttleSmall => "hull/mask_shuttle_small.png".into(),
             Hull::ShuttleStandard => "hull/mask_shuttle_standard.png".into(),
@@ -380,7 +411,7 @@ impl ImageComponent for Hull {
 }
 
 impl ImageComponent for Engine {
-    fn select_file(&self, _size: u8) -> String {
+    fn select_file(&self) -> String {
         match self {
             Engine::ShuttleSingle => "engine/shuttle_single.png".into(),
             Engine::ShuttleDouble => "engine/shuttle_double.png".into(),
@@ -394,21 +425,41 @@ impl ImageComponent for Engine {
     }
 }
 
-impl ImageComponent for Storage {
+impl SizedImageComponent for Storage {
+    fn image(&self, size: u8) -> AppResult<RgbaImage> {
+        match self {
+            Self::PincherNone | Self::ShuttleNone | Self::JesterNone => Ok(RgbaImage::new(0, 0)),
+            _ => open_image(&self.select_file(size)),
+        }
+    }
+
+    fn mask(&self, size: u8) -> AppResult<RgbaImage> {
+        match self {
+            Self::PincherNone | Self::ShuttleNone | Self::JesterNone => Ok(RgbaImage::new(0, 0)),
+            _ => open_image(&self.select_mask_file(size)),
+        }
+    }
+
     fn select_file(&self, size: u8) -> String {
         match self {
             Storage::ShuttleSingle => match size {
                 0 => "storage/shuttle_single0.png".into(),
                 1 => "storage/shuttle_single1.png".into(),
-                _ => "storage/shuttle_single2.png".into(),
+                2 => "storage/shuttle_single2.png".into(),
+                _ => unreachable!("No image should be required for this component"),
             },
             Storage::ShuttleDouble => match size {
                 0 => "storage/shuttle_double0.png".into(),
                 1 => "storage/shuttle_double1.png".into(),
-                _ => "storage/shuttle_double2.png".into(),
+                2 => "storage/shuttle_double2.png".into(),
+                _ => unreachable!("No image should be required for this component"),
             },
-            Storage::PincherSingle => "storage/pincher_single.png".into(),
-            _ => panic!("No image should be required for this component"),
+            Storage::PincherSingle => match size {
+                1 => "storage/pincher_single1.png".into(),
+                2 => "storage/pincher_single2.png".into(),
+                _ => unreachable!("No image should be required for this component"),
+            },
+            _ => unreachable!("No image should be required for this component"),
         }
     }
 
@@ -417,15 +468,49 @@ impl ImageComponent for Storage {
             Storage::ShuttleSingle => match size {
                 0 => "storage/mask_shuttle_single0.png".into(),
                 1 => "storage/mask_shuttle_single1.png".into(),
-                _ => "storage/mask_shuttle_single2.png".into(),
+                2 => "storage/mask_shuttle_single2.png".into(),
+                _ => unreachable!("No image should be required for this component"),
             },
             Storage::ShuttleDouble => match size {
                 0 => "storage/mask_shuttle_double0.png".into(),
                 1 => "storage/mask_shuttle_double1.png".into(),
-                _ => "storage/mask_shuttle_double2.png".into(),
+                2 => "storage/mask_shuttle_double2.png".into(),
+                _ => unreachable!("No image should be required for this component"),
             },
-            Storage::PincherSingle => format!("storage/mask_pincher_single.png"),
-            _ => panic!("No image should be required for this component"),
+            Storage::PincherSingle => match size {
+                1 => "storage/mask_pincher_single1.png".into(),
+                2 => "storage/mask_pincher_single2.png".into(),
+                _ => unreachable!("No image should be required for this component"),
+            },
+            _ => unreachable!("No image should be required for this component"),
+        }
+    }
+}
+
+impl SizedImageComponent for Shooter {
+    fn image(&self, size: u8) -> AppResult<RgbaImage> {
+        match self {
+            Self::PincherNone | Self::ShuttleNone | Self::JesterNone => Ok(RgbaImage::new(0, 0)),
+            _ => open_image(&self.select_file(size)),
+        }
+    }
+
+    fn mask(&self, size: u8) -> AppResult<RgbaImage> {
+        match self {
+            Self::PincherNone | Self::ShuttleNone | Self::JesterNone => Ok(RgbaImage::new(0, 0)),
+            _ => open_image(&self.select_mask_file(size)),
+        }
+    }
+
+    fn select_file(&self, size: u8) -> String {
+        match self {
+            Self::ShuttleSingle => format!("shooter/shuttle_single{}.png", size),
+            Self::ShuttleTriple => format!("shooter/shuttle_triple{}.png", size),
+            Self::PincherDouble => format!("shooter/pincher_double{}.png", size),
+            Self::PincherQuadruple => format!("shooter/pincher_quadruple{}.png", size),
+            Self::JesterDouble => "shooter/jester_double.png".into(),
+            Self::JesterQuadruple => "shooter/jester_quadruple.png".into(),
+            _ => unreachable!("No image should be required for this component"),
         }
     }
 }

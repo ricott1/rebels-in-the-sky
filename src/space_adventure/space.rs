@@ -1,5 +1,15 @@
 use super::{
-    asteroid::{AsteroidEntity, AsteroidSize}, constants::{MAX_SCREEN_HEIGHT, MAX_SCREEN_WIDTH}, fragment::FragmentEntity, particle::ParticleEntity, projectile::ProjectileEntity, spaceship::SpaceshipEntity, traits::{resolve_collision_between, Entity}, utils::EntityState, visual_effects::VisualEffect, PlayerControlled, PlayerInput
+    asteroid::{AsteroidEntity, AsteroidSize},
+    collector::CollectorEntity,
+    constants::*,
+    fragment::FragmentEntity,
+    particle::ParticleEntity,
+    projectile::ProjectileEntity,
+    spaceship::SpaceshipEntity,
+    traits::{resolve_collision_between, Entity},
+    utils::EntityState,
+    visual_effects::VisualEffect,
+    ControllableSpaceship, PlayerInput,
 };
 use crate::{
     image::utils::{ExtraImageUtils, TRAVELLING_BACKGROUND},
@@ -9,45 +19,49 @@ use crate::{
 };
 use anyhow::anyhow;
 use glam::Vec2;
+use image::imageops::crop_imm;
 use image::{Rgba, RgbaImage};
 use itertools::Itertools;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use strum::Display;
 use std::{
     collections::HashMap,
     time::{Duration, Instant},
 };
+use strum::Display;
 
-const MAX_LAYER: usize = 5;
-
-#[derive(Default, Debug, Display,Clone, Copy, PartialEq)]
-enum SpaceState {
-    Starting {
-        time: Instant,
-    },
-    #[default]
-    Running,
-    Ending {
-        time: Instant,
-    },
+#[derive(Debug, Display, Clone, Copy, PartialEq)]
+enum SpaceAdventureState {
+    Starting { time: Instant },
+    Running { time: Instant },
+    Ending { time: Instant },
 }
 
-impl SpaceState {
-    pub const STARTING_DURATION:Duration = Duration::from_millis(2500);
-    pub const ENDING_DURATION:Duration = Duration::from_millis(2500);
+impl SpaceAdventureState {
+    pub const STARTING_DURATION: Duration = Duration::from_millis(2500);
+    pub const ENDING_DURATION: Duration = Duration::from_millis(2500);
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug, Display, Clone, Copy, PartialEq)]
+enum AsteroidPlanetState {
+    NotSpawned { asteroid_planet_probability: f64 },
+    Spawned { image_number: usize },
+    Landed { image_number: usize },
+}
+
+#[derive(Debug)]
 pub struct SpaceAdventure {
     id: usize,
-    state: SpaceState,
+    rng: ChaCha8Rng,
+    state: SpaceAdventureState,
     tick: usize,
     background: RgbaImage,
     // Layered entities, to allow to draw/interact on separate layers.
-    entities: [HashMap<usize, Box<dyn Entity>>; MAX_LAYER],
+    entities: Vec<HashMap<usize, Box<dyn Entity>>>,
     id_to_layer: HashMap<usize, usize>,
     player_id: Option<usize>,
+    asteroid_planet_state: AsteroidPlanetState,
+    enemy_ship_spawned: bool,
 }
 
 impl SpaceAdventure {
@@ -62,19 +76,40 @@ impl SpaceAdventure {
         } else {
             entity.image()
         };
-        base.copy_non_trasparent_from(image, x as u32, y as u32)?;
+
+        let cropped_image = if x as u32 + image.width() > base.width()
+            && y as u32 + image.height() > base.height()
+        {
+            &crop_imm(
+                image,
+                0,
+                0,
+                base.width() - x as u32,
+                base.height() - y as u32,
+            )
+            .to_image()
+        } else if x as u32 + image.width() > base.width() {
+            &crop_imm(image, 0, 0, base.width() - x as u32, image.height()).to_image()
+        } else if y as u32 + image.height() > base.height() {
+            &crop_imm(image, 0, 0, image.width(), base.height() - y as u32).to_image()
+        } else {
+            image
+        };
+
+        base.copy_non_trasparent_from(cropped_image, x as u32, y as u32)?;
 
         if debug_view {
-            let red = Rgba([255, 0, 5, 255]);
             let gray = Rgba([105, 105, 105, 255]);
 
             for (point, &is_border) in entity.hit_box().iter() {
                 let g_point = entity.position() + point;
-                base.put_pixel(
-                    g_point.x.max(0).min(MAX_SCREEN_WIDTH as i16) as u32,
-                    g_point.y.max(0).min(MAX_SCREEN_HEIGHT as i16) as u32,
-                    if is_border { red } else { gray },
-                );
+                if is_border {
+                    base.put_pixel(
+                        g_point.x.max(0).min(MAX_ENTITY_POSITION.x as i16) as u32,
+                        g_point.y.max(0).min(MAX_ENTITY_POSITION.y as i16) as u32,
+                        gray,
+                    );
+                }
             }
         }
 
@@ -85,6 +120,7 @@ impl SpaceAdventure {
         let id = self.id.clone();
         let layer = entity.layer().clone();
         entity.set_id(id);
+
         self.entities[layer].insert(entity.id(), entity);
         self.id_to_layer.insert(id, layer);
         self.id += 1;
@@ -93,14 +129,14 @@ impl SpaceAdventure {
 
     pub fn is_starting(&self) -> bool {
         match self.state {
-            SpaceState::Starting { .. } => true,
+            SpaceAdventureState::Starting { .. } => true,
             _ => false,
         }
     }
 
     pub fn is_ending(&self) -> bool {
         match self.state {
-            SpaceState::Ending { .. } => true,
+            SpaceAdventureState::Ending { .. } => true,
             _ => false,
         }
     }
@@ -148,6 +184,13 @@ impl SpaceAdventure {
         }
 
         None
+    }
+
+    pub fn generate_enemy_spaceship(&mut self) -> AppResult<usize> {
+        let collector_id = self.insert_entity(Box::new(CollectorEntity::new()));
+        let enemy_id = self.insert_entity(Box::new(SpaceshipEntity::random_enemy(collector_id)?));
+        self.enemy_ship_spawned = true;
+        Ok(enemy_id)
     }
 
     pub fn generate_asteroid(
@@ -201,29 +244,69 @@ impl SpaceAdventure {
         )))
     }
 
-    pub fn new() -> AppResult<Self> {
+    pub fn asteroid_planet_found(&self) -> Option<usize> {
+        match self.asteroid_planet_state {
+            AsteroidPlanetState::Landed { image_number } => Some(image_number),
+            _ => None,
+        }
+    }
+
+    pub fn new(asteroid_planet_probability: f64) -> AppResult<Self> {
         let bg = TRAVELLING_BACKGROUND.clone();
-        let mut background = RgbaImage::new(bg.width() * 2, bg.height() * 2);
+        let mut background = RgbaImage::new(bg.width() * 2, bg.height() * 3);
         background.copy_non_trasparent_from(&bg, 0, 0)?;
         background.copy_non_trasparent_from(&bg, bg.width(), 0)?;
         background.copy_non_trasparent_from(&bg, 0, bg.height())?;
         background.copy_non_trasparent_from(&bg, bg.width(), bg.height())?;
+        background.copy_non_trasparent_from(&bg, 0, 2 * bg.height())?;
+        background.copy_non_trasparent_from(&bg, bg.width(), 2 * bg.height())?;
+        // Crop background
+        let background = crop_imm(
+            &background,
+            0,
+            0,
+            BACKGROUND_IMAGE_SIZE.x,
+            BACKGROUND_IMAGE_SIZE.y,
+        )
+        .to_image();
+
+        let mut entities = vec![];
+        for _ in 0..MAX_LAYER {
+            entities.push(HashMap::new());
+        }
 
         Ok(Self {
+            id: 0,
+            rng: ChaCha8Rng::from_entropy(),
+            state: SpaceAdventureState::Starting {
+                time: Instant::now(),
+            },
+            tick: 0,
             background,
-            state: SpaceState::Starting { time: Instant::now() },
-            ..Default::default()
+            entities,
+            id_to_layer: HashMap::new(),
+            player_id: None,
+            asteroid_planet_state: AsteroidPlanetState::NotSpawned {
+                asteroid_planet_probability,
+            },
+            enemy_ship_spawned: false,
         })
     }
 
-    pub fn with_spaceship(
+    pub fn with_player(
         mut self,
         spaceship: &Spaceship,
+        team_speed_bonus: f32,
         resources: ResourceMap,
         fuel: u32,
     ) -> AppResult<Self> {
+        let collector_id = self.insert_entity(Box::new(CollectorEntity::new()));
         let id = self.insert_entity(Box::new(SpaceshipEntity::from_spaceship(
-            spaceship, resources, fuel,
+            spaceship,
+            team_speed_bonus,
+            resources,
+            fuel,
+            collector_id,
         )?));
         self.player_id = Some(id);
 
@@ -236,47 +319,75 @@ impl SpaceAdventure {
     }
 
     pub fn handle_player_input(&mut self, input: PlayerInput) -> AppResult<()> {
-        if self.state != SpaceState::Running {
-            return Ok(());
+        match self.state {
+            SpaceAdventureState::Running { .. } => {}
+            _ => return Ok(()),
         }
 
         let player = self.get_player_mut().ok_or(anyhow!("No player set"))?;
-        let player_control: &mut dyn PlayerControlled = player
+        let player_control: &mut dyn ControllableSpaceship = player
             .as_trait_mut()
-            .expect("Player should implement PlayerControlled.");
+            .expect("Player should implement ControllableSpaceship.");
         player_control.handle_player_input(input);
 
         Ok(())
     }
 
     pub fn stop_space_adventure(&mut self) {
-        self.state = SpaceState::Ending {
-            time: Instant::now(),
-        };
+        match self.state {
+            SpaceAdventureState::Ending { .. } => {}
+            _ => {
+                self.state = SpaceAdventureState::Ending {
+                    time: Instant::now(),
+                }
+            }
+        }
+    }
+
+    pub fn land_on_asteroid(&mut self) {
+        match self.asteroid_planet_state {
+            AsteroidPlanetState::NotSpawned { .. } => {
+                unreachable!("Should not be possible to land on unspawned asteroid planet.")
+            }
+            AsteroidPlanetState::Spawned { image_number } => {
+                self.asteroid_planet_state = AsteroidPlanetState::Landed { image_number }
+            }
+            AsteroidPlanetState::Landed { .. } => {}
+        }
+
+        match self.state {
+            SpaceAdventureState::Ending { .. } => {}
+            _ => {
+                self.state = SpaceAdventureState::Ending {
+                    time: Instant::now(),
+                }
+            }
+        }
     }
 
     pub fn update(&mut self, deltatime: f32) -> AppResult<Vec<UiCallback>> {
-
-        match self.state {
-            SpaceState::Starting { time } => {
-                if time.elapsed() >= SpaceState::STARTING_DURATION {
-                    self.state = SpaceState::Running;
+        let time = match self.state {
+            SpaceAdventureState::Starting { time } => {
+                if time.elapsed() >= SpaceAdventureState::STARTING_DURATION {
+                    self.state = SpaceAdventureState::Running {
+                        time: Instant::now(),
+                    };
                     return Ok(vec![]);
                 }
-
+                time
             }
 
-            SpaceState::Running => {
+            SpaceAdventureState::Running { time } => {
                 if let Some(player) = self.get_player() {
-                    let player_control: &dyn PlayerControlled = player
+                    let player_control: &dyn ControllableSpaceship = player
                         .as_trait_ref()
-                        .expect("Player should implement PlayerControlled.");
+                        .expect("Player should implement ControllableSpaceship.");
 
                     if player_control.current_durability() == 0 {
                         self.stop_space_adventure();
 
                         return Ok(vec![
-                        UiCallback::PushUiPopup { popup_message: 
+                        UiCallback::PushUiPopup { popup_message:
                             PopupMessage::Ok{
                                message: "Danger! There's a breach in the hull.\nAll the resources in the stiva have been lost,\nyou need to go back to the base...".to_string() 
                                 , is_skippable:true, tick:Tick::now()}
@@ -284,14 +395,16 @@ impl SpaceAdventure {
                     ]);
                     }
                 }
+                time
             }
 
-            SpaceState::Ending { time } => {
-                if time.elapsed() >= SpaceState::ENDING_DURATION {
+            SpaceAdventureState::Ending { time } => {
+                if time.elapsed() >= SpaceAdventureState::ENDING_DURATION {
                     return Ok(vec![UiCallback::ReturnFromSpaceAdventure]);
                 }
+                time
             }
-        }
+        };
 
         self.tick += 1;
 
@@ -330,16 +443,36 @@ impl SpaceAdventure {
         }
 
         // Generate asteroids
-        let rng = &mut ChaCha8Rng::from_entropy();
-        if self.entity_count() < 50 && rng.gen_bool(0.01) {
+        let difficulty_level = time.elapsed().as_secs() as usize;
+        if self.entity_count() < difficulty_level.min(250)
+            && self.rng.gen_bool(ASTEROID_GENERATION_PROBABILITY)
+        {
             let asteroid = AsteroidEntity::new_at_screen_edge();
             self.insert_entity(Box::new(asteroid));
         }
 
+        if difficulty_level > DIFFICULTY_FOR_ASTEROID_PLANET_GENERATION {
+            match self.asteroid_planet_state {
+                AsteroidPlanetState::NotSpawned {
+                    asteroid_planet_probability,
+                } => {
+                    if asteroid_planet_probability > 0.0 {
+                        let asteroid = AsteroidEntity::planet();
+                        let id = self.insert_entity(Box::new(asteroid));
+                        self.asteroid_planet_state = AsteroidPlanetState::Spawned {
+                            image_number: id % MAX_ASTEROID_PLANET_IMAGE_TYPE,
+                        };
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // TODO: spawn enemy ship
         Ok(vec![])
     }
 
-    pub fn image(&self, debug_view: bool) -> AppResult<RgbaImage> {
+    pub fn image(&self, width: u32, height: u32, debug_view: bool) -> AppResult<RgbaImage> {
         let mut base = self.background.clone();
 
         // Draw starting from lowest layer
@@ -349,19 +482,30 @@ impl SpaceAdventure {
             }
         }
 
-        
-        match  self.state {
+        match self.state {
             // If adventure is starting, fade in.
-            SpaceState::Starting { time } => {
-                VisualEffect::FadeIn.apply_global_effect(&mut base, time.elapsed().as_millis() as f32/1000.0);
+            SpaceAdventureState::Starting { time } => {
+                VisualEffect::FadeIn
+                    .apply_global_effect(&mut base, time.elapsed().as_millis() as f32 / 1000.0);
             }
-             // If adventure is ending, fade out.
-            SpaceState::Ending { time } => {
-                VisualEffect::FadeOut.apply_global_effect(&mut base, time.elapsed().as_millis() as f32/1000.0);
+            // If adventure is ending, fade out.
+            SpaceAdventureState::Ending { time } => {
+                VisualEffect::FadeOut
+                    .apply_global_effect(&mut base, time.elapsed().as_millis() as f32 / 1000.0);
             }
-            SpaceState::Running=>{}
+            SpaceAdventureState::Running { .. } => {}
         }
 
-        Ok(base)
+        // Crop centered subimage of size SCREEN_SIZE
+        let image = crop_imm(
+            &base,
+            (MAX_ENTITY_POSITION.x - SCREEN_SIZE.x) / 2,
+            (MAX_ENTITY_POSITION.y - SCREEN_SIZE.y) / 2,
+            width,
+            height,
+        )
+        .to_image();
+
+        Ok(image)
     }
 }

@@ -1,12 +1,13 @@
-use super::{space_callback::SpaceCallback, traits::*, utils::EntityState};
+use super::{networking::ImageType, space_callback::SpaceCallback, traits::*, utils::EntityState};
 use crate::{register_impl, space_adventure::constants::*};
 use glam::{I16Vec2, Vec2};
-use image::{Rgba, RgbaImage};
+use image::{Pixel, Rgba, RgbaImage};
 use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct ParticleEntity {
     id: usize,
+    color: Rgba<u8>,
     previous_position: Vec2,
     position: Vec2,
     velocity: Vec2,
@@ -33,10 +34,10 @@ impl Body for ParticleEntity {
         self.previous_position = self.position;
         self.position = self.position + self.velocity * deltatime;
 
-        if self.position.x < 0.0 || self.position.x > SCREEN_WIDTH as f32 {
+        if self.position.x < 0.0 || self.position.x > SCREEN_SIZE.x as f32 {
             return vec![SpaceCallback::DestroyEntity { id: self.id() }];
         }
-        if self.position.y < 0.0 || self.position.y > SCREEN_HEIGHT as f32 {
+        if self.position.y < 0.0 || self.position.y > SCREEN_SIZE.y as f32 {
             return vec![SpaceCallback::DestroyEntity { id: self.id() }];
         }
 
@@ -59,29 +60,37 @@ impl Body for ParticleEntity {
 }
 
 impl Sprite for ParticleEntity {
-    fn layer(&self) -> usize {
-        self.layer
-    }
     fn image(&self) -> &RgbaImage {
         &self.image
     }
 
+    fn network_image_type(&self) -> ImageType {
+        ImageType::Particle {
+            color: self.color.to_rgb().0,
+        }
+    }
+}
+
+impl Collider for ParticleEntity {
     fn hit_box(&self) -> &HitBox {
         &self.hit_box
     }
 }
 
-impl Collider for ParticleEntity {}
-
-register_impl!(!PlayerControlled for ParticleEntity);
+register_impl!(!ControllableSpaceship for ParticleEntity);
 register_impl!(!ResourceFragment for ParticleEntity);
 
 impl Entity for ParticleEntity {
     fn set_id(&mut self, id: usize) {
         self.id = id;
     }
+
     fn id(&self) -> usize {
         self.id
+    }
+
+    fn layer(&self) -> usize {
+        self.layer
     }
 }
 
@@ -98,6 +107,7 @@ impl ParticleEntity {
         hit_box.insert(I16Vec2::ZERO, true);
         Self {
             id: 0,
+            color,
             previous_position: position,
             position,
             velocity,

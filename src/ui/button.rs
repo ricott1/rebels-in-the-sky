@@ -1,5 +1,6 @@
 use super::{
     constants::UiStyle,
+    traits::HoverableWidget,
     ui_callback::{CallbackRegistry, UiCallback},
     widgets::default_block,
 };
@@ -7,27 +8,27 @@ use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Margin, Rect},
     style::{Style, Styled, Stylize},
+    symbols::border,
     text::{Line, Span, Text},
-    widgets::{Clear, Paragraph, Widget},
+    widgets::{Block, Paragraph, Widget},
 };
-use std::{sync::Arc, sync::Mutex};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Button<'a> {
     text: Text<'a>,
     hotkey: Option<KeyCode>,
     on_click: UiCallback,
-    callback_registry: Arc<Mutex<CallbackRegistry>>,
     disabled: bool,
-    disabled_text: Option<String>,
+    selected: bool,
+    is_hovered: bool,
+    disabled_text: Option<Text<'a>>,
     text_alignemnt: ratatui::layout::Alignment,
     style: Style,
     hover_style: Style,
-    box_style: Option<Style>,
-    box_hover_style: Option<Style>,
-    hover_text: Option<String>,
-    hover_text_target: Option<Rect>,
-    layer: u8,
+    block: Option<Block<'a>>,
+    hover_block: Option<Block<'a>>,
+    hover_text: Option<Text<'a>>,
+    layer: usize,
 }
 
 impl<'a> From<Button<'a>> for Text<'a> {
@@ -37,128 +38,74 @@ impl<'a> From<Button<'a>> for Text<'a> {
 }
 
 impl<'a> Button<'a> {
-    fn is_hovered(&self, rect: Rect) -> bool {
-        self.callback_registry.lock().unwrap().is_hovering(rect)
-            && self.layer == self.callback_registry.lock().unwrap().get_max_layer()
+    pub fn new(text: impl Into<Text<'a>>, on_click: UiCallback) -> Self {
+        Self::no_box(text.into(), on_click)
+            .hover_block(default_block())
+            .block(default_block())
     }
-    pub fn new(
-        text: Text<'a>,
-        on_click: UiCallback,
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-    ) -> Self {
+
+    pub fn box_on_hover(text: impl Into<Text<'a>>, on_click: UiCallback) -> Self {
+        Self::no_box(text, on_click).hover_block(default_block())
+    }
+
+    pub fn no_box(text: impl Into<Text<'a>>, on_click: UiCallback) -> Self {
         Self {
-            text,
-            hotkey: None,
+            text: text.into(),
             on_click,
-            callback_registry,
-            disabled: false,
-            disabled_text: None,
             text_alignemnt: ratatui::layout::Alignment::Center,
-            style: UiStyle::UNSELECTED,
-            hover_style: UiStyle::SELECTED,
-            box_style: Some(Style::default()),
-            box_hover_style: Some(Style::default()),
-            hover_text: None,
-            hover_text_target: None,
-            layer: 0,
+            hover_style: UiStyle::HIGHLIGHT,
+            ..Default::default()
         }
     }
 
-    pub fn box_on_hover(
-        text: Text<'a>,
-        on_click: UiCallback,
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-    ) -> Self {
-        Self {
-            text,
-            hotkey: None,
-            on_click,
-            callback_registry,
-            disabled: false,
-            disabled_text: None,
-            text_alignemnt: ratatui::layout::Alignment::Center,
-            style: UiStyle::UNSELECTED,
-            hover_style: UiStyle::UNSELECTED,
-            box_style: None,
-            box_hover_style: Some(Style::default()),
-            hover_text: None,
-            hover_text_target: None,
-            layer: 0,
-        }
+    pub fn set_text(&mut self, text: impl Into<Text<'a>>) {
+        self.text = text.into();
     }
 
-    pub fn no_box(
-        text: Text<'a>,
-        on_click: UiCallback,
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-    ) -> Self {
-        Self {
-            text,
-            hotkey: None,
-            on_click,
-            callback_registry,
-            disabled: false,
-            disabled_text: None,
-            text_alignemnt: ratatui::layout::Alignment::Center,
-            style: UiStyle::UNSELECTED,
-            hover_style: UiStyle::SELECTED,
-            box_style: None,
-            box_hover_style: None,
-            hover_text: None,
-            hover_text_target: None,
-            layer: 0,
-        }
-    }
-
-    pub fn text(
-        text: Text<'a>,
-        on_click: UiCallback,
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-    ) -> Self {
-        Self {
-            text,
-            hotkey: None,
-            on_click,
-            callback_registry,
-            disabled: false,
-            disabled_text: None,
-            text_alignemnt: ratatui::layout::Alignment::Left,
-            style: UiStyle::UNSELECTED,
-            hover_style: UiStyle::SELECTED,
-            box_style: None,
-            box_hover_style: None,
-            hover_text: None,
-            hover_text_target: None,
-            layer: 0,
-        }
-    }
-
-    pub fn set_text(&mut self, text: Text<'a>) {
-        self.text = text;
-    }
-
-    pub fn disable(&mut self, text: Option<String>) {
+    pub fn disable(&mut self, text: Option<impl Into<Text<'a>>>) {
         self.disabled = true;
-        self.disabled_text = text;
+        self.disabled_text = if let Some(t) = text {
+            Some(t.into())
+        } else {
+            None
+        };
+    }
+
+    pub fn disabled(mut self, text: Option<impl Into<Text<'a>>>) -> Self {
+        self.disable(text);
+        self
     }
 
     pub fn enable(&mut self) {
         self.disabled = false;
     }
 
-    pub fn set_hover_style(mut self, style: Style) -> Self {
+    pub fn select(&mut self) {
+        self.selected = true;
+    }
+
+    pub fn selected(mut self) -> Self {
+        self.select();
+        self
+    }
+
+    pub const fn set_hover_style(mut self, style: Style) -> Self {
         self.hover_style = style;
         self
     }
 
-    pub fn set_box_style(mut self, style: Style) -> Self {
-        self.box_style = Some(style);
+    pub fn block(mut self, block: Block<'a>) -> Self {
+        self.block = Some(block);
         self
     }
 
-    pub fn set_hover_text(mut self, text: String, target: Rect) -> Self {
-        self.hover_text = Some(text);
-        self.hover_text_target = Some(target);
+    pub fn hover_block(mut self, block: Block<'a>) -> Self {
+        self.hover_block = Some(block);
+        self
+    }
+
+    pub fn set_hover_text(mut self, text: impl Into<Text<'a>>) -> Self {
+        self.hover_text = Some(text.into());
         self
     }
 
@@ -167,7 +114,7 @@ impl<'a> Button<'a> {
         self
     }
 
-    pub fn set_layer(mut self, layer: u8) -> Self {
+    pub fn set_layer(mut self, layer: usize) -> Self {
         self.layer = layer;
         self
     }
@@ -198,24 +145,6 @@ impl<'a> Widget for Button<'a> {
             area
         };
 
-        if self.disabled == false {
-            self.callback_registry
-                .lock()
-                .unwrap()
-                .register_mouse_callback(
-                    crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
-                    Some(inner),
-                    self.on_click.clone(),
-                );
-
-            if let Some(key) = self.hotkey {
-                self.callback_registry
-                    .lock()
-                    .unwrap()
-                    .register_keyboard_callback(key, self.on_click.clone());
-            }
-        }
-
         let paragraph = if let Some(u) = self.hotkey {
             let split = self
                 .text
@@ -237,200 +166,55 @@ impl<'a> Widget for Button<'a> {
             Paragraph::new(self.text.clone()).alignment(self.text_alignemnt)
         };
 
-        if area.height < 3 {
-            if self.disabled {
-                paragraph.set_style(UiStyle::UNSELECTABLE).render(area, buf);
-            } else if self.is_hovered(inner) {
-                paragraph.set_style(self.hover_style).render(area, buf);
-            } else {
-                paragraph.set_style(self.style).render(area, buf);
-            }
-        } else if self.disabled {
-            if let Some(box_style) = self.box_style {
-                paragraph
-                    .set_style(UiStyle::UNSELECTABLE)
-                    .block(default_block().border_style(box_style))
-                    .render(area, buf);
-            } else {
-                paragraph
-                    .set_style(UiStyle::UNSELECTABLE)
-                    .render(inner, buf);
-            }
-        } else if self.is_hovered(inner) {
-            if let Some(box_hover_style) = self.box_hover_style {
-                paragraph
-                    .set_style(self.hover_style)
-                    .block(default_block().border_style(box_hover_style))
-                    .render(area, buf);
-            } else {
-                paragraph.set_style(self.hover_style).render(inner, buf);
-            }
+        let render_style = if self.is_hovered {
+            self.hover_style
         } else {
-            if let Some(box_style) = self.box_style {
-                paragraph
-                    .set_style(self.style)
-                    .block(default_block().border_style(box_style))
-                    .render(area, buf);
+            self.style
+        };
+
+        let paragraph_style = if self.selected {
+            UiStyle::SELECTED_BUTTON
+        } else if self.disabled {
+            UiStyle::UNSELECTABLE
+        } else {
+            render_style
+        };
+
+        let maybe_block = if self.is_hovered {
+            self.hover_block
+        } else {
+            self.block
+        };
+
+        if area.height < 3 {
+            paragraph.set_style(paragraph_style).render(area, buf);
+        } else if let Some(mut block) = maybe_block {
+            block = if self.selected {
+                block.border_set(border::THICK)
+            } else if self.disabled {
+                block
+                    .border_style(UiStyle::UNSELECTABLE)
+                    .border_set(border::Set::default())
             } else {
-                paragraph.set_style(self.style).render(inner, buf);
-            }
-        }
+                block
+            };
 
-        if self.hover_text.is_some() && self.hover_text_target.is_some() && self.is_hovered(area) {
-            let mut spans = vec![Span::raw(self.hover_text.unwrap())];
-
-            if self.disabled {
-                if let Some(text) = self.disabled_text.as_ref() {
-                    spans.push(Span::styled(
-                        format!("  Disabled: {}", text),
-                        UiStyle::ERROR,
-                    ));
-                }
-            }
-
-            let hover_text = Paragraph::new(Line::from(spans)).centered();
-            Clear.render(self.hover_text_target.unwrap(), buf);
-            hover_text.render(self.hover_text_target.unwrap(), buf);
+            paragraph
+                .set_style(paragraph_style)
+                .block(block)
+                .render(area, buf);
+        } else {
+            paragraph.set_style(render_style).render(inner, buf);
         }
     }
 }
 
-#[derive(Debug)]
-pub struct RadioButton<'a> {
-    text: Text<'a>,
-    on_click: UiCallback,
-    callback_registry: Arc<Mutex<CallbackRegistry>>,
-    disabled: bool,
-    linked_index: &'a mut usize,
-    index: usize,
-    style: Style,
-    hover_style: Style,
-    box_style: Option<Style>,
-    box_hover_style: Option<Style>,
-    box_hover_title: Option<String>,
-    layer: u8,
-}
-
-impl<'a> From<RadioButton<'a>> for Text<'a> {
-    fn from(button: RadioButton<'a>) -> Text<'a> {
-        button.text
-    }
-}
-
-impl<'a> Styled for RadioButton<'a> {
-    type Item = RadioButton<'a>;
-
-    fn style(&self) -> Style {
-        self.style
-    }
-    fn set_style<S: Into<Style>>(self, style: S) -> Self::Item {
-        Self {
-            style: style.into(),
-            ..self
-        }
-    }
-}
-
-impl<'a> RadioButton<'a> {
-    fn is_hovered(&self, rect: Rect) -> bool {
-        self.callback_registry.lock().unwrap().is_hovering(rect)
-            && self.layer == self.callback_registry.lock().unwrap().get_max_layer()
+impl HoverableWidget for Button<'_> {
+    fn layer(&self) -> usize {
+        self.layer
     }
 
-    pub fn new(
-        text: Text<'a>,
-        on_click: UiCallback,
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-        linked_index: &'a mut usize,
-        index: usize,
-    ) -> Self {
-        Self {
-            text,
-            on_click,
-            callback_registry,
-            disabled: false,
-            linked_index,
-            index,
-            style: UiStyle::UNSELECTED,
-            hover_style: UiStyle::SELECTED,
-            box_style: Some(Style::default()),
-            box_hover_style: Some(Style::default()),
-            box_hover_title: None,
-            layer: 0,
-        }
-    }
-    pub fn box_on_hover(
-        text: Text<'a>,
-        on_click: UiCallback,
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-        linked_index: &'a mut usize,
-        index: usize,
-    ) -> Self {
-        Self {
-            text,
-            on_click,
-            callback_registry,
-            disabled: false,
-            linked_index,
-            index,
-            style: UiStyle::UNSELECTED,
-            hover_style: UiStyle::UNSELECTED,
-            box_style: None,
-            box_hover_style: Some(Style::default()),
-            box_hover_title: None,
-            layer: 0,
-        }
-    }
-
-    pub fn no_box(
-        text: Text<'a>,
-        on_click: UiCallback,
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-        linked_index: &'a mut usize,
-        index: usize,
-    ) -> Self {
-        Self {
-            text,
-            on_click,
-            callback_registry,
-            disabled: false,
-            linked_index,
-            index,
-            style: UiStyle::UNSELECTED,
-            hover_style: UiStyle::SELECTED,
-            box_style: None,
-            box_hover_style: None,
-            box_hover_title: None,
-            layer: 0,
-        }
-    }
-
-    pub fn disable(&mut self) {
-        self.disabled = true;
-    }
-
-    pub fn enable(&mut self) {
-        self.disabled = false;
-    }
-
-    pub fn set_hover_style(mut self, style: Style) -> Self {
-        self.hover_style = style;
-        self
-    }
-
-    pub fn set_box_hover_style(mut self, style: Style) -> Self {
-        self.box_hover_style = Some(style);
-        self
-    }
-
-    pub fn set_box_hover_title(mut self, title: String) -> Self {
-        self.box_hover_title = Some(title);
-        self
-    }
-}
-
-impl<'a> Widget for RadioButton<'a> {
-    fn render(self, area: ratatui::layout::Rect, buf: &mut ratatui::buffer::Buffer) {
+    fn before_rendering(&mut self, area: Rect, callback_registry: &mut CallbackRegistry) {
         let inner = if area.height >= 3 {
             area.inner(Margin {
                 horizontal: 1,
@@ -439,58 +223,36 @@ impl<'a> Widget for RadioButton<'a> {
         } else {
             area
         };
+        self.is_hovered = callback_registry.is_hovering(inner)
+            && callback_registry.get_max_layer() == self.layer();
 
-        if self.disabled == false {
-            if self.is_hovered(inner) {
-                *self.linked_index = self.index;
+        if !self.disabled {
+            callback_registry.register_mouse_callback(
+                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                Some(inner),
+                self.on_click.clone(),
+            );
+
+            if let Some(key) = self.hotkey {
+                callback_registry.register_keyboard_callback(key, self.on_click.clone());
             }
-            self.callback_registry
-                .lock()
-                .unwrap()
-                .register_mouse_callback(
-                    crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
-                    Some(inner),
-                    self.on_click,
-                );
         }
+    }
 
-        let paragraph = if self.disabled {
-            Paragraph::new(self.text)
-                .centered()
-                .style(UiStyle::UNSELECTABLE)
-        } else {
-            if *self.linked_index == self.index {
-                Paragraph::new(self.text).centered().style(self.hover_style)
-            } else {
-                Paragraph::new(self.text).centered().style(self.style)
-            }
-        };
+    fn hover_text(&self) -> Text {
+        let mut spans = vec![];
+        if let Some(hover_text) = self.hover_text.as_ref() {
+            spans.push(Span::raw(hover_text.to_string()));
 
-        if area.height < 3 {
-            paragraph.render(area, buf);
-        } else {
-            if *self.linked_index == self.index {
-                if let Some(box_hover_style) = self.box_hover_style {
-                    let block = if let Some(box_hover_title) = self.box_hover_title {
-                        default_block()
-                            .border_style(box_hover_style)
-                            .title(box_hover_title)
-                    } else {
-                        default_block().border_style(box_hover_style)
-                    };
-                    paragraph.block(block).render(area, buf);
-                } else {
-                    paragraph.render(inner, buf);
-                }
-            } else {
-                if let Some(box_style) = self.box_style {
-                    paragraph
-                        .block(default_block().style(box_style))
-                        .render(area, buf);
-                } else {
-                    paragraph.render(inner, buf);
+            if self.disabled {
+                if let Some(disabled_text) = self.disabled_text.as_ref() {
+                    spans.push(Span::styled(
+                        format!("  Disabled: {}", disabled_text),
+                        UiStyle::ERROR,
+                    ));
                 }
             }
         }
+        Line::from(spans).into()
     }
 }

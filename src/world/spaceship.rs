@@ -231,14 +231,14 @@ pub enum Engine {
 impl Display for Engine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Engine::ShuttleSingle => write!(f, "Single"),
-            Engine::ShuttleDouble => write!(f, "Double"),
-            Engine::ShuttleTriple => write!(f, "Triple"),
-            Engine::PincherSingle => write!(f, "Single"),
-            Engine::PincherDouble => write!(f, "Double"),
-            Engine::PincherTriple => write!(f, "Triple"),
-            Engine::JesterDouble => write!(f, "Double"),
-            Engine::JesterQuadruple => write!(f, "Quadruple"),
+            Self::ShuttleSingle => write!(f, "Single"),
+            Self::ShuttleDouble => write!(f, "Double"),
+            Self::ShuttleTriple => write!(f, "Triple"),
+            Self::PincherSingle => write!(f, "Single"),
+            Self::PincherDouble => write!(f, "Double"),
+            Self::PincherTriple => write!(f, "Triple"),
+            Self::JesterDouble => write!(f, "Double"),
+            Self::JesterQuadruple => write!(f, "Quadruple"),
         }
     }
 }
@@ -361,13 +361,187 @@ impl SpaceshipComponent for Engine {
         ];
         // Final upgrade has a cost in rum
         if self.next().cost() > self.next().next().cost() {
-            cost.push((Resource::RUM, 1))
+            cost.push((Resource::RUM, 10))
         }
 
         cost
     }
 }
 
+#[derive(
+    Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Default, EnumIter, Hash,
+)]
+#[repr(u8)]
+pub enum Shooter {
+    #[default]
+    ShuttleNone,
+    ShuttleSingle,
+    ShuttleTriple,
+    PincherNone,
+    PincherDouble,
+    PincherQuadruple,
+    JesterNone,
+    JesterDouble,
+    JesterQuadruple,
+}
+
+impl Display for Shooter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ShuttleSingle => write!(f, "Single"),
+            Self::ShuttleTriple => write!(f, "Triple"),
+            Self::PincherDouble => write!(f, "Double"),
+            Self::PincherQuadruple => write!(f, "Quadruple"),
+            Self::JesterDouble => write!(f, "Double"),
+            Self::JesterQuadruple => write!(f, "Quadruple"),
+            _ => write!(f, "None"),
+        }
+    }
+}
+
+impl SpaceshipComponent for Shooter {
+    fn next(&self) -> Self {
+        match self {
+            Self::ShuttleNone => Self::ShuttleSingle,
+            Self::ShuttleSingle => Self::ShuttleTriple,
+            Self::ShuttleTriple => Self::ShuttleNone,
+            Self::PincherNone => Self::PincherDouble,
+            Self::PincherDouble => Self::PincherQuadruple,
+            Self::PincherQuadruple => Self::PincherNone,
+            Self::JesterNone => Self::JesterDouble,
+            Self::JesterDouble => Self::JesterQuadruple,
+            Self::JesterQuadruple => Self::JesterNone,
+        }
+    }
+    fn previous(&self) -> Self {
+        match self {
+            Self::ShuttleNone => Self::ShuttleTriple,
+            Self::ShuttleSingle => Self::ShuttleNone,
+            Self::ShuttleTriple => Self::ShuttleSingle,
+            Self::PincherNone => Self::PincherQuadruple,
+            Self::PincherDouble => Self::PincherNone,
+            Self::PincherQuadruple => Self::PincherDouble,
+            Self::JesterNone => Self::JesterQuadruple,
+            Self::JesterDouble => Self::JesterNone,
+            Self::JesterQuadruple => Self::JesterDouble,
+        }
+    }
+
+    fn style(&self) -> SpaceshipStyle {
+        match self {
+            Self::ShuttleNone | Self::ShuttleSingle | Self::ShuttleTriple => {
+                SpaceshipStyle::Shuttle
+            }
+            Self::PincherNone | Self::PincherDouble | Self::PincherQuadruple => {
+                SpaceshipStyle::Pincher
+            }
+            Self::JesterNone | Self::JesterDouble | Self::JesterQuadruple => SpaceshipStyle::Jester,
+        }
+    }
+    fn crew_capacity(&self) -> u8 {
+        0
+    }
+
+    fn storage_capacity(&self) -> u32 {
+        0
+    }
+
+    fn fuel_capacity(&self) -> u32 {
+        0
+    }
+
+    fn fuel_consumption(&self) -> f32 {
+        1.0
+    }
+
+    fn speed(&self) -> f32 {
+        1.0
+    }
+
+    fn durability(&self) -> u32 {
+        match self {
+            Self::ShuttleSingle => 1,
+            Self::ShuttleTriple => 3,
+            Self::PincherDouble => 2,
+            Self::PincherQuadruple => 4,
+            Self::JesterDouble => 2,
+            Self::JesterQuadruple => 4,
+            _ => 0,
+        }
+    }
+    fn cost(&self) -> u32 {
+        match self {
+            Self::ShuttleSingle => 5000,
+            Self::ShuttleTriple => 15000,
+            Self::PincherDouble => 11000,
+            Self::PincherQuadruple => 24000,
+            Self::JesterDouble => 10000,
+            Self::JesterQuadruple => 25000,
+            _ => 0,
+        }
+    }
+
+    fn upgrade_cost(&self) -> Vec<(Resource, u32)> {
+        if self.next().cost() < self.cost() {
+            return vec![];
+        }
+
+        let scraps_cost = match self.style() {
+            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 75,
+            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 70,
+            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 100,
+        };
+
+        let mut cost = vec![
+            (Resource::SATOSHI, self.next().cost() - self.cost()),
+            (Resource::SCRAPS, scraps_cost),
+        ];
+        // Final upgrade has a cost in rum
+        if self.next().cost() > self.next().next().cost() {
+            cost.push((Resource::RUM, 5))
+        }
+
+        cost
+    }
+}
+
+impl Shooter {
+    pub fn damage(&self) -> f32 {
+        match self {
+            Self::ShuttleSingle => 1.5,
+            Self::ShuttleTriple => 1.8,
+            Self::PincherDouble => 2.0,
+            Self::PincherQuadruple => 2.5,
+            Self::JesterDouble => 2.25,
+            Self::JesterQuadruple => 3.0,
+            _ => 0.0,
+        }
+    }
+
+    pub fn fire_rate(&self) -> f32 {
+        match self {
+            Self::ShuttleSingle => 6.0,
+            Self::ShuttleTriple => 4.0,
+            Self::PincherDouble => 6.0,
+            Self::PincherQuadruple => 6.0,
+            Self::JesterDouble => 9.0,
+            Self::JesterQuadruple => 9.0,
+            _ => 0.0,
+        }
+    }
+
+    pub fn shooting_points(&self) -> u8 {
+        match self {
+            Self::ShuttleSingle => 1,
+            Self::ShuttleTriple => 3,
+            Self::PincherDouble => 2,
+            Self::PincherQuadruple => 4,
+            Self::JesterDouble => 2,
+            Self::JesterQuadruple => 4,
+            _ => 0,
+        }
+    }
+}
 #[derive(
     Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Default, EnumIter, Hash,
 )]
@@ -507,11 +681,12 @@ pub enum SpaceshipUpgradeTarget {
     Hull { component: Hull },
     Engine { component: Engine },
     Storage { component: Storage },
+    Shooter { component: Shooter },
     Repairs { amount: u32 },
 }
 
 impl SpaceshipUpgradeTarget {
-    pub const MAX_INDEX: usize = 4; // = SpaceshipUpgradeTarget::iter().count();
+    pub const MAX_INDEX: usize = 5; // = SpaceshipUpgradeTarget::iter().count();
 }
 
 impl Default for SpaceshipUpgradeTarget {
@@ -526,6 +701,7 @@ impl Display for SpaceshipUpgradeTarget {
             Self::Hull { .. } => write!(f, "Hull"),
             Self::Engine { .. } => write!(f, "Engine"),
             Self::Storage { .. } => write!(f, "Storage"),
+            Self::Shooter { .. } => write!(f, "Shooter"),
             Self::Repairs { .. } => write!(f, "Repairs"),
         }
     }
@@ -569,6 +745,7 @@ impl SpaceshipUpgrade {
             SpaceshipUpgradeTarget::Hull { component } => component.previous().upgrade_cost(),
             SpaceshipUpgradeTarget::Engine { component } => component.previous().upgrade_cost(),
             SpaceshipUpgradeTarget::Storage { component } => component.previous().upgrade_cost(),
+            SpaceshipUpgradeTarget::Shooter { component } => component.previous().upgrade_cost(),
             SpaceshipUpgradeTarget::Repairs { amount } => {
                 vec![
                     (
@@ -590,11 +767,11 @@ pub struct Spaceship {
     pub storage: Storage,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    current_durability: u32,
-    pub image: SpaceshipImage,
+    pub shooter: Shooter,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub total_travelled: u128,
+    current_durability: u32,
+    pub image: SpaceshipImage,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub pending_upgrade: Option<SpaceshipUpgrade>,
@@ -606,6 +783,7 @@ impl Spaceship {
         hull: Hull,
         engine: Engine,
         storage: Storage,
+        shooter: Shooter,
         color_map: ColorMap,
     ) -> Self {
         let mut spaceship = Self {
@@ -613,9 +791,9 @@ impl Spaceship {
             hull,
             engine,
             storage,
+            shooter,
             current_durability: 0,
             image: SpaceshipImage::new(color_map),
-            total_travelled: 0,
             pending_upgrade: None,
         };
         spaceship.reset_durability();
@@ -627,17 +805,6 @@ impl Spaceship {
         self.current_durability = self.durability()
     }
 
-    pub fn size(&self) -> u8 {
-        match self.hull {
-            Hull::ShuttleSmall => 0,
-            Hull::ShuttleStandard => 1,
-            Hull::ShuttleLarge => 2,
-            Hull::PincherStandard => 1,
-            Hull::PincherLarge => 2,
-            Hull::JesterStandard => 1,
-        }
-    }
-
     pub fn can_be_repaired(&self) -> bool {
         self.current_durability() < self.durability()
     }
@@ -647,6 +814,7 @@ impl Spaceship {
             SpaceshipUpgradeTarget::Hull { .. } => self.hull.can_be_upgraded(),
             SpaceshipUpgradeTarget::Engine { .. } => self.engine.can_be_upgraded(),
             SpaceshipUpgradeTarget::Storage { .. } => self.storage.can_be_upgraded(),
+            SpaceshipUpgradeTarget::Shooter { .. } => self.shooter.can_be_upgraded(),
             SpaceshipUpgradeTarget::Repairs { .. } => self.can_be_repaired(),
         }
     }
@@ -667,7 +835,12 @@ impl Spaceship {
             .choose(rng)
             .expect("Should choose a valid component");
 
-        Self::new(name, hull, engine, storage, ColorMap::random())
+        let shooter = Shooter::iter()
+            .filter(|s| s.style() == style)
+            .choose(rng)
+            .expect("Should choose a valid component");
+
+        Self::new(name, hull, engine, storage, shooter, ColorMap::random())
     }
 
     pub fn style(&self) -> SpaceshipStyle {
@@ -679,18 +852,41 @@ impl Spaceship {
         self
     }
 
-    pub fn compose_image(&self) -> AppResult<Gif> {
-        self.image
-            .compose(self.size(), self.hull, self.engine, self.storage, false)
-    }
-
     pub fn image_id(&self) -> SpaceshipImageId {
         self.image.id(self.hull, self.engine, self.storage)
     }
 
+    pub fn compose_image(&self) -> AppResult<Gif> {
+        self.image.compose(
+            self.hull,
+            self.engine,
+            self.storage,
+            self.shooter,
+            false,
+            false,
+        )
+    }
+
+    pub fn compose_image_shooting(&self) -> AppResult<Gif> {
+        self.image.compose(
+            self.hull,
+            self.engine,
+            self.storage,
+            self.shooter,
+            false,
+            true,
+        )
+    }
+
     pub fn compose_image_in_shipyard(&self) -> AppResult<Gif> {
-        self.image
-            .compose(self.size(), self.hull, self.engine, self.storage, true)
+        self.image.compose(
+            self.hull,
+            self.engine,
+            self.storage,
+            self.shooter,
+            true,
+            false,
+        )
     }
 
     pub fn speed(&self, storage_units: u32) -> f32 {
@@ -699,20 +895,20 @@ impl Spaceship {
             / (1.0 + SPEED_PENALTY_PER_UNIT_STORAGE * storage_units as f32)
     }
 
-    pub fn set_current_durability(&mut self, value: u32) {
-        self.current_durability = value.min(self.durability());
-    }
-
-    pub fn current_durability(&self) -> u32 {
-        self.current_durability
-    }
-
     pub fn durability(&self) -> u32 {
         self.hull.durability() + self.engine.durability() + self.storage.durability()
     }
 
-    pub fn crew_capacity(&self) -> u8 {
-        self.hull.crew_capacity() + self.engine.crew_capacity() + self.storage.crew_capacity()
+    pub fn damage(&self) -> f32 {
+        self.shooter.damage()
+    }
+
+    pub fn fire_rate(&self) -> f32 {
+        self.shooter.fire_rate()
+    }
+
+    pub fn shooting_points(&self) -> u8 {
+        self.shooter.shooting_points()
     }
 
     pub fn storage_capacity(&self) -> u32 {
@@ -732,6 +928,18 @@ impl Spaceship {
             * self.engine.fuel_consumption()
             * self.storage.fuel_consumption()
             * (1.0 + FUEL_CONSUMPTION_PER_UNIT_STORAGE * storage_units as f32)
+    }
+
+    pub fn set_current_durability(&mut self, value: u32) {
+        self.current_durability = value.min(self.durability());
+    }
+
+    pub fn current_durability(&self) -> u32 {
+        self.current_durability
+    }
+
+    pub fn crew_capacity(&self) -> u8 {
+        self.hull.crew_capacity() + self.engine.crew_capacity() + self.storage.crew_capacity()
     }
 
     pub fn cost(&self) -> u32 {
@@ -762,91 +970,82 @@ pub enum SpaceshipPrefab {
     Orwell,
     Ragnarok,
     Ibarruri,
+    Rivolta,
 }
 
 impl SpaceshipPrefab {
-    pub fn next(&self) -> Self {
-        match self {
-            Self::Bresci => Self::Cafiero,
-            Self::Cafiero => Self::Yukawa,
-            Self::Yukawa => Self::Milwaukee,
-            Self::Milwaukee => Self::Pincher,
-            Self::Pincher => Self::Orwell,
-            Self::Orwell => Self::Ragnarok,
-            Self::Ragnarok => Self::Ibarruri,
-            Self::Ibarruri => Self::Bresci,
-        }
-    }
-
-    pub fn previous(&self) -> Self {
-        match self {
-            Self::Bresci => Self::Ibarruri,
-            Self::Cafiero => Self::Bresci,
-            Self::Yukawa => Self::Cafiero,
-            Self::Milwaukee => Self::Yukawa,
-            Self::Pincher => Self::Milwaukee,
-            Self::Orwell => Self::Pincher,
-            Self::Ragnarok => Self::Orwell,
-            Self::Ibarruri => Self::Ragnarok,
-        }
-    }
-
-    pub fn spaceship(&self, name: String) -> Spaceship {
+    pub fn spaceship(&self, name: impl Into<String>) -> Spaceship {
         match self {
             Self::Yukawa => Spaceship::new(
-                name,
+                name.into(),
                 Hull::ShuttleSmall,
                 Engine::ShuttleTriple,
                 Storage::ShuttleNone,
+                Shooter::ShuttleSingle,
                 ColorMap::default(),
             ),
             Self::Milwaukee => Spaceship::new(
-                name,
+                name.into(),
                 Hull::ShuttleLarge,
                 Engine::ShuttleTriple,
                 Storage::ShuttleNone,
+                Shooter::ShuttleTriple,
                 ColorMap::default(),
             ),
             Self::Cafiero => Spaceship::new(
-                name,
+                name.into(),
                 Hull::ShuttleStandard,
                 Engine::ShuttleSingle,
                 Storage::ShuttleSingle,
+                Shooter::ShuttleTriple,
                 ColorMap::default(),
             ),
             Self::Bresci => Spaceship::new(
-                name,
+                name.into(),
                 Hull::ShuttleSmall,
                 Engine::ShuttleSingle,
                 Storage::ShuttleNone,
+                Shooter::ShuttleSingle,
                 ColorMap::default(),
             ),
             Self::Pincher => Spaceship::new(
-                name,
+                name.into(),
                 Hull::PincherStandard,
                 Engine::PincherTriple,
                 Storage::PincherSingle,
+                Shooter::PincherDouble,
                 ColorMap::default(),
             ),
             Self::Orwell => Spaceship::new(
-                name,
+                name.into(),
                 Hull::PincherStandard,
                 Engine::PincherSingle,
                 Storage::PincherNone,
+                Shooter::PincherDouble,
                 ColorMap::default(),
             ),
             Self::Ragnarok => Spaceship::new(
-                name,
+                name.into(),
                 Hull::PincherLarge,
                 Engine::PincherDouble,
                 Storage::PincherNone,
+                Shooter::PincherQuadruple,
                 ColorMap::default(),
             ),
             Self::Ibarruri => Spaceship::new(
-                name,
+                name.into(),
                 Hull::JesterStandard,
                 Engine::JesterDouble,
                 Storage::JesterNone,
+                Shooter::JesterDouble,
+                ColorMap::default(),
+            ),
+            Self::Rivolta => Spaceship::new(
+                name.into(),
+                Hull::JesterStandard,
+                Engine::JesterQuadruple,
+                Storage::JesterNone,
+                Shooter::JesterQuadruple,
                 ColorMap::default(),
             ),
         }
@@ -922,7 +1121,7 @@ mod tests {
         let planet_ids = world.planets.keys().collect_vec();
         let from = planet_ids[0].clone();
         let to = planet_ids[1].clone();
-        let mut team = Team::random(TeamId::new_v4(), from.clone(), "test".into(), "test".into());
+        let mut team = Team::random(TeamId::new_v4(), from.clone(), "test", "test");
         team.spaceship = spaceship;
         team.current_location = TeamLocation::Travelling {
             from,
@@ -931,7 +1130,7 @@ mod tests {
             duration: 100,
             distance: 1000,
         };
-        println!("TOTAL AU: {}", team.spaceship.total_travelled);
+        println!("TOTAL AU: {}", team.total_travelled);
         world.own_team_id = team.id;
 
         world.teams.insert(team.id, team);
@@ -952,7 +1151,7 @@ mod tests {
                 ),
                 _ => {
                     println!("Team landed");
-                    println!("TOTALAU: {}", own_team.spaceship.total_travelled);
+                    println!("TOTALAU: {}", own_team.total_travelled);
                     break;
                 }
             };

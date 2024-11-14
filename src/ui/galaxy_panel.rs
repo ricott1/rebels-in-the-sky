@@ -1,10 +1,10 @@
-use super::button::{Button, RadioButton};
+use super::button::Button;
 use super::constants::{UiStyle, LEFT_PANEL_WIDTH};
 use super::gif_map::{GifMap, ImageResizeInGalaxyGif};
 use super::traits::SplitPanel;
-use super::ui_callback::{CallbackRegistry, UiCallback};
-use super::utils::hover_text_target;
-use super::widgets::space_adventure_button;
+use super::ui_callback::UiCallback;
+use super::ui_frame::UiFrame;
+use super::widgets::{space_adventure_button, thick_block};
 use super::{traits::Screen, widgets::default_block};
 use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId};
 use crate::ui::constants::*;
@@ -20,21 +20,19 @@ use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
 use itertools::Itertools;
 use ratatui::layout::{Constraint, Margin};
-use ratatui::widgets::{List, ListItem};
+use ratatui::widgets::{block, Borders, List, ListItem};
 use ratatui::{
     layout::Layout,
     prelude::Rect,
     style::Style,
     text::Span,
     widgets::{Clear, Paragraph},
-    Frame,
 };
-use std::sync::{Arc, Mutex};
 use std::{cmp::min, vec};
 
 const TICKS_PER_REVOLUTION: usize = 3;
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum ZoomLevel {
     #[default]
     Out,
@@ -43,27 +41,37 @@ pub enum ZoomLevel {
 
 #[derive(Debug, Default)]
 pub struct GalaxyPanel {
-    pub planet_id: PlanetId,
-    pub planets: PlanetMap,
-    pub planet_index: usize,
-    pub team_index: Option<usize>,
+    planet_id: PlanetId,
+    planets: PlanetMap,
+    planet_index: usize,
+    team_index: Option<usize>,
     tick: usize,
-    pub zoom_level: ZoomLevel,
-    callback_registry: Arc<Mutex<CallbackRegistry>>,
-    gif_map: Arc<Mutex<GifMap>>,
+    zoom_level: ZoomLevel,
+    gif_map: GifMap,
 }
 
 impl GalaxyPanel {
-    pub fn new(
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-        gif_map: Arc<Mutex<GifMap>>,
-    ) -> Self {
+    pub fn new() -> Self {
         Self {
             planet_id: GALAXY_ROOT_ID.clone(),
-            callback_registry,
-            gif_map,
             ..Default::default()
         }
+    }
+
+    pub fn set_zoom_level(&mut self, zoom_level: ZoomLevel) {
+        self.zoom_level = zoom_level;
+    }
+
+    pub fn set_planet_id(&mut self, planet_id: PlanetId) {
+        self.planet_id = planet_id;
+    }
+
+    pub fn set_planet_index(&mut self, index: usize) {
+        self.planet_index = index;
+    }
+
+    pub fn set_team_index(&mut self, index: Option<usize>) {
+        self.team_index = index;
     }
 
     pub fn go_to_planet(
@@ -84,15 +92,20 @@ impl GalaxyPanel {
         }
     }
 
-    fn render_planet_gif(&self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
-        let planet = world.get_planet_or_err(self.planet_id)?;
+    fn render_planet_gif(
+        &mut self,
+        frame: &mut UiFrame,
+        planet: &Planet,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         let mut lines = match self.zoom_level {
-            ZoomLevel::In => self.gif_map.lock().unwrap().planet_zoom_in_frame_lines(
-                self.planet_id,
+            ZoomLevel::In => self.gif_map.planet_zoom_in_frame_lines(
+                &self.planet_id,
                 self.tick / planet.rotation_period,
                 world,
             ),
-            ZoomLevel::Out => self.gif_map.lock().unwrap().planet_zoom_out_frame_lines(
+            ZoomLevel::Out => self.gif_map.planet_zoom_out_frame_lines(
                 planet,
                 self.tick / TICKS_PER_REVOLUTION,
                 world,
@@ -100,11 +113,7 @@ impl GalaxyPanel {
         }?;
 
         // Apply y-centering
-        let min_offset = if lines.len() > area.height as usize {
-            (lines.len() - area.height as usize) / 2
-        } else {
-            0
-        };
+        let min_offset = lines.len().saturating_sub(area.height as usize) / 2;
         let max_offset = min(lines.len(), min_offset + area.height as usize);
         if min_offset > 0 || max_offset < lines.len() {
             lines = lines[min_offset..max_offset].to_vec();
@@ -112,11 +121,7 @@ impl GalaxyPanel {
 
         // Apply x-centering
         if lines[0].spans.len() > area.width as usize - 2 {
-            let min_offset = if lines[0].spans.len() > area.width as usize {
-                (lines[0].spans.len() - area.width as usize) / 2
-            } else {
-                0
-            };
+            let min_offset = lines[0].spans.len().saturating_sub(area.width as usize) / 2;
             let max_offset = min(lines[0].spans.len(), min_offset + area.width as usize);
             for line in lines.iter_mut() {
                 line.spans = line.spans[min_offset..max_offset].to_vec();
@@ -128,9 +133,118 @@ impl GalaxyPanel {
         Ok(())
     }
 
+    fn render_gif_rects(
+        &mut self,
+        frame: &mut UiFrame,
+        planet: &Planet,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
+        // One rect for each satellite and one rect for the central planet
+        for index in 0..planet.satellites.len() + 1 {
+            let planet_name = if index == 0 {
+                planet.name.clone()
+            } else {
+                world
+                    .get_planet_or_err(&planet.satellites[index - 1])?
+                    .name
+                    .clone()
+            };
+
+            let (mut x, mut y, mut width, mut height) =
+                self.get_planet_info_rect(&planet.id, index, world, area);
+
+            // We check that the rect fits into the screen and eventually remove borders that are not
+            // visible to avoid distorting it. There is a bit of magic numbering going on here and a lot of
+            // trial and errors. For instance, the central block must be handled separately, otherwise
+            // some borders disappear when the resoultion gets higher.
+            let mut borders = Borders::NONE;
+            let mut title_position = block::Position::Top;
+
+            if x >= 0.0 {
+                borders |= Borders::LEFT;
+            } else {
+                width = width.saturating_sub(x.abs() as u16);
+                x = 0.0;
+            }
+
+            if (x + width as f32) <= area.width as f32 {
+                borders |= Borders::RIGHT;
+            } else {
+                width = (area.width).saturating_sub(x.abs() as u16);
+            }
+
+            if y >= 0.0 {
+                borders |= Borders::TOP;
+            } else {
+                title_position = block::Position::Bottom;
+                height = height.saturating_sub(y.abs() as u16);
+                y = 0.0;
+            }
+
+            if (y + height as f32) < (area.height + 4) as f32 {
+                borders |= Borders::BOTTOM;
+            } else {
+                height = (area.height + 4).saturating_sub(y.abs() as u16);
+            }
+
+            let block = thick_block()
+                .border_style(UiStyle::NETWORK)
+                .title(planet_name)
+                .borders(borders)
+                .title_position(title_position);
+
+            let rect = frame.to_screen_rect(Rect::new(x as u16, y as u16, width, height));
+
+            if frame.is_hovering(rect) {
+                self.planet_index = index;
+            }
+
+            let target_id = if self.planet_index == 0 {
+                planet.id
+            } else {
+                planet.satellites[self.planet_index - 1]
+            };
+
+            let target = world.get_planet_or_err(&target_id)?;
+            let zoom_level = if self.planet_index == 0 || target.satellites.len() == 0 {
+                ZoomLevel::In
+            } else {
+                ZoomLevel::Out
+            };
+
+            let button = if index == self.planet_index {
+                Button::new(
+                    "",
+                    UiCallback::ZoomToPlanet {
+                        planet_id: target_id,
+                        zoom_level,
+                    },
+                )
+                .block(block.clone())
+                .hover_block(block)
+                .set_hover_style(UiStyle::DEFAULT)
+            } else {
+                Button::box_on_hover(
+                    "",
+                    UiCallback::ZoomToPlanet {
+                        planet_id: target_id,
+                        zoom_level,
+                    },
+                )
+                .hover_block(block)
+                .set_hover_style(UiStyle::DEFAULT)
+            };
+
+            frame.render_hoverable(button, rect);
+        }
+
+        Ok(())
+    }
+
     fn render_planet_buttons(
         &mut self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         planet: &Planet,
         world: &World,
         area: Rect,
@@ -138,20 +252,19 @@ impl GalaxyPanel {
         let target = if self.planet_index == 0 {
             planet
         } else {
-            world.get_planet_or_err(planet.satellites[self.planet_index - 1])?
+            world.get_planet_or_err(&planet.satellites[self.planet_index - 1])?
         };
 
-        let mut current_id = target.id.clone();
+        let mut current_id = target.id;
         let mut buttons = vec![];
-        while world.get_planet_or_err(current_id)?.satellite_of.is_some() {
-            let parent_id = world.get_planet_or_err(current_id)?.satellite_of.unwrap();
-            let parent = world.get_planet_or_err(parent_id)?;
+        while world.get_planet_or_err(&current_id)?.satellite_of.is_some() {
+            let parent_id = world.get_planet_or_err(&current_id)?.satellite_of.unwrap();
+            let parent = world.get_planet_or_err(&parent_id)?;
             let button = Button::new(
-                format!("{}", parent.name).into(),
+                format!("{}", parent.name),
                 UiCallback::GoToPlanetZoomOut {
                     planet_id: parent_id,
                 },
-                Arc::clone(&self.callback_registry),
             );
             buttons.push(button);
             current_id = parent_id;
@@ -162,41 +275,32 @@ impl GalaxyPanel {
 
         let target_button = if target.satellites.len() > 0 {
             Button::new(
-                target.name.clone().into(),
+                target.name.clone(),
                 UiCallback::GoToPlanetZoomOut {
                     planet_id: target.id,
                 },
-                Arc::clone(&self.callback_registry),
             )
         } else if let Some(parent_id) = target.satellite_of {
             Button::new(
-                target.name.clone().into(),
+                target.name.clone(),
                 UiCallback::GoToPlanetZoomOut {
                     planet_id: parent_id,
                 },
-                Arc::clone(&self.callback_registry),
             )
         } else {
-            panic!("There should be no planet with no satellites and no parent");
+            unreachable!("There should be no planet with no satellites and no parent");
         };
-        buttons.push(target_button);
+        buttons.push(target_button.selected());
 
         if self.zoom_level == ZoomLevel::In {
             let own_team = world.get_own_team()?;
-            let hover_text_target = hover_text_target(frame);
-
             match own_team.current_location {
                 x if x
                     == TeamLocation::OnPlanet {
                         planet_id: planet.id,
                     } =>
                 {
-                    if let Ok(explore_button) = space_adventure_button(
-                        world,
-                        own_team,
-                        &self.callback_registry,
-                        hover_text_target,
-                    ) {
+                    if let Ok(explore_button) = space_adventure_button(world, own_team) {
                         buttons.push(explore_button);
                     }
                 }
@@ -211,15 +315,15 @@ impl GalaxyPanel {
                                     {
                                         format!("Distance {:4} AU - ", distance as f32 / AU as f32)
                                     } else {
-                                        "".into()
+                                        "".to_string()
                                     }
                                 }
-                                _ => "".into(),
+                                _ => "".to_string(),
                             };
 
                             (
                                 own_team.can_travel_to_planet(&planet, time),
-                                time.formatted(),
+                                format!(" ({})", time.formatted()),
                                 format!(
                                     "Travel to {}: {}Time {} - Fuel {}",
                                     planet.name,
@@ -229,21 +333,16 @@ impl GalaxyPanel {
                                 ),
                             )
                         }
-                        Err(e) => (
-                            Err(e),
-                            "unavailable".to_string(),
-                            format!("Travel to {}", planet.name),
-                        ),
+                        Err(e) => (Err(e), "".to_string(), format!("Travel to {}", planet.name)),
                     };
 
                     let mut go_to_planet_button = Button::new(
-                        format!("Travel ({})", button_text).into(),
+                        format!("Travel{}", button_text),
                         UiCallback::TravelToPlanet {
                             planet_id: planet.id,
                         },
-                        Arc::clone(&self.callback_registry),
                     )
-                    .set_hover_text(hover_text, hover_text_target)
+                    .set_hover_text(hover_text)
                     .set_hotkey(UiKey::TRAVEL);
 
                     if can_travel.is_err() {
@@ -262,7 +361,7 @@ impl GalaxyPanel {
         let split = Layout::vertical(constraints).split(area);
         for (idx, button) in buttons.iter().enumerate() {
             frame.render_widget(Clear, split[idx]);
-            frame.render_widget(button.clone(), split[idx]);
+            frame.render_hoverable(button.clone(), split[idx]);
         }
 
         Ok(())
@@ -270,7 +369,7 @@ impl GalaxyPanel {
 
     fn render_planet_lists(
         &mut self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         planet: &Planet,
         world: &World,
         area: Rect,
@@ -278,26 +377,26 @@ impl GalaxyPanel {
         let target = if self.planet_index == 0 {
             planet
         } else {
-            world.get_planet_or_err(planet.satellites[self.planet_index - 1])?
+            world.get_planet_or_err(&planet.satellites[self.planet_index - 1])?
         };
 
-        let team_options = target
+        let mut team_options = target
             .team_ids
             .iter()
-            .filter(|&&team_id| world.get_team_or_err(team_id).is_ok())
-            .sorted_by(|&&a, &&b| {
+            .filter(|&team_id| world.get_team_or_err(team_id).is_ok())
+            .sorted_by(|&a, &b| {
                 world
                     .team_rating(b)
                     .unwrap_or_default()
                     .partial_cmp(&world.team_rating(a).unwrap_or_default())
                     .expect("Value should be some")
             })
-            .map(|&team_id| {
+            .map(|team_id| {
                 let team = world
                     .get_team_or_err(team_id)
                     .expect("Team should be part of the world");
                 let mut style = UiStyle::DEFAULT;
-                if team_id == world.own_team_id {
+                if *team_id == world.own_team_id {
                     style = UiStyle::OWN_TEAM;
                 } else if team.peer_id.is_some() {
                     style = UiStyle::NETWORK;
@@ -305,12 +404,18 @@ impl GalaxyPanel {
                 let text = format!(
                     "{:<MAX_NAME_LENGTH$} {}",
                     team.name,
-                    world.team_rating(team.id).unwrap_or_default().stars()
+                    world.team_rating(team_id).unwrap_or_default().stars()
                 );
                 (team.id, text, style)
             })
             .take(10)
             .collect::<Vec<(TeamId, String, Style)>>();
+
+        if let Some(team_index) = self.team_index {
+            if team_options.len() > team_index {
+                team_options[team_index].2 = UiStyle::SELECTED;
+            }
+        }
 
         let player_options = world
             .players
@@ -383,17 +488,13 @@ impl GalaxyPanel {
                 }));
 
             for (idx, (team_id, text, style)) in team_options.iter().enumerate() {
-                frame.render_widget(
+                frame.render_hoverable(
                     Button::no_box(
-                        Span::styled(text.clone(), style.clone())
-                            .into_left_aligned_line()
-                            .into(),
+                        Span::styled(text.clone(), style.clone()).into_left_aligned_line(),
                         UiCallback::GoToTeam {
                             team_id: team_id.clone(),
                         },
-                        Arc::clone(&self.callback_registry),
-                    )
-                    .set_hover_style(UiStyle::HIGHLIGHT),
+                    ),
                     l_split[idx],
                 );
             }
@@ -409,17 +510,13 @@ impl GalaxyPanel {
                 }));
 
             for (idx, (player_id, text, style)) in player_options.iter().enumerate() {
-                frame.render_widget(
+                frame.render_hoverable(
                     Button::no_box(
-                        Span::styled(text.clone(), style.clone())
-                            .into_left_aligned_line()
-                            .into(),
+                        Span::styled(text.clone(), style.clone()).into_left_aligned_line(),
                         UiCallback::GoToPlayer {
                             player_id: player_id.clone(),
                         },
-                        Arc::clone(&self.callback_registry),
-                    )
-                    .set_hover_style(UiStyle::HIGHLIGHT),
+                    ),
                     l_split[idx],
                 );
             }
@@ -447,41 +544,29 @@ impl GalaxyPanel {
 
     fn get_planet_info_rect(
         &self,
-        central_planet_id: PlanetId,
+        central_planet_id: &PlanetId,
         index: usize,
         world: &World,
         area: Rect,
-    ) -> Rect {
+    ) -> (f32, f32, u16, u16) {
         let central_planet = world.get_planet_or_err(central_planet_id).unwrap();
         match index {
             0 => {
                 let size = ImageResizeInGalaxyGif::ZoomOutCentral {
-                    planet_type: central_planet.planet_type.clone(),
+                    planet_type: central_planet.planet_type,
                 }
                 .size() as u16;
-                let width = min(size + 2, area.width);
-                let height = min(size / 2 + 2, area.height);
-                let x = if area.width > width {
-                    area.x + (area.width - width) / 2
-                } else {
-                    area.x
-                };
-                let y = if area.height > height {
-                    area.y + (area.height - height) / 2
-                } else {
-                    area.y
-                };
 
-                Rect {
-                    x,
-                    y,
-                    width,
-                    height,
-                }
+                let width = area.width.min(size + 2);
+                let height = area.height.min(size / 2 + 2);
+                let x = area.width.saturating_sub(width) / 2;
+                let y = area.height.saturating_sub(height) / 2 + 4;
+
+                (x as f32, y as f32, width, height)
             }
             _ => {
                 let satellite = world
-                    .get_planet_or_err(central_planet.satellites[index - 1])
+                    .get_planet_or_err(&central_planet.satellites[index - 1])
                     .unwrap();
                 let size = ImageResizeInGalaxyGif::ZoomOutSatellite {
                     planet_type: satellite.planet_type.clone(),
@@ -495,26 +580,18 @@ impl GalaxyPanel {
                         / satellite.revolution_period as f32;
                 let (x_planet, y_planet) = ellipse_coords(satellite.axis, theta);
 
-                let x = (area.width as f32 / 2.0 + x_planet).round() as u16 - 2;
-                let y = (area.y as f32 / 2.0 + area.height as f32 / 2.0 + y_planet / 2.0).round()
-                    as u16;
+                let x = (area.width as f32 / 2.0 + x_planet).round() - 2.0;
+                let y = (area.height as f32 / 2.0 + y_planet / 2.0).round() + 2.0;
 
                 let width = size + 5;
                 let height = size / 2 + 3;
 
-                Rect {
-                    x,
-                    y,
-                    width,
-                    height,
-                }
+                (x, y, width, height)
             }
         }
     }
 
-    fn select_target(&mut self) -> Option<UiCallback> {
-        let target = self.planets.get(&self.planet_id)?;
-
+    fn select_target(&mut self, target: &Planet) -> Option<UiCallback> {
         match self.zoom_level {
             ZoomLevel::In => {
                 if self.team_index.is_some() {
@@ -523,8 +600,15 @@ impl GalaxyPanel {
                 }
             }
             ZoomLevel::Out => {
-                let planet_id = self.planet_id.clone();
-                return Some(UiCallback::ZoomInToPlanet { planet_id });
+                let zoom_level = if self.planet_index == 0 || target.satellites.len() == 0 {
+                    ZoomLevel::In
+                } else {
+                    ZoomLevel::Out
+                };
+                return Some(UiCallback::ZoomToPlanet {
+                    planet_id: target.id,
+                    zoom_level,
+                });
             }
         }
         None
@@ -541,21 +625,24 @@ impl Screen for GalaxyPanel {
     }
     fn render(
         &mut self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
         _debug_view: bool,
     ) -> AppResult<()> {
-        let planet = world.get_planet_or_err(self.planet_id)?;
-        // Ensure that rendering area has even width and odd height for correct rect centering
-        let area = Rect {
-            x: area.x,
-            y: area.y,
-            width: area.width - area.width % 2,
-            height: area.height - area.height % 2,
-        };
+        let planet = world.get_planet_or_err(&self.planet_id)?;
+        // Ensure that rendering area has even width and height for correct rect centering
+        let render_area = area; //Rect::new(
+                                //     area.x,
+                                //     area.y,
+                                //     area.width - area.width % 2,
+                                //     area.height - area.height % 2,
+                                // );
 
-        self.render_planet_gif(frame, world, area)?;
+        self.render_planet_gif(frame, planet, world, render_area)?;
+        if self.zoom_level == ZoomLevel::Out {
+            self.render_gif_rects(frame, planet, world, render_area)?;
+        }
 
         let split =
             Layout::horizontal([Constraint::Max(LEFT_PANEL_WIDTH), Constraint::Min(0)]).split(area);
@@ -563,86 +650,61 @@ impl Screen for GalaxyPanel {
         self.render_planet_buttons(frame, planet, world, split[0])?;
         self.render_planet_lists(frame, planet, world, split[0])?;
 
-        if self.zoom_level == ZoomLevel::Out {
-            let rects = (0..planet.satellites.len() + 1)
-                .map(|idx| self.get_planet_info_rect(planet.id.clone(), idx, world, area))
-                .collect::<Vec<Rect>>();
-
-            for idx in 0..rects.len() {
-                let planet_name = if idx == 0 {
-                    planet.name.clone()
-                } else {
-                    world
-                        .get_planet_or_err(planet.satellites[idx - 1])?
-                        .name
-                        .clone()
-                };
-                let button = RadioButton::box_on_hover(
-                    "".into(),
-                    UiCallback::ZoomInToPlanet {
-                        planet_id: self.planet_id,
-                    },
-                    Arc::clone(&self.callback_registry),
-                    &mut self.planet_index,
-                    idx,
-                )
-                .set_box_hover_style(UiStyle::NETWORK)
-                .set_box_hover_title(planet_name);
-                let rect = rects[idx];
-                let frame_rect = frame.area();
-                if rect.x + rect.width <= frame_rect.width
-                    && rect.y + rect.height <= frame_rect.height
-                {
-                    frame.render_widget(button, rect);
-                }
-            }
-        }
         Ok(())
     }
 
-    fn handle_key_events(&mut self, key_event: KeyEvent, _world: &World) -> Option<UiCallback> {
-        let target = self.planets.get(&self.planet_id);
-        if target.is_none() {
+    fn handle_key_events(&mut self, key_event: KeyEvent, world: &World) -> Option<UiCallback> {
+        let planet = if let Some(planet) = self.planets.get(&self.planet_id) {
+            planet
+        } else {
             return None;
-        }
-        let target = target.unwrap();
+        };
+
         match key_event.code {
             KeyCode::Up => match self.zoom_level {
                 ZoomLevel::Out => {
-                    self.planet_index = (self.planet_index + target.satellites.len())
-                        % (target.satellites.len() + 1);
+                    self.planet_index = (self.planet_index + planet.satellites.len())
+                        % (planet.satellites.len() + 1);
                 }
                 ZoomLevel::In => {
-                    if target.team_ids.len() == 0 {
+                    if planet.team_ids.len() == 0 {
                         self.team_index = None;
                     } else {
                         self.team_index = Some(
-                            (self.team_index.unwrap_or_default() + target.team_ids.len() - 1)
-                                % target.team_ids.len(),
+                            (self.team_index.unwrap_or_default() + planet.team_ids.len() - 1)
+                                % planet.team_ids.len(),
                         );
                     }
                 }
             },
             KeyCode::Down => match self.zoom_level {
                 ZoomLevel::Out => {
-                    self.planet_index = (self.planet_index + 1) % (target.satellites.len() + 1);
+                    self.planet_index = (self.planet_index + 1) % (planet.satellites.len() + 1);
                 }
                 ZoomLevel::In => {
-                    if target.team_ids.len() == 0 {
+                    if planet.team_ids.len() == 0 {
                         self.team_index = None;
                     } else {
                         self.team_index =
-                            Some((self.team_index.unwrap_or_default() + 1) % target.team_ids.len());
+                            Some((self.team_index.unwrap_or_default() + 1) % planet.team_ids.len());
                     }
                 }
             },
 
             KeyCode::Enter => {
-                return self.select_target();
+                let target_id = if self.planet_index == 0 {
+                    planet.id
+                } else {
+                    planet.satellites[self.planet_index - 1]
+                };
+
+                if let Ok(target) = world.get_planet_or_err(&target_id) {
+                    return self.select_target(target);
+                }
             }
             KeyCode::Backspace => {
-                if self.zoom_level == ZoomLevel::Out || target.satellites.len() == 0 {
-                    if let Some(parent) = target.satellite_of.clone() {
+                if self.zoom_level == ZoomLevel::Out || planet.satellites.len() == 0 {
+                    if let Some(parent) = planet.satellite_of.clone() {
                         self.planet_id = parent;
                     }
                 }

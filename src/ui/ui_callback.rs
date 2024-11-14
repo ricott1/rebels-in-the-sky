@@ -14,7 +14,7 @@ use crate::{
     game_engine::{tactic::Tactic, types::TeamInGame},
     image::color_map::{ColorMap, ColorPreset},
     network::{challenge::Challenge, trade::Trade},
-    space_adventure::{PlayerControlled, PlayerInput, SpaceAdventure},
+    space_adventure::{ControllableSpaceship, PlayerInput, SpaceAdventure},
     types::{
         AppCallback, AppResult, GameId, PlanetId, PlayerId, ResourceMap, StorableResourceMap,
         SystemTimeTick, TeamId, Tick,
@@ -39,8 +39,9 @@ use rand_chacha::ChaCha8Rng;
 use ratatui::layout::Rect;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub enum UiCallback {
+    #[default]
     None,
     PromptQuit,
     PushTutorialPage {
@@ -182,8 +183,9 @@ pub enum UiCallback {
     ExploreAroundPlanet {
         duration: Tick,
     },
-    ZoomInToPlanet {
+    ZoomToPlanet {
         planet_id: PlanetId,
+        zoom_level: ZoomLevel,
     },
     DialSeed,
     Sync,
@@ -210,8 +212,9 @@ pub enum UiCallback {
     SpaceMovePlayerRight,
     SpaceMovePlayerDown,
     SpaceMovePlayerUp,
-    SpaceMainButton,
-    SpaceSecondButton,
+    SpaceToggleAutofire,
+    SpaceShoot,
+    SpaceReleaseScraps,
 }
 
 impl UiCallback {
@@ -287,7 +290,7 @@ impl UiCallback {
         Box::new(move |app: &mut App| {
             let team_id = app
                 .world
-                .get_player(player_id)
+                .get_player(&player_id)
                 .ok_or(anyhow!("Player {:?} not found", player_id))?
                 .team
                 .ok_or(anyhow!("Player {:?} has no team", player_id))?;
@@ -295,7 +298,7 @@ impl UiCallback {
                 app.ui.team_panel.set_index(index);
                 let player_index = app
                     .world
-                    .get_team_or_err(team_id)?
+                    .get_team_or_err(&team_id)?
                     .player_ids
                     .iter()
                     .position(|&x| x == player_id)
@@ -310,20 +313,17 @@ impl UiCallback {
 
     fn go_to_game(game_id: GameId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            if let Some(index) = app.ui.game_panel.games.iter().position(|&x| x == game_id) {
-                app.ui.game_panel.set_index(index);
-                app.ui.switch_to(super::ui::UiTab::Games);
-            }
-
+            app.ui.game_panel.set_active_game(game_id)?;
+            app.ui.switch_to(super::ui::UiTab::Games);
             Ok(None)
         })
     }
 
     fn go_to_home_planet(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let team = app.world.get_team_or_err(team_id)?;
+            let team = app.world.get_team_or_err(&team_id)?;
 
-            let target = app.world.get_planet_or_err(team.home_planet_id)?;
+            let target = app.world.get_planet_or_err(&team.home_planet_id)?;
 
             let team_index = target.team_ids.iter().position(|&x| x == team_id);
 
@@ -338,12 +338,12 @@ impl UiCallback {
 
     fn go_to_current_team_planet(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let team = app.world.get_team_or_err(team_id)?;
+            let team = app.world.get_team_or_err(&team_id)?;
 
             let target = match team.current_location {
                 TeamLocation::OnPlanet {
                     planet_id: current_planet_id,
-                } => app.world.get_planet_or_err(current_planet_id)?,
+                } => app.world.get_planet_or_err(&current_planet_id)?,
                 TeamLocation::Travelling { .. } => {
                     return Err(anyhow!("Team is travelling"));
                 }
@@ -368,13 +368,13 @@ impl UiCallback {
 
     fn go_to_current_player_planet(player_id: PlayerId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let player = app.world.get_player_or_err(player_id)?;
+            let player = app.world.get_player_or_err(&player_id)?;
 
             match player.current_location {
                 PlayerLocation::OnPlanet {
                     planet_id: current_planet_id,
                 } => {
-                    let target = app.world.get_planet_or_err(current_planet_id)?;
+                    let target = app.world.get_planet_or_err(&current_planet_id)?;
                     app.ui
                         .galaxy_panel
                         .go_to_planet(target.id, None, ZoomLevel::In);
@@ -439,39 +439,19 @@ impl UiCallback {
         })
     }
 
-    fn zoom_in_to_planet(planet_id: PlanetId) -> AppCallback {
+    fn zoom_to_planet(planet_id: PlanetId, zoom_level: ZoomLevel) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let target = app.world.get_planet_or_err(planet_id)?;
+            let target = app.world.get_planet_or_err(&planet_id)?;
             let panel = &mut app.ui.galaxy_panel;
 
-            if panel.planet_index == 0 {
-                panel.zoom_level = ZoomLevel::In;
-
-                if target.team_ids.len() == 0 {
-                    panel.team_index = None;
-                } else {
-                    panel.team_index = Some(0);
-                }
+            panel.set_zoom_level(zoom_level);
+            panel.set_planet_index(0);
+            panel.set_planet_id(planet_id);
+            panel.set_team_index(if target.team_ids.len() == 0 {
+                None
             } else {
-                panel.planet_id = target.satellites[panel.planet_index - 1].clone();
-
-                let new_target = panel
-                    .planets
-                    .get(&panel.planet_id)
-                    .ok_or(anyhow!("Planet {:?} not found", panel.planet_id))?;
-
-                panel.planet_index = 0;
-                if new_target.satellites.len() == 0 {
-                    panel.zoom_level = ZoomLevel::In;
-                    if new_target.team_ids.len() == 0 {
-                        panel.team_index = None;
-                    } else {
-                        panel.team_index = Some(0);
-                    }
-                } else {
-                    panel.zoom_level = ZoomLevel::Out;
-                }
-            }
+                Some(0)
+            });
 
             Ok(None)
         })
@@ -480,7 +460,7 @@ impl UiCallback {
     fn challenge_team(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
             let own_team = app.world.get_own_team()?;
-            let team = app.world.get_team_or_err(team_id)?;
+            let team = app.world.get_team_or_err(&team_id)?;
             own_team.can_challenge_team(team)?;
 
             if let Some(peer_id) = team.peer_id {
@@ -519,16 +499,7 @@ impl UiCallback {
                 .generate_game(home_team_in_game, away_team_in_game)?;
 
             app.ui.game_panel.update(&app.world)?;
-
-            let index = app
-                .ui
-                .game_panel
-                .games
-                .iter()
-                .position(|&x| x == game_id)
-                .ok_or(anyhow!("Game {:?} not found", game_id))?;
-
-            app.ui.game_panel.set_index(index);
+            app.ui.game_panel.set_active_game(game_id)?;
             app.ui.switch_to(super::ui::UiTab::Games);
             return Ok(Some("Challenge accepted".to_string()));
         })
@@ -538,14 +509,14 @@ impl UiCallback {
         Box::new(move |app: &mut App| {
             let own_team = app.world.get_own_team()?;
 
-            let target_player = app.world.get_player_or_err(target_player_id)?;
+            let target_player = app.world.get_player_or_err(&target_player_id)?;
             let target_team = if let Some(team_id) = target_player.team {
-                app.world.get_team_or_err(team_id)?
+                app.world.get_team_or_err(&team_id)?
             } else {
                 return Err(anyhow!("Target player has no team"));
             };
 
-            let proposer_player = app.world.get_player_or_err(proposer_player_id)?;
+            let proposer_player = app.world.get_player_or_err(&proposer_player_id)?;
             own_team.can_trade_players(proposer_player, target_player, target_team)?;
 
             if let Some(peer_id) = target_team.peer_id {
@@ -685,7 +656,7 @@ impl UiCallback {
 
     fn next_training_focus(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let mut team = app.world.get_team_or_err(team_id)?.clone();
+            let mut team = app.world.get_team_or_err(&team_id)?.clone();
             if team.current_game.is_some() {
                 return Err(anyhow!("Cannot change training focus:\nTeam is playing"));
             }
@@ -705,7 +676,7 @@ impl UiCallback {
     fn travel_to_planet(planet_id: PlanetId) -> AppCallback {
         Box::new(move |app: &mut App| {
             let mut own_team = app.world.get_own_team()?.clone();
-            let target_planet = app.world.get_planet_or_err(planet_id)?;
+            let target_planet = app.world.get_planet_or_err(&planet_id)?;
 
             let mut current_planet = match own_team.current_location {
                 TeamLocation::OnPlanet {
@@ -714,7 +685,7 @@ impl UiCallback {
                     if current_planet_id == planet_id {
                         return Err(anyhow!("Already on planet"));
                     }
-                    app.world.get_planet_or_err(current_planet_id)?.clone()
+                    app.world.get_planet_or_err(&current_planet_id)?.clone()
                 }
                 TeamLocation::Travelling { .. } => return Err(anyhow!("Team is travelling")),
                 TeamLocation::Exploring { .. } => return Err(anyhow!("Team is exploring")),
@@ -762,7 +733,7 @@ impl UiCallback {
             };
 
             for player in own_team.player_ids.iter() {
-                let mut player = app.world.get_player_or_err(*player)?.clone();
+                let mut player = app.world.get_player_or_err(player)?.clone();
                 player.set_jersey(&pirate_jersey);
                 app.world.players.insert(player.id, player);
             }
@@ -789,7 +760,7 @@ impl UiCallback {
                 }
             };
 
-            let mut around_planet = app.world.get_planet_or_err(planet_id)?.clone();
+            let mut around_planet = app.world.get_planet_or_err(&planet_id)?.clone();
             own_team.can_explore_around_planet(&around_planet, duration)?;
 
             own_team.current_location = TeamLocation::Exploring {
@@ -814,8 +785,8 @@ impl UiCallback {
                 color: own_team.jersey.color.clone(),
             };
 
-            for player in own_team.player_ids.iter() {
-                let mut player = app.world.get_player_or_err(*player)?.clone();
+            for player_id in own_team.player_ids.iter() {
+                let mut player = app.world.get_player_or_err(player_id)?.clone();
                 player.set_jersey(&pirate_jersey);
                 app.world.players.insert(player.id, player);
             }
@@ -877,7 +848,7 @@ impl UiCallback {
                         planet_id: asteroid_id,
                     };
 
-                    let mut asteroid = app.world.get_planet_or_err(asteroid_id)?.clone();
+                    let mut asteroid = app.world.get_planet_or_err(&asteroid_id)?.clone();
                     asteroid.team_ids.push(team.id);
                     asteroid.version += 1;
 
@@ -933,6 +904,9 @@ impl UiCallback {
                 SpaceshipUpgradeTarget::Storage { component } => {
                     team.spaceship.storage = component.clone()
                 }
+                SpaceshipUpgradeTarget::Shooter { component } => {
+                    team.spaceship.shooter = component.clone()
+                }
                 SpaceshipUpgradeTarget::Repairs { .. } => {}
             };
 
@@ -961,6 +935,10 @@ impl UiCallback {
         match self {
             UiCallback::None => Ok(None),
             UiCallback::PromptQuit => {
+                if app.ui.state == UiState::Splash {
+                    app.quit()?;
+                    return Ok(None);
+                }
                 let during_space_adventure = app.world.space_adventure.is_some();
                 app.ui.push_popup(PopupMessage::PromptQuit {
                     during_space_adventure,
@@ -1011,9 +989,7 @@ impl UiCallback {
                 unit_cost,
             } => Self::trade_resource(*resource, *amount, *unit_cost)(app),
             UiCallback::SetTeamColors { color, channel } => {
-                app.ui
-                    .new_team_screen
-                    .set_team_colors(color.clone(), channel.clone());
+                app.ui.new_team_screen.set_team_colors(*color, *channel);
                 Ok(None)
             }
             UiCallback::SetTeamTactic { tactic } => {
@@ -1164,7 +1140,7 @@ impl UiCallback {
                 Ok(None)
             }
             UiCallback::PromptReleasePlayer { player_id } => {
-                let player = app.world.get_player_or_err(*player_id)?;
+                let player = app.world.get_player_or_err(player_id)?;
                 app.ui.push_popup(PopupMessage::ReleasePlayer {
                     player_name: player.info.full_name(),
                     player_id: *player_id,
@@ -1188,12 +1164,12 @@ impl UiCallback {
                 Ok(None)
             }
             UiCallback::SetCrewRole { player_id, role } => {
-                app.world.set_team_crew_role(role.clone(), *player_id)?;
+                app.world.set_team_crew_role(*role, *player_id)?;
                 Ok(None)
             }
 
             UiCallback::Drink { player_id } => {
-                let mut player = app.world.get_player_or_err(*player_id)?.clone();
+                let mut player = app.world.get_player_or_err(player_id)?.clone();
                 player.can_drink(&app.world)?;
 
                 let morale_bonus = if matches!(player.special_trait, Some(Trait::Spugna)) {
@@ -1213,7 +1189,7 @@ impl UiCallback {
 
                 let mut team = app
                     .world
-                    .get_team_or_err(player.team.expect("Player should have team"))?
+                    .get_team_or_err(&player.team.expect("Player should have team"))?
                     .clone();
 
                 team.resources.sub(Resource::RUM, 1)?;
@@ -1257,7 +1233,7 @@ impl UiCallback {
                             .map(|(&id, _)| id.clone()),
                     };
                     if let Some(to) = portal_target_id {
-                        let portal_target = app.world.get_planet_or_err(to)?;
+                        let portal_target = app.world.get_planet_or_err(&to)?;
                         // We set the new target to the portal_target
                         let from = match team.current_location {
                             TeamLocation::OnPlanet { .. }
@@ -1280,7 +1256,7 @@ impl UiCallback {
 
                         app.ui.push_popup(PopupMessage::PortalFound {
                             player_name: player.info.shortened_name(),
-                            portal_target: portal_target.name.clone(),
+                            portal_target: portal_target.name.to_string(),
                             tick: Tick::now(),
                         });
                     }
@@ -1320,7 +1296,10 @@ impl UiCallback {
             UiCallback::ExploreAroundPlanet { duration } => {
                 Self::explore_around_planet(duration.clone())(app)
             }
-            UiCallback::ZoomInToPlanet { planet_id } => Self::zoom_in_to_planet(*planet_id)(app),
+            UiCallback::ZoomToPlanet {
+                planet_id,
+                zoom_level,
+            } => Self::zoom_to_planet(*planet_id, *zoom_level)(app),
             UiCallback::DialSeed => Self::dial_seed()(app),
             UiCallback::Sync => Self::sync()(app),
             UiCallback::SendMessage { message } => Self::send(message.clone())(app),
@@ -1341,8 +1320,20 @@ impl UiCallback {
                 app.ui.set_state(UiState::SpaceAdventure);
                 let mut own_team = app.world.get_own_team()?.clone();
                 own_team.can_start_space_adventure()?;
-                let space = SpaceAdventure::new()?.with_spaceship(
+                let team_speed_bonus =
+                    TeamBonus::SpaceshipSpeed.current_team_bonus(&app.world, &own_team.id)?;
+
+                let asteroid_planet_probability = match own_team.current_location {
+                    TeamLocation::OnPlanet { planet_id } => {
+                        let current_planet = app.world.get_planet_or_err(&planet_id)?;
+                        current_planet.asteroid_probability
+                    }
+                    _ => unreachable!(),
+                };
+
+                let space = SpaceAdventure::new(asteroid_planet_probability)?.with_player(
                     &own_team.spaceship,
+                    team_speed_bonus,
                     own_team.resources.clone(),
                     own_team.fuel(),
                 )?;
@@ -1376,46 +1367,86 @@ impl UiCallback {
                 app.ui.set_state(UiState::Main);
                 let mut own_team = app.world.get_own_team()?.clone();
 
-                if let Some(space) = app.world.space_adventure.as_ref() {
-                    if let Some(player) = space.get_player() {
-                        let player_control: &dyn PlayerControlled = player
-                            .as_trait_ref()
-                            .expect("Player should implement PlayerControlled.");
+                let space = app
+                    .world
+                    .space_adventure
+                    .take()
+                    .ok_or(anyhow!("World should have a space adventure"))?;
 
-                        // If durability is zero, the cargo (and fuel) has been lost.
-                        let mut new_resources = if player_control.durability() > 0 {
-                            player_control.resources().clone()
-                        } else {
-                            ResourceMap::default()
-                        };
+                let player = space
+                    .get_player()
+                    .ok_or(anyhow!("Space adventure should have a player entity."))?;
+                let player_control: &dyn ControllableSpaceship = player
+                    .as_trait_ref()
+                    .expect("Player should implement ControllableSpaceship.");
 
-                        // Special handling for fuel. Override current resources with fuel.
-                        if player_control.durability() > 0 {
-                            new_resources.insert(Resource::FUEL, player_control.fuel());
-                        }
+                // If durability is zero, the cargo (and fuel) has been lost.
+                let mut new_resources = if player_control.current_durability() > 0 {
+                    player_control.resources().clone()
+                } else {
+                    ResourceMap::default()
+                };
 
-                        own_team.resources = new_resources;
-                        own_team
-                            .spaceship
-                            .set_current_durability(player_control.current_durability());
-
-                        match own_team.current_location {
-                            TeamLocation::OnSpaceAdventure { around } => {
-                                own_team.current_location =
-                                    TeamLocation::OnPlanet { planet_id: around }
-                            }
-                            _ => {
-                                return Err(anyhow!("Team should be on a space adventure."));
-                            }
-                        }
-                        app.world.teams.insert(own_team.id, own_team);
-                    }
-                    app.world.space_adventure = None;
-                    return Ok(Some("Team returned from space adventure.".to_string()));
+                // Special handling for fuel. Override current resources with fuel.
+                if player_control.current_durability() > 0 {
+                    new_resources.insert(Resource::FUEL, player_control.fuel());
                 }
 
-                app.world.space_adventure = None;
-                Ok(None)
+                // Update team space adventure data
+                own_team.number_of_space_adventures += 1;
+                let mut resources_gathered_text = "".to_string();
+
+                for (resource, &amount) in new_resources.iter() {
+                    let current_amount = own_team.resources.value(resource);
+                    if amount > current_amount {
+                        let gathered_amount = amount - current_amount;
+                        let current_gathered = own_team.resources_gathered.value(resource);
+                        own_team
+                            .resources_gathered
+                            .insert(*resource, current_gathered + gathered_amount);
+                        resources_gathered_text.push_str(
+                            format!(
+                                "  {} {}\n",
+                                gathered_amount,
+                                resource.to_string().to_lowercase()
+                            )
+                            .as_str(),
+                        );
+                    }
+                }
+
+                if resources_gathered_text.len() == 0 {
+                    resources_gathered_text.push_str("No resources collected!")
+                } else {
+                    resources_gathered_text.push_str("collected.")
+                }
+
+                own_team.resources = new_resources;
+                own_team
+                    .spaceship
+                    .set_current_durability(player_control.current_durability());
+
+                match own_team.current_location {
+                    TeamLocation::OnSpaceAdventure { around } => {
+                        own_team.current_location = TeamLocation::OnPlanet { planet_id: around }
+                    }
+                    _ => {
+                        return Err(anyhow!("Team should be on a space adventure."));
+                    }
+                }
+                app.world.teams.insert(own_team.id, own_team);
+
+                if let Some(asteroid_type) = space.asteroid_planet_found() {
+                    app.ui.push_popup(PopupMessage::AsteroidNameDialog {
+                        tick: Tick::now(),
+                        asteroid_type,
+                    });
+                }
+
+                return Ok(Some(format!(
+                    "Team returned from space adventure:\n{}",
+                    resources_gathered_text
+                )));
             }
             UiCallback::SpaceMovePlayerLeft => {
                 if let Some(space) = app.world.space_adventure.as_mut() {
@@ -1445,16 +1476,24 @@ impl UiCallback {
 
                 Ok(None)
             }
-            UiCallback::SpaceMainButton => {
+            UiCallback::SpaceToggleAutofire => {
                 if let Some(space) = app.world.space_adventure.as_mut() {
-                    space.handle_player_input(PlayerInput::MainButton)?;
+                    space.handle_player_input(PlayerInput::ToggleAutofire)?;
                 }
 
                 Ok(None)
             }
-            UiCallback::SpaceSecondButton => {
+            UiCallback::SpaceShoot => {
                 if let Some(space) = app.world.space_adventure.as_mut() {
-                    space.handle_player_input(PlayerInput::SecondButton)?;
+                    space.handle_player_input(PlayerInput::Shoot)?;
+                }
+
+                Ok(None)
+            }
+
+            UiCallback::SpaceReleaseScraps => {
+                if let Some(space) = app.world.space_adventure.as_mut() {
+                    space.handle_player_input(PlayerInput::ReleaseScraps)?;
                 }
 
                 Ok(None)
@@ -1463,12 +1502,12 @@ impl UiCallback {
     }
 }
 
-#[derive(Default, Debug, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct CallbackRegistry {
     mouse_callbacks: HashMap<MouseEventKind, HashMap<Option<Rect>, UiCallback>>,
     keyboard_callbacks: HashMap<KeyCode, UiCallback>,
     hovering: (u16, u16),
-    max_layer: u8,
+    max_layer: usize,
 }
 
 impl CallbackRegistry {
@@ -1480,11 +1519,11 @@ impl CallbackRegistry {
         Self::default()
     }
 
-    pub fn set_max_layer(&mut self, layer: u8) {
+    pub fn set_max_layer(&mut self, layer: usize) {
         self.max_layer = layer;
     }
 
-    pub fn get_max_layer(&mut self) -> u8 {
+    pub fn get_max_layer(&self) -> usize {
         self.max_layer
     }
 
@@ -1514,8 +1553,12 @@ impl CallbackRegistry {
         Self::contains(&rect, self.hovering.0, self.hovering.1)
     }
 
-    pub fn set_hovering(&mut self, event: MouseEvent) {
-        self.hovering = (event.column, event.row);
+    pub fn hovering(&self) -> (u16, u16) {
+        self.hovering
+    }
+
+    pub fn set_hovering(&mut self, position: (u16, u16)) {
+        self.hovering = position;
     }
 
     pub fn handle_mouse_event(&self, event: &MouseEvent) -> Option<UiCallback> {

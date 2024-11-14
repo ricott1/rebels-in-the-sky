@@ -58,8 +58,7 @@ impl AppServer {
         println!("Starting SSH server. Press Ctrl-C to exit.");
 
         let signing_key = load_keys().unwrap_or_else(|_| {
-            let key_pair =
-                russh_keys::key::KeyPair::generate_ed25519().expect("Failed to generate key pair");
+            let key_pair = russh_keys::key::KeyPair::generate_ed25519();
             let signing_key = match key_pair {
                 russh_keys::key::KeyPair::Ed25519(signing_key) => signing_key,
                 _ => panic!("SSH server: Invalid KeyPair"),

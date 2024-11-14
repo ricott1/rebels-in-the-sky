@@ -1,6 +1,8 @@
 mod asteroid;
+mod collector;
 mod constants;
 mod fragment;
+mod networking;
 mod particle;
 mod projectile;
 mod space;

@@ -1,6 +1,7 @@
-use super::button::RadioButton;
+use super::button::Button;
 use super::gif_map::*;
-use super::ui_callback::{CallbackRegistry, UiCallback};
+use super::ui_callback::UiCallback;
+use super::ui_frame::UiFrame;
 use super::utils::big_text;
 use super::{
     traits::{Screen, SplitPanel},
@@ -19,9 +20,7 @@ use ratatui::layout::Margin;
 use ratatui::{
     prelude::{Constraint, Layout, Rect},
     widgets::{Paragraph, Wrap},
-    Frame,
 };
-use std::sync::{Arc, Mutex};
 use std::vec;
 
 const TITLE_WIDTH: u16 = 71;
@@ -43,11 +42,10 @@ pub struct SplashScreen {
     tick: usize,
     can_load_world: bool,
     audio_player_state: AudioPlayerState,
-    callback_registry: Arc<Mutex<CallbackRegistry>>,
-    gif_map: Arc<Mutex<GifMap>>,
+    gif_map: GifMap,
 }
 
-const QUOTES: [&'static str;14] = [
+const QUOTES: [&'static str;15] = [
     " “What cannot be destroyed can, nonetheless, be diverted, frozen, transformed, and gradually deprived of its substance - which in the case of states, is ultimately their capacity to inspire terror.” - D. Graeber",
     " “Aber der Staat lügt in allen Zungen des Guten und Bösen; und was er auch redet, er lügt—und was er auch hat, gestohlen hat er's.” - F. Nietzsche",
     " “That is what I have always understood to be the essence of anarchism: the conviction that the burden of proof has to be placed on authority, and that it should be dismantled if that burden cannot be met.” - N. Chomsky",
@@ -62,8 +60,8 @@ const QUOTES: [&'static str;14] = [
     " “Dilige, et quod vis fac.” - Aurelius Augustinus Hipponensis",
     " “The only way to deal with an unfree world is to become so absolutely free that your very existence is an act of rebellion.” - A. Camus",
     " “He who can destroy a thing, controls a thing.” - F. Herbert",
-    " “What's law? Control? Laws filter chaos and what drips through? Serenity? [..] Don't look too closely at the law. Do, and you'll find the rationalised interpretations, the legal casuistry, the precedents of convenience. You'll find the serenity, which is just another word for death.” - F. Herbert"
-
+    " “What's law? Control? Laws filter chaos and what drips through? Serenity? [..] Don't look too closely at the law. Do, and you'll find the rationalised interpretations, the legal casuistry, the precedents of convenience. You'll find the serenity, which is just another word for death.” - F. Herbert",
+    " “I do not demand any right, therefore I need not recognize any either.” - M. Stirner"
     ];
 
 const TITLE: [&'static str; 13] = [
@@ -84,11 +82,7 @@ const TITLE: [&'static str; 13] = [
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 impl SplashScreen {
-    pub fn new(
-        store_prefix: &str,
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-        gif_map: Arc<Mutex<GifMap>>,
-    ) -> Self {
+    pub fn new(store_prefix: &str) -> Self {
         let mut selection_text = vec![];
         let mut can_load_world = false;
         let mut continue_text = "Continue".to_string();
@@ -123,8 +117,7 @@ impl SplashScreen {
             tick: 0,
             can_load_world,
             audio_player_state: AudioPlayerState::Disabled,
-            callback_registry,
-            gif_map,
+            gif_map: GifMap::new(),
         }
     }
 
@@ -154,7 +147,7 @@ impl Screen for SplashScreen {
     }
     fn render(
         &mut self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
         _debug_view: bool,
@@ -214,11 +207,8 @@ impl Screen for SplashScreen {
         let mut gif_lines = if self.index == 0 {
             SPINNING_BALL_GIF[(self.tick / 4) % SPINNING_BALL_GIF.len()].clone()
         } else {
-            self.gif_map.lock().unwrap().planet_zoom_in_frame_lines(
-                SOL_ID.clone(),
-                self.tick / 3,
-                world,
-            )?
+            self.gif_map
+                .planet_zoom_in_frame_lines(&SOL_ID, self.tick / 3, world)?
         };
 
         let offset = if gif_lines.len() > split[3].height as usize {
@@ -261,25 +251,31 @@ impl Screen for SplashScreen {
         }
 
         for i in 0..selection_split.len() - 1 {
-            let mut button = RadioButton::box_on_hover(
-                self.selection_text[i].clone().into(),
-                self.get_ui_preset_at_index(i),
-                Arc::clone(&self.callback_registry),
-                &mut self.index,
-                i,
-            );
+            let mut button = if i == self.index {
+                Button::new(
+                    self.selection_text[i].clone(),
+                    self.get_ui_preset_at_index(i),
+                )
+                .selected()
+            } else {
+                Button::box_on_hover(
+                    self.selection_text[i].clone(),
+                    self.get_ui_preset_at_index(i),
+                )
+            };
 
             // Disable continue button if no world exists
             if i == 0 && self.can_load_world == false {
-                button.disable();
+                button.disable(Some("No save file found".to_string()));
             } else if i > 0 && world.is_simulating() {
-                button.disable();
+                button.disable(Some("Simulating world"));
             }
             // Disable music button if audio is not supported
             if i == 2 && self.audio_player_state == AudioPlayerState::Disabled {
-                button.disable();
+                button.disable(Some("Sound not supported"));
             }
-            frame.render_widget(button, selection_split[i]);
+
+            frame.render_hoverable(button, selection_split[i]);
         }
 
         frame.render_widget(

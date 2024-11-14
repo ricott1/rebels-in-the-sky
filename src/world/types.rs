@@ -1,8 +1,8 @@
 use std::fmt::Display;
 
 use super::{
-    constants::DEFAULT_PLANET_ID,
-    player::{InfoStats, Player},
+    constants::{DEFAULT_PLANET_ID, KILOMETER},
+    player::Player,
     skill::MAX_SKILL,
     world::World,
 };
@@ -16,26 +16,6 @@ use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::{Display, FromRepr};
 use strum_macros::EnumIter;
-
-pub type Size = u8;
-pub const SIZE_LARGE_OFFSET: Size = 7;
-
-pub fn size_from_info(info: &InfoStats) -> Size {
-    let mut size = match info.height {
-        x if x <= 184.0 => 0,
-        x if x <= 190.0 => 1,
-        x if x <= 196.0 => 2,
-        x if x <= 202.0 => 3,
-        x if x <= 208.0 => 4,
-        x if x <= 214.0 => 5,
-        _ => 6,
-    };
-    let bmi = info.weight as u32 * 10_000 / (info.height as u32 * info.height as u32);
-    if bmi >= 27 || info.population == Population::Pupparoll {
-        size += SIZE_LARGE_OFFSET;
-    }
-    size as Size
-}
 
 #[derive(
     Debug, Default, PartialEq, Eq, Clone, Copy, EnumIter, Serialize_repr, Deserialize_repr, Hash,
@@ -263,8 +243,9 @@ impl Population {
             ],
             Self::Octopulp => vec![
                 (SkinColorMap::LightPurple, 0.45),
-                (SkinColorMap::Dark, 0.01),
+                (SkinColorMap::Dark, 0.05),
                 (SkinColorMap::LightBlue, 0.5),
+                (SkinColorMap::Yellow, 0.02),
             ],
         };
 
@@ -309,7 +290,7 @@ pub enum TeamLocation {
         to: PlanetId,
         started: Tick,
         duration: Tick,
-        distance: u128,
+        distance: KILOMETER,
     },
     OnPlanet {
         planet_id: PlanetId,
@@ -433,8 +414,6 @@ impl TrainingFocus {
     }
 }
 
-const BASE_BONUS: f32 = 1.0;
-const BONUS_PER_SKILL: f32 = 1.0 / MAX_SKILL;
 #[derive(Clone, Copy, Debug)]
 pub enum TeamBonus {
     Exploration,       //pilot
@@ -459,7 +438,9 @@ impl Display for TeamBonus {
 }
 
 impl TeamBonus {
-    pub fn current_team_bonus(&self, world: &World, team_id: TeamId) -> AppResult<f32> {
+    pub const BASE_BONUS: f32 = 1.0;
+    const BONUS_PER_SKILL: f32 = 1.0 / MAX_SKILL;
+    pub fn current_team_bonus(&self, world: &World, team_id: &TeamId) -> AppResult<f32> {
         let team = world.get_team_or_err(team_id)?;
         let player_id = match self {
             TeamBonus::Exploration => team.crew_roles.pilot,
@@ -471,18 +452,18 @@ impl TeamBonus {
         };
 
         let skill = if let Some(id) = player_id {
-            let player = world.get_player_or_err(id)?;
+            let player = world.get_player_or_err(&id)?;
             self.as_skill(player).unwrap_or_default()
         } else {
             0.0
         };
 
-        Ok(BASE_BONUS + BONUS_PER_SKILL * skill)
+        Ok(Self::BASE_BONUS + Self::BONUS_PER_SKILL * skill)
     }
 
     pub fn current_player_bonus(&self, player: &Player) -> AppResult<f32> {
         let skill = self.as_skill(player).unwrap_or_default();
-        Ok(BASE_BONUS + BONUS_PER_SKILL * skill)
+        Ok(Self::BASE_BONUS + Self::BONUS_PER_SKILL * skill)
     }
 
     pub fn as_skill(&self, player: &Player) -> AppResult<f32> {

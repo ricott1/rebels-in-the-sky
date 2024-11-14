@@ -1,5 +1,3 @@
-use std::{sync::Arc, sync::Mutex};
-
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Layout, Rect},
@@ -9,7 +7,11 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use super::ui_callback::{CallbackRegistry, UiCallback};
+use super::{
+    constants::UiStyle,
+    traits::HoverableStatefulWidget,
+    ui_callback::{CallbackRegistry, UiCallback},
+};
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
 pub struct ClickableCell<'a> {
@@ -122,9 +124,9 @@ pub struct ClickableTable<'a> {
     /// Space between each column
     column_spacing: u16,
     /// Style used to render the selected row
-    highlight_style: Style,
+    select_style: Style,
     // Style used to render hovered item
-    hovering_style: Style,
+    hover_style: Style,
     /// Symbol in front of the selected rom
     highlight_symbol: Option<&'a str>,
     /// Optional header
@@ -133,11 +135,10 @@ pub struct ClickableTable<'a> {
     rows: Vec<ClickableRow<'a>>,
     /// Decides when to allocate spacing for the row selection
     highlight_spacing: HighlightSpacing,
-    callback_registry: Arc<Mutex<CallbackRegistry>>,
 }
 
 impl<'a> ClickableTable<'a> {
-    pub fn new<T>(rows: T, callback_registry: Arc<Mutex<CallbackRegistry>>) -> Self
+    pub fn new<T>(rows: T) -> Self
     where
         T: IntoIterator<Item = ClickableRow<'a>>,
     {
@@ -146,13 +147,12 @@ impl<'a> ClickableTable<'a> {
             style: Style::default(),
             widths: &[],
             column_spacing: 1,
-            highlight_style: Style::default(),
-            hovering_style: Style::default(),
+            select_style: UiStyle::SELECTED,
+            hover_style: UiStyle::HIGHLIGHT,
             highlight_symbol: None,
             header: None,
             rows: rows.into_iter().collect(),
             highlight_spacing: HighlightSpacing::default(),
-            callback_registry,
         }
     }
 
@@ -189,25 +189,7 @@ impl<'a> ClickableTable<'a> {
         self
     }
 
-    pub fn highlight_style(mut self, highlight_style: Style) -> Self {
-        self.highlight_style = highlight_style;
-        self
-    }
-
-    pub fn hovering_style(mut self, style: Style) -> Self {
-        self.hovering_style = style;
-        self
-    }
-
-    /// Set when to show the highlight spacing
-    ///
-    /// See [`HighlightSpacing`] about which variant affects spacing in which way
-    pub fn _highlight_spacing(mut self, value: HighlightSpacing) -> Self {
-        self.highlight_spacing = value;
-        self
-    }
-
-    pub fn _column_spacing(mut self, spacing: u16) -> Self {
+    pub const fn column_spacing(mut self, spacing: u16) -> Self {
         self.column_spacing = spacing;
         self
     }
@@ -295,6 +277,7 @@ impl<'a> Styled for ClickableTable<'a> {
 pub struct ClickableTableState {
     offset: usize,
     selected: Option<usize>,
+    hovered: Rect,
 }
 
 impl ClickableTableState {
@@ -389,29 +372,8 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
             return;
         }
 
-        if self.callback_registry.lock().unwrap().is_hovering(area) {
-            self.callback_registry
-                .lock()
-                .unwrap()
-                .register_mouse_callback(
-                    crossterm::event::MouseEventKind::ScrollDown,
-                    None,
-                    UiCallback::NextPanelIndex,
-                );
-
-            self.callback_registry
-                .lock()
-                .unwrap()
-                .register_mouse_callback(
-                    crossterm::event::MouseEventKind::ScrollUp,
-                    None,
-                    UiCallback::PreviousPanelIndex,
-                );
-        }
-
         let (start, end) = self.get_row_bounds(state.selected, state.offset, rows_height);
         state.offset = start;
-        let mut selected_element: Option<(Rect, usize)> = None;
         for (i, table_row) in self
             .rows
             .iter_mut()
@@ -453,28 +415,12 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
                     },
                 );
             }
-            if self
-                .callback_registry
-                .lock()
-                .unwrap()
-                .is_hovering(table_row_area)
-            {
-                selected_element = Some((table_row_area, i));
-                buf.set_style(table_row_area, self.hovering_style);
+            if state.hovered == table_row_area {
+                buf.set_style(table_row_area, self.hover_style);
             }
             if is_selected {
-                buf.set_style(table_row_area, self.highlight_style);
+                buf.set_style(table_row_area, self.select_style);
             }
-        }
-        if let Some((area, index)) = selected_element {
-            self.callback_registry
-                .lock()
-                .unwrap()
-                .register_mouse_callback(
-                    crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
-                    Some(area),
-                    UiCallback::SetPanelIndex { index },
-                );
         }
     }
 }
@@ -500,5 +446,92 @@ impl<'a> Widget for ClickableTable<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let mut state = ClickableTableState::default();
         StatefulWidget::render(self, area, buf, &mut state);
+    }
+}
+
+impl HoverableStatefulWidget for ClickableTable<'_> {
+    fn layer(&self) -> usize {
+        0
+    }
+
+    fn hover_text(&self) -> Text<'_> {
+        "".into()
+    }
+
+    fn before_rendering(
+        &mut self,
+        area: Rect,
+        callback_registry: &mut CallbackRegistry,
+        state: &mut Self::State,
+    ) {
+        if area.area() == 0 {
+            return;
+        }
+
+        if self.rows.is_empty() {
+            return;
+        }
+
+        let table_area = match self.block.as_ref() {
+            Some(b) => b.inner(area),
+            None => area,
+        };
+
+        if callback_registry.is_hovering(area) {
+            callback_registry.register_mouse_callback(
+                crossterm::event::MouseEventKind::ScrollDown,
+                None,
+                UiCallback::NextPanelIndex,
+            );
+
+            callback_registry.register_mouse_callback(
+                crossterm::event::MouseEventKind::ScrollUp,
+                None,
+                UiCallback::PreviousPanelIndex,
+            );
+        }
+
+        let mut current_height = 0;
+        let mut rows_height = table_area.height;
+
+        if let Some(ref header) = self.header {
+            let max_header_height = table_area.height.min(header.total_height());
+            current_height += max_header_height;
+            rows_height = rows_height.saturating_sub(max_header_height);
+        }
+
+        let (start, end) = self.get_row_bounds(state.selected, state.offset, rows_height);
+        state.offset = start;
+        let mut selected_element: Option<(Rect, usize)> = None;
+        for (i, table_row) in self
+            .rows
+            .iter_mut()
+            .enumerate()
+            .skip(state.offset)
+            .take(end - start)
+        {
+            let (row, inner_offset) = (table_area.top() + current_height, table_area.left());
+            current_height += table_row.total_height();
+            let table_row_area = Rect {
+                x: inner_offset,
+                y: row,
+                width: table_area.width,
+                height: table_row.height,
+            };
+
+            if callback_registry.is_hovering(table_row_area) {
+                selected_element = Some((table_row_area, i));
+                state.hovered = table_row_area;
+                break;
+            }
+        }
+
+        if let Some((area, index)) = selected_element {
+            callback_registry.register_mouse_callback(
+                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                Some(area),
+                UiCallback::SetPanelIndex { index },
+            );
+        }
     }
 }

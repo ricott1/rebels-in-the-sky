@@ -2,8 +2,8 @@ use super::button::Button;
 use super::clickable_list::ClickableListState;
 use super::constants::UiStyle;
 use super::gif_map::*;
-use super::ui_callback::{CallbackRegistry, UiCallback};
-use super::utils::hover_text_target;
+use super::ui_callback::UiCallback;
+use super::ui_frame::UiFrame;
 use super::{
     big_numbers::{hyphen, BigNumberFont},
     constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
@@ -33,6 +33,7 @@ use crate::{
         world::World,
     },
 };
+use anyhow::anyhow;
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use itertools::Itertools;
@@ -43,45 +44,56 @@ use ratatui::{
     style::Stylize,
     text::{Line, Span},
     widgets::{Cell, Paragraph, Row, Table, Wrap},
-    Frame,
 };
 use std::collections::HashMap;
-use std::{sync::Arc, sync::Mutex};
 
 #[derive(Debug, Default)]
 pub struct GamePanel {
     pub index: usize,
-    pub games: Vec<GameId>,
+    game_ids: Vec<GameId>,
     pitch_view: bool,
     pitch_view_filter: Option<Period>,
     player_status_view: bool,
     commentary_index: usize,
     action_results: Vec<ActionOutput>,
     tick: usize,
-    callback_registry: Arc<Mutex<CallbackRegistry>>,
-    gif_map: Arc<Mutex<GifMap>>,
+    gif_map: GifMap,
 }
 
 impl GamePanel {
-    pub fn new(
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-        gif_map: Arc<Mutex<GifMap>>,
-    ) -> Self {
-        Self {
-            callback_registry,
-            gif_map,
-            ..Default::default()
-        }
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn toggle_pitch_view(&mut self) {
+        self.pitch_view = !self.pitch_view;
+    }
+
+    pub fn toggle_player_status_view(&mut self) {
+        self.player_status_view = !self.player_status_view;
+    }
+
+    pub fn set_active_game(&mut self, game_id: GameId) -> AppResult<()> {
+        let index = self
+            .game_ids
+            .iter()
+            .position(|&x| x == game_id)
+            .ok_or(anyhow!("Game {:?} not found", game_id))?;
+
+        self.set_index(index);
+
+        Ok(())
     }
 
     fn selected_game<'a>(&self, world: &'a World) -> Option<&'a Game> {
-        if self.index >= self.games.len() {
+        if self.index >= self.game_ids.len() {
             return None;
         }
-        world.get_game(self.games[self.index].clone())
+
+        world.get_game(&self.game_ids[self.index])
     }
 
-    fn build_top_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn build_top_panel(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         // Split into left and right panels
         let split = Layout::horizontal([
             Constraint::Length(LEFT_PANEL_WIDTH),
@@ -101,13 +113,12 @@ impl GamePanel {
         Ok(())
     }
 
-    fn build_game_list(&mut self, frame: &mut Frame, world: &World, area: Rect) {
+    fn build_game_list(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
         let options = self
-            .games
+            .game_ids
             .iter()
-            .filter(|&&id| world.get_game(id).is_some())
-            .map(|&id| {
-                let game = world.get_game(id).unwrap();
+            .map(|id| {
+                let game = world.get_game(id).expect("Game should be stored in games.");
                 let mut style = UiStyle::DEFAULT;
 
                 if game.home_team_in_game.team_id == world.own_team_id
@@ -133,73 +144,58 @@ impl GamePanel {
             })
             .collect_vec();
 
-        let list = selectable_list(options, &self.callback_registry);
+        let list = selectable_list(options);
 
-        frame.render_stateful_widget(
+        frame.render_stateful_hoverable(
             list.block(default_block().title("Games ↓/↑")),
             area,
             &mut ClickableListState::default().with_selected(Some(self.index)),
         );
     }
 
-    fn build_game_buttons(&mut self, frame: &mut Frame, area: Rect) {
+    fn build_game_buttons(&mut self, frame: &mut UiFrame, area: Rect) {
         let b_split =
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(area);
-        let hover_text_target = hover_text_target(frame);
         let text = if self.pitch_view {
             "Commentary view"
         } else {
             "Game view"
         };
-        let pitch_button = Button::new(
-            text.into(),
-            UiCallback::TogglePitchView,
-            Arc::clone(&self.callback_registry),
-        )
-        .set_hover_text(
-            format!(
+        let pitch_button = Button::new(text, UiCallback::TogglePitchView)
+            .set_hover_text(format!(
                 "Change to {} view",
                 if self.pitch_view {
                     "commentary"
                 } else {
                     "pitch"
                 }
-            ),
-            hover_text_target,
-        )
-        .set_hotkey(UiKey::PITCH_VIEW);
+            ))
+            .set_hotkey(UiKey::PITCH_VIEW);
 
-        frame.render_widget(pitch_button, b_split[0]);
+        frame.render_hoverable(pitch_button, b_split[0]);
 
         let text = if self.player_status_view {
             "Game stats"
         } else {
             "Player status"
         };
-        let player_status_button = Button::new(
-            text.into(),
-            UiCallback::TogglePlayerStatusView,
-            Arc::clone(&self.callback_registry),
-        )
-        .set_hover_text(
-            format!(
+        let player_status_button = Button::new(text, UiCallback::TogglePlayerStatusView)
+            .set_hover_text(format!(
                 "Change to {} view",
                 if self.player_status_view {
                     "game box"
                 } else {
                     "player status"
                 }
-            ),
-            hover_text_target,
-        )
-        .set_hotkey(UiKey::PLAYER_STATUS_VIEW);
+            ))
+            .set_hotkey(UiKey::PLAYER_STATUS_VIEW);
 
-        frame.render_widget(player_status_button, b_split[1]);
+        frame.render_hoverable(player_status_button, b_split[1]);
     }
 
     fn build_score_panel(
-        &self,
-        frame: &mut Frame,
+        &mut self,
+        frame: &mut UiFrame,
         world: &World,
         game: &Game,
         area: Rect,
@@ -244,7 +240,7 @@ impl GamePanel {
         frame.render_widget(
             Paragraph::new(format!(
                 "Playing on {}",
-                world.get_planet_or_err(game.location).unwrap().name
+                world.get_planet_or_err(&game.location)?.name
             ))
             .centered(),
             central_split[2],
@@ -305,8 +301,6 @@ impl GamePanel {
 
         if let Ok(mut lines) = self
             .gif_map
-            .lock()
-            .unwrap()
             .player_frame_lines(&base_home_player, self.tick)
         {
             lines.remove(0);
@@ -315,8 +309,6 @@ impl GamePanel {
         }
         if let Ok(mut lines) = self
             .gif_map
-            .lock()
-            .unwrap()
             .player_frame_lines(&base_away_player, self.tick)
         {
             lines.remove(0);
@@ -386,7 +378,7 @@ impl GamePanel {
 
     fn build_pitch_panel(
         &self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         world: &World,
         game: &Game,
         area: Rect,
@@ -401,7 +393,7 @@ impl GamePanel {
             vertical: 1,
         }));
 
-        let planet = world.get_planet_or_err(game.location)?;
+        let planet = world.get_planet_or_err(&game.location)?;
         let pitch_style = match planet.planet_type {
             PlanetType::Earth => PitchStyle::PitchBall,
             _ => PitchStyle::PitchClassic,
@@ -480,21 +472,35 @@ impl GamePanel {
 
     fn build_bottom_panel(
         &mut self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Min(8), Constraint::Length(73)]).split(area);
         if let Some(game) = self.selected_game(world) {
             let mut shot_img = None;
+            // Display shot gif if the last action was a made 3 or if it was a substitution and the second last was a made 3.
             if let Some(last_action) = game.action_results.last() {
+                let mut should_display_shot_gif_for = None;
+
                 if last_action.score_change == 3 {
+                    should_display_shot_gif_for = Some(last_action.possession);
+                } else if last_action.situation == ActionSituation::AfterSubstitution
+                    && game.action_results.len() > 1
+                {
+                    let second_last_action = &game.action_results[game.action_results.len() - 2];
+                    if second_last_action.score_change == 3 {
+                        should_display_shot_gif_for = Some(second_last_action.possession);
+                    }
+                }
+
+                if let Some(side) = should_display_shot_gif_for {
                     let shot_tick = game.starting_at + last_action.start_at.as_tick();
                     let now = Tick::now();
                     let shot_frame = (now - shot_tick) as usize / 140;
                     if shot_frame < RIGHT_SHOT_GIF.len() {
                         // After scoring the possesion is flipped, so the opposite team scored.
-                        if last_action.possession == Possession::Home {
+                        if side == Possession::Home {
                             shot_img = Some(RIGHT_SHOT_GIF[shot_frame].clone());
                         } else {
                             shot_img = Some(LEFT_SHOT_GIF[shot_frame].clone());
@@ -544,7 +550,7 @@ impl GamePanel {
         Line::from(vec![timer, text, arrow])
     }
 
-    fn build_commentary(&mut self, frame: &mut Frame, area: Rect) {
+    fn build_commentary(&mut self, frame: &mut UiFrame, area: Rect) {
         let mut commentary = vec![];
         let max_index = self.action_results.len() - self.commentary_index;
 
@@ -783,11 +789,9 @@ impl GamePanel {
         let mut timer_lines: Vec<Line> = vec![];
         if !timer.has_started() {
             timer_lines.push(Line::from(Timer::from(timer.period().start()).format()));
-            let starting_in_seconds = (game.starting_at - world.last_tick_short_interval) / 1000;
             timer_lines.push(Line::from(format!(
-                "Starting in {:02}:{:02}",
-                starting_in_seconds / 60,
-                starting_in_seconds % 60
+                "Starting in {}",
+                (game.starting_at - world.last_tick_short_interval).formatted()
             )));
         } else if timer.has_ended() {
             timer_lines.push(Line::from(Timer::from(timer.period().end()).format()));
@@ -804,7 +808,7 @@ impl GamePanel {
         timer_lines
     }
 
-    fn build_status_box(game: &Game, frame: &mut Frame, area: Rect) {
+    fn build_status_box(game: &Game, frame: &mut UiFrame, area: Rect) {
         let header_cells_home = [
             "  ",
             game.home_team_in_game.name.as_str(),
@@ -864,7 +868,7 @@ impl GamePanel {
         frame.render_widget(away_table, box_area[2]);
     }
 
-    fn build_stats_box(game: &Game, frame: &mut Frame, area: Rect) {
+    fn build_stats_box(game: &Game, frame: &mut UiFrame, area: Rect) {
         let header_cells_home = [
             "  ",
             game.home_team_in_game.name.as_str(),
@@ -945,43 +949,26 @@ impl GamePanel {
         frame.render_widget(home_table, box_area[0]);
         frame.render_widget(away_table, box_area[2]);
     }
-
-    pub fn toggle_pitch_view(&mut self) {
-        self.pitch_view = !self.pitch_view;
-    }
-
-    pub fn toggle_player_status_view(&mut self) {
-        self.player_status_view = !self.player_status_view;
-    }
 }
 
 impl Screen for GamePanel {
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
-        if world.dirty_ui || self.games.len() != world.games.len() {
-            // Try to keep track of current game when other games finish
-            let current_game_id = if let Some(current_game) = self.selected_game(world) {
-                Some(current_game.id)
-            } else {
-                None
-            };
 
-            self.games = world
-                .games
-                .keys()
-                .into_iter()
-                .cloned()
-                .sorted_by(|&a, &b| {
-                    let game_a = world.get_game(a).unwrap();
-                    let game_b = world.get_game(b).unwrap();
-                    game_b.starting_at.cmp(&game_a.starting_at)
-                })
-                .collect();
-            if current_game_id.is_some() {
+        self.game_ids = world
+            .games
+            .iter()
+            .sorted_by(|&(_, a), &(_, b)| a.starting_at.cmp(&b.starting_at))
+            .map(|(k, _)| k.clone())
+            .collect_vec();
+
+        if world.dirty_ui {
+            // Try to keep track of current game when other games finish
+            if let Some(game) = self.selected_game(world) {
                 self.set_index(
-                    self.games
+                    self.game_ids
                         .iter()
-                        .position(|&id| id == current_game_id.unwrap())
+                        .position(|&id| id == game.id)
                         .unwrap_or_default(),
                 );
             }
@@ -999,12 +986,13 @@ impl Screen for GamePanel {
 
     fn render(
         &mut self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
+
         _debug_view: bool,
     ) -> AppResult<()> {
-        if self.games.len() == 0 {
+        if self.game_ids.len() == 0 {
             frame.render_widget(
                 Paragraph::new(" No games at the moment!").block(default_block()),
                 area,
@@ -1101,7 +1089,7 @@ impl SplitPanel for GamePanel {
     }
 
     fn max_index(&self) -> usize {
-        self.games.len()
+        self.game_ids.len()
     }
 
     fn set_index(&mut self, index: usize) {
@@ -1109,8 +1097,6 @@ impl SplitPanel for GamePanel {
         self.commentary_index = 0;
     }
 }
-
-// Add test for timer formatting only
 
 #[cfg(test)]
 mod tests {

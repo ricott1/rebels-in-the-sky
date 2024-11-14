@@ -2,6 +2,8 @@ use crate::world::position::Position;
 use crossterm::event::KeyCode;
 use ratatui::style::{Color, Modifier, Style};
 
+pub const UI_SCREEN_SIZE: (u16, u16) = (160, 48);
+
 pub const LEFT_PANEL_WIDTH: u16 = 36;
 pub const IMG_FRAME_WIDTH: u16 = 80;
 pub const MIN_NAME_LENGTH: usize = 3;
@@ -62,9 +64,10 @@ impl UiKey {
     pub const SPACE_MOVE_RIGHT: KeyCode = KeyCode::Right;
     pub const SPACE_MOVE_DOWN: KeyCode = KeyCode::Down;
     pub const SPACE_MOVE_UP: KeyCode = KeyCode::Up;
-    pub const SPACE_MAIN: KeyCode = KeyCode::Char('s');
-    pub const SPACE_SECOND: KeyCode = KeyCode::Char('a');
-    pub const SPACE_BACK_TO_BASE: KeyCode = KeyCode::Char('b');
+    pub const SPACE_AUTOFIRE: KeyCode = KeyCode::Char('a');
+    pub const SPACE_SHOOT: KeyCode = KeyCode::Char('z');
+    pub const SPACE_RELEASE_SCRAPS: KeyCode = KeyCode::Char('s');
+    pub const SPACE_BACK_TO_BASE: KeyCode = KeyCode::Char('x');
     pub const YES_TO_DIALOG: KeyCode = KeyCode::Enter;
     pub const NO_TO_DIALOG: KeyCode = KeyCode::Backspace;
     pub const fn set_player_position(position: Position) -> KeyCode {
@@ -91,8 +94,8 @@ pub struct UiStyle;
 
 impl UiStyle {
     pub const DEFAULT: Style = DEFAULT_STYLE;
-    pub const UNSELECTED: Style = DEFAULT_STYLE;
     pub const SELECTED: Style = DEFAULT_STYLE.bg(Color::Rgb(70, 70, 86));
+    pub const SELECTED_BUTTON: Style = DEFAULT_STYLE.fg(Color::Rgb(118, 213, 192));
     pub const UNSELECTABLE: Style = DEFAULT_STYLE.fg(Color::DarkGray);
     pub const ERROR: Style = DEFAULT_STYLE.fg(Color::Red);
     pub const OWN_TEAM: Style = DEFAULT_STYLE.fg(Color::Green);

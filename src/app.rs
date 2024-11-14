@@ -20,7 +20,7 @@ use stream_download::StreamDownload;
 use tokio::select;
 use void::Void;
 
-const NETWORK_HANDLER_INIT_INTERVAL: u128 = 10 * SECONDS;
+const NETWORK_HANDLER_INIT_INTERVAL: Tick = 10 * SECONDS;
 
 #[derive(Debug, PartialEq)]
 pub enum AppState {
@@ -40,6 +40,7 @@ pub struct App {
     seed_ip: Option<String>,
     network_port: Option<u16>,
     store_prefix: String,
+    pub new_version_notified: bool,
 }
 
 impl App {
@@ -194,6 +195,7 @@ impl App {
             seed_ip,
             network_port,
             store_prefix: store_prefix.to_string(),
+            new_version_notified: false,
         }
     }
 
@@ -227,7 +229,6 @@ impl App {
                 Some(streaming_data) = Self::conditional_audio_event(& self.audio_player) =>  self.handle_streaming_data(streaming_data)?,
                 Some(swarm_event) = Self::conditional_network_event(&mut self.network_handler) =>  self.handle_network_events(swarm_event)?,
                 app_event = tui.events.next() => {
-
                     match app_event{
                         TerminalEvent::Tick {tick} => {
                                 self.handle_tick_events(tick)?;
@@ -240,12 +241,13 @@ impl App {
                             if let Err(e) = tui.draw(&mut self.ui, &self.world, self.audio_player.as_ref()).await {
                                 error!("Drawing error: {e}");
                             }
-                            },
-                        TerminalEvent::Mouse(mouse_event) => {self.handle_mouse_events(mouse_event)?;
+                        },
+                        TerminalEvent::Mouse(mouse_event) => {
+                            self.handle_mouse_events(mouse_event)?;
                             if let Err(e) = tui.draw(&mut self.ui, &self.world, self.audio_player.as_ref()).await {
                                 error!("Drawing error: {e}");
                             }
-                            },
+                        },
                         TerminalEvent::Resize(w, h) => tui.resize((w, h))?,
                         TerminalEvent::Quit => self.quit()?,
                     }

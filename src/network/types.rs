@@ -3,7 +3,7 @@ use super::trade::Trade;
 use crate::game_engine::timer::Timer;
 use crate::game_engine::types::GameStats;
 use crate::types::{KartoffelId, PlanetId, Tick};
-use crate::world::planet::{Planet, PlanetType};
+use crate::world::planet::Planet;
 use crate::world::position::{Position, MAX_POSITION};
 use crate::world::skill::Skill;
 use crate::{
@@ -30,22 +30,6 @@ pub(crate) enum NetworkData {
     SeedInfo(Tick, SeedInfo),
 }
 
-impl TryFrom<Vec<u8>> for NetworkData {
-    type Error = anyhow::Error;
-    fn try_from(item: Vec<u8>) -> AppResult<Self> {
-        let network_data = serde_json::from_slice::<NetworkData>(item.as_slice())?;
-        Ok(network_data)
-    }
-}
-
-impl TryInto<Vec<u8>> for NetworkData {
-    type Error = anyhow::Error;
-    fn try_into(self) -> AppResult<Vec<u8>> {
-        let data = serde_json::to_vec(&self)?;
-        Ok(data)
-    }
-}
-
 #[derive(Debug, Clone, Display, Default, Serialize, Deserialize, PartialEq, Hash)]
 pub enum NetworkRequestState {
     #[default]
@@ -61,40 +45,42 @@ pub enum NetworkRequestState {
 pub struct NetworkTeam {
     pub team: Team,
     pub players: Vec<Player>,
-    pub home_planet: Option<Planet>,
+    pub asteroids: Vec<Planet>,
 }
 
 impl NetworkTeam {
-    pub fn new(team: Team, players: Vec<Player>, home_planet: Option<Planet>) -> Self {
+    pub fn new(team: Team, players: Vec<Player>, asteroids: Vec<Planet>) -> Self {
         Self {
             team,
             players,
-            home_planet,
+            asteroids,
         }
     }
 
-    pub fn from_team_id(world: &World, team_id: &TeamId) -> AppResult<Self> {
-        let team = world.get_team_or_err(*team_id)?.clone();
-        let players = world.get_players_by_team(&team)?;
-        let planet = world.get_planet_or_err(team.home_planet_id)?;
-        let home_planet = if planet.planet_type == PlanetType::Asteroid {
-            Some(planet)
-        } else {
-            None
-        }
-        .cloned();
+    pub fn from_team_id(world: &World, team_id: &TeamId, peer_id: PeerId) -> AppResult<Self> {
+        let mut team = world.get_team_or_err(team_id)?.clone();
+        let mut players = world.get_players_by_team(&team)?;
+        let asteroids = team
+            .asteroid_ids
+            .iter()
+            .map(|asteroid_id| {
+                let mut asteroid = world
+                    .get_planet_or_err(asteroid_id)
+                    .expect("Asteroid should be part of world")
+                    .clone();
+                asteroid.peer_id = Some(peer_id);
+                asteroid
+            })
+            .collect_vec();
 
-        Ok(Self::new(team, players, home_planet))
-    }
-
-    pub fn set_peer_id(&mut self, peer_id: PeerId) {
-        self.team.peer_id = Some(peer_id);
-        for player in self.players.iter_mut() {
+        // Set the peer_id for team we are sending out
+        // This means that the team can be challenged online and it will not be stored.
+        team.peer_id = Some(peer_id);
+        for player in players.iter_mut() {
             player.peer_id = Some(peer_id.clone());
         }
-        if self.home_planet.is_some() {
-            self.home_planet.as_mut().unwrap().peer_id = Some(peer_id);
-        }
+
+        Ok(Self::new(team, players, asteroids))
     }
 }
 
@@ -110,7 +96,7 @@ pub struct NetworkGame {
 }
 
 impl NetworkGame {
-    pub fn from_game_id(world: &World, game_id: GameId) -> AppResult<Self> {
+    pub fn from_game_id(world: &World, game_id: &GameId) -> AppResult<Self> {
         let game = world.get_game_or_err(game_id)?.clone();
 
         let mut home_team_in_game = game.home_team_in_game.clone();
@@ -171,6 +157,7 @@ impl NetworkGame {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TeamRanking {
+    team_id: TeamId,
     pub timestamp: Tick,
     pub name: String,
     pub reputation: Skill,
@@ -182,6 +169,7 @@ pub struct TeamRanking {
 impl TeamRanking {
     pub fn from_network_team(timestamp: Tick, network_team: &NetworkTeam) -> Self {
         Self {
+            team_id: network_team.team.id,
             timestamp,
             name: network_team.team.name.clone(),
             reputation: network_team.team.reputation,
@@ -203,14 +191,14 @@ pub struct SeedInfo {
     pub version_minor: usize,
     pub version_patch: usize,
     pub message: Option<String>,
-    pub team_ranking: HashMap<TeamId, TeamRanking>,
+    pub team_ranking: Vec<(TeamId, TeamRanking)>,
 }
 
 impl SeedInfo {
     pub fn new(
         connected_peers_count: usize,
         message: Option<String>,
-        team_ranking: HashMap<TeamId, TeamRanking>,
+        team_ranking: Vec<(TeamId, TeamRanking)>,
     ) -> AppResult<Self> {
         Ok(Self {
             connected_peers_count,

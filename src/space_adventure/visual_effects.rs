@@ -1,12 +1,12 @@
-use image::{Rgba, RgbaImage};
-
 use super::Entity;
+use image::RgbaImage;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum VisualEffect {
     FadeIn,
     FadeOut,
-    ColorMask { color: Rgba<u8> },
+    ColorMask { color: [u8; 3] },
 }
 
 impl VisualEffect {
@@ -31,7 +31,7 @@ impl VisualEffect {
                     if is_border {
                         let mut pixel = img.get_pixel(point.x as u32, point.y as u32).clone();
 
-                        for idx in 0..4 {
+                        for idx in 0..color.len() {
                             if color[idx] > 0 {
                                 pixel.0[idx] = ((1.0 - time / Self::COLOR_MASK_LIFETIME)
                                     * pixel.0[idx] as f32
@@ -50,13 +50,13 @@ impl VisualEffect {
     pub fn apply_global_effect(&self, img: &mut RgbaImage, time: f32) {
         match &self {
             VisualEffect::FadeIn => {
+                let modifier = (time / Self::FADE_IN_LIFETIME).min(1.0).max(0.0);
                 for x in 0..img.width() {
                     for y in 0..img.height() {
                         let mut pixel = img.get_pixel(x, y).clone();
+
                         for idx in 0..4 {
-                            pixel.0[idx] = (time / Self::FADE_IN_LIFETIME * pixel.0[idx] as f32)
-                                .min(255.0)
-                                .max(0.0) as u8;
+                            pixel.0[idx] = (modifier * pixel.0[idx] as f32) as u8;
                         }
                         img.put_pixel(x, y, pixel);
                     }
@@ -64,14 +64,13 @@ impl VisualEffect {
             }
 
             VisualEffect::FadeOut => {
+                let modifier = (1.0 - time / Self::FADE_IN_LIFETIME).min(1.0).max(0.0);
+
                 for x in 0..img.width() {
                     for y in 0..img.height() {
                         let mut pixel = img.get_pixel(x, y).clone();
                         for idx in 0..4 {
-                            pixel.0[idx] = ((1.0 - time / Self::FADE_OUT_LIFETIME)
-                                * pixel.0[idx] as f32)
-                                .min(255.0)
-                                .max(0.0) as u8;
+                            pixel.0[idx] = (modifier * pixel.0[idx] as f32) as u8;
                         }
                         img.put_pixel(x, y, pixel);
                     }

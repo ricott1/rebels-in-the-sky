@@ -23,7 +23,9 @@ const TRADE_DELTA_SCARCITY: f32 = 3.0;
 const TRADE_DELTA_BUY_SELL: f32 = 0.07;
 const RESOURCE_PRICE_REFRESH_RATE_MILLIS: Tick = 2 * HOURS;
 
-#[derive(Debug, Display, Clone, Serialize_repr, Deserialize_repr, PartialEq, Default, EnumIter)]
+#[derive(
+    Debug, Display, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Default, EnumIter,
+)]
 #[repr(u8)]
 pub enum PlanetType {
     BlackHole,

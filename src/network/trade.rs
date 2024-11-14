@@ -76,7 +76,7 @@ mod tests {
             "ship_name".into(),
         )?;
 
-        let mut target_team = world.get_team_or_err(target_team_id)?.clone();
+        let mut target_team = world.get_team_or_err(&target_team_id)?.clone();
 
         let target_team_peer_id = PeerId::random();
         target_team.peer_id = Some(target_team_peer_id);
@@ -87,9 +87,9 @@ mod tests {
         let own_team_peer_id = PeerId::random();
 
         let proposer_player_id = own_team.player_ids[0];
-        let proposer_player = world.get_player_or_err(proposer_player_id)?.clone();
+        let proposer_player = world.get_player_or_err(&proposer_player_id)?.clone();
 
-        let target_player = world.get_player_or_err(target_player_id)?.clone();
+        let target_player = world.get_player_or_err(&target_player_id)?.clone();
 
         let _trade = Trade::new(
             own_team_peer_id,

@@ -1,9 +1,11 @@
 use crate::{types::ResourceMap, world::resources::Resource};
 
-use super::{space_callback::SpaceCallback, spaceship::ShooterState, visual_effects::VisualEffect};
+use super::{
+    networking::ImageType, space_callback::SpaceCallback, spaceship::ShooterState,
+    visual_effects::VisualEffect,
+};
 use glam::I16Vec2;
-use image::{Rgba, RgbaImage};
-use itertools::Itertools;
+use image::{Pixel, RgbaImage};
 use std::{
     collections::{
         hash_map::{Iter, Keys, Values},
@@ -123,7 +125,7 @@ impl HitBox {
     }
 }
 
-pub trait Body: Sprite {
+pub trait Body: Collider {
     fn previous_rect(&self) -> (I16Vec2, I16Vec2) {
         (
             self.previous_position() + self.hit_box().top_left,
@@ -159,22 +161,7 @@ pub trait Body: Sprite {
 pub trait Sprite {
     fn image(&self) -> &RgbaImage;
 
-    fn layer(&self) -> usize {
-        0
-    }
-
-    fn hit_box(&self) -> &HitBox;
-
-    fn hit_box_vec(&self) -> Vec<(I16Vec2, bool)> {
-        self.hit_box()
-            .iter()
-            .map(|(key, value)| (*key, *value))
-            .collect_vec()
-    }
-
-    fn size(&self) -> I16Vec2 {
-        self.hit_box().size
-    }
+    fn network_image_type(&self) -> ImageType;
 
     fn should_apply_visual_effects<'a>(&self) -> bool {
         false
@@ -196,18 +183,26 @@ pub trait Sprite {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ColliderType {
     None,
-    Spaceship,
     Asteroid,
-    Projectile,
+    AsteroidPlanet,
+    Collector,
     Fragment,
+    Projectile,
+    Spaceship,
 }
-pub trait Collider: Body {
+pub trait Collider {
     fn collision_damage(&self) -> f32 {
-        10.0
+        0.0
     }
 
     fn collider_type(&self) -> ColliderType {
         ColliderType::None
+    }
+
+    fn hit_box(&self) -> &HitBox;
+
+    fn size(&self) -> I16Vec2 {
+        self.hit_box().size
     }
 }
 
@@ -296,6 +291,10 @@ fn are_colliding(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -> bool {
         return false;
     }
 
+    if one.parent_id() == Some(other.id()) || other.parent_id() == Some(one.id()) {
+        return false;
+    }
+
     // Broad phase detection, shortcut if rects cannot intersect
     if !check_broad_phase_collision(one, other) {
         return false;
@@ -336,6 +335,36 @@ pub fn resolve_collision_between(
     other: &Box<dyn Entity>,
 ) -> Vec<SpaceCallback> {
     match (one.collider_type(), other.collider_type()) {
+        (ColliderType::AsteroidPlanet, ColliderType::Asteroid) => {
+            if !are_colliding(one, other) {
+                return vec![];
+            }
+            return vec![SpaceCallback::DamageEntity {
+                id: other.id(),
+                damage: one.collision_damage(),
+            }];
+        }
+        (ColliderType::Asteroid, ColliderType::AsteroidPlanet) => {
+            resolve_collision_between(other, one)
+        }
+        (ColliderType::AsteroidPlanet, ColliderType::Spaceship) => {
+            if !are_colliding(one, other) {
+                return vec![];
+            }
+
+            let ship_control: &dyn ControllableSpaceship = other
+                .as_trait_ref()
+                .expect("Spaceship should implement ControllableSpaceship");
+
+            if ship_control.is_player() {
+                return vec![SpaceCallback::LandSpaceshipOnAsteroid];
+            }
+
+            return vec![];
+        }
+        (ColliderType::Spaceship, ColliderType::AsteroidPlanet) => {
+            resolve_collision_between(other, one)
+        }
         (ColliderType::Projectile, ColliderType::Asteroid) => {
             if !are_colliding(one, other) {
                 return vec![];
@@ -349,6 +378,21 @@ pub fn resolve_collision_between(
             ];
         }
         (ColliderType::Asteroid, ColliderType::Projectile) => resolve_collision_between(other, one),
+        (ColliderType::Projectile, ColliderType::Spaceship) => {
+            if !are_colliding(one, other) {
+                return vec![];
+            }
+            return vec![
+                SpaceCallback::DestroyEntity { id: one.id() },
+                SpaceCallback::DamageEntity {
+                    id: other.id(),
+                    damage: one.collision_damage(),
+                },
+            ];
+        }
+        (ColliderType::Spaceship, ColliderType::Projectile) => {
+            resolve_collision_between(other, one)
+        }
         (ColliderType::Spaceship, ColliderType::Asteroid) => {
             if !are_colliding(one, other) {
                 return vec![];
@@ -367,11 +411,6 @@ pub fn resolve_collision_between(
         (ColliderType::Asteroid, ColliderType::Spaceship) => resolve_collision_between(other, one),
 
         (ColliderType::Spaceship, ColliderType::Fragment) => {
-            if !are_colliding(one, other) {
-                return vec![];
-            }
-
-            // Two cases: if the fragment actually hits the spaceship hitbox, it is collected.
             let g_point = other.position() - one.position();
             if one.hit_box().contains_key(&g_point) {
                 let resource_fragment: &dyn ResourceFragment = other
@@ -384,7 +423,7 @@ pub fn resolve_collision_between(
                     SpaceCallback::AddVisualEffect {
                         id: one.id(),
                         effect: VisualEffect::ColorMask {
-                            color: other.image().get_pixel(0, 0).clone(),
+                            color: other.image().get_pixel(0, 0).to_rgb().0,
                         },
                         duration: VisualEffect::COLOR_MASK_LIFETIME,
                     },
@@ -396,22 +435,23 @@ pub fn resolve_collision_between(
                     SpaceCallback::DestroyEntity { id: other.id() },
                 ];
             }
-            // Else, it is accelerated towards the spaceship.
-            return vec![
-                SpaceCallback::AddVisualEffect {
-                    id: other.id(),
-                    effect: VisualEffect::ColorMask {
-                        color: Rgba([0, 255, 0, 255]),
-                    },
-                    duration: VisualEffect::COLOR_MASK_LIFETIME,
-                },
-                SpaceCallback::AccelerateEntity {
-                    id: other.id(),
-                    acceleration: one.center() - other.center(),
-                },
-            ];
+            vec![]
         }
+
         (ColliderType::Fragment, ColliderType::Spaceship) => resolve_collision_between(other, one),
+
+        (ColliderType::Collector, ColliderType::Fragment) => {
+            if !are_colliding(one, other) {
+                return vec![];
+            }
+
+            // If a fragment touches the collector hit_box, it is accelerated towards it.
+            return vec![SpaceCallback::SetAcceleration {
+                id: other.id(),
+                acceleration: one.center() - other.center(),
+            }];
+        }
+        (ColliderType::Fragment, ColliderType::Collector) => resolve_collision_between(other, one),
 
         _ => return vec![],
     }
@@ -419,8 +459,9 @@ pub fn resolve_collision_between(
 
 pub trait Entity:
     Sprite
+    + Body
     + Collider
-    + MaybeImplements<dyn PlayerControlled>
+    + MaybeImplements<dyn ControllableSpaceship>
     + MaybeImplements<dyn ResourceFragment>
     + Debug
     + Send
@@ -428,6 +469,13 @@ pub trait Entity:
 {
     fn set_id(&mut self, id: usize);
     fn id(&self) -> usize;
+    fn set_parent_id(&mut self, _parent_id: usize) {}
+    fn parent_id(&self) -> Option<usize> {
+        None
+    }
+    fn layer(&self) -> usize {
+        0
+    }
     fn update(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
         let mut callbacks = vec![];
         callbacks.append(&mut self.update_body(deltatime));
@@ -447,11 +495,13 @@ pub enum PlayerInput {
     MoveRight,
     MoveUp,
     MoveDown,
-    MainButton,
-    SecondButton,
+    ToggleAutofire,
+    Shoot,
+    ReleaseScraps,
 }
 
-pub trait PlayerControlled {
+pub trait ControllableSpaceship {
+    fn is_player(&self) -> bool;
     fn fuel(&self) -> u32;
     fn fuel_capacity(&self) -> u32;
     fn resources(&self) -> &ResourceMap;
@@ -476,28 +526,26 @@ pub trait ResourceFragment {
 mod test {
 
     use crate::{
-        space_adventure::{fragment::FragmentEntity, traits::*, SpaceshipEntity},
-        types::{AppResult, ResourceMap},
-        world::{resources::Resource, spaceship::SpaceshipPrefab},
+        space_adventure::{collector::CollectorEntity, fragment::FragmentEntity, traits::*},
+        types::AppResult,
+        world::resources::Resource,
     };
     use glam::Vec2;
 
     #[test]
     fn test_spaceship_fragment_collisions() -> AppResult<()> {
-        let base_ship = SpaceshipPrefab::Ragnarok.spaceship("name".into());
-        let spaceship = SpaceshipEntity::from_spaceship(&base_ship, ResourceMap::default(), 100)?;
-
+        let collector = CollectorEntity::new();
         let fragment = FragmentEntity::new(
             Vec2::new(
-                spaceship.position().x as f32 + 60.0,
-                spaceship.position().y as f32,
+                collector.position().x as f32 + 60.0,
+                collector.position().y as f32,
             ),
             Vec2::ZERO,
             Resource::SCRAPS,
             1,
         );
 
-        let min_distance = spaceship
+        let min_distance = collector
             .hit_box()
             .keys()
             .map(|point| point.as_vec2().distance(fragment.position().as_vec2()))
@@ -505,29 +553,28 @@ mod test {
             .unwrap();
 
         println!(
-            "Ship position: {}\nFragment position: {}\nDistance: {}\nHitbox size: {}\n",
-            spaceship.center(),
+            "Ship position: {}\nFragment position: {}\nDistance: {}\n",
+            collector.center(),
             fragment.center(),
             min_distance,
-            fragment.hit_box().size,
         );
 
-        let trait_spaceship: Box<dyn Entity> = Box::new(spaceship) as Box<dyn Entity>;
+        let trait_collector: Box<dyn Entity> = Box::new(collector) as Box<dyn Entity>;
         let trait_fragment: Box<dyn Entity> = Box::new(fragment) as Box<dyn Entity>;
-        assert!(are_colliding(&trait_spaceship, &trait_fragment) == false);
+        assert!(are_colliding(&trait_collector, &trait_fragment) == false);
 
-        let spaceship = SpaceshipEntity::from_spaceship(&base_ship, ResourceMap::default(), 100)?;
+        let collector = CollectorEntity::new();
         let fragment = FragmentEntity::new(
             Vec2::new(
-                spaceship.position().x as f32 + 29.0,
-                spaceship.position().y as f32,
+                collector.position().x as f32 + 29.0,
+                collector.position().y as f32,
             ),
             Vec2::ZERO,
             Resource::SCRAPS,
             1,
         );
 
-        let min_distance = spaceship
+        let min_distance = collector
             .hit_box()
             .keys()
             .map(|point| point.as_vec2().distance(fragment.position().as_vec2()))
@@ -535,14 +582,14 @@ mod test {
             .unwrap();
 
         println!(
-            "Ship position: {}\nFragment position: {}\nDistance: {}\nHitbox size: {}\n",
-            spaceship.center(),
+            "Ship position: {}\nFragment position: {}\nDistance: {}\n",
+            collector.center(),
             fragment.center(),
             min_distance,
-            fragment.hit_box().size,
         );
+        let trait_collector: Box<dyn Entity> = Box::new(collector) as Box<dyn Entity>;
         let trait_fragment: Box<dyn Entity> = Box::new(fragment) as Box<dyn Entity>;
-        assert!(are_colliding(&trait_spaceship, &trait_fragment) == true);
+        assert!(are_colliding(&trait_collector, &trait_fragment) == true);
 
         Ok(())
     }

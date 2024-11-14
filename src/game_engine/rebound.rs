@@ -14,7 +14,7 @@ use std::{
     collections::HashMap,
 };
 
-const MIN_REBOUND_VALUE: u16 = 42;
+const MIN_REBOUND_VALUE: u16 = 40;
 const REBOUND_POSITION_SCALING: f32 = 12.0;
 
 fn position_rebound_bonus(idx: usize) -> f32 {

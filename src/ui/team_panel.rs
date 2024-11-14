@@ -1,8 +1,8 @@
-use super::button::{Button, RadioButton};
+use super::button::Button;
 use super::clickable_list::ClickableListState;
 use super::gif_map::GifMap;
-use super::ui_callback::{CallbackRegistry, UiCallback};
-use super::utils::hover_text_target;
+use super::ui_callback::UiCallback;
+use super::ui_frame::UiFrame;
 use super::widgets::{
     go_to_team_current_planet_button, render_challenge_button, render_spaceship_description,
 };
@@ -14,7 +14,7 @@ use super::{
 };
 use crate::image::spaceship::{SPACESHIP_IMAGE_HEIGHT, SPACESHIP_IMAGE_WIDTH};
 use crate::types::AppResult;
-use crate::world::position::MAX_POSITION;
+use crate::world::constants::MIN_PLAYERS_PER_GAME;
 use crate::world::team::Team;
 use crate::{
     image::game::floor_from_size,
@@ -29,14 +29,13 @@ use crate::{
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use ratatui::layout::Margin;
+use ratatui::style::Styled;
 use ratatui::{
     layout::{Alignment, Constraint, Layout},
     prelude::Rect,
     widgets::Paragraph,
-    Frame,
 };
 use std::vec;
-use std::{sync::Arc, sync::Mutex};
 use strum_macros::Display;
 
 const IMG_FRAME_WIDTH: u16 = 80;
@@ -87,20 +86,12 @@ pub struct TeamListPanel {
     update_view: bool,
     current_team_players_length: usize,
     tick: usize,
-    callback_registry: Arc<Mutex<CallbackRegistry>>,
-    gif_map: Arc<Mutex<GifMap>>,
+    gif_map: GifMap,
 }
 
 impl TeamListPanel {
-    pub fn new(
-        callback_registry: Arc<Mutex<CallbackRegistry>>,
-        gif_map: Arc<Mutex<GifMap>>,
-    ) -> Self {
-        Self {
-            callback_registry,
-            gif_map,
-            ..Default::default()
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     fn next_player_index(&mut self) {
@@ -120,7 +111,7 @@ impl TeamListPanel {
             % self.current_team_players_length;
     }
 
-    fn build_left_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) {
+    fn build_left_panel(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
         let split = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
@@ -129,57 +120,48 @@ impl TeamListPanel {
         ])
         .split(area);
 
-        let hover_text_target = hover_text_target(frame);
-
         let mut filter_all_button = Button::new(
-            format!("View: {}", TeamView::All.to_string()).into(),
+            format!("View: {}", TeamView::All.to_string()),
             UiCallback::SetTeamPanelView {
                 view: TeamView::All,
             },
-            Arc::clone(&self.callback_registry),
         )
         .set_hotkey(UiKey::CYCLE_VIEW)
-        .set_hover_text("View all teams.".into(), hover_text_target);
+        .set_hover_text("View all teams.");
 
         let mut filter_challenge_button = Button::new(
-            format!("View: {}", TeamView::OpenToChallenge.to_string()).into(),
+            format!("View: {}", TeamView::OpenToChallenge.to_string()),
             UiCallback::SetTeamPanelView {
                 view: TeamView::OpenToChallenge,
             },
-            Arc::clone(&self.callback_registry),
         )
         .set_hotkey(UiKey::CYCLE_VIEW)
-        .set_hover_text(
-            "View all teams that can be currently challenged to a game.".into(),
-            hover_text_target,
-        );
+        .set_hover_text("View all teams that can be currently challenged to a game.");
 
         let mut filter_peers_button = Button::new(
-            format!("View: {}", TeamView::Peers.to_string()).into(),
+            format!("View: {}", TeamView::Peers.to_string()),
             UiCallback::SetTeamPanelView {
                 view: TeamView::Peers,
             },
-            Arc::clone(&self.callback_registry),
         )
         .set_hotkey(UiKey::CYCLE_VIEW)
         .set_hover_text(
             "View all teams received from the network (i.e. teams controlled by other players online)."
-                .into(),
-            hover_text_target,
+                ,
         );
         match self.view {
-            TeamView::All => filter_all_button.disable(None),
-            TeamView::OpenToChallenge => filter_challenge_button.disable(None),
-            TeamView::Peers => filter_peers_button.disable(None),
+            TeamView::All => filter_all_button.select(),
+            TeamView::OpenToChallenge => filter_challenge_button.select(),
+            TeamView::Peers => filter_peers_button.select(),
         }
 
-        frame.render_widget(filter_all_button, split[0]);
-        frame.render_widget(filter_challenge_button, split[1]);
-        frame.render_widget(filter_peers_button, split[2]);
+        frame.render_hoverable(filter_all_button, split[0]);
+        frame.render_hoverable(filter_challenge_button, split[1]);
+        frame.render_hoverable(filter_peers_button, split[2]);
 
         if self.teams.len() > 0 {
             let mut options = vec![];
-            for &team_id in self.teams.iter() {
+            for team_id in self.teams.iter() {
                 let team = world.get_team(team_id);
                 if team.is_none() {
                     continue;
@@ -194,13 +176,13 @@ impl TeamListPanel {
                 let text = format!(
                     "{:<MAX_NAME_LENGTH$} {}",
                     team.name,
-                    world.team_rating(team.id).unwrap_or_default().stars()
+                    world.team_rating(&team.id).unwrap_or_default().stars()
                 );
                 options.push((text, style));
             }
-            let list = selectable_list(options, &self.callback_registry);
+            let list = selectable_list(options);
 
-            frame.render_stateful_widget(
+            frame.render_stateful_hoverable(
                 list.block(default_block().title("Teams ↓/↑")),
                 split[3],
                 &mut ClickableListState::default().with_selected(Some(self.index)),
@@ -210,11 +192,16 @@ impl TeamListPanel {
         }
     }
 
-    fn build_right_panel(&mut self, frame: &mut Frame, world: &World, area: Rect) -> AppResult<()> {
+    fn build_right_panel(
+        &mut self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         if self.index >= self.teams.len() {
             return Ok(());
         }
-        let team = world.get_team_or_err(self.teams[self.index]).unwrap();
+        let team = world.get_team_or_err(&self.teams[self.index]).unwrap();
         self.current_team_players_length = team.player_ids.len();
         let vertical_split = Layout::vertical([
             Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2), //players
@@ -252,44 +239,39 @@ impl TeamListPanel {
         ];
 
         let player_img_split = Layout::horizontal(constraints).split(vertical_split[0]);
-
         let player_name_split = Layout::horizontal(constraints).split(vertical_split[2]);
-
         let player_rating_split = Layout::horizontal(constraints).split(vertical_split[3]);
 
-        for i in 0..MAX_POSITION as usize {
+        for i in 0..MIN_PLAYERS_PER_GAME as usize {
             if i >= team.player_ids.len() {
                 break;
             }
 
             // recalculate button area: to offset the missing box of the radiobutton
             // we add an extra row to top and bottom
-            let button_area = Rect {
-                x: player_img_split[i + 1].x,
-                y: player_img_split[i + 1].y,
-                width: player_img_split[i + 1].width,
-                height: player_img_split[i + 1].height + 1,
-            };
+            let button_area = Rect::new(
+                player_img_split[i + 1].x,
+                player_img_split[i + 1].y,
+                player_img_split[i + 1].width,
+                player_img_split[i + 1].height + 1,
+            );
 
-            let button = RadioButton::no_box(
-                "".into(),
+            let mut button = Button::no_box(
+                "",
                 UiCallback::GoToPlayer {
                     player_id: team.player_ids[i],
                 },
-                Arc::clone(&self.callback_registry),
-                &mut self.player_index,
-                i,
-            );
-            frame.render_widget(button, button_area);
+            )
+            .set_hover_style(UiStyle::SELECTED);
+            if self.player_index == i {
+                button = button.set_style(UiStyle::SELECTED);
+            }
 
-            let player = world.get_player_or_err(team.player_ids[i])?;
+            frame.render_hoverable(button, button_area);
 
-            if let Ok(lines) = self
-                .gif_map
-                .lock()
-                .unwrap()
-                .player_frame_lines(player, self.tick)
-            {
+            let player = world.get_player_or_err(&team.player_ids[i])?;
+
+            if let Ok(lines) = self.gif_map.player_frame_lines(player, self.tick) {
                 frame.render_widget(Paragraph::new(lines).centered(), player_img_split[i + 1]);
             }
 
@@ -331,7 +313,12 @@ impl TeamListPanel {
                 vertical: 1,
             }));
 
-            for (i, &player_id) in team.player_ids.iter().skip(5).enumerate() {
+            for (i, player_id) in team
+                .player_ids
+                .iter()
+                .skip(MIN_PLAYERS_PER_GAME)
+                .enumerate()
+            {
                 if let Some(player) = world.get_player(player_id) {
                     let info = format!("{}\n", player.info.shortened_name());
                     let skills = player.current_skill_array();
@@ -342,22 +329,26 @@ impl TeamListPanel {
                         best_role.as_str(),
                         best_role.player_rating(skills).stars()
                     );
-                    let button = RadioButton::new(
-                        format!("{}{}", info, role_info).into(),
+                    let mut button = Button::new(
+                        format!("{}{}", info, role_info),
                         UiCallback::GoToPlayer {
-                            player_id: team.player_ids[i + 5],
+                            player_id: team.player_ids[i + MIN_PLAYERS_PER_GAME],
                         },
-                        Arc::clone(&self.callback_registry),
-                        &mut self.player_index,
-                        i + 5,
                     );
+
+                    if self.player_index == i + MIN_PLAYERS_PER_GAME {
+                        button = button
+                            .set_style(UiStyle::SELECTED)
+                            .set_hover_style(UiStyle::SELECTED);
+                    }
+
                     let row = i / 2;
 
                     let bench_column_split =
                         Layout::horizontal([Constraint::Length(20), Constraint::Length(20)])
                             .split(bench_row_split[row]);
                     let column = i % 2;
-                    frame.render_widget(button, bench_column_split[column]);
+                    frame.render_hoverable(button, bench_column_split[column]);
                 }
             }
         }
@@ -374,31 +365,19 @@ impl TeamListPanel {
         let button_split = Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
             .split(ship_buttons_split[1]);
 
-        let hover_text_target = hover_text_target(frame);
         if team.id != world.own_team_id {
-            if let Ok(go_to_team_current_planet_button) = go_to_team_current_planet_button(
-                world,
-                team,
-                &self.callback_registry,
-                hover_text_target,
-            ) {
-                frame.render_widget(go_to_team_current_planet_button, button_split[0]);
+            if let Ok(go_to_team_current_planet_button) =
+                go_to_team_current_planet_button(world, team)
+            {
+                frame.render_hoverable(go_to_team_current_planet_button, button_split[0]);
             }
 
-            render_challenge_button(
-                world,
-                team,
-                &self.callback_registry,
-                hover_text_target,
-                true,
-                frame,
-                button_split[1],
-            )?;
+            render_challenge_button(world, team, true, frame, button_split[1])?;
         }
 
         render_spaceship_description(
             &team,
-            &self.gif_map,
+            &mut self.gif_map,
             self.tick,
             world,
             frame,
@@ -438,12 +417,12 @@ impl Screen for TeamListPanel {
         if world.dirty_ui || self.all_teams.len() != world.teams.len() {
             self.all_teams = world.teams.keys().into_iter().cloned().collect();
             self.all_teams.sort_by(|a, b| {
-                let a = world.get_team_or_err(*a).unwrap();
-                let b = world.get_team_or_err(*b).unwrap();
+                let a = world.get_team_or_err(a).unwrap();
+                let b = world.get_team_or_err(b).unwrap();
                 world
-                    .team_rating(b.id)
+                    .team_rating(&b.id)
                     .unwrap_or_default()
-                    .partial_cmp(&world.team_rating(a.id).unwrap_or_default())
+                    .partial_cmp(&world.team_rating(&a.id).unwrap_or_default())
                     .expect("Rating should exists")
             });
             self.update_view = true;
@@ -453,7 +432,7 @@ impl Screen for TeamListPanel {
             self.teams = self
                 .all_teams
                 .iter()
-                .filter(|&&team_id| {
+                .filter(|&team_id| {
                     let team = world.get_team_or_err(team_id).unwrap();
                     self.view.rule(team, world.get_own_team().unwrap())
                 })
@@ -468,7 +447,7 @@ impl Screen for TeamListPanel {
         if self.index < self.teams.len() {
             self.selected_team_id = self.teams[self.index];
             let players = world
-                .get_team_or_err(self.selected_team_id)?
+                .get_team_or_err(&self.selected_team_id)?
                 .player_ids
                 .clone();
             if self.player_index < players.len() {
@@ -479,9 +458,10 @@ impl Screen for TeamListPanel {
     }
     fn render(
         &mut self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         world: &World,
         area: Rect,
+
         _debug_view: bool,
     ) -> AppResult<()> {
         if self.all_teams.len() == 0 {

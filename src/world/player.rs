@@ -493,7 +493,7 @@ impl Player {
             return Err(anyhow!("Player has no team, so no rum to drink"));
         }
 
-        let team = world.get_team_or_err(self.team.unwrap())?;
+        let team = world.get_team_or_err(&self.team.expect("Player should have team"))?;
 
         if team.current_game.is_some() {
             return Err(anyhow!("Can't drink during game"));
@@ -628,7 +628,7 @@ impl Player {
 
         player.previous_skills = player.current_skill_array();
 
-        let normal = Normal::new(0.0, 6.50).expect("Should create valid normal distribution");
+        let normal = Normal::new(0.0, 5.75).expect("Should create valid normal distribution");
         let extra_potential = (normal.sample(rng) as f32).abs();
         player.potential = (player.average_skill() + extra_potential).bound();
         player.reputation =
@@ -822,24 +822,26 @@ impl Player {
         self.morale = (self.morale + morale).bound();
     }
 
-    pub fn roll(&self, rng: &mut ChaCha8Rng) -> u8 {
+    fn min_roll(&self) -> u8 {
+        (self.morale / 2.0) as u8
+    }
+
+    fn max_roll(&self) -> u8 {
         if self.tiredness == MAX_TIREDNESS {
             return 0;
         }
 
-        let mut result =
-            rng.gen_range(MIN_SKILL..=MAX_SKILL) + rng.gen_range(MIN_SKILL..=MAX_SKILL);
-
-        result = result.max(self.morale);
-
         if self.tiredness <= MIN_TIREDNESS_FOR_ROLL_DECLINE {
-            return result as u8;
+            return 2 * MAX_SKILL as u8;
         }
 
-        result =
-            result.min(2.0 * (MAX_TIREDNESS - (self.tiredness - MIN_TIREDNESS_FOR_ROLL_DECLINE)));
+        2 * (MAX_TIREDNESS - (self.tiredness - MIN_TIREDNESS_FOR_ROLL_DECLINE)) as u8
+    }
 
-        result as u8
+    pub fn roll(&self, rng: &mut ChaCha8Rng) -> u8 {
+        rng.gen_range(MIN_SKILL as u8..=2 * MAX_SKILL as u8)
+            .max(self.min_roll())
+            .min(self.max_roll())
     }
 
     pub fn modify_skill(&mut self, idx: usize, mut value: f32) {
@@ -901,7 +903,6 @@ impl Player {
         // potential_modifier has a value ranging from 0.0 to 2.0.
         // Players with skills below their potential improve faster, above their potential improve slower.
         let potential_modifier = 1.0 + (self.potential - self.average_skill()) / 20.0;
-        log::info!("Previous Experience increase: {:#?}", self.skills_training);
         for p in 0..MAX_POSITION {
             if experience_at_position[p as usize] == 0 {
                 continue;
@@ -1093,7 +1094,19 @@ impl Trait {
 
 #[cfg(test)]
 mod test {
-    use crate::{app::App, world::skill::Rated};
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+
+    use crate::{
+        app::App,
+        types::PlayerId,
+        world::{
+            planet::Planet,
+            skill::{Rated, MAX_SKILL, MIN_SKILL},
+        },
+    };
+
+    use super::Player;
 
     #[test]
     fn test_bare_value() {
@@ -1122,5 +1135,39 @@ mod test {
             );
             player.info.age += 0.025 * player.info.population.max_age();
         }
+    }
+
+    #[test]
+    fn test_roll() {
+        fn print_player_rolls(player: &Player, rng: &mut ChaCha8Rng) {
+            let roll = player.roll(rng);
+            println!(
+                "Tiredness={} Morale={} => Min={:2} Max={:2} Roll={:2}",
+                player.tiredness,
+                player.morale,
+                player.min_roll(),
+                player.max_roll(),
+                roll
+            );
+            assert!(player.max_roll() >= roll);
+            if player.max_roll() >= player.min_roll() {
+                assert!(player.min_roll() <= roll);
+            }
+        }
+        let rng = &mut ChaCha8Rng::from_entropy();
+        let planet = Planet::default();
+        let mut player = Player::random(rng, PlayerId::new_v4(), None, &planet, 0.0);
+
+        print_player_rolls(&player, rng);
+
+        player.tiredness = MAX_SKILL;
+        print_player_rolls(&player, rng);
+
+        player.morale = MIN_SKILL;
+        print_player_rolls(&player, rng);
+
+        player.tiredness = MIN_SKILL;
+        player.morale = MIN_SKILL;
+        print_player_rolls(&player, rng);
     }
 }

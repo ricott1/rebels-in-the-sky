@@ -1,11 +1,10 @@
 use super::{
-    constants::{INITIAL_TEAM_BALANCE, MIN_PLAYERS_PER_GAME},
+    constants::{INITIAL_TEAM_BALANCE, KILOMETER, MIN_PLAYERS_PER_GAME},
     jersey::Jersey,
     planet::Planet,
     player::Player,
     position::MAX_POSITION,
     resources::Resource,
-    role::CrewRole,
     spaceship::{Spaceship, SpaceshipUpgrade},
     types::{TeamLocation, TrainingFocus},
 };
@@ -44,6 +43,9 @@ pub struct Team {
     pub crew_roles: CrewRoles,
     pub jersey: Jersey,
     pub resources: ResourceMap,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub resources_gathered: ResourceMap,
     pub spaceship: Spaceship,
     pub home_planet_id: PlanetId,
     #[serde(skip_serializing_if = "is_default")]
@@ -68,23 +70,34 @@ pub struct Team {
     pub sent_challenges: HashMap<TeamId, Challenge>,
     #[serde(skip)]
     pub received_challenges: HashMap<TeamId, Challenge>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub total_travelled: KILOMETER,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub number_of_space_adventures: usize,
 }
 
 impl Team {
-    pub fn random(id: TeamId, home_planet_id: PlanetId, name: String, ship_name: String) -> Self {
+    pub fn random(
+        id: TeamId,
+        home_planet_id: PlanetId,
+        name: impl Into<String>,
+        ship_name: impl Into<String>,
+    ) -> Self {
         let jersey = Jersey::random();
         let ship_color = jersey.color;
         let mut resources = HashMap::new();
         resources.insert(Resource::SATOSHI, INITIAL_TEAM_BALANCE);
         Self {
             id,
-            name,
+            name: name.into(),
             jersey,
             home_planet_id,
             current_location: TeamLocation::OnPlanet {
                 planet_id: home_planet_id,
             },
-            spaceship: Spaceship::random(ship_name).with_color_map(ship_color),
+            spaceship: Spaceship::random(ship_name.into()).with_color_map(ship_color),
             game_tactic: Tactic::random(),
             resources,
             ..Default::default()
@@ -237,7 +250,7 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_set_crew_role(&self, player: &Player, role: CrewRole) -> AppResult<()> {
+    pub fn can_set_crew_role(&self, player: &Player) -> AppResult<()> {
         if player.team.is_none() {
             return Err(anyhow!("Player is not in a team"));
         }
@@ -246,28 +259,6 @@ impl Team {
             return Err(anyhow!("Team is playing"));
         }
 
-        match role {
-            CrewRole::Captain => {
-                if self.crew_roles.captain == Some(player.id) {
-                    return Err(anyhow!("Player is already captain"));
-                }
-            }
-            CrewRole::Doctor => {
-                if self.crew_roles.doctor == Some(player.id) {
-                    return Err(anyhow!("Player is already doctor"));
-                }
-            }
-            CrewRole::Pilot => {
-                if self.crew_roles.pilot == Some(player.id) {
-                    return Err(anyhow!("Player is already pilot"));
-                }
-            }
-            CrewRole::Mozzo => {
-                if self.crew_roles.mozzo.contains(&player.id) {
-                    return Err(anyhow!("Player is already mozzo"));
-                }
-            }
-        }
         Ok(())
     }
 
@@ -278,6 +269,10 @@ impl Team {
 
         if self.id == team.id {
             return Err(anyhow!("Cannot challenge self"));
+        }
+
+        if self.sent_challenges.get(&team.id).is_some() {
+            return Err(anyhow!("Already challenged"));
         }
 
         if self.is_on_planet().is_none() {
@@ -623,7 +618,7 @@ mod tests {
     #[test]
     fn test_team_random() {
         let (name, _) = TEAM_DATA[0].clone();
-        let team = super::Team::random(TeamId::new_v4(), Planet::default().id, name, "test".into());
+        let team = super::Team::random(TeamId::new_v4(), Planet::default().id, name, "test");
         println!("{:?}", team);
     }
 }

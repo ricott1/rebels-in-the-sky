@@ -189,8 +189,12 @@ impl<'game> Game {
         game.attendance = attendance as u32;
         let mut default_output = ActionOutput::default();
         default_output.description = format!(
-            "{} vs {}. Game is about to start here on {}! There are {} people in the stadium.",
-            home_name, away_name, planet.name, game.attendance
+            "{} vs {}. Game is about to start here on {}! There are {} {}people in the stadium.",
+            home_name,
+            away_name,
+            planet.name,
+            game.attendance,
+            if game.attendance == 69 { "(nice) " } else { "" }
         );
         default_output.random_seed = seed;
         game.action_results.push(default_output);
@@ -280,7 +284,7 @@ impl<'game> Game {
             ActionSituation::LongShot => Action::LongShot,
             ActionSituation::MissedShot => Action::Rebound,
             ActionSituation::EndOfQuarter => Action::StartOfQuarter,
-            ActionSituation::BallInBackcourt => {
+            ActionSituation::AfterSubstitution | ActionSituation::BallInBackcourt => {
                 let brawl_probability = BRAWL_ACTION_PROBABILITY
                     * (self.home_team_in_game.tactic.brawl_probability_modifier()
                         + self.away_team_in_game.tactic.brawl_probability_modifier());
@@ -474,9 +478,8 @@ impl<'game> Game {
     fn get_rng_seed(&self) -> [u8; 32] {
         let mut seed = [0; 32];
         seed[0..16].copy_from_slice(self.id.as_bytes());
-        seed[16..32].copy_from_slice(self.starting_at.to_be_bytes().as_ref());
-        // Overwrite first two bytes with timer value
-        seed[0..2].copy_from_slice(self.timer.value.to_be_bytes().as_ref());
+        seed[16..24].copy_from_slice(self.starting_at.to_be_bytes().as_ref());
+        seed[24..26].copy_from_slice(self.timer.value.to_be_bytes().as_ref());
 
         seed
     }
@@ -719,7 +722,7 @@ impl<'game> Game {
                             ..Default::default()
                         });
                     }
-                    _ =>
+                    (false, false) =>
                     // Check if teams make substitutions. Only if ball is out
                     {
                         if let Some(sub) = Substitution::execute(action_input, self, rng) {
@@ -740,7 +743,7 @@ impl<'game> Game {
 mod tests {
     use super::Game;
     use crate::game_engine::types::TeamInGame;
-    use crate::types::GameId;
+    use crate::types::{AppResult, GameId};
     use crate::types::{SystemTimeTick, Tick};
     use crate::world::constants::DEFAULT_PLANET_ID;
     use crate::world::world::World;
@@ -749,36 +752,28 @@ mod tests {
 
     #[ignore]
     #[test]
-    fn test_game() {
+    fn test_game() -> AppResult<()> {
         let mut world = World::new(None);
         let rng = &mut ChaCha8Rng::seed_from_u64(world.seed);
 
-        // world.initialize(true);
+        let id0 = world.generate_random_team(
+            rng,
+            DEFAULT_PLANET_ID.clone(),
+            "Testen".to_string(),
+            "Tosten".to_string(),
+        )?;
+        let id1 = world.generate_random_team(
+            rng,
+            DEFAULT_PLANET_ID.clone(),
+            "Holalo".to_string(),
+            "Halley".to_string(),
+        )?;
 
-        // let home_planet = world.planets.get(&DEFAULT_PLANET_ID).unwrap();
-        let id0 = world
-            .generate_random_team(
-                rng,
-                DEFAULT_PLANET_ID.clone(),
-                "Testen".to_string(),
-                "Tosten".to_string(),
-            )
-            .unwrap();
-        let id1 = world
-            .generate_random_team(
-                rng,
-                DEFAULT_PLANET_ID.clone(),
-                "Holalo".to_string(),
-                "Halley".to_string(),
-            )
-            .unwrap();
-
-        let home_team = world.get_team(id0).unwrap().clone();
+        let home_team = world.get_team(&id0).unwrap().clone();
 
         let checked_player_id = home_team.player_ids[0];
         let quickness_before = world
-            .get_player(checked_player_id)
-            .unwrap()
+            .get_player_or_err(&checked_player_id)?
             .athletics
             .quickness
             .clone();
@@ -791,7 +786,7 @@ mod tests {
             home_team_in_game.unwrap(),
             away_team_in_game.unwrap(),
             Tick::now(),
-            &world.get_planet(DEFAULT_PLANET_ID.clone()).unwrap(),
+            &world.get_planet(&DEFAULT_PLANET_ID).unwrap(),
         );
 
         game.home_team_in_game
@@ -821,11 +816,12 @@ mod tests {
             let _ = world.handle_tick_events(Tick::now());
         }
         let quickness_after = world
-            .get_player(checked_player_id)
-            .unwrap()
+            .get_player_or_err(&checked_player_id)?
             .athletics
             .quickness
             .clone();
         println!("{} {}", quickness_before, quickness_after);
+
+        Ok(())
     }
 }

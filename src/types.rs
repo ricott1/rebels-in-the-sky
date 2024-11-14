@@ -17,7 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 // A Tick represents a unit of time in the game world.
 // It corresponds to a millisecond in the real world.
-pub type Tick = u128;
+pub type Tick = u64;
 
 pub type PlayerId = uuid::Uuid;
 pub type TeamId = uuid::Uuid;
@@ -180,13 +180,13 @@ impl SystemTimeTick for Tick {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Invalid system time")
-            .as_millis()
+            .as_millis() as Tick
     }
 
     fn from_system_time(time: SystemTime) -> Tick {
         time.duration_since(UNIX_EPOCH)
             .expect("Invalid system time")
-            .as_millis()
+            .as_millis() as Tick
     }
 
     fn as_secs(&self) -> Tick {
@@ -229,10 +229,10 @@ impl SystemTimeTick for Tick {
 
     fn formatted(&self) -> String {
         let seconds = self.as_secs() % 60;
-        let minutes = (self.as_minutes() as f32) as u128 % 60;
-        let hours = (self.as_hours() as f32) as u128 % 24;
-        let days = (self.as_secs() as f32 / 60.0 / 60.0 / 24.0) as u128 % 365;
-        let years = (self.as_secs() as f32 / 60.0 / 60.0 / 24.0 / 365.2425) as u128;
+        let minutes = (self.as_minutes() as f32) as Tick % 60;
+        let hours = (self.as_hours() as f32) as Tick % 24;
+        let days = (self.as_secs() as f32 / 60.0 / 60.0 / 24.0) as Tick % 365;
+        let years = (self.as_secs() as f32 / 60.0 / 60.0 / 24.0 / 365.2425) as Tick;
 
         if years > 0 {
             format!(

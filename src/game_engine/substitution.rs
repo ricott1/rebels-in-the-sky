@@ -1,5 +1,5 @@
 use super::{
-    action::ActionOutput,
+    action::{ActionOutput, ActionSituation},
     constants::MIN_TIREDNESS_FOR_SUB,
     game::Game,
     types::{GameStats, GameStatsMap, Possession},
@@ -178,7 +178,7 @@ impl Substitution {
             possession: input.possession,
             attackers: input.attackers.clone(),
             defenders: input.defenders.clone(),
-            situation: input.situation.clone(),
+            situation: ActionSituation::AfterSubstitution,
             assist_from: input.assist_from,
             start_at: input.start_at,
             end_at: input.end_at,

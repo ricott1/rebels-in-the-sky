@@ -1,16 +1,12 @@
-use super::hover_text_span::HoverTextSpan;
+use super::{hover_text_span::HoverTextSpan, traits::HoverableWidget};
 use ratatui::{prelude::*, widgets::Widget};
 
 #[derive(Debug, Default, Clone)]
 pub struct HoverTextLine<'a> {
-    /// The spans that make up this line of text.
     pub spans: Vec<HoverTextSpan<'a>>,
-
-    /// The style of this line of text.
     pub style: Style,
-
-    /// The alignment of this line of text.
     pub alignment: Option<Alignment>,
+    hovered_span_index: usize,
 }
 
 impl<'a> HoverTextLine<'a> {
@@ -147,5 +143,48 @@ impl std::fmt::Display for HoverTextLine<'_> {
             write!(f, "{span}")?;
         }
         Ok(())
+    }
+}
+
+impl HoverableWidget for HoverTextLine<'_> {
+    fn layer(&self) -> usize {
+        0
+    }
+
+    fn hover_text(&self) -> Text<'_> {
+        self.spans[self.hovered_span_index].hover_text()
+    }
+
+    fn before_rendering(
+        &mut self,
+        area: Rect,
+        callback_registry: &mut super::ui_callback::CallbackRegistry,
+    ) {
+        let width = self.width() as u16;
+        let offset = match self.alignment {
+            Some(Alignment::Left) => 0,
+            Some(Alignment::Center) => (area.width.saturating_sub(width)) / 2,
+            Some(Alignment::Right) => area.width.saturating_sub(width),
+            None => 0,
+        };
+        let mut x = area.left().saturating_add(offset);
+        for (index, span) in self.spans.iter().enumerate() {
+            let span_width = span.width() as u16;
+            let span_area = Rect {
+                x,
+                width: span_width.min(area.right() - x),
+                ..area
+            };
+
+            if callback_registry.is_hovering(span_area) {
+                self.hovered_span_index = index;
+                break;
+            }
+
+            x = x.saturating_add(span_width);
+            if x >= area.right() {
+                break;
+            }
+        }
     }
 }

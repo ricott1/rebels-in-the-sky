@@ -4,6 +4,7 @@ use super::network_callback::NetworkCallback;
 use super::trade::Trade;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::game_engine::types::TeamInGame;
+use crate::store::serialize;
 use crate::types::{AppResult, GameId};
 use crate::types::{PlayerId, TeamId};
 use crate::types::{SystemTimeTick, Tick};
@@ -99,7 +100,7 @@ impl NetworkHandler {
     }
 
     fn _send(&mut self, data: NetworkData) -> AppResult<MessageId> {
-        let data = serde_json::to_vec(&data)?;
+        let data = serialize(&data)?;
         let msg_id = self
             .swarm
             .behaviour_mut()
@@ -133,28 +134,29 @@ impl NetworkHandler {
             return Err(anyhow!("No own team"));
         };
 
-        //If own team is playing with network peer, send the game.
+        // If own team is playing with network peer, send the game.
         if let Some(game_id) = world.get_own_team()?.current_game {
-            let game = world.get_game_or_err(game_id)?;
+            let game = world.get_game_or_err(&game_id)?;
+            // FIX BUG?? Send game even if we are playing with local team.
+            // return self.send_game(world, game_id);
+
             if game.home_team_in_game.peer_id.is_some() || game.away_team_in_game.peer_id.is_some()
             {
-                return self.send_game(world, game_id);
+                return self.send_game(world, &game_id);
             }
         }
 
         Ok(message_id)
     }
 
-    fn send_game(&mut self, world: &World, game_id: GameId) -> AppResult<MessageId> {
+    fn send_game(&mut self, world: &World, game_id: &GameId) -> AppResult<MessageId> {
         let network_game = NetworkGame::from_game_id(&world, game_id)?;
         self._send(NetworkData::Game(Tick::now(), network_game))
     }
 
     fn send_team(&mut self, world: &World, team_id: TeamId) -> AppResult<MessageId> {
-        let mut network_team = NetworkTeam::from_team_id(world, &team_id)?;
-        // Set the peer_id for team we are sending out
-        // This means that the team can be challenged online and it will not be stored.
-        network_team.set_peer_id(self.swarm.local_peer_id().clone());
+        let network_team =
+            NetworkTeam::from_team_id(world, &team_id, self.swarm.local_peer_id().clone())?;
 
         self._send(NetworkData::Team(Tick::now(), network_team))
     }
@@ -202,8 +204,8 @@ impl NetworkHandler {
     ) -> AppResult<Trade> {
         self.send_own_team(world)?;
 
-        let proposer_player = world.get_player_or_err(proposer_player_id)?.clone();
-        let target_player = world.get_player_or_err(target_player_id)?.clone();
+        let proposer_player = world.get_player_or_err(&proposer_player_id)?.clone();
+        let target_player = world.get_player_or_err(&target_player_id)?.clone();
 
         let trade = Trade::new(
             self.swarm.local_peer_id().clone(),
@@ -231,6 +233,7 @@ impl NetworkHandler {
             .connected_peers()
             .map(|id| id.clone())
             .collect::<Vec<PeerId>>();
+
         for peer_id in peers {
             if self.swarm.is_connected(&peer_id) {
                 let _ = self
@@ -244,8 +247,8 @@ impl NetworkHandler {
     pub fn accept_challenge(&mut self, world: &World, challenge: Challenge) -> AppResult<()> {
         self.send_own_team(world)?;
         let mut handle_syn = || -> AppResult<()> {
-            let home_team = world.get_team_or_err(challenge.home_team_in_game.team_id)?;
-            let away_team = world.get_team_or_err(challenge.away_team_in_game.team_id)?;
+            let home_team = world.get_team_or_err(&challenge.home_team_in_game.team_id)?;
+            let away_team = world.get_team_or_err(&challenge.away_team_in_game.team_id)?;
             home_team.can_challenge_team(away_team)?;
 
             let mut away_team_in_game =
@@ -289,7 +292,7 @@ impl NetworkHandler {
         let mut handle_syn = || -> AppResult<()> {
             let own_team = world.get_own_team()?;
             let proposer_team = if let Some(proposer_team_id) = trade.proposer_player.team {
-                world.get_team_or_err(proposer_team_id)?
+                world.get_team_or_err(&proposer_team_id)?
             } else {
                 return Err(anyhow!("Trade target player has no team"));
             };
@@ -299,7 +302,7 @@ impl NetworkHandler {
             // and the status of the proposer could have changed considerably
             // possibly making the trade invalid.
             let mut trade = trade.clone();
-            let target_player = world.get_player_or_err(trade.target_player.id)?.clone();
+            let target_player = world.get_player_or_err(&trade.target_player.id)?.clone();
             trade.target_player = target_player;
             proposer_team.can_trade_players(
                 &trade.proposer_player,
@@ -382,10 +385,12 @@ impl NetworkHandler {
 mod tests {
     use crate::{
         network::types::{NetworkData, NetworkTeam},
+        store::{deserialize, serialize},
         types::{AppResult, SystemTimeTick, Tick},
         world::world::World,
     };
     use anyhow::anyhow;
+    use libp2p::PeerId;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
@@ -397,14 +402,14 @@ mod tests {
         let team_name = "Testen".to_string();
         let ship_name = "Tosten".to_string();
         let own_team_id = world.generate_random_team(rng, home_planet, team_name, ship_name);
-        let network_team = NetworkTeam::from_team_id(&world, &own_team_id.unwrap()).unwrap();
+        let network_team =
+            NetworkTeam::from_team_id(&world, &own_team_id.unwrap(), PeerId::random()).unwrap();
 
         let timestamp = Tick::now();
         let serialized_network_data =
-            serde_json::to_vec(&NetworkData::Team(timestamp, network_team.clone()))?;
+            serialize(&NetworkData::Team(timestamp, network_team.clone()))?;
 
-        let deserialized_network_data =
-            serde_json::from_slice::<NetworkData>(serialized_network_data.as_slice())?;
+        let deserialized_network_data = deserialize::<NetworkData>(&serialized_network_data)?;
 
         match deserialized_network_data {
             NetworkData::Team(deserialized_timestamp, deserialized_team) => {

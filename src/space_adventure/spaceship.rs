@@ -1,7 +1,10 @@
+use super::networking::ImageType;
 use super::space_callback::SpaceCallback;
 use super::utils::{body_data_from_image, EntityState};
 use super::{constants::*, traits::*};
-use crate::image::components::ImageComponent;
+use crate::image::color_map::ColorMap;
+use crate::image::components::{ImageComponent, SizedImageComponent};
+use crate::image::spaceship::SpaceshipImage;
 use crate::image::utils::open_image;
 use crate::register_impl;
 use crate::space_adventure::visual_effects::VisualEffect;
@@ -9,13 +12,17 @@ use crate::space_adventure::Direction;
 use crate::types::*;
 use crate::world::constants::{FUEL_CONSUMPTION_PER_UNIT_STORAGE, SPEED_PENALTY_PER_UNIT_STORAGE};
 use crate::world::resources::Resource;
+use crate::world::spaceship::SpaceshipPrefab;
 use crate::{image::types::Gif, types::AppResult, world::spaceship::Spaceship};
 use glam::{I16Vec2, Vec2};
-use image::imageops::rotate90;
-use image::{Rgba, RgbaImage};
+use image::imageops::{rotate270, rotate90};
+use image::{Pixel, Rgba, RgbaImage};
+use itertools::Itertools;
+use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
+use strum::IntoEnumIterator;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ShooterState {
@@ -25,16 +32,49 @@ pub enum ShooterState {
 }
 
 impl ShooterState {
-    const MAX_SHOOTING_RECOIL: f32 = 0.125;
     const SHOOTING_CHARGE_COST: f32 = 1.0;
     const MAX_CHARGE: f32 = 100.0;
-    const CHARGE_RECOVERY_SPEED: f32 = 2.0;
-    const RECHARGE_RECOVERY_SPEED: f32 = 7.5;
+    const CHARGE_RECOVERY_SPEED: f32 = 5.0;
+    const RECHARGE_RECOVERY_SPEED: f32 = 3.0;
+}
+
+#[derive(Debug)]
+struct Shooter {
+    pub positions: Vec<I16Vec2>,
+    pub damage: f32,
+    pub max_recoil: f32,
+    pub state: ShooterState,
+}
+
+impl Shooter {
+    pub fn new(positions: Vec<I16Vec2>, damage: f32, fire_rate: f32) -> Self {
+        Self {
+            positions,
+            damage,
+            max_recoil: 1.0 / fire_rate,
+            state: ShooterState::Ready {
+                charge: ShooterState::MAX_CHARGE,
+            },
+        }
+    }
+
+    pub fn set_state(&mut self, state: ShooterState) {
+        self.state = state;
+    }
+
+    pub fn shoot(&mut self, charge: f32) {
+        self.set_state(ShooterState::Shooting {
+            charge,
+            recoil: self.max_recoil,
+        })
+    }
 }
 
 #[derive(Debug)]
 pub struct SpaceshipEntity {
     id: usize,
+    is_player: bool,
+    base_spaceship: Spaceship,
     resources: ResourceMap,
     used_storage_capacity: u32,
     storage_capacity: u32,
@@ -57,10 +97,11 @@ pub struct SpaceshipEntity {
     tick: usize,
     gif: Gif,
     engine_exhaust: Vec<I16Vec2>, // Position of exhaust in relative coords
-    shooters: Vec<I16Vec2>,       // Position of shooters in relative coords
+    shooter: Shooter,
     auto_shoot: bool,
-    shooter_state: ShooterState,
+    collector_id: usize,
     visual_effects: VisualEffectMap,
+    releasing_scraps: bool,
 }
 
 impl Body for SpaceshipEntity {
@@ -129,9 +170,9 @@ impl Body for SpaceshipEntity {
         self.position += self.velocity * deltatime;
         self.acceleration = Vec2::ZERO;
 
-        let min_position = Vec2::ZERO;
-        let max_position =
-            Vec2::new(SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32) - self.size().as_vec2();
+        // The spaceship must always remain on screen
+        let min_position = (MAX_ENTITY_POSITION - SCREEN_SIZE).as_vec2() / 2.0;
+        let max_position = min_position + SCREEN_SIZE.as_vec2() - self.size().as_vec2();
 
         if self.position.x < min_position.x {
             self.position.x = min_position.x;
@@ -149,21 +190,27 @@ impl Body for SpaceshipEntity {
             self.velocity.y = 0.0;
         }
 
+        callbacks.push(SpaceCallback::SetPosition {
+            id: self.collector_id,
+            position: self.center(),
+        });
+
         callbacks
     }
 }
 
 impl Sprite for SpaceshipEntity {
-    fn layer(&self) -> usize {
-        1
-    }
-
     fn image(&self) -> &RgbaImage {
         &self.gif[self.frame()]
     }
 
-    fn hit_box(&self) -> &HitBox {
-        &self.hit_boxes[self.frame()]
+    fn network_image_type(&self) -> ImageType {
+        ImageType::Spaceship {
+            hull: self.base_spaceship.hull,
+            engine: self.base_spaceship.engine,
+            storage: self.base_spaceship.storage,
+            color_map: self.base_spaceship.image.color_map,
+        }
     }
 
     fn should_apply_visual_effects<'a>(&self) -> bool {
@@ -203,92 +250,157 @@ impl Entity for SpaceshipEntity {
     fn set_id(&mut self, id: usize) {
         self.id = id;
     }
+
     fn id(&self) -> usize {
         self.id
     }
 
+    fn layer(&self) -> usize {
+        1
+    }
+
     fn update(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
+        // This is only triggered for enemy ships and not for the player ship.
+        if !self.is_player && self.current_durability() == 0 {
+            return vec![SpaceCallback::DestroyEntity { id: self.id }];
+        }
+
+        if !self.is_player {
+            let rng = &mut rand::thread_rng();
+            match self.shooter.state {
+                ShooterState::Ready { charge } => {
+                    if !self.auto_shoot
+                        && charge > ShooterState::MAX_CHARGE * rng.gen_range(0.25..1.0)
+                    {
+                        self.auto_shoot = true;
+                    }
+                    if charge <= 0.25 {
+                        self.auto_shoot = false;
+                    }
+                }
+                _ => {}
+            }
+        }
+
         let mut callbacks = vec![];
         callbacks.append(&mut self.update_body(deltatime));
         callbacks.append(&mut self.update_sprite(deltatime));
 
-        match self.shooter_state {
+        match self.shooter.state {
             ShooterState::Shooting { charge, recoil } => {
-                if recoil == ShooterState::MAX_SHOOTING_RECOIL {
-                    for shooter_position in self.shooters.iter() {
+                if recoil == self.shooter.max_recoil {
+                    for shooter_position in self.shooter.positions.iter() {
                         callbacks.push(SpaceCallback::GenerateProjectile {
                             shot_by_id: self.id(),
                             position: self.position + shooter_position.as_vec2(),
-                            velocity: Vec2::X * 100.0,
+                            velocity: Vec2::X * 100.0 * self.orientation() as f32,
                             color: Rgba([
                                 25,
                                 125,
                                 55 + (200.0 * charge / ShooterState::MAX_CHARGE) as u8,
                                 255,
                             ]),
-                            damage: 1.5 * (charge / ShooterState::MAX_CHARGE).powf(0.25),
+                            damage: self.shooter.damage,
                         });
                     }
                     let new_charge = charge - ShooterState::SHOOTING_CHARGE_COST;
                     if new_charge > 0.0 {
                         let new_recoil = recoil - deltatime;
-                        self.shooter_state = ShooterState::Shooting {
+                        self.shooter.set_state(ShooterState::Shooting {
                             charge: new_charge,
                             recoil: new_recoil,
-                        };
+                        });
                     } else {
-                        self.shooter_state = ShooterState::Recharging { charge: 0.0 };
+                        self.shooter
+                            .set_state(ShooterState::Recharging { charge: 0.0 });
                     }
                 } else {
                     let new_recoil = recoil - deltatime;
                     if new_recoil > 0.0 {
-                        self.shooter_state = ShooterState::Shooting {
+                        self.shooter.set_state(ShooterState::Shooting {
                             charge,
                             recoil: new_recoil,
-                        };
+                        });
                     } else {
-                        self.shooter_state = ShooterState::Ready { charge };
+                        self.shooter.set_state(ShooterState::Ready { charge });
                     }
                 }
             }
 
             ShooterState::Ready { charge } => {
                 if self.auto_shoot {
-                    self.shooter_state = ShooterState::Shooting {
+                    self.shooter.set_state(ShooterState::Shooting {
                         charge,
-                        recoil: ShooterState::MAX_SHOOTING_RECOIL,
-                    };
+                        recoil: self.shooter.max_recoil,
+                    });
                 } else if charge < ShooterState::MAX_CHARGE {
                     let new_charge = (charge + ShooterState::CHARGE_RECOVERY_SPEED * deltatime)
                         .min(ShooterState::MAX_CHARGE);
-                    self.shooter_state = ShooterState::Ready { charge: new_charge };
+                    self.shooter
+                        .set_state(ShooterState::Ready { charge: new_charge });
                 }
             }
 
             ShooterState::Recharging { charge } => {
                 let new_charge = charge + ShooterState::RECHARGE_RECOVERY_SPEED * deltatime;
                 if new_charge < ShooterState::MAX_CHARGE {
-                    self.shooter_state = ShooterState::Recharging { charge: new_charge };
+                    self.shooter
+                        .set_state(ShooterState::Recharging { charge: new_charge });
                 } else {
-                    self.shooter_state = ShooterState::Ready {
+                    self.shooter.set_state(ShooterState::Ready {
                         charge: ShooterState::MAX_CHARGE,
-                    };
+                    });
                 }
             }
         }
 
+        if self.releasing_scraps {
+            let rng = &mut rand::thread_rng();
+            callbacks.push(SpaceCallback::GenerateParticle {
+                position: self.center().as_vec2(),
+                velocity: Vec2::new(-6.0 + rng.gen_range(-0.5..0.5), rng.gen_range(-1.5..1.5)),
+                color: Resource::SCRAPS.color(),
+                particle_state: EntityState::Decaying {
+                    lifetime: 3.0 + rng.gen_range(0.0..1.5),
+                },
+                layer: 2,
+            });
+            self.releasing_scraps = false;
+        }
         callbacks
     }
 
     fn handle_space_callback(&mut self, callback: SpaceCallback) -> Vec<SpaceCallback> {
         match callback {
+            SpaceCallback::DestroyEntity { .. } => {
+                let rng = &mut rand::thread_rng();
+                let mut callbacks = vec![SpaceCallback::DestroyEntity {
+                    id: self.collector_id,
+                }];
+
+                let color_map = self.base_spaceship.image.color_map;
+                let colors = [color_map.red, color_map.green, color_map.blue];
+                for _ in 0..24 {
+                    let color = colors.choose(rng).expect("There should be one color");
+                    callbacks.push(SpaceCallback::GenerateParticle {
+                        position: self.center().as_vec2(),
+                        velocity: self.velocity
+                            + Vec2::new(rng.gen_range(-10.0..10.0), rng.gen_range(-10.0..10.0)),
+                        color: color.to_rgba(),
+                        particle_state: EntityState::Decaying {
+                            lifetime: 5.0 + rng.gen_range(-1.5..1.5),
+                        },
+                        layer: rng.gen_range(0..=2),
+                    });
+                }
+                return callbacks;
+            }
+
             SpaceCallback::DamageEntity { damage, .. } => {
                 self.add_damage(damage);
                 self.add_visual_effect(
                     VisualEffect::COLOR_MASK_LIFETIME,
-                    VisualEffect::ColorMask {
-                        color: Rgba([255, 0, 0, 0]),
-                    },
+                    VisualEffect::ColorMask { color: [255, 0, 0] },
                 );
             }
 
@@ -314,12 +426,20 @@ impl Collider for SpaceshipEntity {
     fn collider_type(&self) -> ColliderType {
         ColliderType::Spaceship
     }
+
+    fn hit_box(&self) -> &HitBox {
+        &self.hit_boxes[self.frame()]
+    }
 }
 
-register_impl!(PlayerControlled for SpaceshipEntity);
+register_impl!(ControllableSpaceship for SpaceshipEntity);
 register_impl!(!ResourceFragment for SpaceshipEntity);
 
-impl PlayerControlled for SpaceshipEntity {
+impl ControllableSpaceship for SpaceshipEntity {
+    fn is_player(&self) -> bool {
+        self.is_player
+    }
+
     fn fuel(&self) -> u32 {
         self.fuel.round() as u32
     }
@@ -341,7 +461,7 @@ impl PlayerControlled for SpaceshipEntity {
     }
 
     fn charge(&self) -> u32 {
-        match self.shooter_state {
+        match self.shooter.state {
             ShooterState::Ready { charge } => charge,
             ShooterState::Recharging { charge } => charge,
             ShooterState::Shooting { charge, .. } => charge,
@@ -350,7 +470,7 @@ impl PlayerControlled for SpaceshipEntity {
     }
 
     fn shooter_state(&self) -> ShooterState {
-        self.shooter_state
+        self.shooter.state
     }
 
     fn max_charge(&self) -> u32 {
@@ -379,13 +499,21 @@ impl PlayerControlled for SpaceshipEntity {
             PlayerInput::MoveUp => self.accelerate(Direction::UP),
             PlayerInput::MoveLeft => self.accelerate(Direction::LEFT),
             PlayerInput::MoveRight => self.accelerate(Direction::RIGHT),
-            PlayerInput::MainButton => self.shoot(),
-            PlayerInput::SecondButton => self.auto_shoot = !self.auto_shoot,
+            PlayerInput::Shoot => self.shoot(),
+            PlayerInput::ToggleAutofire => self.auto_shoot = !self.auto_shoot,
+            PlayerInput::ReleaseScraps => self.release_scraps(),
         }
     }
 }
 
 impl SpaceshipEntity {
+    fn orientation(&self) -> i8 {
+        if self.is_player {
+            return 1;
+        }
+        return -1;
+    }
+
     fn thrust(&self) -> f32 {
         self.base_thrust
             / (1.0 + SPEED_PENALTY_PER_UNIT_STORAGE * self.used_storage_capacity as f32)
@@ -422,36 +550,42 @@ impl SpaceshipEntity {
     }
 
     fn shoot(&mut self) {
-        match self.shooter_state {
-            ShooterState::Ready { charge } => {
-                self.shooter_state = ShooterState::Shooting {
-                    charge,
-                    recoil: ShooterState::MAX_SHOOTING_RECOIL,
-                }
-            }
+        match self.shooter.state {
+            ShooterState::Ready { charge } => self.shooter.shoot(charge),
             _ => {}
+        }
+    }
+
+    fn release_scraps(&mut self) {
+        if self.resources.sub(Resource::SCRAPS, 1).is_ok() {
+            self.releasing_scraps = true;
         }
     }
 
     pub fn from_spaceship(
         spaceship: &Spaceship,
+        team_speed_bonus: f32,
         resources: ResourceMap,
         fuel: u32,
+        collector_id: usize,
     ) -> AppResult<Self> {
         let mut gif = vec![];
         let mut hit_boxes = vec![];
         let base_gif = spaceship.compose_image()?;
         for idx in 0..base_gif.len() {
             let base_image = rotate90(&base_gif[idx]);
-            let (image, hit_box) = body_data_from_image(&base_image);
+            let (image, hit_box) = body_data_from_image(&base_image, true);
 
             gif.push(image);
             hit_boxes.push(hit_box);
         }
 
-        let position = Vec2::ZERO.with_y((SCREEN_HEIGHT / 2) as f32);
+        let position = Vec2::new(
+            (MAX_ENTITY_POSITION.x - SCREEN_SIZE.x) as f32 / 2.0,
+            0.5 * SCREEN_SIZE.y as f32,
+        );
 
-        let mut engine_img = open_image(&spaceship.engine.select_mask_file(0))?;
+        let mut engine_img = open_image(&spaceship.engine.select_mask_file())?;
         engine_img = rotate90(&engine_img);
 
         let y_offset = (engine_img.height() - gif[0].height()) / 2;
@@ -467,17 +601,18 @@ impl SpaceshipEntity {
             }
         }
 
-        let mut hull_img = open_image(&spaceship.hull.select_mask_file(0))?;
-        hull_img = rotate90(&hull_img);
+        let size = SpaceshipImage::size(&spaceship.hull);
+        let mut shooter_img = spaceship.shooter.image(size)?;
+        shooter_img = rotate90(&shooter_img);
 
-        let y_offset = (hull_img.height() - gif[0].height()) / 2;
-        let mut shooters = vec![];
-        for x in 0..hull_img.width() {
-            for y in 0..hull_img.height() {
-                if let Some(pixel) = hull_img.get_pixel_checked(x, y) {
-                    // If pixel is blue, it is at the exhaust position.
+        let y_offset = (shooter_img.height() - gif[0].height()) / 2;
+        let mut shooter_positions = vec![];
+        for x in 0..shooter_img.width() {
+            for y in 0..shooter_img.height() {
+                if let Some(pixel) = shooter_img.get_pixel_checked(x, y) {
+                    // If pixel is blue, it is at the shooter position.
                     if pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 255 && pixel[3] > 0 {
-                        shooters.push(I16Vec2::new(x as i16, y as i16 - y_offset as i16));
+                        shooter_positions.push(I16Vec2::new(x as i16, y as i16 - y_offset as i16));
                     }
                 }
             }
@@ -485,8 +620,12 @@ impl SpaceshipEntity {
 
         let used_storage_capacity = resources.used_storage_capacity();
 
+        let shooter = Shooter::new(shooter_positions, spaceship.damage(), spaceship.fire_rate());
+
         Ok(Self {
             id: 0,
+            is_player: true,
+            base_spaceship: spaceship.clone(),
             resources,
             used_storage_capacity,
             storage_capacity: spaceship.storage_capacity(),
@@ -497,22 +636,120 @@ impl SpaceshipEntity {
             current_durability: spaceship.current_durability() as f32,
             durability: spaceship.durability() as f32,
             base_thrust: spaceship.speed(0) * THRUST_MOD,
-            base_speed: spaceship.speed(0) * MAX_SPACESHIP_SPEED_MOD,
+            base_speed: spaceship.speed(0) * MAX_SPACESHIP_SPEED_MOD * team_speed_bonus,
             maneuverability: 0.0,
             fuel: fuel as f32,
             fuel_capacity: spaceship.fuel_capacity(),
             base_fuel_consumption: spaceship.fuel_consumption(0) * FUEL_CONSUMPTION_MOD,
             friction_coeff: FRICTION_COEFF,
             engine_exhaust,
-            shooters,
+            shooter,
             auto_shoot: false,
             velocity: Vec2::default(),
             acceleration: Vec2::default(),
             tick: 0,
-            shooter_state: ShooterState::Ready {
-                charge: ShooterState::MAX_CHARGE,
-            },
+            collector_id,
             visual_effects: HashMap::new(),
+            releasing_scraps: true,
+        })
+    }
+
+    pub fn random_enemy(collector_id: usize) -> AppResult<Self> {
+        let mut gif = vec![];
+        let mut hit_boxes = vec![];
+        let spaceship = SpaceshipPrefab::iter()
+            .collect_vec()
+            .choose(&mut rand::thread_rng())
+            .expect("There shiuld be one spaceship available")
+            .spaceship("Baddy".to_string())
+            .with_color_map(ColorMap::random());
+
+        let base_gif = spaceship.compose_image()?;
+        for idx in 0..base_gif.len() {
+            let base_image = rotate270(&base_gif[idx]);
+            let (image, hit_box) = body_data_from_image(&base_image, true);
+
+            gif.push(image);
+            hit_boxes.push(hit_box);
+        }
+
+        let position = Vec2::new(SCREEN_SIZE.x as f32, SCREEN_SIZE.y as f32 / 2.0);
+
+        let mut engine_img = open_image(&spaceship.engine.select_mask_file())?;
+        engine_img = rotate270(&engine_img);
+
+        let y_offset = (engine_img.height() - gif[0].height()) / 2;
+        let mut engine_exhaust = vec![];
+        for x in 0..engine_img.width() {
+            for y in 0..engine_img.height() {
+                if let Some(pixel) = engine_img.get_pixel_checked(x, y) {
+                    // If pixel is blue, it is at the exhaust position.
+                    if pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 255 && pixel[3] > 0 {
+                        engine_exhaust.push(I16Vec2::new(x as i16, y as i16 - y_offset as i16));
+                    }
+                }
+            }
+        }
+
+        let size = SpaceshipImage::size(&spaceship.hull);
+        let mut shooter_img = spaceship.shooter.image(size)?;
+        shooter_img = rotate270(&shooter_img);
+
+        let y_offset = (shooter_img.height() - gif[0].height()) / 2;
+        let mut shooter_positions = vec![];
+        for x in 0..shooter_img.width() {
+            for y in 0..shooter_img.height() {
+                if let Some(pixel) = shooter_img.get_pixel_checked(x, y) {
+                    // If pixel is blue, it is at the shooter position.
+                    if pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 255 && pixel[3] > 0 {
+                        shooter_positions.push(I16Vec2::new(x as i16, y as i16 - y_offset as i16));
+                    }
+                }
+            }
+        }
+
+        let resources = ResourceMap::new();
+        let used_storage_capacity = 0;
+        let fuel = spaceship.fuel_capacity() as f32;
+        let storage_capacity = spaceship.storage_capacity();
+        let current_durability = spaceship.current_durability() as f32;
+        let durability = spaceship.durability() as f32;
+        let base_thrust = spaceship.speed(0) * THRUST_MOD;
+        let base_speed = spaceship.speed(0) * MAX_SPACESHIP_SPEED_MOD;
+        let fuel_capacity = spaceship.fuel_capacity();
+        let base_fuel_consumption = spaceship.fuel_consumption(0) * FUEL_CONSUMPTION_MOD;
+
+        let shooter = Shooter::new(shooter_positions, spaceship.damage(), spaceship.fire_rate());
+
+        Ok(Self {
+            id: 0,
+            is_player: false,
+            base_spaceship: spaceship,
+            resources,
+            used_storage_capacity,
+            storage_capacity,
+            previous_position: position,
+            position,
+            gif,
+            hit_boxes,
+            current_durability,
+            durability,
+            base_thrust,
+            base_speed,
+            maneuverability: 0.0,
+            fuel,
+            fuel_capacity,
+            base_fuel_consumption,
+            friction_coeff: FRICTION_COEFF,
+            engine_exhaust,
+            shooter,
+            auto_shoot: false,
+            velocity: Vec2::default(),
+            acceleration: Vec2::default(),
+            tick: 0,
+            collector_id,
+            visual_effects: HashMap::new(),
+            releasing_scraps: true,
         })
     }
 }

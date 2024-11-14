@@ -1,24 +1,19 @@
 use super::button::Button;
 use super::constants::{UiKey, UiStyle, UiText};
 use super::gif_map::{self, TREASURE_GIF};
-use super::ui_callback::{CallbackRegistry, UiCallback};
-use super::utils::{
-    hover_text_target, img_to_lines, input_from_key_event, validate_textarea_input,
-};
-use super::widgets::default_block;
+use super::ui_callback::UiCallback;
+use super::ui_frame::UiFrame;
+use super::utils::{img_to_lines, input_from_key_event, validate_textarea_input};
+use super::widgets::{default_block, thick_block};
 use crate::image::types::{Gif, PrintableGif};
 use crate::types::*;
 use crate::ui::gif_map::PORTAL_GIFS;
 use crate::world::{player::Player, resources::Resource, skill::Rated};
 use anyhow::anyhow;
 use core::fmt::Debug;
+use ratatui::layout::{Constraint, Layout};
 use ratatui::layout::{Margin, Rect};
 use ratatui::widgets::{Clear, Paragraph, Wrap};
-use ratatui::{
-    layout::{Constraint, Layout},
-    Frame,
-};
-use std::sync::{Arc, Mutex};
 use strum_macros::Display;
 use tui_textarea::TextArea;
 
@@ -47,6 +42,7 @@ pub enum PopupMessage {
     },
     AsteroidNameDialog {
         tick: Tick,
+        asteroid_type: usize,
     },
     PortalFound {
         player_name: String,
@@ -71,7 +67,7 @@ pub enum PopupMessage {
 }
 
 impl PopupMessage {
-    const MAX_TUTORIAL_PAGE: usize = 2;
+    const MAX_TUTORIAL_PAGE: usize = 3;
     fn rect(&self, area: Rect) -> Rect {
         let (width, height) = match self {
             PopupMessage::AsteroidNameDialog { .. } => (54, 28),
@@ -130,7 +126,7 @@ impl PopupMessage {
         key_event: crossterm::event::KeyEvent,
     ) -> Option<UiCallback> {
         match self {
-            PopupMessage::AsteroidNameDialog { tick } => {
+            PopupMessage::AsteroidNameDialog { tick, .. } => {
                 if key_event.code == UiKey::YES_TO_DIALOG {
                     let mut name = popup_input.lines()[0].clone();
                     name = name
@@ -138,7 +134,7 @@ impl PopupMessage {
                         .enumerate()
                         .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
                         .collect();
-                    if validate_textarea_input(popup_input, "Asteroid name".into()) {
+                    if validate_textarea_input(popup_input, "Asteroid name") {
                         let filename = format!("asteroid{}", tick % 30);
                         return Some(UiCallback::NameAndAcceptAsteroid { name, filename });
                     }
@@ -192,13 +188,11 @@ impl PopupMessage {
 
     pub fn render(
         &self,
-        frame: &mut Frame,
+        frame: &mut UiFrame,
         area: Rect,
         popup_input: &mut TextArea<'static>,
-        callback_registry: &Arc<Mutex<CallbackRegistry>>,
     ) -> AppResult<()> {
-        let rect = self.rect(area);
-
+        let rect = frame.to_screen_rect(self.rect(area));
         let split = Layout::vertical([
             Constraint::Length(3), //header
             Constraint::Min(3),    //message
@@ -210,8 +204,7 @@ impl PopupMessage {
         }));
 
         frame.render_widget(Clear, rect);
-        frame.render_widget(default_block(), rect);
-        let hover_text_target = hover_text_target(frame);
+        frame.render_widget(thick_block(), rect);
         match self {
             PopupMessage::Ok { message, tick, .. } => {
                 frame.render_widget(
@@ -229,17 +222,13 @@ impl PopupMessage {
                         vertical: 1,
                     }),
                 );
-                let button = Button::new(
-                    UiText::YES.into(),
-                    UiCallback::CloseUiPopup,
-                    Arc::clone(&callback_registry),
-                )
-                .set_hover_text("Close the popup".into(), hover_text_target)
-                .set_hotkey(UiKey::YES_TO_DIALOG)
-                .set_box_style(UiStyle::OK)
-                .set_layer(1);
+                let button = Button::new(UiText::YES, UiCallback::CloseUiPopup)
+                    .set_hover_text("Close the popup")
+                    .set_hotkey(UiKey::YES_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::OK))
+                    .set_layer(1);
 
-                frame.render_widget(
+                frame.render_hoverable(
                     button,
                     split[2].inner(Margin {
                         vertical: 0,
@@ -264,17 +253,13 @@ impl PopupMessage {
                         vertical: 1,
                     }),
                 );
-                let button = Button::new(
-                    UiText::YES.into(),
-                    UiCallback::CloseUiPopup,
-                    Arc::clone(&callback_registry),
-                )
-                .set_hover_text("Close the popup".into(), hover_text_target)
-                .set_hotkey(UiKey::YES_TO_DIALOG)
-                .set_box_style(UiStyle::OK)
-                .set_layer(1);
+                let button = Button::new(UiText::YES, UiCallback::CloseUiPopup)
+                    .set_hover_text("Close the popup")
+                    .set_hotkey(UiKey::YES_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::OK))
+                    .set_layer(1);
 
-                frame.render_widget(
+                frame.render_hoverable(
                     button,
                     split[2].inner(Margin {
                         vertical: 0,
@@ -290,7 +275,7 @@ impl PopupMessage {
             } => {
                 frame.render_widget(
                     Paragraph::new(format!("Attention!"))
-                        .block(default_block().border_style(UiStyle::NETWORK))
+                        .block(default_block().border_style(UiStyle::HIGHLIGHT))
                         .centered(),
                     split[0],
                 );
@@ -312,33 +297,25 @@ impl PopupMessage {
                         .split(split[2]);
 
                 let confirm_button = Button::new(
-                    UiText::YES.into(),
+                    UiText::YES,
                     UiCallback::ConfirmReleasePlayer {
                         player_id: player_id.clone(),
                     },
-                    Arc::clone(&callback_registry),
                 )
-                .set_hover_text(
-                    format!("Confirm releasing {}.", player_name),
-                    hover_text_target,
-                )
+                .set_hover_text(format!("Confirm releasing {}", player_name))
                 .set_hotkey(UiKey::YES_TO_DIALOG)
-                .set_box_style(UiStyle::OK)
+                .block(default_block().border_style(UiStyle::OK))
                 .set_layer(1);
 
-                frame.render_widget(confirm_button, buttons_split[0]);
+                frame.render_hoverable(confirm_button, buttons_split[0]);
 
-                let no_button = Button::new(
-                    UiText::NO.into(),
-                    UiCallback::CloseUiPopup,
-                    Arc::clone(&callback_registry),
-                )
-                .set_hover_text(format!("Don't release {}", player_name), hover_text_target)
-                .set_hotkey(UiKey::NO_TO_DIALOG)
-                .set_box_style(UiStyle::ERROR)
-                .set_layer(1);
+                let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
+                    .set_hover_text(format!("Don't release {}", player_name))
+                    .set_hotkey(UiKey::NO_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::ERROR))
+                    .set_layer(1);
 
-                frame.render_widget(no_button, buttons_split[1]);
+                frame.render_hoverable(no_button, buttons_split[1]);
             }
 
             PopupMessage::PromptQuit {
@@ -347,7 +324,7 @@ impl PopupMessage {
             } => {
                 frame.render_widget(
                     Paragraph::new(format!("Attention!"))
-                        .block(default_block().border_style(UiStyle::NETWORK))
+                        .block(default_block().border_style(UiStyle::HIGHLIGHT))
                         .centered(),
                     split[0],
                 );
@@ -369,43 +346,35 @@ impl PopupMessage {
                     Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
                         .split(split[2]);
 
-                let confirm_button = Button::new(
-                    UiText::YES.into(),
-                    UiCallback::QuitGame,
-                    Arc::clone(&callback_registry),
-                )
-                .set_hover_text(format!("Confirm quitting."), hover_text_target)
-                .set_hotkey(UiKey::YES_TO_DIALOG)
-                .set_box_style(UiStyle::OK)
-                .set_layer(1);
+                let confirm_button = Button::new(UiText::YES, UiCallback::QuitGame)
+                    .set_hover_text(format!("Confirm quitting."))
+                    .set_hotkey(UiKey::YES_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::OK))
+                    .set_layer(1);
 
-                frame.render_widget(confirm_button, buttons_split[0]);
+                frame.render_hoverable(confirm_button, buttons_split[0]);
 
-                let no_button = Button::new(
-                    UiText::NO.into(),
-                    UiCallback::CloseUiPopup,
-                    Arc::clone(&callback_registry),
-                )
-                .set_hover_text(
-                    format!("Please don't go, don't goooooo..."),
-                    hover_text_target,
-                )
-                .set_hotkey(UiKey::NO_TO_DIALOG)
-                .set_box_style(UiStyle::ERROR)
-                .set_layer(1);
+                let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
+                    .set_hover_text(format!("Please don't go, don't goooooo..."))
+                    .set_hotkey(UiKey::NO_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::ERROR))
+                    .set_layer(1);
 
-                frame.render_widget(no_button, buttons_split[1]);
+                frame.render_hoverable(no_button, buttons_split[1]);
             }
 
-            PopupMessage::AsteroidNameDialog { tick } => {
+            PopupMessage::AsteroidNameDialog {
+                tick,
+                asteroid_type,
+            } => {
                 frame.render_widget(
                     Paragraph::new(format!("Asteroid discovered: {}", tick.formatted_as_date()))
-                        .block(default_block().border_style(UiStyle::NETWORK))
+                        .block(default_block().border_style(UiStyle::HIGHLIGHT))
                         .centered(),
                     split[0],
                 );
 
-                let filename = format!("asteroid{}", tick % 30);
+                let filename = format!("asteroid{}", asteroid_type);
                 let asteroid_img = img_to_lines(&gif_map::GifMap::asteroid_zoom_out(&filename)?[0]);
 
                 if asteroid_img.len() == 0 {
@@ -461,35 +430,27 @@ impl PopupMessage {
                     .collect();
 
                 let mut ok_button = Button::new(
-                    UiText::YES.into(),
+                    UiText::YES,
                     UiCallback::NameAndAcceptAsteroid { name, filename },
-                    Arc::clone(&callback_registry),
                 )
-                .set_hover_text(
-                    "Name and set the asteroid as home planet".into(),
-                    hover_text_target,
-                )
+                .set_hover_text("Name and set the asteroid as home planet")
                 .set_hotkey(UiKey::YES_TO_DIALOG)
-                .set_box_style(UiStyle::OK)
+                .block(default_block().border_style(UiStyle::OK))
                 .set_layer(1);
 
-                if !validate_textarea_input(popup_input, "Asteroid name".into()) {
-                    ok_button.disable(None);
+                if !validate_textarea_input(popup_input, "Asteroid name") {
+                    ok_button.disable(Some("Invalid asteroid name"));
                 }
 
-                frame.render_widget(ok_button, buttons_split[0]);
+                frame.render_hoverable(ok_button, buttons_split[0]);
 
-                let no_button = Button::new(
-                    UiText::NO.into(),
-                    UiCallback::CloseUiPopup,
-                    Arc::clone(&callback_registry),
-                )
-                .set_hover_text("Leave the asteroid alone!".into(), hover_text_target)
-                .set_hotkey(UiKey::NO_TO_DIALOG)
-                .set_box_style(UiStyle::ERROR)
-                .set_layer(1);
+                let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
+                    .set_hover_text("Leave the asteroid alone!")
+                    .set_hotkey(UiKey::NO_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::ERROR))
+                    .set_layer(1);
 
-                frame.render_widget(no_button, buttons_split[1]);
+                frame.render_hoverable(no_button, buttons_split[1]);
             }
 
             PopupMessage::PortalFound {
@@ -542,17 +503,13 @@ impl PopupMessage {
                     m_split[1],
                 );
 
-                let button = Button::new(
-                    UiText::YES.into(),
-                    UiCallback::CloseUiPopup,
-                    Arc::clone(&callback_registry),
-                )
-                .set_hover_text("Close the popup".into(), hover_text_target)
-                .set_hotkey(UiKey::YES_TO_DIALOG)
-                .set_box_style(UiStyle::OK)
-                .set_layer(1);
+                let button = Button::new(UiText::YES, UiCallback::CloseUiPopup)
+                    .set_hover_text("Close the popup")
+                    .set_hotkey(UiKey::YES_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::OK))
+                    .set_layer(1);
 
-                frame.render_widget(
+                frame.render_hoverable(
                     button,
                     split[2].inner(Margin {
                         vertical: 0,
@@ -647,17 +604,13 @@ impl PopupMessage {
                     );
                 }
 
-                let button = Button::new(
-                    UiText::YES.into(),
-                    UiCallback::CloseUiPopup,
-                    Arc::clone(&callback_registry),
-                )
-                .set_hover_text("Close the popup".into(), hover_text_target)
-                .set_hotkey(UiKey::YES_TO_DIALOG)
-                .set_box_style(UiStyle::OK)
-                .set_layer(1);
+                let button = Button::new(UiText::YES, UiCallback::CloseUiPopup)
+                    .set_hover_text("Close the popup")
+                    .set_hotkey(UiKey::YES_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::OK))
+                    .set_layer(1);
 
-                frame.render_widget(
+                frame.render_hoverable(
                     button,
                     split[2].inner(Margin {
                         vertical: 0,
@@ -714,17 +667,13 @@ impl PopupMessage {
                     m_split[1],
                 );
 
-                let button = Button::new(
-                    UiText::YES.into(),
-                    UiCallback::CloseUiPopup,
-                    Arc::clone(&callback_registry),
-                )
-                .set_hover_text("Close the popup".into(), hover_text_target)
-                .set_hotkey(UiKey::YES_TO_DIALOG)
-                .set_box_style(UiStyle::OK)
-                .set_layer(1);
+                let button = Button::new(UiText::YES, UiCallback::CloseUiPopup)
+                    .set_hover_text("Close the popup")
+                    .set_hotkey(UiKey::YES_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::OK))
+                    .set_layer(1);
 
-                frame.render_widget(
+                frame.render_hoverable(
                     button,
                     split[2].inner(Margin {
                         vertical: 0,
@@ -740,15 +689,16 @@ impl PopupMessage {
                         index + 1,
                         PopupMessage::MAX_TUTORIAL_PAGE + 1
                     ))
-                    .block(default_block().border_style(UiStyle::NETWORK))
+                    .block(default_block().border_style(UiStyle::HIGHLIGHT))
                     .centered(),
                     split[0],
                 );
 
                 let message = match index {
                     0 => "Hello pirate! This is your team page.\nHere you can check your pirates and ship and interact with the market.",
-                    1 => "To start, you can try to challenge another team to a game,\nor maybe explore around your planet to gather resources.",
-                    _ => "Have fun!"
+                    1 => "You can navigate aorund by clicking on the tabs\nor using the arrow keys.",
+                    2 => "To start, you can try to challenge another team to a game,\nor maybe explore around your planet to gather resources.",
+                    _ => "Ultimately, the key is to gather together a great crew.\nHave fun!"
                 };
 
                 frame.render_widget(
@@ -759,36 +709,29 @@ impl PopupMessage {
                     }),
                 );
 
-                let next_button = Button::new(
-                    "Next >>".into(),
-                    UiCallback::PushTutorialPage { index: index + 1 },
-                    Arc::clone(&callback_registry),
-                )
-                .set_hover_text("Next tutorial".into(), hover_text_target)
-                .set_hotkey(UiKey::YES_TO_DIALOG)
-                .set_box_style(UiStyle::OK)
-                .set_layer(1);
+                let next_button =
+                    Button::new("Next >>", UiCallback::PushTutorialPage { index: index + 1 })
+                        .set_hover_text("Next tutorial")
+                        .set_hotkey(UiKey::YES_TO_DIALOG)
+                        .block(default_block().border_style(UiStyle::OK))
+                        .set_layer(1);
 
-                let close_button = Button::new(
-                    "Close".into(),
-                    UiCallback::CloseUiPopup,
-                    Arc::clone(&callback_registry),
-                )
-                .set_hover_text("Skip the tutorial".into(), hover_text_target)
-                .set_hotkey(UiKey::NO_TO_DIALOG)
-                .set_box_style(UiStyle::ERROR)
-                .set_layer(1);
+                let close_button = Button::new("Close", UiCallback::CloseUiPopup)
+                    .set_hover_text("Skip the tutorial")
+                    .set_hotkey(UiKey::NO_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::ERROR))
+                    .set_layer(1);
 
                 match index {
                     x if *x < PopupMessage::MAX_TUTORIAL_PAGE => {
                         let buttons_split =
                             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
                                 .split(split[2]);
-                        frame.render_widget(next_button, buttons_split[0]);
-                        frame.render_widget(close_button, buttons_split[1]);
+                        frame.render_hoverable(next_button, buttons_split[0]);
+                        frame.render_hoverable(close_button, buttons_split[1]);
                     }
                     _ => {
-                        frame.render_widget(close_button, split[2]);
+                        frame.render_hoverable(close_button, split[2]);
                     }
                 }
             }

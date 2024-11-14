@@ -2,6 +2,7 @@ use super::challenge::Challenge;
 use super::trade::Trade;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::game_engine::types::TeamInGame;
+use crate::store::deserialize;
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::ui::popup_message::PopupMessage;
 use crate::ui::utils::SwarmPanelEvent;
@@ -130,8 +131,8 @@ impl NetworkCallback {
                     text: format!("Closing connection: {}", peer_id),
                 };
                 app.ui.swarm_panel.push_log_event(event);
-                // // FIXME: read connection protocol and understand when this is called
-                // // for example, we could check that num_established >0 or that cause = None
+                // FIXME: read connection protocol and understand when this is called.
+                //        For example, we could check that num_established >0 or that cause = None
             }
             Ok(None)
         })
@@ -150,6 +151,10 @@ impl NetworkCallback {
             };
             app.ui.swarm_panel.push_log_event(event);
 
+            if let Some(id) = peer_id {
+                app.ui.swarm_panel.add_peer_id(id, network_team.team.id);
+            }
+            app.world.add_network_team(network_team.clone())?;
             let event = SwarmPanelEvent {
                 timestamp,
                 peer_id,
@@ -159,10 +164,6 @@ impl NetworkCallback {
                 ),
             };
             app.ui.swarm_panel.push_log_event(event);
-            if let Some(id) = peer_id {
-                app.ui.swarm_panel.add_peer_id(id, network_team.team.id);
-            }
-            app.world.add_network_team(network_team.clone())?;
             Ok(None)
         })
     }
@@ -228,22 +229,26 @@ impl NetworkCallback {
             let own_version_minor = env!("CARGO_PKG_VERSION_MINOR").parse()?;
             let own_version_patch = env!("CARGO_PKG_VERSION_PATCH").parse()?;
 
-            if seed_info.version_major > own_version_major
-                || (seed_info.version_major == own_version_major
-                    && seed_info.version_minor > own_version_minor)
-                || (seed_info.version_major == own_version_major
-                    && seed_info.version_minor == own_version_minor
-                    && seed_info.version_patch > own_version_patch)
-            {
-                let message = format!(
-                    "New version {}.{}.{} available. Download at https://rebels.frittura.org",
-                    seed_info.version_major, seed_info.version_minor, seed_info.version_patch,
-                );
-                app.ui.push_popup(PopupMessage::Ok {
-                    message,
-                    is_skippable: false,
-                    tick: timestamp,
-                });
+            // Notify about new version (only once).
+            if app.new_version_notified == false {
+                if seed_info.version_major > own_version_major
+                    || (seed_info.version_major == own_version_major
+                        && seed_info.version_minor > own_version_minor)
+                    || (seed_info.version_major == own_version_major
+                        && seed_info.version_minor == own_version_minor
+                        && seed_info.version_patch > own_version_patch)
+                {
+                    let message = format!(
+                        "New version {}.{}.{} available. Download at https://rebels.frittura.org",
+                        seed_info.version_major, seed_info.version_minor, seed_info.version_patch,
+                    );
+                    app.ui.push_popup(PopupMessage::Ok {
+                        message,
+                        is_skippable: false,
+                        tick: timestamp,
+                    });
+                    app.new_version_notified = true;
+                }
             }
 
             app.ui
@@ -307,7 +312,7 @@ impl NetworkCallback {
                         let mut trade = trade.clone();
                         let proposer_player = app
                             .world
-                            .get_player_or_err(trade.proposer_player.id)?
+                            .get_player_or_err(&trade.proposer_player.id)?
                             .clone();
                         trade.proposer_player = proposer_player;
 
@@ -321,7 +326,7 @@ impl NetworkCallback {
 
                         let own_team = app.world.get_own_team()?;
                         let target_team = app.world.get_team_or_err(
-                            trade
+                            &trade
                                 .target_player
                                 .team
                                 .ok_or(anyhow!("Player in trade should have a team"))?,
@@ -405,7 +410,7 @@ impl NetworkCallback {
 
                         let own_team = app.world.get_own_team()?;
                         let proposer_team = app.world.get_team_or_err(
-                            trade
+                            &trade
                                 .proposer_player
                                 .team
                                 .ok_or(anyhow!("Player in trade should have a team"))?,
@@ -716,7 +721,8 @@ impl NetworkCallback {
             }
             Self::HandleMessage { message } => {
                 let peer_id = message.source;
-                let network_data = serde_json::from_slice::<NetworkData>(&message.data)?;
+
+                let network_data = deserialize::<NetworkData>(&message.data)?;
                 match network_data {
                     NetworkData::Team(timestamp, team) => {
                         Self::handle_team_topic(peer_id, timestamp, team)(app)
