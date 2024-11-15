@@ -6,7 +6,7 @@ use ratatui::{
 };
 
 use super::{
-    traits::{HoverableStatefulWidget, HoverableWidget},
+    traits::{InteractiveStatefulWidget, InteractiveWidget},
     ui_callback::{CallbackRegistry, UiCallback},
     UI_SCREEN_SIZE,
 };
@@ -131,7 +131,7 @@ impl<'a, 'b> UiFrame<'a, 'b> {
 
     pub fn render_hoverable<W>(&mut self, mut widget: W, area: Rect)
     where
-        W: HoverableWidget,
+        W: InteractiveWidget,
     {
         let is_hovered = self.is_hovered(area, widget.layer());
         widget.before_rendering(area, &mut self.callback_registry);
@@ -146,7 +146,7 @@ impl<'a, 'b> UiFrame<'a, 'b> {
 
     pub fn render_stateful_hoverable<W>(&mut self, mut widget: W, area: Rect, state: &mut W::State)
     where
-        W: HoverableStatefulWidget,
+        W: InteractiveStatefulWidget,
     {
         let is_hovered = self.is_hovered(area, widget.layer());
         widget.before_rendering(area, &mut self.callback_registry, state);

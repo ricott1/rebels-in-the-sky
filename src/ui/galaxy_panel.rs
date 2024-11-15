@@ -336,7 +336,7 @@ impl GalaxyPanel {
                         Err(e) => (Err(e), "".to_string(), format!("Travel to {}", planet.name)),
                     };
 
-                    let mut go_to_planet_button = Button::new(
+                    let mut travel_to_planet_button = Button::new(
                         format!("Travel{}", button_text),
                         UiCallback::TravelToPlanet {
                             planet_id: planet.id,
@@ -346,10 +346,10 @@ impl GalaxyPanel {
                     .set_hotkey(UiKey::TRAVEL);
 
                     if can_travel.is_err() {
-                        go_to_planet_button.disable(Some(can_travel.unwrap_err().to_string()));
+                        travel_to_planet_button.disable(Some(can_travel.unwrap_err().to_string()));
                     }
 
-                    buttons.push(go_to_planet_button);
+                    buttons.push(travel_to_planet_button);
                 }
             }
         }

@@ -95,7 +95,7 @@ impl AsteroidSize {
         match self {
             AsteroidSize::Small => 0.2,
             AsteroidSize::Big => 1.0,
-            AsteroidSize::Huge => 3.0,
+            AsteroidSize::Huge => 4.0,
             AsteroidSize::Planet => 0.0,
         }
     }

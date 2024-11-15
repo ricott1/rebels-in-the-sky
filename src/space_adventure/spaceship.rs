@@ -605,7 +605,7 @@ impl SpaceshipEntity {
         let mut shooter_img = spaceship.shooter.image(size)?;
         shooter_img = rotate90(&shooter_img);
 
-        let y_offset = (shooter_img.height() - gif[0].height()) / 2;
+        let y_offset = shooter_img.height().saturating_sub(gif[0].height()) / 2;
         let mut shooter_positions = vec![];
         for x in 0..shooter_img.width() {
             for y in 0..shooter_img.height() {
@@ -635,8 +635,8 @@ impl SpaceshipEntity {
             hit_boxes,
             current_durability: spaceship.current_durability() as f32,
             durability: spaceship.durability() as f32,
-            base_thrust: spaceship.speed(0) * THRUST_MOD,
-            base_speed: spaceship.speed(0) * MAX_SPACESHIP_SPEED_MOD * team_speed_bonus,
+            base_thrust: spaceship.speed(0) * THRUST_MOD * team_speed_bonus,
+            base_speed: spaceship.speed(0) * MAX_SPACESHIP_SPEED_MOD,
             maneuverability: 0.0,
             fuel: fuel as f32,
             fuel_capacity: spaceship.fuel_capacity(),

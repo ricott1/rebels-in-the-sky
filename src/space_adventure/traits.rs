@@ -402,10 +402,7 @@ pub fn resolve_collision_between(
                     id: one.id(),
                     damage: other.collision_damage(),
                 },
-                SpaceCallback::DamageEntity {
-                    id: other.id(),
-                    damage: one.collision_damage(),
-                },
+                SpaceCallback::DestroyEntity { id: other.id() },
             ];
         }
         (ColliderType::Asteroid, ColliderType::Spaceship) => resolve_collision_between(other, one),

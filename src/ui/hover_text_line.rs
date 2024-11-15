@@ -1,4 +1,4 @@
-use super::{hover_text_span::HoverTextSpan, traits::HoverableWidget};
+use super::{hover_text_span::HoverTextSpan, traits::InteractiveWidget};
 use ratatui::{prelude::*, widgets::Widget};
 
 #[derive(Debug, Default, Clone)]
@@ -146,7 +146,7 @@ impl std::fmt::Display for HoverTextLine<'_> {
     }
 }
 
-impl HoverableWidget for HoverTextLine<'_> {
+impl InteractiveWidget for HoverTextLine<'_> {
     fn layer(&self) -> usize {
         0
     }

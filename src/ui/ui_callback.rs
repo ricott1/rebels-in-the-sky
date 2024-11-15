@@ -63,6 +63,9 @@ pub enum UiCallback {
     GoToGame {
         game_id: GameId,
     },
+    GoToPlanet {
+        planet_id: PlanetId,
+    },
     GoToHomePlanet {
         team_id: TeamId,
     },
@@ -319,12 +322,21 @@ impl UiCallback {
         })
     }
 
+    fn go_to_planet(planet_id: PlanetId) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            app.ui
+                .galaxy_panel
+                .go_to_planet(planet_id, None, ZoomLevel::In);
+            app.ui.switch_to(super::ui::UiTab::Galaxy);
+
+            Ok(None)
+        })
+    }
+
     fn go_to_home_planet(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
             let team = app.world.get_team_or_err(&team_id)?;
-
             let target = app.world.get_planet_or_err(&team.home_planet_id)?;
-
             let team_index = target.team_ids.iter().position(|&x| x == team_id);
 
             app.ui
@@ -916,9 +928,15 @@ impl UiCallback {
             team.spaceship.pending_upgrade = None;
 
             app.world.teams.insert(team.id, team);
+            let message = match upgrade.target {
+                SpaceshipUpgradeTarget::Repairs { .. } => {
+                    "Spaceship repairs completed!".to_string()
+                }
+                _ => "Spaceship upgrade completed!".to_string(),
+            };
 
             app.ui.push_popup(PopupMessage::Ok {
-                message: "Spaceship upgrade completed!".into(),
+                message,
                 is_skippable: true,
                 tick: Tick::now(),
             });
@@ -969,6 +987,7 @@ impl UiCallback {
             UiCallback::GoToPlayer { player_id } => Self::go_to_player(*player_id)(app),
             UiCallback::GoToPlayerTeam { player_id } => Self::go_to_player_team(*player_id)(app),
             UiCallback::GoToGame { game_id } => Self::go_to_game(*game_id)(app),
+            UiCallback::GoToPlanet { planet_id } => Self::go_to_planet(*planet_id)(app),
             UiCallback::GoToHomePlanet { team_id } => Self::go_to_home_planet(*team_id)(app),
             UiCallback::GoToCurrentTeamPlanet { team_id } => {
                 Self::go_to_current_team_planet(*team_id)(app)
@@ -1085,6 +1104,7 @@ impl UiCallback {
                 Ok(None)
             }
             UiCallback::ContinueGame => {
+                app.ui.splash_screen.set_index(0);
                 app.load_world();
                 Ok(None)
             }
@@ -1380,30 +1400,27 @@ impl UiCallback {
                     .as_trait_ref()
                     .expect("Player should implement ControllableSpaceship.");
 
-                // If durability is zero, the cargo (and fuel) has been lost.
-                let mut new_resources = if player_control.current_durability() > 0 {
-                    player_control.resources().clone()
-                } else {
-                    ResourceMap::default()
-                };
-
-                // Special handling for fuel. Override current resources with fuel.
-                if player_control.current_durability() > 0 {
-                    new_resources.insert(Resource::FUEL, player_control.fuel());
-                }
-
                 // Update team space adventure data
                 own_team.number_of_space_adventures += 1;
                 let mut resources_gathered_text = "".to_string();
+                let mut new_resources = ResourceMap::new();
 
-                for (resource, &amount) in new_resources.iter() {
-                    let current_amount = own_team.resources.value(resource);
-                    if amount > current_amount {
-                        let gathered_amount = amount - current_amount;
-                        let current_gathered = own_team.resources_gathered.value(resource);
+                for (&resource, &amount) in player_control.resources().iter() {
+                    let current_amount = own_team.resources.value(&resource);
+                    // If durability is zero, the cargo (and fuel) has been lost (not the satoshi).
+                    if resource != Resource::SATOSHI && player_control.current_durability() == 0 {
+                        continue;
+                    }
+
+                    new_resources.insert(resource, amount);
+                    // Gathered amount should always be larger equal to amount, apart from fuel.
+                    let gathered_amount = amount.saturating_sub(current_amount);
+
+                    if gathered_amount > 0 {
+                        let current_gathered = own_team.resources_gathered.value(&resource);
                         own_team
                             .resources_gathered
-                            .insert(*resource, current_gathered + gathered_amount);
+                            .insert(resource, current_gathered + gathered_amount);
                         resources_gathered_text.push_str(
                             format!(
                                 "  {} {}\n",
@@ -1579,5 +1596,108 @@ impl CallbackRegistry {
 
     pub fn handle_keyboard_event(&self, key_code: &KeyCode) -> Option<UiCallback> {
         self.keyboard_callbacks.get(key_code).cloned()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::UiCallback;
+    use crate::{
+        app::App,
+        space_adventure::{ControllableSpaceship, SpaceCallback},
+        types::{AppResult, ResourceMap, StorableResourceMap},
+        ui::ui_callback::INITIAL_TEAM_BALANCE,
+        world::resources::Resource,
+    };
+
+    #[test]
+    fn test_resource_gathered_in_space_adventure() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let world = &mut app.world;
+        let own_team = world.get_own_team_mut()?;
+        own_team
+            .resources
+            .add(Resource::FUEL, 100, own_team.storage_capacity())?;
+
+        println!("Own team resources: {:#?}", own_team.resources);
+
+        assert!(own_team.resources.value(&Resource::GOLD) == 0);
+        assert!(own_team.resources.value(&Resource::FUEL) == 100);
+        assert!(own_team.resources.value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE);
+
+        let own_team_resources = own_team.resources.clone();
+
+        UiCallback::StartSpaceAdventure.call(&mut app)?;
+
+        let space = app
+            .world
+            .space_adventure
+            .as_mut()
+            .expect("There should be a space adventure");
+
+        let player_id = space.get_player().expect("There should be a player").id();
+
+        let space_callbacks = vec![
+            SpaceCallback::CollectFragment {
+                id: player_id,
+                resource: Resource::GOLD,
+                amount: 10,
+            },
+            SpaceCallback::DamageEntity {
+                id: player_id,
+                damage: 2000.0,
+            },
+        ];
+
+        for cb in space_callbacks {
+            cb.call(space);
+        }
+
+        let player = space.get_player().expect("There should be a player");
+
+        let player_control: &dyn ControllableSpaceship = player
+            .as_trait_ref()
+            .expect("Player entity should implement ControllableSpaceship");
+
+        assert!(player_control.current_durability() == 0);
+        assert!(player_control.resources().value(&Resource::GOLD) == 10);
+        assert!(player_control.resources().value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE);
+        assert!(player_control.resources().value(&Resource::FUEL) == 100);
+
+        println!(
+            "Player durability: {}/{}",
+            player_control.current_durability(),
+            player_control.durability()
+        );
+        println!(
+            "After adventure resources: {:#?}",
+            player_control.resources()
+        );
+
+        let player_control_resources = player_control.resources().clone();
+
+        // UiCallback::ReturnFromSpaceAdventure.call(&mut app)?;
+        // let own_team = world.get_own_team()?;
+        // println!("{:#?}", own_team.resources);
+
+        let mut new_resources = ResourceMap::new();
+
+        for (&resource, &amount) in player_control_resources.iter() {
+            let current_amount = own_team_resources.value(&resource);
+            // If durability is zero, the cargo (and fuel) has been lost (not the satoshi).
+            if resource != Resource::SATOSHI && player_control.current_durability() == 0 {
+                continue;
+            }
+            new_resources.insert(resource, amount);
+
+            assert!(amount >= current_amount);
+        }
+
+        println!("Collected {:#?}", new_resources);
+        assert!(new_resources.value(&Resource::GOLD) == 0);
+        assert!(new_resources.value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE);
+        assert!(new_resources.value(&Resource::FUEL) == 0);
+
+        Ok(())
     }
 }

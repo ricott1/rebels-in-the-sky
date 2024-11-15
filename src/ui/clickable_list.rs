@@ -1,6 +1,6 @@
 use super::{
     constants::UiStyle,
-    traits::HoverableStatefulWidget,
+    traits::InteractiveStatefulWidget,
     ui_callback::{CallbackRegistry, UiCallback},
 };
 use ratatui::{
@@ -338,7 +338,7 @@ impl<'a> Styled for ClickableList<'a> {
     }
 }
 
-impl HoverableStatefulWidget for ClickableList<'_> {
+impl InteractiveStatefulWidget for ClickableList<'_> {
     fn layer(&self) -> usize {
         0
     }

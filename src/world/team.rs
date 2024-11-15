@@ -271,10 +271,6 @@ impl Team {
             return Err(anyhow!("Cannot challenge self"));
         }
 
-        if self.sent_challenges.get(&team.id).is_some() {
-            return Err(anyhow!("Already challenged"));
-        }
-
         if self.is_on_planet().is_none() {
             return Err(anyhow!("Team is in space"));
         }
@@ -301,6 +297,10 @@ impl Team {
 
         if team.current_game.is_some() {
             return Err(anyhow!("Opponent is already playing"));
+        }
+
+        if self.sent_challenges.get(&team.id).is_some() {
+            return Err(anyhow!("Already challenged"));
         }
 
         self.can_challenge_team_over_network(team)

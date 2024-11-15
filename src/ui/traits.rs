@@ -123,16 +123,14 @@ impl PercentageRating for f32 {
     }
 }
 
-pub trait HoverableWidget: Widget {
+pub trait InteractiveWidget: Widget {
     fn layer(&self) -> usize;
-    //FIXME: we should split this trait into a Clickable trait.
     fn before_rendering(&mut self, area: Rect, callback_registry: &mut CallbackRegistry);
     fn hover_text(&self) -> Text<'_>;
 }
 
-pub trait HoverableStatefulWidget: StatefulWidget {
+pub trait InteractiveStatefulWidget: StatefulWidget {
     fn layer(&self) -> usize;
-    //FIXME: we should split this trait into a Clickable trait.
     fn before_rendering(
         &mut self,
         area: Rect,

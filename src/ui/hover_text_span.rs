@@ -1,4 +1,4 @@
-use super::{traits::HoverableWidget, ui_callback::CallbackRegistry};
+use super::{traits::InteractiveWidget, ui_callback::CallbackRegistry};
 use ratatui::{prelude::*, widgets::Widget};
 
 /// A ratatui Paragraph that can display hover text when the mouse hovers over it.
@@ -42,7 +42,7 @@ impl Widget for HoverTextSpan<'_> {
     }
 }
 
-impl HoverableWidget for HoverTextSpan<'_> {
+impl InteractiveWidget for HoverTextSpan<'_> {
     fn layer(&self) -> usize {
         self.layer
     }

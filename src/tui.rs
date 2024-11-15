@@ -5,6 +5,7 @@ use crate::ssh::SSHEventHandler;
 use crate::ssh::SSHWriterProxy;
 use crate::types::{AppResult, Tick};
 use crate::ui::ui::Ui;
+use crate::ui::UI_SCREEN_SIZE;
 use crate::world::world::World;
 use crossterm::cursor::{Hide, Show};
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, KeyEvent, MouseEvent};
@@ -15,6 +16,8 @@ use futures::Future;
 use ratatui::layout::Rect;
 use ratatui::prelude::CrosstermBackend;
 use ratatui::Terminal;
+use ratatui::TerminalOptions;
+use ratatui::Viewport;
 use std::io::{self};
 use std::panic;
 use std::pin::Pin;
@@ -83,7 +86,16 @@ impl Tui<io::Stdout, CrosstermEventHandler> {
 impl Tui<SSHWriterProxy, SSHEventHandler> {
     pub fn new_ssh(writer: SSHWriterProxy, events: SSHEventHandler) -> AppResult<Self> {
         let backend = CrosstermBackend::new(writer);
-        let terminal = Terminal::new(backend)?;
+        let opts = TerminalOptions {
+            viewport: Viewport::Fixed(Rect {
+                x: 0,
+                y: 0,
+                width: UI_SCREEN_SIZE.0,
+                height: UI_SCREEN_SIZE.1,
+            }),
+        };
+
+        let terminal = Terminal::with_options(backend, opts)?;
         let mut tui = Self {
             tui_type: TuiType::SSH,
             terminal,

@@ -15,10 +15,11 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use futures::StreamExt;
 use libp2p::{gossipsub, swarm::SwarmEvent};
 use log::{error, info, warn};
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use stream_download::storage::temp::TempStorageProvider;
 use stream_download::StreamDownload;
 use tokio::select;
-use void::Void;
 
 const NETWORK_HANDLER_INIT_INTERVAL: Tick = 10 * SECONDS;
 
@@ -138,7 +139,7 @@ impl App {
 
     pub async fn conditional_network_event(
         network_handler: &mut Option<NetworkHandler>,
-    ) -> Option<SwarmEvent<gossipsub::Event, Void>> {
+    ) -> Option<SwarmEvent<gossipsub::Event>> {
         match network_handler.as_mut() {
             Some(handler) => Some(handler.swarm.select_next_some().await),
             None => None,
@@ -153,6 +154,26 @@ impl App {
             error!("Cannot initialize network handler: TCP port not set.")
         }
         Ok(())
+    }
+
+    pub fn test_default() -> AppResult<Self> {
+        let mut app = App::new(None, true, true, true, false, None, None, None);
+        app.new_world();
+        let home_planet_id = app
+            .world
+            .planets
+            .keys()
+            .next()
+            .expect("There should be at elast one planet")
+            .clone();
+        app.world.own_team_id = app.world.generate_random_team(
+            &mut ChaCha8Rng::from_entropy(),
+            home_planet_id,
+            "own team".into(),
+            "ship_name".into(),
+        )?;
+
+        Ok(app)
     }
 
     pub fn new(
@@ -244,9 +265,9 @@ impl App {
                         },
                         TerminalEvent::Mouse(mouse_event) => {
                             self.handle_mouse_events(mouse_event)?;
-                            if let Err(e) = tui.draw(&mut self.ui, &self.world, self.audio_player.as_ref()).await {
-                                error!("Drawing error: {e}");
-                            }
+                            // if let Err(e) = tui.draw(&mut self.ui, &self.world, self.audio_player.as_ref()).await {
+                            //     error!("Drawing error: {e}");
+                            // }
                         },
                         TerminalEvent::Resize(w, h) => tui.resize((w, h))?,
                         TerminalEvent::Quit => self.quit()?,
@@ -445,7 +466,7 @@ impl App {
 
     pub fn handle_network_events(
         &mut self,
-        network_event: SwarmEvent<gossipsub::Event, Void>,
+        network_event: SwarmEvent<gossipsub::Event>,
     ) -> AppResult<()> {
         if let Some(network_handler) = &mut self.network_handler {
             if let Some(callback) = network_handler.handle_network_events(network_event) {

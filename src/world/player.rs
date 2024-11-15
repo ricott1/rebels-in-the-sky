@@ -1099,7 +1099,7 @@ mod test {
 
     use crate::{
         app::App,
-        types::PlayerId,
+        types::{AppResult, PlayerId},
         world::{
             planet::Planet,
             skill::{Rated, MAX_SKILL, MIN_SKILL},
@@ -1109,9 +1109,8 @@ mod test {
     use super::Player;
 
     #[test]
-    fn test_bare_value() {
-        let mut app = App::new(None, true, true, true, false, None, None, None);
-        app.new_world();
+    fn test_bare_value() -> AppResult<()> {
+        let mut app = App::test_default()?;
 
         let world = &mut app.world;
 
@@ -1122,7 +1121,7 @@ mod test {
             .expect("There should be at least one player")
             .id;
 
-        let player = world.players.get_mut(&player_id).unwrap();
+        let mut player = world.get_player_or_err(&player_id)?.clone();
         player.info.age = player.info.population.min_age();
 
         for _ in 0..20 {
@@ -1135,6 +1134,8 @@ mod test {
             );
             player.info.age += 0.025 * player.info.population.max_age();
         }
+
+        Ok(())
     }
 
     #[test]

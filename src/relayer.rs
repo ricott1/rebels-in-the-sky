@@ -11,7 +11,6 @@ use itertools::Itertools;
 use libp2p::gossipsub::IdentTopic;
 use libp2p::{gossipsub, swarm::SwarmEvent};
 use tokio::select;
-use void::Void;
 
 const SEED_INFO_INTERVAL_MILLIS: Tick = 60 * SECONDS;
 
@@ -115,7 +114,7 @@ impl Relayer {
 
     pub fn handle_network_events(
         &mut self,
-        network_event: SwarmEvent<gossipsub::Event, Void>,
+        network_event: SwarmEvent<gossipsub::Event>,
     ) -> AppResult<()> {
         println!("Received network event: {:?}", network_event);
         match network_event {

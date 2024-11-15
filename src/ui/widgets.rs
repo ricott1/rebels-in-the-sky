@@ -73,7 +73,34 @@ pub fn selectable_list<'a>(options: Vec<(String, Style)>) -> ClickableList<'a> {
     ClickableList::new(items)
 }
 
-pub fn go_to_team_current_planet_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
+pub fn go_to_planet_button<'a>(world: &World, planet_id: &PlanetId) -> AppResult<Button<'a>> {
+    let planet_name = &world.get_planet_or_err(planet_id)?.name;
+    Ok(Button::new(
+        format!("Go to planet: {planet_name}"),
+        UiCallback::GoToPlanet {
+            planet_id: *planet_id,
+        },
+    )
+    .set_hover_text(format!("Go to planet {planet_name}"))
+    .set_hotkey(UiKey::GO_TO_PLANET))
+}
+
+pub fn go_to_team_home_planet_button<'a>(world: &World, team_id: &TeamId) -> AppResult<Button<'a>> {
+    let team = world.get_team_or_err(team_id)?;
+    let planet_name = &world.get_planet_or_err(&team.home_planet_id)?.name;
+    Ok(Button::new(
+        format!("Home planet {planet_name}"),
+        UiCallback::GoToHomePlanet { team_id: team.id },
+    )
+    .set_hover_text(format!("Go to team home planet {planet_name}",))
+    .set_hotkey(UiKey::GO_TO_HOME_PLANET))
+}
+
+pub fn go_to_team_current_planet_button<'a>(
+    world: &World,
+    team_id: &TeamId,
+) -> AppResult<Button<'a>> {
+    let team = world.get_team_or_err(team_id)?;
     let go_to_team_current_planet_button = match team.current_location {
         TeamLocation::OnPlanet { planet_id } => Button::new(
             format!("On planet {}", world.get_planet_or_err(&planet_id)?.name),
@@ -83,7 +110,7 @@ pub fn go_to_team_current_planet_button<'a>(world: &World, team: &Team) -> AppRe
             "Go to planet {}",
             world.get_planet_or_err(&planet_id)?.name
         ))
-        .set_hotkey(UiKey::GO_TO_PLANET),
+        .set_hotkey(UiKey::ON_PLANET),
 
         TeamLocation::Travelling {
             from: _from,
@@ -153,16 +180,6 @@ pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button
     }
 
     Ok(button)
-}
-
-pub fn go_to_team_home_planet_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
-    let planet_name = world.get_planet_or_err(&team.home_planet_id)?.name.clone();
-    Ok(Button::new(
-        format!("Home planet: {planet_name}"),
-        UiCallback::GoToHomePlanet { team_id: team.id },
-    )
-    .set_hover_text(format!("Go to team home planet {planet_name}",))
-    .set_hotkey(UiKey::GO_TO_HOME_PLANET))
 }
 
 pub fn render_challenge_button<'a>(

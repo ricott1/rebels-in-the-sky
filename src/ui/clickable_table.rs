@@ -9,7 +9,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::{
     constants::UiStyle,
-    traits::HoverableStatefulWidget,
+    traits::InteractiveStatefulWidget,
     ui_callback::{CallbackRegistry, UiCallback},
 };
 
@@ -449,7 +449,7 @@ impl<'a> Widget for ClickableTable<'a> {
     }
 }
 
-impl HoverableStatefulWidget for ClickableTable<'_> {
+impl InteractiveStatefulWidget for ClickableTable<'_> {
     fn layer(&self) -> usize {
         0
     }

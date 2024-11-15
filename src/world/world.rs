@@ -2067,7 +2067,6 @@ mod test {
             },
         },
     };
-    use itertools::Itertools;
     use rand::{seq::IteratorRandom, Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
@@ -2263,11 +2262,9 @@ mod test {
 
     #[test]
     fn test_tick_players_update() -> AppResult<()> {
-        let mut app = App::new(None, true, true, true, false, None, None, None);
-        app.new_world();
+        let mut app = App::test_default()?;
 
         let world = &mut app.world;
-        world.own_team_id = world.teams.keys().collect_vec()[0].clone();
 
         let player_id = world
             .players
@@ -2309,17 +2306,9 @@ mod test {
 
     #[test]
     fn test_tick_player_leaving_own_team_for_age() -> AppResult<()> {
-        let mut app = App::new(None, true, true, true, false, None, None, None);
-        app.new_world();
+        let mut app = App::test_default()?;
 
         let world = &mut app.world;
-        let rng = &mut ChaCha8Rng::from_entropy();
-        world.own_team_id = world.generate_random_team(
-            rng,
-            world.planets.keys().next().unwrap().clone(),
-            "team_name".into(),
-            "ship_name".into(),
-        )?;
 
         let own_team = world.get_own_team()?;
         let player_id = own_team.player_ids[0];
@@ -2338,17 +2327,9 @@ mod test {
 
     #[test]
     fn test_tick_player_leaving_own_team_for_morale() -> AppResult<()> {
-        let mut app = App::new(None, true, true, true, false, None, None, None);
-        app.new_world();
+        let mut app = App::test_default()?;
 
         let world = &mut app.world;
-        let rng = &mut ChaCha8Rng::from_entropy();
-        world.own_team_id = world.generate_random_team(
-            rng,
-            world.planets.keys().next().unwrap().clone(),
-            "team_name".into(),
-            "ship_name".into(),
-        )?;
 
         let own_team = world.get_own_team()?;
         let player_id = own_team.player_ids[0];
@@ -2374,12 +2355,9 @@ mod test {
 
     #[test]
     fn test_is_simulating() -> AppResult<()> {
-        let mut app = App::new(None, true, true, true, false, None, None, None);
-        app.new_world();
+        let mut app = App::test_default()?;
 
         let world = &mut app.world;
-        assert!(world.is_simulating() == false);
-        world.own_team_id = world.teams.keys().collect_vec()[0].clone();
         assert!(world.is_simulating() == false);
 
         world.last_tick_short_interval = Tick::now();

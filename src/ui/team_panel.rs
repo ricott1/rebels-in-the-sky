@@ -367,7 +367,7 @@ impl TeamListPanel {
 
         if team.id != world.own_team_id {
             if let Ok(go_to_team_current_planet_button) =
-                go_to_team_current_planet_button(world, team)
+                go_to_team_current_planet_button(world, &team.id)
             {
                 frame.render_hoverable(go_to_team_current_planet_button, button_split[0]);
             }

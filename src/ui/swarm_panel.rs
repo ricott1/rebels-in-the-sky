@@ -407,7 +407,7 @@ impl SwarmPanel {
     }
 
     fn render_team_ranking(&self, frame: &mut UiFrame, world: &World, area: Rect) {
-        frame.render_widget(default_block().title("Team ranking"), area);
+        frame.render_widget(default_block().title("Top 10 Pirate Crews"), area);
         let mut constraints = [Constraint::Length(1)].repeat(self.team_ranking.len());
         constraints.push(Constraint::Min(0));
         let split = Layout::vertical(constraints).split(area.inner(Margin {
@@ -543,9 +543,7 @@ impl SwarmPanel {
     }
 
     pub fn set_view(&mut self, topic: SwarmView) {
-        log::info!("Current view {}", self.view);
         self.view = topic;
-        log::info!("New view {}", self.view);
     }
 }
 

@@ -334,7 +334,7 @@ impl PlayerListPanel {
                     "Go to {}, this free pirate's current location",
                     planet.name
                 ))
-                .set_hotkey(UiKey::GO_TO_PLANET);
+                .set_hotkey(UiKey::ON_PLANET);
                 frame.render_hoverable(button, buttons_split[0]);
             }
             PlayerLocation::WithTeam => {

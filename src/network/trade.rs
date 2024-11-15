@@ -55,19 +55,12 @@ mod tests {
     #[ignore]
     #[test]
     fn test_trade() -> AppResult<()> {
-        let mut app = App::new(None, true, true, true, false, None, None, None);
-        app.new_world();
+        let mut app = App::test_default()?;
 
         let world = &mut app.world;
         let rng = &mut ChaCha8Rng::from_entropy();
 
         let home_planet_id = world.planets.keys().next().unwrap().clone();
-        world.own_team_id = world.generate_random_team(
-            rng,
-            home_planet_id,
-            "own team".into(),
-            "ship_name".into(),
-        )?;
 
         let target_team_id = world.generate_random_team(
             rng,

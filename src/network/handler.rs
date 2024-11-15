@@ -10,17 +10,15 @@ use crate::types::{PlayerId, TeamId};
 use crate::types::{SystemTimeTick, Tick};
 use crate::world::world::World;
 use anyhow::anyhow;
-use libp2p::core::upgrade::Version;
 use libp2p::gossipsub::{self, IdentTopic, MessageId};
-use libp2p::swarm::{Config, SwarmEvent};
-use libp2p::{identity, noise, tcp, yamux, PeerId, Transport};
+use libp2p::swarm::SwarmEvent;
+use libp2p::{identity, noise, tcp, yamux, PeerId};
 use libp2p::{Multiaddr, Swarm};
 use log::{error, info};
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
-use void::Void;
 
 pub struct NetworkHandler {
     pub swarm: Swarm<gossipsub::Behaviour>,
@@ -39,14 +37,6 @@ impl Debug for NetworkHandler {
 impl NetworkHandler {
     pub fn new(seed_ip: Option<String>, tcp_port: u16) -> AppResult<Self> {
         let local_key = identity::Keypair::generate_ed25519();
-        let local_peer_id = PeerId::from(local_key.public());
-
-        let tcp_transport = tcp::tokio::Transport::default()
-            .upgrade(Version::V1Lazy)
-            .authenticate(noise::Config::new(&local_key)?)
-            .multiplex(yamux::Config::default())
-            .timeout(std::time::Duration::from_secs(20))
-            .boxed();
 
         // To content-address message, we can take the hash of message and use it as an ID.
         let message_id_fn = |message: &gossipsub::Message| {
@@ -72,12 +62,18 @@ impl NetworkHandler {
 
         gossipsub.subscribe(&IdentTopic::new(TOPIC))?;
 
-        let mut swarm = Swarm::new(
-            tcp_transport,
-            gossipsub,
-            local_peer_id,
-            Config::with_tokio_executor(),
-        );
+        let mut swarm = libp2p::SwarmBuilder::with_new_identity()
+            .with_tokio()
+            .with_tcp(
+                tcp::Config::default(),
+                noise::Config::new,
+                yamux::Config::default,
+            )?
+            .with_behaviour(|_| gossipsub)?
+            .with_swarm_config(|cfg| {
+                cfg.with_idle_connection_timeout(Duration::from_secs(u64::MAX))
+            })
+            .build();
 
         swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{tcp_port}").parse()?)?;
 
@@ -108,15 +104,15 @@ impl NetworkHandler {
         Ok(msg_id)
     }
 
-    pub fn dial_seed(&mut self) -> AppResult<()> {
-        self.dial(self.seed_address.clone())
-    }
-
     fn dial(&mut self, address: Multiaddr) -> AppResult<()> {
         if address != self.address {
             self.swarm.dial(address)?;
         }
         Ok(())
+    }
+
+    pub fn dial_seed(&mut self) -> AppResult<()> {
+        self.dial(self.seed_address.clone())
     }
 
     pub fn send_msg(&mut self, msg: String) -> AppResult<MessageId> {
@@ -337,7 +333,7 @@ impl NetworkHandler {
 
     pub fn handle_network_events(
         &mut self,
-        event: SwarmEvent<gossipsub::Event, Void>,
+        event: SwarmEvent<gossipsub::Event>,
     ) -> Option<NetworkCallback> {
         match event {
             SwarmEvent::NewListenAddr { address, .. } => {

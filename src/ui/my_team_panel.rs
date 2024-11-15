@@ -640,12 +640,13 @@ impl MyTeamPanel {
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
                 .split(btm_split[2]);
 
-        if let Ok(go_to_team_current_planet_button) = go_to_team_current_planet_button(world, team)
+        if let Ok(go_to_team_current_planet_button) =
+            go_to_team_current_planet_button(world, &team.id)
         {
             frame.render_hoverable(go_to_team_current_planet_button, btm_button_split[0]);
         }
 
-        if let Ok(home_planet_button) = go_to_team_home_planet_button(world, team) {
+        if let Ok(home_planet_button) = go_to_team_home_planet_button(world, &team.id) {
             frame.render_hoverable(home_planet_button, btm_button_split[1]);
         }
 
@@ -1310,8 +1311,8 @@ impl MyTeamPanel {
             return Ok(());
         }
 
-        let asteroid =
-            world.get_planet_or_err(&self.asteroid_ids[self.asteroid_index.unwrap_or_default()])?;
+        let asteroid_id = self.asteroid_ids[self.asteroid_index.unwrap_or_default()];
+        let asteroid = world.get_planet_or_err(&asteroid_id)?;
 
         frame.render_widget(default_block().title(format!("{} ", asteroid.name)), area);
 
@@ -1336,18 +1337,10 @@ impl MyTeamPanel {
         let b_split =
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(split[1]);
 
+        frame.render_hoverable(go_to_planet_button(world, &asteroid_id)?, b_split[0]);
         frame.render_widget(
             Paragraph::new(Span::styled(
                 "No kartoffeln to plant",
-                UiStyle::DISCONNECTED,
-            ))
-            .centered()
-            .block(default_block()),
-            b_split[0],
-        );
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                "No kartoffeln to harvest",
                 UiStyle::DISCONNECTED,
             ))
             .centered()

@@ -142,8 +142,20 @@ pub fn reset() -> AppResult<()> {
 
 pub fn world_exists(store_prefix: &str) -> bool {
     let filename = prefixed_world_filename(store_prefix);
-    let path = store_path(&format!("{}.json", filename));
-    path.is_ok() && path.unwrap().exists()
+
+    if let Ok(path) = store_path(&format!("{}.json.compressed", filename)) {
+        if path.exists() {
+            return true;
+        }
+    }
+
+    if let Ok(path) = store_path(&format!("{}.json", filename)) {
+        if path.exists() {
+            return true;
+        }
+    }
+
+    false
 }
 
 pub fn world_file_data(store_prefix: &str) -> AppResult<std::fs::Metadata> {

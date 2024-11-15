@@ -27,7 +27,8 @@ impl UiKey {
     pub const GO_TO_TEAM: KeyCode = KeyCode::Backspace;
     pub const GO_TO_TEAM_ALTERNATIVE: KeyCode = KeyCode::Char('t');
     pub const GO_TO_GAME: KeyCode = KeyCode::Char('g');
-    pub const GO_TO_PLANET: KeyCode = KeyCode::Char('O');
+    pub const ON_PLANET: KeyCode = KeyCode::Char('O');
+    pub const GO_TO_PLANET: KeyCode = KeyCode::Char('G');
     pub const GO_TO_HOME_PLANET: KeyCode = KeyCode::Char('H');
     pub const CHALLENGE_TEAM: KeyCode = KeyCode::Char('C');
     pub const TRAINING_FOCUS: KeyCode = KeyCode::Char('T');

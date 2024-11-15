@@ -387,12 +387,12 @@ impl SpaceAdventure {
                         self.stop_space_adventure();
 
                         return Ok(vec![
-                        UiCallback::PushUiPopup { popup_message:
-                            PopupMessage::Ok{
-                               message: "Danger! There's a breach in the hull.\nAll the resources in the stiva have been lost,\nyou need to go back to the base...".to_string() 
-                                , is_skippable:true, tick:Tick::now()}
-                            }
-                    ]);
+                            UiCallback::PushUiPopup { popup_message:
+                                PopupMessage::Ok {
+                                    message: "Danger! There's a breach in the hull.\nAll the resources in the stiva have been lost,\nyou need to go back to the base...".to_string(),
+                                    is_skippable:true, tick:Tick::now()}
+                                }
+                        ]);
                     }
                 }
                 time
@@ -417,24 +417,29 @@ impl SpaceAdventure {
             }
         }
 
-        // Resolve collisions
-        for layer in 0..MAX_LAYER {
-            let layer_entities = self.entities[layer].keys().collect_vec();
-            if layer_entities.len() == 0 {
-                continue;
-            }
+        // Resolve collisions (only if state is running)
+        match self.state {
+            SpaceAdventureState::Running { .. } => {
+                for layer in 0..MAX_LAYER {
+                    let layer_entities = self.entities[layer].keys().collect_vec();
+                    if layer_entities.len() == 0 {
+                        continue;
+                    }
 
-            for idx in 0..layer_entities.len() - 1 {
-                let entity = self.entities[layer]
-                    .get(layer_entities[idx])
-                    .expect("Entity should exist.");
-                for other_idx in idx + 1..layer_entities.len() {
-                    let other = self.entities[layer]
-                        .get(layer_entities[other_idx])
-                        .expect("Entity should exist.");
-                    callbacks.append(&mut resolve_collision_between(entity, other));
+                    for idx in 0..layer_entities.len() - 1 {
+                        let entity = self.entities[layer]
+                            .get(layer_entities[idx])
+                            .expect("Entity should exist.");
+                        for other_idx in idx + 1..layer_entities.len() {
+                            let other = self.entities[layer]
+                                .get(layer_entities[other_idx])
+                                .expect("Entity should exist.");
+                            callbacks.append(&mut resolve_collision_between(entity, other));
+                        }
+                    }
                 }
             }
+            _ => {}
         }
 
         // Execute callbacks
@@ -451,6 +456,8 @@ impl SpaceAdventure {
             self.insert_entity(Box::new(asteroid));
         }
 
+        let mut ui_callbacks = vec![];
+
         if difficulty_level > DIFFICULTY_FOR_ASTEROID_PLANET_GENERATION {
             match self.asteroid_planet_state {
                 AsteroidPlanetState::NotSpawned {
@@ -462,6 +469,11 @@ impl SpaceAdventure {
                         self.asteroid_planet_state = AsteroidPlanetState::Spawned {
                             image_number: id % MAX_ASTEROID_PLANET_IMAGE_TYPE,
                         };
+                        ui_callbacks.push(UiCallback::PushUiPopup { popup_message:
+                            PopupMessage::Ok {
+                            message: "You've found an asteroid! Bring the spaceship in touch with it to claim it.".to_string(),
+                                is_skippable:true, tick:Tick::now()}
+                            });
                     }
                 }
                 _ => {}
@@ -469,7 +481,7 @@ impl SpaceAdventure {
         }
 
         // TODO: spawn enemy ship
-        Ok(vec![])
+        Ok(ui_callbacks)
     }
 
     pub fn image(&self, width: u32, height: u32, debug_view: bool) -> AppResult<RgbaImage> {

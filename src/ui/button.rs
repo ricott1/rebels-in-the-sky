@@ -1,6 +1,6 @@
 use super::{
     constants::UiStyle,
-    traits::HoverableWidget,
+    traits::InteractiveWidget,
     ui_callback::{CallbackRegistry, UiCallback},
     widgets::default_block,
 };
@@ -204,12 +204,12 @@ impl<'a> Widget for Button<'a> {
                 .block(block)
                 .render(area, buf);
         } else {
-            paragraph.set_style(render_style).render(inner, buf);
+            paragraph.set_style(paragraph_style).render(inner, buf);
         }
     }
 }
 
-impl HoverableWidget for Button<'_> {
+impl InteractiveWidget for Button<'_> {
     fn layer(&self) -> usize {
         self.layer
     }

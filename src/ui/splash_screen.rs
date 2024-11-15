@@ -265,7 +265,7 @@ impl Screen for SplashScreen {
             };
 
             // Disable continue button if no world exists
-            if i == 0 && self.can_load_world == false {
+            if i == 0 && !self.can_load_world {
                 button.disable(Some("No save file found".to_string()));
             } else if i > 0 && world.is_simulating() {
                 button.disable(Some("Simulating world"));
