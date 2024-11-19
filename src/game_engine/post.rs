@@ -9,7 +9,7 @@ use crate::world::{
     player::Player,
     skill::GameSkill,
 };
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, WeightedIndex};
 use std::collections::HashMap;
@@ -55,11 +55,36 @@ impl EngineAction for Post {
                 attackers: vec![post_idx],
                 defenders: vec![post_idx],
                 situation: ActionSituation::CloseShot,
-                description: format!(
-                    "{} worked {}'s perfectly and got to the basket.",
-                    poster.info.shortened_name(),
-                    defender.info.shortened_name()
-                ),
+                description: [
+                    format!(
+                        "{} worked {}'s perfectly and got to the basket.",
+                        poster.info.shortened_name(),
+                        defender.info.shortened_name()
+                    ),
+                    format!(
+                        "{} used {}'s defense to create space and drive to the hoop.",
+                        poster.info.shortened_name(),
+                        defender.info.shortened_name()
+                    ),
+                    format!(
+                        "{} beats {} with a slick move and makes a strong move to the basket.",
+                        poster.info.shortened_name(),
+                        defender.info.shortened_name()
+                    ),
+                    format!(
+                        "{} spun past {} and now has an open lane to the basket.",
+                        poster.info.shortened_name(),
+                        defender.info.shortened_name()
+                    ),
+                    format!(
+                        "{} took advantage of {}'s mistake and easily attacked the basket.",
+                        poster.info.shortened_name(),
+                        defender.info.shortened_name()
+                    ),
+                ]
+                .choose(rng)
+                .expect("There should be one option")
+                .clone(),
                 start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),
                 home_score: input.home_score,
@@ -72,11 +97,36 @@ impl EngineAction for Post {
                 attackers: vec![post_idx],
                 defenders: vec![post_idx],
                 situation: ActionSituation::CloseShot,
-                description: format!(
-                    "{} bumps on {} and gathers the ball to shoot.",
-                    poster.info.shortened_name(),
-                    defender.info.shortened_name(),
-                ),
+                description: [
+                    format!(
+                        "{} bumps on {} and gathers the ball to shoot.",
+                        poster.info.shortened_name(),
+                        defender.info.shortened_name(),
+                    ),
+                    format!(
+                        "{} backs down {} and collects the ball, looking for a shot.",
+                        poster.info.shortened_name(),
+                        defender.info.shortened_name(),
+                    ),
+                    format!(
+                        "{} establishes position against {} and prepares for the shot.",
+                        poster.info.shortened_name(),
+                        defender.info.shortened_name(),
+                    ),
+                    format!(
+                        "{} powers through {}'s defense to secure the ball and get ready to shoot.",
+                        poster.info.shortened_name(),
+                        defender.info.shortened_name(),
+                    ),
+                    format!(
+                        "{} muscles up against {} and pulls in the ball for a post move.",
+                        poster.info.shortened_name(),
+                        defender.info.shortened_name(),
+                    ),
+                ]
+                .choose(rng)
+                .expect("There should be one option")
+                .clone(),
                 start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),
                 home_score: input.home_score,
@@ -95,10 +145,30 @@ impl EngineAction for Post {
                         attackers: vec![target_idx],
                         defenders: vec![],
                         situation: ActionSituation::BallInMidcourt,
-                        description: format!(
-                            "{} is struggling from the post due to {}'s defense. The ball is passed to {} to reset.",
-                            poster.info.shortened_name(), defender.info.shortened_name(), target.info.shortened_name()
-                        ),
+                        description: [
+                            format!(
+                                "{} is struggling from the post due to {}'s defense. The ball is passed to {} to reset.",
+                                poster.info.shortened_name(), defender.info.shortened_name(), target.info.shortened_name()
+                            ),
+                            format!(
+                                "{} can't shake off {}'s defense in the post, so the ball is passed to {} to reset the offense.",
+                                poster.info.shortened_name(), defender.info.shortened_name(), target.info.shortened_name()
+                            ),
+                            format!(
+                                "{} is bottled up by {} in the post. The play resets as {} gets the ball.",
+                                poster.info.shortened_name(), defender.info.shortened_name(), target.info.shortened_name()
+                            ),
+                            format!(
+                                "{} is having trouble in the post against {}'s tough defense. The ball is swung to {} for a reset.",
+                                poster.info.shortened_name(), defender.info.shortened_name(), target.info.shortened_name()
+                            ),
+                            format!(
+                                "{} can't find an opening against {}'s defense, so the ball is passed out to {} to reset.",
+                                poster.info.shortened_name(), defender.info.shortened_name(), target.info.shortened_name()
+                            ),
+                        ].choose(rng)
+                        .expect("There should be one option")
+                        .clone(),
                         start_at: input.end_at,
                         end_at: input.end_at.plus(timer_increase/2),
                         home_score: input.home_score,
@@ -112,10 +182,30 @@ impl EngineAction for Post {
                         attackers: vec![post_idx],
                         defenders: vec![post_idx],
                         situation: ActionSituation::MediumShot,
-                        description: format!(
-                        "{} tries to make the post moves work against {} but {} is all over him.",
-                        poster.info.shortened_name(), defender.info.shortened_name(), defender.info.shortened_name()
-                    ),
+                        description: [
+                            format!(
+                                "{} tries to make the post moves work against {} but {} is all over {}.",
+                                poster.info.shortened_name(), defender.info.shortened_name(), defender.info.shortened_name(),  poster.info.pronouns.as_object()
+                            ),
+                            format!(
+                                "{} attempts a post move on {} but can't shake off the tight defense, resulting in a bad shot.",
+                                poster.info.shortened_name(), defender.info.shortened_name()
+                            ),
+                            format!(
+                                "{} tries to power through {}'s defense in the post, but {} smothers {}, forcing a difficult shot.",
+                                poster.info.shortened_name(), defender.info.shortened_name(), defender.info.shortened_name(), poster.info.pronouns.as_object()
+                            ),
+                            format!(
+                                "{} works the post against {} but the defense is too strong, leading to an off-balance shot.",
+                                poster.info.shortened_name(), defender.info.shortened_name()
+                            ),
+                            format!(
+                                "{} makes an attempt in the post against {} but is completely shut down, forcing a bad shot.",
+                                poster.info.shortened_name(), defender.info.shortened_name()
+                            ),
+                        ].choose(rng)
+                        .expect("There should be one option")
+                        .clone(),
                         start_at: input.end_at,
                         end_at: input.end_at.plus(timer_increase),
                         home_score: input.home_score,

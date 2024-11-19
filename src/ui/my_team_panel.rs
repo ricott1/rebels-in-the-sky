@@ -71,13 +71,13 @@ enum PanelList {
 #[derive(Debug, Default)]
 pub struct MyTeamPanel {
     player_index: Option<usize>,
+    max_player_index: usize,
     game_index: Option<usize>,
     planet_index: Option<usize>,
     spaceship_upgrade_index: usize,
     asteroid_index: Option<usize>,
     view: MyTeamView,
     active_list: PanelList,
-    players: Vec<PlayerId>,
     recent_games: Vec<GameId>,
     loaded_games: HashMap<GameId, Game>,
     planet_markets: Vec<PlanetId>,
@@ -96,7 +96,7 @@ impl MyTeamPanel {
 
     fn render_view_buttons(&self, frame: &mut UiFrame, area: Rect) -> AppResult<()> {
         let mut view_info_button = Button::new(
-            "View: Info",
+            "Info",
             UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Info,
             },
@@ -105,7 +105,7 @@ impl MyTeamPanel {
         .set_hover_text("View team information.");
 
         let mut view_games_button = Button::new(
-            "View: Games",
+            "Games",
             UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Games,
             },
@@ -114,7 +114,7 @@ impl MyTeamPanel {
         .set_hover_text("View recent games.");
 
         let mut view_market_button = Button::new(
-            "View: Market",
+            "Market",
             UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Market,
             },
@@ -123,7 +123,7 @@ impl MyTeamPanel {
         .set_hover_text("View market, buy and sell resources.");
 
         let mut view_shipyard_button = Button::new(
-            "View: Shipyard",
+            "Shipyard",
             UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Shipyard,
             },
@@ -132,7 +132,7 @@ impl MyTeamPanel {
         .set_hover_text("View shipyard, improve your spaceship.");
 
         let mut view_asteroids_button = Button::new(
-            format!("View: Asteroids ({})", self.asteroid_ids.len()),
+            format!("Asteroids ({})", self.asteroid_ids.len()),
             UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Asteroids,
             },
@@ -557,24 +557,24 @@ impl MyTeamPanel {
             )),
             Line::from(vec![
                 Span::styled(
-                    format!("{:>10}", Resource::GOLD.to_string()),
+                    format!("{:>9} ", Resource::GOLD.to_string()),
                     Resource::GOLD.style(),
                 ),
                 Span::raw(format!("{:>3} Kg  ", team.resources.value(&Resource::GOLD))),
-                Span::styled(format!("{:>10}", "Kartoffeln"), UiStyle::STORAGE_KARTOFFEL),
-                Span::raw(format!("{:>3}", team.kartoffel_ids.len())),
+                Span::styled(format!("{:>10} ", "Kartoffeln"), UiStyle::STORAGE_KARTOFFEL),
+                Span::raw(format!("{}", team.kartoffel_ids.len())),
             ]),
             Line::from(vec![
                 Span::styled(
-                    format!("{:>10}", Resource::RUM.to_string()),
+                    format!("{:>8} ", Resource::RUM.to_string()),
                     Resource::RUM.style(),
                 ),
-                Span::raw(format!("{:>3} l   ", team.resources.value(&Resource::RUM))),
+                Span::raw(format!("{:>4} l   ", team.resources.value(&Resource::RUM))),
                 Span::styled(
-                    format!("{:>10}", Resource::SCRAPS.to_string()),
+                    format!("{:>6} ", Resource::SCRAPS.to_string()),
                     Resource::SCRAPS.style(),
                 ),
-                Span::raw(format!("{:>3} t", team.resources.value(&Resource::SCRAPS))),
+                Span::raw(format!("{:>5} t", team.resources.value(&Resource::SCRAPS))),
             ]),
         ]);
         frame.render_widget(default_block().title("Info"), split[0]);
@@ -1353,15 +1353,19 @@ impl MyTeamPanel {
 
     fn render_player_buttons(
         &self,
+        players: Vec<PlayerId>,
         frame: &mut UiFrame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
         let team = world.get_own_team()?;
-        if self.player_index.is_none() {
+        let player_index = if let Some(index) = self.player_index {
+            index
+        } else {
             return Ok(());
-        }
-        let player_id = self.players[self.player_index.unwrap()];
+        };
+
+        let player_id = players[player_index];
         let player = world.get_player_or_err(&player_id)?;
         let button_splits = Layout::horizontal([
             Constraint::Length(11),
@@ -1470,7 +1474,12 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn build_players_table(&self, world: &World, table_width: u16) -> AppResult<ClickableTable> {
+    fn build_players_table(
+        &self,
+        players: &Vec<PlayerId>,
+        world: &World,
+        table_width: u16,
+    ) -> AppResult<ClickableTable> {
         let team = world.get_own_team().unwrap();
         let header_cells = [
             " Name",
@@ -1489,8 +1498,7 @@ impl MyTeamPanel {
         // full or shortened version.
         let name_header_width = table_width - (9 + 10 + 10 + 10 + 9 + 15 + 17);
 
-        let rows = self
-            .players
+        let rows = players
             .iter()
             .map(|id| {
                 let player = world.get_player(id).unwrap();
@@ -1609,16 +1617,28 @@ impl MyTeamPanel {
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
-        let team = world.get_own_team()?;
+        let own_team = world.get_own_team()?;
+        let mut players = own_team.player_ids.clone();
+        players.sort_by(|a, b| {
+            let a = world.get_player(a).unwrap();
+            let b = world.get_player(b).unwrap();
+            if a.rating() == b.rating() {
+                b.average_skill()
+                    .partial_cmp(&a.average_skill())
+                    .expect("Skill value should exist")
+            } else {
+                b.rating().cmp(&a.rating())
+            }
+        });
         let top_split =
             Layout::horizontal([Constraint::Min(10), Constraint::Length(60)]).split(area);
 
-        let table = self.build_players_table(world, top_split[0].width)?;
+        let table = self.build_players_table(&players, world, top_split[0].width)?;
         frame.render_stateful_hoverable(
             table.block(default_block().title(format!(
                 "{} {} ↓/↑",
-                team.name.clone(),
-                world.team_rating(&team.id).unwrap_or_default().stars()
+                own_team.name.clone(),
+                world.team_rating(&own_team.id).unwrap_or_default().stars()
             ))),
             top_split[0],
             &mut ClickableTableState::default().with_selected(self.player_index),
@@ -1627,7 +1647,7 @@ impl MyTeamPanel {
         if self.player_index.is_none() {
             return Ok(());
         }
-        let player_id = self.players[self.player_index.unwrap()];
+        let player_id = players[self.player_index.unwrap()];
 
         let player = world
             .get_player(&player_id)
@@ -1637,12 +1657,12 @@ impl MyTeamPanel {
             player,
             &mut self.gif_map,
             self.tick,
-            frame,
             world,
+            frame,
             top_split[1],
         );
 
-        if team.current_game.is_none() {
+        if own_team.current_game.is_none() {
             let table_bottom = Layout::vertical([
                 Constraint::Min(10),
                 Constraint::Length(3), //role buttons
@@ -1682,7 +1702,7 @@ impl MyTeamPanel {
                 ))
                 .set_hotkey(UiKey::set_player_position(idx as Position));
 
-                let position = team.player_ids.iter().position(|id| *id == player.id);
+                let position = own_team.player_ids.iter().position(|id| *id == player.id);
                 if position.is_some() && position.unwrap() == idx {
                     button.select();
                 }
@@ -1694,7 +1714,7 @@ impl MyTeamPanel {
                     .set_hover_text("Auto-assign players' initial position.")
                     .set_hotkey(UiKey::AUTO_ASSIGN);
             frame.render_hoverable(auto_assign_button, position_button_splits[6]);
-            self.render_player_buttons(frame, world, table_bottom[2])?;
+            self.render_player_buttons(players, frame, world, table_bottom[2])?;
         }
 
         Ok(())
@@ -1714,7 +1734,15 @@ impl MyTeamPanel {
                 horizontal: 1,
             }),
         );
-        render_spaceship_description(&team, &mut self.gif_map, self.tick, world, frame, area);
+        render_spaceship_description(
+            &team,
+            true,
+            &mut self.gif_map,
+            self.tick,
+            world,
+            frame,
+            area,
+        );
 
         let explore_split =
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(split[1]);
@@ -1813,7 +1841,15 @@ impl MyTeamPanel {
                 frame.render_hoverable(upgrade_button, split[1]);
             }
         } else {
-            render_spaceship_description(&team, &mut self.gif_map, self.tick, world, frame, area);
+            render_spaceship_description(
+                &team,
+                true,
+                &mut self.gif_map,
+                self.tick,
+                world,
+                frame,
+                area,
+            );
         }
 
         Ok(())
@@ -1915,21 +1951,6 @@ impl Screen for MyTeamPanel {
             _ => None,
         };
 
-        if self.players.len() != own_team.player_ids.len() || world.dirty_ui {
-            self.players = own_team.player_ids.clone();
-            self.players.sort_by(|a, b| {
-                let a = world.get_player(a).unwrap();
-                let b = world.get_player(b).unwrap();
-                if a.rating() == b.rating() {
-                    b.average_skill()
-                        .partial_cmp(&a.average_skill())
-                        .expect("Skill value should exist")
-                } else {
-                    b.rating().cmp(&a.rating())
-                }
-            });
-        }
-
         if self.planet_markets.len() == 0 || world.dirty_ui {
             self.planet_markets = world
                 .planets
@@ -1957,15 +1978,17 @@ impl Screen for MyTeamPanel {
             None
         };
 
-        self.player_index = if self.players.len() > 0 {
+        self.player_index = if own_team.player_ids.len() > 0 {
             if let Some(index) = self.player_index {
-                Some(index % self.players.len())
+                Some(index % own_team.player_ids.len())
             } else {
                 Some(0)
             }
         } else {
             None
         };
+
+        self.max_player_index = own_team.player_ids.len();
 
         if world.dirty_ui {
             let mut games = vec![];
@@ -2060,7 +2083,7 @@ impl Screen for MyTeamPanel {
         key_event: crossterm::event::KeyEvent,
         _world: &World,
     ) -> Option<UiCallback> {
-        if self.players.is_empty() {
+        if self.planet_index.is_none() {
             return None;
         }
 
@@ -2109,7 +2132,7 @@ impl SplitPanel for MyTeamPanel {
         } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Asteroids {
             return self.asteroid_ids.len();
         }
-        self.players.len()
+        self.max_player_index
     }
 
     fn set_index(&mut self, index: usize) {

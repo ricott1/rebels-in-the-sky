@@ -150,7 +150,7 @@ impl PlayerListPanel {
         .split(area);
 
         let mut filter_all_button = Button::new(
-            format!("View: {}", PlayerView::All.to_string()),
+            format!("{}", PlayerView::All.to_string()),
             UiCallback::SetPlayerPanelView {
                 view: PlayerView::All,
             },
@@ -159,7 +159,7 @@ impl PlayerListPanel {
         .set_hover_text("View all players.");
 
         let mut filter_free_pirates_button = Button::new(
-            format!("View: {}", PlayerView::FreePirates.to_string()),
+            format!("{}", PlayerView::FreePirates.to_string()),
             UiCallback::SetPlayerPanelView {
                 view: PlayerView::FreePirates,
             },
@@ -168,7 +168,7 @@ impl PlayerListPanel {
         .set_hover_text("View free pirates.");
 
         let mut filter_tradable_button = Button::new(
-            format!("View: {}", PlayerView::Tradable.to_string()),
+            format!("{}", PlayerView::Tradable.to_string()),
             UiCallback::SetPlayerPanelView {
                 view: PlayerView::Tradable,
             },
@@ -177,7 +177,7 @@ impl PlayerListPanel {
         .set_hover_text("View pirates open for trade.");
 
         let mut filter_own_team_button = Button::new(
-            format!("View: {}", PlayerView::OwnTeam.to_string()),
+            format!("{}", PlayerView::OwnTeam.to_string()),
             UiCallback::SetPlayerPanelView {
                 view: PlayerView::OwnTeam,
             },
@@ -198,12 +198,14 @@ impl PlayerListPanel {
 
         if self.players.len() > 0 {
             let mut options = vec![];
+
+            let name_length = 2 * MAX_NAME_LENGTH + 2;
             for player_id in self.players.iter() {
-                let player = world.get_player(player_id);
-                if player.is_none() {
+                let player = if let Some(p) = world.get_player(player_id) {
+                    p
+                } else {
                     continue;
-                }
-                let player = player.unwrap();
+                };
                 let mut style = UiStyle::DEFAULT;
                 if player.team.is_some() && player.team.unwrap() == world.own_team_id {
                     style = UiStyle::OK;
@@ -211,13 +213,13 @@ impl PlayerListPanel {
                     style = UiStyle::NETWORK;
                 }
                 let full_name = player.info.full_name();
-                let name = if full_name.len() <= 2 * MAX_NAME_LENGTH + 2 {
+                let name = if full_name.len() <= name_length {
                     full_name
                 } else {
                     player.info.shortened_name()
                 };
 
-                let text = format!("{:<26} {}", name, player.stars());
+                let text = format!("{:<name_length$} {}", name, player.stars());
                 options.push((text, style));
             }
             let list = selectable_list(options);
@@ -280,8 +282,8 @@ impl PlayerListPanel {
             player,
             &mut self.gif_map,
             self.tick,
-            frame,
             world,
+            frame,
             h_split[0],
         );
         self.render_buttons(player, open_trade, frame, world, button_split[0])?;
@@ -295,8 +297,8 @@ impl PlayerListPanel {
                 locked_player,
                 &mut self.gif_map,
                 self.tick,
-                frame,
                 world,
+                frame,
                 h_split[1],
             );
             self.render_buttons(locked_player, open_trade, frame, world, button_split[1])?;

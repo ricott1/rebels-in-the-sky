@@ -1,7 +1,7 @@
 use crate::{
     game_engine::game::Game,
-    network::types::TeamRanking,
-    types::{AppResult, GameId, TeamId},
+    network::types::{PlayerRanking, TeamRanking},
+    types::{AppResult, GameId, PlayerId, TeamId},
     world::world::World,
 };
 use anyhow::anyhow;
@@ -19,6 +19,7 @@ pub static ASSETS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/assets/");
 static PERSISTED_WORLD_FILENAME: &str = "world";
 static PERSISTED_GAMES_PREFIX: &str = "game_";
 static PERSISTED_TEAM_RANKING_FILENAME: &str = "team_ranking";
+static PERSISTED_PLAYER_RANKING_FILENAME: &str = "player_ranking";
 const COMPRESSION_LEVEL: u32 = 3;
 
 fn prefixed_world_filename(store_prefix: &str) -> String {
@@ -36,7 +37,6 @@ fn save_to_json<T: Serialize>(filename: &str, data: &T) -> AppResult<()> {
 fn load_from_json<T: for<'a> Deserialize<'a>>(filename: &str) -> AppResult<T> {
     let data: T =
         if let Ok(bytes) = std::fs::read(store_path(&format!("{}.json.compressed", filename))?) {
-            log::info!("Read {} bytes", bytes.len());
             deserialize(&bytes)?
         } else {
             // This fallback serves to migrate old files to the new compressed format
@@ -122,6 +122,22 @@ pub fn save_team_ranking(
 
 pub fn load_team_ranking() -> AppResult<HashMap<TeamId, TeamRanking>> {
     load_from_json::<HashMap<TeamId, TeamRanking>>(PERSISTED_TEAM_RANKING_FILENAME)
+}
+
+pub fn save_player_ranking(
+    player_ranking: &HashMap<PlayerId, PlayerRanking>,
+    with_backup: bool,
+) -> AppResult<()> {
+    save_to_json(PERSISTED_PLAYER_RANKING_FILENAME, &player_ranking)?;
+    if with_backup {
+        let backup_filename = format!("{}.back", PERSISTED_PLAYER_RANKING_FILENAME);
+        save_to_json(&backup_filename, &player_ranking)?;
+    }
+    Ok(())
+}
+
+pub fn load_player_ranking() -> AppResult<HashMap<PlayerId, PlayerRanking>> {
+    load_from_json::<HashMap<PlayerId, PlayerRanking>>(PERSISTED_PLAYER_RANKING_FILENAME)
 }
 
 pub fn get_world_size(store_prefix: &str) -> AppResult<u64> {

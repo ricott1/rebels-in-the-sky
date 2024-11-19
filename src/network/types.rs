@@ -2,7 +2,7 @@ use super::challenge::Challenge;
 use super::trade::Trade;
 use crate::game_engine::timer::Timer;
 use crate::game_engine::types::GameStats;
-use crate::types::{KartoffelId, PlanetId, Tick};
+use crate::types::{PlanetId, PlayerId, Tick};
 use crate::world::planet::Planet;
 use crate::world::position::{Position, MAX_POSITION};
 use crate::world::skill::Skill;
@@ -157,30 +157,34 @@ impl NetworkGame {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TeamRanking {
-    team_id: TeamId,
+    pub team: Team,
     pub timestamp: Tick,
-    pub name: String,
-    pub reputation: Skill,
     pub player_ratings: Vec<Skill>,
-    pub record: [u32; 3],
-    pub kartoffel_ids: Vec<KartoffelId>,
 }
 
 impl TeamRanking {
     pub fn from_network_team(timestamp: Tick, network_team: &NetworkTeam) -> Self {
         Self {
-            team_id: network_team.team.id,
+            team: network_team.team.clone(),
             timestamp,
-            name: network_team.team.name.clone(),
-            reputation: network_team.team.reputation,
             player_ratings: network_team
                 .players
                 .iter()
                 .map(|p| p.average_skill())
                 .collect_vec(),
-            record: network_team.team.network_game_record,
-            kartoffel_ids: network_team.team.kartoffel_ids.clone(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PlayerRanking {
+    pub player: Player,
+    pub timestamp: Tick,
+}
+
+impl PlayerRanking {
+    pub fn new(timestamp: Tick, player: Player) -> Self {
+        Self { player, timestamp }
     }
 }
 
@@ -192,6 +196,7 @@ pub struct SeedInfo {
     pub version_patch: usize,
     pub message: Option<String>,
     pub team_ranking: Vec<(TeamId, TeamRanking)>,
+    pub player_ranking: Vec<(PlayerId, PlayerRanking)>,
 }
 
 impl SeedInfo {
@@ -199,6 +204,7 @@ impl SeedInfo {
         connected_peers_count: usize,
         message: Option<String>,
         team_ranking: Vec<(TeamId, TeamRanking)>,
+        player_ranking: Vec<(PlayerId, PlayerRanking)>,
     ) -> AppResult<Self> {
         Ok(Self {
             connected_peers_count,
@@ -207,6 +213,7 @@ impl SeedInfo {
             version_patch: env!("CARGO_PKG_VERSION_PATCH").parse()?,
             message,
             team_ranking,
+            player_ranking,
         })
     }
 }

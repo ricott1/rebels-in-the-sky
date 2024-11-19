@@ -1,20 +1,25 @@
 use super::button::Button;
+use super::clickable_list::ClickableListState;
 use super::constants::*;
+use super::gif_map::GifMap;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
 use super::utils::SwarmPanelEvent;
+use super::widgets::{render_player_description, render_spaceship_description, selectable_list};
 use super::{
     traits::{Screen, SplitPanel},
     utils::input_from_key_event,
     widgets::default_block,
 };
-use crate::network::types::TeamRanking;
-use crate::types::{AppResult, SystemTimeTick, TeamId, Tick};
+
+use crate::network::types::{PlayerRanking, TeamRanking};
+use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId, Tick};
 use crate::ui::constants::UiKey;
 use crate::world::constants::{MIN_PLAYERS_PER_GAME, SECONDS};
 use crate::world::{skill::Rated, world::World};
 use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
+use itertools::Itertools;
 use libp2p::PeerId;
 use ratatui::layout::Margin;
 use ratatui::{
@@ -35,7 +40,7 @@ pub enum SwarmView {
     Chat,
     Requests,
     Log,
-    TeamRanking,
+    Ranking,
 }
 
 impl SwarmView {
@@ -43,15 +48,22 @@ impl SwarmView {
         match self {
             SwarmView::Chat => SwarmView::Requests,
             SwarmView::Requests => SwarmView::Log,
-            SwarmView::Log => SwarmView::TeamRanking,
-            SwarmView::TeamRanking => SwarmView::Chat,
+            SwarmView::Log => SwarmView::Ranking,
+            SwarmView::Ranking => SwarmView::Chat,
         }
     }
 }
 
+#[derive(Debug, Display, Default, PartialEq)]
+enum PanelList {
+    #[default]
+    Players,
+    Teams,
+}
+
 #[derive(Debug, Default)]
 pub struct SwarmPanel {
-    pub index: usize,
+    tick: usize,
     events: HashMap<SwarmView, Vec<SwarmPanelEvent>>,
     view: SwarmView,
     textarea: TextArea<'static>,
@@ -59,9 +71,20 @@ pub struct SwarmPanel {
     team_id_to_peer_id: HashMap<TeamId, PeerId>,
     peer_id_to_team_id: HashMap<PeerId, TeamId>,
     team_ranking: Vec<(TeamId, TeamRanking)>,
+    team_ranking_index: Option<usize>,
+    player_ranking: Vec<(PlayerId, PlayerRanking)>,
+    player_ranking_index: Option<usize>,
+    gif_map: GifMap,
+    active_list: PanelList,
 }
 
 impl SwarmPanel {
+    pub fn remove_player_from_ranking(&mut self, player_id: PlayerId) {
+        self.player_ranking.retain(|&(id, _)| id != player_id);
+        if self.player_ranking.len() == 0 {
+            self.player_ranking_index = None;
+        }
+    }
     pub fn new() -> Self {
         let mut events = HashMap::new();
         events.insert(SwarmView::Log, vec![]);
@@ -75,6 +98,16 @@ impl SwarmPanel {
 
     pub fn update_team_ranking(&mut self, team_ranking: &Vec<(TeamId, TeamRanking)>) {
         self.team_ranking = team_ranking.clone();
+        if self.team_ranking_index.is_none() && self.team_ranking.len() > 0 {
+            self.team_ranking_index = Some(0);
+        }
+    }
+
+    pub fn update_player_ranking(&mut self, player_ranking: &Vec<(PlayerId, PlayerRanking)>) {
+        self.player_ranking = player_ranking.clone();
+        if self.player_ranking_index.is_none() && self.player_ranking.len() > 0 {
+            self.player_ranking_index = Some(0);
+        }
     }
 
     pub fn push_log_event(&mut self, event: SwarmPanelEvent) {
@@ -133,7 +166,7 @@ impl SwarmPanel {
         .split(area);
 
         let mut chat_button = Button::new(
-            "View: Chat",
+            "Chat",
             UiCallback::SetSwarmPanelView {
                 topic: SwarmView::Chat,
             },
@@ -142,7 +175,7 @@ impl SwarmPanel {
         .set_hover_text("View the chat. Just type and press Enter to message the network.");
 
         let mut requests_button = Button::new(
-            "View: Requests",
+            "Requests",
             UiCallback::SetSwarmPanelView {
                 topic: SwarmView::Requests,
             },
@@ -151,7 +184,7 @@ impl SwarmPanel {
         .set_hover_text("View challenges received from the network.");
 
         let mut log_button = Button::new(
-            "View: Log",
+            "Log",
             UiCallback::SetSwarmPanelView {
                 topic: SwarmView::Log,
             },
@@ -159,26 +192,26 @@ impl SwarmPanel {
         .set_hotkey(UiKey::CYCLE_VIEW)
         .set_hover_text("View log and system info from the network.");
 
-        let mut team_ranking_button = Button::new(
-            "View: Ranking",
+        let mut ranking_button = Button::new(
+            "Ranking",
             UiCallback::SetSwarmPanelView {
-                topic: SwarmView::TeamRanking,
+                topic: SwarmView::Ranking,
             },
         )
         .set_hotkey(UiKey::CYCLE_VIEW)
-        .set_hover_text("View ranking of best teams in the network.");
+        .set_hover_text("View ranking of best pirates and crews in the network.");
 
         match self.view {
             SwarmView::Chat => chat_button.select(),
             SwarmView::Requests => requests_button.select(),
             SwarmView::Log => log_button.select(),
-            SwarmView::TeamRanking => team_ranking_button.select(),
+            SwarmView::Ranking => ranking_button.select(),
         }
 
         frame.render_hoverable(chat_button, split[0]);
         frame.render_hoverable(requests_button, split[1]);
         frame.render_hoverable(log_button, split[2]);
-        frame.render_hoverable(team_ranking_button, split[3]);
+        frame.render_hoverable(ranking_button, split[3]);
 
         let mut items: Vec<ListItem> = vec![];
 
@@ -406,53 +439,136 @@ impl SwarmPanel {
         Ok(())
     }
 
-    fn render_team_ranking(&self, frame: &mut UiFrame, world: &World, area: Rect) {
-        frame.render_widget(default_block().title("Top 10 Pirate Crews"), area);
-        let mut constraints = [Constraint::Length(1)].repeat(self.team_ranking.len());
-        constraints.push(Constraint::Min(0));
-        let split = Layout::vertical(constraints).split(area.inner(Margin {
-            horizontal: 1,
-            vertical: 1,
-        }));
-        for (idx, (team_id, ranking)) in self.team_ranking.iter().enumerate() {
-            let mut rating = ranking
-                .player_ratings
-                .iter()
-                .take(MIN_PLAYERS_PER_GAME)
-                .sum::<f32>()
-                / MIN_PLAYERS_PER_GAME as f32;
-
-            if let Ok(r) = world.team_rating(team_id) {
-                rating = r;
-            }
-
-            let text = format!(
-                " {:<MAX_NAME_LENGTH$}  Reputation {:5}  Ranking {:5}  {:12} ({})",
-                ranking.name.clone(),
-                ranking.reputation.stars(),
-                rating.stars(),
-                format!(
-                    "W{}/L{}/D{}",
-                    ranking.record[0], ranking.record[1], ranking.record[2]
-                ),
-                ranking.timestamp.formatted_as_date()
+    fn render_team_ranking(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
+        let h_split = Layout::horizontal([Constraint::Min(1), Constraint::Length(60)]).split(area);
+        log::info!("team index:{:#?}", self.team_ranking_index);
+        let team_ranking_index = if let Some(index) = self.team_ranking_index {
+            index % self.team_ranking.len()
+        } else {
+            frame.render_widget(
+                default_block().title("Top 10 Crews by Reputation"),
+                h_split[0],
             );
-            if world.get_team(team_id).is_some() {
-                frame.render_hoverable(
-                    Button::no_box(
-                        Span::styled(text, UiStyle::NETWORK).into_left_aligned_line(),
-                        UiCallback::GoToTeam { team_id: *team_id },
-                    )
-                    .set_hover_text(format!(
-                        "Go to team {} (Reputation {:.2})",
-                        ranking.name, ranking.reputation
-                    )),
-                    split[idx],
+            log::info!("QUI");
+            return;
+        };
+
+        let (_, top_team) = &self.team_ranking[team_ranking_index];
+        render_spaceship_description(
+            &top_team.team,
+            false,
+            &mut self.gif_map,
+            self.tick,
+            world,
+            frame,
+            h_split[1],
+        );
+
+        let options = self
+            .team_ranking
+            .iter()
+            .enumerate()
+            .map(|(idx, (_, ranking))| {
+                let team_id = ranking.team.id;
+                let rating = if let Ok(r) = world.team_rating(&team_id) {
+                    r
+                } else {
+                    ranking
+                        .player_ratings
+                        .iter()
+                        .take(MIN_PLAYERS_PER_GAME)
+                        .sum::<f32>()
+                        / MIN_PLAYERS_PER_GAME as f32
+                };
+
+                let text = format!(
+                    " {}. {:<MAX_NAME_LENGTH$} {}",
+                    idx + 1,
+                    &ranking.team.name,
+                    rating.stars(),
                 );
-            } else {
-                frame.render_widget(Span::styled(text, UiStyle::DISCONNECTED), split[idx]);
-            };
-        }
+
+                let style = if team_id == world.own_team_id {
+                    UiStyle::OWN_TEAM
+                } else if world.get_team(&team_id).is_some() {
+                    UiStyle::NETWORK
+                } else {
+                    UiStyle::DISCONNECTED
+                };
+
+                (text, style)
+            })
+            .collect_vec();
+
+        let list = selectable_list(options);
+
+        frame.render_stateful_hoverable(
+            list.block(default_block().title("Top 10 Crews by Reputation")),
+            h_split[0],
+            &mut ClickableListState::default().with_selected(Some(team_ranking_index)),
+        );
+    }
+
+    fn render_player_ranking(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
+        let h_split = Layout::horizontal([Constraint::Min(1), Constraint::Length(60)]).split(area);
+        let player_ranking_index = if let Some(index) = self.player_ranking_index {
+            index % self.player_ranking.len()
+        } else {
+            frame.render_widget(
+                default_block().title("Top 10 Pirates by Reputation"),
+                h_split[0],
+            );
+            return;
+        };
+
+        let (_, top_player) = &self.player_ranking[player_ranking_index];
+        render_player_description(
+            &top_player.player,
+            &mut self.gif_map,
+            self.tick,
+            world,
+            frame,
+            h_split[1],
+        );
+
+        let name_length = 2 * MAX_NAME_LENGTH + 2;
+        let options = self
+            .player_ranking
+            .iter()
+            .enumerate()
+            .map(|(idx, (player_id, ranking))| {
+                let player = if let Ok(p) = world.get_player_or_err(&player_id) {
+                    p
+                } else {
+                    &ranking.player
+                };
+
+                let text = format!(
+                    " {}. {:<name_length$} {}",
+                    idx + 1,
+                    player.info.full_name(),
+                    player.stars()
+                );
+
+                let style = if player.team.is_some() && player.team.unwrap() == world.own_team_id {
+                    UiStyle::OWN_TEAM
+                } else if world.get_player(&player_id).is_some() {
+                    UiStyle::NETWORK
+                } else {
+                    UiStyle::DISCONNECTED
+                };
+
+                (text, style)
+            })
+            .collect_vec();
+
+        let list = selectable_list(options);
+
+        frame.render_stateful_hoverable(
+            list.block(default_block().title("Top 10 Pirates by Reputation")),
+            h_split[0],
+            &mut ClickableListState::default().with_selected(Some(player_ranking_index)),
+        );
     }
 
     fn build_right_panel(
@@ -481,8 +597,17 @@ impl SwarmPanel {
             return Ok(());
         }
 
-        if self.view == SwarmView::TeamRanking {
-            self.render_team_ranking(frame, world, split[0]);
+        if self.view == SwarmView::Ranking {
+            let ranking_split =
+                Layout::vertical([Constraint::Length(24), Constraint::Min(1)]).split(split[0]);
+            if frame.is_hovering(ranking_split[0]) {
+                self.active_list = PanelList::Players;
+            } else {
+                self.active_list = PanelList::Teams;
+            }
+
+            self.render_player_ranking(frame, world, ranking_split[0]);
+            self.render_team_ranking(frame, world, ranking_split[1]);
             return Ok(());
         }
 
@@ -549,6 +674,7 @@ impl SwarmPanel {
 
 impl Screen for SwarmPanel {
     fn update(&mut self, _world: &World) -> AppResult<()> {
+        self.tick += 1;
         Ok(())
     }
 
@@ -557,7 +683,6 @@ impl Screen for SwarmPanel {
         frame: &mut UiFrame,
         world: &World,
         area: Rect,
-
         _debug_view: bool,
     ) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Min(1)])
@@ -570,8 +695,8 @@ impl Screen for SwarmPanel {
 
     fn handle_key_events(&mut self, key_event: KeyEvent, _world: &World) -> Option<UiCallback> {
         match key_event.code {
-            KeyCode::Up => self.previous_index(),
-            KeyCode::Down => self.next_index(),
+            KeyCode::Up => self.next_index(),
+            KeyCode::Down => self.previous_index(),
             UiKey::CYCLE_VIEW => {
                 //FIXME: this means the chat can't use the capital V
                 return Some(UiCallback::SetSwarmPanelView {
@@ -632,14 +757,34 @@ impl Screen for SwarmPanel {
 
 impl SplitPanel for SwarmPanel {
     fn index(&self) -> usize {
-        self.index
+        if self.active_list == PanelList::Players && self.view == SwarmView::Ranking {
+            return self.player_ranking_index.unwrap_or_default();
+        }
+
+        self.team_ranking_index.unwrap_or_default()
     }
 
     fn max_index(&self) -> usize {
-        self.peer_id_to_team_id.len()
+        if self.active_list == PanelList::Players && self.view == SwarmView::Ranking {
+            return self.player_ranking.len();
+        }
+
+        self.team_ranking.len()
     }
 
     fn set_index(&mut self, index: usize) {
-        self.index = index;
+        if self.max_index() == 0 {
+            if self.active_list == PanelList::Players && self.view == SwarmView::Ranking {
+                return self.player_ranking_index = None;
+            } else {
+                self.team_ranking_index = None;
+            }
+        } else {
+            if self.active_list == PanelList::Players && self.view == SwarmView::Ranking {
+                return self.player_ranking_index = Some(index % self.max_index());
+            } else {
+                self.team_ranking_index = Some(index % self.max_index());
+            }
+        }
     }
 }

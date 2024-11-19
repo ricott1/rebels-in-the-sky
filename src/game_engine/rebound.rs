@@ -7,7 +7,7 @@ use crate::{
     game_engine::{action::Advantage, constants::*, types::GameStatsMap},
     world::constants::TirednessCost,
 };
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use std::{
     cmp::{max, min},
@@ -93,7 +93,6 @@ impl EngineAction for Rebound {
         let attack_rebounder = attacking_players[attack_rebounder_idx];
         let defence_rebounder = defending_players[defence_rebounder_idx];
 
-        //TODO: add more random situations
         log::debug!(
             "Rebound debugging: {} vs {}, to beat {}",
             attack_result,
@@ -113,16 +112,60 @@ impl EngineAction for Rebound {
                 attack_stats_update.insert(attack_rebounder.id, rebounder_update);
                 let description: String;
                 if attack_rebounder_idx == input.attackers[0] {
-                    description = format!(
-                        "{} catches {} own rebound.",
-                        attack_rebounder.info.shortened_name(),
-                        attack_rebounder.info.pronouns.as_possessive()
-                    )
+                    description = [
+                        format!(
+                            "{} grabs {} own rebound with a quick reaction.",
+                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.pronouns.as_possessive()
+                        ),
+                        format!(
+                            "{} snatches the ball after missing the shot, showing persistence.",
+                            attack_rebounder.info.shortened_name(),
+                        ),
+                        format!(
+                            "{} secures {} own miss for a second chance.",
+                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.pronouns.as_possessive()
+                        ),
+                        format!(
+                            "{} quickly leaps and grabs {} missed shot, avoiding defenders.",
+                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.pronouns.as_possessive()
+                        ),
+                        format!(
+                            "{} fights through the defenders to secure {} own rebound.",
+                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.pronouns.as_possessive()
+                        ),
+                    ]
+                    .choose(rng)
+                    .expect("There should be an option")
+                    .clone()
                 } else {
-                    description = format!(
-                        "{} jumps high and gets the offensive rebound.",
-                        attack_rebounder.info.shortened_name(),
-                    )
+                    description = [
+                        format!(
+                            "{} leaps above the defenders and snags the offensive rebound.",
+                            attack_rebounder.info.shortened_name(),
+                        ),
+                        format!(
+                            "{} outmuscles the competition to grab the offensive rebound.",
+                            attack_rebounder.info.shortened_name(),
+                        ),
+                        format!(
+                            "{} beats everyone to the ball, securing the offensive rebound.",
+                            attack_rebounder.info.shortened_name(),
+                        ),
+                        format!(
+                            "{} extends high and grabs the ball over the defenders for an offensive rebound.",
+                            attack_rebounder.info.shortened_name(),
+                        ),
+                        format!(
+                            "{} crashes the boards and comes down with the offensive rebound.",
+                            attack_rebounder.info.shortened_name(),
+                        ),
+                    ].choose(rng)
+                    .expect("There should be an option")
+                    .clone()
                 }
                 ActionOutput {
                     possession: input.possession,
@@ -144,11 +187,28 @@ impl EngineAction for Rebound {
                 rebounder_update.offensive_rebounds = 1;
                 rebounder_update.extra_tiredness = TirednessCost::LOW;
                 attack_stats_update.insert(attack_rebounder.id, rebounder_update);
-                let description: String;
-                description = format!(
-                    "The ball got to {} that can restart the offensive action.",
-                    attack_rebounder.info.shortened_name(),
-                );
+                let description = [
+                    format!(
+                        "The ball got to {} who can restart the offensive action.",
+                        attack_rebounder.info.shortened_name(),
+                    ),
+                    format!(
+                        "{} secures the offensive rebound and looks to reset the play.",
+                        attack_rebounder.info.shortened_name(),
+                    ),
+                    format!(
+                        "{} snags the rebound and reset the offense.",
+                        attack_rebounder.info.shortened_name(),
+                    ),
+                    format!(
+                        "{} pulls down the board and surveys the floor for the next move.",
+                        attack_rebounder.info.shortened_name(),
+                    ),
+                ]
+                .choose(rng)
+                .expect("There should be an option")
+                .clone();
+
                 ActionOutput {
                     possession: input.possession,
                     situation: ActionSituation::AfterLongOffensiveRebound,
@@ -172,10 +232,30 @@ impl EngineAction for Rebound {
                 ActionOutput {
                     possession: !input.possession,
                     situation: ActionSituation::AfterDefensiveRebound,
-                    description: format!(
-                        "{} jumps high and gets the defensive rebound.",
-                        defence_rebounder.info.shortened_name(),
-                    ),
+                    description: [
+                        format!(
+                            "{} jumps high and gets the defensive rebound.",
+                            defence_rebounder.info.shortened_name(),
+                        ),
+                        format!(
+                            "{} reaches up to snare the ball, grabbing the defensive rebound.",
+                            defence_rebounder.info.shortened_name(),
+                        ),
+                        format!(
+                            "{} outmuscles the offense and secures the defensive board.",
+                            defence_rebounder.info.shortened_name(),
+                        ),
+                        format!(
+                            "{} claims the rebound, boxing out the attacker and controlling the ball.",
+                            defence_rebounder.info.shortened_name(),
+                        ),
+                        format!(
+                            "{} uses great positioning to grab the defensive rebound and take control.",
+                            defence_rebounder.info.shortened_name(),
+                        ),
+                    ] .choose(rng)
+                    .expect("There should be an option")
+                    .clone(),
                     defense_stats_update: Some(defence_stats_update),
                     start_at: input.end_at,
                     end_at: input.end_at.plus(4 + rng.gen_range(0..=3)),
@@ -187,7 +267,14 @@ impl EngineAction for Rebound {
             _ => ActionOutput {
                 possession: !input.possession,
                 situation: ActionSituation::BallInBackcourt,
-                description: "Nobody got the rebound, ball goes to defence.".into(),
+                description: [
+                    "Nobody got the rebound, ball goes to defence.",
+                    "Neither team secures the board, and the ball rolls to the defensive side.",
+                    "The rebound bounces loose, and the defense grabs it.",
+                    "The ball is up for grabs but nobody claims it, and it’s recovered by the defense.",
+                ].choose(rng)
+                .expect("There should be an option")
+                .to_string(),
                 start_at: input.end_at,
                 end_at: input.end_at.plus(5 + rng.gen_range(0..=4)),
                 home_score: input.home_score,

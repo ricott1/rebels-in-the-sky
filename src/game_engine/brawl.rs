@@ -8,7 +8,7 @@ use crate::world::{
     player::Trait,
     skill::GameSkill,
 };
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
@@ -92,17 +92,59 @@ impl EngineAction for Brawl {
                 if attacker.has_hook() {
                     defender_update.extra_tiredness += TirednessCost::CRITICAL;
                     format!(
-                        "A brawl between {} and {}! {} seems to have gotten the upper hand.",
-                        defender.info.shortened_name(),
-                        attacker.info.shortened_name(),
-                        attacker.info.shortened_name()
-                    )
-                } else {
-                    defender_update.extra_tiredness += TirednessCost::SEVERE;
-                    format!(
                         "A brawl between {} and {}! {} got {} good with the hook! That'll be an ugly scar.",
                         defender.info.shortened_name(), attacker.info.shortened_name(), attacker.info.shortened_name(), defender.info.pronouns.as_object()
                     )
+                } else {
+                    defender_update.extra_tiredness += TirednessCost::SEVERE;
+
+                    [
+                        format!(
+                            "A brawl between {} and {}! {} seems to have gotten the upper hand.",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            attacker.info.shortened_name()
+                        ),
+                        format!(
+                            "An intense clash between {} and {} ends with {} coming out on top!",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            attacker.info.shortened_name()
+                        ),
+                        format!(
+                            "A fierce fight between {} and {} concludes with {} gaining the upper hand!",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            attacker.info.shortened_name()
+                        ),
+                        format!(
+                            "{} and {} engage in a heated scuffle, but {} emerges the winner.",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            attacker.info.shortened_name()
+                        ),
+                        format!(
+                            "It's {} versus {} in a wild brawl! {} prevails in the end.",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            attacker.info.shortened_name()
+                        ),
+                        format!(
+                            "{} and {} come to blows during the game. {} manages to give the best shots.",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            attacker.info.shortened_name()
+                        ),
+                        format!(
+                            "The battle between {} and {} wraps up with {} as the victor.",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            attacker.info.shortened_name()
+                        ),
+                    ]
+                    .choose(rng)
+                    .expect("There should be an option")
+                    .clone()
                 }
             }
             x if x == 0 => {
@@ -110,18 +152,42 @@ impl EngineAction for Brawl {
                 defender_update.extra_tiredness += TirednessCost::HIGH;
                 defender_update.extra_morale += MoraleModifier::SMALL_MALUS;
                 attacker_update.extra_morale += MoraleModifier::SMALL_MALUS;
-                match rng.gen_range(0..=1) {
-                    0 => format!(
+
+                [
+                    format!(
                         "A brawl between {} and {}! They both got some damage.",
                         attacker.info.shortened_name(),
                         defender.info.shortened_name()
                     ),
-                    _ => format!(
+                    format!(
                         "A brawl between {} and {}! An even match.",
                         defender.info.shortened_name(),
                         attacker.info.shortened_name()
                     ),
-                }
+                    format!(
+                        "A fierce clash! {} and {} trade powerful blows.",
+                        attacker.info.shortened_name(),
+                        defender.info.shortened_name()
+                    ),
+                    format!(
+                        "{} and {} collide in an intense struggle! Neither backs down.",
+                        attacker.info.shortened_name(),
+                        defender.info.shortened_name()
+                    ),
+                    format!(
+                        "{} strikes first, but {} quickly counters! An even fight.",
+                        attacker.info.shortened_name(),
+                        defender.info.shortened_name()
+                    ),
+                    format!(
+                        "{} tries to outmaneuver {}, but the fight remains deadlocked.",
+                        attacker.info.shortened_name(),
+                        defender.info.shortened_name()
+                    ),
+                ]
+                .choose(rng)
+                .expect("There should be one choice")
+                .clone()
             }
             _ => {
                 defender_update.extra_morale += MoraleModifier::SEVERE_BONUS;
@@ -129,17 +195,59 @@ impl EngineAction for Brawl {
                 if defender.has_hook() {
                     attacker_update.extra_tiredness += TirednessCost::CRITICAL;
                     format!(
-                        "A brawl between {} and {}! {} seems to have gotten the upper hand.",
-                        attacker.info.shortened_name(),
-                        defender.info.shortened_name(),
-                        defender.info.shortened_name()
-                    )
-                } else {
-                    attacker_update.extra_tiredness += TirednessCost::SEVERE;
-                    format!(
                         "A brawl between {} and {}! {} got {} good with the hook! That'll be an ugly scar.",
                         attacker.info.shortened_name(), defender.info.shortened_name(), defender.info.shortened_name(), attacker.info.pronouns.as_object()
                     )
+                } else {
+                    attacker_update.extra_tiredness += TirednessCost::SEVERE;
+
+                    [
+                        format!(
+                            "A brawl between {} and {}! {} seems to have gotten the upper hand.",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            defender.info.shortened_name()
+                        ),
+                        format!(
+                            "An intense clash between {} and {} ends with {} coming out on top!",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            defender.info.shortened_name()
+                        ),
+                        format!(
+                            "A fierce fight between {} and {} concludes with {} gaining the upper hand!",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            defender.info.shortened_name()
+                        ),
+                        format!(
+                            "{} and {} engage in a heated scuffle, but {} emerges the winner.",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            defender.info.shortened_name()
+                        ),
+                        format!(
+                            "It's {} versus {} in a wild brawl! {} prevails in the end.",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            defender.info.shortened_name()
+                        ),
+                        format!(
+                            "{} and {} come to blows during the game. {} manages to give the best shots.",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            defender.info.shortened_name()
+                        ),
+                        format!(
+                            "The battle between {} and {} wraps up with {} as the victor.",
+                            attacker.info.shortened_name(),
+                            defender.info.shortened_name(),
+                            defender.info.shortened_name()
+                        ),
+                    ]
+                    .choose(rng)
+                    .expect("There should be an option")
+                    .clone()
                 }
             }
         };

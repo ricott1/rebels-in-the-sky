@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
 use crate::network::constants::{DEFAULT_SEED_PORT, TOPIC};
-use crate::network::types::{NetworkData, TeamRanking};
+use crate::network::types::{NetworkData, PlayerRanking, TeamRanking};
 use crate::network::{handler::NetworkHandler, types::SeedInfo};
-use crate::store::{deserialize, load_team_ranking, save_team_ranking};
-use crate::types::{AppResult, SystemTimeTick, TeamId, Tick};
+use crate::store::{
+    deserialize, load_player_ranking, load_team_ranking, save_player_ranking, save_team_ranking,
+};
+use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId, Tick};
 use crate::world::constants::*;
 use futures::StreamExt;
 use itertools::Itertools;
@@ -20,41 +22,37 @@ pub struct Relayer {
     last_seed_info_tick: Tick,
     team_ranking: HashMap<TeamId, TeamRanking>,
     top_team_ranking: Vec<(TeamId, TeamRanking)>,
+    player_ranking: HashMap<PlayerId, PlayerRanking>,
+    top_player_ranking: Vec<(PlayerId, PlayerRanking)>,
 }
 
 impl Relayer {
-    fn update_top_team_ranking(
-        top_team_ranking: &mut Vec<(TeamId, TeamRanking)>,
-        team_id: TeamId,
-        team_ranking: TeamRanking,
-    ) {
-        let mut insertion_index = 0;
-        for (_, top_ranking) in top_team_ranking.iter() {
-            if team_ranking.reputation > top_ranking.reputation {
-                break;
-            }
-            insertion_index += 1;
-        }
-        top_team_ranking.insert(insertion_index, (team_id, team_ranking));
+    fn get_top_player_ranking(&self) -> Vec<(PlayerId, PlayerRanking)> {
+        self.player_ranking
+            .iter()
+            .sorted_by(|(_, a), (_, b)| {
+                b.player
+                    .reputation
+                    .partial_cmp(&a.player.reputation)
+                    .expect("Reputation should exist")
+            })
+            .take(10)
+            .map(|(id, ranking)| (id.clone(), ranking.clone()))
+            .collect()
+    }
 
-        let mut unique_team_ids = vec![];
-        let mut to_remove = vec![];
-
-        for (index, (id, _)) in top_team_ranking.iter().enumerate() {
-            if unique_team_ids.contains(id) {
-                to_remove.push(index);
-            } else {
-                unique_team_ids.push(*id);
-            }
-        }
-
-        for index in to_remove {
-            top_team_ranking.remove(index);
-        }
-
-        if top_team_ranking.len() > 10 {
-            top_team_ranking.pop();
-        }
+    fn get_top_team_ranking(&self) -> Vec<(TeamId, TeamRanking)> {
+        self.team_ranking
+            .iter()
+            .sorted_by(|(_, a), (_, b)| {
+                b.team
+                    .reputation
+                    .partial_cmp(&a.team.reputation)
+                    .expect("Reputation should exist")
+            })
+            .take(10)
+            .map(|(id, ranking)| (id.clone(), ranking.clone()))
+            .collect()
     }
 
     pub fn new() -> Self {
@@ -66,11 +64,36 @@ impl Relayer {
             }
         };
 
+        println!("Team ranking has {} entries.", team_ranking.len());
+
         let top_team_ranking = team_ranking
             .iter()
             .sorted_by(|(_, a), (_, b)| {
-                b.reputation
-                    .partial_cmp(&a.reputation)
+                b.team
+                    .reputation
+                    .partial_cmp(&a.team.reputation)
+                    .expect("Reputation should exist")
+            })
+            .take(10)
+            .map(|(id, ranking)| (id.clone(), ranking.clone()))
+            .collect();
+
+        let player_ranking = match load_player_ranking() {
+            Ok(player_ranking) => player_ranking,
+            Err(err) => {
+                println!("Error while loading player ranking: {err}");
+                HashMap::new()
+            }
+        };
+
+        println!("Player ranking has {} entries.", player_ranking.len());
+
+        let top_player_ranking = player_ranking
+            .iter()
+            .sorted_by(|(_, a), (_, b)| {
+                b.player
+                    .reputation
+                    .partial_cmp(&a.player.reputation)
                     .expect("Reputation should exist")
             })
             .take(10)
@@ -84,6 +107,8 @@ impl Relayer {
             last_seed_info_tick: Tick::now(),
             team_ranking,
             top_team_ranking,
+            player_ranking,
+            top_player_ranking,
         }
     }
 
@@ -105,6 +130,7 @@ impl Relayer {
                     self.network_handler.swarm.connected_peers().count(),
                     None,
                     self.top_team_ranking.clone(),
+                    self.top_player_ranking.clone(),
                 )?)?;
                 self.last_seed_info_tick = now;
             }
@@ -126,6 +152,7 @@ impl Relayer {
                         self.network_handler.swarm.connected_peers().count(),
                         None,
                         self.top_team_ranking.clone(),
+                        self.top_player_ranking.clone(),
                     )?)?;
                 }
             }
@@ -135,30 +162,42 @@ impl Relayer {
                 let network_data = deserialize::<NetworkData>(&message.data)?;
                 match network_data {
                     NetworkData::Team(timestamp, network_team) => {
-                        let team_ranking = TeamRanking::from_network_team(timestamp, &network_team);
-                        self.team_ranking
-                            .insert(network_team.team.id, team_ranking.clone());
-                        Self::update_top_team_ranking(
-                            &mut self.top_team_ranking,
-                            network_team.team.id,
-                            team_ranking,
-                        );
+                        if let Some(current_ranking) = self.team_ranking.get(&network_team.team.id)
+                        {
+                            if current_ranking.timestamp >= timestamp {
+                                return Ok(());
+                            }
+                        }
 
-                        // self.top_team_ranking = self
-                        //     .team_ranking
-                        //     .iter()
-                        //     .sorted_by(|(_, a), (_, b)| {
-                        //         b.reputation
-                        //             .partial_cmp(&a.reputation)
-                        //             .expect("Reputation should exist")
-                        //     })
-                        //     .take(10)
-                        //     .map(|(id, ranking)| (id.clone(), ranking.clone()))
-                        //     .collect();
+                        let ranking = TeamRanking::from_network_team(timestamp, &network_team);
+
+                        // If the team is already stored, remove players from previous version.
+                        // This is to ensure that fired players are removed.
+                        if let Some(current_ranking) = self.team_ranking.get(&network_team.team.id)
+                        {
+                            for player_id in current_ranking.team.player_ids.iter() {
+                                self.player_ranking.remove(player_id);
+                            }
+                        }
+
+                        self.team_ranking
+                            .insert(network_team.team.id, ranking.clone());
 
                         if let Err(err) = save_team_ranking(&self.team_ranking, true) {
                             println!("Error while saving team ranking: {err}");
                         }
+
+                        for player in network_team.players.iter() {
+                            let ranking = PlayerRanking::new(timestamp, player.clone());
+                            self.player_ranking.insert(player.id, ranking.clone());
+                        }
+
+                        if let Err(err) = save_player_ranking(&self.player_ranking, true) {
+                            println!("Error while saving player ranking: {err}");
+                        }
+
+                        self.top_team_ranking = self.get_top_team_ranking();
+                        self.top_player_ranking = self.get_top_player_ranking();
                     }
                     _ => {}
                 }
@@ -166,43 +205,5 @@ impl Relayer {
             _ => {}
         }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        network::types::{NetworkTeam, TeamRanking},
-        relayer::Relayer,
-        types::{PlanetId, TeamId},
-        world::team::Team,
-    };
-    use std::collections::HashMap;
-
-    #[test]
-    fn test_top_team_ranking() {
-        let mut team_ranking = HashMap::new();
-        let mut top_team_ranking: Vec<(TeamId, TeamRanking)> = vec![];
-
-        for idx in 0..20 {
-            let mut team = Team::random(TeamId::new_v4(), PlanetId::new_v4(), "name", "ship_name");
-            team.reputation = idx as f32;
-            let network_team = NetworkTeam::new(team, vec![], vec![]);
-            let new_team_ranking = TeamRanking::from_network_team(0, &network_team);
-
-            team_ranking.insert(network_team.team.id, new_team_ranking.clone());
-
-            Relayer::update_top_team_ranking(
-                &mut top_team_ranking,
-                network_team.team.id,
-                new_team_ranking,
-            );
-        }
-
-        for idx in 0..top_team_ranking.len() - 1 {
-            let (_, ranking) = &top_team_ranking[idx];
-            let (_, next_ranking) = &top_team_ranking[idx + 1];
-            assert!(ranking.reputation >= next_ranking.reputation)
-        }
     }
 }

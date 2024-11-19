@@ -20,7 +20,7 @@ impl UiKey {
     pub const PREVIOUS_TAB: KeyCode = KeyCode::Left;
     pub const NEXT_SELECTION: KeyCode = KeyCode::Char(']');
     pub const PREVIOUS_SELECTION: KeyCode = KeyCode::Char('[');
-    pub const UI_DEBUG_MODE: KeyCode = KeyCode::Tab;
+    pub const UI_DEBUG_MODE: KeyCode = KeyCode::Char('`');
     pub const TOGGLE_AUDIO: KeyCode = KeyCode::Char('|');
     pub const PREVIOUS_RADIO: KeyCode = KeyCode::Char('<');
     pub const NEXT_RADIO: KeyCode = KeyCode::Char('>');
@@ -34,7 +34,7 @@ impl UiKey {
     pub const TRAINING_FOCUS: KeyCode = KeyCode::Char('T');
     pub const AUTO_ASSIGN: KeyCode = KeyCode::Char('a');
     pub const SET_TACTIC: KeyCode = KeyCode::Char('t');
-    pub const CYCLE_VIEW: KeyCode = KeyCode::Char('V');
+    pub const CYCLE_VIEW: KeyCode = KeyCode::Tab;
     pub const HIRE: KeyCode = KeyCode::Char('H');
     pub const FIRE: KeyCode = KeyCode::Char('F');
     pub const LOCK_PLAYER: KeyCode = KeyCode::Char('L');

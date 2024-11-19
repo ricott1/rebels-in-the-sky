@@ -38,6 +38,7 @@ pub enum PopupMessage {
     ReleasePlayer {
         player_name: String,
         player_id: PlayerId,
+        not_enough_players_for_game: bool,
         tick: Tick,
     },
     AsteroidNameDialog {
@@ -271,6 +272,7 @@ impl PopupMessage {
             PopupMessage::ReleasePlayer {
                 player_name,
                 player_id,
+                not_enough_players_for_game,
                 ..
             } => {
                 frame.render_widget(
@@ -279,10 +281,15 @@ impl PopupMessage {
                         .centered(),
                     split[0],
                 );
+                let extra_warning = if *not_enough_players_for_game {
+                    "\n\nThere will be not enough players for games!"
+                } else {
+                    ""
+                };
                 frame.render_widget(
                     Paragraph::new(format!(
-                        "Are you sure you want to release {} from the crew?",
-                        player_name
+                        "Are you sure you want to release {} from the crew?{}",
+                        player_name, extra_warning
                     ))
                     .centered()
                     .wrap(Wrap { trim: true }),

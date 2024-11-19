@@ -637,6 +637,7 @@ pub fn get_fuel_spans<'a>(fuel: u32, fuel_capacity: u32, bars_length: usize) -> 
 
 pub fn render_spaceship_description(
     team: &Team,
+    full_info: bool,
     gif_map: &mut GifMap,
     tick: usize,
     world: &World,
@@ -663,7 +664,7 @@ pub fn render_spaceship_description(
         );
     }
 
-    let spaceship_info = if team.id == world.own_team_id {
+    let spaceship_info = if full_info {
         Paragraph::new(vec![
             Line::from(get_crew_spans(team)),
             Line::from(get_durability_spans(
@@ -705,6 +706,20 @@ pub fn render_spaceship_description(
             Line::from(format!("Value {}", format_satoshi(team.spaceship.cost()),)),
         ])
     } else {
+        let game_record = if team.peer_id.is_some() {
+            format!(
+                "Network record W{}/L{}/D{}",
+                team.network_game_record[0],
+                team.network_game_record[1],
+                team.network_game_record[2]
+            )
+        } else {
+            format!(
+                "Game record W{}/L{}/D{}",
+                team.game_record[0], team.game_record[1], team.game_record[2]
+            )
+        };
+
         Paragraph::new(vec![
             Line::from(format!(
                 "Rating {}",
@@ -712,10 +727,7 @@ pub fn render_spaceship_description(
             )),
             Line::from(format!("Reputation {}", team.reputation.stars())),
             Line::from(format!("Treasury {}", format_satoshi(team.balance()))),
-            Line::from(format!(
-                "Game record W{}/L{}/D{}",
-                team.game_record[0], team.game_record[1], team.game_record[2]
-            )),
+            Line::from(game_record),
             Line::from(get_crew_spans(team)),
         ])
     };
@@ -1000,8 +1012,8 @@ pub fn render_player_description(
     player: &Player,
     gif_map: &mut GifMap,
     tick: usize,
-    frame: &mut UiFrame,
     world: &World,
+    frame: &mut UiFrame,
     area: Rect,
 ) {
     let h_split = Layout::horizontal([

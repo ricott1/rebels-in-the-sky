@@ -267,12 +267,14 @@ impl Screen for SplashScreen {
             // Disable continue button if no world exists
             if i == 0 && !self.can_load_world {
                 button.disable(Some("No save file found".to_string()));
+                button = button.no_hover_block();
             } else if i > 0 && world.is_simulating() {
                 button.disable(Some("Simulating world"));
             }
             // Disable music button if audio is not supported
             if i == 2 && self.audio_player_state == AudioPlayerState::Disabled {
                 button.disable(Some("Sound not supported"));
+                button = button.no_hover_block();
             }
 
             frame.render_hoverable(button, selection_split[i]);
@@ -297,8 +299,8 @@ impl Screen for SplashScreen {
         }
 
         match key_event.code {
-            KeyCode::Up => self.next_index(),
-            KeyCode::Down => self.previous_index(),
+            KeyCode::Up => self.previous_index(),
+            KeyCode::Down => self.next_index(),
             KeyCode::Enter => match self.index {
                 // continue
                 0 => {
@@ -345,15 +347,23 @@ impl SplitPanel for SplashScreen {
     }
 
     fn previous_index(&mut self) {
-        if self.index < self.max_index() - 1 {
-            self.set_index(self.index + 1);
+        let min_index = if self.can_load_world { 0 } else { 1 };
+        if self.index > min_index {
+            let mut new_index = self.index - 1;
+            if new_index == 2 && self.audio_player_state == AudioPlayerState::Disabled {
+                new_index -= 1;
+            }
+            self.set_index(new_index);
         }
     }
 
     fn next_index(&mut self) {
-        let min_index = if self.can_load_world { 0 } else { 1 };
-        if self.index > min_index {
-            self.set_index(self.index - 1);
+        if self.index < self.max_index() - 1 {
+            let mut new_index = self.index + 1;
+            if new_index == 2 && self.audio_player_state == AudioPlayerState::Disabled {
+                new_index += 1;
+            }
+            self.set_index(new_index);
         }
     }
 

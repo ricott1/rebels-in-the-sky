@@ -103,6 +103,7 @@ impl Tui<SSHWriterProxy, SSHEventHandler> {
         };
 
         tui.init()?;
+        tui.resize(UI_SCREEN_SIZE)?;
         Ok(tui)
     }
 }

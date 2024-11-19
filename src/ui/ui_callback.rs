@@ -643,9 +643,6 @@ impl UiCallback {
 
             app.world.teams.insert(team.id, team);
 
-            // TODO: THis should probably be a different button?
-            // app.world.auto_assign_crew_roles(player_ids)?;
-
             Ok(None)
         })
     }
@@ -844,31 +841,35 @@ impl UiCallback {
 
     fn name_and_accept_asteroid(name: String, filename: String) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let mut team = app.world.get_own_team()?.clone();
-            if team.asteroid_ids.len() > MAX_NUM_ASTEROID_PER_TEAM {
+            let mut own_team = app.world.get_own_team()?.clone();
+            if own_team.asteroid_ids.len() > MAX_NUM_ASTEROID_PER_TEAM {
                 return Err(anyhow!("Team has reached max number of asteroids."));
             }
 
-            match team.current_location {
+            match own_team.current_location {
                 TeamLocation::OnPlanet { planet_id } => {
                     let asteroid_id = app.world.generate_team_asteroid(
                         name.clone(),
                         filename.clone(),
                         planet_id,
                     )?;
-                    team.current_location = TeamLocation::OnPlanet {
+                    let mut current_planet = app.world.get_planet_or_err(&planet_id)?.clone();
+                    current_planet.team_ids.retain(|&x| x != own_team.id);
+                    app.world.planets.insert(current_planet.id, current_planet);
+
+                    own_team.current_location = TeamLocation::OnPlanet {
                         planet_id: asteroid_id,
                     };
 
                     let mut asteroid = app.world.get_planet_or_err(&asteroid_id)?.clone();
-                    asteroid.team_ids.push(team.id);
+                    asteroid.team_ids.push(own_team.id);
                     asteroid.version += 1;
 
-                    team.asteroid_ids.push(asteroid_id);
-                    team.version += 1;
+                    own_team.asteroid_ids.push(asteroid_id);
+                    own_team.version += 1;
 
                     app.world.planets.insert(asteroid.id, asteroid);
-                    app.world.teams.insert(team.id, team);
+                    app.world.teams.insert(own_team.id, own_team);
                 }
                 _ => return Err(anyhow!("Invalid team location when accepting asteroid.")),
             }
@@ -1161,9 +1162,17 @@ impl UiCallback {
             }
             UiCallback::PromptReleasePlayer { player_id } => {
                 let player = app.world.get_player_or_err(player_id)?;
+                let own_team = app.world.get_own_team()?;
+                let not_enough_players_for_game =
+                    if own_team.player_ids.len() - 1 < MIN_PLAYERS_PER_GAME {
+                        true
+                    } else {
+                        false
+                    };
                 app.ui.push_popup(PopupMessage::ReleasePlayer {
                     player_name: player.info.full_name(),
                     player_id: *player_id,
+                    not_enough_players_for_game,
                     tick: Tick::now(),
                 });
                 Ok(None)
@@ -1171,6 +1180,7 @@ impl UiCallback {
             UiCallback::ConfirmReleasePlayer { player_id } => {
                 app.world.release_player_from_team(*player_id)?;
                 app.ui.close_popup();
+                app.ui.swarm_panel.remove_player_from_ranking(*player_id);
                 Ok(None)
             }
             UiCallback::LockPlayerPanel { player_id } => {

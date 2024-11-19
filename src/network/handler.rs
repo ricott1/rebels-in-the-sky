@@ -23,7 +23,7 @@ use std::time::Duration;
 pub struct NetworkHandler {
     pub swarm: Swarm<gossipsub::Behaviour>,
     pub address: Multiaddr,
-    pub seed_address: Multiaddr,
+    pub seed_addresses: Vec<Multiaddr>,
 }
 
 impl Debug for NetworkHandler {
@@ -69,29 +69,52 @@ impl NetworkHandler {
                 noise::Config::new,
                 yamux::Config::default,
             )?
+            .with_dns()?
             .with_behaviour(|_| gossipsub)?
             .with_swarm_config(|cfg| {
                 cfg.with_idle_connection_timeout(Duration::from_secs(u64::MAX))
             })
             .build();
 
-        swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{tcp_port}").parse()?)?;
+        let mut succesful_listen_on = false;
+        if let Err(e) = swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{tcp_port}").parse()?) {
+            log::error!("Could not listen on ip4: {}", e);
+        } else {
+            succesful_listen_on = true;
+        }
+        if let Err(e) = swarm.listen_on(format!("/ip6/::/tcp/{tcp_port}").parse()?) {
+            log::error!("Could not listen on ip6: {}", e);
+        } else {
+            succesful_listen_on = true;
+        };
 
-        let seed_address = match seed_ip {
-            Some(ip) => format!("/ip4/{ip}/tcp/{DEFAULT_SEED_PORT}")
-                .parse()
-                .expect("Invalid provided seed ip."),
-            None => format!("/ip4/{DEFAULT_SEED_IP}/tcp/{DEFAULT_SEED_PORT}")
+        if !succesful_listen_on {
+            return Err(anyhow!("Swarm could not start listening."));
+        }
+
+        let mut seed_addresses = vec![
+            format!("/dns4/{DEFAULT_SEED_URL}/tcp/{DEFAULT_SEED_PORT}")
                 .parse()
                 .expect("Invalid default seed address."),
-        };
+            format!("/ip6/{DEFAULT_SEED_IPV6}/tcp/{DEFAULT_SEED_PORT}")
+                .parse()
+                .expect("Invalid provided seed ip."),
+        ];
+
+        if let Some(ip) = seed_ip {
+            seed_addresses.push(
+                format!("/ip4/{ip}/tcp/{DEFAULT_SEED_PORT}")
+                    .parse()
+                    .expect("Invalid provided seed ip."),
+            );
+        }
 
         info!("Network handler started on port {}", tcp_port);
 
         Ok(Self {
             swarm,
             address: Multiaddr::empty(),
-            seed_address,
+            seed_addresses,
         })
     }
 
@@ -104,15 +127,15 @@ impl NetworkHandler {
         Ok(msg_id)
     }
 
-    fn dial(&mut self, address: Multiaddr) -> AppResult<()> {
-        if address != self.address {
-            self.swarm.dial(address)?;
+    pub fn dial_seed(&mut self) -> AppResult<()> {
+        for address in self.seed_addresses.iter() {
+            if *address != self.address {
+                if let Err(e) = self.swarm.dial(address.clone()) {
+                    log::error!("Dial error: {}", e);
+                }
+            }
         }
         Ok(())
-    }
-
-    pub fn dial_seed(&mut self) -> AppResult<()> {
-        self.dial(self.seed_address.clone())
     }
 
     pub fn send_msg(&mut self, msg: String) -> AppResult<MessageId> {

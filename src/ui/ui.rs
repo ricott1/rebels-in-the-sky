@@ -246,6 +246,18 @@ impl Ui {
                 None
             }
             _ => {
+                // Special handling for space screen. It takes precedence over popups.
+                match self.state {
+                    UiState::SpaceAdventure => {
+                        if let Some(callback) =
+                            self.space_screen.handle_key_events(key_event, world)
+                        {
+                            return Some(callback);
+                        }
+                    }
+                    _ => {}
+                }
+
                 if self.popup_messages.len() > 0 {
                     return self.popup_messages[0].consumes_input(&mut self.popup_input, key_event);
                 }

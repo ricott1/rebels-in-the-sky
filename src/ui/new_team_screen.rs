@@ -696,7 +696,7 @@ impl NewTeamScreen {
         let player = world
             .get_player(&planet_players[self.player_index].0)
             .unwrap();
-        render_player_description(player, &mut self.gif_map, self.tick, frame, world, area);
+        render_player_description(player, &mut self.gif_map, self.tick, world, frame, area);
     }
 
     fn render_confirm_box(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {

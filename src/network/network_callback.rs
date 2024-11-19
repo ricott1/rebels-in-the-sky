@@ -210,6 +210,7 @@ impl NetworkCallback {
         seed_info: SeedInfo,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
+            log::info!("Got seed info: {:#?}", seed_info);
             let event = SwarmPanelEvent {
                 timestamp,
                 peer_id,
@@ -254,6 +255,10 @@ impl NetworkCallback {
             app.ui
                 .swarm_panel
                 .update_team_ranking(&seed_info.team_ranking);
+
+            app.ui
+                .swarm_panel
+                .update_player_ranking(&seed_info.player_ranking);
 
             app.world.dirty_network = true;
             Ok(None)

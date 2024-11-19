@@ -99,8 +99,18 @@ impl<'a> Button<'a> {
         self
     }
 
+    pub fn no_block(mut self) -> Self {
+        self.block = None;
+        self
+    }
+
     pub fn hover_block(mut self, block: Block<'a>) -> Self {
         self.hover_block = Some(block);
+        self
+    }
+
+    pub fn no_hover_block(mut self) -> Self {
+        self.hover_block = None;
         self
     }
 

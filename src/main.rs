@@ -62,10 +62,6 @@ async fn main() -> AppResult<()> {
     }
 
     if args.ssh_server {
-        // tokio::runtime::Builder::new_multi_thread()
-        //     .enable_all()
-        //     .build()?
-        //     .spawn(AppServer::new().run())
         AppServer::new().run().await?;
     } else if args.relayer_mode {
         Relayer::new().run().await?;

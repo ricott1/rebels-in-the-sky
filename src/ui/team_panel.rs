@@ -121,7 +121,7 @@ impl TeamListPanel {
         .split(area);
 
         let mut filter_all_button = Button::new(
-            format!("View: {}", TeamView::All.to_string()),
+            format!("{}", TeamView::All.to_string()),
             UiCallback::SetTeamPanelView {
                 view: TeamView::All,
             },
@@ -130,7 +130,7 @@ impl TeamListPanel {
         .set_hover_text("View all teams.");
 
         let mut filter_challenge_button = Button::new(
-            format!("View: {}", TeamView::OpenToChallenge.to_string()),
+            format!("{}", TeamView::OpenToChallenge.to_string()),
             UiCallback::SetTeamPanelView {
                 view: TeamView::OpenToChallenge,
             },
@@ -139,7 +139,7 @@ impl TeamListPanel {
         .set_hover_text("View all teams that can be currently challenged to a game.");
 
         let mut filter_peers_button = Button::new(
-            format!("View: {}", TeamView::Peers.to_string()),
+            format!("{}", TeamView::Peers.to_string()),
             UiCallback::SetTeamPanelView {
                 view: TeamView::Peers,
             },
@@ -377,6 +377,7 @@ impl TeamListPanel {
 
         render_spaceship_description(
             &team,
+            team.id == world.own_team_id,
             &mut self.gif_map,
             self.tick,
             world,
