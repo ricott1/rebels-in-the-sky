@@ -703,7 +703,7 @@ impl PopupMessage {
 
                 let message = match index {
                     0 => "Hello pirate! This is your team page.\nHere you can check your pirates and ship and interact with the market.",
-                    1 => "You can navigate aorund by clicking on the tabs\nor using the arrow keys.",
+                    1 => "You can navigate around by clicking on the tabs\nor using the arrow keys.",
                     2 => "To start, you can try to challenge another team to a game,\nor maybe explore around your planet to gather resources.",
                     _ => "Ultimately, the key is to gather together a great crew.\nHave fun!"
                 };
