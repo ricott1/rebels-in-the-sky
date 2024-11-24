@@ -158,11 +158,11 @@ impl MyTeamPanel {
         ])
         .split(area);
 
-        frame.render_hoverable(view_info_button, split[0]);
-        frame.render_hoverable(view_games_button, split[1]);
-        frame.render_hoverable(view_market_button, split[2]);
-        frame.render_hoverable(view_shipyard_button, split[3]);
-        frame.render_hoverable(view_asteroids_button, split[4]);
+        frame.render_interactive(view_info_button, split[0]);
+        frame.render_interactive(view_games_button, split[1]);
+        frame.render_interactive(view_market_button, split[2]);
+        frame.render_interactive(view_shipyard_button, split[3]);
+        frame.render_interactive(view_asteroids_button, split[4]);
 
         Ok(())
     }
@@ -208,7 +208,7 @@ impl MyTeamPanel {
         }
 
         let list = selectable_list(options);
-        frame.render_stateful_hoverable(
+        frame.render_stateful_interactive(
             list,
             split[0].inner(Margin {
                 horizontal: 1,
@@ -461,7 +461,7 @@ impl MyTeamPanel {
                     },
                     UiStyle::OK,
                 ) {
-                    frame.render_hoverable(btn, resource_split[idx + 1]);
+                    frame.render_interactive(btn, resource_split[idx + 1]);
                 }
             }
 
@@ -479,7 +479,7 @@ impl MyTeamPanel {
                     },
                     UiStyle::ERROR,
                 ) {
-                    frame.render_hoverable(btn, resource_split[idx + 4]);
+                    frame.render_interactive(btn, resource_split[idx + 4]);
                 }
             }
         }
@@ -488,10 +488,10 @@ impl MyTeamPanel {
 
         info_spans.append(&mut get_fuel_spans(
             team.fuel(),
-            team.spaceship.fuel_capacity(),
+            team.fuel_capacity(),
             BARS_LENGTH,
         ));
-        info_spans.push(Span::raw("  "));
+        info_spans.push(Span::raw(" "));
         info_spans.append(&mut get_storage_spans(
             &team.resources,
             team.spaceship.storage_capacity(),
@@ -547,7 +547,7 @@ impl MyTeamPanel {
             )),
             Line::from(get_fuel_spans(
                 team.fuel(),
-                team.spaceship.fuel_capacity(),
+                team.fuel_capacity(),
                 BARS_LENGTH,
             )),
             Line::from(get_storage_spans(
@@ -612,7 +612,7 @@ impl MyTeamPanel {
             team.game_tactic.description()
         ))
         .set_hotkey(UiKey::SET_TACTIC);
-        frame.render_hoverable(offense_tactic_button, top_button_split[0]);
+        frame.render_interactive(offense_tactic_button, top_button_split[0]);
 
         let can_change_training_focus = team.can_change_training_focus();
         let mut training_button = Button::new(
@@ -634,7 +634,7 @@ impl MyTeamPanel {
                 can_change_training_focus.unwrap_err().to_string()
             )));
         }
-        frame.render_hoverable(training_button, top_button_split[1]);
+        frame.render_interactive(training_button, top_button_split[1]);
 
         let btm_button_split =
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
@@ -643,11 +643,11 @@ impl MyTeamPanel {
         if let Ok(go_to_team_current_planet_button) =
             go_to_team_current_planet_button(world, &team.id)
         {
-            frame.render_hoverable(go_to_team_current_planet_button, btm_button_split[0]);
+            frame.render_interactive(go_to_team_current_planet_button, btm_button_split[0]);
         }
 
         if let Ok(home_planet_button) = go_to_team_home_planet_button(world, &team.id) {
-            frame.render_hoverable(home_planet_button, btm_button_split[1]);
+            frame.render_interactive(home_planet_button, btm_button_split[1]);
         }
 
         match team.current_location {
@@ -728,7 +728,7 @@ impl MyTeamPanel {
                     game.home_team_in_game.name, game.away_team_in_game.name,
                 )
             };
-            frame.render_hoverable(
+            frame.render_interactive(
                 Button::new(
                     format!("Playing - {}", game_text),
                     UiCallback::GoToGame { game_id },
@@ -829,7 +829,7 @@ impl MyTeamPanel {
         }
         let list = selectable_list(options);
 
-        frame.render_stateful_hoverable(
+        frame.render_stateful_interactive(
             list,
             split[0].inner(Margin {
                 horizontal: 1,
@@ -1139,7 +1139,7 @@ impl MyTeamPanel {
 
         let list = selectable_list(options);
 
-        frame.render_stateful_hoverable(
+        frame.render_stateful_interactive(
             list,
             split[0].inner(Margin {
                 horizontal: 1,
@@ -1259,13 +1259,6 @@ impl MyTeamPanel {
             return Ok(());
         }
 
-        let split = Layout::horizontal([Constraint::Length(12), Constraint::Length(30)]).split(
-            area.inner(Margin {
-                horizontal: 1,
-                vertical: 1,
-            }),
-        );
-
         let options = self
             .asteroid_ids
             .iter()
@@ -1288,9 +1281,9 @@ impl MyTeamPanel {
 
         let list = selectable_list(options);
 
-        frame.render_stateful_hoverable(
+        frame.render_stateful_interactive(
             list,
-            split[0].inner(Margin {
+            area.inner(Margin {
                 horizontal: 1,
                 vertical: 1,
             }),
@@ -1337,7 +1330,7 @@ impl MyTeamPanel {
         let b_split =
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(split[1]);
 
-        frame.render_hoverable(go_to_planet_button(world, &asteroid_id)?, b_split[0]);
+        frame.render_interactive(go_to_planet_button(world, &asteroid_id)?, b_split[0]);
         frame.render_widget(
             Paragraph::new(Span::styled(
                 "No kartoffeln to plant",
@@ -1404,7 +1397,7 @@ impl MyTeamPanel {
         } else if let Err(e) = can_set_crew_role.as_ref() {
             captain_button.disable(Some(e.to_string()));
         }
-        frame.render_hoverable(captain_button, button_splits[0]);
+        frame.render_interactive(captain_button, button_splits[0]);
 
         let mut pilot_button = Button::new(
             "pilot",
@@ -1428,7 +1421,7 @@ impl MyTeamPanel {
         } else if let Err(e) = can_set_crew_role.as_ref() {
             pilot_button.disable(Some(e.to_string()));
         }
-        frame.render_hoverable(pilot_button, button_splits[1]);
+        frame.render_interactive(pilot_button, button_splits[1]);
 
         let mut doctor_button = Button::new(
             "doctor",
@@ -1452,7 +1445,7 @@ impl MyTeamPanel {
         } else if let Err(e) = can_set_crew_role.as_ref() {
             doctor_button.disable(Some(e.to_string()));
         }
-        frame.render_hoverable(doctor_button, button_splits[2]);
+        frame.render_interactive(doctor_button, button_splits[2]);
 
         let can_release = team.can_release_player(&player);
         let mut release_button = Button::new(
@@ -1465,10 +1458,10 @@ impl MyTeamPanel {
             release_button.disable(Some(format!("{}", can_release.unwrap_err().to_string())));
         }
 
-        frame.render_hoverable(release_button, button_splits[3]);
+        frame.render_interactive(release_button, button_splits[3]);
 
         if let Ok(drink_button) = drink_button(world, &player_id) {
-            frame.render_hoverable(drink_button, button_splits[4]);
+            frame.render_interactive(drink_button, button_splits[4]);
         }
 
         Ok(())
@@ -1634,7 +1627,7 @@ impl MyTeamPanel {
             Layout::horizontal([Constraint::Min(10), Constraint::Length(60)]).split(area);
 
         let table = self.build_players_table(&players, world, top_split[0].width)?;
-        frame.render_stateful_hoverable(
+        frame.render_stateful_interactive(
             table.block(default_block().title(format!(
                 "{} {} ↓/↑",
                 own_team.name.clone(),
@@ -1706,14 +1699,14 @@ impl MyTeamPanel {
                 if position.is_some() && position.unwrap() == idx {
                     button.select();
                 }
-                frame.render_hoverable(button, rect);
+                frame.render_interactive(button, rect);
             }
 
             let auto_assign_button =
                 Button::new("Auto-assign positions", UiCallback::AssignBestTeamPositions)
                     .set_hover_text("Auto-assign players' initial position.")
                     .set_hotkey(UiKey::AUTO_ASSIGN);
-            frame.render_hoverable(auto_assign_button, position_button_splits[6]);
+            frame.render_interactive(auto_assign_button, position_button_splits[6]);
             self.render_player_buttons(players, frame, world, table_bottom[2])?;
         }
 
@@ -1747,10 +1740,10 @@ impl MyTeamPanel {
         let explore_split =
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(split[1]);
         if let Ok(explore_button) = space_adventure_button(world, team) {
-            frame.render_hoverable(explore_button, explore_split[0]);
+            frame.render_interactive(explore_button, explore_split[0]);
         }
         if let Ok(explore_button) = explore_button(world, team) {
-            frame.render_hoverable(explore_button, explore_split[1]);
+            frame.render_interactive(explore_button, explore_split[1]);
         }
         Ok(())
     }
@@ -1838,7 +1831,7 @@ impl MyTeamPanel {
                         horizontal: 1,
                     }),
                 );
-                frame.render_hoverable(upgrade_button, split[1]);
+                frame.render_interactive(upgrade_button, split[1]);
             }
         } else {
             render_spaceship_description(

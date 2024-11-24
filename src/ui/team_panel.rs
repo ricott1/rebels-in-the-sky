@@ -155,9 +155,9 @@ impl TeamListPanel {
             TeamView::Peers => filter_peers_button.select(),
         }
 
-        frame.render_hoverable(filter_all_button, split[0]);
-        frame.render_hoverable(filter_challenge_button, split[1]);
-        frame.render_hoverable(filter_peers_button, split[2]);
+        frame.render_interactive(filter_all_button, split[0]);
+        frame.render_interactive(filter_challenge_button, split[1]);
+        frame.render_interactive(filter_peers_button, split[2]);
 
         if self.teams.len() > 0 {
             let mut options = vec![];
@@ -182,7 +182,7 @@ impl TeamListPanel {
             }
             let list = selectable_list(options);
 
-            frame.render_stateful_hoverable(
+            frame.render_stateful_interactive(
                 list.block(default_block().title("Teams ↓/↑")),
                 split[3],
                 &mut ClickableListState::default().with_selected(Some(self.index)),
@@ -267,7 +267,7 @@ impl TeamListPanel {
                 button = button.set_style(UiStyle::SELECTED);
             }
 
-            frame.render_hoverable(button, button_area);
+            frame.render_interactive(button, button_area);
 
             let player = world.get_player_or_err(&team.player_ids[i])?;
 
@@ -348,7 +348,7 @@ impl TeamListPanel {
                         Layout::horizontal([Constraint::Length(20), Constraint::Length(20)])
                             .split(bench_row_split[row]);
                     let column = i % 2;
-                    frame.render_hoverable(button, bench_column_split[column]);
+                    frame.render_interactive(button, bench_column_split[column]);
                 }
             }
         }
@@ -369,7 +369,7 @@ impl TeamListPanel {
             if let Ok(go_to_team_current_planet_button) =
                 go_to_team_current_planet_button(world, &team.id)
             {
-                frame.render_hoverable(go_to_team_current_planet_button, button_split[0]);
+                frame.render_interactive(go_to_team_current_planet_button, button_split[0]);
             }
 
             render_challenge_button(world, team, true, frame, button_split[1])?;

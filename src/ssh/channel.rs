@@ -113,8 +113,8 @@ impl AppChannel {
     pub async fn pty_request(
         &mut self,
         id: ChannelId,
-        _width: u32,
-        _height: u32,
+        width: u32,
+        height: u32,
         session: &mut Session,
     ) -> AppResult<()> {
         // FIXME: this is the server shitdown token, we should use it to stop the app (which stops everything else).
@@ -153,6 +153,8 @@ impl AppChannel {
             // App has closed.
             app_shutdown.cancel();
         });
+
+        self.window_change_request(width, height).await?;
 
         Ok(())
     }

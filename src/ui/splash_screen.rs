@@ -277,7 +277,7 @@ impl Screen for SplashScreen {
                 button = button.no_hover_block();
             }
 
-            frame.render_hoverable(button, selection_split[i]);
+            frame.render_interactive(button, selection_split[i]);
         }
 
         frame.render_widget(

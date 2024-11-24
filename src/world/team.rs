@@ -159,6 +159,10 @@ impl Team {
         self.resources.value(&Resource::FUEL)
     }
 
+    pub fn used_fuel_capacity(&self) -> u32 {
+        self.resources.used_fuel_capacity()
+    }
+
     pub fn fuel_capacity(&self) -> u32 {
         self.spaceship.fuel_capacity()
     }

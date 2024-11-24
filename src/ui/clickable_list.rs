@@ -359,19 +359,24 @@ impl InteractiveStatefulWidget for ClickableList<'_> {
             return;
         }
 
-        if callback_registry.is_hovering(area) {
-            callback_registry.register_mouse_callback(
-                crossterm::event::MouseEventKind::ScrollDown,
-                None,
-                UiCallback::NextPanelIndex,
-            );
+        let is_hovered = callback_registry.is_hovering(area)
+            && callback_registry.get_max_layer() == self.layer();
 
-            callback_registry.register_mouse_callback(
-                crossterm::event::MouseEventKind::ScrollUp,
-                None,
-                UiCallback::PreviousPanelIndex,
-            );
+        if !is_hovered {
+            return;
         }
+
+        callback_registry.register_mouse_callback(
+            crossterm::event::MouseEventKind::ScrollDown,
+            None,
+            UiCallback::NextPanelIndex,
+        );
+
+        callback_registry.register_mouse_callback(
+            crossterm::event::MouseEventKind::ScrollUp,
+            None,
+            UiCallback::PreviousPanelIndex,
+        );
 
         let list_height = list_area.height as usize;
 

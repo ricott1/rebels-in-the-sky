@@ -1,6 +1,6 @@
 [package]
 name = "rebels"
-version = "1.0.22"
+version = "1.0.23"
 edition = "2021"
 authors = ["Alessandro Ricottone <ricott2@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -65,13 +65,13 @@ serde = { version = "1.0.215", features = ["derive", "default"] }
 serde_json = "1.0.133"
 serde_repr = "0.1.19"
 sha2 = "0.10.8"
-stream-download = { version = "0.12.0", features = ["reqwest-rustls"] }
+stream-download = { version = "0.13.1", features = ["reqwest-rustls"] }
 strum = { version = "0.26.3", features = ["derive"] }
 strum_macros = "0.26.4"
 tokio = { version = "1.41.1", features = ["full"] }
 tokio-util = "0.7.12"
 tui-textarea = "0.7.0"
 unicode-width = "0.2.0"
-url = "2.5.3"
+url = "2.5.4"
 uuid = { version = "1.11.0", features = ["v4", "serde"] }
 void = "1.0.2"

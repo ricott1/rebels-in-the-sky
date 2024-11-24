@@ -1,4 +1,4 @@
-use super::traits::HitBox;
+use super::collisions::HitBox;
 use glam::{I16Vec2, Vec2};
 use image::imageops::crop_imm;
 use image::{buffer::ConvertBuffer, GrayImage, RgbaImage};
@@ -91,5 +91,28 @@ pub fn body_data_from_image(image: &RgbaImage, should_crop: bool) -> (RgbaImage,
         }
     }
 
-    (final_image, hit_box.into())
+    let hit_box: HitBox = hit_box.into();
+    log::info!("Created hitbox with size {:#?}", hit_box.size());
+    (final_image, hit_box)
+}
+
+#[cfg(test)]
+mod test {
+
+    use crate::{types::AppResult, world::spaceship::SpaceshipPrefab};
+    use glam::I16Vec2;
+    use image::imageops::rotate90;
+
+    use super::body_data_from_image;
+
+    #[test]
+    fn test_hitbox_size() -> AppResult<()> {
+        let spaceship = SpaceshipPrefab::Ibarruri.spaceship("name".to_string());
+        let base_gif = spaceship.compose_image()?;
+        let base_image = rotate90(&base_gif[0]);
+        let (_, hit_box) = body_data_from_image(&base_image, false);
+        assert!(hit_box.size() == I16Vec2::new(16, 20));
+
+        Ok(())
+    }
 }

@@ -1289,12 +1289,21 @@ impl World {
             let (home_team_reputation, away_team_reputation) = match game.winner {
                 Some(winner) => {
                     if winner == game.home_team_in_game.team_id {
-                        (REPUTATION_BONUS_WINNER, REPUTATION_BONUS_LOSER)
+                        (
+                            ReputationModifier::HIGH_BONUS,
+                            ReputationModifier::MEDIUM_MALUS,
+                        )
                     } else {
-                        (REPUTATION_BONUS_LOSER, REPUTATION_BONUS_WINNER)
+                        (
+                            ReputationModifier::MEDIUM_MALUS,
+                            ReputationModifier::HIGH_BONUS,
+                        )
                     }
                 }
-                None => (REPUTATION_BONUS_DRAW, REPUTATION_BONUS_DRAW),
+                None => (
+                    ReputationModifier::MEDIUM_BONUS,
+                    ReputationModifier::MEDIUM_BONUS,
+                ),
             };
 
             // Winner team gets 1 rum per player, Loser team gets 1 rum in total
@@ -1419,7 +1428,7 @@ impl World {
     }
 
     fn team_reputation_bonus_per_distance(distance: KILOMETER) -> f32 {
-        ((distance as f32 + 1.0).ln()).powf(4.0) * TEAM_REPUTATION_BONUS_MODIFIER
+        ((distance as f32 + 1.0).ln()).powf(4.0) * ReputationModifier::BONUS_PER_DISTANCE
     }
 
     pub fn tick_travel(&mut self, current_tick: Tick) -> AppResult<Option<UiCallback>> {

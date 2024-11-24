@@ -229,8 +229,8 @@ pub fn render_challenge_button<'a>(
             c_split[0],
         );
 
-        frame.render_hoverable(accept_button, c_split[1]);
-        frame.render_hoverable(decline_button, c_split[2]);
+        frame.render_interactive(accept_button, c_split[1]);
+        frame.render_interactive(decline_button, c_split[2]);
         return Ok(());
     }
 
@@ -279,7 +279,7 @@ pub fn render_challenge_button<'a>(
         }
         button
     };
-    frame.render_hoverable(challenge_button, area);
+    frame.render_interactive(challenge_button, area);
 
     Ok(())
 }
@@ -1074,7 +1074,7 @@ pub fn render_player_description(
             },
         )
     ]);
-    frame.render_hoverable(line, header_body_stats[1]);
+    frame.render_interactive(line, header_body_stats[1]);
     let mut morale = player.morale;
     // Check if player is currently playing.
     // In this case, read current morale from game.
@@ -1107,7 +1107,7 @@ pub fn render_player_description(
         _ => UiStyle::UNSELECTABLE,
     };
 
-    frame.render_hoverable(
+    frame.render_interactive(
         HoverTextLine::from(vec![
             HoverTextSpan::new(
                 Span::raw("Morale ".to_string()),
@@ -1156,7 +1156,7 @@ pub fn render_player_description(
         _ => UiStyle::UNSELECTABLE,
     };
 
-    frame.render_hoverable(
+    frame.render_interactive(
         HoverTextLine::from(vec![
             HoverTextSpan::new(
                 Span::raw("Energy ".to_string()),

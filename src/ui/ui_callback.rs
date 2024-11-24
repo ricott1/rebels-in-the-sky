@@ -25,7 +25,7 @@ use crate::{
         player::Trait,
         resources::Resource,
         role::CrewRole,
-        skill::MAX_SKILL,
+        skill::{GameSkill, MAX_SKILL},
         spaceship::{Spaceship, SpaceshipUpgrade, SpaceshipUpgradeTarget},
         team::Team,
         types::{PlayerLocation, TeamBonus, TeamLocation, TrainingFocus},
@@ -190,7 +190,7 @@ pub enum UiCallback {
         planet_id: PlanetId,
         zoom_level: ZoomLevel,
     },
-    DialSeed,
+    Ping,
     Sync,
     SendMessage {
         message: String,
@@ -809,13 +809,8 @@ impl UiCallback {
         })
     }
 
-    fn dial_seed() -> AppCallback {
+    fn ping() -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.network_handler
-                .as_mut()
-                .ok_or(anyhow!("Network handler is not initialized"))?
-                .dial_seed()
-                .map_err(|e| anyhow!(e.to_string()))?;
             app.world.dirty_network = true;
             Ok(None)
         })
@@ -1330,7 +1325,7 @@ impl UiCallback {
                 planet_id,
                 zoom_level,
             } => Self::zoom_to_planet(*planet_id, *zoom_level)(app),
-            UiCallback::DialSeed => Self::dial_seed()(app),
+            UiCallback::Ping => Self::ping()(app),
             UiCallback::Sync => Self::sync()(app),
             UiCallback::SendMessage { message } => Self::send(message.clone())(app),
             UiCallback::PushUiPopup { popup_message } => {
@@ -1461,6 +1456,9 @@ impl UiCallback {
                         return Err(anyhow!("Team should be on a space adventure."));
                     }
                 }
+
+                own_team.reputation =
+                    (own_team.reputation + ReputationModifier::SMALL_BONUS).bound();
                 app.world.teams.insert(own_team.id, own_team);
 
                 if let Some(asteroid_type) = space.asteroid_planet_found() {
@@ -1685,10 +1683,6 @@ mod test {
         );
 
         let player_control_resources = player_control.resources().clone();
-
-        // UiCallback::ReturnFromSpaceAdventure.call(&mut app)?;
-        // let own_team = world.get_own_team()?;
-        // println!("{:#?}", own_team.resources);
 
         let mut new_resources = ResourceMap::new();
 

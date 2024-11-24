@@ -130,7 +130,6 @@ impl EngineAction for PickAndRoll {
                     ..Default::default()
                 },
                 x if x > ADV_DEFENSE_LIMIT => {
-                    
                     match rng.gen_bool(0.5) {
                         false => ActionOutput {
                             possession: input.possession,
@@ -189,8 +188,6 @@ impl EngineAction for PickAndRoll {
                             ..Default::default()
                         }
                     }
-                    
-                    
             },
                 _ => {
                     playmaker_update.turnovers = 1;
@@ -281,7 +278,7 @@ impl EngineAction for PickAndRoll {
                 possession: input.possession,
                 advantage: Advantage::Neutral,
                 attackers: vec![target_idx],
-                defenders: vec![play_idx], 
+                defenders: vec![play_idx],
                 situation: ActionSituation::CloseShot,
                 description:[
                     format!(
@@ -316,7 +313,7 @@ impl EngineAction for PickAndRoll {
                 possession: input.possession,
                 advantage: Advantage::Defense,
                 attackers: vec![target_idx],
-                defenders: vec![target_idx], 
+                defenders: vec![target_idx],
                 situation: ActionSituation::MediumShot,
                 description:[
                     format!(
@@ -325,7 +322,7 @@ impl EngineAction for PickAndRoll {
                     ),
                     format!(
                         "The pick'n'roll is executed, but {} is quick to cover as {} passes to {}.",
-                       target_defender.info.shortened_name(), playmaker.info.shortened_name(), target.info.shortened_name(),  
+                       target_defender.info.shortened_name(), playmaker.info.shortened_name(), target.info.shortened_name(),
                     ),
                     format!(
                         "They try the pick'n'roll. {} passes to {} but {} sticks to {} like glue.",

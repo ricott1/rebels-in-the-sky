@@ -1,4 +1,7 @@
-use super::{networking::ImageType, space_callback::SpaceCallback, traits::*, utils::EntityState};
+use super::{
+    collisions::HitBox, networking::ImageType, space_callback::SpaceCallback, traits::*,
+    utils::EntityState,
+};
 use crate::{register_impl, space_adventure::constants::*};
 use glam::{I16Vec2, Vec2};
 use image::{Pixel, Rgba, RgbaImage};

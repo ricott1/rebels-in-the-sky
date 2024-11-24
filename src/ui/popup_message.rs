@@ -229,7 +229,7 @@ impl PopupMessage {
                     .block(default_block().border_style(UiStyle::OK))
                     .set_layer(1);
 
-                frame.render_hoverable(
+                frame.render_interactive(
                     button,
                     split[2].inner(Margin {
                         vertical: 0,
@@ -260,7 +260,7 @@ impl PopupMessage {
                     .block(default_block().border_style(UiStyle::OK))
                     .set_layer(1);
 
-                frame.render_hoverable(
+                frame.render_interactive(
                     button,
                     split[2].inner(Margin {
                         vertical: 0,
@@ -314,7 +314,7 @@ impl PopupMessage {
                 .block(default_block().border_style(UiStyle::OK))
                 .set_layer(1);
 
-                frame.render_hoverable(confirm_button, buttons_split[0]);
+                frame.render_interactive(confirm_button, buttons_split[0]);
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
                     .set_hover_text(format!("Don't release {}", player_name))
@@ -322,7 +322,7 @@ impl PopupMessage {
                     .block(default_block().border_style(UiStyle::ERROR))
                     .set_layer(1);
 
-                frame.render_hoverable(no_button, buttons_split[1]);
+                frame.render_interactive(no_button, buttons_split[1]);
             }
 
             PopupMessage::PromptQuit {
@@ -359,7 +359,7 @@ impl PopupMessage {
                     .block(default_block().border_style(UiStyle::OK))
                     .set_layer(1);
 
-                frame.render_hoverable(confirm_button, buttons_split[0]);
+                frame.render_interactive(confirm_button, buttons_split[0]);
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
                     .set_hover_text(format!("Please don't go, don't goooooo..."))
@@ -367,7 +367,7 @@ impl PopupMessage {
                     .block(default_block().border_style(UiStyle::ERROR))
                     .set_layer(1);
 
-                frame.render_hoverable(no_button, buttons_split[1]);
+                frame.render_interactive(no_button, buttons_split[1]);
             }
 
             PopupMessage::AsteroidNameDialog {
@@ -449,7 +449,7 @@ impl PopupMessage {
                     ok_button.disable(Some("Invalid asteroid name"));
                 }
 
-                frame.render_hoverable(ok_button, buttons_split[0]);
+                frame.render_interactive(ok_button, buttons_split[0]);
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
                     .set_hover_text("Leave the asteroid alone!")
@@ -457,7 +457,7 @@ impl PopupMessage {
                     .block(default_block().border_style(UiStyle::ERROR))
                     .set_layer(1);
 
-                frame.render_hoverable(no_button, buttons_split[1]);
+                frame.render_interactive(no_button, buttons_split[1]);
             }
 
             PopupMessage::PortalFound {
@@ -516,7 +516,7 @@ impl PopupMessage {
                     .block(default_block().border_style(UiStyle::OK))
                     .set_layer(1);
 
-                frame.render_hoverable(
+                frame.render_interactive(
                     button,
                     split[2].inner(Margin {
                         vertical: 0,
@@ -617,7 +617,7 @@ impl PopupMessage {
                     .block(default_block().border_style(UiStyle::OK))
                     .set_layer(1);
 
-                frame.render_hoverable(
+                frame.render_interactive(
                     button,
                     split[2].inner(Margin {
                         vertical: 0,
@@ -680,7 +680,7 @@ impl PopupMessage {
                     .block(default_block().border_style(UiStyle::OK))
                     .set_layer(1);
 
-                frame.render_hoverable(
+                frame.render_interactive(
                     button,
                     split[2].inner(Margin {
                         vertical: 0,
@@ -734,11 +734,11 @@ impl PopupMessage {
                         let buttons_split =
                             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
                                 .split(split[2]);
-                        frame.render_hoverable(next_button, buttons_split[0]);
-                        frame.render_hoverable(close_button, buttons_split[1]);
+                        frame.render_interactive(next_button, buttons_split[0]);
+                        frame.render_interactive(close_button, buttons_split[1]);
                     }
                     _ => {
-                        frame.render_hoverable(close_button, split[2]);
+                        frame.render_interactive(close_button, split[2]);
                     }
                 }
             }

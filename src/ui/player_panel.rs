@@ -191,10 +191,10 @@ impl PlayerListPanel {
             PlayerView::OwnTeam => filter_own_team_button.select(),
         }
 
-        frame.render_hoverable(filter_all_button, split[0]);
-        frame.render_hoverable(filter_free_pirates_button, split[1]);
-        frame.render_hoverable(filter_tradable_button, split[2]);
-        frame.render_hoverable(filter_own_team_button, split[3]);
+        frame.render_interactive(filter_all_button, split[0]);
+        frame.render_interactive(filter_free_pirates_button, split[1]);
+        frame.render_interactive(filter_tradable_button, split[2]);
+        frame.render_interactive(filter_own_team_button, split[3]);
 
         if self.players.len() > 0 {
             let mut options = vec![];
@@ -223,7 +223,7 @@ impl PlayerListPanel {
                 options.push((text, style));
             }
             let list = selectable_list(options);
-            frame.render_stateful_hoverable(
+            frame.render_stateful_interactive(
                 list.block(default_block().title("Players ↓/↑")),
                 split[4],
                 &mut ClickableListState::default().with_selected(Some(self.index)),
@@ -337,7 +337,7 @@ impl PlayerListPanel {
                     planet.name
                 ))
                 .set_hotkey(UiKey::ON_PLANET);
-                frame.render_hoverable(button, buttons_split[0]);
+                frame.render_interactive(button, buttons_split[0]);
             }
             PlayerLocation::WithTeam => {
                 let team = world.get_team_or_err(&player.team.unwrap())?;
@@ -349,7 +349,7 @@ impl PlayerListPanel {
                 )
                 .set_hover_text(format!("Go to team {}", team.name))
                 .set_hotkey(UiKey::GO_TO_TEAM_ALTERNATIVE);
-                frame.render_hoverable(button, buttons_split[0]);
+                frame.render_interactive(button, buttons_split[0]);
             }
         }
         let lock_button =
@@ -377,7 +377,7 @@ impl PlayerListPanel {
                 ))
                 .set_hotkey(UiKey::LOCK_PLAYER)
             };
-        frame.render_hoverable(lock_button, buttons_split[1]);
+        frame.render_interactive(lock_button, buttons_split[1]);
 
         // Add hire button for free pirates
         if player.team.is_none() {
@@ -399,7 +399,7 @@ impl PlayerListPanel {
                 button.disable(Some(format!("{}", can_hire.unwrap_err().to_string())));
             }
 
-            frame.render_hoverable(button, buttons_split[2]);
+            frame.render_interactive(button, buttons_split[2]);
         }
         // or if a trade exists and player is part of it, add trade buttons
         else if let Some(trade) = open_trade {
@@ -427,7 +427,7 @@ impl PlayerListPanel {
                 if can_trade.is_err() {
                     button.disable(Some(format!("{}", can_trade.unwrap_err().to_string())));
                 }
-                frame.render_hoverable(button, buttons_split[2]);
+                frame.render_interactive(button, buttons_split[2]);
             } else if player.id == self.locked_player_id.expect("One player should be locked") {
                 let button = Button::new(
                     "Decline trade",
@@ -442,7 +442,7 @@ impl PlayerListPanel {
                 ))
                 .set_hotkey(UiKey::DECLINE_TRADE);
 
-                frame.render_hoverable(button, buttons_split[2]);
+                frame.render_interactive(button, buttons_split[2]);
             };
         }
         // or finally if either the selected or locked player are part of own_team (but not both)
@@ -480,7 +480,7 @@ impl PlayerListPanel {
                             trade_button.disable(Some("Trade already proposed"));
                         }
 
-                        frame.render_hoverable(trade_button, buttons_split[2]);
+                        frame.render_interactive(trade_button, buttons_split[2]);
                     }
                 }
             }

@@ -147,15 +147,15 @@ impl EngineAction for OffTheScreen {
                     ),
                     format!(
                         "{} tries to use the screen to get open for the shot, but {} is right there, forcing a bad attempt.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(), 
-                    ),
+                        playmaker.info.shortened_name(), target.info.shortened_name(),
+                                        ),
                     format!(
                         "{} receives the pass from {} but can't escape {}'s tight defense, resulting in a rushed shot.",
                         playmaker.info.shortened_name(), target.info.shortened_name(), target_defender.info.shortened_name()
                     ),
                     format!(
                         "{} gets the pass after the screen, but {} doesn't give an inch, and the shot is off balance.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(), 
+                        playmaker.info.shortened_name(), target.info.shortened_name(),
                     ),
                 ].choose(rng).expect("There should be one option").clone(),
                 assist_from: Some(play_idx),

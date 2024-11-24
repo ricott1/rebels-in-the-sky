@@ -604,7 +604,8 @@ impl Player {
 
         if athletics.quickness < WOODEN_LEG_MAX_QUICKNESS {
             player.image.set_wooden_leg(rng);
-            player.mental.charisma = (player.mental.charisma + 1.0).bound();
+            player.mental.charisma = (player.mental.charisma + 0.5).bound();
+            player.technical.post_moves = (player.technical.post_moves + 0.5).bound();
         }
         if mental.vision < EYE_PATCH_MAX_VISION {
             player.image.set_eye_patch(rng, population);
@@ -613,7 +614,8 @@ impl Player {
 
         if technical.ball_handling < HOOK_MAX_BALL_HANDLING {
             player.image.set_hook(rng, population);
-            player.mental.charisma = (player.mental.charisma + 1.0).bound();
+            player.athletics.strength = (player.athletics.strength + 0.75).bound();
+            player.mental.charisma = (player.mental.charisma + 0.25).bound();
         }
 
         if athletics.strength > 15.0 && rng.gen_bool(TRAIT_PROBABILITY) {
@@ -667,8 +669,8 @@ impl Player {
             }
             Population::Galdari => {
                 self.info.height = (self.info.height * 1.02).min(225.0);
-                self.mental.charisma = (self.mental.charisma * 1.15).bound();
-                self.mental.vision = (self.mental.vision * 1.5).bound();
+                self.mental.charisma = (self.mental.charisma * 1.1).bound();
+                self.mental.vision = (self.mental.vision * 1.25).bound();
                 self.defense.steal = (self.defense.steal * 1.2).bound();
             }
             Population::Pupparoll => {
@@ -676,7 +678,7 @@ impl Player {
                 self.athletics.vertical = (self.athletics.vertical * 1.25).bound();
                 self.technical.rebounds = (self.technical.rebounds * 1.25).bound();
                 self.mental.aggression = (self.mental.aggression * 0.85).bound();
-                self.offense.brawl = (self.offense.brawl * 1.25).bound();
+                self.offense.brawl = (self.offense.brawl * 1.15).bound();
             }
             Population::Octopulp => {
                 self.athletics.quickness = (self.athletics.quickness * 0.95).bound();

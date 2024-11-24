@@ -195,10 +195,10 @@ impl NewTeamScreen {
             "
         It's the year 2101. Corporations have taken over the world. 
         The only way to be free is to join a pirate crew and start plundering the galaxy.
-        The only mean of survival is to play basketball.
+        The only means of survival is to play basketball.
 
         Now it's your turn to go out there and make a name for yourself.
-        Create your crew and start wondering the galaxy in search of worthy basketball opponents.
+        Create your crew and start wandering the galaxy in search of worthy basketball opponents.
         
         Choose your team name, customize your ship, and select a worthy crew.
         You won't keep any leftover money, so spend wisely!
@@ -295,7 +295,7 @@ impl NewTeamScreen {
                 .collect_vec();
 
             let list = selectable_list(options);
-            frame.render_stateful_hoverable(
+            frame.render_stateful_interactive(
                 list.block(
                     default_block()
                         .border_style(UiStyle::DEFAULT)
@@ -333,7 +333,7 @@ impl NewTeamScreen {
                 .collect_vec();
 
             let list = selectable_list(options);
-            frame.render_stateful_hoverable(
+            frame.render_stateful_interactive(
                 list.block(
                     default_block()
                         .border_style(UiStyle::DEFAULT)
@@ -460,21 +460,21 @@ impl NewTeamScreen {
                 },
             );
 
-            frame.render_hoverable(
+            frame.render_interactive(
                 red,
                 color_split[0].inner(Margin {
                     horizontal: 1,
                     vertical: 1,
                 }),
             );
-            frame.render_hoverable(
+            frame.render_interactive(
                 green,
                 color_split[1].inner(Margin {
                     horizontal: 1,
                     vertical: 1,
                 }),
             );
-            frame.render_hoverable(
+            frame.render_interactive(
                 blue,
                 color_split[2].inner(Margin {
                     horizontal: 1,
@@ -515,7 +515,7 @@ impl NewTeamScreen {
                 .collect_vec();
 
             let list = selectable_list(options);
-            frame.render_stateful_hoverable(
+            frame.render_stateful_interactive(
                 list.block(
                     default_block()
                         .border_style(UiStyle::DEFAULT)
@@ -680,7 +680,7 @@ impl NewTeamScreen {
             ClickableListState::default().with_selected(Some(self.player_index))
         };
 
-        frame.render_stateful_hoverable(
+        frame.render_stateful_interactive(
             list.block(block.title(format!(
                 "Select {} players",
                 self.max_players_selected() - self.selected_players.len(),
@@ -749,12 +749,12 @@ impl NewTeamScreen {
             },
         )
         .set_style(UiStyle::OK);
-        frame.render_hoverable(yes_button, button_split[1]);
+        frame.render_interactive(yes_button, button_split[1]);
 
         let no_button =
             Button::new(UiText::NO, UiCallback::CancelGeneratePlayerTeam).set_style(UiStyle::ERROR);
 
-        frame.render_hoverable(no_button, button_split[2]);
+        frame.render_interactive(no_button, button_split[2]);
         frame.render_widget(thick_block().border_style(UiStyle::HIGHLIGHT), area);
     }
 

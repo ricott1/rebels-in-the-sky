@@ -236,7 +236,7 @@ impl GalaxyPanel {
                 .set_hover_style(UiStyle::DEFAULT)
             };
 
-            frame.render_hoverable(button, rect);
+            frame.render_interactive(button, rect);
         }
 
         Ok(())
@@ -361,7 +361,7 @@ impl GalaxyPanel {
         let split = Layout::vertical(constraints).split(area);
         for (idx, button) in buttons.iter().enumerate() {
             frame.render_widget(Clear, split[idx]);
-            frame.render_hoverable(button.clone(), split[idx]);
+            frame.render_interactive(button.clone(), split[idx]);
         }
 
         Ok(())
@@ -488,7 +488,7 @@ impl GalaxyPanel {
                 }));
 
             for (idx, (team_id, text, style)) in team_options.iter().enumerate() {
-                frame.render_hoverable(
+                frame.render_interactive(
                     Button::no_box(
                         Span::styled(text.clone(), style.clone()).into_left_aligned_line(),
                         UiCallback::GoToTeam {
@@ -510,7 +510,7 @@ impl GalaxyPanel {
                 }));
 
             for (idx, (player_id, text, style)) in player_options.iter().enumerate() {
-                frame.render_hoverable(
+                frame.render_interactive(
                     Button::no_box(
                         Span::styled(text.clone(), style.clone()).into_left_aligned_line(),
                         UiCallback::GoToPlayer {

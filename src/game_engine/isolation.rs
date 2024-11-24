@@ -119,7 +119,6 @@ impl EngineAction for Isolation {
                         iso.info.shortened_name(),
                         defender.info.shortened_name()
                     ),
-                    
                     format!(
                         "{} cuts through {} and the help defense.",
                         iso.info.shortened_name(),
@@ -184,7 +183,6 @@ impl EngineAction for Isolation {
                         iso.info.shortened_name(),
                         defender.info.shortened_name()
                     ),
-                    
                 ].choose(rng).expect("There should be one option").clone(),
                 start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),

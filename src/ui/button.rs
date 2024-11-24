@@ -237,11 +237,13 @@ impl InteractiveWidget for Button<'_> {
             && callback_registry.get_max_layer() == self.layer();
 
         if !self.disabled {
-            callback_registry.register_mouse_callback(
-                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
-                Some(inner),
-                self.on_click.clone(),
-            );
+            if self.is_hovered {
+                callback_registry.register_mouse_callback(
+                    crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                    Some(inner),
+                    self.on_click.clone(),
+                );
+            }
 
             if let Some(key) = self.hotkey {
                 callback_registry.register_keyboard_callback(key, self.on_click.clone());

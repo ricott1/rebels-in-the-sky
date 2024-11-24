@@ -477,7 +477,10 @@ impl InteractiveStatefulWidget for ClickableTable<'_> {
             None => area,
         };
 
-        if callback_registry.is_hovering(area) {
+        let is_hovered = callback_registry.is_hovering(area)
+            && callback_registry.get_max_layer() == self.layer();
+
+        if is_hovered {
             callback_registry.register_mouse_callback(
                 crossterm::event::MouseEventKind::ScrollDown,
                 None,

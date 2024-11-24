@@ -210,7 +210,7 @@ impl NetworkCallback {
         seed_info: SeedInfo,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
-            log::info!("Got seed info: {:#?}", seed_info);
+            log::info!("Got seed info");
             let event = SwarmPanelEvent {
                 timestamp,
                 peer_id,

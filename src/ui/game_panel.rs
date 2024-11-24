@@ -146,7 +146,7 @@ impl GamePanel {
 
         let list = selectable_list(options);
 
-        frame.render_stateful_hoverable(
+        frame.render_stateful_interactive(
             list.block(default_block().title("Games ↓/↑")),
             area,
             &mut ClickableListState::default().with_selected(Some(self.index)),
@@ -172,7 +172,7 @@ impl GamePanel {
             ))
             .set_hotkey(UiKey::PITCH_VIEW);
 
-        frame.render_hoverable(pitch_button, b_split[0]);
+        frame.render_interactive(pitch_button, b_split[0]);
 
         let text = if self.player_status_view {
             "Game stats"
@@ -190,7 +190,7 @@ impl GamePanel {
             ))
             .set_hotkey(UiKey::PLAYER_STATUS_VIEW);
 
-        frame.render_hoverable(player_status_button, b_split[1]);
+        frame.render_interactive(player_status_button, b_split[1]);
     }
 
     fn build_score_panel(

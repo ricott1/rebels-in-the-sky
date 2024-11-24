@@ -102,14 +102,18 @@ impl NetworkHandler {
         ];
 
         if let Some(ip) = seed_ip {
-            seed_addresses.push(
-                format!("/ip4/{ip}/tcp/{DEFAULT_SEED_PORT}")
-                    .parse()
-                    .expect("Invalid provided seed ip."),
-            );
+            if let Ok(address) = format!("/ip4/{ip}/tcp/{DEFAULT_SEED_PORT}").parse() {
+                seed_addresses.push(address);
+            } else if let Ok(address) = format!("/ip6/{ip}/tcp/{DEFAULT_SEED_PORT}").parse() {
+                seed_addresses.push(address);
+            }
         }
 
-        info!("Network handler started on port {}", tcp_port);
+        info!(
+            "Network handler started on port {} with {} seed addresses.",
+            tcp_port,
+            seed_addresses.len()
+        );
 
         Ok(Self {
             swarm,

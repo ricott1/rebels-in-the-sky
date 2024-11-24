@@ -67,7 +67,7 @@ impl EngineAction for Post {
                         defender.info.shortened_name()
                     ),
                     format!(
-                        "{} beats {} with a slick move and makes a strong move to the basket.",
+                        "{} beats {} with a slick step and makes a strong move to the basket.",
                         poster.info.shortened_name(),
                         defender.info.shortened_name()
                     ),

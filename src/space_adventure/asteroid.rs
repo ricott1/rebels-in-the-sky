@@ -1,3 +1,4 @@
+use super::collisions::HitBox;
 use super::networking::ImageType;
 use super::space_callback::SpaceCallback;
 use super::visual_effects::VisualEffect;

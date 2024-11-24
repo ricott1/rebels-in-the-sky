@@ -154,7 +154,8 @@ impl PlayerImage {
         } else if info.population == Population::Octopulp {
             match rng.gen_range(0..=1) {
                 0 => Some(BeardImage::Octobeard1),
-                _ => Some(BeardImage::Octobeard2),
+                1 => Some(BeardImage::Octobeard2),
+                _ => unreachable!(),
             }
         } else {
             match rng.gen_range(1..=6) {
@@ -299,7 +300,8 @@ impl PlayerImage {
     pub fn set_wooden_leg(&mut self, rng: &mut ChaCha8Rng) {
         self.wooden_leg = match rng.gen_range(0..=1) {
             0 => Some(WoodenLegImage::Left),
-            _ => Some(WoodenLegImage::Right),
+            1 => Some(WoodenLegImage::Right),
+            _ => unreachable!(),
         };
     }
 
@@ -308,11 +310,13 @@ impl PlayerImage {
             Population::Galdari => match rng.gen_range(0..=2) {
                 0 => Some(EyePatchImage::LeftLow),
                 1 => Some(EyePatchImage::RightLow),
-                _ => Some(EyePatchImage::Central),
+                2 => Some(EyePatchImage::Central),
+                _ => unreachable!(),
             },
             Population::Polpett | Population::Yardalaim => match rng.gen_range(0..=1) {
                 0 => Some(EyePatchImage::LeftLow),
-                _ => Some(EyePatchImage::RightLow),
+                1 => Some(EyePatchImage::RightLow),
+                _ => unreachable!(),
             },
             Population::Octopulp => {
                 if self.head == HeadImage::Octopulp1 {
@@ -320,16 +324,20 @@ impl PlayerImage {
                 } else if self.head == HeadImage::Octopulp2 {
                     match rng.gen_range(0..=1) {
                         0 => Some(EyePatchImage::LeftLow),
-                        _ => Some(EyePatchImage::RightLow),
+                        1 => Some(EyePatchImage::RightLow),
+                        _ => unreachable!(),
                     }
                 } else {
                     unreachable!()
                 }
             }
             Population::Pupparoll => Some(EyePatchImage::Pupparoll),
-            _ => match rng.gen_range(0..=1) {
-                0 => Some(EyePatchImage::LeftLow),
-                _ => Some(EyePatchImage::RightLow),
+            _ => match rng.gen_range(0..=3) {
+                0 => Some(EyePatchImage::LeftHigh),
+                1 => Some(EyePatchImage::LeftLow),
+                2 => Some(EyePatchImage::RightHigh),
+                3 => Some(EyePatchImage::RightLow),
+                _ => unreachable!(),
             },
         };
     }
@@ -338,12 +346,14 @@ impl PlayerImage {
         self.hook = if population == Population::Pupparoll {
             match rng.gen_range(0..=1) {
                 0 => Some(HookImage::LeftPupparoll),
-                _ => Some(HookImage::RightPupparoll),
+                1 => Some(HookImage::RightPupparoll),
+                _ => unreachable!(),
             }
         } else {
             match rng.gen_range(0..=1) {
                 0 => Some(HookImage::Left),
-                _ => Some(HookImage::Right),
+                1 => Some(HookImage::Right),
+                _ => unreachable!(),
             }
         };
     }

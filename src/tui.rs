@@ -103,7 +103,6 @@ impl Tui<SSHWriterProxy, SSHEventHandler> {
         };
 
         tui.init()?;
-        tui.resize(UI_SCREEN_SIZE)?;
         Ok(tui)
     }
 }
@@ -129,8 +128,8 @@ where
 
         // Define a custom panic hook to reset the terminal properties.
         // This way, you won't have your terminal messed up if an unexpected error happens.
-        let panic_hook = panic::take_hook();
         if self.tui_type == TuiType::Local {
+            let panic_hook = panic::take_hook();
             panic::set_hook(Box::new(move |panic| {
                 Self::reset().expect("failed to reset the terminal");
                 panic_hook(panic);

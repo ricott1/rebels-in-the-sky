@@ -236,12 +236,14 @@ impl Ui {
                 return Some(UiCallback::ToggleUiDebugMode);
             }
 
-            UiKey::NEXT_TAB if self.state == UiState::Main => {
+            UiKey::NEXT_TAB if self.state == UiState::Main && self.popup_messages.len() == 0 => {
                 self.next_tab();
                 None
             }
 
-            UiKey::PREVIOUS_TAB if self.state == UiState::Main => {
+            UiKey::PREVIOUS_TAB
+                if self.state == UiState::Main && self.popup_messages.len() == 0 =>
+            {
                 self.previous_tab();
                 None
             }
@@ -404,7 +406,7 @@ impl Ui {
                         )
                     };
 
-                    ui_frame.render_hoverable(button, tab_split[idx]);
+                    ui_frame.render_interactive(button, tab_split[idx]);
                 }
 
                 active_render
@@ -531,7 +533,7 @@ impl Ui {
         );
 
         if let Some(audio_player) = &audio_player {
-            frame.render_hoverable(
+            frame.render_interactive(
                 Button::no_box(
                     format!(
                         " {}: Turn radio {} ",
@@ -548,7 +550,7 @@ impl Ui {
                 split[1],
             );
 
-            frame.render_hoverable(
+            frame.render_interactive(
                 Button::no_box(
                     format!(" {} ", UiKey::PREVIOUS_RADIO.to_string()),
                     UiCallback::PreviousRadio,
@@ -557,7 +559,7 @@ impl Ui {
                 split[2],
             );
 
-            frame.render_hoverable(
+            frame.render_interactive(
                 Button::no_box(
                     format!(" {} ", UiKey::NEXT_RADIO.to_string()),
                     UiCallback::NextRadio,

@@ -55,7 +55,10 @@ impl AppServer {
     }
 
     pub async fn run(&mut self) -> AppResult<()> {
-        println!("Starting SSH server. Press Ctrl-C to exit.");
+        println!(
+            "Starting SSH server on port {}. Press Ctrl-C to exit.",
+            SERVER_SSH_PORT
+        );
 
         let signing_key = load_keys().unwrap_or_else(|_| {
             let key_pair = russh_keys::key::KeyPair::generate_ed25519();

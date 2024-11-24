@@ -392,14 +392,12 @@ impl App {
                             text: format!("Failed to send own team to peers: {}", e),
                         });
                     }
-                } else {
-                    if let Err(e) = network_handler.dial_seed() {
-                        self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
-                            timestamp: Tick::now(),
-                            peer_id: None,
-                            text: format!("Failed to dial seed: {}", e),
-                        });
-                    }
+                } else if let Err(e) = network_handler.dial_seed() {
+                    self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
+                        timestamp: Tick::now(),
+                        peer_id: None,
+                        text: format!("Failed to dial seed: {}", e),
+                    });
                 }
             }
         }

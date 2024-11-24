@@ -40,6 +40,7 @@ pub type ResourceMap = HashMap<Resource, u32>;
 pub trait StorableResourceMap {
     fn value(&self, resource: &Resource) -> u32;
     fn used_storage_capacity(&self) -> u32;
+    fn used_fuel_capacity(&self) -> u32;
     fn update(&mut self, resource: Resource, amount: i32, max_capacity: u32) -> AppResult<()>;
     fn add(&mut self, resource: Resource, amount: u32, max_capacity: u32) -> AppResult<()>;
     fn saturating_add(&mut self, resource: Resource, amount: u32, max_capacity: u32);
@@ -52,7 +53,19 @@ impl StorableResourceMap for ResourceMap {
     }
 
     fn used_storage_capacity(&self) -> u32 {
-        self.iter().map(|(k, v)| k.to_storing_space() * v).sum()
+        self.iter()
+            .map(|(k, v)| {
+                if *k == Resource::FUEL {
+                    0
+                } else {
+                    k.to_storing_space() * v
+                }
+            })
+            .sum()
+    }
+
+    fn used_fuel_capacity(&self) -> u32 {
+        self.value(&Resource::FUEL) * Resource::FUEL.to_storing_space()
     }
 
     fn update(&mut self, resource: Resource, amount: i32, max_capacity: u32) -> AppResult<()> {
@@ -66,12 +79,17 @@ impl StorableResourceMap for ResourceMap {
     }
 
     fn add(&mut self, resource: Resource, amount: u32, max_capacity: u32) -> AppResult<()> {
-        if self.used_storage_capacity() + resource.to_storing_space() * amount > max_capacity {
+        let used_capacity = if resource == Resource::FUEL {
+            self.used_fuel_capacity()
+        } else {
+            self.used_storage_capacity()
+        };
+        if used_capacity + resource.to_storing_space() * amount > max_capacity {
             log::info!(
-                "Adding {} {} used is {}, adding extra {}, max is {}",
+                "Adding {} {}, used is {}, adding extra {}, max is {}",
                 amount,
                 resource,
-                self.used_storage_capacity(),
+                used_capacity,
                 resource.to_storing_space() * amount,
                 max_capacity
             );
@@ -91,7 +109,12 @@ impl StorableResourceMap for ResourceMap {
         let max_amount = if resource.to_storing_space() == 0 {
             amount
         } else {
-            amount.min((max_capacity - self.used_storage_capacity()) / resource.to_storing_space())
+            let used_capacity = if resource == Resource::FUEL {
+                self.used_fuel_capacity()
+            } else {
+                self.used_storage_capacity()
+            };
+            amount.min((max_capacity - used_capacity) / resource.to_storing_space())
         };
 
         self.entry(resource)

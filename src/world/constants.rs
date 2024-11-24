@@ -66,11 +66,6 @@ pub const SPEED_PENALTY_PER_UNIT_STORAGE: f32 = 1.0 / 6_000.0; // 6_000 storage 
 
 pub const LANDING_TIME_OVERHEAD: Tick = 10 * MINUTES;
 
-pub const REPUTATION_BONUS_WINNER: f32 = 0.5;
-pub const REPUTATION_BONUS_LOSER: f32 = -0.2;
-pub const REPUTATION_BONUS_DRAW: f32 = 0.25;
-pub const TEAM_REPUTATION_BONUS_MODIFIER: f32 = 0.000002;
-
 pub const QUICK_EXPLORATION_TIME: Tick = 1 * HOURS;
 pub const LONG_EXPLORATION_TIME: Tick = 8 * HOURS;
 pub const ASTEROID_DISCOVERY_PROBABILITY: f64 = 0.15;
@@ -119,6 +114,20 @@ impl MoraleModifier {
     pub const MEDIUM_BONUS: f32 = 1.0;
     pub const HIGH_BONUS: f32 = 2.5;
     pub const SEVERE_BONUS: f32 = 5.0;
+}
+
+pub struct ReputationModifier;
+impl ReputationModifier {
+    pub const SEVERE_MALUS: f32 = -1.5;
+    pub const HIGH_MALUS: f32 = -0.5;
+    pub const MEDIUM_MALUS: f32 = -0.2;
+    pub const SMALL_MALUS: f32 = -0.1;
+    pub const NONE: f32 = 0.0;
+    pub const SMALL_BONUS: f32 = 0.1;
+    pub const MEDIUM_BONUS: f32 = 0.2;
+    pub const HIGH_BONUS: f32 = 0.5;
+    pub const SEVERE_BONUS: f32 = 1.5;
+    pub const BONUS_PER_DISTANCE: f32 = 0.000002;
 }
 
 pub const MAX_TIREDNESS: f32 = MAX_SKILL;

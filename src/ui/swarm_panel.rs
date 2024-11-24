@@ -208,10 +208,10 @@ impl SwarmPanel {
             SwarmView::Ranking => ranking_button.select(),
         }
 
-        frame.render_hoverable(chat_button, split[0]);
-        frame.render_hoverable(requests_button, split[1]);
-        frame.render_hoverable(log_button, split[2]);
-        frame.render_hoverable(ranking_button, split[3]);
+        frame.render_interactive(chat_button, split[0]);
+        frame.render_interactive(requests_button, split[1]);
+        frame.render_interactive(log_button, split[2]);
+        frame.render_interactive(ranking_button, split[3]);
 
         let mut items: Vec<ListItem> = vec![];
 
@@ -240,9 +240,9 @@ impl SwarmPanel {
         let list = List::new(items);
         frame.render_widget(list.block(default_block().title("Peers")), split[4]);
 
-        let dial_button = Button::new("Ping", UiCallback::DialSeed);
+        let dial_button = Button::new("Ping", UiCallback::Ping);
 
-        frame.render_hoverable(dial_button, split[5]);
+        frame.render_interactive(dial_button, split[5]);
     }
 
     fn build_challenge_list(
@@ -294,7 +294,7 @@ impl SwarmPanel {
             } else {
                 &challenge.home_team_in_game
             };
-            frame.render_hoverable(
+            frame.render_interactive(
                 Button::new(
                     format!(
                         "{} {} ({})",
@@ -329,7 +329,7 @@ impl SwarmPanel {
                 if idx == 0 {
                     accept_button = accept_button.set_hotkey(UiKey::YES_TO_DIALOG);
                 }
-                frame.render_hoverable(accept_button, line_split[1]);
+                frame.render_interactive(accept_button, line_split[1]);
                 let mut decline_button = Button::new(
                     format!("{:6^}", UiText::NO),
                     UiCallback::DeclineChallenge {
@@ -341,7 +341,7 @@ impl SwarmPanel {
                 if idx == 0 {
                     decline_button = decline_button.set_hotkey(UiKey::NO_TO_DIALOG);
                 }
-                frame.render_hoverable(decline_button, line_split[2]);
+                frame.render_interactive(decline_button, line_split[2]);
             }
         }
         Ok(())
@@ -386,7 +386,7 @@ impl SwarmPanel {
 
             let proposer_player = &trade.proposer_player;
             let target_player = &trade.target_player;
-            frame.render_hoverable(
+            frame.render_interactive(
                 Button::new(
                     format!(
                         "{} {} ⇄ {} {}",
@@ -417,7 +417,7 @@ impl SwarmPanel {
                 if idx == 0 {
                     accept_button = accept_button.set_hotkey(UiKey::YES_TO_DIALOG);
                 }
-                frame.render_hoverable(accept_button, line_split[1]);
+                frame.render_interactive(accept_button, line_split[1]);
                 let mut decline_button = Button::new(
                     format!("{:6^}", UiText::NO),
                     UiCallback::DeclineTrade {
@@ -433,7 +433,7 @@ impl SwarmPanel {
                 if idx == 0 {
                     decline_button = decline_button.set_hotkey(UiKey::NO_TO_DIALOG);
                 }
-                frame.render_hoverable(decline_button, line_split[2]);
+                frame.render_interactive(decline_button, line_split[2]);
             }
         }
         Ok(())
@@ -482,7 +482,7 @@ impl SwarmPanel {
                 };
 
                 let text = format!(
-                    " {}. {:<MAX_NAME_LENGTH$} {}",
+                    " {:>2}. {:<MAX_NAME_LENGTH$} {}",
                     idx + 1,
                     &ranking.team.name,
                     rating.stars(),
@@ -502,7 +502,7 @@ impl SwarmPanel {
 
         let list = selectable_list(options);
 
-        frame.render_stateful_hoverable(
+        frame.render_stateful_interactive(
             list.block(default_block().title("Top 10 Crews by Reputation")),
             h_split[0],
             &mut ClickableListState::default().with_selected(Some(team_ranking_index)),
@@ -544,7 +544,7 @@ impl SwarmPanel {
                 };
 
                 let text = format!(
-                    " {}. {:<name_length$} {}",
+                    " {:>2}. {:<name_length$} {}",
                     idx + 1,
                     player.info.full_name(),
                     player.stars()
@@ -564,7 +564,7 @@ impl SwarmPanel {
 
         let list = selectable_list(options);
 
-        frame.render_stateful_hoverable(
+        frame.render_stateful_interactive(
             list.block(default_block().title("Top 10 Pirates by Reputation")),
             h_split[0],
             &mut ClickableListState::default().with_selected(Some(player_ranking_index)),
@@ -717,8 +717,8 @@ impl Screen for SwarmPanel {
                 let command = split_input.clone().next()?;
 
                 match command {
-                    "/dial" => {
-                        return Some(UiCallback::DialSeed);
+                    "/ping" => {
+                        return Some(UiCallback::Ping);
                     }
                     "/sync" => {
                         return Some(UiCallback::Sync);

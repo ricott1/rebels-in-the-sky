@@ -19,7 +19,7 @@ pub struct UiFrame<'a, 'b> {
 
 impl<'a, 'b> UiFrame<'a, 'b> {
     fn is_hovered(&self, rect: Rect, layer: usize) -> bool {
-        self.is_hovering(rect) && layer == self.get_max_layer()
+        self.callback_registry.is_hovering(rect) && layer == self.get_max_layer()
     }
 
     pub fn set_max_layer(&mut self, layer: usize) {
@@ -129,7 +129,7 @@ impl<'a, 'b> UiFrame<'a, 'b> {
         self.inner.render_stateful_widget(widget, area, state);
     }
 
-    pub fn render_hoverable<W>(&mut self, mut widget: W, area: Rect)
+    pub fn render_interactive<W>(&mut self, mut widget: W, area: Rect)
     where
         W: InteractiveWidget,
     {
@@ -144,8 +144,12 @@ impl<'a, 'b> UiFrame<'a, 'b> {
         self.render_widget(widget, area);
     }
 
-    pub fn render_stateful_hoverable<W>(&mut self, mut widget: W, area: Rect, state: &mut W::State)
-    where
+    pub fn render_stateful_interactive<W>(
+        &mut self,
+        mut widget: W,
+        area: Rect,
+        state: &mut W::State,
+    ) where
         W: InteractiveStatefulWidget,
     {
         let is_hovered = self.is_hovered(area, widget.layer());

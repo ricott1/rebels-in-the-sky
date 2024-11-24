@@ -52,7 +52,10 @@ impl CrosstermEventHandler {
                             CrosstermEvent::Resize(w, h) => {
                                 sender.send(TerminalEvent::Resize(w, h)).await
                             }
-                            _ => unimplemented!(),
+                            _ => {
+                                log::info!("Crossterm event not implemented");
+                                Ok(())
+                            }
                         }
                         .expect("failed to send terminal event")
                     }
