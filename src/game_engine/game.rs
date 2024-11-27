@@ -475,6 +475,20 @@ impl<'game> Game {
         }
     }
 
+    pub fn attacking_team(&self) -> &TeamInGame {
+        match self.possession {
+            Possession::Home => &self.home_team_in_game,
+            Possession::Away => &self.away_team_in_game,
+        }
+    }
+
+    pub fn defending_team(&self) -> &TeamInGame {
+        match self.possession {
+            Possession::Home => &self.away_team_in_game,
+            Possession::Away => &self.home_team_in_game,
+        }
+    }
+
     fn get_rng_seed(&self) -> [u8; 32] {
         let mut seed = [0; 32];
         seed[0..16].copy_from_slice(self.id.as_bytes());

@@ -366,10 +366,11 @@ impl TeamListPanel {
             .split(ship_buttons_split[1]);
 
         if team.id != world.own_team_id {
-            if let Ok(go_to_team_current_planet_button) =
-                go_to_team_current_planet_button(world, &team.id)
-            {
-                frame.render_interactive(go_to_team_current_planet_button, button_split[0]);
+            match go_to_team_current_planet_button(world, &team.id) {
+                Ok(go_to_team_current_planet_button) => {
+                    frame.render_interactive(go_to_team_current_planet_button, button_split[0])
+                }
+                Err(e) => log::error!("go_to_team_current_planet_button error: {} ", e.to_string()),
             }
 
             render_challenge_button(world, team, true, frame, button_split[1])?;
@@ -377,10 +378,10 @@ impl TeamListPanel {
 
         render_spaceship_description(
             &team,
+            world.team_rating(&team.id).unwrap_or_default(),
             team.id == world.own_team_id,
             &mut self.gif_map,
             self.tick,
-            world,
             frame,
             bottom_split[1],
         );

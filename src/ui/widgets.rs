@@ -10,6 +10,7 @@ use super::{
     ui_callback::UiCallback,
     utils::format_satoshi,
 };
+use crate::world::skill::{Skill, MAX_SKILL, MIN_SKILL};
 use crate::{
     game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
     image::{player::PLAYER_IMAGE_WIDTH, spaceship::SPACESHIP_IMAGE_WIDTH},
@@ -341,7 +342,7 @@ pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
     match team.current_location {
         TeamLocation::OnPlanet { planet_id } => {
             let planet = world.get_planet_or_err(&planet_id)?;
-            let needed_fuel = (duration as f32 * team.spaceship_fuel_consumption()) as u32;
+            let needed_fuel = (duration as f32 * team.spaceship_fuel_consumption_per_tick()) as u32;
             button = button.set_hover_text(
                 format!(
                     "Explore the space around {} on autopilot (need {} t of fuel). Hope to find resources, free pirates or more...",
@@ -581,7 +582,9 @@ pub fn get_durability_spans<'a>(value: u32, max_value: u32, bars_length: usize) 
     let length = (value as f32 / max_value as f32 * bars_length as f32).round() as usize;
     let bars = format!("{}{}", "▰".repeat(length), "▱".repeat(bars_length - length),);
 
-    let style = (20.0 * (value as f32 / max_value as f32)).bound().style();
+    let style = (MAX_SKILL * (value as f32 / max_value as f32))
+        .bound()
+        .style();
 
     vec![
         Span::raw("Hull  "),
@@ -600,9 +603,11 @@ pub fn get_charge_spans<'a>(
     let bars = format!("{}{}", "▰".repeat(length), "▱".repeat(bars_length - length),);
 
     let style = if is_recharging {
-        0.0.style()
+        MIN_SKILL.style()
     } else {
-        (20.0 * (value as f32 / max_value as f32)).bound().style()
+        (MAX_SKILL * (value as f32 / max_value as f32))
+            .bound()
+            .style()
     };
 
     vec![
@@ -617,14 +622,15 @@ pub fn get_charge_spans<'a>(
 }
 
 pub fn get_fuel_spans<'a>(fuel: u32, fuel_capacity: u32, bars_length: usize) -> Vec<Span<'a>> {
-    let fuel_length = (fuel as f32 / fuel_capacity as f32 * bars_length as f32).round() as usize;
+    let fuel_length = (fuel.min(fuel_capacity) as f32 / fuel_capacity as f32 * bars_length as f32)
+        .round() as usize;
     let fuel_bars = format!(
         "{}{}",
         "▰".repeat(fuel_length),
-        "▱".repeat(bars_length - fuel_length),
+        "▱".repeat(bars_length.saturating_sub(fuel_length)),
     );
 
-    let fuel_style = (20.0 * (fuel as f32 / fuel_capacity as f32))
+    let fuel_style = (MAX_SKILL * (fuel as f32 / fuel_capacity as f32))
         .bound()
         .style();
 
@@ -637,10 +643,10 @@ pub fn get_fuel_spans<'a>(fuel: u32, fuel_capacity: u32, bars_length: usize) -> 
 
 pub fn render_spaceship_description(
     team: &Team,
+    team_rating: Skill,
     full_info: bool,
     gif_map: &mut GifMap,
     tick: usize,
-    world: &World,
     frame: &mut UiFrame,
     area: Rect,
 ) {
@@ -693,7 +699,7 @@ pub fn render_spaceship_description(
             )),
             Line::from(format!(
                 "Consumption {:.2} t/h",
-                team.spaceship_fuel_consumption() * HOURS as f32
+                team.spaceship_fuel_consumption_per_tick() * HOURS as f32
             )),
             Line::from(format!(
                 "Max distance {:.3} AU",
@@ -721,10 +727,7 @@ pub fn render_spaceship_description(
         };
 
         Paragraph::new(vec![
-            Line::from(format!(
-                "Rating {}",
-                world.team_rating(&team.id).unwrap_or_default().stars()
-            )),
+            Line::from(format!("Rating {}", team_rating.stars(),)),
             Line::from(format!("Reputation {}", team.reputation.stars())),
             Line::from(format!("Treasury {}", format_satoshi(team.balance()))),
             Line::from(game_record),
@@ -949,20 +952,20 @@ pub fn render_spaceship_upgrade(
             Span::raw(format!(
                 "{:<12} {:.3}",
                 "Consumption",
-                team.spaceship.fuel_consumption(storage_units) * HOURS as f32
+                team.spaceship.fuel_consumption_per_tick(storage_units) * HOURS as f32
             )),
             Span::raw(" --> "),
             Span::styled(
                 format!(
                     "{:.3}",
-                    upgraded_ship.fuel_consumption(storage_units) * HOURS as f32
+                    upgraded_ship.fuel_consumption_per_tick(storage_units) * HOURS as f32
                 ),
-                if upgraded_ship.fuel_consumption(storage_units)
-                    < team.spaceship.fuel_consumption(storage_units)
+                if upgraded_ship.fuel_consumption_per_tick(storage_units)
+                    < team.spaceship.fuel_consumption_per_tick(storage_units)
                 {
                     UiStyle::OK
-                } else if upgraded_ship.fuel_consumption(storage_units)
-                    > team.spaceship.fuel_consumption(storage_units)
+                } else if upgraded_ship.fuel_consumption_per_tick(storage_units)
+                    > team.spaceship.fuel_consumption_per_tick(storage_units)
                 {
                     UiStyle::ERROR
                 } else {
@@ -1103,7 +1106,7 @@ pub fn render_player_description(
     let morale_style = match morale {
         x if x > 1.75 * MORALE_THRESHOLD_FOR_LEAVING => UiStyle::OK,
         x if x > MORALE_THRESHOLD_FOR_LEAVING => UiStyle::WARNING,
-        x if x > 0.0 => UiStyle::ERROR,
+        x if x > MIN_SKILL => UiStyle::ERROR,
         _ => UiStyle::UNSELECTABLE,
     };
 

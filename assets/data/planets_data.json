@@ -76,7 +76,7 @@
         "revolution_period": 180,
         "gravity": 2,
         "asteroid_probability": 0.3,
-        "planet_type": 8,
+        "planet_type": 2,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0001-000000000001",
         "axis": [31.0, 69.0]
@@ -101,7 +101,7 @@
         "revolution_period": 360,
         "gravity": 3,
         "asteroid_probability": 0.1,
-        "planet_type": 8,
+        "planet_type": 5,
         "satellites": ["71a43700-0000-0000-0003-000000000003", "71a43700-0000-0000-0003-000000000004"],
         "satellite_of": "71a43700-0000-0000-0001-000000000001",
         "axis": [68.0, 24.0]
@@ -123,7 +123,7 @@
         "revolution_period": 360,
         "gravity": 3,
         "asteroid_probability": 0.3,
-        "planet_type": 8,
+        "planet_type": 2,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0002-000000000006",
         "axis": [44.0, 44.0]
@@ -145,7 +145,7 @@
         "revolution_period": 360,
         "gravity": 2,
         "asteroid_probability": 0.15,
-        "planet_type": 8,
+        "planet_type": 2,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0002-000000000006",
         "axis": [40.0, 46.0]

@@ -20,7 +20,6 @@ use crate::{
     world::{
         constants::*,
         jersey::{Jersey, JerseyStyle},
-        skill::Rated,
         spaceship::{Spaceship, SpaceshipPrefab},
         world::World,
     },
@@ -247,7 +246,7 @@ impl NewTeamScreen {
             Line::from(format!("Max Tank: {} t", spaceship.fuel_capacity())),
             Line::from(format!(
                 "Bare consumption: {:.2} t/h",
-                spaceship.fuel_consumption(storage_units) * HOURS as f32
+                spaceship.fuel_consumption_per_tick(storage_units) * HOURS as f32
             )),
             Line::from(format!(
                 "Max distance: {:.2} AU",
@@ -364,7 +363,7 @@ impl NewTeamScreen {
             style,
             color: self.get_team_colors(),
         };
-        player.image.set_jersey(&jersey, &player.info);
+        player.set_jersey(&jersey);
 
         // We cannot use the gif map because we are changing the jersey style
         if let Ok(gif) = player.compose_image() {
@@ -581,7 +580,7 @@ impl NewTeamScreen {
 
     fn get_remaining_balance(&self) -> i32 {
         let hiring_costs = if let Some(planet_players) =
-            &self.planet_players.get(&self.planet_ids[self.planet_index])
+            self.planet_players.get(&self.planet_ids[self.planet_index])
         {
             let mut hiring_costs = 0 as i32;
             for (player_id, hire_cost) in planet_players.iter() {
@@ -595,17 +594,18 @@ impl NewTeamScreen {
             0
         };
 
-        let ship_cost = self.selected_ship().cost();
+        let ship_cost = if self.state >= CreationState::ShipModel {
+            self.selected_ship().cost()
+        } else {
+            0
+        };
         INITIAL_TEAM_BALANCE as i32 - hiring_costs - ship_cost as i32
     }
 
     fn render_remaining_balance(&mut self, frame: &mut UiFrame, area: Rect) {
         let remaining_balance = self.get_remaining_balance();
-        let text = format!(
-            " Remaining balance: {}{:>}",
-            if remaining_balance >= 0 { "" } else { "-" },
-            format_satoshi(remaining_balance.abs() as u32)
-        );
+        // We don't use format_satoshi for aesthetic reasons.
+        let text = format!(" Remaining balance: {:>} sat", remaining_balance);
 
         let block = if remaining_balance >= 0 {
             thick_block().border_style(UiStyle::OK)
@@ -615,7 +615,12 @@ impl NewTeamScreen {
         frame.render_widget(Paragraph::new(text).block(block), area);
     }
 
-    fn render_player_list(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn render_player_list(
+        &mut self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         if self.state < CreationState::Players {
             frame.render_widget(
                 default_block()
@@ -626,11 +631,11 @@ impl NewTeamScreen {
                     .style(UiStyle::UNSELECTABLE),
                 area,
             );
-            return;
+            return Ok(());
         }
 
         let planet_id = self.planet_ids[self.planet_index];
-        let planet_players = &self.planet_players.get(&planet_id).unwrap();
+        let planet_players = self.planet_players.get(&planet_id).unwrap();
         let options = planet_players
             .iter()
             .map(|&player_data| {
@@ -647,7 +652,7 @@ impl NewTeamScreen {
                 {
                     return ("".to_string(), style);
                 }
-                let player = world.get_player(&player_id).unwrap();
+                let player = world.get_player_or_err(&player_id).unwrap();
                 let full_name = player.info.full_name();
 
                 let max_width = 2 * MAX_NAME_LENGTH;
@@ -688,18 +693,23 @@ impl NewTeamScreen {
             area,
             &mut state,
         );
+        Ok(())
     }
 
-    fn render_player(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn render_player(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         let planet_id = self.planet_ids[self.planet_index];
-        let planet_players = &self.planet_players.get(&planet_id).unwrap();
-        let player = world
-            .get_player(&planet_players[self.player_index].0)
-            .unwrap();
+        let planet_players = self.planet_players.get(&planet_id).unwrap();
+        let player = world.get_player_or_err(&planet_players[self.player_index].0)?;
         render_player_description(player, &mut self.gif_map, self.tick, world, frame, area);
+        Ok(())
     }
 
-    fn render_confirm_box(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn render_confirm_box(
+        &mut self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         let split = Layout::vertical([
             Constraint::Min(1),
             Constraint::Length(4),
@@ -708,9 +718,7 @@ impl NewTeamScreen {
         ])
         .split(area);
         let name = self.team_name_textarea.lines()[0].clone();
-        let planet = world
-            .get_planet_or_err(&self.planet_ids[self.planet_index])
-            .unwrap();
+        let planet = world.get_planet_or_err(&self.planet_ids[self.planet_index])?;
         let text = Paragraph::new(vec![
             Line::from(Span::raw(format!("{} from {}", name, planet.name))),
             Line::from(Span::raw("Ready to sail the cosmic waves?")),
@@ -756,12 +764,13 @@ impl NewTeamScreen {
 
         frame.render_interactive(no_button, button_split[2]);
         frame.render_widget(thick_block().border_style(UiStyle::HIGHLIGHT), area);
+        Ok(())
     }
 
     fn max_players_selected(&self) -> usize {
         // self.selected_players.len() >= self.selected_ship().crew_capacity() as usize
         let planet_id = self.planet_ids[self.planet_index];
-        let planet_players = &self.planet_players.get(&planet_id).unwrap();
+        let planet_players = self.planet_players.get(&planet_id).unwrap();
         min(INITIAL_TEAM_SIZE, planet_players.len())
     }
     fn enough_players_selected(&self) -> bool {
@@ -795,7 +804,7 @@ impl Screen for NewTeamScreen {
                     planet_players.sort_by(|a, b| {
                         let p1 = world.get_player(&a.0).unwrap();
                         let p2 = world.get_player(&b.0).unwrap();
-                        p2.rating().cmp(&p1.rating())
+                        p2.hire_cost(0.0).cmp(&p1.hire_cost(0.0))
                     });
                 }
             }
@@ -888,9 +897,9 @@ impl Screen for NewTeamScreen {
             self.render_spaceship(frame, v_split[2]);
         }
 
-        self.render_player_list(frame, world, h_split[7]);
+        self.render_player_list(frame, world, h_split[7])?;
         if self.state == CreationState::Players {
-            self.render_player(frame, world, v_split[2]);
+            self.render_player(frame, world, v_split[2])?;
         }
 
         if self.state >= CreationState::Done {
@@ -908,7 +917,7 @@ impl Screen for NewTeamScreen {
             };
             let confirm_box = frame.to_screen_rect(Rect::new(x, y, width, height));
             frame.render_widget(Clear, confirm_box);
-            self.render_confirm_box(frame, world, confirm_box);
+            self.render_confirm_box(frame, world, confirm_box)?;
         }
         Ok(())
     }
@@ -1074,7 +1083,7 @@ impl Screen for NewTeamScreen {
                     CreationState::Players => match key_event.code {
                         KeyCode::Enter => {
                             let planet_id = self.planet_ids[self.planet_index];
-                            let planet_players = &self.planet_players.get(&planet_id).unwrap();
+                            let planet_players = self.planet_players.get(&planet_id).unwrap();
                             let (player_id, _) = planet_players[self.player_index];
                             if self.selected_players.contains(&player_id) {
                                 self.selected_players.retain(|&x| x != player_id);
@@ -1141,8 +1150,11 @@ impl SplitPanel for NewTeamScreen {
             CreationState::ShipModel => SPACESHIP_MODELS.len(),
             CreationState::Players => {
                 let planet_id = self.planet_ids[self.planet_index];
-                let planet_players = self.planet_players.get(&planet_id).unwrap();
-                planet_players.len()
+                if let Some(planet_players) = self.planet_players.get(&planet_id) {
+                    planet_players.len()
+                } else {
+                    0
+                }
             }
             _ => 0,
         }

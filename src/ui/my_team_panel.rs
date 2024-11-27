@@ -365,7 +365,7 @@ impl MyTeamPanel {
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Length(3),
+            Constraint::Min(3),
         ])
         .split(area.inner(Margin {
             horizontal: 1,
@@ -484,24 +484,20 @@ impl MyTeamPanel {
             }
         }
 
-        let mut info_spans = vec![];
-
-        info_spans.append(&mut get_fuel_spans(
-            team.fuel(),
-            team.fuel_capacity(),
-            BARS_LENGTH,
-        ));
-        info_spans.push(Span::raw(" "));
-        info_spans.append(&mut get_storage_spans(
-            &team.resources,
-            team.spaceship.storage_capacity(),
-            BARS_LENGTH,
-        ));
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(""),
                 Line::from(format!("Treasury {}", format_satoshi(team.balance()))),
-                Line::from(info_spans),
+                Line::from(get_fuel_spans(
+                    team.fuel(),
+                    team.fuel_capacity(),
+                    BARS_LENGTH,
+                )),
+                Line::from(get_storage_spans(
+                    &team.resources,
+                    team.spaceship.storage_capacity(),
+                    BARS_LENGTH,
+                )),
             ]),
             button_split[5].inner(Margin {
                 horizontal: 1,
@@ -577,6 +573,7 @@ impl MyTeamPanel {
                 Span::raw(format!("{:>5} t", team.resources.value(&Resource::SCRAPS))),
             ]),
         ]);
+
         frame.render_widget(default_block().title("Info"), split[0]);
         frame.render_widget(
             info,
@@ -600,7 +597,7 @@ impl MyTeamPanel {
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
                 .split(btm_split[1]);
 
-        let offense_tactic_button = Button::new(
+        let tactic_button = Button::new(
             format!("tactic: {}", team.game_tactic),
             UiCallback::SetTeamTactic {
                 tactic: team.game_tactic.next(),
@@ -612,7 +609,7 @@ impl MyTeamPanel {
             team.game_tactic.description()
         ))
         .set_hotkey(UiKey::SET_TACTIC);
-        frame.render_interactive(offense_tactic_button, top_button_split[0]);
+        frame.render_interactive(tactic_button, top_button_split[0]);
 
         let can_change_training_focus = team.can_change_training_focus();
         let mut training_button = Button::new(
@@ -664,11 +661,9 @@ impl MyTeamPanel {
                 duration,
                 ..
             } => {
-                let countdown = if started + duration > world.last_tick_short_interval {
-                    (started + duration - world.last_tick_short_interval).formatted()
-                } else {
-                    (0 as Tick).formatted()
-                };
+                let countdown = (started + duration)
+                    .saturating_sub(world.last_tick_short_interval)
+                    .formatted();
                 self.render_travelling_spaceship(frame, world, split[1], &to, countdown)?
             }
             TeamLocation::Exploring {
@@ -677,11 +672,9 @@ impl MyTeamPanel {
                 duration,
                 ..
             } => {
-                let countdown = if started + duration > world.last_tick_short_interval {
-                    (started + duration - world.last_tick_short_interval).formatted()
-                } else {
-                    (0 as Tick).formatted()
-                };
+                let countdown = (started + duration)
+                    .saturating_sub(world.last_tick_short_interval)
+                    .formatted();
                 self.render_exploring_spaceship(frame, world, split[1], &around, countdown)?
             }
             TeamLocation::OnSpaceAdventure { .. } => {
@@ -1729,10 +1722,10 @@ impl MyTeamPanel {
         );
         render_spaceship_description(
             &team,
+            world.team_rating(&team.id).unwrap_or_default(),
             true,
             &mut self.gif_map,
             self.tick,
-            world,
             frame,
             area,
         );
@@ -1836,10 +1829,10 @@ impl MyTeamPanel {
         } else {
             render_spaceship_description(
                 &team,
+                world.team_rating(&team.id).unwrap_or_default(),
                 true,
                 &mut self.gif_map,
                 self.tick,
-                world,
                 frame,
                 area,
             );
@@ -2042,7 +2035,6 @@ impl Screen for MyTeamPanel {
         frame: &mut UiFrame,
         world: &World,
         area: Rect,
-
         _debug_view: bool,
     ) -> AppResult<()> {
         let split = Layout::vertical([Constraint::Length(24), Constraint::Min(8)]).split(area);

@@ -95,7 +95,6 @@ impl ImageResizeInGalaxyGif {
             ImageResizeInGalaxyGif::ZoomOutCentral { planet_type } => match planet_type {
                 PlanetType::BlackHole => 16,
                 PlanetType::Sol => 28,
-                PlanetType::Earth => 24,
                 PlanetType::Rocky => 16,
                 PlanetType::Ring => 32,
                 _ => 24,
@@ -152,20 +151,19 @@ impl GifMap {
         let x_blit = MAX_GIF_WIDTH / 2 + planet.axis.0 as u32;
         let y_blit = MAX_GIF_HEIGHT / 2 + planet.axis.1 as u32;
         let gif = if planet.planet_type == PlanetType::Asteroid {
-            let mut img =
-                open_image(format!("asteroids/{}.png", planet.filename.clone()).as_str())?;
+            let mut img = open_image(format!("asteroids/{}.png", planet.filename).as_str())?;
 
             let color_map = AsteroidColorMap::Base.color_map();
-            vec![img.apply_color_map(color_map).clone()]
+            img.apply_color_map(color_map);
+            vec![img]
         } else {
-            Gif::open(format!("planets/{}_full.gif", planet.filename.clone()))?
+            Gif::open(format!("planets/{}_full.gif", planet.filename))?
                 .iter()
                 .map(|img: &RgbaImage| {
                     let base = &mut UNIVERSE_BACKGROUND.clone();
 
                     // Blit img on base
-                    base.copy_non_trasparent_from(&mut img.clone(), x_blit, y_blit)
-                        .unwrap();
+                    base.copy_non_trasparent_from(&img, x_blit, y_blit).unwrap();
 
                     let center = (x_blit + img.width() / 2, y_blit + img.height() / 2);
                     base.view(

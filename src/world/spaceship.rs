@@ -30,7 +30,7 @@ pub trait SpaceshipComponent: Sized + Clone + Copy + PartialEq {
     fn crew_capacity(&self) -> u8;
     fn storage_capacity(&self) -> u32;
     fn fuel_capacity(&self) -> u32;
-    fn fuel_consumption(&self) -> f32;
+    fn fuel_consumption_per_tick(&self) -> f32;
     fn speed(&self) -> f32;
     fn durability(&self) -> u32;
     fn cost(&self) -> u32;
@@ -141,7 +141,7 @@ impl SpaceshipComponent for Hull {
         }
     }
 
-    fn fuel_consumption(&self) -> f32 {
+    fn fuel_consumption_per_tick(&self) -> f32 {
         match self {
             Self::ShuttleSmall => 0.95,
             Self::ShuttleStandard => 1.0,
@@ -293,7 +293,7 @@ impl SpaceshipComponent for Engine {
         0
     }
 
-    fn fuel_consumption(&self) -> f32 {
+    fn fuel_consumption_per_tick(&self) -> f32 {
         match self {
             Self::ShuttleSingle => 1.0,
             Self::ShuttleDouble => 1.5,
@@ -450,7 +450,7 @@ impl SpaceshipComponent for Shooter {
         0
     }
 
-    fn fuel_consumption(&self) -> f32 {
+    fn fuel_consumption_per_tick(&self) -> f32 {
         1.0
     }
 
@@ -625,7 +625,7 @@ impl SpaceshipComponent for Storage {
         }
     }
 
-    fn fuel_consumption(&self) -> f32 {
+    fn fuel_consumption_per_tick(&self) -> f32 {
         match self {
             Self::ShuttleSingle => 1.02,
             Self::ShuttleDouble => 1.03,
@@ -921,13 +921,18 @@ impl Spaceship {
         self.hull.fuel_capacity() + self.engine.fuel_capacity() + self.storage.fuel_capacity()
     }
 
-    pub fn fuel_consumption(&self, storage_units: u32) -> f32 {
+    pub fn fuel_consumption_per_tick(&self, storage_units: u32) -> f32 {
         // Returns the fuel consumption in t/ms (tonnes per Tick)
         BASE_FUEL_CONSUMPTION
-            * self.hull.fuel_consumption()
-            * self.engine.fuel_consumption()
-            * self.storage.fuel_consumption()
+            * self.hull.fuel_consumption_per_tick()
+            * self.engine.fuel_consumption_per_tick()
+            * self.storage.fuel_consumption_per_tick()
             * (1.0 + FUEL_CONSUMPTION_PER_UNIT_STORAGE * storage_units as f32)
+    }
+
+    pub fn fuel_consumption_per_kilometer(&self, storage_units: u32) -> f32 {
+        // Returns the fuel consumption in t/Km (tonnes per Kilometer)
+        self.fuel_consumption_per_tick(storage_units) / self.speed(storage_units)
     }
 
     pub fn set_current_durability(&mut self, value: u32) {
@@ -950,13 +955,14 @@ impl Spaceship {
     pub fn max_distance(&self, current_fuel: u32) -> f32 {
         // Return the max distance in kilometers.
         let storage_units = 0;
-        self.speed(storage_units) / self.fuel_consumption(storage_units) * current_fuel as f32
+        self.speed(storage_units) / self.fuel_consumption_per_tick(storage_units)
+            * current_fuel as f32
     }
 
     pub fn max_travel_time(&self, current_fuel: u32) -> Tick {
         // Return the max travel time in milliseconds (Ticks)
         let storage_units = 0;
-        (current_fuel as f32 / self.fuel_consumption(storage_units)) as Tick
+        (current_fuel as f32 / self.fuel_consumption_per_tick(storage_units)) as Tick
     }
 }
 
@@ -1076,7 +1082,7 @@ mod tests {
         let crew_capacity = spaceship.crew_capacity();
         let storage_capacity = spaceship.storage_capacity();
         let fuel_capacity = spaceship.fuel_capacity();
-        let fuel_consumption = spaceship.fuel_consumption(0);
+        let fuel_consumption = spaceship.fuel_consumption_per_tick(0);
         let cost = spaceship.cost();
         let max_distance = spaceship.max_distance(fuel_capacity);
         let max_travel_time = spaceship.max_travel_time(fuel_capacity);

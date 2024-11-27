@@ -79,6 +79,7 @@ pub struct SpaceshipEntity {
     resources: ResourceMap,
     used_storage_capacity: u32,
     storage_capacity: u32,
+    fuel_capacity: u32,
     previous_position: Vec2,
     position: Vec2,
     velocity: Vec2,
@@ -91,8 +92,7 @@ pub struct SpaceshipEntity {
     base_thrust: f32,
     base_speed: f32,
     maneuverability: f32,
-    fuel: f32,
-    fuel_capacity: u32,
+    fuel: f32, // Fuel cannot be stored in the resource map because it's a f32 rather than a u32
     base_fuel_consumption: f32,
     friction_coeff: f32,
     tick: usize,
@@ -536,6 +536,8 @@ impl SpaceshipEntity {
 
         self.acceleration = acceleration * self.thrust();
         self.fuel = (self.fuel - self.fuel_consumption()).max(0.0);
+        // Keep fuel in resources updated
+        self.resources.insert(Resource::FUEL, self.fuel());
     }
 
     fn frame(&self) -> usize {
@@ -641,7 +643,7 @@ impl SpaceshipEntity {
             maneuverability: 0.0,
             fuel: fuel as f32,
             fuel_capacity: spaceship.fuel_capacity(),
-            base_fuel_consumption: spaceship.fuel_consumption(0) * FUEL_CONSUMPTION_MOD,
+            base_fuel_consumption: spaceship.fuel_consumption_per_tick(0) * FUEL_CONSUMPTION_MOD,
             friction_coeff: FRICTION_COEFF,
             engine_exhaust,
             shooter,
@@ -718,7 +720,7 @@ impl SpaceshipEntity {
         let base_thrust = spaceship.speed(0) * THRUST_MOD;
         let base_speed = spaceship.speed(0) * MAX_SPACESHIP_SPEED_MOD;
         let fuel_capacity = spaceship.fuel_capacity();
-        let base_fuel_consumption = spaceship.fuel_consumption(0) * FUEL_CONSUMPTION_MOD;
+        let base_fuel_consumption = spaceship.fuel_consumption_per_tick(0) * FUEL_CONSUMPTION_MOD;
 
         let shooter = Shooter::new(shooter_positions, spaceship.damage(), spaceship.fire_rate());
 

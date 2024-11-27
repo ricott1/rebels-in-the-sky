@@ -6,7 +6,7 @@ use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
 use super::widgets::{space_adventure_button, thick_block};
 use super::{traits::Screen, widgets::default_block};
-use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId};
+use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId, Tick};
 use crate::ui::constants::*;
 use crate::world::skill::Rated;
 use crate::world::types::PlayerLocation;
@@ -294,6 +294,7 @@ impl GalaxyPanel {
 
         if self.zoom_level == ZoomLevel::In {
             let own_team = world.get_own_team()?;
+
             match own_team.current_location {
                 x if x
                     == TeamLocation::OnPlanet {
@@ -304,50 +305,88 @@ impl GalaxyPanel {
                         buttons.push(explore_button);
                     }
                 }
-                _ => {
-                    let travel_time = world.travel_time_to_planet(own_team.id, planet.id);
-                    let (can_travel, button_text, hover_text) = match travel_time {
-                        Ok(time) => {
-                            let distance_text = match own_team.current_location {
-                                TeamLocation::OnPlanet { planet_id } => {
-                                    if let Ok(distance) =
-                                        world.distance_between_planets(planet_id, planet.id)
-                                    {
-                                        format!("Distance {:4} AU - ", distance as f32 / AU as f32)
-                                    } else {
-                                        "".to_string()
-                                    }
-                                }
-                                _ => "".to_string(),
-                            };
 
-                            (
-                                own_team.can_travel_to_planet(&planet, time),
-                                format!(" ({})", time.formatted()),
-                                format!(
-                                    "Travel to {}: {}Time {} - Fuel {}",
-                                    planet.name,
-                                    distance_text,
-                                    time.formatted(),
-                                    (time as f32 * own_team.spaceship_fuel_consumption()) as u32,
-                                ),
-                            )
-                        }
-                        Err(e) => (Err(e), "".to_string(), format!("Travel to {}", planet.name)),
-                    };
+                TeamLocation::OnPlanet { planet_id } => {
+                    let duration = world.travel_time_to_planet(own_team.id, planet.id)?;
+                    let hover_text = format!(
+                        "Travel to {}: Distance {} AU - Time {} - Fuel {}",
+                        planet.name,
+                        world.distance_between_planets(planet_id, planet.id)? as f32 / AU as f32,
+                        duration.formatted(),
+                        world.fuel_consumption_to_planet(own_team.id, planet.id)?
+                    );
 
                     let mut travel_to_planet_button = Button::new(
-                        format!("Travel{}", button_text),
+                        "Travel",
                         UiCallback::TravelToPlanet {
                             planet_id: planet.id,
                         },
                     )
-                    .set_hover_text(hover_text)
-                    .set_hotkey(UiKey::TRAVEL);
+                    .set_hotkey(UiKey::TRAVEL)
+                    .set_hover_text(hover_text);
 
-                    if can_travel.is_err() {
-                        travel_to_planet_button.disable(Some(can_travel.unwrap_err().to_string()));
+                    if let Err(e) = own_team.can_travel_to_planet(&planet, duration) {
+                        travel_to_planet_button.disable(Some(e.to_string()));
+                    } else if duration > 0 {
+                        travel_to_planet_button
+                            .set_text(format!("Travel ({})", duration.formatted()));
+                    } else {
+                        travel_to_planet_button.set_text(format!("Teleport"));
+                        travel_to_planet_button = travel_to_planet_button
+                            .set_hover_text(format!("Travel instantaneously to {}", planet.name));
                     }
+                    buttons.push(travel_to_planet_button);
+                }
+
+                TeamLocation::Travelling {
+                    to,
+                    started,
+                    duration,
+                    ..
+                } => {
+                    let text = if to == planet.id {
+                        let countdown = if started + duration > world.last_tick_short_interval {
+                            (started + duration - world.last_tick_short_interval).formatted()
+                        } else {
+                            (0 as Tick).formatted()
+                        };
+                        format!("Getting there ({})", countdown)
+                    } else {
+                        "Travel".to_string()
+                    };
+                    let travel_to_planet_button = Button::new(
+                        text,
+                        UiCallback::TravelToPlanet {
+                            planet_id: planet.id,
+                        },
+                    )
+                    .set_hover_text(format!("Travel to {}", planet.name))
+                    .disabled(Some("Team is travelling"));
+
+                    buttons.push(travel_to_planet_button);
+                }
+                TeamLocation::Exploring { .. } => {
+                    let travel_to_planet_button = Button::new(
+                        "Travel",
+                        UiCallback::TravelToPlanet {
+                            planet_id: planet.id,
+                        },
+                    )
+                    .set_hover_text(format!("Travel to {}", planet.name))
+                    .disabled(Some("Team is exploring"));
+
+                    buttons.push(travel_to_planet_button);
+                }
+
+                TeamLocation::OnSpaceAdventure { .. } => {
+                    let travel_to_planet_button = Button::new(
+                        "Travel",
+                        UiCallback::TravelToPlanet {
+                            planet_id: planet.id,
+                        },
+                    )
+                    .set_hover_text(format!("Travel to {}", planet.name))
+                    .disabled(Some("Team is on space adventure"));
 
                     buttons.push(travel_to_planet_button);
                 }

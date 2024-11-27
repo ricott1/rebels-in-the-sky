@@ -20,6 +20,7 @@ fn save_keys(signing_key: &ed25519_dalek::SigningKey) -> AppResult<()> {
     assert!(file.metadata()?.is_file());
     let mut buffer = std::io::BufWriter::new(file);
     buffer.write(&signing_key.to_bytes())?;
+    println!("Created new keypair for SSH server.");
     Ok(())
 }
 
@@ -28,6 +29,7 @@ fn load_keys() -> AppResult<ed25519_dalek::SigningKey> {
     let mut buffer = std::io::BufReader::new(file);
     let mut buf: [u8; 32] = [0; 32];
     buffer.read(&mut buf)?;
+    println!("Loaded keypair for SSH server.");
     Ok(ed25519_dalek::SigningKey::from_bytes(&buf))
 }
 

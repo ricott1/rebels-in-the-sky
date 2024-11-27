@@ -1,5 +1,5 @@
 use super::{
-    action::{ActionOutput, ActionSituation, Advantage, EngineAction},
+    action::{Action, ActionOutput, ActionSituation, Advantage, EngineAction},
     constants::*,
     game::Game,
     types::{GameStats, GameStatsMap},
@@ -60,7 +60,7 @@ impl EngineAction for PickAndRoll {
                 + playmaker_defender.defense.perimeter_defense.value()
                 + playmaker_defender.mental.vision.value();
 
-            result = match atk_result as i16 - def_result as i16 {
+            result = match atk_result as i16 - def_result as i16 + Self::tactic_modifier(game, &Action::PickAndRoll) {
                 x if x > ADV_ATTACK_LIMIT => ActionOutput {
                     possession: input.possession,
                     advantage: Advantage::Attack,
@@ -238,7 +238,7 @@ impl EngineAction for PickAndRoll {
                 + playmaker_defender.defense.perimeter_defense.value()
                 + target_defender.athletics.quickness.value();
 
-            result = match atk_result as i16 - def_result as i16 {
+            result = match atk_result as i16 - def_result as i16 + Self::tactic_modifier(game, &Action::PickAndRoll){
             x if x > ADV_ATTACK_LIMIT => ActionOutput {
                 possession: input.possession,
                 advantage: Advantage::Attack,

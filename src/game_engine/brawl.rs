@@ -1,5 +1,5 @@
 use super::{
-    action::{ActionOutput, EngineAction},
+    action::{Action, ActionOutput, EngineAction},
     game::Game,
     types::GameStats,
 };
@@ -84,7 +84,9 @@ impl EngineAction for Brawl {
             def_result += defender.reputation.value();
         }
 
-        let description = match atk_result as i16 - def_result as i16 {
+        let description = match atk_result as i16 - def_result as i16
+            + Self::tactic_modifier(game, &Action::Brawl)
+        {
             x if x > 0 => {
                 defender_update.extra_morale += MoraleModifier::SEVERE_MALUS;
                 attacker_update.extra_morale += MoraleModifier::SEVERE_BONUS;

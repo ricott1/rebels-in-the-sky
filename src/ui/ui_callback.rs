@@ -721,8 +721,10 @@ impl UiCallback {
             // For simplicity we just subtract the fuel upfront, maybe would be nicer on UI to
             // show the fuel consumption as the team travels in world.tick_travel,
             // but this would require more operations and checks in the tick function.
-            let fuel_consumed =
-                (duration as f32 * own_team.spaceship_fuel_consumption()).max(1.0) as u32;
+            // fixme: centralize fuel cost calculation
+            let fuel_consumed = app
+                .world
+                .fuel_consumption_to_planet(own_team.id, planet_id)?;
             own_team.resources.sub(Resource::FUEL, fuel_consumed)?;
 
             info!(
@@ -730,7 +732,7 @@ impl UiCallback {
                 own_team.id,
                 current_planet.id,
                 target_planet.id,
-                duration as f32 * own_team.spaceship_fuel_consumption()
+                duration as f32 * own_team.spaceship_fuel_consumption_per_tick()
             );
 
             current_planet.team_ids.retain(|&x| x != own_team.id);
@@ -783,7 +785,7 @@ impl UiCallback {
             // but this would require more operations and checks in the tick function.
             own_team.resources.sub(
                 Resource::FUEL,
-                (duration as f32 * own_team.spaceship_fuel_consumption()).max(1.0) as u32,
+                (duration as f32 * own_team.spaceship_fuel_consumption_per_tick()).max(1.0) as u32,
             )?;
 
             around_planet.team_ids.retain(|&x| x != own_team.id);
@@ -1412,8 +1414,10 @@ impl UiCallback {
 
                 for (&resource, &amount) in player_control.resources().iter() {
                     let current_amount = own_team.resources.value(&resource);
-                    // If durability is zero, the cargo (and fuel) has been lost (not the satoshi).
-                    if resource != Resource::SATOSHI && player_control.current_durability() == 0 {
+                    // If durability is zero, the cargo (and fuel) has been lost (not the satoshi or fuel).
+                    if (resource != Resource::SATOSHI || resource != Resource::FUEL)
+                        && player_control.current_durability() == 0
+                    {
                         continue;
                     }
 

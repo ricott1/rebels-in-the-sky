@@ -179,9 +179,14 @@ impl Team {
         self.spaceship.speed(self.used_storage_capacity())
     }
 
-    pub fn spaceship_fuel_consumption(&self) -> f32 {
+    pub fn spaceship_fuel_consumption_per_tick(&self) -> f32 {
         self.spaceship
-            .fuel_consumption(self.used_storage_capacity())
+            .fuel_consumption_per_tick(self.used_storage_capacity())
+    }
+
+    pub fn spaceship_fuel_consumption_per_kilometer(&self) -> f32 {
+        self.spaceship
+            .fuel_consumption_per_kilometer(self.used_storage_capacity())
     }
 
     pub fn is_on_planet(&self) -> Option<PlanetId> {
@@ -373,11 +378,12 @@ impl Team {
             return Err(anyhow!("Team is playing"));
         }
 
-        if planet.total_population() == 0 && self.home_planet_id != planet.id {
+        // Cannot travel to planet with no population unless its our asteroid.
+        if planet.total_population() == 0 && !self.asteroid_ids.contains(&planet.id) {
             return Err(anyhow!("This place is inhabitable"));
         }
 
-        //If we can't get there with full tank, than the planet is too far.
+        // If we can't get there with full tank, than the planet is too far.
         let max_fuel = self.spaceship.fuel_capacity();
         let max_autonomy = self.spaceship.max_travel_time(max_fuel);
         if duration > max_autonomy {
@@ -385,6 +391,9 @@ impl Team {
         }
 
         // Else we check that we can go there with the current fuel.
+        // Note: this check seems wrong because there is a minimal consumption of 1 tonne of fuel for each travel,
+        //       regardless of the distance. However, this is only relevant if the current fuel is 0, in which case
+        //       any travel duration larger than 0 would fail this check.
         let current_fuel = self.fuel();
         let autonomy = self.spaceship.max_travel_time(current_fuel);
 

@@ -4,7 +4,11 @@ use super::{
     types::GameStats,
 };
 use crate::{
-    game_engine::{action::Advantage, constants::*, types::GameStatsMap},
+    game_engine::{
+        action::{Action, Advantage},
+        constants::*,
+        types::GameStatsMap,
+    },
     world::constants::TirednessCost,
 };
 use rand::{seq::SliceRandom, Rng};
@@ -99,7 +103,7 @@ impl EngineAction for Rebound {
             defence_result,
             MIN_REBOUND_VALUE
         );
-        let result = match attack_result as i16 - defence_result as i16 {
+        let result = match attack_result as i16 - defence_result as i16 + Self::tactic_modifier(game, &Action::Rebound){
             x if x > ADV_ATTACK_LIMIT
                 || (x > 0
                     && attack_result >= MIN_REBOUND_VALUE
@@ -266,7 +270,7 @@ impl EngineAction for Rebound {
             }
             _ => ActionOutput {
                 possession: !input.possession,
-                situation: ActionSituation::BallInBackcourt,
+                situation: ActionSituation::AfterDefensiveRebound,
                 description: [
                     "Nobody got the rebound, ball goes to defence.",
                     "Neither team secures the board, and the ball rolls to the defensive side.",

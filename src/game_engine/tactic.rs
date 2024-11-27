@@ -1,6 +1,5 @@
 use super::action::Action;
 use crate::types::AppResult;
-use anyhow::anyhow;
 use rand::{seq::IteratorRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, WeightedIndex};
@@ -16,14 +15,16 @@ pub enum Tactic {
     Balanced,
     BigPirates,
     Arrembaggio,
+    Shooters,
 }
 
 impl Display for Tactic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Tactic::Balanced => write!(f, "Balanced"),
-            Tactic::BigPirates => write!(f, "Big Pirates"),
-            Tactic::Arrembaggio => write!(f, "Arrembaggio"),
+            Self::Balanced => write!(f, "Balanced"),
+            Self::BigPirates => write!(f, "Big Pirates"),
+            Self::Arrembaggio => write!(f, "Arrembaggio"),
+            Self::Shooters => write!(f, "Shooters"),
         }
     }
 }
@@ -38,7 +39,8 @@ impl Tactic {
         match self {
             Self::Balanced => Self::BigPirates,
             Self::BigPirates => Self::Arrembaggio,
-            Self::Arrembaggio => Self::Balanced,
+            Self::Arrembaggio => Self::Shooters,
+            Self::Shooters => Self::Balanced,
         }
     }
 
@@ -49,21 +51,23 @@ impl Tactic {
             Self::Arrembaggio => {
                 "Aggressive tactic focusing on sharing the ball, very high chance of brawl."
             }
+            Self::Shooters => "Focus on shooting from a distance, smaller chance of brawl.",
         }
     }
 
     pub fn pick_action(&self, rng: &mut ChaCha8Rng) -> AppResult<Action> {
         let weights = match self {
             Self::Balanced => [2, 2, 2, 2],
-            Self::BigPirates => [1, 1, 1, 3],
-            Self::Arrembaggio => [2, 4, 4, 1],
+            Self::BigPirates => [1, 1, 2, 4],
+            Self::Arrembaggio => [3, 1, 3, 1],
+            Self::Shooters => [1, 4, 2, 1],
         };
         let action = match WeightedIndex::new(&weights)?.sample(rng) {
             0 => Action::Isolation,
             1 => Action::OffTheScreen,
             2 => Action::PickAndRoll,
             3 => Action::Post,
-            _ => return Err(anyhow!("Invalid index in pick_action.")),
+            _ => unreachable!(),
         };
         Ok(action)
     }
@@ -73,14 +77,73 @@ impl Tactic {
             Self::Balanced => 1.0,
             Self::BigPirates => 1.25,
             Self::Arrembaggio => 2.0,
+            Self::Shooters => 0.75,
         }
     }
 
-    pub fn drink_probability_modifier(&self) -> f32 {
-        match self {
-            Self::Balanced => 1.0,
-            Self::BigPirates => 0.25,
-            Self::Arrembaggio => 2.0,
-        }
+    pub fn atk_roll_bonus(&self, defense_tactic: &Tactic, action: &Action) -> i16 {
+        let defense_bonus = match defense_tactic {
+            Self::Balanced => 0,
+            Self::BigPirates => match action {
+                Action::Isolation => -2,
+                Action::PickAndRoll => -2,
+                Action::OffTheScreen => -2,
+                Action::Post => 4,
+                Action::Brawl => 0,
+                Action::Rebound => 2,
+                _ => 0,
+            },
+            Self::Arrembaggio => match action {
+                Action::Isolation => 0,
+                Action::PickAndRoll => -2,
+                Action::OffTheScreen => 2,
+                Action::Post => -2,
+                Action::Brawl => 2,
+                Action::Rebound => -2,
+                _ => 0,
+            },
+            Self::Shooters => match action {
+                Action::Isolation => 2,
+                Action::PickAndRoll => 0,
+                Action::OffTheScreen => 2,
+                Action::Post => -2,
+                Action::Brawl => -2,
+                Action::Rebound => 0,
+                _ => 0,
+            },
+        };
+
+        let attack_bonus = match self {
+            Self::Balanced => 0,
+            Self::BigPirates => match action {
+                Action::Isolation => -2,
+                Action::PickAndRoll => -2,
+                Action::OffTheScreen => -2,
+                Action::Post => 4,
+                Action::Brawl => 0,
+                Action::Rebound => 2,
+                _ => 0,
+            },
+            Self::Arrembaggio => match action {
+                Action::Isolation => 2,
+                Action::PickAndRoll => -2,
+                Action::OffTheScreen => 0,
+                Action::Post => -2,
+                Action::Brawl => 4,
+                Action::Rebound => -2,
+                _ => 0,
+            },
+            Self::Shooters => match action {
+                Action::Isolation => 0,
+                Action::PickAndRoll => 2,
+                Action::OffTheScreen => 4,
+                Action::Post => -2,
+                Action::Brawl => 0,
+                Action::Rebound => -4,
+                _ => 0,
+            },
+        };
+
+        attack_bonus - defense_bonus
     }
 }

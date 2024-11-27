@@ -928,7 +928,7 @@ impl Player {
                     * training_focus_bonus
                     * potential_modifier;
 
-                log::info!(
+                log::debug!(
                     "Experience increase: {:.3}={}x{}x{}x{}x{}x{:.2}",
                     experience_at_position[p as usize] as f32
                         * w
@@ -950,7 +950,7 @@ impl Player {
             }
         }
 
-        log::info!("Total Experience increase: {:#?}", self.skills_training);
+        log::debug!("Total Experience increase: {:#?}", self.skills_training);
     }
 
     pub fn tiredness_weighted_rating_at_position(&self, position: Position) -> f32 {

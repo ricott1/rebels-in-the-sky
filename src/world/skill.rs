@@ -89,7 +89,6 @@ impl GameSkill for Skill {
         Normal::new(NORMAL_AVG + self, NORMAL_STD)
             .unwrap()
             .sample(rng)
-            .round()
             .bound()
     }
 }

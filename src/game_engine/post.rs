@@ -1,5 +1,5 @@
 use super::{
-    action::{ActionOutput, ActionSituation, Advantage, EngineAction},
+    action::{Action, ActionOutput, ActionSituation, Advantage, EngineAction},
     constants::*,
     game::Game,
     types::GameStats,
@@ -48,7 +48,9 @@ impl EngineAction for Post {
             + defender.defense.interior_defense.value()
             + defender.athletics.strength.value();
 
-        let mut result = match atk_result as i16 - def_result as i16 {
+        let mut result = match atk_result as i16 - def_result as i16
+            + Self::tactic_modifier(game, &Action::Post)
+        {
             x if x > ADV_ATTACK_LIMIT => ActionOutput {
                 possession: input.possession,
                 advantage: Advantage::Attack,
@@ -62,7 +64,7 @@ impl EngineAction for Post {
                         defender.info.shortened_name()
                     ),
                     format!(
-                        "{} used {}'s defense to create space and drive to the hoop.",
+                        "{} beats {}'s defense to create space and drive to the hoop.",
                         poster.info.shortened_name(),
                         defender.info.shortened_name()
                     ),

@@ -79,12 +79,12 @@ pub enum Action {
     PickAndRoll,
     OffTheScreen,
     Post,
+    Brawl,
     Rebound,
     CloseShot,
     MediumShot,
     LongShot,
     Substitution,
-    Brawl,
 }
 
 impl Action {
@@ -115,6 +115,11 @@ impl Action {
 }
 
 pub trait EngineAction {
+    fn tactic_modifier(game: &Game, action: &Action) -> i16 {
+        let attack_tactic = game.home_team_in_game.tactic;
+        let defense_tactic = game.home_team_in_game.tactic;
+        attack_tactic.atk_roll_bonus(&defense_tactic, &action)
+    }
     fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput>;
     fn sample(rng: &mut ChaCha8Rng, weights: [u8; 5]) -> Option<usize> {
         Some(WeightedIndex::new(&weights).ok()?.sample(rng))

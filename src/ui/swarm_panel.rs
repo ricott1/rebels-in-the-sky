@@ -441,7 +441,6 @@ impl SwarmPanel {
 
     fn render_team_ranking(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
         let h_split = Layout::horizontal([Constraint::Min(1), Constraint::Length(60)]).split(area);
-        log::info!("team index:{:#?}", self.team_ranking_index);
         let team_ranking_index = if let Some(index) = self.team_ranking_index {
             index % self.team_ranking.len()
         } else {
@@ -449,17 +448,23 @@ impl SwarmPanel {
                 default_block().title("Top 10 Crews by Reputation"),
                 h_split[0],
             );
-            log::info!("QUI");
             return;
         };
 
         let (_, top_team) = &self.team_ranking[team_ranking_index];
+        let team_rating = if world.get_team(&top_team.team.id).is_some() {
+            world.team_rating(&top_team.team.id).unwrap_or_default()
+        } else {
+            top_team.player_ratings.iter().sum::<f32>()
+                / top_team.player_ratings.len().max(MIN_PLAYERS_PER_GAME) as f32
+        };
+
         render_spaceship_description(
             &top_team.team,
+            team_rating,
             false,
             &mut self.gif_map,
             self.tick,
-            world,
             frame,
             h_split[1],
         );
@@ -470,22 +475,11 @@ impl SwarmPanel {
             .enumerate()
             .map(|(idx, (_, ranking))| {
                 let team_id = ranking.team.id;
-                let rating = if let Ok(r) = world.team_rating(&team_id) {
-                    r
-                } else {
-                    ranking
-                        .player_ratings
-                        .iter()
-                        .take(MIN_PLAYERS_PER_GAME)
-                        .sum::<f32>()
-                        / MIN_PLAYERS_PER_GAME as f32
-                };
-
                 let text = format!(
                     " {:>2}. {:<MAX_NAME_LENGTH$} {}",
                     idx + 1,
                     &ranking.team.name,
-                    rating.stars(),
+                    ranking.team.reputation.stars()
                 );
 
                 let style = if team_id == world.own_team_id {
@@ -515,7 +509,7 @@ impl SwarmPanel {
             index % self.player_ranking.len()
         } else {
             frame.render_widget(
-                default_block().title("Top 10 Pirates by Reputation"),
+                default_block().title("Top 20 Pirates by Reputation"),
                 h_split[0],
             );
             return;
@@ -547,7 +541,7 @@ impl SwarmPanel {
                     " {:>2}. {:<name_length$} {}",
                     idx + 1,
                     player.info.full_name(),
-                    player.stars()
+                    player.reputation.stars()
                 );
 
                 let style = if player.team.is_some() && player.team.unwrap() == world.own_team_id {
@@ -565,7 +559,7 @@ impl SwarmPanel {
         let list = selectable_list(options);
 
         frame.render_stateful_interactive(
-            list.block(default_block().title("Top 10 Pirates by Reputation")),
+            list.block(default_block().title("Top 20 Pirates by Reputation")),
             h_split[0],
             &mut ClickableListState::default().with_selected(Some(player_ranking_index)),
         );

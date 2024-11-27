@@ -1,6 +1,6 @@
 use super::button::Button;
 use super::constants::{UiKey, UiStyle, UiText};
-use super::gif_map::{self, TREASURE_GIF};
+use super::gif_map::{self, GifMap, TREASURE_GIF};
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
 use super::utils::{img_to_lines, input_from_key_event, validate_textarea_input};
@@ -8,6 +8,7 @@ use super::widgets::{default_block, thick_block};
 use crate::image::types::{Gif, PrintableGif};
 use crate::types::*;
 use crate::ui::gif_map::PORTAL_GIFS;
+use crate::world::planet::PlanetType;
 use crate::world::{player::Player, resources::Resource, skill::Rated};
 use anyhow::anyhow;
 use core::fmt::Debug;
@@ -59,6 +60,7 @@ pub enum PopupMessage {
         team_name: String,
         planet_name: String,
         planet_filename: String,
+        planet_type: PlanetType,
         tick: Tick,
     },
     Tutorial {
@@ -630,6 +632,7 @@ impl PopupMessage {
                 team_name,
                 planet_name,
                 planet_filename,
+                planet_type,
                 tick,
             } => {
                 frame.render_widget(
@@ -639,10 +642,15 @@ impl PopupMessage {
                     split[0],
                 );
 
-                let planet_gif =
-                    Gif::open(format!("planets/{}_zoomout.gif", planet_filename))?.to_lines();
+                let planet_gif = if *planet_type == PlanetType::Asteroid {
+                    GifMap::asteroid_zoom_out(planet_filename)?
+                } else {
+                    Gif::open(format!("planets/{}_zoomout.gif", planet_filename))?
+                };
 
-                if planet_gif.len() == 0 {
+                let planet_gif_lines = planet_gif.to_lines();
+
+                if planet_gif_lines.len() == 0 {
                     return Err(anyhow!("Invalid planet gif"));
                 }
 
@@ -670,7 +678,7 @@ impl PopupMessage {
                     ((Tick::now() - tick) / FRAME_DURATION_MILLIS) as usize % planet_gif.len();
 
                 frame.render_widget(
-                    Paragraph::new(planet_gif[current_frame].clone()).centered(),
+                    Paragraph::new(planet_gif_lines[current_frame].clone()).centered(),
                     m_split[1],
                 );
 

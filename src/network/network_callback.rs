@@ -85,6 +85,7 @@ impl NetworkCallback {
             network_handler.address = address.clone();
 
             network_handler.dial_seed()?;
+
             Ok(None)
         })
     }

@@ -232,6 +232,7 @@ impl App {
             if self.state == AppState::Simulating {
                 info!("Starting world simulation...");
                 self.simulate_loaded_world(&mut tui).await;
+                info!("...Done");
             }
 
             if self.network_port.is_some()
@@ -243,6 +244,8 @@ impl App {
                 if let Err(e) = self.initialize_network_handler() {
                     error!("Could not initialize network handler: {}", e);
                     last_network_handler_init = now;
+                } else {
+                    info!("...Done");
                 }
             }
 
@@ -265,9 +268,6 @@ impl App {
                         },
                         TerminalEvent::Mouse(mouse_event) => {
                             self.handle_mouse_events(mouse_event)?;
-                            // if let Err(e) = tui.draw(&mut self.ui, &self.world, self.audio_player.as_ref()).await {
-                            //     error!("Drawing error: {e}");
-                            // }
                         },
                         TerminalEvent::Resize(w, h) => tui.resize((w, h))?,
                         TerminalEvent::Quit => self.quit()?,

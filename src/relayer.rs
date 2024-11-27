@@ -15,6 +15,8 @@ use libp2p::{gossipsub, swarm::SwarmEvent};
 use tokio::select;
 
 const SEED_INFO_INTERVAL_MILLIS: Tick = 60 * SECONDS;
+const TOP_PLAYER_RANKING_LENGTH: usize = 20;
+const TOP_TEAM_RANKING_LENGTH: usize = 10;
 
 pub struct Relayer {
     pub running: bool,
@@ -36,7 +38,7 @@ impl Relayer {
                     .partial_cmp(&a.player.reputation)
                     .expect("Reputation should exist")
             })
-            .take(10)
+            .take(TOP_PLAYER_RANKING_LENGTH)
             .map(|(id, ranking)| (id.clone(), ranking.clone()))
             .collect()
     }
@@ -50,7 +52,7 @@ impl Relayer {
                     .partial_cmp(&a.team.reputation)
                     .expect("Reputation should exist")
             })
-            .take(10)
+            .take(TOP_TEAM_RANKING_LENGTH)
             .map(|(id, ranking)| (id.clone(), ranking.clone()))
             .collect()
     }
@@ -74,7 +76,7 @@ impl Relayer {
                     .partial_cmp(&a.team.reputation)
                     .expect("Reputation should exist")
             })
-            .take(10)
+            .take(TOP_TEAM_RANKING_LENGTH)
             .map(|(id, ranking)| (id.clone(), ranking.clone()))
             .collect();
 
@@ -96,7 +98,7 @@ impl Relayer {
                     .partial_cmp(&a.player.reputation)
                     .expect("Reputation should exist")
             })
-            .take(10)
+            .take(TOP_PLAYER_RANKING_LENGTH)
             .map(|(id, ranking)| (id.clone(), ranking.clone()))
             .collect();
 

@@ -1,5 +1,5 @@
 use super::{
-    action::{ActionOutput, ActionSituation, Advantage, EngineAction},
+    action::{Action, ActionOutput, ActionSituation, Advantage, EngineAction},
     constants::*,
     game::Game,
     types::{GameStats, GameStatsMap},
@@ -25,13 +25,12 @@ impl EngineAction for OffTheScreen {
             _ => input.attackers[0],
         };
         let target_idx = match input.attackers.len() {
-            0 => Self::sample(rng, [1, 2, 3, 3, 2])?,
-            1 => {
+            2 => input.attackers[1],
+            _ => {
                 let mut weights = [1, 2, 3, 3, 2];
                 weights[play_idx] = 0;
                 Self::sample(rng, weights)?
             }
-            _ => input.attackers[1],
         };
 
         let playmaker = attacking_players[play_idx];
@@ -59,7 +58,7 @@ impl EngineAction for OffTheScreen {
             + target_defender.defense.perimeter_defense.value()
             + target_defender.athletics.quickness.value();
 
-        let mut result = match atk_result as i16 - def_result as i16 {
+        let mut result = match atk_result as i16 - def_result as i16 + Self::tactic_modifier(game, &Action::OffTheScreen) {
             x if x > ADV_ATTACK_LIMIT => ActionOutput {
                 possession: input.possession,
                 advantage: Advantage::Attack,

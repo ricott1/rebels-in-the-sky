@@ -1,5 +1,5 @@
 use super::{
-    action::{ActionOutput, ActionSituation, Advantage, EngineAction},
+    action::{Action, ActionOutput, ActionSituation, Advantage, EngineAction},
     constants::*,
     game::Game,
     types::{GameStats, Possession},
@@ -69,7 +69,7 @@ impl EngineAction for Isolation {
             + defender.defense.perimeter_defense.value()
             + defender.athletics.quickness.value();
 
-        let mut result = match atk_result as i16 - def_result as i16 {
+        let mut result = match atk_result as i16 - def_result as i16 + Self::tactic_modifier(game, &Action::Isolation) {
             x if x > ADV_ATTACK_LIMIT => ActionOutput {
                 possession: input.possession,
                 advantage: Advantage::Attack,

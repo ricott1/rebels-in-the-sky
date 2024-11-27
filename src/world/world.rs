@@ -1,11 +1,11 @@
 use super::constants::*;
 use super::jersey::{Jersey, JerseyStyle};
-use super::planet::{Planet, PlanetType};
+use super::planet::Planet;
 use super::player::Player;
 use super::position::{Position, MAX_POSITION};
 use super::resources::Resource;
 use super::role::CrewRole;
-use super::skill::{GameSkill, Rated, MAX_SKILL};
+use super::skill::{GameSkill, MAX_SKILL};
 use super::spaceship::Spaceship;
 use super::team::Team;
 use super::types::{PlayerLocation, TeamBonus, TeamLocation};
@@ -24,7 +24,6 @@ use crate::world::utils::is_default;
 use anyhow::anyhow;
 use itertools::Itertools;
 use libp2p::PeerId;
-use log::info;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -414,7 +413,7 @@ impl World {
                     let new_duration =
                         (duration - time_elapsed) as f32 * previous_spaceship_speed_bonus / bonus;
 
-                    info!(
+                    log::info!(
                     "Update {role}: old speed {previous_spaceship_speed_bonus}, new speed {bonus}"
                 );
 
@@ -545,7 +544,7 @@ impl World {
                     let new_duration =
                         (duration - time_elapsed) as f32 * previous_spaceship_speed_bonus / bonus;
 
-                    info!(
+                    log::info!(
                     "Update {role}: old speed {previous_spaceship_speed_bonus}, new speed {bonus}"
                 );
 
@@ -1036,8 +1035,8 @@ impl World {
             .player_ids
             .iter()
             .filter(|&id| self.get_player(id).is_some())
-            .map(|id| self.get_player(id).unwrap().rating())
-            .sum::<u8>() as f32
+            .map(|id| self.get_player(id).unwrap().average_skill())
+            .sum::<f32>()
             / team.player_ids.len().max(MIN_PLAYERS_PER_GAME) as f32)
     }
 
@@ -1153,11 +1152,6 @@ impl World {
         }
 
         if current_tick >= self.last_tick_long_interval + TickInterval::LONG {
-            log::info!(
-                "Long tick: {} >= {}",
-                current_tick,
-                self.last_tick_long_interval + TickInterval::LONG
-            );
             self.tick_players_update();
             self.tick_teams_reputation()?;
             // Create free pirates only if this is the last time window to do so.
@@ -1185,7 +1179,7 @@ impl World {
                 continue;
             }
 
-            info!(
+            log::info!(
                 "Game {} vs {}: started at {}, ended at {} and is being removed at {}",
                 game.home_team_in_game.name,
                 game.away_team_in_game.name,
@@ -1446,10 +1440,10 @@ impl World {
                     let team_name = team.name.clone();
                     team.current_location = TeamLocation::OnPlanet { planet_id: to };
                     let mut planet = self.get_planet_or_err(&to)?.clone();
+                    planet.team_ids.push(team.id);
                     let planet_name = planet.name.clone();
                     let planet_filename = planet.filename.clone();
-
-                    planet.team_ids.push(team.id);
+                    let planet_type = planet.planet_type;
 
                     for player in team.player_ids.iter() {
                         let mut player = self.get_player_or_err(player)?.clone();
@@ -1473,6 +1467,7 @@ impl World {
                             team_name,
                             planet_name,
                             planet_filename,
+                            planet_type,
                             tick: current_tick,
                         },
                     }));
@@ -1491,21 +1486,19 @@ impl World {
                         player.set_jersey(&team.jersey);
                         self.players.insert(player.id, player);
                     }
-
-                    let home_planet = self.get_planet_or_err(&team.home_planet_id)?;
                     let mut around_planet = self.get_planet_or_err(&around)?.clone();
 
                     let mut rng = ChaCha8Rng::from_entropy();
 
                     // If the home planet is an asteroid, it means an asteroid has already been found.
-                    let duration_bonus = duration as f64 / (1.0 * HOURS as f64);
+                    let duration_bonus = duration as f64 / (QUICK_EXPLORATION_TIME as f64);
                     // If team has already MAX_NUM_ASTEROID_PER_TEAM, it cannot find another one. Finding asteroids
                     // becomes progressively more difficult.
-                    let team_asteroid_modifier =
-                        (MAX_NUM_ASTEROID_PER_TEAM - team.asteroid_ids.len()) as f64
-                            / MAX_NUM_ASTEROID_PER_TEAM as f64;
+                    let team_asteroid_modifier = (MAX_NUM_ASTEROID_PER_TEAM as f64
+                        - team.asteroid_ids.len() as f64)
+                        / MAX_NUM_ASTEROID_PER_TEAM as f64;
 
-                    if home_planet.planet_type != PlanetType::Asteroid
+                    if team_asteroid_modifier > 0.0
                         && rng.gen_bool(
                             (ASTEROID_DISCOVERY_PROBABILITY
                                 * around_planet.asteroid_probability
@@ -1609,7 +1602,7 @@ impl World {
                     // Recovery outside of games is slower by a factor TICK_SHORT_INTERVAL/TICK_MEDIUM_INTERVAL
                     // so that it takes 1 minute * 10 * 100 ~ 18 hours to recover from 100% tiredness.
                     player.tiredness =
-                        (player.tiredness - bonus * RECOVERING_TIREDNESS_PER_SHORT_TICK).max(0.0);
+                        (player.tiredness - bonus * RECOVERING_TIREDNESS_PER_SHORT_TICK).bound();
                     self.players.insert(player.id, player);
                 }
             }
@@ -1775,7 +1768,8 @@ impl World {
             }
 
             let team = self.get_team_or_err(&player.team.expect("Player should have a team"))?;
-            if team.current_game.is_some() {
+
+            if team.can_release_player(player).is_err() {
                 continue;
             }
 
@@ -1942,6 +1936,12 @@ impl World {
 
     pub fn travel_time_to_planet(&self, team_id: TeamId, to: PlanetId) -> AppResult<Tick> {
         let team = self.get_team_or_err(&team_id)?;
+
+        // Travelling back to home planet is istantaneous.
+        if team.home_planet_id == to {
+            return Ok(0);
+        }
+
         let from = match team.current_location {
             TeamLocation::OnPlanet { planet_id } => planet_id,
             TeamLocation::Travelling { .. } => return Err(anyhow!("Team is travelling")),
@@ -1969,6 +1969,14 @@ impl World {
             height += 1;
         }
         Ok(height)
+    }
+
+    pub fn fuel_consumption_to_planet(&self, team_id: TeamId, to: PlanetId) -> AppResult<u32> {
+        // let distance = self.distance_between_planets(from_id, to_id)?;
+        let duration = self.travel_time_to_planet(team_id, to)?;
+        let team = self.get_team_or_err(&team_id)?;
+
+        Ok((duration as f64 * team.spaceship_fuel_consumption_per_tick() as f64).ceil() as u32)
     }
 
     pub fn distance_between_planets(
@@ -2025,7 +2033,7 @@ impl World {
             to_height
         };
 
-        let parent_id = bottom.satellite_of.unwrap(); // This is guaranteed to be some, otherwise we would have matched already
+        let parent_id = bottom.satellite_of.expect("The should be a parent planet"); // This is guaranteed to be some, otherwise we would have matched already
 
         let distance =
             (bottom.axis.0).max(bottom.axis.1) / 24.0 * BASE_DISTANCES[bottom_height - 1] as f32;

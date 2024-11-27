@@ -65,7 +65,7 @@ impl StorableResourceMap for ResourceMap {
     }
 
     fn used_fuel_capacity(&self) -> u32 {
-        self.value(&Resource::FUEL) * Resource::FUEL.to_storing_space()
+        self.value(&Resource::FUEL)
     }
 
     fn update(&mut self, resource: Resource, amount: i32, max_capacity: u32) -> AppResult<()> {
@@ -79,21 +79,28 @@ impl StorableResourceMap for ResourceMap {
     }
 
     fn add(&mut self, resource: Resource, amount: u32, max_capacity: u32) -> AppResult<()> {
-        let used_capacity = if resource == Resource::FUEL {
-            self.used_fuel_capacity()
+        if resource == Resource::FUEL {
+            if self.used_fuel_capacity() + amount > max_capacity {
+                log::debug!(
+                    "Adding {} {}, used is {}, max is {}",
+                    amount,
+                    resource,
+                    self.used_fuel_capacity(),
+                    max_capacity
+                );
+                return Err(anyhow!("Not enough space in the tank to add fuel"));
+            }
         } else {
-            self.used_storage_capacity()
-        };
-        if used_capacity + resource.to_storing_space() * amount > max_capacity {
-            log::info!(
-                "Adding {} {}, used is {}, adding extra {}, max is {}",
-                amount,
-                resource,
-                used_capacity,
-                resource.to_storing_space() * amount,
-                max_capacity
-            );
-            return Err(anyhow!("Not enough storage to add resource"));
+            if self.used_storage_capacity() + resource.to_storing_space() * amount > max_capacity {
+                log::debug!(
+                    "Adding {} {}, used is {}, max is {}",
+                    amount,
+                    resource,
+                    self.used_storage_capacity(),
+                    max_capacity
+                );
+                return Err(anyhow!("Not enough storage to add resource"));
+            }
         }
 
         self.entry(resource)
@@ -106,15 +113,17 @@ impl StorableResourceMap for ResourceMap {
     }
 
     fn saturating_add(&mut self, resource: Resource, amount: u32, max_capacity: u32) {
-        let max_amount = if resource.to_storing_space() == 0 {
-            amount
+        let max_amount = if resource == Resource::FUEL {
+            amount.min(max_capacity.saturating_sub(self.used_fuel_capacity()))
         } else {
-            let used_capacity = if resource == Resource::FUEL {
-                self.used_fuel_capacity()
+            if resource.to_storing_space() == 0 {
+                amount
             } else {
-                self.used_storage_capacity()
-            };
-            amount.min((max_capacity - used_capacity) / resource.to_storing_space())
+                amount.min(
+                    max_capacity.saturating_sub(self.used_storage_capacity())
+                        / resource.to_storing_space(),
+                )
+            }
         };
 
         self.entry(resource)
@@ -273,7 +282,11 @@ impl SystemTimeTick for Tick {
 // Write tests here
 #[cfg(test)]
 mod tests {
-    use crate::types::{SystemTimeTick, Tick, SECONDS};
+    use super::{AppResult, ResourceMap, StorableResourceMap};
+    use crate::{
+        types::{SystemTimeTick, Tick, SECONDS},
+        world::resources::Resource,
+    };
 
     #[test]
     fn test_system_time_conversion() {
@@ -288,5 +301,42 @@ mod tests {
         let time = 10 * SECONDS;
         let formatted = time.formatted();
         assert_eq!(formatted, "00:00:10");
+    }
+
+    #[test]
+    fn test_resources() -> AppResult<()> {
+        let storage_capactiy = 1000;
+        let mut resources = ResourceMap::new();
+        assert!(resources.add(Resource::GOLD, 150, storage_capactiy).is_ok() == true);
+        assert!(resources.value(&Resource::GOLD) == 150);
+        assert!(
+            resources
+                .add(Resource::GOLD, 1500, storage_capactiy)
+                .is_err()
+                == true,
+        );
+        assert!(resources.value(&Resource::GOLD) == 150);
+        assert!(
+            resources.used_storage_capacity()
+                == resources.value(&Resource::GOLD) * Resource::GOLD.to_storing_space()
+        );
+        resources.saturating_add(Resource::GOLD, 1500, storage_capactiy);
+        assert!(
+            resources.value(&Resource::GOLD) * Resource::GOLD.to_storing_space()
+                == storage_capactiy
+        );
+
+        let fuel_capacity = 500;
+        assert!(resources.add(Resource::FUEL, 150, fuel_capacity).is_ok() == true);
+        assert!(resources.value(&Resource::FUEL) == 150);
+        assert!(resources.used_fuel_capacity() == resources.value(&Resource::FUEL));
+        assert!(resources.add(Resource::FUEL, 1500, fuel_capacity).is_err() == true,);
+        assert!(resources.value(&Resource::FUEL) == 150);
+        assert!(resources.used_fuel_capacity() == resources.value(&Resource::FUEL));
+        resources.saturating_add(Resource::FUEL, 1500, fuel_capacity);
+        assert!(resources.value(&Resource::FUEL) == fuel_capacity);
+        assert!(resources.value(&Resource::FUEL) == resources.used_fuel_capacity());
+
+        Ok(())
     }
 }

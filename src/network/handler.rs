@@ -265,6 +265,16 @@ impl NetworkHandler {
                     .map_err(|e| error!("Error disconnecting peer id {}: {:?}", peer_id, e));
             }
         }
+
+        let external_addresses = self
+            .swarm
+            .external_addresses()
+            .map(|addr| addr.clone())
+            .collect::<Vec<Multiaddr>>();
+
+        for addr in external_addresses {
+            self.swarm.remove_external_address(&addr);
+        }
     }
 
     pub fn accept_challenge(&mut self, world: &World, challenge: Challenge) -> AppResult<()> {

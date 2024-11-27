@@ -40,7 +40,7 @@ impl CrosstermEventHandler {
             tokio::task::spawn(async move {
                 loop {
                     if event::poll(time_step).expect("no events available") {
-                        match event::read().expect("unable to read event") {
+                        let result = match event::read().expect("unable to read event") {
                             CrosstermEvent::Key(key) => {
                                 if key.kind == KeyEventKind::Press {
                                     sender.send(TerminalEvent::Key(key)).await
@@ -56,8 +56,12 @@ impl CrosstermEventHandler {
                                 log::info!("Crossterm event not implemented");
                                 Ok(())
                             }
+                        };
+
+                        if let Err(e) = result {
+                            error!("Failed to send terminal event: {e}");
+                            break;
                         }
-                        .expect("failed to send terminal event")
                     }
 
                     let now = Tick::now();
