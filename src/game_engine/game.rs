@@ -17,7 +17,7 @@ use crate::{
     },
 };
 use itertools::Itertools;
-use rand::{Rng, SeedableRng};
+use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -125,6 +125,10 @@ pub struct Game {
 }
 
 impl<'game> Game {
+    pub fn is_network(&self) -> bool {
+        self.home_team_in_game.peer_id.is_some() && self.away_team_in_game.peer_id.is_some()
+    }
+
     pub fn new(
         id: GameId,
         home_team_in_game: TeamInGame,
@@ -188,14 +192,91 @@ impl<'game> Game {
                 * (1.0 + bonus_attendance);
         game.attendance = attendance as u32;
         let mut default_output = ActionOutput::default();
-        default_output.description = format!(
-            "{} vs {}. Game is about to start here on {}! There are {} {}people in the stadium.",
-            home_name,
-            away_name,
-            planet.name,
-            game.attendance,
-            if game.attendance == 69 { "(nice) " } else { "" }
-        );
+
+        let opening_text = [
+    format!(
+        "{} vs {}. The intergalactic showdown is kicking off on {}! {} fans have packed the arena{}.",
+        home_name,
+        away_name,
+        planet.name,
+        game.attendance,
+        if game.attendance == 69 { " (nice)" } else { "" }
+    ),
+    format!(
+        "It's {} against {}! We're live here on {} where {} spectators{} are buzzing with excitement.",
+        home_name,
+        away_name,
+        planet.name,
+        game.attendance,
+        if game.attendance == 69 { " (nice)" } else { "" }
+    ),
+    format!(
+        "The stage is set on {} for {} vs {}. A crowd of {}{} fans is ready for the action to unfold!",
+        planet.name,
+        home_name,
+        away_name,
+        game.attendance,
+        if game.attendance == 69 { " (nice)" } else { "" }
+    ),
+    format!(
+        "{} and {} clash today on {}! An electric atmosphere fills the stadium with {} fans{} watching closely.",
+        home_name,
+        away_name,
+        planet.name,
+        game.attendance,
+        if game.attendance == 69 { " (nice)" } else { "" }
+    ),
+    format!(
+        "Welcome to {} for an epic battle: {} vs {}. The crowd of {} fans{} is ready to witness greatness!",
+        planet.name,
+        home_name,
+        away_name,
+        game.attendance,
+        if game.attendance == 69 { " (nice)" } else { "" }
+    ),
+    format!(
+        "Tonight on {}, it's {} taking on {}. With {} passionate fans{} in attendance, the game is about to ignite!",
+        planet.name,
+        home_name,
+        away_name,
+        game.attendance,
+        if game.attendance == 69 { " (nice)" } else { "" }
+    ),
+    format!(
+        "Game night on {}! {} faces off against {} before {} eager fans{} under the starry skies.",
+        planet.name,
+        home_name,
+        away_name,
+        game.attendance,
+        if game.attendance == 69 { " (nice)" } else { "" }
+    ),
+    format!(
+        "The rivalry continues on {}: {} vs {}. The crowd of {} fans{} is fired up for this clash!",
+        planet.name,
+        home_name,
+        away_name,
+        game.attendance,
+        if game.attendance == 69 { " (nice)" } else { "" }
+    ),
+    format!(
+        "All eyes are on {} as {} battles {}. An audience of {}{} is here to cheer for their team!",
+        planet.name,
+        home_name,
+        away_name,
+        game.attendance,
+        if game.attendance == 69 { " (nice)" } else { "" }
+    ),
+    format!(
+        "Here on {}, it's {} vs {}. A roaring crowd of {} fans{} awaits the start of the showdown!",
+        planet.name,
+        home_name,
+        away_name,
+        game.attendance,
+        if game.attendance == 69 { " (nice)" } else { "" }
+    ),
+].choose(&mut rng).expect("There should be one option").clone();
+
+        default_output.description = opening_text;
         default_output.random_seed = seed;
         game.action_results.push(default_output);
         game

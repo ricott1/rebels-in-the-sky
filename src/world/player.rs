@@ -630,7 +630,7 @@ impl Player {
 
         player.previous_skills = player.current_skill_array();
 
-        let normal = Normal::new(0.0, 5.75).expect("Should create valid normal distribution");
+        let normal = Normal::new(0.0, 4.75).expect("Should create valid normal distribution");
         let extra_potential = (normal.sample(rng) as f32).abs();
         player.potential = (player.average_skill() + extra_potential).bound();
         player.reputation =
@@ -904,7 +904,7 @@ impl Player {
     ) {
         // potential_modifier has a value ranging from 0.0 to 2.0.
         // Players with skills below their potential improve faster, above their potential improve slower.
-        let potential_modifier = 1.0 + (self.potential - self.average_skill()) / 20.0;
+        let potential_modifier = 1.0 + (self.potential - self.average_skill()) / MAX_SKILL;
         for p in 0..MAX_POSITION {
             if experience_at_position[p as usize] == 0 {
                 continue;

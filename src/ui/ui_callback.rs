@@ -86,6 +86,9 @@ pub enum UiCallback {
         amount: i32,
         unit_cost: u32,
     },
+    BuildTeleportationPod {
+        asteroid_id: PlanetId,
+    },
     ChallengeTeam {
         team_id: TeamId,
     },
@@ -141,6 +144,12 @@ pub enum UiCallback {
     },
     SetTeamPanelView {
         view: TeamView,
+    },
+    PromptAbandonAsteroid {
+        asteroid_id: PlanetId,
+    },
+    ConfirmAbandonAsteroid {
+        asteroid_id: PlanetId,
     },
     HirePlayer {
         player_id: PlayerId,
@@ -324,9 +333,7 @@ impl UiCallback {
 
     fn go_to_planet(planet_id: PlanetId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui
-                .galaxy_panel
-                .go_to_planet(planet_id, None, ZoomLevel::In);
+            app.ui.galaxy_panel.go_to_planet(planet_id, ZoomLevel::In);
             app.ui.switch_to(super::ui::UiTab::Galaxy);
 
             Ok(None)
@@ -336,12 +343,9 @@ impl UiCallback {
     fn go_to_home_planet(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
             let team = app.world.get_team_or_err(&team_id)?;
-            let target = app.world.get_planet_or_err(&team.home_planet_id)?;
-            let team_index = target.team_ids.iter().position(|&x| x == team_id);
-
             app.ui
                 .galaxy_panel
-                .go_to_planet(team.home_planet_id, team_index, ZoomLevel::In);
+                .go_to_planet(team.home_planet_id, ZoomLevel::In);
             app.ui.switch_to(super::ui::UiTab::Galaxy);
 
             Ok(None)
@@ -367,11 +371,7 @@ impl UiCallback {
                 }
             };
 
-            let team_index = target.team_ids.iter().position(|&x| x == team_id);
-
-            app.ui
-                .galaxy_panel
-                .go_to_planet(target.id, team_index, ZoomLevel::In);
+            app.ui.galaxy_panel.go_to_planet(target.id, ZoomLevel::In);
             app.ui.switch_to(super::ui::UiTab::Galaxy);
 
             Ok(None)
@@ -387,9 +387,7 @@ impl UiCallback {
                     planet_id: current_planet_id,
                 } => {
                     let target = app.world.get_planet_or_err(&current_planet_id)?;
-                    app.ui
-                        .galaxy_panel
-                        .go_to_planet(target.id, None, ZoomLevel::In);
+                    app.ui.galaxy_panel.go_to_planet(target.id, ZoomLevel::In);
                     app.ui.switch_to(super::ui::UiTab::Galaxy);
                 }
                 PlayerLocation::WithTeam => {
@@ -403,9 +401,7 @@ impl UiCallback {
 
     fn go_to_planet_zoom_in(planet_id: PlanetId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui
-                .galaxy_panel
-                .go_to_planet(planet_id, None, ZoomLevel::In);
+            app.ui.galaxy_panel.go_to_planet(planet_id, ZoomLevel::In);
             app.ui.switch_to(super::ui::UiTab::Galaxy);
             Ok(None)
         })
@@ -413,9 +409,7 @@ impl UiCallback {
 
     fn go_to_planet_zoom_out(planet_id: PlanetId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui
-                .galaxy_panel
-                .go_to_planet(planet_id, None, ZoomLevel::Out);
+            app.ui.galaxy_panel.go_to_planet(planet_id, ZoomLevel::Out);
             app.ui.switch_to(super::ui::UiTab::Galaxy);
             Ok(None)
         })
@@ -425,24 +419,11 @@ impl UiCallback {
         Box::new(move |app: &mut App| {
             let mut own_team = app.world.get_own_team()?.clone();
             if amount > 0 {
-                let max_capacity = if resource == Resource::FUEL {
-                    own_team.fuel_capacity()
-                } else {
-                    own_team.storage_capacity()
-                };
-                own_team
-                    .resources
-                    .add(resource, amount as u32, max_capacity)?;
-                own_team
-                    .resources
-                    .sub(Resource::SATOSHI, unit_cost * amount as u32)?;
+                own_team.add_resource(resource, amount as u32)?;
+                own_team.sub_resource(Resource::SATOSHI, unit_cost * amount as u32)?;
             } else if amount < 0 {
-                own_team.resources.sub(resource, (-amount) as u32)?;
-                own_team.resources.add(
-                    Resource::SATOSHI,
-                    unit_cost * (-amount) as u32,
-                    own_team.storage_capacity(),
-                )?;
+                own_team.sub_resource(resource, (-amount) as u32)?;
+                own_team.add_resource(Resource::SATOSHI, unit_cost * (-amount) as u32)?;
             }
             app.world.teams.insert(own_team.id, own_team);
             app.world.dirty = true;
@@ -453,17 +434,10 @@ impl UiCallback {
 
     fn zoom_to_planet(planet_id: PlanetId, zoom_level: ZoomLevel) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let target = app.world.get_planet_or_err(&planet_id)?;
             let panel = &mut app.ui.galaxy_panel;
-
             panel.set_zoom_level(zoom_level);
             panel.set_planet_index(0);
             panel.set_planet_id(planet_id);
-            panel.set_team_index(if target.team_ids.len() == 0 {
-                None
-            } else {
-                Some(0)
-            });
 
             Ok(None)
         })
@@ -475,6 +449,7 @@ impl UiCallback {
             let team = app.world.get_team_or_err(&team_id)?;
             own_team.can_challenge_team(team)?;
 
+            // Challenge to network team.
             if let Some(peer_id) = team.peer_id {
                 let challenge = app
                     .network_handler
@@ -488,6 +463,26 @@ impl UiCallback {
                 return Ok(Some("Challenge sent".to_string()));
             }
 
+            // Else, challenge to local team.
+            // If local team is too tired, reject challenge.
+            let challenged_team = app.world.get_team_or_err(&team_id)?;
+            let avg_tiredness = challenged_team
+                .player_ids
+                .iter()
+                .map(|&id| {
+                    if let Ok(player) = app.world.get_player_or_err(&id) {
+                        player.tiredness
+                    } else {
+                        0.0
+                    }
+                })
+                .sum::<f32>()
+                / team.player_ids.len() as f32;
+
+            if avg_tiredness > MAX_AVG_TIREDNESS_PER_CHALLENGED_GAME {
+                return Err(anyhow!("Challenge rejected: {} is too tired", team.name));
+            }
+
             let own_team_id = app.world.own_team_id;
             let (home_team_in_game, away_team_in_game) =
                 match ChaCha8Rng::from_entropy().gen_range(0..=1) {
@@ -498,12 +493,13 @@ impl UiCallback {
                             .ok_or(anyhow!("Team {:?} not found", team_id))?,
                     ),
 
-                    _ => (
+                    1 => (
                         TeamInGame::from_team_id(team_id, &app.world.teams, &app.world.players)
                             .ok_or(anyhow!("Team {:?} not found", team_id))?,
                         TeamInGame::from_team_id(own_team_id, &app.world.teams, &app.world.players)
                             .ok_or(anyhow!("Own team {:?} not found", own_team_id))?,
                     ),
+                    _ => unreachable!(),
                 };
 
             let game_id = app
@@ -725,7 +721,7 @@ impl UiCallback {
             let fuel_consumed = app
                 .world
                 .fuel_consumption_to_planet(own_team.id, planet_id)?;
-            own_team.resources.sub(Resource::FUEL, fuel_consumed)?;
+            own_team.sub_resource(Resource::FUEL, fuel_consumed)?;
 
             info!(
                 "Team {:?} is travelling from {:?} to {:?}, consuming {:.2} fuel",
@@ -783,7 +779,7 @@ impl UiCallback {
             // For simplicity we just subtract the fuel upfront, maybe would be nicer on UI to
             // show the fuel consumption as the team travels in world.tick_travel,
             // but this would require more operations and checks in the tick function.
-            own_team.resources.sub(
+            own_team.sub_resource(
                 Resource::FUEL,
                 (duration as f32 * own_team.spaceship_fuel_consumption_per_tick()).max(1.0) as u32,
             )?;
@@ -886,7 +882,7 @@ impl UiCallback {
             team.can_set_upgrade_spaceship(upgrade.clone())?;
 
             for (resource, amount) in &upgrade.cost() {
-                team.resources.sub(*resource, *amount)?;
+                team.sub_resource(*resource, *amount)?;
             }
 
             team.spaceship.pending_upgrade = Some(upgrade.clone());
@@ -1037,6 +1033,30 @@ impl UiCallback {
                 app.ui.game_panel.toggle_player_status_view();
                 Ok(None)
             }
+            UiCallback::BuildTeleportationPod { asteroid_id } => {
+                let own_team = app.world.get_own_team_mut()?;
+                if own_team.extra_teleportation_pods.contains(asteroid_id) {
+                    return Err(anyhow!("Teleportation pad already built"));
+                }
+
+                for (resource, amount) in AsteroidFacilityCost::TELEPORTATION_POD {
+                    if own_team.resources.value(&resource) < amount {
+                        return Err(anyhow!(
+                            "Not enough {} ({}/{}) to build teleportation pad",
+                            resource,
+                            own_team.resources.value(&resource),
+                            amount
+                        ));
+                    }
+                    own_team.sub_resource(resource, amount)?;
+                }
+
+                own_team.extra_teleportation_pods.push(*asteroid_id);
+
+                app.ui.push_popup(PopupMessage::Ok { message: "Teleportation pad built!\nNow you are able to teleport back to this asteroid.".to_string(), is_skippable: true, tick: Tick::now() });
+
+                Ok(None)
+            }
             UiCallback::ChallengeTeam { team_id } => Self::challenge_team(*team_id)(app),
             UiCallback::AcceptChallenge { challenge } => {
                 app.network_handler
@@ -1151,6 +1171,25 @@ impl UiCallback {
                 app.ui.team_panel.set_view(*view);
                 Ok(None)
             }
+            UiCallback::PromptAbandonAsteroid { asteroid_id } => {
+                let asteroid = app.world.get_planet_or_err(asteroid_id)?;
+
+                app.ui.push_popup(PopupMessage::AbandonAsteroid {
+                    asteroid_name: asteroid.name.clone(),
+                    asteroid_id: *asteroid_id,
+                    tick: Tick::now(),
+                });
+                Ok(None)
+            }
+            UiCallback::ConfirmAbandonAsteroid { asteroid_id } => {
+                let own_team = app.world.get_own_team_mut()?;
+                own_team.asteroid_ids.retain(|&id| id != *asteroid_id);
+                own_team
+                    .extra_teleportation_pods
+                    .retain(|&id| id != *asteroid_id);
+                app.ui.close_popup();
+                Ok(None)
+            }
             UiCallback::HirePlayer { player_id } => {
                 app.world
                     .hire_player_for_team(*player_id, app.world.own_team_id)?;
@@ -1219,7 +1258,7 @@ impl UiCallback {
                     .get_team_or_err(&player.team.expect("Player should have team"))?
                     .clone();
 
-                team.resources.sub(Resource::RUM, 1)?;
+                team.sub_resource(Resource::RUM, 1)?;
 
                 //If player is a spugna and pilot and team is travelling or exploring and player was already maxxed in morale,
                 // there is a chance that the player enters a portal to a random planet.
@@ -1347,20 +1386,18 @@ impl UiCallback {
                 app.ui.set_state(UiState::SpaceAdventure);
                 let mut own_team = app.world.get_own_team()?.clone();
                 own_team.can_start_space_adventure()?;
-                let team_speed_bonus =
-                    TeamBonus::SpaceshipSpeed.current_team_bonus(&app.world, &own_team.id)?;
 
-                let asteroid_planet_probability = match own_team.current_location {
+                let should_spawn_asteroid = match own_team.current_location {
                     TeamLocation::OnPlanet { planet_id } => {
                         let current_planet = app.world.get_planet_or_err(&planet_id)?;
-                        current_planet.asteroid_probability
+                        current_planet.asteroid_probability > 0.0
+                            && own_team.asteroid_ids.len() < MAX_NUM_ASTEROID_PER_TEAM
                     }
                     _ => unreachable!(),
                 };
 
-                let space = SpaceAdventure::new(asteroid_planet_probability)?.with_player(
+                let space = SpaceAdventure::new(should_spawn_asteroid)?.with_player(
                     &own_team.spaceship,
-                    team_speed_bonus,
                     own_team.resources.clone(),
                     own_team.fuel(),
                 )?;
@@ -1627,9 +1664,7 @@ mod test {
         let mut app = App::test_default()?;
         let world = &mut app.world;
         let own_team = world.get_own_team_mut()?;
-        own_team
-            .resources
-            .add(Resource::FUEL, 100, own_team.storage_capacity())?;
+        own_team.add_resource(Resource::FUEL, 100)?;
 
         println!("Own team resources: {:#?}", own_team.resources);
 

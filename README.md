@@ -61,6 +61,14 @@ You need to have the [rust toolchain](https://www.rust-lang.org/tools/install). 
 pacman -S rebels-in-the-sky
 ```
 
+#### MacPorts
+
+`rebels-in-the-sky` can be installed from the [available ports](https://ports.macports.org/port/rebels-in-the-sky/):
+
+```sh
+sudo port install rebels-in-the-sky
+```
+
 ## Run
 
 This game runs as a terminal application, meaning that you just need to run the executable from your terminal with

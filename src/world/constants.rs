@@ -1,4 +1,4 @@
-use super::skill::MAX_SKILL;
+use super::{resources::Resource, skill::MAX_SKILL};
 use crate::types::{PlanetId, Tick};
 use once_cell::sync::Lazy;
 
@@ -32,10 +32,10 @@ pub const MAX_PLAYERS_PER_TEAM: usize = MIN_PLAYERS_PER_GAME + 5;
 // More realistically, one should take a factor 10 less.
 pub const EXPERIENCE_PER_SKILL_MULTIPLIER: f32 = 0.0000125;
 pub const MAX_SKILL_INCREASE_PER_LONG_TICK: f32 = 0.5;
-pub const SKILL_DECREMENT_PER_LONG_TICK: f32 = -0.05;
+pub const SKILL_DECREMENT_PER_LONG_TICK: f32 = -0.075;
 
 pub const REPUTATION_PER_EXPERIENCE: f32 = 0.0001;
-pub const REPUTATION_DECREASE_PER_LONG_TICK: f32 = 0.1;
+pub const REPUTATION_DECREASE_PER_LONG_TICK: f32 = -0.125;
 pub const AGE_INCREASE_PER_LONG_TICK: f32 = 0.1; // 1 year every 10 LONG_TICK
 
 pub const INCOME_PER_ATTENDEE_HOME: u32 = 36;
@@ -47,6 +47,7 @@ pub const SPECIAL_TRAIT_VALUE_BONUS: f32 = 1.35;
 
 pub const AUTO_GENERATE_GAMES_NUMBER: usize = 3;
 pub const MAX_AVG_TIREDNESS_PER_AUTO_GAME: f32 = 2.0;
+pub const MAX_AVG_TIREDNESS_PER_CHALLENGED_GAME: f32 = 5.0;
 
 pub const BASE_DISTANCES: [u64; 5] = [
     1 * LIGHT_YEAR,
@@ -147,3 +148,8 @@ pub const TRAIT_PROBABILITY: f64 = 0.25;
 
 pub const MIN_RELATIVE_RETIREMENT_AGE: f32 = 0.96;
 pub const PEAK_PERFORMANCE_RELATIVE_AGE: f32 = 0.65;
+
+pub struct AsteroidFacilityCost;
+impl AsteroidFacilityCost {
+    pub const TELEPORTATION_POD: [(Resource, u32); 1] = [(Resource::GOLD, 25)];
+}

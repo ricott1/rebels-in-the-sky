@@ -301,7 +301,9 @@ impl NetworkCallback {
                     let own_team = app.world.get_own_team_mut()?;
                     own_team.add_received_trade(trade.clone());
 
-                    return Ok(Some("Trade received.\nCheck the swarm panel".to_string()));
+                    return Ok(Some(
+                        "Trade offer received.\nCheck the swarm panel".to_string(),
+                    ));
                 }
                 NetworkRequestState::SynAck => {
                     if trade.target_peer_id == *self_peer_id {

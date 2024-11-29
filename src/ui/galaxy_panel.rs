@@ -44,7 +44,6 @@ pub struct GalaxyPanel {
     planet_id: PlanetId,
     planets: PlanetMap,
     planet_index: usize,
-    team_index: Option<usize>,
     tick: usize,
     zoom_level: ZoomLevel,
     gif_map: GifMap,
@@ -70,26 +69,10 @@ impl GalaxyPanel {
         self.planet_index = index;
     }
 
-    pub fn set_team_index(&mut self, index: Option<usize>) {
-        self.team_index = index;
-    }
-
-    pub fn go_to_planet(
-        &mut self,
-        planet_id: PlanetId,
-        team_index: Option<usize>,
-        zoom_level: ZoomLevel,
-    ) {
+    pub fn go_to_planet(&mut self, planet_id: PlanetId, zoom_level: ZoomLevel) {
         self.planet_id = planet_id;
         self.planet_index = 0;
         self.zoom_level = zoom_level;
-        if let Some(target) = self.planets.get(&self.planet_id) {
-            self.team_index = if target.team_ids.len() == 0 {
-                None
-            } else {
-                team_index
-            };
-        }
     }
 
     fn render_planet_gif(
@@ -419,7 +402,7 @@ impl GalaxyPanel {
             world.get_planet_or_err(&planet.satellites[self.planet_index - 1])?
         };
 
-        let mut team_options = target
+        let team_options = target
             .team_ids
             .iter()
             .filter(|&team_id| world.get_team_or_err(team_id).is_ok())
@@ -434,12 +417,13 @@ impl GalaxyPanel {
                 let team = world
                     .get_team_or_err(team_id)
                     .expect("Team should be part of the world");
-                let mut style = UiStyle::DEFAULT;
-                if *team_id == world.own_team_id {
-                    style = UiStyle::OWN_TEAM;
+                let style = if *team_id == world.own_team_id {
+                    UiStyle::OWN_TEAM
                 } else if team.peer_id.is_some() {
-                    style = UiStyle::NETWORK;
-                }
+                    UiStyle::NETWORK
+                } else {
+                    UiStyle::DEFAULT
+                };
                 let text = format!(
                     "{:<MAX_NAME_LENGTH$} {}",
                     team.name,
@@ -449,12 +433,6 @@ impl GalaxyPanel {
             })
             .take(10)
             .collect::<Vec<(TeamId, String, Style)>>();
-
-        if let Some(team_index) = self.team_index {
-            if team_options.len() > team_index {
-                team_options[team_index].2 = UiStyle::SELECTED;
-            }
-        }
 
         let player_options = world
             .players
@@ -475,7 +453,12 @@ impl GalaxyPanel {
             })
             .sorted_by(|a, b| b.rating().cmp(&a.rating()))
             .map(|player| {
-                let text = format!("{:<26} {}", player.info.full_name(), player.stars());
+                let name_length = 2 * MAX_NAME_LENGTH + 2;
+                let text = format!(
+                    "{:<name_length$} {}",
+                    player.info.full_name(),
+                    player.stars()
+                );
                 (player.id, text, UiStyle::DEFAULT)
             })
             .take(10)
@@ -533,7 +516,8 @@ impl GalaxyPanel {
                         UiCallback::GoToTeam {
                             team_id: team_id.clone(),
                         },
-                    ),
+                    )
+                    .set_hover_style(UiStyle::HIGHLIGHT),
                     l_split[idx],
                 );
             }
@@ -632,12 +616,7 @@ impl GalaxyPanel {
 
     fn select_target(&mut self, target: &Planet) -> Option<UiCallback> {
         match self.zoom_level {
-            ZoomLevel::In => {
-                if self.team_index.is_some() {
-                    let team_id = target.team_ids[self.team_index?].clone();
-                    return Some(UiCallback::GoToTeam { team_id });
-                }
-            }
+            ZoomLevel::In => {}
             ZoomLevel::Out => {
                 let zoom_level = if self.planet_index == 0 || target.satellites.len() == 0 {
                     ZoomLevel::In
@@ -705,29 +684,13 @@ impl Screen for GalaxyPanel {
                     self.planet_index = (self.planet_index + planet.satellites.len())
                         % (planet.satellites.len() + 1);
                 }
-                ZoomLevel::In => {
-                    if planet.team_ids.len() == 0 {
-                        self.team_index = None;
-                    } else {
-                        self.team_index = Some(
-                            (self.team_index.unwrap_or_default() + planet.team_ids.len() - 1)
-                                % planet.team_ids.len(),
-                        );
-                    }
-                }
+                ZoomLevel::In => {}
             },
             KeyCode::Down => match self.zoom_level {
                 ZoomLevel::Out => {
                     self.planet_index = (self.planet_index + 1) % (planet.satellites.len() + 1);
                 }
-                ZoomLevel::In => {
-                    if planet.team_ids.len() == 0 {
-                        self.team_index = None;
-                    } else {
-                        self.team_index =
-                            Some((self.team_index.unwrap_or_default() + 1) % planet.team_ids.len());
-                    }
-                }
+                ZoomLevel::In => {}
             },
 
             KeyCode::Enter => {
@@ -749,7 +712,6 @@ impl Screen for GalaxyPanel {
                 }
                 self.zoom_level = ZoomLevel::Out;
                 self.planet_index = 0;
-                self.team_index = None;
             }
 
             _ => {}
@@ -774,31 +736,10 @@ impl Screen for GalaxyPanel {
 
 impl SplitPanel for GalaxyPanel {
     fn index(&self) -> usize {
-        if let Some(index) = self.team_index {
-            index
-        } else {
-            0
-        }
+        0
     }
     fn max_index(&self) -> usize {
-        let target = self.planets.get(&self.planet_id);
-        if target.is_none() {
-            return 0;
-        }
-        let target = target.unwrap();
-        target.team_ids.len()
+        0
     }
-    fn set_index(&mut self, index: usize) {
-        let target = self.planets.get(&self.planet_id);
-        if target.is_none() {
-            self.team_index = None;
-            return;
-        }
-        let target = target.unwrap();
-        if index >= target.team_ids.len() {
-            self.team_index = None;
-            return;
-        }
-        self.team_index = Some(index);
-    }
+    fn set_index(&mut self, _index: usize) {}
 }

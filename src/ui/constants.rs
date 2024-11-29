@@ -47,7 +47,9 @@ impl UiKey {
     pub const TRAVEL: KeyCode = KeyCode::Char('T');
     pub const EXPLORE: KeyCode = KeyCode::Char('x');
     pub const SPACE_ADVENTURE: KeyCode = KeyCode::Char('A');
+    pub const ABANDON_ASTEROID: KeyCode = KeyCode::Char('A');
     pub const DRINK: KeyCode = KeyCode::Char('D');
+    pub const BUILD_TELEPORTATION_POD: KeyCode = KeyCode::Char('B');
     pub const UPGRADE_SPACESHIP: KeyCode = KeyCode::Char('U');
     pub const REPAIR_SPACESHIP: KeyCode = KeyCode::Char('R');
     pub const BUY_SCRAPS: KeyCode = KeyCode::Char('s');

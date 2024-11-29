@@ -41,7 +41,6 @@ pub trait StorableResourceMap {
     fn value(&self, resource: &Resource) -> u32;
     fn used_storage_capacity(&self) -> u32;
     fn used_fuel_capacity(&self) -> u32;
-    fn update(&mut self, resource: Resource, amount: i32, max_capacity: u32) -> AppResult<()>;
     fn add(&mut self, resource: Resource, amount: u32, max_capacity: u32) -> AppResult<()>;
     fn saturating_add(&mut self, resource: Resource, amount: u32, max_capacity: u32);
     fn sub(&mut self, resource: Resource, amount: u32) -> AppResult<()>;
@@ -66,16 +65,6 @@ impl StorableResourceMap for ResourceMap {
 
     fn used_fuel_capacity(&self) -> u32 {
         self.value(&Resource::FUEL)
-    }
-
-    fn update(&mut self, resource: Resource, amount: i32, max_capacity: u32) -> AppResult<()> {
-        if amount > 0 {
-            self.add(resource, amount as u32, max_capacity)?;
-        } else if amount < 0 {
-            self.sub(resource, (-amount) as u32)?;
-        }
-
-        Ok(())
     }
 
     fn add(&mut self, resource: Resource, amount: u32, max_capacity: u32) -> AppResult<()> {
@@ -139,11 +128,7 @@ impl StorableResourceMap for ResourceMap {
             return Err(anyhow!("Not enough resources to remove"));
         }
 
-        self.entry(resource)
-            .and_modify(|e| {
-                *e = e.saturating_sub(amount);
-            })
-            .or_insert(0);
+        self.saturating_sub(resource, amount);
         Ok(())
     }
 

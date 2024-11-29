@@ -1337,13 +1337,12 @@ fn format_player_data(player: &Player) -> Vec<Line> {
 
 #[cfg(test)]
 mod tests {
+    use super::{AppResult, BARS_LENGTH};
     use crate::{
         types::{PlanetId, TeamId},
         ui::widgets::get_storage_lengths,
         world::{resources::Resource, spaceship::SpaceshipPrefab, team::Team},
     };
-
-    use super::{AppResult, StorableResourceMap, BARS_LENGTH};
 
     #[test]
     fn test_storage_spans() -> AppResult<()> {
@@ -1379,10 +1378,8 @@ mod tests {
             panic!("Failed to calculate resource length");
         }
 
-        team.resources
-            .add(Resource::SCRAPS, 178, team.storage_capacity())?;
-        team.resources
-            .add(Resource::RUM, 11, team.storage_capacity())?;
+        team.add_resource(Resource::SCRAPS, 178)?;
+        team.add_resource(Resource::RUM, 11)?;
 
         if let [gold_length, scraps_length, rum_length, free_bars] = get_storage_lengths(
             &team.resources,
@@ -1411,10 +1408,8 @@ mod tests {
         } else {
             panic!("Failed to calculate resource length");
         }
-        team.resources
-            .add(Resource::SCRAPS, 24, team.storage_capacity())?;
-        team.resources
-            .add(Resource::GOLD, 1, team.storage_capacity())?;
+        team.add_resource(Resource::SCRAPS, 24)?;
+        team.add_resource(Resource::GOLD, 1)?;
 
         if let [gold_length, scraps_length, rum_length, free_bars] = get_storage_lengths(
             &team.resources,

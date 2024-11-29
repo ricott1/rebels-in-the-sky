@@ -45,7 +45,7 @@ impl SpaceAdventureState {
 
 #[derive(Debug, Display, Clone, Copy, PartialEq)]
 enum AsteroidPlanetState {
-    NotSpawned { asteroid_planet_probability: f64 },
+    NotSpawned { should_spawn_asteroid: bool },
     Spawned { image_number: usize },
     Landed { image_number: usize },
 }
@@ -252,7 +252,7 @@ impl SpaceAdventure {
         }
     }
 
-    pub fn new(asteroid_planet_probability: f64) -> AppResult<Self> {
+    pub fn new(should_spawn_asteroid: bool) -> AppResult<Self> {
         let bg = TRAVELLING_BACKGROUND.clone();
         let mut background = RgbaImage::new(bg.width() * 2, bg.height() * 3);
         background.copy_non_trasparent_from(&bg, 0, 0)?;
@@ -288,7 +288,7 @@ impl SpaceAdventure {
             id_to_layer: HashMap::new(),
             player_id: None,
             asteroid_planet_state: AsteroidPlanetState::NotSpawned {
-                asteroid_planet_probability,
+                should_spawn_asteroid,
             },
             enemy_ship_spawned: false,
         })
@@ -297,14 +297,12 @@ impl SpaceAdventure {
     pub fn with_player(
         mut self,
         spaceship: &Spaceship,
-        team_speed_bonus: f32,
         resources: ResourceMap,
         fuel: u32,
     ) -> AppResult<Self> {
         let collector_id = self.insert_entity(Box::new(CollectorEntity::new()));
         let id = self.insert_entity(Box::new(SpaceshipEntity::from_spaceship(
             spaceship,
-            team_speed_bonus,
             resources,
             fuel,
             collector_id,
@@ -462,9 +460,9 @@ impl SpaceAdventure {
         if difficulty_level > DIFFICULTY_FOR_ASTEROID_PLANET_GENERATION {
             match self.asteroid_planet_state {
                 AsteroidPlanetState::NotSpawned {
-                    asteroid_planet_probability,
+                    should_spawn_asteroid,
                 } => {
-                    if asteroid_planet_probability > 0.0 {
+                    if should_spawn_asteroid {
                         let asteroid = AsteroidEntity::planet();
                         let id = self.insert_entity(Box::new(asteroid));
                         self.asteroid_planet_state = AsteroidPlanetState::Spawned {

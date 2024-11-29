@@ -42,6 +42,11 @@ pub enum PopupMessage {
         not_enough_players_for_game: bool,
         tick: Tick,
     },
+    AbandonAsteroid {
+        asteroid_name: String,
+        asteroid_id: PlanetId,
+        tick: Tick,
+    },
     AsteroidNameDialog {
         tick: Tick,
         asteroid_type: usize,
@@ -155,6 +160,16 @@ impl PopupMessage {
                 if key_event.code == UiKey::YES_TO_DIALOG {
                     return Some(UiCallback::ConfirmReleasePlayer {
                         player_id: player_id.clone(),
+                    });
+                } else if key_event.code == UiKey::NO_TO_DIALOG {
+                    return Some(UiCallback::CloseUiPopup);
+                }
+            }
+
+            PopupMessage::AbandonAsteroid { asteroid_id, .. } => {
+                if key_event.code == UiKey::YES_TO_DIALOG {
+                    return Some(UiCallback::ConfirmAbandonAsteroid {
+                        asteroid_id: asteroid_id.clone(),
                     });
                 } else if key_event.code == UiKey::NO_TO_DIALOG {
                     return Some(UiCallback::CloseUiPopup);
@@ -320,6 +335,56 @@ impl PopupMessage {
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
                     .set_hover_text(format!("Don't release {}", player_name))
+                    .set_hotkey(UiKey::NO_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::ERROR))
+                    .set_layer(1);
+
+                frame.render_interactive(no_button, buttons_split[1]);
+            }
+
+            PopupMessage::AbandonAsteroid {
+                asteroid_name,
+                asteroid_id,
+                ..
+            } => {
+                frame.render_widget(
+                    Paragraph::new(format!("Attention!"))
+                        .block(default_block().border_style(UiStyle::HIGHLIGHT))
+                        .centered(),
+                    split[0],
+                );
+                frame.render_widget(
+                    Paragraph::new(format!(
+                        "Are you sure you want to abandon {}?\nYou will not be able to come back!",
+                        asteroid_name
+                    ))
+                    .centered()
+                    .wrap(Wrap { trim: true }),
+                    split[1].inner(Margin {
+                        horizontal: 1,
+                        vertical: 1,
+                    }),
+                );
+
+                let buttons_split =
+                    Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                        .split(split[2]);
+
+                let confirm_button = Button::new(
+                    UiText::YES,
+                    UiCallback::ConfirmAbandonAsteroid {
+                        asteroid_id: asteroid_id.clone(),
+                    },
+                )
+                .set_hover_text(format!("Confirm abandoning {}", asteroid_name))
+                .set_hotkey(UiKey::YES_TO_DIALOG)
+                .block(default_block().border_style(UiStyle::OK))
+                .set_layer(1);
+
+                frame.render_interactive(confirm_button, buttons_split[0]);
+
+                let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
+                    .set_hover_text(format!("Don't abandon {}", asteroid_name))
                     .set_hotkey(UiKey::NO_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::ERROR))
                     .set_layer(1);

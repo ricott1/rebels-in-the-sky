@@ -118,7 +118,7 @@ pub trait EngineAction {
     fn tactic_modifier(game: &Game, action: &Action) -> i16 {
         let attack_tactic = game.home_team_in_game.tactic;
         let defense_tactic = game.home_team_in_game.tactic;
-        attack_tactic.atk_roll_bonus(&defense_tactic, &action)
+        attack_tactic.attack_roll_bonus(&action) - defense_tactic.defense_roll_bonus(&action)
     }
     fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput>;
     fn sample(rng: &mut ChaCha8Rng, weights: [u8; 5]) -> Option<usize> {

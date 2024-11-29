@@ -77,7 +77,7 @@ pub struct SpaceshipEntity {
     is_player: bool,
     base_spaceship: Spaceship,
     resources: ResourceMap,
-    used_storage_capacity: u32,
+    used_storage_capacity: u32, // Not necessary, we keep it to avoid recalculating them every time.
     storage_capacity: u32,
     fuel_capacity: u32,
     previous_position: Vec2,
@@ -567,7 +567,6 @@ impl SpaceshipEntity {
 
     pub fn from_spaceship(
         spaceship: &Spaceship,
-        team_speed_bonus: f32,
         resources: ResourceMap,
         fuel: u32,
         collector_id: usize,
@@ -638,7 +637,7 @@ impl SpaceshipEntity {
             hit_boxes,
             current_durability: spaceship.current_durability() as f32,
             durability: spaceship.durability() as f32,
-            base_thrust: spaceship.speed(0) * THRUST_MOD * team_speed_bonus,
+            base_thrust: spaceship.speed(0) * THRUST_MOD,
             base_speed: spaceship.speed(0) * MAX_SPACESHIP_SPEED_MOD,
             maneuverability: 0.0,
             fuel: fuel as f32,

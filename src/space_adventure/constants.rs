@@ -5,7 +5,7 @@ use crate::ui::UI_SCREEN_SIZE;
 pub(crate) const FRICTION_COEFF: f32 = 0.1;
 pub(crate) const THRUST_MOD: f32 = 1.5;
 pub(crate) const FUEL_CONSUMPTION_MOD: f32 = 215_000.0;
-pub(crate) const MAX_SPACESHIP_SPEED_MOD: f32 = 0.135;
+pub(crate) const MAX_SPACESHIP_SPEED_MOD: f32 = 0.125;
 
 pub(crate) const ASTEROID_GENERATION_PROBABILITY: f64 = 0.05;
 pub(crate) const DIFFICULTY_FOR_ASTEROID_PLANET_GENERATION: usize = 60;

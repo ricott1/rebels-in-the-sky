@@ -217,7 +217,7 @@
         "resources": {
             "1": 1,
             "2": 7,
-            "3": 16
+            "3": 12
         },
         "filename": "gas",
         "rotation_period": 9,
@@ -344,7 +344,7 @@
         },
         "resources": {
             "2": 2,
-            "3": 18,
+            "3": 14,
             "4": 2
         },
         "filename": "deimos",

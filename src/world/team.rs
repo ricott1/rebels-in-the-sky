@@ -51,6 +51,9 @@ pub struct Team {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub asteroid_ids: Vec<PlanetId>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub extra_teleportation_pods: Vec<PlanetId>,
     pub current_location: TeamLocation,
     pub peer_id: Option<PeerId>,
     pub current_game: Option<GameId>,
@@ -104,6 +107,10 @@ impl Team {
         }
     }
 
+    pub fn can_teleport_to(&self, to: PlanetId) -> bool {
+        self.home_planet_id == to || self.extra_teleportation_pods.contains(&to)
+    }
+
     pub fn add_sent_challenge(&mut self, challenge: Challenge) {
         self.sent_challenges
             .insert(challenge.away_team_in_game.team_id, challenge);
@@ -153,6 +160,34 @@ impl Team {
 
     pub fn balance(&self) -> u32 {
         self.resources.value(&Resource::SATOSHI)
+    }
+
+    pub fn add_resource(&mut self, resource: Resource, amount: u32) -> AppResult<()> {
+        if resource == Resource::FUEL {
+            self.resources.add(resource, amount, self.fuel_capacity())?;
+        } else {
+            self.resources
+                .add(resource, amount, self.storage_capacity())?;
+        }
+        Ok(())
+    }
+
+    pub fn saturating_add_resource(&mut self, resource: Resource, amount: u32) {
+        if resource == Resource::FUEL {
+            self.resources
+                .saturating_add(resource, amount, self.fuel_capacity());
+        } else {
+            self.resources
+                .saturating_add(resource, amount, self.storage_capacity());
+        }
+    }
+
+    pub fn sub_resource(&mut self, resource: Resource, amount: u32) -> AppResult<()> {
+        self.resources.sub(resource, amount)
+    }
+
+    pub fn saturating_sub_resource(&mut self, resource: Resource, amount: u32) {
+        self.resources.saturating_sub(resource, amount);
     }
 
     pub fn fuel(&self) -> u32 {
@@ -518,20 +553,6 @@ impl Team {
         }
 
         Ok(())
-    }
-
-    pub fn max_resource_storage_capacity(&self, resource: Resource) -> u32 {
-        if resource == Resource::FUEL {
-            self.spaceship.fuel_capacity() - self.fuel()
-        } else {
-            let free_storage_capacity =
-                self.spaceship.storage_capacity() - self.resources.used_storage_capacity();
-            if resource.to_storing_space() == 0 {
-                u32::MAX
-            } else {
-                free_storage_capacity / resource.to_storing_space()
-            }
-        }
     }
 
     pub fn max_resource_buy_amount(&self, resource: Resource, unit_cost: u32) -> u32 {

@@ -81,39 +81,8 @@ impl Tactic {
         }
     }
 
-    pub fn atk_roll_bonus(&self, defense_tactic: &Tactic, action: &Action) -> i16 {
-        let defense_bonus = match defense_tactic {
-            Self::Balanced => 0,
-            Self::BigPirates => match action {
-                Action::Isolation => -2,
-                Action::PickAndRoll => -2,
-                Action::OffTheScreen => -2,
-                Action::Post => 4,
-                Action::Brawl => 0,
-                Action::Rebound => 2,
-                _ => 0,
-            },
-            Self::Arrembaggio => match action {
-                Action::Isolation => 0,
-                Action::PickAndRoll => -2,
-                Action::OffTheScreen => 2,
-                Action::Post => -2,
-                Action::Brawl => 2,
-                Action::Rebound => -2,
-                _ => 0,
-            },
-            Self::Shooters => match action {
-                Action::Isolation => 2,
-                Action::PickAndRoll => 0,
-                Action::OffTheScreen => 2,
-                Action::Post => -2,
-                Action::Brawl => -2,
-                Action::Rebound => 0,
-                _ => 0,
-            },
-        };
-
-        let attack_bonus = match self {
+    pub fn attack_roll_bonus(&self, action: &Action) -> i16 {
+        match self {
             Self::Balanced => 0,
             Self::BigPirates => match action {
                 Action::Isolation => -2,
@@ -142,8 +111,39 @@ impl Tactic {
                 Action::Rebound => -4,
                 _ => 0,
             },
-        };
+        }
+    }
 
-        attack_bonus - defense_bonus
+    pub fn defense_roll_bonus(&self, action: &Action) -> i16 {
+        match self {
+            Self::Balanced => 0,
+            Self::BigPirates => match action {
+                Action::Isolation => -2,
+                Action::PickAndRoll => -2,
+                Action::OffTheScreen => -2,
+                Action::Post => 4,
+                Action::Brawl => 0,
+                Action::Rebound => 2,
+                _ => 0,
+            },
+            Self::Arrembaggio => match action {
+                Action::Isolation => 0,
+                Action::PickAndRoll => -2,
+                Action::OffTheScreen => 2,
+                Action::Post => -2,
+                Action::Brawl => 2,
+                Action::Rebound => -2,
+                _ => 0,
+            },
+            Self::Shooters => match action {
+                Action::Isolation => 2,
+                Action::PickAndRoll => 0,
+                Action::OffTheScreen => 2,
+                Action::Post => -2,
+                Action::Brawl => -2,
+                Action::Rebound => 0,
+                _ => 0,
+            },
+        }
     }
 }

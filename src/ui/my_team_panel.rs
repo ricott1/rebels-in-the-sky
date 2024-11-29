@@ -10,6 +10,7 @@ use super::{
     utils::format_satoshi,
     widgets::*,
 };
+use crate::world::constants::AsteroidFacilityCost;
 use crate::{
     game_engine::game::Game,
     store::load_game,
@@ -1080,7 +1081,7 @@ impl MyTeamPanel {
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
-        let split = Layout::horizontal([Constraint::Length(12), Constraint::Length(30)]).split(
+        let split = Layout::horizontal([Constraint::Length(20), Constraint::Length(30)]).split(
             area.inner(Margin {
                 horizontal: 1,
                 vertical: 1,
@@ -1238,7 +1239,6 @@ impl MyTeamPanel {
         area: Rect,
     ) -> AppResult<()> {
         frame.render_widget(default_block().title("Asteroids "), area);
-        let team = world.get_own_team()?;
 
         if self.asteroid_ids.len() == 0 {
             frame.render_widget(
@@ -1252,13 +1252,22 @@ impl MyTeamPanel {
             return Ok(());
         }
 
+        let split = Layout::horizontal([Constraint::Length(20), Constraint::Length(30)]).split(
+            area.inner(Margin {
+                horizontal: 1,
+                vertical: 1,
+            }),
+        );
+
+        let own_team = world.get_own_team()?;
+
         let options = self
             .asteroid_ids
             .iter()
             .filter(|&asteroid_id| world.get_planet_or_err(asteroid_id).is_ok())
             .map(|&asteroid_id| {
                 let asteroid = world.get_planet_or_err(&asteroid_id).unwrap();
-                let style = match team.current_location {
+                let style = match own_team.current_location {
                     TeamLocation::OnPlanet { planet_id } => {
                         if planet_id == asteroid_id {
                             UiStyle::OWN_TEAM
@@ -1268,6 +1277,7 @@ impl MyTeamPanel {
                     }
                     _ => UiStyle::DEFAULT,
                 };
+
                 (asteroid.name.clone(), style)
             })
             .collect_vec();
@@ -1276,12 +1286,61 @@ impl MyTeamPanel {
 
         frame.render_stateful_interactive(
             list,
-            area.inner(Margin {
-                horizontal: 1,
-                vertical: 1,
-            }),
+            split[0],
             &mut ClickableListState::default().with_selected(self.asteroid_index),
         );
+
+        let a_split = Layout::vertical([3, 3, 3]).split(split[1]);
+        if let Some(index) = self.asteroid_index {
+            let asteroid_id = own_team.asteroid_ids[index];
+            let asteroid = world.get_planet_or_err(&asteroid_id)?;
+            if own_team.can_teleport_to(asteroid_id) {
+                let mut travel_to_planet_button = Button::new(
+                    "Teleport",
+                    UiCallback::TravelToPlanet {
+                        planet_id: asteroid_id,
+                    },
+                )
+                .set_hotkey(UiKey::TRAVEL)
+                .set_hover_text(format!("Travel instantaneously to {}", asteroid.name));
+
+                let duration = world.travel_time_to_planet(own_team.id, asteroid_id)?;
+                if let Err(e) = own_team.can_travel_to_planet(&asteroid, duration) {
+                    travel_to_planet_button.disable(Some(e.to_string()));
+                }
+
+                frame.render_interactive(travel_to_planet_button, a_split[0]);
+            } else {
+                let mut build_teleport_pod_button = Button::new(
+                    "Build teleportation pod",
+                    UiCallback::BuildTeleportationPod { asteroid_id },
+                )
+                .set_hotkey(UiKey::BUILD_TELEPORTATION_POD)
+                .set_hover_text(format!(
+                    "Build teleportation pad to travel instantaneously to {}",
+                    asteroid.name
+                ));
+
+                if own_team.extra_teleportation_pods.contains(&asteroid_id) {
+                    log::error!("Asteroid teleportation pad: This path should be unreachable");
+                    build_teleport_pod_button.disable(Some("Teleportation pad already built"));
+                } else {
+                    for (resource, amount) in AsteroidFacilityCost::TELEPORTATION_POD {
+                        if own_team.resources.value(&resource) < amount {
+                            build_teleport_pod_button.disable(Some(format!(
+                                "Not enough {} ({}/{})",
+                                resource,
+                                own_team.resources.value(&resource),
+                                amount
+                            )));
+                            break;
+                        }
+                    }
+                }
+
+                frame.render_interactive(build_teleport_pod_button, a_split[0]);
+            }
+        }
 
         Ok(())
     }
@@ -1300,7 +1359,16 @@ impl MyTeamPanel {
         let asteroid_id = self.asteroid_ids[self.asteroid_index.unwrap_or_default()];
         let asteroid = world.get_planet_or_err(&asteroid_id)?;
 
-        frame.render_widget(default_block().title(format!("{} ", asteroid.name)), area);
+        let parent = world.get_planet_or_err(
+            &asteroid
+                .satellite_of
+                .expect("Asteroid should orbit a planet"),
+        )?;
+
+        frame.render_widget(
+            default_block().title(format!("{} (around {})", asteroid.name, parent.name)),
+            area,
+        );
 
         let split = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(
             area.inner(Margin {
@@ -1324,15 +1392,12 @@ impl MyTeamPanel {
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(split[1]);
 
         frame.render_interactive(go_to_planet_button(world, &asteroid_id)?, b_split[0]);
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                "No kartoffeln to plant",
-                UiStyle::DISCONNECTED,
-            ))
-            .centered()
-            .block(default_block()),
-            b_split[1],
-        );
+
+        let abandon_asteroid_button =
+            Button::new("Abandon", UiCallback::PromptAbandonAsteroid { asteroid_id })
+                .set_hotkey(UiKey::ABANDON_ASTEROID)
+                .set_hover_text("Abandon this asteroid (there's no way back!)");
+        frame.render_interactive(abandon_asteroid_button, b_split[1]);
 
         Ok(())
     }

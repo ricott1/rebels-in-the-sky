@@ -24,7 +24,7 @@ use crate::{
     image::game::{PitchStyle, PITCH_HEIGHT},
     image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
     types::GameId,
-    ui::constants::UiKey,
+    ui::constants::*,
     world::{
         constants::MAX_TIREDNESS,
         planet::PlanetType,
@@ -230,7 +230,8 @@ impl GamePanel {
         }
         let central_split = Layout::vertical([
             Constraint::Length(margin_height),
-            Constraint::Length(2),
+            Constraint::Length(1),
+            Constraint::Length(1),
             Constraint::Length(2),
             Constraint::Length(8),
             Constraint::Length(margin_height),
@@ -243,7 +244,7 @@ impl GamePanel {
                 world.get_planet_or_err(&game.location)?.name
             ))
             .centered(),
-            central_split[2],
+            central_split[3],
         );
 
         let digit_split = Layout::horizontal([
@@ -261,7 +262,7 @@ impl GamePanel {
             Constraint::Length(1),
             Constraint::Length(8),
         ])
-        .split(central_split[3]);
+        .split(central_split[4]);
 
         let action = if self.commentary_index == 0 {
             &game.action_results[game.action_results.len() - 1]
@@ -326,20 +327,19 @@ impl GamePanel {
         } else {
             " "
         };
+        let l = MAX_NAME_LENGTH + 2;
         frame.render_widget(
             Paragraph::new(Line::from(format!(
-                "{} {} vs {} {}",
-                home_dot,
-                game.home_team_in_game.name.to_string(),
-                game.away_team_in_game.name.to_string(),
-                away_dot
+                "{:>l$} vs {:<l$}",
+                format!("{} {}", home_dot, game.home_team_in_game.name),
+                format!("{} {}", game.away_team_in_game.name, away_dot),
             )))
             .centered(),
             central_split[1],
         );
 
         let timer_lines = self.build_timer_lines(world, game);
-        frame.render_widget(Paragraph::new(timer_lines).centered(), central_split[4]);
+        frame.render_widget(Paragraph::new(timer_lines).centered(), central_split[5]);
         match home_score {
             x if x < 10 => frame.render_widget((home_score % 10).big_font(), digit_split[4]),
             x if x < 100 => {
@@ -809,20 +809,6 @@ impl GamePanel {
     }
 
     fn build_status_box(game: &Game, frame: &mut UiFrame, area: Rect) {
-        let header_cells_home = [
-            "  ",
-            game.home_team_in_game.name.as_str(),
-            "Morale",
-            "Tiredness",
-        ];
-
-        let header_cells_away = [
-            "  ",
-            game.away_team_in_game.name.as_str(),
-            "Morale",
-            "Tiredness",
-        ];
-
         let home_players = game
             .home_team_in_game
             .initial_positions
@@ -843,14 +829,25 @@ impl GamePanel {
             Constraint::Ratio(1, 2), //tiredness
         ];
 
+        let home_tactic = game.home_team_in_game.tactic.to_string();
+        let away_tactic = game.away_team_in_game.tactic.to_string();
+
         let home_table =
             Self::build_player_status_table(&game.home_team_in_game.stats, home_players)
-                .header(Row::new(header_cells_home).style(UiStyle::HEADER).height(1))
+                .header(
+                    Row::new(["  ", home_tactic.as_str(), "Morale", "Tiredness"])
+                        .style(UiStyle::HEADER)
+                        .height(1),
+                )
                 .widths(constraint);
 
         let away_table =
             Self::build_player_status_table(&game.away_team_in_game.stats, away_players)
-                .header(Row::new(header_cells_away).style(UiStyle::HEADER).height(1))
+                .header(
+                    Row::new(["  ", away_tactic.as_str(), "Morale", "Tiredness"])
+                        .style(UiStyle::HEADER)
+                        .height(1),
+                )
                 .widths(constraint);
 
         let box_area = Layout::vertical([

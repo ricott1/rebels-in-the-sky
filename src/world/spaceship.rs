@@ -1163,9 +1163,9 @@ mod tests {
             };
 
             match world.tick_travel(current_tick) {
-                Ok(message_option) => {
-                    if let Some(messages) = message_option {
-                        println!("{:#?}", messages)
+                Ok(messages) => {
+                    for message in messages {
+                        println!("{:#?}", message)
                     }
                 }
                 Err(e) => {
