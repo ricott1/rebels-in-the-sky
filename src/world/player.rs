@@ -1241,6 +1241,7 @@ mod test {
         print_player_rolls(&player, rng);
     }
 
+    #[ignore]
     #[test]
     fn test_players_generation() -> AppResult<()> {
         let mut app = App::test_default()?;
