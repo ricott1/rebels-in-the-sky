@@ -121,12 +121,13 @@ impl World {
         let number_free_pirates = planet.total_population();
         let mut position = 0 as Position;
         let own_team_base_level = if let Ok(own_team) = self.get_own_team() {
-            own_team.reputation / 4.0
+            own_team.reputation / 5.0
         } else {
             0.0
         };
-        let base_level = rng.gen_range(0.0..4.0) + own_team_base_level;
+
         for _ in 0..number_free_pirates {
+            let base_level = own_team_base_level + rng.gen_range(0.0..4.0);
             self.generate_random_player(rng, Some(position), &planet, base_level)?;
             position = (position + 1) % MAX_POSITION;
         }
@@ -162,12 +163,12 @@ impl World {
         ship_name: String,
     ) -> AppResult<TeamId> {
         let team_id = TeamId::new_v4();
-        let team = Team::random(team_id, home_planet_id, team_name, ship_name);
-        self.teams.insert(team.id, team.clone());
+        let team = Team::random(team_id, home_planet_id, team_name, ship_name, rng);
 
-        let home_planet_id = team.home_planet_id.clone();
-        let mut planet = self.get_planet_or_err(&home_planet_id)?.clone();
+        let mut planet = self.get_planet_or_err(&team.home_planet_id)?.clone();
         planet.team_ids.push(team_id);
+
+        self.teams.insert(team.id, team);
 
         let team_base_level = rng.gen_range(0..=8) as f32;
         for position in 0..MAX_POSITION {
@@ -226,7 +227,7 @@ impl World {
             resources,
             ..Default::default()
         };
-        self.teams.insert(team.id, team.clone());
+        self.teams.insert(team.id, team);
 
         for player_id in players {
             self.add_player_to_team(player_id, team_id)?;
@@ -391,7 +392,6 @@ impl World {
         player.morale = (player.morale + MORALE_DEMOTION_MALUS).bound();
         player.set_jersey(&jersey);
         self.players.insert(player.id, player);
-
         self.teams.insert(team.id, team);
 
         if role == CrewRole::Pilot {
@@ -413,7 +413,7 @@ impl World {
                     let new_duration =
                         (duration - time_elapsed) as f32 * previous_spaceship_speed_bonus / bonus;
 
-                    log::info!(
+                    log::debug!(
                     "Update {role}: old speed {previous_spaceship_speed_bonus}, new speed {bonus}"
                 );
 
@@ -544,7 +544,7 @@ impl World {
                     let new_duration =
                         (duration - time_elapsed) as f32 * previous_spaceship_speed_bonus / bonus;
 
-                    log::info!(
+                    log::debug!(
                     "Update {role}: old speed {previous_spaceship_speed_bonus}, new speed {bonus}"
                 );
 
@@ -577,7 +577,7 @@ impl World {
     }
 
     fn add_player_to_team(&mut self, player_id: PlayerId, team_id: TeamId) -> AppResult<()> {
-        let mut player = self.get_player(&player_id).unwrap().clone();
+        let mut player = self.get_player_or_err(&player_id)?.clone();
         let mut team = self.get_team_or_err(&team_id)?.clone();
         team.can_add_player(&player)?;
 
@@ -610,7 +610,7 @@ impl World {
     }
 
     pub fn hire_player_for_team(&mut self, player_id: PlayerId, team_id: TeamId) -> AppResult<()> {
-        let player = self.get_player(&player_id).unwrap().clone();
+        let player = self.get_player_or_err(&player_id)?.clone();
         let mut team = self.get_team_or_err(&team_id)?.clone();
         team.can_hire_player(&player)?;
         team.sub_resource(Resource::SATOSHI, player.hire_cost(team.reputation))?;
@@ -680,14 +680,14 @@ impl World {
         }
         player.version += 1;
 
-        self.players.insert(player.id, player.clone());
-        self.teams.insert(team.id, team.clone());
-
         self.dirty = true;
         if team.id == self.own_team_id {
             self.dirty_network = true;
         }
         self.dirty_ui = true;
+
+        self.players.insert(player.id, player);
+        self.teams.insert(team.id, team);
 
         Ok(())
     }
@@ -754,11 +754,21 @@ impl World {
         let mut away_team = self.get_team_or_err(&away_team_in_game.team_id)?.clone();
 
         // For a network game we run different checks.
-        // In particular, we do not check if the teams are already playing a game
-        // as this is done with an extra check if the current game is THIS game.
+        // In particular, we check if our game has already a game, not the other.
         // This is necessary because of a race condition when a team can be received
         // over the network before the challenge confirmation message.
-        home_team.can_challenge_team_over_network(&away_team)?;
+
+        if self.own_team_id == home_team.id {
+            if home_team.current_game.is_some() {
+                return Err(anyhow!("{} is already playing", home_team.name));
+            }
+        } else if self.own_team_id == away_team.id {
+            if away_team.current_game.is_some() {
+                return Err(anyhow!("{} is already playing", away_team.name));
+            }
+        }
+
+        home_team.can_accept_network_challenge(&away_team)?;
 
         let location = match home_team.current_location {
             TeamLocation::OnPlanet { planet_id } => planet_id,
@@ -776,13 +786,19 @@ impl World {
 
         if let Some(previous_game_id) = home_team.current_game {
             if game_id != previous_game_id {
-                return Err(anyhow!("Team is already playing another game"));
+                return Err(anyhow!(
+                    "{} is already playing another game",
+                    home_team.name
+                ));
             }
         }
 
         if let Some(previous_game_id) = away_team.current_game {
             if game_id != previous_game_id {
-                return Err(anyhow!("Opponent is already playing another game"));
+                return Err(anyhow!(
+                    "{} is already playing another game",
+                    away_team.name
+                ));
             }
         }
 
@@ -802,7 +818,7 @@ impl World {
         Ok(game_id)
     }
 
-    pub fn generate_game(
+    pub fn generate_local_game(
         &mut self,
         home_team_in_game: TeamInGame,
         away_team_in_game: TeamInGame,
@@ -811,7 +827,7 @@ impl World {
         let mut home_team = self.get_team_or_err(&home_team_in_game.team_id)?.clone();
         let mut away_team = self.get_team_or_err(&away_team_in_game.team_id)?.clone();
 
-        home_team.can_challenge_team(&away_team)?;
+        home_team.can_challenge_local_team(&away_team)?;
 
         let location = home_team
             .is_on_planet()
@@ -825,6 +841,27 @@ impl World {
 
         home_team.current_game = Some(game_id);
         away_team.current_game = Some(game_id);
+
+        if home_team.id != self.own_team_id {
+            home_team.player_ids = Team::best_position_assignment(
+                home_team
+                    .player_ids
+                    .iter()
+                    .map(|&id| self.players.get(&id).unwrap())
+                    .collect(),
+            );
+        }
+
+        if away_team.id != self.own_team_id {
+            away_team.player_ids = Team::best_position_assignment(
+                away_team
+                    .player_ids
+                    .iter()
+                    .map(|&id| self.players.get(&id).unwrap())
+                    .collect(),
+            );
+        }
+
         self.dirty = true;
         self.dirty_ui = true;
 
@@ -1134,14 +1171,15 @@ impl World {
                 callbacks.push(cb);
             }
 
-            if self.games.len() < AUTO_GENERATE_GAMES_NUMBER {
-                self.generate_random_games()?;
+            if !is_simulating {
+                self.tick_team_position_assignment()?;
+                // Once every MEDIUM interval, set dirty_network flag,
+                // so that we send our team to the network.
+                self.dirty_network = true;
             }
 
-            // Once every MEDIUM interval, set dirty_network flag,
-            // so that we send our team to the network.
-            if !is_simulating {
-                self.dirty_network = true;
+            if self.games.len() < AUTO_GENERATE_GAMES_NUMBER {
+                self.generate_random_games()?;
             }
 
             self.last_tick_medium_interval += TickInterval::MEDIUM;
@@ -1205,7 +1243,18 @@ impl World {
                     // Set tiredness and morale to the value in game.
                     // We do not clone the game_player as other changes may have occured to the player
                     // during the game (such as skill update).
-                    let mut player = self.get_player_or_err(&game_player.id)?.clone();
+                    let try_player = self.get_player_or_err(&game_player.id);
+                    if let Err(e) = try_player {
+                        log::error!(
+                            "Can't find player {} in world during game {} cleanup: {}",
+                            game_player.id,
+                            game.id,
+                            e
+                        );
+                        continue;
+                    }
+
+                    let mut player = try_player?.clone();
                     player.tiredness = game_player.tiredness;
                     player.morale = game_player.morale;
 
@@ -1351,7 +1400,7 @@ impl World {
                         home_team.game_record[2] + home_team_record[2],
                     ];
                 }
-                self.teams.insert(home_team.id, home_team.clone());
+                self.teams.insert(home_team.id, home_team);
             }
 
             if let Ok(res) = self.get_team_or_err(&game.away_team_in_game.team_id) {
@@ -1378,7 +1427,7 @@ impl World {
                         away_team.game_record[2] + away_team_record[2],
                     ];
                 }
-                self.teams.insert(away_team.id, away_team.clone());
+                self.teams.insert(away_team.id, away_team);
             }
 
             self.dirty = true;
@@ -1437,11 +1486,10 @@ impl World {
                         self.players.insert(player.id, player);
                     }
 
-                    team.total_travelled += distance;
-
                     // Increase team reputation based on the travel distance if the team didn't use a teleport pad.
                     // Note: if the team switches a pilot at the last moment, they lose this bonus as the duration is reset.
                     if duration > 0 {
+                        team.total_travelled += distance;
                         let reputation_bonus = Self::team_reputation_bonus_per_distance(distance);
                         team.reputation = (team.reputation + reputation_bonus).bound();
                     }
@@ -1571,18 +1619,46 @@ impl World {
         for team in teams {
             let bonus = TeamBonus::TirednessRecovery.current_team_bonus(&self, &team.id)?;
             for player_id in team.player_ids.iter() {
-                let db_player = self
-                    .get_player(player_id)
-                    .ok_or(anyhow!("Player {:?} not found", player_id))?;
-                if db_player.tiredness > 0.0 && db_player.tiredness <= MAX_TIREDNESS {
-                    let mut player = db_player.clone();
+                let player = self.get_player_or_err(player_id)?;
+                if player.tiredness > 0.0 {
                     // Recovery outside of games is slower by a factor TICK_SHORT_INTERVAL/TICK_MEDIUM_INTERVAL
                     // so that it takes 1 minute * 10 * 100 ~ 18 hours to recover from 100% tiredness.
+                    let mut player = player.clone();
                     player.tiredness =
                         (player.tiredness - bonus * RECOVERING_TIREDNESS_PER_SHORT_TICK).bound();
                     self.players.insert(player.id, player);
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    fn tick_team_position_assignment(&mut self) -> AppResult<()> {
+        //TODO: once we remove local teams, we can completely remove this function
+        for team in self.teams.values_mut() {
+            if team.peer_id.is_some() {
+                continue;
+            }
+
+            if team.id == self.own_team_id {
+                continue;
+            }
+
+            if team.current_game.is_some() {
+                continue;
+            }
+
+            if team.is_on_planet().is_none() {
+                continue;
+            }
+
+            team.player_ids = Team::best_position_assignment(
+                team.player_ids
+                    .iter()
+                    .map(|&id| self.players.get(&id).unwrap())
+                    .collect(),
+            );
         }
 
         Ok(())
@@ -1671,35 +1747,28 @@ impl World {
             for idx in 0..player.skills_training.len() {
                 // Reduce player skills. This is planned to counteract the effect of training by playing games.
 
-                // Mental abilities decrease slowly for mature players.
-                let age_modifier = if idx > 15 && player.info.relative_age() > 0.25 {
-                    0.5
-                } else
-                // Reduce athletics skills even more if relative_age is more than 0.75.
-                if idx < 4 && player.info.relative_age() > 0.75 {
-                    2.0 * player.info.relative_age()
-                } else {
-                    player.info.relative_age().max(0.1)
-                };
+                let age_modifier =
+                    // Age modifier increseas linearly from (0,2/3) to (PEAK_PERFORMANCE_RELATIVE_AGE, 1),
+                    // then increseas linearly from (PEAK_PERFORMANCE_RELATIVE_AGE, 1) to (1, 4).
+                    if PEAK_PERFORMANCE_RELATIVE_AGE >= player.info.relative_age() {
+                        1.0 / (1.5
+                            - player.info.relative_age() / (2.0 * PEAK_PERFORMANCE_RELATIVE_AGE))
+                    }
+                    // Mental abilities decrease slowly for mature players.
+                    else if idx > 15 {
+                         (2.0 * PEAK_PERFORMANCE_RELATIVE_AGE - 2.0)
+                            / (player.info.relative_age() + PEAK_PERFORMANCE_RELATIVE_AGE - 2.0)
+                    }
+                    // Reduce athletics skills even more if relative_age is more than PEAK_PERFORMANCE_RELATIVE_AGE.
+                    else if idx < 4 {
+                        4.0 * (2.0 * PEAK_PERFORMANCE_RELATIVE_AGE - 2.0)
+                            / (player.info.relative_age() + PEAK_PERFORMANCE_RELATIVE_AGE - 2.0)
+                    } else {
+                      2.0*  (2.0 * PEAK_PERFORMANCE_RELATIVE_AGE - 2.0)
+                            / (player.info.relative_age() + PEAK_PERFORMANCE_RELATIVE_AGE - 2.0)
+                    };
 
-                // The potential_modifier has a value ranging from 0.0 to 4.0.
-                // Players with skills below their potential decrease slower, above their potential decrease faster.
-                let potential_modifier =
-                    (1.0 + (player.average_skill() - player.potential) / MAX_SKILL).powf(2.0);
-
-                // Extra malus for high skill. At most, 20.0 gets reduced by an extra 20%
-                let skill_modifier = if player.current_skill_array()[idx] > 16.0 {
-                    1.0 + (player.current_skill_array()[idx] - 16.0) / MAX_SKILL
-                } else {
-                    1.0
-                };
-                player.modify_skill(
-                    idx,
-                    SKILL_DECREMENT_PER_LONG_TICK
-                        * potential_modifier
-                        * age_modifier
-                        * skill_modifier,
-                );
+                player.modify_skill(idx, SKILL_DECREMENT_PER_LONG_TICK * age_modifier.bound());
 
                 // Increase player skills from training
                 player.modify_skill(idx, player.skills_training[idx]);
@@ -1834,22 +1903,11 @@ impl World {
                         if team.player_ids.len() < MIN_PLAYERS_PER_GAME {
                             return false;
                         }
-                        let avg_tiredness = team
-                            .player_ids
-                            .iter()
-                            .map(|&id| {
-                                if let Ok(player) = self.get_player_or_err(&id) {
-                                    player.tiredness
-                                } else {
-                                    0.0
-                                }
-                            })
-                            .sum::<f32>()
-                            / team.player_ids.len() as f32;
+                        let average_tiredness = team.average_tiredness(self);
                         return team.current_game.is_none()
                             && team.id != self.own_team_id
                             && team.peer_id.is_none()
-                            && avg_tiredness <= MAX_AVG_TIREDNESS_PER_AUTO_GAME;
+                            && average_tiredness <= MAX_AVG_TIREDNESS_PER_AUTO_GAME;
                     }
                     false
                 })
@@ -1860,14 +1918,14 @@ impl World {
             }
             let teams = candidate_teams.iter().choose_multiple(rng, 2);
             let home_team_in_game =
-                TeamInGame::from_team_id(teams[0].id, &self.teams, &self.players)
+                TeamInGame::from_team_id(&teams[0].id, &self.teams, &self.players)
                     .ok_or(anyhow!("Team {:?} not found in world", teams[0].id))?;
 
             let away_team_in_game =
-                TeamInGame::from_team_id(teams[1].id, &self.teams, &self.players)
+                TeamInGame::from_team_id(&teams[1].id, &self.teams, &self.players)
                     .ok_or(anyhow!("Team {:?} not found in world", teams[1].id))?;
 
-            self.generate_game(home_team_in_game, away_team_in_game)?;
+            self.generate_local_game(home_team_in_game, away_team_in_game)?;
             return Ok(());
         }
 
@@ -1884,6 +1942,14 @@ impl World {
                 .retain(|_, player| player.peer_id.is_none() || player.peer_id.unwrap() != peer_id);
             self.planets
                 .retain(|_, planet| planet.peer_id.is_none() || planet.peer_id.unwrap() != peer_id);
+            self.games.retain(|_, game| {
+                game.home_team_in_game.team_id == self.own_team_id
+                    || game.away_team_in_game.team_id == self.own_team_id
+                    || ((game.home_team_in_game.peer_id.is_none()
+                        || game.home_team_in_game.peer_id.unwrap() != peer_id)
+                        && (game.away_team_in_game.peer_id.is_none()
+                            || game.away_team_in_game.peer_id.unwrap() != peer_id))
+            });
             own_team
                 .sent_challenges
                 .retain(|_, challenge| challenge.target_peer_id != peer_id);
@@ -1901,9 +1967,17 @@ impl World {
             self.teams.retain(|_, team| team.peer_id.is_none());
             self.players.retain(|_, player| player.peer_id.is_none());
             self.planets.retain(|_, planet| planet.peer_id.is_none());
+            self.games.retain(|_, game| {
+                game.home_team_in_game.team_id == self.own_team_id
+                    || game.away_team_in_game.team_id == self.own_team_id
+                    || (game.home_team_in_game.peer_id.is_none()
+                        && game.away_team_in_game.peer_id.is_none())
+            });
             own_team.clear_challenges();
             own_team.clear_trades();
         }
+        self.teams.insert(own_team.id, own_team);
+
         // Remove teams from planet teams vector.
         for (_, planet) in self.planets.iter_mut() {
             planet
@@ -1913,13 +1987,13 @@ impl World {
 
         // Set current game to None for teams playing a game not stored in games.
         for team in self.teams.values_mut() {
-            if team.current_game.is_some() && !self.games.contains_key(&team.current_game.unwrap())
-            {
-                team.current_game = None;
+            if let Some(game_id) = team.current_game {
+                if !self.games.contains_key(&game_id) {
+                    team.current_game = None;
+                }
             }
         }
 
-        self.teams.insert(own_team.id, own_team);
         self.dirty = true;
         self.dirty_ui = true;
         Ok(())
@@ -1952,18 +2026,16 @@ impl World {
 
     fn planet_height(&self, planet_id: PlanetId) -> AppResult<usize> {
         let mut planet = self.get_planet_or_err(&planet_id)?;
-
         let mut height = 0;
 
-        while planet.satellite_of.is_some() {
-            planet = self.get_planet_or_err(&planet.satellite_of.unwrap())?;
+        while let Some(parent_id) = planet.satellite_of {
+            planet = self.get_planet_or_err(&parent_id)?;
             height += 1;
         }
         Ok(height)
     }
 
     pub fn fuel_consumption_to_planet(&self, team_id: TeamId, to: PlanetId) -> AppResult<u32> {
-        // let distance = self.distance_between_planets(from_id, to_id)?;
         let duration = self.travel_time_to_planet(team_id, to)?;
         let team = self.get_team_or_err(&team_id)?;
 
@@ -1976,7 +2048,6 @@ impl World {
         to_id: PlanetId,
     ) -> AppResult<KILOMETER> {
         // We calculate the distance. 5 cases:
-
         // 1: from and to are the same planet -> 0
         if from_id == to_id {
             return Ok(0);
@@ -2071,6 +2142,7 @@ mod test {
             world::{TickInterval, AU, LONG_EXPLORATION_TIME},
         },
     };
+    use itertools::Itertools;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
     use uuid::uuid;
@@ -2202,7 +2274,7 @@ mod test {
         let team_id =
             world.generate_random_team(rng, planet.id, "test".into(), "testship".into())?;
 
-        let team = &mut world.get_team_or_err(&team_id)?.clone();
+        let mut team = world.get_team_or_err(&team_id)?.clone();
         team.add_resource(Resource::RUM, 20)?;
 
         let mut spugna = world.get_player_or_err(&team.player_ids[0])?.clone();
@@ -2224,7 +2296,7 @@ mod test {
 
         println!("Team resources {:?}", team.resources);
         println!("Team location {:?}", team.current_location);
-        world.teams.insert(team.id, team.clone());
+        world.teams.insert(team.id, team);
 
         UiCallback::Drink {
             player_id: spugna_id,
@@ -2256,8 +2328,8 @@ mod test {
             player.info.age = player.info.population.min_age();
 
             println!(
-                "Age {} - Overall {} {} - Potential {} {}",
-                player.info.age,
+                "Age {:.2} - Overall {:.2} {} - Potential {:.2} {}",
+                player.info.relative_age(),
                 player.average_skill(),
                 player.average_skill().stars(),
                 player.potential,
@@ -2270,8 +2342,8 @@ mod test {
             let player = world.players.get_mut(&player_id).unwrap();
             player.info.age = player.info.population.max_age();
             println!(
-                "Age {} - Overall {} {} - Potential {} {}",
-                player.info.age,
+                "Age {:.2} - Overall {:.2} {} - Potential {:.2} {}",
+                player.info.relative_age(),
                 player.average_skill(),
                 player.average_skill().stars(),
                 player.potential,
@@ -2279,6 +2351,74 @@ mod test {
             );
             world.tick_players_update();
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_players_training() -> AppResult<()> {
+        let mut app = App::test_default()?;
+
+        let world = &mut app.world;
+
+        let player_id = world
+            .players
+            .values()
+            .sorted_by(|a, b| b.potential.partial_cmp(&a.potential).unwrap())
+            .next()
+            .expect("There should be at least one player")
+            .id;
+
+        let mut overalls = vec![];
+
+        let player = world.get_player_or_err(&player_id)?;
+
+        let mut current_max_average_skill = player.current_skill_array();
+        for _ in 0..300 {
+            let mut player = world.get_player_or_err(&player_id)?.clone();
+            if player.average_skill()
+                > current_max_average_skill.iter().sum::<f32>()
+                    / current_max_average_skill.len() as f32
+            {
+                current_max_average_skill = player.current_skill_array();
+            }
+            overalls.push(player.average_skill());
+            assert!(player.skills_training == [0.0; 20]);
+            println!(
+                "Age {:.2} - Overall {:.2} {} - Potential {:.2} {}",
+                player.info.relative_age(),
+                player.average_skill(),
+                player.average_skill().stars(),
+                player.potential,
+                player.potential.stars(),
+            );
+            if player.info.relative_age() > 1.0 {
+                break;
+            }
+
+            // 32 minutes equally split between 5 positions
+            let experience_at_position = [384; 5];
+            player.update_skills_training(experience_at_position, 1.5, None);
+            world.players.insert(player.id, player);
+            world.tick_players_update();
+        }
+
+        let player = world.get_player_or_err(&player_id)?;
+        println!(
+            "Top skills: {:?}",
+            current_max_average_skill
+                .iter()
+                .map(|v| (v * 100.0).round() / 100.0)
+                .collect_vec()
+        );
+        println!(
+            "Final skills: {:?}",
+            player
+                .current_skill_array()
+                .iter()
+                .map(|v| (v * 100.0).round() / 100.0)
+                .collect_vec()
+        );
+
         Ok(())
     }
 
@@ -2356,6 +2496,27 @@ mod test {
 
         assert!(runs == cycles);
         assert!(world.is_simulating() == false);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_random_games() -> AppResult<()> {
+        let mut app = App::test_default()?;
+
+        let world = &mut app.world;
+
+        for i in 0..11 {
+            assert!(world.games.len() == i);
+            world.generate_random_games()?;
+        }
+
+        for game in world.games.values() {
+            println!(
+                "{} vs {}",
+                game.home_team_in_game.name, game.away_team_in_game.name
+            );
+        }
 
         Ok(())
     }

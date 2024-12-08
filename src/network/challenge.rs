@@ -18,9 +18,11 @@ impl Challenge {
     pub fn new(
         proposer_peer_id: PeerId,
         target_peer_id: PeerId,
-        home_team_in_game: TeamInGame,
-        away_team_in_game: TeamInGame,
+        mut home_team_in_game: TeamInGame,
+        mut away_team_in_game: TeamInGame,
     ) -> Self {
+        home_team_in_game.peer_id = Some(proposer_peer_id);
+        away_team_in_game.peer_id = Some(target_peer_id);
         Self {
             state: NetworkRequestState::Syn,
             proposer_peer_id,

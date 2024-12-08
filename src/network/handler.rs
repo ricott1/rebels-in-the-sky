@@ -163,7 +163,7 @@ impl NetworkHandler {
             // FIX BUG?? Send game even if we are playing with local team.
             // return self.send_game(world, game_id);
 
-            if game.home_team_in_game.peer_id.is_some() || game.away_team_in_game.peer_id.is_some()
+            if game.home_team_in_game.peer_id.is_some() && game.away_team_in_game.peer_id.is_some()
             {
                 return self.send_game(world, &game_id);
             }
@@ -200,11 +200,11 @@ impl NetworkHandler {
     ) -> AppResult<Challenge> {
         self.send_own_team(world)?;
         let mut home_team_in_game =
-            TeamInGame::from_team_id(world.own_team_id, &world.teams, &world.players)
+            TeamInGame::from_team_id(&world.own_team_id, &world.teams, &world.players)
                 .ok_or(anyhow!("Cannot generate team in game"))?;
         home_team_in_game.peer_id = Some(self.swarm.local_peer_id().clone());
 
-        let away_team_in_game = TeamInGame::from_team_id(team_id, &world.teams, &world.players)
+        let away_team_in_game = TeamInGame::from_team_id(&team_id, &world.teams, &world.players)
             .ok_or(anyhow!("Cannot generate team in game"))?;
 
         let challenge = Challenge::new(
@@ -282,10 +282,16 @@ impl NetworkHandler {
         let mut handle_syn = || -> AppResult<()> {
             let home_team = world.get_team_or_err(&challenge.home_team_in_game.team_id)?;
             let away_team = world.get_team_or_err(&challenge.away_team_in_game.team_id)?;
-            home_team.can_challenge_team(away_team)?;
+
+            // Away team is our team.
+            if away_team.current_game.is_some() {
+                return Err(anyhow!("{} is already playing", away_team.name));
+            }
+
+            away_team.can_accept_network_challenge(home_team)?;
 
             let mut away_team_in_game =
-                TeamInGame::from_team_id(world.own_team_id, &world.teams, &world.players)
+                TeamInGame::from_team_id(&world.own_team_id, &world.teams, &world.players)
                     .ok_or(anyhow!("Cannot generate team in game"))?;
 
             away_team_in_game.peer_id = Some(self.swarm.local_peer_id().clone());
@@ -312,10 +318,9 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub fn decline_challenge(&mut self, challenge: Challenge) -> AppResult<()> {
-        let mut challenge = challenge.clone();
+    pub fn decline_challenge(&mut self, mut challenge: Challenge) -> AppResult<()> {
         challenge.state = NetworkRequestState::Failed {
-            error_message: "Challenge declined".to_string(),
+            error_message: format!("{} declined", challenge.away_team_in_game.name),
         };
         self.send_challenge(challenge)?;
         Ok(())

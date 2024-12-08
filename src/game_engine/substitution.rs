@@ -6,7 +6,12 @@ use super::{
 };
 use crate::{
     types::SortablePlayerMap,
-    world::{constants::MAX_TIREDNESS, player::Player, position::Position, team::Team},
+    world::{
+        constants::MAX_TIREDNESS,
+        player::Player,
+        position::{Position, MAX_POSITION},
+        team::Team,
+    },
 };
 use itertools::Itertools;
 use rand_chacha::ChaCha8Rng;
@@ -15,14 +20,14 @@ use std::collections::HashMap;
 #[derive(Debug, Default)]
 pub struct Substitution;
 
-fn get_subs<'a>(players: Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a Player> {
+fn get_subs<'a>(players: &Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a Player> {
     if players.len() <= 5 {
         return vec![];
     }
 
     let bench: Vec<&Player> = players
         .iter()
-        .skip(5)
+        .skip(MAX_POSITION as usize)
         .filter(|&p| {
             let stats = team_stats.get(&p.id).unwrap();
             !stats.is_playing() && !p.is_knocked_out()
@@ -36,7 +41,7 @@ fn get_subs<'a>(players: Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a 
 
     let playing: Vec<&Player> = players
         .iter()
-        .take(5)
+        .take(MAX_POSITION as usize)
         .filter(|&p| {
             let stats = team_stats.get(&p.id).unwrap();
             return stats.is_playing() == true && p.tiredness > MIN_TIREDNESS_FOR_SUB;
@@ -92,7 +97,7 @@ fn make_substitution(
     players: Vec<&Player>,
     stats: &GameStatsMap,
 ) -> Option<(String, GameStatsMap)> {
-    let subs = get_subs(players.clone(), stats);
+    let subs = get_subs(&players, stats);
     if subs.len() == 0 {
         return None;
     }
@@ -148,7 +153,7 @@ fn make_substitution(
         .map(|&p| p)
         .collect();
     playing.push(player_in);
-    let assignement = Team::best_position_assignment(playing.clone());
+    let assignement = Team::best_position_assignment(playing);
     for (idx, &id) in assignement.clone().iter().enumerate() {
         let mut player_update: GameStats;
         if stats_update.get(&id).is_none() {

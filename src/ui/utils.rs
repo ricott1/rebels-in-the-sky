@@ -146,9 +146,10 @@ pub fn validate_textarea_input<'a>(
 
 pub fn format_satoshi(amount: u32) -> String {
     const SATOSHI_PER_BITCOIN: u32 = 100_000_000;
-    if amount >= 100_000 {
-        let f_amount = (amount as f32 / SATOSHI_PER_BITCOIN as f32 * 100_000.0).round() / 100_000.0;
-        return format!("{} BTC", f_amount);
+    if amount >= 1_000_000 {
+        let f_amount =
+            (amount as f32 / SATOSHI_PER_BITCOIN as f32 * 1_000_000.0).round() / 1_000_000.0;
+        return format!("{:.4} BTC", f_amount);
     }
 
     format!("{amount} sat")
@@ -164,10 +165,10 @@ mod test {
         assert_eq!(format_satoshi(10), "10 sat");
         assert_eq!(format_satoshi(1_000), "1000 sat");
         assert_eq!(format_satoshi(99_999), "99999 sat");
-        assert_eq!(format_satoshi(100_000), "0.001 BTC");
-        assert_eq!(format_satoshi(1_000_000), "0.01 BTC");
-        assert_eq!(format_satoshi(2_345_678), "0.02346 BTC");
-        assert_eq!(format_satoshi(100_000_000), "1 BTC");
-        assert_eq!(format_satoshi(1_234_567_890), "12.34568 BTC");
+        assert_eq!(format_satoshi(999_999), "999999 sat");
+        assert_eq!(format_satoshi(1_000_000), "0.0100 BTC");
+        assert_eq!(format_satoshi(2_345_678), "0.0235 BTC");
+        assert_eq!(format_satoshi(100_000_000), "1.0000 BTC");
+        assert_eq!(format_satoshi(1_234_567_890), "12.3457 BTC");
     }
 }

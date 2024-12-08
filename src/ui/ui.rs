@@ -320,6 +320,7 @@ impl Ui {
                 self.player_panel.update(world)?;
                 self.game_panel.update(world)?;
                 self.galaxy_panel.update(world)?;
+                self.swarm_panel.update(world)?;
             }
             UiState::SpaceAdventure => self.space_screen.update(world)?,
         }

@@ -1,4 +1,4 @@
-use super::skill::Skill;
+use super::{constants::MAX_PLAYERS_PER_GAME, skill::Skill};
 
 pub type Position = u8;
 pub const MAX_POSITION: Position = 5;
@@ -30,7 +30,8 @@ impl GamePosition for Position {
             2 => "SF",
             3 => "PF",
             4 => "C",
-            _ => "Bench",
+            &x if x < MAX_PLAYERS_PER_GAME as u8 => "Bench",
+            _ => "Out",
         }
     }
     fn weights(&self) -> [f32; 20] {
@@ -45,16 +46,16 @@ impl GamePosition for Position {
             ],
             2 => [
                 3.0, 5.0, 3.0, 5.0, 2.0, 2.0, 5.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 2.0, 3.0,
-                1.0, 2.0, 2.0, 4.0,
+                2.0, 1.0, 2.0, 4.0,
             ],
 
             3 => [
-                2.0, 3.0, 4.0, 3.0, 4.0, 3.0, 2.0, 2.0, 1.0, 4.0, 2.0, 4.0, 3.0, 2.0, 5.0, 4.0,
+                2.0, 3.0, 4.0, 3.0, 4.0, 3.0, 3.0, 2.0, 1.0, 4.0, 2.0, 4.0, 1.0, 3.0, 5.0, 4.0,
                 2.0, 4.0, 3.0, 3.0,
             ],
             4 => [
-                2.0, 3.0, 4.0, 2.0, 3.0, 4.0, 3.0, 2.0, 2.0, 4.0, 2.0, 4.0, 2.0, 2.0, 5.0, 5.0,
-                2.0, 3.0, 3.0, 3.0,
+                2.0, 3.0, 4.0, 3.0, 3.0, 4.0, 3.0, 2.0, 2.0, 4.0, 2.0, 4.0, 2.0, 2.0, 5.0, 5.0,
+                1.0, 3.0, 3.0, 3.0,
             ],
 
             _ => panic!("Invalid position"),
@@ -87,5 +88,34 @@ impl GamePosition for Position {
             }
         }
         best
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{GamePosition, MAX_POSITION};
+    use itertools::Itertools;
+
+    #[test]
+    fn test_weights() {
+        let means = (0..MAX_POSITION)
+            .map(|p| p.weights().iter().map(|w| w).sum::<f32>())
+            .collect_vec();
+        println!("{:?}", means);
+
+        let m = means[0];
+        for mean in means {
+            assert!(mean == m);
+        }
+
+        let stds = (0..MAX_POSITION)
+            .map(|p| p.weights().iter().map(|w| w.powf(2.0)).sum::<f32>())
+            .collect_vec();
+        println!("{:?}", stds);
+
+        let s = stds[0];
+        for std in stds {
+            assert!(std == s);
+        }
     }
 }

@@ -447,10 +447,10 @@ impl UiCallback {
         Box::new(move |app: &mut App| {
             let own_team = app.world.get_own_team()?;
             let team = app.world.get_team_or_err(&team_id)?;
-            own_team.can_challenge_team(team)?;
 
             // Challenge to network team.
             if let Some(peer_id) = team.peer_id {
+                own_team.can_challenge_network_team(team)?;
                 let challenge = app
                     .network_handler
                     .as_mut()
@@ -464,47 +464,35 @@ impl UiCallback {
             }
 
             // Else, challenge to local team.
-            // If local team is too tired, reject challenge.
-            let challenged_team = app.world.get_team_or_err(&team_id)?;
-            let avg_tiredness = challenged_team
-                .player_ids
-                .iter()
-                .map(|&id| {
-                    if let Ok(player) = app.world.get_player_or_err(&id) {
-                        player.tiredness
-                    } else {
-                        0.0
-                    }
-                })
-                .sum::<f32>()
-                / team.player_ids.len() as f32;
-
-            if avg_tiredness > MAX_AVG_TIREDNESS_PER_CHALLENGED_GAME {
-                return Err(anyhow!("Challenge rejected: {} is too tired", team.name));
+            own_team.can_challenge_local_team(team)?;
+            // If other team is local, reject challenge if team is too tired
+            let average_tiredness = team.average_tiredness(&app.world);
+            if average_tiredness > MAX_AVG_TIREDNESS_PER_CHALLENGED_GAME {
+                return Err(anyhow!("{} is too tired", team.name));
             }
-
             let own_team_id = app.world.own_team_id;
-            let (home_team_in_game, away_team_in_game) =
-                match ChaCha8Rng::from_entropy().gen_range(0..=1) {
-                    0 => (
-                        TeamInGame::from_team_id(own_team_id, &app.world.teams, &app.world.players)
-                            .ok_or(anyhow!("Own team {:?} not found", own_team_id))?,
-                        TeamInGame::from_team_id(team_id, &app.world.teams, &app.world.players)
-                            .ok_or(anyhow!("Team {:?} not found", team_id))?,
-                    ),
+            let (home_team_in_game, away_team_in_game) = match ChaCha8Rng::from_entropy()
+                .gen_range(0..=1)
+            {
+                0 => (
+                    TeamInGame::from_team_id(&own_team_id, &app.world.teams, &app.world.players)
+                        .ok_or(anyhow!("Own team {:?} not found", own_team_id))?,
+                    TeamInGame::from_team_id(&team_id, &app.world.teams, &app.world.players)
+                        .ok_or(anyhow!("Team {:?} not found", team_id))?,
+                ),
 
-                    1 => (
-                        TeamInGame::from_team_id(team_id, &app.world.teams, &app.world.players)
-                            .ok_or(anyhow!("Team {:?} not found", team_id))?,
-                        TeamInGame::from_team_id(own_team_id, &app.world.teams, &app.world.players)
-                            .ok_or(anyhow!("Own team {:?} not found", own_team_id))?,
-                    ),
-                    _ => unreachable!(),
-                };
+                1 => (
+                    TeamInGame::from_team_id(&team_id, &app.world.teams, &app.world.players)
+                        .ok_or(anyhow!("Team {:?} not found", team_id))?,
+                    TeamInGame::from_team_id(&own_team_id, &app.world.teams, &app.world.players)
+                        .ok_or(anyhow!("Own team {:?} not found", own_team_id))?,
+                ),
+                _ => unreachable!(),
+            };
 
             let game_id = app
                 .world
-                .generate_game(home_team_in_game, away_team_in_game)?;
+                .generate_local_game(home_team_in_game, away_team_in_game)?;
 
             app.ui.game_panel.update(&app.world)?;
             app.ui.game_panel.set_active_game(game_id)?;
@@ -1059,16 +1047,26 @@ impl UiCallback {
             }
             UiCallback::ChallengeTeam { team_id } => Self::challenge_team(*team_id)(app),
             UiCallback::AcceptChallenge { challenge } => {
-                app.network_handler
+                if let Err(e) = app
+                    .network_handler
                     .as_mut()
                     .ok_or(anyhow!("Network handler is not initialized"))?
-                    .accept_challenge(&&app.world, challenge.clone())?;
+                    .accept_challenge(&app.world, challenge.clone())
+                {
+                    let own_team = app.world.get_own_team_mut()?;
+                    own_team.remove_challenge(
+                        challenge.home_team_in_game.team_id,
+                        challenge.away_team_in_game.team_id,
+                    );
+                    return Err(e);
+                }
 
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.remove_challenge(
                     challenge.home_team_in_game.team_id,
                     challenge.away_team_in_game.team_id,
                 );
+
                 Ok(None)
             }
             UiCallback::DeclineChallenge { challenge } => {
@@ -1088,10 +1086,16 @@ impl UiCallback {
                 target_player_id,
             } => Self::trade_players(*proposer_player_id, *target_player_id)(app),
             UiCallback::AcceptTrade { trade } => {
-                app.network_handler
+                if let Err(e) = app
+                    .network_handler
                     .as_mut()
                     .ok_or(anyhow!("Network handler is not initialized"))?
-                    .accept_trade(&&app.world, trade.clone())?;
+                    .accept_trade(&&app.world, trade.clone())
+                {
+                    let own_team = app.world.get_own_team_mut()?;
+                    own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
+                    return Err(e);
+                }
 
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
@@ -1328,7 +1332,7 @@ impl UiCallback {
                     }
                 }
 
-                app.world.players.insert(player_id.clone(), player);
+                app.world.players.insert(player.id, player);
                 app.world.teams.insert(team.id, team);
                 app.world.dirty_network = true;
                 app.world.dirty_ui = true;

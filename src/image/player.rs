@@ -208,6 +208,7 @@ impl PlayerImage {
             JerseyStyle::Fancy => Some(ShirtImage::Fancy),
             JerseyStyle::Gilet => Some(ShirtImage::Gilet),
             JerseyStyle::Stripe => Some(ShirtImage::Stripe),
+            JerseyStyle::Horizontal => Some(ShirtImage::Horizontal),
             JerseyStyle::Pirate => {
                 if info.population == Population::Galdari {
                     Some(ShirtImage::PirateGald)
@@ -227,6 +228,7 @@ impl PlayerImage {
                 JerseyStyle::Fancy => Some(ShortsImage::Fancy),
                 JerseyStyle::Gilet => Some(ShortsImage::Gilet),
                 JerseyStyle::Stripe => Some(ShortsImage::Stripe),
+                JerseyStyle::Horizontal => Some(ShortsImage::Horizontal),
                 JerseyStyle::Pirate => {
                     if info.population == Population::Galdari {
                         Some(ShortsImage::PirateGald)

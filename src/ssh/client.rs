@@ -5,7 +5,7 @@ use crate::types::AppResult;
 use anyhow::anyhow;
 use anyhow::Context;
 use async_trait::async_trait;
-use russh::keys::key::PublicKey;
+use russh::keys::PublicKey;
 use russh::{
     server::{self, *},
     ChannelId,
@@ -74,7 +74,7 @@ impl server::Handler for AppClient {
 
         // We defer checking username and password to channel_open_session so that it is possible
         // to send informative error messages to the user using session.write.
-        self.session_auth = SessionAuth::new(username, public_key.fingerprint());
+        self.session_auth = SessionAuth::new(username, public_key.to_string());
 
         Ok(Auth::Accept)
     }
@@ -94,8 +94,8 @@ impl server::Handler for AppClient {
                 == false
             {
                 let error_string = format!("\n\rWrong password.\n");
-                session.disconnect(Disconnect::ByApplication, error_string.as_str(), "");
-                session.close(channel.id());
+                session.disconnect(Disconnect::ByApplication, error_string.as_str(), "")?;
+                session.close(channel.id())?;
                 return Ok(false);
             }
             println!("Found valid save file");
@@ -109,8 +109,8 @@ impl server::Handler for AppClient {
                     "\n\rInvalid username. The username must have between {} and {} characters.\n",
                     MIN_USERNAME_LENGTH, MAX_USERNAME_LENGTH
                 );
-                session.disconnect(Disconnect::ByApplication, error_string.as_str(), "");
-                session.close(channel.id());
+                session.disconnect(Disconnect::ByApplication, error_string.as_str(), "")?;
+                session.close(channel.id())?;
                 return Ok(false);
             }
             println!("No valid save file, starting from scratch.");

@@ -272,6 +272,9 @@ mod tests {
         types::{SystemTimeTick, Tick, SECONDS},
         world::resources::Resource,
     };
+    use rand::{Rng, SeedableRng};
+    use rand_chacha::ChaCha8Rng;
+    use std::time::Instant;
 
     #[test]
     fn test_system_time_conversion() {
@@ -321,6 +324,33 @@ mod tests {
         resources.saturating_add(Resource::FUEL, 1500, fuel_capacity);
         assert!(resources.value(&Resource::FUEL) == fuel_capacity);
         assert!(resources.value(&Resource::FUEL) == resources.used_fuel_capacity());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_random_generation_times() -> AppResult<()> {
+        let thread_rng = &mut rand::thread_rng();
+        let start = Instant::now();
+        for _ in 0..1_000_000 {
+            let _: f32 = thread_rng.gen();
+        }
+
+        println!(
+            "Rand 1_000_000 generations: {} µs",
+            start.elapsed().as_micros()
+        );
+
+        let chacha_rng = &mut ChaCha8Rng::from_entropy();
+        let start = Instant::now();
+        for _ in 0..1_000_000 {
+            let _: f32 = chacha_rng.gen();
+        }
+
+        println!(
+            "ChaCha8Rng 1_000_000 generations: {} µs",
+            start.elapsed().as_micros()
+        );
 
         Ok(())
     }

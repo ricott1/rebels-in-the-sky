@@ -1,5 +1,5 @@
 use crate::image::color_map::ColorMap;
-use rand::{Rng, SeedableRng};
+use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use strum::Display;
@@ -14,16 +14,19 @@ pub enum JerseyStyle {
     Stripe,
     Fancy,
     Gilet,
+    Horizontal,
     Pirate,
 }
 
 impl JerseyStyle {
-    pub fn random() -> Self {
-        match ChaCha8Rng::from_entropy().gen_range(0..=3) {
+    pub fn random(rng: &mut ChaCha8Rng) -> Self {
+        match rng.gen_range(0..=4) {
             0 => Self::Classic,
             1 => Self::Stripe,
             2 => Self::Fancy,
-            _ => Self::Gilet,
+            3 => Self::Gilet,
+            4 => Self::Horizontal,
+            _ => unreachable!(),
         }
     }
 
@@ -42,9 +45,9 @@ pub struct Jersey {
 }
 
 impl Jersey {
-    pub fn random() -> Self {
-        let color = ColorMap::random();
-        let style: JerseyStyle = JerseyStyle::random();
+    pub fn random(rng: &mut ChaCha8Rng) -> Self {
+        let color = ColorMap::random(rng);
+        let style: JerseyStyle = JerseyStyle::random(rng);
         Self { color, style }
     }
 }

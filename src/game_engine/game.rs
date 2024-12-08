@@ -873,8 +873,8 @@ mod tests {
             .quickness
             .clone();
 
-        let home_team_in_game = TeamInGame::from_team_id(id0, &world.teams, &world.players);
-        let away_team_in_game = TeamInGame::from_team_id(id1, &world.teams, &world.players);
+        let home_team_in_game = TeamInGame::from_team_id(&id0, &world.teams, &world.players);
+        let away_team_in_game = TeamInGame::from_team_id(&id1, &world.teams, &world.players);
 
         let mut game = Game::new(
             GameId::new_v4(),

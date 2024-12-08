@@ -15,7 +15,7 @@ use super::{
 use crate::network::types::{PlayerRanking, TeamRanking};
 use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId, Tick};
 use crate::ui::constants::UiKey;
-use crate::world::constants::{MIN_PLAYERS_PER_GAME, SECONDS};
+use crate::world::constants::{MINUTES, MIN_PLAYERS_PER_GAME, SECONDS};
 use crate::world::{skill::Rated, world::World};
 use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -33,6 +33,7 @@ use strum_macros::Display;
 use tui_textarea::{CursorMove, TextArea};
 
 const EVENT_DUPLICATE_DELAY: Tick = 10 * SECONDS;
+const PEER_DISCONNECTION_INTERVAL: Tick = 5 * MINUTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display, Hash, Default)]
 pub enum SwarmView {
@@ -67,7 +68,7 @@ pub struct SwarmPanel {
     events: HashMap<SwarmView, Vec<SwarmPanelEvent>>,
     view: SwarmView,
     textarea: TextArea<'static>,
-    connected_peers: Vec<PeerId>,
+    connected_peers: HashMap<PeerId, Tick>,
     team_id_to_peer_id: HashMap<TeamId, PeerId>,
     peer_id_to_team_id: HashMap<PeerId, TeamId>,
     team_ranking: Vec<(TeamId, TeamRanking)>,
@@ -140,18 +141,23 @@ impl SwarmPanel {
     }
 
     pub fn add_peer_id(&mut self, peer_id: PeerId, team_id: TeamId) {
-        // If team id is already in the list, remove the previous entry
-        if let Some(previous_peer_id) = self.team_id_to_peer_id.get(&team_id) {
-            self.connected_peers.retain(|id| id != previous_peer_id);
-            // We do not remove from peer_id_to_team_id to retain info about past messages
-        }
         self.team_id_to_peer_id.insert(team_id, peer_id);
         self.peer_id_to_team_id.insert(peer_id, team_id);
-        self.connected_peers.push(peer_id);
+        self.connected_peers.insert(peer_id, Tick::now());
     }
 
     pub fn remove_peer_id(&mut self, peer_id: &PeerId) {
-        self.connected_peers.retain(|id| id != peer_id);
+        self.connected_peers.remove(peer_id);
+    }
+
+    fn is_peer_connected(&self, peer_id: &PeerId) -> bool {
+        if let Some(last_tick) = self.connected_peers.get(peer_id) {
+            let now = Tick::now();
+            if now.saturating_sub(*last_tick) < PEER_DISCONNECTION_INTERVAL {
+                return true;
+            }
+        }
+        false
     }
 
     fn build_left_panel(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
@@ -217,14 +223,14 @@ impl SwarmPanel {
 
         for (&team_id, peer_id) in self.team_id_to_peer_id.iter() {
             if let Ok(team) = world.get_team_or_err(&team_id) {
-                let style = if self.connected_peers.contains(peer_id) {
+                let style = if self.is_peer_connected(peer_id) {
                     UiStyle::NETWORK
                 } else {
                     UiStyle::DISCONNECTED
                 };
                 items.push(ListItem::new(Span::styled(
                     format!(
-                        "{} ({})",
+                        " {:MAX_NAME_LENGTH$} ({})",
                         team.name.clone(),
                         peer_id
                             .to_base58()
@@ -461,7 +467,9 @@ impl SwarmPanel {
 
         render_spaceship_description(
             &top_team.team,
+            world,
             team_rating,
+            false,
             false,
             &mut self.gif_map,
             self.tick,
@@ -476,15 +484,16 @@ impl SwarmPanel {
             .map(|(idx, (_, ranking))| {
                 let team_id = ranking.team.id;
                 let text = format!(
-                    " {:>2}. {:<MAX_NAME_LENGTH$} {}",
+                    "{:>2}. {:<MAX_NAME_LENGTH$} {}",
                     idx + 1,
                     &ranking.team.name,
                     ranking.team.reputation.stars()
                 );
 
+                let peer_id = self.team_id_to_peer_id.get(&team_id);
                 let style = if team_id == world.own_team_id {
                     UiStyle::OWN_TEAM
-                } else if world.get_team(&team_id).is_some() {
+                } else if peer_id.is_some() && self.is_peer_connected(peer_id.unwrap()) {
                     UiStyle::NETWORK
                 } else {
                     UiStyle::DISCONNECTED
@@ -538,19 +547,22 @@ impl SwarmPanel {
                 };
 
                 let text = format!(
-                    " {:>2}. {:<name_length$} {}",
+                    "{:>2}. {:<name_length$} {}",
                     idx + 1,
                     player.info.full_name(),
                     player.reputation.stars()
                 );
 
-                let style = if player.team.is_some() && player.team.unwrap() == world.own_team_id {
-                    UiStyle::OWN_TEAM
-                } else if world.get_player(&player_id).is_some() {
-                    UiStyle::NETWORK
-                } else {
-                    UiStyle::DISCONNECTED
-                };
+                let mut style = UiStyle::DISCONNECTED;
+
+                if let Some(team_id) = player.team {
+                    let peer_id = self.team_id_to_peer_id.get(&team_id);
+                    if team_id == world.own_team_id {
+                        style = UiStyle::OWN_TEAM
+                    } else if peer_id.is_some() && self.is_peer_connected(peer_id.unwrap()) {
+                        style = UiStyle::NETWORK
+                    }
+                }
 
                 (text, style)
             })

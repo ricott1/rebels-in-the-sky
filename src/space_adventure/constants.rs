@@ -8,7 +8,7 @@ pub(crate) const FUEL_CONSUMPTION_MOD: f32 = 215_000.0;
 pub(crate) const MAX_SPACESHIP_SPEED_MOD: f32 = 0.125;
 
 pub(crate) const ASTEROID_GENERATION_PROBABILITY: f64 = 0.05;
-pub(crate) const DIFFICULTY_FOR_ASTEROID_PLANET_GENERATION: usize = 60;
+pub(crate) const DIFFICULTY_FOR_ASTEROID_PLANET_GENERATION: usize = 90;
 
 // There are 3 relevant lengths for the space image:
 //   1. the "screen size", which is the size of the cropped space image before rendering on the screen;

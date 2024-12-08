@@ -212,7 +212,7 @@ impl MyTeamPanel {
         frame.render_stateful_interactive(
             list,
             split[0].inner(Margin {
-                horizontal: 1,
+                horizontal: 0,
                 vertical: 1,
             }),
             &mut ClickableListState::default().with_selected(self.planet_index),
@@ -225,7 +225,7 @@ impl MyTeamPanel {
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(""),
-                Line::from(Span::styled(format!("Resource: Buy/Sell"), UiStyle::HEADER)),
+                Line::from(Span::styled(format!("Resource: Prices"), UiStyle::HEADER)),
                 Line::from(vec![
                     Span::styled("Fuel      ", Resource::FUEL.style()),
                     Span::styled(
@@ -375,7 +375,7 @@ impl MyTeamPanel {
 
         frame.render_widget(
             Paragraph::new(Span::styled(
-                format!("       Key                                       Buy/Sell"),
+                format!("        Key        Buy               Sell        Prices"),
                 UiStyle::HEADER,
             )),
             button_split[0],
@@ -536,7 +536,10 @@ impl MyTeamPanel {
                 ),
             ]),
             Line::from(format!("Treasury {:<10}", format_satoshi(team.balance()),)),
-            Line::from(get_crew_spans(team)),
+            Line::from(get_crew_spans(
+                team.player_ids.len(),
+                team.spaceship.crew_capacity() as usize,
+            )),
             Line::from(get_durability_spans(
                 team.spaceship.current_durability(),
                 team.spaceship.durability(),
@@ -706,33 +709,35 @@ impl MyTeamPanel {
                 vertical: 1,
             }),
         );
+
         if let Some(game_id) = team.current_game {
-            let game = world.get_game_or_err(&game_id)?;
-            let game_text = if let Some(action) = game.action_results.last() {
-                format!(
-                    "{} {:>3}-{:<3} {}",
-                    game.home_team_in_game.name,
-                    action.home_score,
-                    action.away_score,
-                    game.away_team_in_game.name,
-                )
-            } else {
-                format!(
-                    "{}   0-0   {}",
-                    game.home_team_in_game.name, game.away_team_in_game.name,
-                )
-            };
-            frame.render_interactive(
-                Button::new(
-                    format!("Playing - {}", game_text),
-                    UiCallback::GoToGame { game_id },
-                )
-                .set_hover_text("Go to current game")
-                .set_hotkey(UiKey::GO_TO_GAME)
-                .block(default_block().border_style(UiStyle::OWN_TEAM)),
-                split[0],
-            );
-            return Ok(());
+            if let Ok(game) = world.get_game_or_err(&game_id) {
+                let game_text = if let Some(action) = game.action_results.last() {
+                    format!(
+                        "{} {:>3}-{:<3} {}",
+                        game.home_team_in_game.name,
+                        action.home_score,
+                        action.away_score,
+                        game.away_team_in_game.name,
+                    )
+                } else {
+                    format!(
+                        "{}   0-0   {}",
+                        game.home_team_in_game.name, game.away_team_in_game.name,
+                    )
+                };
+                frame.render_interactive(
+                    Button::new(
+                        format!("Playing - {}", game_text),
+                        UiCallback::GoToGame { game_id },
+                    )
+                    .set_hover_text("Go to current game")
+                    .set_hotkey(UiKey::GO_TO_GAME)
+                    .block(default_block().border_style(UiStyle::OWN_TEAM)),
+                    split[0],
+                );
+                return Ok(());
+            }
         }
 
         let split = Layout::horizontal([Constraint::Min(16), Constraint::Max(24)]).split(
@@ -756,7 +761,6 @@ impl MyTeamPanel {
             .enumerate()
         {
             let team = world.get_team_or_err(team_id)?;
-
             frame.render_widget(
                 Paragraph::new(format!(
                     "{:<MAX_NAME_LENGTH$} {}",
@@ -786,13 +790,12 @@ impl MyTeamPanel {
         if self.recent_games.len() == 0 {
             return Ok(());
         }
-
         let team = world.get_own_team()?;
         let split = Layout::horizontal([Constraint::Max(36), Constraint::Min(20)]).split(area);
 
         let mut options = vec![];
-        if team.current_game.is_some() {
-            if let Some(game) = world.games.get(&team.current_game.unwrap()) {
+        if let Some(game_id) = team.current_game {
+            if let Ok(game) = world.get_game_or_err(&game_id) {
                 if let Some(action) = game.action_results.last() {
                     let text = format!(
                         " {:>12} {:>3}-{:<3} {:<}",
@@ -832,7 +835,8 @@ impl MyTeamPanel {
             &mut ClickableListState::default().with_selected(self.game_index),
         );
 
-        let game_id = self.recent_games[self.game_index.unwrap()];
+        let game_id = self.recent_games[self.game_index.unwrap_or_default()];
+
         let summary = if let Ok(current_game) = world.get_game_or_err(&game_id) {
             Paragraph::new(format!(
                 "Location {} - Attendance {}\nCurrently playing: {}",
@@ -842,8 +846,12 @@ impl MyTeamPanel {
             ))
         } else {
             if self.loaded_games.get(&game_id).is_none() {
-                let game = load_game(game_id)?;
-                self.loaded_games.insert(game_id, game);
+                if let Ok(game) = load_game(game_id) {
+                    self.loaded_games.insert(game_id, game);
+                } else {
+                    log::error!("Failed to load game {game_id}");
+                    return Ok(());
+                }
             }
             let game = world
                 .past_games
@@ -1136,7 +1144,7 @@ impl MyTeamPanel {
         frame.render_stateful_interactive(
             list,
             split[0].inner(Margin {
-                horizontal: 1,
+                horizontal: 0,
                 vertical: 1,
             }),
             &mut ClickableListState::default().with_selected(Some(self.spaceship_upgrade_index)),
@@ -1187,7 +1195,7 @@ impl MyTeamPanel {
             1 => "Upgrade Engine",
             2 => "Upgrade Storage",
             3 => "Upgrade Shooter",
-            4 => "Repair",
+            4 => "Repairs",
             _ => unreachable!(),
         };
 
@@ -1286,14 +1294,21 @@ impl MyTeamPanel {
 
         frame.render_stateful_interactive(
             list,
-            split[0],
+            split[0].inner(Margin::new(0, 1)),
             &mut ClickableListState::default().with_selected(self.asteroid_index),
         );
 
-        let a_split = Layout::vertical([3, 3, 3]).split(split[1]);
         if let Some(index) = self.asteroid_index {
             let asteroid_id = own_team.asteroid_ids[index];
             let asteroid = world.get_planet_or_err(&asteroid_id)?;
+
+            let a_split = Layout::vertical([
+                3, // Teleport pad
+                3, // Mining facility
+                3, // TBD
+            ])
+            .split(split[1]);
+
             if own_team.can_teleport_to(asteroid_id) {
                 let mut travel_to_planet_button = Button::new(
                     "Teleport",
@@ -1785,9 +1800,12 @@ impl MyTeamPanel {
                 horizontal: 1,
             }),
         );
+
         render_spaceship_description(
             &team,
+            world,
             world.team_rating(&team.id).unwrap_or_default(),
+            true,
             true,
             &mut self.gif_map,
             self.tick,
@@ -1894,7 +1912,9 @@ impl MyTeamPanel {
         } else {
             render_spaceship_description(
                 &team,
+                world,
                 world.team_rating(&team.id).unwrap_or_default(),
+                true,
                 true,
                 &mut self.gif_map,
                 self.tick,
@@ -2067,7 +2087,8 @@ impl Screen for MyTeamPanel {
                 .into_iter()
                 .filter(|&id| {
                     let team = world.get_team_or_err(id).unwrap();
-                    team.can_challenge_team(own_team).is_ok()
+                    own_team.can_challenge_local_team(team).is_ok()
+                        || own_team.can_challenge_network_team(team).is_ok()
                 })
                 .cloned()
                 .collect();

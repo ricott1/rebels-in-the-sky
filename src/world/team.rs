@@ -1,22 +1,25 @@
 use super::{
-    constants::{INITIAL_TEAM_BALANCE, KILOMETER, MIN_PLAYERS_PER_GAME},
+    constants::{INITIAL_TEAM_BALANCE, KILOMETER, MAX_PLAYERS_PER_GAME, MIN_PLAYERS_PER_GAME},
     jersey::Jersey,
     planet::Planet,
     player::Player,
     position::MAX_POSITION,
     resources::Resource,
+    skill::GameSkill,
     spaceship::{Spaceship, SpaceshipUpgrade},
     types::{TeamLocation, TrainingFocus},
+    world::World,
 };
 use crate::{
     game_engine::tactic::Tactic,
     network::{challenge::Challenge, trade::Trade},
     types::*,
-    world::{constants::MAX_PLAYERS_PER_TEAM, utils::is_default},
+    world::{constants::MAX_CREW_SIZE, utils::is_default},
 };
 use anyhow::anyhow;
 use itertools::Itertools;
 use libp2p::PeerId;
+use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::{cmp::min, collections::HashMap};
 
@@ -87,8 +90,9 @@ impl Team {
         home_planet_id: PlanetId,
         name: impl Into<String>,
         ship_name: impl Into<String>,
+        rng: &mut ChaCha8Rng,
     ) -> Self {
-        let jersey = Jersey::random();
+        let jersey = Jersey::random(rng);
         let ship_color = jersey.color;
         let mut resources = HashMap::new();
         resources.insert(Resource::SATOSHI, INITIAL_TEAM_BALANCE);
@@ -100,8 +104,8 @@ impl Team {
             current_location: TeamLocation::OnPlanet {
                 planet_id: home_planet_id,
             },
-            spaceship: Spaceship::random(ship_name.into()).with_color_map(ship_color),
-            game_tactic: Tactic::random(),
+            spaceship: Spaceship::random(ship_name.into(), rng).with_color_map(ship_color),
+            game_tactic: Tactic::random(rng),
             resources,
             ..Default::default()
         }
@@ -122,13 +126,13 @@ impl Team {
     }
 
     pub fn remove_challenge(&mut self, home_team_id: TeamId, away_team_id: TeamId) {
-        let team_id = if home_team_id == self.id {
+        let other_team_id = if home_team_id == self.id {
             away_team_id
         } else {
             home_team_id
         };
-        self.sent_challenges.remove(&team_id);
-        self.received_challenges.remove(&team_id);
+        self.sent_challenges.remove(&other_team_id);
+        self.received_challenges.remove(&other_team_id);
     }
 
     pub fn clear_challenges(&mut self) {
@@ -231,6 +235,23 @@ impl Team {
         }
     }
 
+    pub fn average_tiredness(&self, world: &World) -> f32 {
+        let tiredness_iter = self
+            .player_ids
+            .iter()
+            .take(MAX_PLAYERS_PER_GAME)
+            .map(|&id| {
+                if let Ok(player) = world.get_player_or_err(&id) {
+                    player.current_tiredness(world)
+                } else {
+                    0.0
+                }
+            });
+
+        let n = tiredness_iter.len();
+        (tiredness_iter.sum::<f32>() / n as f32).bound()
+    }
+
     pub fn can_add_player(&self, player: &Player) -> AppResult<()> {
         if player.team.is_some() {
             return Err(anyhow!("Already in a team"));
@@ -284,11 +305,11 @@ impl Team {
         }
 
         if self.is_on_planet().is_none() {
-            return Err(anyhow!("Team is not on a planet"));
+            return Err(anyhow!("{} is not on a planet", self.name));
         }
 
         if self.current_game.is_some() {
-            return Err(anyhow!("Team is playing"));
+            return Err(anyhow!("{} is playing", self.name));
         }
 
         Ok(())
@@ -300,23 +321,19 @@ impl Team {
         }
 
         if self.current_game.is_some() {
-            return Err(anyhow!("Team is playing"));
+            return Err(anyhow!("{} is playing", self.name));
         }
 
         Ok(())
     }
 
-    pub fn can_challenge_team_over_network(&self, team: &Team) -> AppResult<()> {
-        // This function runs checks similar to can_challenge_team,
-        // but crucially skips the checks about the current_game.
-        // This is to go around a race condition described in the challenge SynAck protocol.
-
+    fn can_play_game_with_team(&self, team: &Team) -> AppResult<()> {
         if self.id == team.id {
-            return Err(anyhow!("Cannot challenge self"));
+            return Err(anyhow!("Cannot play alone"));
         }
 
         if self.is_on_planet().is_none() {
-            return Err(anyhow!("Team is in space"));
+            return Err(anyhow!("{} is in space", self.name));
         }
 
         if self.is_on_planet() != team.is_on_planet() {
@@ -324,30 +341,58 @@ impl Team {
         }
 
         if self.player_ids.len() < MIN_PLAYERS_PER_GAME {
-            return Err(anyhow!("Team does not have enough players"));
+            return Err(anyhow!("{} does not have enough pirates", self.name));
         }
 
         if team.player_ids.len() < MIN_PLAYERS_PER_GAME {
-            return Err(anyhow!("Opponent does not have enough players"));
+            return Err(anyhow!("{} does not have enough pirates", team.name));
         }
 
         Ok(())
     }
 
-    pub fn can_challenge_team(&self, team: &Team) -> AppResult<()> {
+    pub fn can_accept_network_challenge(&self, team: &Team) -> AppResult<()> {
+        // This function runs checks similar to can_challenge_team,
+        // but crucially skips the checks about the current_game.
+        // This is to go around a race condition described in the challenge SynAck protocol.
+
+        self.can_play_game_with_team(team)
+    }
+
+    pub fn can_challenge_local_team(&self, team: &Team) -> AppResult<()> {
+        if team.peer_id.is_some() {
+            return Err(anyhow!("{} is not local", team.name));
+        }
+
         if self.current_game.is_some() {
-            return Err(anyhow!("Team is already playing"));
+            return Err(anyhow!("{} is already playing", self.name));
         }
 
         if team.current_game.is_some() {
-            return Err(anyhow!("Opponent is already playing"));
+            return Err(anyhow!("{} is already playing", team.name));
+        }
+
+        self.can_play_game_with_team(team)
+    }
+
+    pub fn can_challenge_network_team(&self, team: &Team) -> AppResult<()> {
+        if team.peer_id.is_none() {
+            return Err(anyhow!("{} is not from network", team.name));
+        }
+
+        if self.current_game.is_some() {
+            return Err(anyhow!("{} is already playing", self.name));
+        }
+
+        if team.current_game.is_some() {
+            return Err(anyhow!("{} is already playing", team.name));
         }
 
         if self.sent_challenges.get(&team.id).is_some() {
-            return Err(anyhow!("Already challenged"));
+            return Err(anyhow!("Already challenged {}", team.name));
         }
 
-        self.can_challenge_team_over_network(team)
+        self.can_play_game_with_team(team)
     }
 
     pub fn can_trade_players(
@@ -378,11 +423,11 @@ impl Team {
         }
 
         if self.current_game.is_some() {
-            return Err(anyhow!("Team is playing"));
+            return Err(anyhow!("{} is playing", self.name));
         }
 
         if target_team.current_game.is_some() {
-            return Err(anyhow!("Opponent is playing"));
+            return Err(anyhow!("{} is playing", target_team.name));
         }
 
         Ok(())
@@ -399,7 +444,7 @@ impl Team {
 
         if let Some(current_planet_id) = self.is_on_planet() {
             if planet.id == current_planet_id {
-                return Err(anyhow!("Already on this planet"));
+                return Err(anyhow!("Already on planet {}", planet.name));
             }
         } else {
             return Err(anyhow!("Already in space"));
@@ -410,19 +455,22 @@ impl Team {
         }
 
         if self.current_game.is_some() {
-            return Err(anyhow!("Team is playing"));
+            return Err(anyhow!("{} is playing", self.name));
         }
 
         // Cannot travel to planet with no population unless its our asteroid.
         if planet.total_population() == 0 && !self.asteroid_ids.contains(&planet.id) {
-            return Err(anyhow!("This place is inhabitable"));
+            return Err(anyhow!("Planet {} is inhabitable", planet.name));
         }
 
         // If we can't get there with full tank, than the planet is too far.
-        let max_fuel = self.spaceship.fuel_capacity();
-        let max_autonomy = self.spaceship.max_travel_time(max_fuel);
-        if duration > max_autonomy {
-            return Err(anyhow!("This planet is too far"));
+        let max_fuel = self.fuel_capacity();
+
+        let fuel_consumption =
+            (duration as f64 * self.spaceship_fuel_consumption_per_tick() as f64).ceil() as u32;
+
+        if fuel_consumption > max_fuel {
+            return Err(anyhow!("Planet {} is too far", planet.name));
         }
 
         // Else we check that we can go there with the current fuel.
@@ -430,9 +478,7 @@ impl Team {
         //       regardless of the distance. However, this is only relevant if the current fuel is 0, in which case
         //       any travel duration larger than 0 would fail this check.
         let current_fuel = self.fuel();
-        let autonomy = self.spaceship.max_travel_time(current_fuel);
-
-        if duration > autonomy {
+        if fuel_consumption > current_fuel {
             return Err(anyhow!("Not enough fuel"));
         }
 
@@ -453,7 +499,7 @@ impl Team {
         }
 
         if self.current_game.is_some() {
-            return Err(anyhow!("Team is playing"));
+            return Err(anyhow!("{} is playing", self.name));
         }
 
         if self.spaceship.current_durability() == 0 {
@@ -480,18 +526,18 @@ impl Team {
             return Err(anyhow!("Not on this planet"));
         }
 
-        //If we can't get there with full tank, than the planet is too far.
-        let max_fuel = self.spaceship.fuel_capacity();
-        let max_autonomy = self.spaceship.max_travel_time(max_fuel);
-        if exploration_time > max_autonomy {
+        // If we can't get there with full tank, than the planet is too far.
+        let max_fuel = self.fuel_capacity();
+        let fuel_consumption = (exploration_time as f64
+            * self.spaceship_fuel_consumption_per_tick() as f64)
+            .ceil() as u32;
+        if fuel_consumption > max_fuel {
             return Err(anyhow!("This planet is too far"));
         }
 
         // Else we check that we can go there with the current fuel.
         let current_fuel = self.fuel();
-        let autonomy = self.spaceship.max_travel_time(current_fuel);
-
-        if exploration_time > autonomy {
+        if fuel_consumption > current_fuel {
             return Err(anyhow!("Not enough fuel"));
         }
 
@@ -500,7 +546,7 @@ impl Team {
 
     pub fn can_change_training_focus(&self) -> AppResult<()> {
         if self.current_game.is_some() {
-            return Err(anyhow!("Team is playing"));
+            return Err(anyhow!("{} is playing", self.name));
         }
         Ok(())
     }
@@ -582,22 +628,15 @@ impl Team {
         matches!(self.current_location, TeamLocation::Travelling { .. })
     }
 
-    pub fn best_position_assignment(mut players: Vec<&Player>) -> Vec<PlayerId> {
+    pub fn best_position_assignment(players: Vec<&Player>) -> Vec<PlayerId> {
         if players.len() < MAX_POSITION as usize {
             return players.iter().map(|&p| p.id).collect();
         }
 
-        // Sort players in case we need to take only the first MAX_PLAYERS_PER_TEAM
-        players.sort_by(|a, b| {
-            b.average_skill()
-                .partial_cmp(&a.average_skill())
-                .expect("Skill value should exist")
-        });
-
         // Create an N-vector of 5-vectors. Each player is mapped to the vector (of length 5) of ratings for each role.
         let all_ratings = players
             .iter()
-            .take(MAX_PLAYERS_PER_TEAM) // For performance reasons, we only consider the first MAX_PLAYERS_PER_TEAM players by rating.
+            .take(MAX_CREW_SIZE) // For performance reasons, we only consider the first MAX_CREW_SIZE players by rating.
             .map(|&p| {
                 (0..MAX_POSITION)
                     .map(|position| p.tiredness_weighted_rating_at_position(position))
@@ -632,27 +671,12 @@ impl Team {
             .map(|&p| p)
             .collect::<Vec<&Player>>();
         bench.sort_by(|a, b| {
-            b.average_skill()
-                .partial_cmp(&a.average_skill())
+            b.tiredness_weighted_rating()
+                .partial_cmp(&a.tiredness_weighted_rating())
                 .expect("Skill value should exist")
         });
         new_players.append(&mut bench.iter().map(|&p| p.id).collect::<Vec<PlayerId>>());
 
         new_players
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        types::TeamId,
-        world::{planet::Planet, utils::TEAM_DATA},
-    };
-
-    #[test]
-    fn test_team_random() {
-        let (name, _) = TEAM_DATA[0].clone();
-        let team = super::Team::random(TeamId::new_v4(), Planet::default().id, name, "test");
-        println!("{:?}", team);
     }
 }

@@ -19,8 +19,8 @@ use std::{
 };
 use strum_macros::{Display, EnumIter};
 
-const TRADE_DELTA_SCARCITY: f32 = 3.0;
-const TRADE_DELTA_BUY_SELL: f32 = 0.07;
+const TRADE_DELTA_SCARCITY: f32 = 3.25;
+const TRADE_DELTA_BUY_SELL: f32 = 0.05;
 const RESOURCE_PRICE_REFRESH_RATE_MILLIS: Tick = 2 * HOURS;
 
 #[derive(

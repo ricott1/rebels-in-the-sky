@@ -2,7 +2,6 @@ use crate::tui::{EventHandler, TerminalEvent};
 use crate::types::{SystemTimeTick, Tick};
 use crate::world::constants::MILLISECONDS;
 use crossterm::event::{self, Event as CrosstermEvent, KeyEventKind};
-use log::error;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -59,7 +58,7 @@ impl CrosstermEventHandler {
                         };
 
                         if let Err(e) = result {
-                            error!("Failed to send terminal event: {e}");
+                            log::error!("Failed to send terminal event: {e}");
                             break;
                         }
                     }
@@ -67,7 +66,7 @@ impl CrosstermEventHandler {
                     let now = Tick::now();
                     if now - last_tick >= time_step_millis {
                         if let Err(e) = sender.send(TerminalEvent::Tick { tick: now }).await {
-                            error!("Failed to send tick event: {e}");
+                            log::error!("Failed to send tick event: {e}");
                             break;
                         }
                         last_tick = now;

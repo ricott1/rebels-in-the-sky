@@ -1,6 +1,6 @@
 use super::action::Action;
 use crate::types::AppResult;
-use rand::{seq::IteratorRandom, SeedableRng};
+use rand::seq::IteratorRandom;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, WeightedIndex};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -30,9 +30,10 @@ impl Display for Tactic {
 }
 
 impl Tactic {
-    pub fn random() -> Self {
-        let mut rng = ChaCha8Rng::from_entropy();
-        Self::iter().choose_stable(&mut rng).unwrap()
+    pub fn random(rng: &mut ChaCha8Rng) -> Self {
+        Self::iter()
+            .choose_stable(rng)
+            .expect("There should be at least a tactic")
     }
 
     pub fn next(&self) -> Self {

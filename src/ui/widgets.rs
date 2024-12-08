@@ -35,7 +35,6 @@ use ratatui::{
     text::Span,
     widgets::{Block, BorderType, Borders, List, Paragraph},
 };
-use symbols::border;
 
 pub const UP_ARROW_SPAN: Lazy<Span<'static>> = Lazy::new(|| Span::styled("↑", UiStyle::HEADER));
 pub const UP_RIGHT_ARROW_SPAN: Lazy<Span<'static>> = Lazy::new(|| Span::styled("↗", UiStyle::OK));
@@ -168,16 +167,12 @@ pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button
         },
     )
     .set_hotkey(UiKey::DRINK)
-    .set_hover_text("Drink a liter of rum, increasing morale and decreasing energy.")
-    .set_hover_style(Resource::RUM.style())
-    .hover_block(
-        default_block()
-            .border_style(Resource::RUM.style())
-            .border_set(border::THICK),
-    );
+    .set_hover_text("Drink a liter of rum, increasing morale and decreasing energy.");
 
     if can_drink.is_err() {
         button.disable(Some(format!("{}", can_drink.unwrap_err().to_string())));
+    } else {
+        button = button.block(default_block().border_style(Resource::RUM.style()));
     }
 
     Ok(button)
@@ -191,7 +186,21 @@ pub fn render_challenge_button<'a>(
     area: Rect,
 ) -> AppResult<()> {
     let own_team = world.get_own_team()?;
-    let can_challenge = own_team.can_challenge_team(team);
+    let can_challenge = if team.peer_id.is_some() {
+        own_team.can_challenge_network_team(team)
+    } else {
+        if let Err(e) = own_team.can_challenge_local_team(team) {
+            Err(e)
+        } else {
+            // If other team is local, reject challenge if team is too tired
+            let average_tiredness = team.average_tiredness(world);
+            if average_tiredness > MAX_AVG_TIREDNESS_PER_CHALLENGED_GAME {
+                Err(anyhow!("{} is too tired", team.name))
+            } else {
+                Ok(())
+            }
+        }
+    };
 
     // If we received a challenge from that team, display the accept/decline buttons
     if let Some(challenge) = own_team.received_challenges.get(&team.id) {
@@ -202,7 +211,7 @@ pub fn render_challenge_button<'a>(
         ])
         .split(area);
 
-        let accept_button = Button::new(
+        let mut accept_button = Button::new(
             format!("{:6^}", UiText::YES),
             UiCallback::AcceptChallenge {
                 challenge: challenge.clone(),
@@ -213,6 +222,11 @@ pub fn render_challenge_button<'a>(
             "Accept the challenge from {} and start a game.",
             team.name
         ));
+        if own_team.current_game.is_some() {
+            accept_button.disable(Some(format!("{} is already playing", own_team.name)));
+        } else if let Err(e) = own_team.can_accept_network_challenge(team) {
+            accept_button.disable(Some(e.to_string()));
+        }
 
         let decline_button = Button::new(
             format!("{:6^}", UiText::NO),
@@ -535,7 +549,7 @@ pub fn get_storage_spans(
         get_storage_lengths(resources, storage_capacity, bars_length)[..4]
     {
         vec![
-            Span::raw(format!("Stiva ",)),
+            Span::raw(format!("Stiva  ",)),
             Span::styled("▰".repeat(gold_length), Resource::GOLD.style()),
             Span::styled("▰".repeat(scraps_length), Resource::SCRAPS.style()),
             Span::styled("▰".repeat(rum_length), Resource::RUM.style()),
@@ -551,30 +565,50 @@ pub fn get_storage_spans(
     }
 }
 
-pub fn get_crew_spans(team: &Team) -> Vec<Span> {
-    let bars_length = team.spaceship.crew_capacity() as usize;
-    let crew_length = team.player_ids.len();
+pub fn get_crew_spans<'a>(crew_size: usize, crew_capacity: usize) -> Vec<Span<'a>> {
+    // let bars_length = team.spaceship.crew_capacity() as usize;
+    // let crew_length = team.player_ids.len();
+
+    let bars_length = crew_capacity;
+    let crew_length = crew_size;
 
     let crew_bars = format!(
         "{}{}",
         "▰".repeat(crew_length),
-        "▱".repeat(bars_length - crew_length),
+        "▱".repeat(bars_length.saturating_sub(crew_length)),
     );
 
     let crew_style = match crew_length {
         x if x < MIN_PLAYERS_PER_GAME => UiStyle::ERROR,
-        x if x < team.spaceship.crew_capacity() as usize => UiStyle::WARNING,
+        x if x < crew_capacity => UiStyle::WARNING,
         _ => UiStyle::OK,
     };
 
     vec![
-        Span::raw(format!("Crew  ")),
+        Span::raw(format!("Crew   ")),
         Span::styled(crew_bars, crew_style),
-        Span::raw(format!(
-            " {}/{}  ",
-            team.player_ids.len(),
-            team.spaceship.crew_capacity()
-        )),
+        Span::raw(format!(" {}/{}  ", crew_size, crew_capacity)),
+    ]
+}
+
+pub fn get_energy_spans<'a>(average_tiredness: f32) -> Vec<Span<'a>> {
+    let tiredness_length =
+        (average_tiredness / MAX_TIREDNESS * BARS_LENGTH as f32).round() as usize;
+    let energy_string = format!(
+        "{}{}",
+        "▰".repeat(BARS_LENGTH.saturating_sub(tiredness_length)),
+        "▱".repeat(tiredness_length),
+    );
+    let energy_style = match average_tiredness {
+        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::OK,
+        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
+        x if x < MAX_TIREDNESS => UiStyle::ERROR,
+        _ => UiStyle::UNSELECTABLE,
+    };
+
+    vec![
+        Span::raw("Energy ".to_string()),
+        Span::styled(energy_string, energy_style),
     ]
 }
 
@@ -587,7 +621,7 @@ pub fn get_durability_spans<'a>(value: u32, max_value: u32, bars_length: usize) 
         .style();
 
     vec![
-        Span::raw("Hull  "),
+        Span::raw("Hull   "),
         Span::styled(bars, style),
         Span::raw(format!(" {}/{}", value, max_value)),
     ]
@@ -635,7 +669,7 @@ pub fn get_fuel_spans<'a>(fuel: u32, fuel_capacity: u32, bars_length: usize) -> 
         .style();
 
     vec![
-        Span::raw(format!("Tank  ",)),
+        Span::raw(format!("Tank   ",)),
         Span::styled(fuel_bars, fuel_style),
         Span::raw(format!(" {}/{}", fuel, fuel_capacity)),
     ]
@@ -643,8 +677,10 @@ pub fn get_fuel_spans<'a>(fuel: u32, fuel_capacity: u32, bars_length: usize) -> 
 
 pub fn render_spaceship_description(
     team: &Team,
+    world: &World,
     team_rating: Skill,
     full_info: bool,
+    with_average_energy: bool,
     gif_map: &mut GifMap,
     tick: usize,
     frame: &mut UiFrame,
@@ -671,8 +707,13 @@ pub fn render_spaceship_description(
     }
 
     let spaceship_info = if full_info {
+        let average_tiredness = team.average_tiredness(world);
         Paragraph::new(vec![
-            Line::from(get_crew_spans(team)),
+            Line::from(get_crew_spans(
+                team.player_ids.len(),
+                team.spaceship.crew_capacity() as usize,
+            )),
+            Line::from(get_energy_spans(average_tiredness)),
             Line::from(get_durability_spans(
                 team.spaceship.current_durability(),
                 team.spaceship.durability(),
@@ -726,13 +767,23 @@ pub fn render_spaceship_description(
             )
         };
 
-        Paragraph::new(vec![
-            Line::from(format!("Rating {}", team_rating.stars(),)),
+        let mut lines = vec![
+            Line::from(format!("Rating {}", team_rating.stars())),
             Line::from(format!("Reputation {}", team.reputation.stars())),
             Line::from(format!("Treasury {}", format_satoshi(team.balance()))),
             Line::from(game_record),
-            Line::from(get_crew_spans(team)),
-        ])
+            Line::from(get_crew_spans(
+                team.player_ids.len(),
+                team.spaceship.crew_capacity() as usize,
+            )),
+        ];
+
+        if with_average_energy {
+            let average_tiredness = team.average_tiredness(world);
+            lines.push(Line::from(get_energy_spans(average_tiredness)));
+        }
+
+        Paragraph::new(lines)
     };
 
     frame.render_widget(
@@ -1078,30 +1129,13 @@ pub fn render_player_description(
         )
     ]);
     frame.render_interactive(line, header_body_stats[1]);
-    let mut morale = player.morale;
-    // Check if player is currently playing.
-    // In this case, read current morale from game.
-    if let Some(team_id) = player.team {
-        if let Ok(team) = world.get_team_or_err(&team_id) {
-            if let Some(game_id) = team.current_game {
-                if let Ok(game) = world.get_game_or_err(&game_id) {
-                    if let Some(p) = if game.home_team_in_game.team_id == team_id {
-                        game.home_team_in_game.players.get(&player.id)
-                    } else {
-                        game.away_team_in_game.players.get(&player.id)
-                    } {
-                        morale = p.morale;
-                    }
-                }
-            }
-        }
-    }
 
+    let morale = player.current_morale(world);
     let morale_length = (morale / MAX_MORALE * BARS_LENGTH as f32).round() as usize;
     let morale_string = format!(
         "{}{}",
         "▰".repeat(morale_length),
-        "▱".repeat(BARS_LENGTH - morale_length),
+        "▱".repeat(BARS_LENGTH.saturating_sub(morale_length)),
     );
     let morale_style = match morale {
         x if x > 1.75 * MORALE_THRESHOLD_FOR_LEAVING => UiStyle::OK,
@@ -1127,29 +1161,11 @@ pub fn render_player_description(
         header_body_stats[2],
     );
 
-    let mut tiredness = player.tiredness;
-    // Check if player is currently playing.
-    // In this case, read current tiredness from game.
-    if let Some(team_id) = player.team {
-        if let Ok(team) = world.get_team_or_err(&team_id) {
-            if let Some(game_id) = team.current_game {
-                if let Ok(game) = world.get_game_or_err(&game_id) {
-                    if let Some(p) = if game.home_team_in_game.team_id == team_id {
-                        game.home_team_in_game.players.get(&player.id)
-                    } else {
-                        game.away_team_in_game.players.get(&player.id)
-                    } {
-                        tiredness = p.tiredness;
-                    }
-                }
-            }
-        }
-    }
-
+    let tiredness = player.current_tiredness(world);
     let tiredness_length = (tiredness / MAX_TIREDNESS * BARS_LENGTH as f32).round() as usize;
     let energy_string = format!(
         "{}{}",
-        "▰".repeat(BARS_LENGTH - tiredness_length),
+        "▰".repeat(BARS_LENGTH.saturating_sub(tiredness_length)),
         "▱".repeat(tiredness_length),
     );
     let energy_style = match tiredness {
@@ -1343,10 +1359,13 @@ mod tests {
         ui::widgets::get_storage_lengths,
         world::{resources::Resource, spaceship::SpaceshipPrefab, team::Team},
     };
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
 
     #[test]
     fn test_storage_spans() -> AppResult<()> {
-        let mut team = Team::random(TeamId::new_v4(), PlanetId::new_v4(), "test", "test");
+        let rng = &mut ChaCha8Rng::from_entropy();
+        let mut team = Team::random(TeamId::new_v4(), PlanetId::new_v4(), "test", "test", rng);
         team.spaceship = SpaceshipPrefab::Bresci.spaceship("test");
 
         let bars_length = BARS_LENGTH;

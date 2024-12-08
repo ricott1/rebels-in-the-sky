@@ -3,7 +3,6 @@ use crate::tui::{EventHandler, TerminalEvent};
 use crate::types::{SystemTimeTick, Tick};
 use crate::world::constants::MILLISECONDS;
 use crossterm::event::{Event as CrosstermEvent, KeyEventKind};
-use log::error;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::{select, time};
@@ -80,7 +79,7 @@ impl SSHEventHandler {
                         _ = ticker.tick() => {
                             let now = Tick::now();
                             if let Err(e) = sender.send(TerminalEvent::Tick { tick: now }).await {
-                                error!("Failed to send tick event: {e}");
+                                log::error!("Failed to send tick event: {e}");
                                 app_shutdown.cancel();
                                 break;
                             }

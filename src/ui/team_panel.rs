@@ -60,7 +60,10 @@ impl TeamView {
     fn rule(&self, team: &Team, own_team: &Team) -> bool {
         match self {
             TeamView::All => true,
-            TeamView::OpenToChallenge => team.can_challenge_team(own_team).is_ok(),
+            TeamView::OpenToChallenge => {
+                own_team.can_challenge_local_team(team).is_ok()
+                    || own_team.can_challenge_network_team(team).is_ok()
+            }
             TeamView::Peers => team.peer_id.is_some(),
         }
     }
@@ -299,19 +302,35 @@ impl TeamListPanel {
         ])
         .split(vertical_split[4]);
 
-        frame.render_widget(default_block().title("Bench"), bottom_split[0]);
+        let bench_out_split =
+            Layout::vertical([Constraint::Length(6), Constraint::Min(0)]).split(bottom_split[0]);
 
-        if team.player_ids.len() > 5 {
-            let bench_row_split = Layout::vertical([
-                Constraint::Length(4),
+        frame.render_widget(default_block().title("Bench"), bench_out_split[0]);
+        frame.render_widget(default_block().title("Out"), bench_out_split[1]);
+
+        if team.player_ids.len() > MIN_PLAYERS_PER_GAME {
+            let out_row_split = Layout::vertical([
                 Constraint::Length(4),
                 Constraint::Length(4),
                 Constraint::Min(0),
             ])
-            .split(bottom_split[0].inner(Margin {
+            .split(bench_out_split[1].inner(Margin {
                 horizontal: 2,
                 vertical: 1,
             }));
+
+            let row_splits = [
+                Layout::horizontal([Constraint::Length(20), Constraint::Length(20)]).split(
+                    bench_out_split[0].inner(Margin {
+                        horizontal: 2,
+                        vertical: 1,
+                    }),
+                ),
+                Layout::horizontal([Constraint::Length(20), Constraint::Length(20)])
+                    .split(out_row_split[0]),
+                Layout::horizontal([Constraint::Length(20), Constraint::Length(20)])
+                    .split(out_row_split[1]),
+            ];
 
             for (i, player_id) in team
                 .player_ids
@@ -343,12 +362,10 @@ impl TeamListPanel {
                     }
 
                     let row = i / 2;
-
-                    let bench_column_split =
-                        Layout::horizontal([Constraint::Length(20), Constraint::Length(20)])
-                            .split(bench_row_split[row]);
                     let column = i % 2;
-                    frame.render_interactive(button, bench_column_split[column]);
+                    let area = row_splits[row][column];
+
+                    frame.render_interactive(button, area);
                 }
             }
         }
@@ -365,21 +382,23 @@ impl TeamListPanel {
         let button_split = Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
             .split(ship_buttons_split[1]);
 
-        if team.id != world.own_team_id {
-            match go_to_team_current_planet_button(world, &team.id) {
-                Ok(go_to_team_current_planet_button) => {
-                    frame.render_interactive(go_to_team_current_planet_button, button_split[0])
-                }
-                Err(e) => log::error!("go_to_team_current_planet_button error: {} ", e.to_string()),
+        match go_to_team_current_planet_button(world, &team.id) {
+            Ok(go_to_team_current_planet_button) => {
+                frame.render_interactive(go_to_team_current_planet_button, button_split[0])
             }
+            Err(e) => log::error!("go_to_team_current_planet_button error: {} ", e.to_string()),
+        }
 
+        if team.id != world.own_team_id {
             render_challenge_button(world, team, true, frame, button_split[1])?;
         }
 
         render_spaceship_description(
             &team,
+            world,
             world.team_rating(&team.id).unwrap_or_default(),
-            team.id == world.own_team_id,
+            false,
+            world.get_team(&team.id).is_some(),
             &mut self.gif_map,
             self.tick,
             frame,
@@ -394,7 +413,6 @@ impl TeamListPanel {
 
         frame.render_widget(
             default_block()
-                // .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
                 .title(format!(" {} ", team.name))
                 .title_alignment(Alignment::Left),
             box_split[0],

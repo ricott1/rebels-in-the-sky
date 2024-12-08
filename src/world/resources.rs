@@ -41,7 +41,7 @@ impl Resource {
             Resource::GOLD => 1750.0,
             Resource::SCRAPS => 40.0,
             Resource::FUEL => 30.0,
-            Resource::RUM => 125.0,
+            Resource::RUM => 100.0,
         }
     }
 

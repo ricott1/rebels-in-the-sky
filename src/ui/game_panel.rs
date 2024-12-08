@@ -13,7 +13,7 @@ use super::{
 };
 use crate::game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE;
 use crate::types::{AppResult, SystemTimeTick, Tick};
-use crate::world::constants::{MAX_MORALE, MORALE_THRESHOLD_FOR_LEAVING};
+use crate::world::constants::{MAX_MORALE, MAX_PLAYERS_PER_GAME, MORALE_THRESHOLD_FOR_LEAVING};
 use crate::{
     game_engine::{
         action::{ActionOutput, ActionSituation, Advantage},
@@ -38,10 +38,10 @@ use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use itertools::Itertools;
 use ratatui::layout::Margin;
+use ratatui::style::Styled;
 use ratatui::{
     layout::{Constraint, Layout},
     prelude::Rect,
-    style::Stylize,
     text::{Line, Span},
     widgets::{Cell, Paragraph, Row, Table, Wrap},
 };
@@ -666,6 +666,11 @@ impl GamePanel {
             rows.push(Row::new(cells).height(1));
         }
 
+        // We want the totals to be always at the bottom, exactly as the (MAX_PLAYERS_PER_GAME + 3)-th row
+        while rows.len() < MAX_PLAYERS_PER_GAME + 1 {
+            rows.push(Row::default().height(1));
+        }
+
         let totals = vec![
             Cell::from(format!("")),
             Cell::from(format!("Total")),
@@ -684,13 +689,13 @@ impl GamePanel {
             Cell::from(format!("{:>+3}", plus_minus_total / 5)),
         ];
 
-        rows.push(Row::new(totals).cyan());
+        rows.push(Row::new(totals).set_style(UiStyle::HIGHLIGHT));
 
         Table::new(
             rows,
             [
                 Constraint::Length(2),
-                Constraint::Length(14),
+                Constraint::Length(MAX_NAME_LENGTH as u16 + 2),
                 Constraint::Length(3),
                 Constraint::Length(4),
                 Constraint::Length(6),
@@ -773,7 +778,7 @@ impl GamePanel {
             rows,
             [
                 Constraint::Length(2),
-                Constraint::Length(14),
+                Constraint::Length(MAX_NAME_LENGTH as u16 + 2),
                 Constraint::Length(bars_length as u16),
                 Constraint::Length(bars_length as u16),
             ],
@@ -823,37 +828,43 @@ impl GamePanel {
             .collect::<Vec<&Player>>();
 
         let constraint = &[
-            Constraint::Length(2),   //role
-            Constraint::Length(16),  //player
-            Constraint::Ratio(1, 2), //morale
-            Constraint::Ratio(1, 2), //tiredness
+            Constraint::Length(2),                          //role
+            Constraint::Length(MAX_NAME_LENGTH as u16 + 2), //player
+            Constraint::Ratio(1, 2),                        //morale
+            Constraint::Ratio(1, 2),                        //tiredness
         ];
-
-        let home_tactic = game.home_team_in_game.tactic.to_string();
-        let away_tactic = game.away_team_in_game.tactic.to_string();
 
         let home_table =
             Self::build_player_status_table(&game.home_team_in_game.stats, home_players)
                 .header(
-                    Row::new(["  ", home_tactic.as_str(), "Morale", "Tiredness"])
-                        .style(UiStyle::HEADER)
-                        .height(1),
+                    Row::new([
+                        "  ",
+                        game.home_team_in_game.name.as_str(),
+                        "Morale",
+                        "Tiredness",
+                    ])
+                    .style(UiStyle::HEADER)
+                    .height(1),
                 )
                 .widths(constraint);
 
         let away_table =
             Self::build_player_status_table(&game.away_team_in_game.stats, away_players)
                 .header(
-                    Row::new(["  ", away_tactic.as_str(), "Morale", "Tiredness"])
-                        .style(UiStyle::HEADER)
-                        .height(1),
+                    Row::new([
+                        "  ",
+                        game.away_team_in_game.name.as_str(),
+                        "Morale",
+                        "Tiredness",
+                    ])
+                    .style(UiStyle::HEADER)
+                    .height(1),
                 )
                 .widths(constraint);
 
         let box_area = Layout::vertical([
-            Constraint::Length(game.home_team_in_game.players.len() as u16 + 2),
-            Constraint::Max(1),
-            Constraint::Length(game.away_team_in_game.players.len() as u16 + 2),
+            Constraint::Ratio(1, 2),
+            Constraint::Ratio(1, 2),
             Constraint::Min(0),
         ])
         .split(area.inner(Margin {
@@ -861,8 +872,29 @@ impl GamePanel {
             vertical: 0,
         }));
 
-        frame.render_widget(home_table, box_area[0]);
-        frame.render_widget(away_table, box_area[2]);
+        let home_box_split = Layout::vertical([Constraint::Min(0), Constraint::Length(1)])
+            .split(box_area[0].inner(Margin::new(1, 1)));
+        let away_box_split = Layout::vertical([Constraint::Min(0), Constraint::Length(1)])
+            .split(box_area[1].inner(Margin::new(1, 1)));
+
+        frame.render_widget(default_block(), box_area[0]);
+        frame.render_widget(home_table, home_box_split[0]);
+        frame.render_widget(
+            Span::styled(
+                format!("   Tactic: {}", game.home_team_in_game.tactic),
+                UiStyle::HIGHLIGHT,
+            ),
+            home_box_split[1],
+        );
+        frame.render_widget(default_block(), box_area[1]);
+        frame.render_widget(away_table, away_box_split[0]);
+        frame.render_widget(
+            Span::styled(
+                format!("   Tactic: {}", game.away_team_in_game.tactic),
+                UiStyle::HIGHLIGHT,
+            ),
+            away_box_split[1],
+        );
     }
 
     fn build_stats_box(game: &Game, frame: &mut UiFrame, area: Rect) {
@@ -910,18 +942,19 @@ impl GamePanel {
             .collect::<Vec<&Player>>();
 
         let constraint = &[
-            Constraint::Length(2), //role
-            Constraint::Min(16),   //player
-            Constraint::Length(3), //minutes
-            Constraint::Length(3), //points
-            Constraint::Length(6), //2pt
-            Constraint::Length(5), //3pt
-            Constraint::Length(6), //assists/turnovers
-            Constraint::Length(7), //defensive rebounds/offensive rebounds
-            Constraint::Length(3), //steals
-            Constraint::Length(3), //blocks
-            Constraint::Length(2), //personal fouls
-            Constraint::Length(3), //plus minus
+            Constraint::Length(2),                          //role
+            Constraint::Length(MAX_NAME_LENGTH as u16 + 2), //player
+            Constraint::Length(3),                          //minutes
+            Constraint::Length(3),                          //points
+            Constraint::Length(6),                          //2pt
+            Constraint::Length(5),                          //3pt
+            Constraint::Length(6),                          //assists/turnovers
+            Constraint::Length(7),                          //defensive rebounds/offensive rebounds
+            Constraint::Length(3),                          //steals
+            Constraint::Length(3),                          //blocks
+            Constraint::Length(2),                          //personal fouls
+            Constraint::Length(3),                          //plus minus
+            Constraint::Min(0),
         ];
 
         let home_table = Self::build_stats_table(&game.home_team_in_game.stats, home_players)
@@ -933,9 +966,8 @@ impl GamePanel {
             .widths(constraint);
 
         let box_area = Layout::vertical([
-            Constraint::Length(game.home_team_in_game.players.len() as u16 + 2),
-            Constraint::Max(1),
-            Constraint::Length(game.away_team_in_game.players.len() as u16 + 2),
+            Constraint::Ratio(1, 2),
+            Constraint::Ratio(1, 2),
             Constraint::Min(0),
         ])
         .split(area.inner(Margin {
@@ -943,8 +975,8 @@ impl GamePanel {
             vertical: 0,
         }));
 
-        frame.render_widget(home_table, box_area[0]);
-        frame.render_widget(away_table, box_area[2]);
+        frame.render_widget(home_table.block(default_block()), box_area[0]);
+        frame.render_widget(away_table.block(default_block()), box_area[1]);
     }
 }
 

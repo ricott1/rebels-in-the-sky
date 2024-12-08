@@ -85,14 +85,28 @@ impl SpaceAdventure {
                 image,
                 0,
                 0,
-                base.width() - x as u32,
-                base.height() - y as u32,
+                base.width().saturating_sub(x as u32),
+                base.height().saturating_sub(y as u32),
             )
             .to_image()
         } else if x as u32 + image.width() > base.width() {
-            &crop_imm(image, 0, 0, base.width() - x as u32, image.height()).to_image()
+            &crop_imm(
+                image,
+                0,
+                0,
+                base.width().saturating_sub(x as u32),
+                image.height(),
+            )
+            .to_image()
         } else if y as u32 + image.height() > base.height() {
-            &crop_imm(image, 0, 0, image.width(), base.height() - y as u32).to_image()
+            &crop_imm(
+                image,
+                0,
+                0,
+                image.width(),
+                base.height().saturating_sub(y as u32),
+            )
+            .to_image()
         } else {
             image
         };

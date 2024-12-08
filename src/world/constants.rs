@@ -1,5 +1,8 @@
 use super::{resources::Resource, skill::MAX_SKILL};
-use crate::types::{PlanetId, Tick};
+use crate::{
+    game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
+    types::{PlanetId, Tick},
+};
 use once_cell::sync::Lazy;
 
 // DEBUG_TIME_MULTIPLIER should be between 1 and 1000;
@@ -23,19 +26,22 @@ pub const LIGHT_YEAR: KILOMETER = 9_460_730_472_580_800 * KILOMETERS;
 pub const CALENDAR_OFFSET: i32 = 77;
 
 pub const MIN_PLAYERS_PER_GAME: usize = 5;
-pub const MAX_PLAYERS_PER_TEAM: usize = MIN_PLAYERS_PER_GAME + 5;
+// Max number of players that can participate in a game. Other crew members beyond this limit are not part of the team during the game.
+pub const MAX_PLAYERS_PER_GAME: usize = MIN_PLAYERS_PER_GAME + 2;
+// The following value is never directly used, but we should ensure that no spaceship allows for a crew size larger than this.
+pub const MAX_CREW_SIZE: usize = MIN_PLAYERS_PER_GAME + 5;
 
 // Try to keep these constants balanced.
 // By playing a game, a player can get at most 5*40*60 = 12000 (5 because of the role, times 40 minutes in seconds).
 // Then, with potential, focus, and doctor bonus, per game a skill can improve at most
-// by 12000 * 8 * EXPERIENCE_PER_SKILL_MULTIPLIER ~ 0.5.
+// by 12000 * 8 * EXPERIENCE_PER_SKILL_MULTIPLIER ~ 0.4.
 // More realistically, one should take a factor 10 less.
-pub const EXPERIENCE_PER_SKILL_MULTIPLIER: f32 = 0.0000125;
-pub const MAX_SKILL_INCREASE_PER_LONG_TICK: f32 = 0.5;
-pub const SKILL_DECREMENT_PER_LONG_TICK: f32 = -0.075;
+pub const EXPERIENCE_PER_SKILL_MULTIPLIER: f32 = 0.00001;
+pub const MAX_SKILL_INCREASE_PER_LONG_TICK: f32 = 0.35;
+pub const SKILL_DECREMENT_PER_LONG_TICK: f32 = -0.06;
 
 pub const REPUTATION_PER_EXPERIENCE: f32 = 0.0001;
-pub const REPUTATION_DECREASE_PER_LONG_TICK: f32 = -0.125;
+pub const REPUTATION_DECREASE_PER_LONG_TICK: f32 = -0.15;
 pub const AGE_INCREASE_PER_LONG_TICK: f32 = 0.1; // 1 year every 10 LONG_TICK
 
 pub const INCOME_PER_ATTENDEE_HOME: u32 = 36;
@@ -47,7 +53,7 @@ pub const SPECIAL_TRAIT_VALUE_BONUS: f32 = 1.35;
 
 pub const AUTO_GENERATE_GAMES_NUMBER: usize = 3;
 pub const MAX_AVG_TIREDNESS_PER_AUTO_GAME: f32 = 2.0;
-pub const MAX_AVG_TIREDNESS_PER_CHALLENGED_GAME: f32 = 5.0;
+pub const MAX_AVG_TIREDNESS_PER_CHALLENGED_GAME: f32 = MIN_TIREDNESS_FOR_ROLL_DECLINE;
 
 pub const BASE_DISTANCES: [u64; 5] = [
     1 * LIGHT_YEAR,
@@ -61,7 +67,7 @@ pub const SPACESHIP_BASE_COST_MULTIPLIER: f32 = 1.1;
 
 pub const LIGHT_SPEED: f32 = 1_079_252_848.8 * KILOMETERS as f32 / HOURS as f32;
 pub const BASE_SPEED: f32 = 0.55 * LIGHT_SPEED; // Very fast ;)
-pub const BASE_FUEL_CONSUMPTION: f32 = 2.5 / HOURS as f32; // TONNES per HOURS
+pub const BASE_FUEL_CONSUMPTION: f32 = 1.85 / HOURS as f32; // TONNES per HOURS
 pub const FUEL_CONSUMPTION_PER_UNIT_STORAGE: f32 = 1.0 / 3_000.0; // 3_000 storage units double the fuel consumption
 pub const SPEED_PENALTY_PER_UNIT_STORAGE: f32 = 1.0 / 6_000.0; // 6_000 storage units halves the speed
 
@@ -147,7 +153,7 @@ pub const TIREDNESS_DRINK_MALUS_SPUGNA: f32 = TirednessCost::HIGH;
 pub const TRAIT_PROBABILITY: f64 = 0.25;
 
 pub const MIN_RELATIVE_RETIREMENT_AGE: f32 = 0.96;
-pub const PEAK_PERFORMANCE_RELATIVE_AGE: f32 = 0.65;
+pub const PEAK_PERFORMANCE_RELATIVE_AGE: f32 = 0.7;
 
 pub struct AsteroidFacilityCost;
 impl AsteroidFacilityCost {

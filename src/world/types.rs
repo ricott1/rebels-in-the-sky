@@ -146,7 +146,7 @@ impl Population {
             Self::Yardalaim => 120.0,
             Self::Polpett => 41.0,
             Self::Juppa => 110.0,
-            Self::Galdari => 350.0,
+            Self::Galdari => 270.0,
             Self::Pupparoll => 45.0,
             Self::Octopulp => 18.0,
         }

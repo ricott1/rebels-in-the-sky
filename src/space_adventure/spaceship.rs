@@ -123,8 +123,35 @@ impl Body for SpaceshipEntity {
         self.previous_position = self.position;
 
         let mut callbacks = vec![];
+        let rng = &mut ChaCha8Rng::from_entropy();
+
+        // Generate fire particle if ship is damaged
+        for _ in self.current_durability as usize..(0.5 * self.durability) as usize {
+            if rng.gen_bool(0.2) {
+                let position = self.center().as_vec2()
+                    + Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0));
+
+                let smoke_color_rng = rng.gen_range(0..=130);
+                callbacks.push(SpaceCallback::GenerateParticle {
+                    position,
+                    velocity: -1.5 * self.acceleration.normalize()
+                        + Vec2::new(rng.gen_range(-1.5..1.5), rng.gen_range(-2.5..2.5)),
+                    color: Rgba([
+                        125 + smoke_color_rng,
+                        55 + smoke_color_rng,
+                        55 + smoke_color_rng,
+                        255,
+                    ]),
+                    particle_state: EntityState::Decaying {
+                        lifetime: 1.5 + rng.gen_range(0.5..1.5),
+                    },
+                    layer: self.layer() + 1,
+                });
+            }
+        }
+
+        // Generate exhaust particles if accelerating
         if self.acceleration.length_squared() > 0.0 {
-            let rng = &mut ChaCha8Rng::from_entropy();
             for &point in self.engine_exhaust.iter() {
                 if self.velocity.length_squared() < self.acceleration.length_squared() / 2.0
                     || rng.gen_bool(0.25)
@@ -657,6 +684,7 @@ impl SpaceshipEntity {
     }
 
     pub fn random_enemy(collector_id: usize) -> AppResult<Self> {
+        let rng = &mut ChaCha8Rng::from_entropy();
         let mut gif = vec![];
         let mut hit_boxes = vec![];
         let spaceship = SpaceshipPrefab::iter()
@@ -664,7 +692,7 @@ impl SpaceshipEntity {
             .choose(&mut rand::thread_rng())
             .expect("There shiuld be one spaceship available")
             .spaceship("Baddy".to_string())
-            .with_color_map(ColorMap::random());
+            .with_color_map(ColorMap::random(rng));
 
         let base_gif = spaceship.compose_image()?;
         for idx in 0..base_gif.len() {

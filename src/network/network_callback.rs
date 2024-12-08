@@ -108,7 +108,7 @@ impl NetworkCallback {
             let event = SwarmPanelEvent {
                 timestamp: Tick::now(),
                 peer_id: Some(peer_id),
-                text: format!("Unsubscribed from topic: {topic}"),
+                text: format!("Peer {peer_id} unsubscribed from topic: {topic}"),
             };
             app.ui.swarm_panel.push_log_event(event);
             app.world.filter_peer_data(Some(peer_id))?;
@@ -374,7 +374,10 @@ impl NetworkCallback {
                         trade.state = NetworkRequestState::Failed {
                             error_message: err.to_string(),
                         };
+                        let own_team = app.world.get_own_team_mut()?;
+                        own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
                         network_handler.send_trade(trade)?;
+
                         return Err(anyhow!(err.to_string()));
                     }
                 }
@@ -533,7 +536,7 @@ impl NetworkCallback {
                     }
                     let mut handle_syn_ack = || -> AppResult<()> {
                         let mut home_team_in_game = TeamInGame::from_team_id(
-                            app.world.own_team_id,
+                            &app.world.own_team_id,
                             &app.world.teams,
                             &app.world.players,
                         )
@@ -555,6 +558,12 @@ impl NetworkCallback {
                         };
                         app.ui.swarm_panel.push_log_event(event);
 
+                        let own_team = app.world.get_own_team_mut()?;
+                        own_team.remove_challenge(
+                            challenge.home_team_in_game.team_id,
+                            challenge.away_team_in_game.team_id,
+                        );
+
                         if let Err(err) = app.world.generate_network_game(
                             challenge.home_team_in_game.clone(),
                             challenge.away_team_in_game.clone(),
@@ -564,14 +573,9 @@ impl NetworkCallback {
                                 error_message: err.to_string(),
                             };
                             network_handler.send_challenge(challenge)?;
+
                             return Err(anyhow!(err.to_string()));
                         }
-
-                        let own_team = app.world.get_own_team_mut()?;
-                        own_team.remove_challenge(
-                            challenge.home_team_in_game.team_id,
-                            challenge.away_team_in_game.team_id,
-                        );
 
                         app.ui.push_popup(PopupMessage::Ok {
                             message: format!("Challenge accepted, game is starting."),
@@ -665,6 +669,11 @@ impl NetworkCallback {
                             error_message: err.to_string(),
                         };
                         network_handler.send_challenge(challenge)?;
+                        app.ui.push_popup(PopupMessage::Error {
+                            message: format!("Challenge failed: {}", err),
+                            tick: Tick::now(),
+                        });
+
                         return Err(anyhow!(err.to_string()));
                     }
                 }

@@ -3,6 +3,7 @@ use crate::{
     image::game::PitchStyle,
     types::{AppResult, GameId, PlayerId, PlayerMap, TeamId, TeamMap},
     world::{
+        constants::MAX_PLAYERS_PER_GAME,
         player::{InfoStats, Player},
         position::{Position, MAX_POSITION},
         skill::{Athletics, Defense, Mental, Offense, Technical},
@@ -11,6 +12,7 @@ use crate::{
         utils::is_default,
     },
 };
+use itertools::Itertools;
 use libp2p::PeerId;
 use once_cell::sync::Lazy;
 use rand_chacha::ChaCha8Rng;
@@ -150,25 +152,23 @@ pub struct TeamInGame {
 }
 
 impl<'game> TeamInGame {
-    pub fn new(team: &Team, players: PlayerMap) -> Self {
+    fn new(team: &Team, players: PlayerMap) -> Self {
         let mut stats = HashMap::new();
 
-        for (idx, player_id) in team.player_ids.iter().enumerate() {
+        for (idx, &player_id) in players.keys().enumerate() {
             let mut player_stats = GameStats::default();
             if (idx as Position) < MAX_POSITION {
                 player_stats.position = Some(idx as Position);
             }
-            stats.insert(player_id.clone(), player_stats.clone());
+            stats.insert(player_id, player_stats.clone());
         }
 
-        let initial_tiredness = team
-            .player_ids
-            .iter()
+        let initial_tiredness = players
+            .keys()
             .map(|id| players.get(id).unwrap().tiredness)
             .collect();
-        let initial_morale = team
-            .player_ids
-            .iter()
+        let initial_morale = players
+            .keys()
             .map(|id| players.get(id).unwrap().morale)
             .collect();
         Self {
@@ -176,7 +176,7 @@ impl<'game> TeamInGame {
             peer_id: team.peer_id,
             reputation: team.reputation,
             name: team.name.clone(),
-            initial_positions: team.player_ids.clone(),
+            initial_positions: players.keys().map(|id| id.clone()).collect_vec(),
             initial_tiredness,
             initial_morale,
             version: team.version,
@@ -188,12 +188,12 @@ impl<'game> TeamInGame {
         }
     }
 
-    pub fn from_team_id(team_id: TeamId, teams: &TeamMap, players: &PlayerMap) -> Option<Self> {
-        let team = teams.get(&team_id)?;
+    pub fn from_team_id(team_id: &TeamId, teams: &TeamMap, players: &PlayerMap) -> Option<Self> {
+        let team = teams.get(team_id)?;
         let mut team_players = PlayerMap::new();
-        for player_id in team.player_ids.iter() {
-            let player = players.get(player_id)?;
-            team_players.insert(player_id.clone(), player.clone());
+        for &player_id in team.player_ids.iter().take(MAX_PLAYERS_PER_GAME) {
+            let player = players.get(&player_id)?;
+            team_players.insert(player_id, player.clone());
         }
 
         Some(TeamInGame::new(team, team_players))

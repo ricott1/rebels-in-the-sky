@@ -2,9 +2,11 @@ use super::client::AppClient;
 use crate::network::constants::DEFAULT_PORT;
 use crate::types::AppResult;
 use itertools::Either;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use russh::server::{Config, Server};
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::net::TcpListener;
 use std::pin::pin;
 use std::sync::Arc;
@@ -15,22 +17,20 @@ use tokio_util::sync::CancellationToken;
 const SERVER_SSH_PORT: u16 = 3788;
 const MAX_SSH_CLIENT_PORT: u16 = DEFAULT_PORT + 32;
 
-fn save_keys(signing_key: &ed25519_dalek::SigningKey) -> AppResult<()> {
+fn save_keys(signing_key: &russh_keys::PrivateKey) -> AppResult<()> {
     let file = File::create::<&str>("./keys".into())?;
     assert!(file.metadata()?.is_file());
     let mut buffer = std::io::BufWriter::new(file);
-    buffer.write(&signing_key.to_bytes())?;
+    buffer.write(&signing_key.to_bytes()?)?;
     println!("Created new keypair for SSH server.");
     Ok(())
 }
 
-fn load_keys() -> AppResult<ed25519_dalek::SigningKey> {
-    let file = File::open::<&str>("./keys".into())?;
-    let mut buffer = std::io::BufReader::new(file);
-    let mut buf: [u8; 32] = [0; 32];
-    buffer.read(&mut buf)?;
+fn load_keys() -> AppResult<russh_keys::PrivateKey> {
+    let bytes = std::fs::read("./keys")?;
+    let private_key = russh_keys::PrivateKey::from_bytes(&bytes)?;
     println!("Loaded keypair for SSH server.");
-    Ok(ed25519_dalek::SigningKey::from_bytes(&buf))
+    Ok(private_key)
 }
 
 fn get_available_port() -> Option<u16> {
@@ -62,22 +62,22 @@ impl AppServer {
             SERVER_SSH_PORT
         );
 
-        let signing_key = load_keys().unwrap_or_else(|_| {
-            let key_pair = russh_keys::key::KeyPair::generate_ed25519();
-            let signing_key = match key_pair {
-                russh_keys::key::KeyPair::Ed25519(signing_key) => signing_key,
-                _ => panic!("SSH server: Invalid KeyPair"),
-            };
-            save_keys(&signing_key).expect("Failed to save SSH keys.");
-            signing_key
+        let private_key = load_keys().unwrap_or_else(|_| {
+            let key = russh_keys::PrivateKey::random(
+                &mut ChaCha8Rng::from_entropy(),
+                russh_keys::Algorithm::Ed25519,
+            )
+            .expect("Failed to generate SSH keys.");
+
+            save_keys(&key).expect("Failed to save SSH keys.");
+            key
         });
-        let key_pair = russh::keys::key::KeyPair::Ed25519(signing_key);
 
         let config = Config {
             inactivity_timeout: Some(std::time::Duration::from_secs(3600)),
             auth_rejection_time: std::time::Duration::from_secs(3),
             auth_rejection_time_initial: Some(std::time::Duration::from_secs(0)),
-            keys: vec![key_pair],
+            keys: vec![private_key],
             ..Default::default()
         };
 

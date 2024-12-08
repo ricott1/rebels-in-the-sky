@@ -8,7 +8,7 @@ use crate::{
     types::{AppResult, SystemTimeTick, Tick},
     world::utils::is_default,
 };
-use rand::{seq::IteratorRandom, SeedableRng};
+use rand::seq::IteratorRandom;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -819,8 +819,7 @@ impl Spaceship {
         }
     }
 
-    pub fn random(name: String) -> Self {
-        let rng = &mut ChaCha8Rng::from_entropy();
+    pub fn random(name: String, rng: &mut ChaCha8Rng) -> Self {
         let style = SpaceshipStyle::iter().choose(rng).unwrap();
         let hull = Hull::iter()
             .filter(|h| h.style() == style)
@@ -840,7 +839,7 @@ impl Spaceship {
             .choose(rng)
             .expect("Should choose a valid component");
 
-        Self::new(name, hull, engine, storage, shooter, ColorMap::random())
+        Self::new(name, hull, engine, storage, shooter, ColorMap::random(rng))
     }
 
     pub fn style(&self) -> SpaceshipStyle {
@@ -944,7 +943,11 @@ impl Spaceship {
     }
 
     pub fn crew_capacity(&self) -> u8 {
-        self.hull.crew_capacity() + self.engine.crew_capacity() + self.storage.crew_capacity()
+        let capacity =
+            self.hull.crew_capacity() + self.engine.crew_capacity() + self.storage.crew_capacity();
+        // Just to be sure :)
+        assert!(capacity <= MAX_CREW_SIZE as u8);
+        capacity
     }
 
     pub fn cost(&self) -> u32 {
@@ -1065,14 +1068,13 @@ impl SpaceshipPrefab {
 #[cfg(test)]
 
 mod tests {
-    use itertools::Itertools;
-
+    use super::*;
     use crate::{
         types::{SystemTimeTick, TeamId},
-        world::{constants::*, team::Team, types::TeamLocation, world::World},
+        world::{team::Team, types::TeamLocation, world::World},
     };
-
-    use super::*;
+    use itertools::Itertools;
+    use rand::SeedableRng;
 
     #[test]
     fn test_spaceship_prefab_data() {
@@ -1127,7 +1129,8 @@ mod tests {
         let planet_ids = world.planets.keys().collect_vec();
         let from = planet_ids[0].clone();
         let to = planet_ids[1].clone();
-        let mut team = Team::random(TeamId::new_v4(), from.clone(), "test", "test");
+        let rng = &mut ChaCha8Rng::from_entropy();
+        let mut team = Team::random(TeamId::new_v4(), from.clone(), "test", "test", rng);
         team.spaceship = spaceship;
         team.current_location = TeamLocation::Travelling {
             from,

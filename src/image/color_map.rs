@@ -1,11 +1,10 @@
 use image::Rgb;
-use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
+use rand::seq::{IteratorRandom, SliceRandom};
 use rand_chacha::ChaCha8Rng;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use strum::IntoEnumIterator;
+use strum::{FromRepr, IntoEnumIterator};
 use strum_macros::EnumIter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Hash)]
@@ -62,10 +61,9 @@ impl ColorMap {
     pub fn random_color() -> Rgb<u8> {
         Rgb([rand::random(), rand::random(), rand::random()])
     }
-    pub fn random() -> Self {
-        let mut rng = ChaCha8Rng::from_entropy();
+    pub fn random(rng: &mut ChaCha8Rng) -> Self {
         let mut color_presets = ColorPreset::iter().collect::<Vec<_>>();
-        color_presets.shuffle(&mut rng);
+        color_presets.shuffle(rng);
         Self {
             red: color_presets[0].to_rgb(),
             green: color_presets[1].to_rgb(),
@@ -89,106 +87,105 @@ impl ColorMap {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, EnumIter, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Default, EnumIter, PartialEq, Hash, FromRepr)]
 #[repr(u8)]
 pub enum ColorPreset {
     #[default]
     Red,
-    Orange,
-    Yellow,
-    Lime,
-    Green,
-    Teal,
-    Cyan,
-    Turquoise,
+    Maroon3,
+    BlueViolet,
+    MediumSlateBlue,
+    Chartreuse,
+    YellowGreen,
+    DarkSeaGreen,
+    SpringGreen,
+    LightGreen,
+    Aqua,
     SkyBlue,
-    Blue,
+    Cornflower,
+    SandyBrown,
+    LightCoral,
+    Orangered,
+    Orange,
+    Khaki,
+    Yellow,
+    Plum,
+    Fuchsia,
+    DeepPink,
+    Linen,
     Navy,
-    Purple,
-    Magenta,
-    Pink,
-    Brown,
-    Maroon,
+    Blue,
     Olive,
-    Gold,
-    Silver,
+    DarkGreen,
+    Maroon2,
+    DarkSlateBlue,
+    DarkMagenta,
+    DarkCyan,
     Gray,
+    DarkGray,
+    Black,
 }
 
 impl ColorPreset {
     pub fn next(&self) -> Self {
-        match self {
-            Self::Red => Self::Orange,
-            Self::Orange => Self::Yellow,
-            Self::Yellow => Self::Lime,
-            Self::Lime => Self::Green,
-            Self::Green => Self::Teal,
-            Self::Teal => Self::Cyan,
-            Self::Cyan => Self::Turquoise,
-            Self::Turquoise => Self::SkyBlue,
-            Self::SkyBlue => Self::Blue,
-            Self::Blue => Self::Navy,
-            Self::Navy => Self::Purple,
-            Self::Purple => Self::Magenta,
-            Self::Magenta => Self::Pink,
-            Self::Pink => Self::Brown,
-            Self::Brown => Self::Maroon,
-            Self::Maroon => Self::Olive,
-            Self::Olive => Self::Gold,
-            Self::Gold => Self::Silver,
-            Self::Silver => Self::Gray,
-            Self::Gray => Self::Red,
-        }
+        return match Self::from_repr(*self as u8 + 1) {
+            Some(color_preset) => color_preset,
+            None => Self::default(),
+        };
     }
 
-    pub fn random() -> Self {
-        let rng = &mut ChaCha8Rng::from_entropy();
-        match rng.gen_range(0..19) {
-            0 => Self::Red,
-            1 => Self::Green,
-            2 => Self::Blue,
-            3 => Self::Yellow,
-            4 => Self::Orange,
-            5 => Self::Purple,
-            6 => Self::Pink,
-            7 => Self::Cyan,
-            8 => Self::Magenta,
-            9 => Self::Lime,
-            10 => Self::Teal,
-            11 => Self::Olive,
-            12 => Self::Maroon,
-            13 => Self::Navy,
-            14 => Self::Silver,
-            15 => Self::Gray,
-            16 => Self::Brown,
-            17 => Self::SkyBlue,
-            18 => Self::Turquoise,
-            _ => Self::Gold,
+    pub fn previous(&self) -> Self {
+        if *self as u8 > 0 {
+            return match Self::from_repr(*self as u8 - 1) {
+                Some(color_preset) => color_preset,
+                None => Self::default(),
+            };
         }
+
+        Self::Black
+    }
+
+    pub fn random(rng: &mut ChaCha8Rng) -> Self {
+        Self::iter()
+            .choose_stable(rng)
+            .expect("There should be at least a color")
     }
 
     pub fn to_rgb(&self) -> Rgb<u8> {
         match self {
-            ColorPreset::Red => Rgb([200, 50, 50]),
-            ColorPreset::Orange => Rgb([200, 120, 50]),
-            ColorPreset::Yellow => Rgb([200, 200, 50]),
-            ColorPreset::Lime => Rgb([50, 200, 50]),
-            ColorPreset::Green => Rgb([20, 210, 30]),
-            ColorPreset::Teal => Rgb([50, 100, 100]),
-            ColorPreset::Cyan => Rgb([50, 200, 200]),
-            ColorPreset::Turquoise => Rgb([50, 180, 170]),
-            ColorPreset::SkyBlue => Rgb([100, 170, 200]),
-            ColorPreset::Blue => Rgb([50, 50, 200]),
-            ColorPreset::Navy => Rgb([50, 50, 100]),
-            ColorPreset::Purple => Rgb([120, 50, 120]),
-            ColorPreset::Magenta => Rgb([200, 50, 200]),
-            ColorPreset::Pink => Rgb([200, 150, 160]),
-            ColorPreset::Brown => Rgb([130, 70, 70]),
-            ColorPreset::Maroon => Rgb([100, 50, 50]),
-            ColorPreset::Olive => Rgb([100, 100, 50]),
-            ColorPreset::Gold => Rgb([220, 190, 80]),
-            ColorPreset::Silver => Rgb([160, 160, 160]),
-            ColorPreset::Gray => Rgb([100, 100, 100]),
+            Self::Red => Rgb([220, 20, 60]),
+            Self::Maroon3 => Rgb([176, 48, 96]),
+            Self::BlueViolet => Rgb([138, 43, 226]),
+            Self::MediumSlateBlue => Rgb([123, 104, 238]),
+            Self::Chartreuse => Rgb([127, 255, 0]),
+            Self::YellowGreen => Rgb([154, 205, 50]),
+            Self::DarkSeaGreen => Rgb([143, 188, 143]),
+            Self::SpringGreen => Rgb([0, 255, 127]),
+            Self::LightGreen => Rgb([144, 238, 144]),
+            Self::Aqua => Rgb([0, 255, 255]),
+            Self::SkyBlue => Rgb([135, 206, 235]),
+            Self::Cornflower => Rgb([100, 149, 237]),
+            Self::SandyBrown => Rgb([244, 164, 96]),
+            Self::LightCoral => Rgb([240, 128, 128]),
+            Self::Orangered => Rgb([255, 69, 0]),
+            Self::Orange => Rgb([255, 165, 0]),
+            Self::Khaki => Rgb([240, 230, 140]),
+            Self::Yellow => Rgb([255, 255, 0]),
+            Self::Plum => Rgb([221, 160, 221]),
+            Self::Fuchsia => Rgb([255, 0, 255]),
+            Self::DeepPink => Rgb([255, 20, 147]),
+            Self::Linen => Rgb([250, 240, 230]),
+            Self::Navy => Rgb([0, 0, 128]),
+            Self::Blue => Rgb([0, 0, 255]),
+            Self::Olive => Rgb([128, 128, 0]),
+            Self::DarkGreen => Rgb([0, 100, 0]),
+            Self::Maroon2 => Rgb([127, 0, 0]),
+            Self::DarkSlateBlue => Rgb([72, 61, 139]),
+            Self::DarkMagenta => Rgb([139, 0, 139]),
+            Self::DarkCyan => Rgb([0, 139, 139]),
+            Self::Gray => Rgb([128, 128, 128]),
+            Self::DarkGray => Rgb([88, 88, 88]),
+            Self::Black => Rgb([0, 0, 0]),
         }
     }
 }
@@ -301,7 +298,7 @@ impl SkinColorMap {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, EnumIter)]
 #[repr(u8)]
 pub enum HairColorMap {
     Black,
@@ -317,17 +314,9 @@ pub enum HairColorMap {
 
 impl HairColorMap {
     pub fn random(rng: &mut ChaCha8Rng) -> Self {
-        match rng.gen_range(0..9) {
-            0 => Self::Black,
-            1 => Self::Blonde,
-            2 => Self::BlondeInverted,
-            3 => Self::Brown,
-            4 => Self::Orange,
-            5 => Self::OrangeInverted,
-            6 => Self::White,
-            7 => Self::Brizzolato,
-            _ => Self::Blue,
-        }
+        Self::iter()
+            .choose_stable(rng)
+            .expect("There should be at least a HairColorMap")
     }
     pub fn color_map(&self) -> ColorMap {
         match self {
@@ -339,26 +328,26 @@ impl HairColorMap {
             Self::Blonde => ColorMap {
                 red: Rgb([184, 151, 120]),
                 green: Rgb([230, 228, 196]),
-                blue: Rgb([120, 80, 110]),
+                blue: Rgb([198, 177, 57]),
             },
             Self::BlondeInverted => ColorMap {
                 red: Rgb([220, 208, 186]),
-                green: Rgb([120, 80, 110]),
+                green: Rgb([198, 177, 57]),
                 blue: Rgb([184, 151, 140]),
             },
             Self::Brown => ColorMap {
                 red: Rgb([145, 85, 61]),
                 green: Rgb([165, 137, 70]),
-                blue: Rgb([120, 80, 110]),
+                blue: Rgb([96, 70, 15]),
             },
             Self::Orange => ColorMap {
                 red: Rgb([222, 137, 75]),
                 green: Rgb([111, 110, 138]),
-                blue: Rgb([120, 80, 110]),
+                blue: Rgb([138, 66, 19]),
             },
             Self::OrangeInverted => ColorMap {
                 red: Rgb([141, 110, 138]),
-                green: Rgb([120, 80, 110]),
+                green: Rgb([138, 66, 19]),
                 blue: Rgb([232, 137, 75]),
             },
             Self::White => ColorMap {
@@ -387,11 +376,8 @@ pub enum AsteroidColorMap {
 }
 
 impl AsteroidColorMap {
-    pub fn random(rng: &mut ChaCha8Rng) -> Self {
-        match rng.gen_range(0..9) {
-            0 => Self::Base,
-            _ => Self::Base,
-        }
+    pub fn random(_rng: &mut ChaCha8Rng) -> Self {
+        Self::Base
     }
     pub fn color_map(&self) -> ColorMap {
         match self {

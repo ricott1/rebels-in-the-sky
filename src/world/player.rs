@@ -54,6 +54,7 @@ pub struct Player {
     pub current_location: PlayerLocation,
     pub skills_training: [f32; 20],
     pub previous_skills: [Skill; 20], // This is for displaying purposes to show the skills that were recently modified
+    // pub skills_potential: [Skill; 20], // Each skill has a separate potential. For retrocompatibility reasons, we allow this array to be all zeros, in which case we initialize it during deserialization.
     pub tiredness: f32,
     pub morale: f32,
 }
@@ -488,6 +489,52 @@ impl Player {
             .expect("There should be 20 skills")
     }
 
+    pub fn current_tiredness(&self, world: &World) -> f32 {
+        let mut tiredness = self.tiredness;
+        // Check if player is currently playing.
+        // In this case, read current tiredness from game.
+        if let Some(team_id) = self.team {
+            if let Ok(team) = world.get_team_or_err(&team_id) {
+                if let Some(game_id) = team.current_game {
+                    if let Ok(game) = world.get_game_or_err(&game_id) {
+                        if let Some(p) = if game.home_team_in_game.team_id == team_id {
+                            game.home_team_in_game.players.get(&self.id)
+                        } else {
+                            game.away_team_in_game.players.get(&self.id)
+                        } {
+                            tiredness = p.tiredness;
+                        }
+                    }
+                }
+            }
+        }
+
+        tiredness
+    }
+
+    pub fn current_morale(&self, world: &World) -> f32 {
+        let mut morale = self.morale;
+        // Check if player is currently playing.
+        // In this case, read current morale from game.
+        if let Some(team_id) = self.team {
+            if let Ok(team) = world.get_team_or_err(&team_id) {
+                if let Some(game_id) = team.current_game {
+                    if let Ok(game) = world.get_game_or_err(&game_id) {
+                        if let Some(p) = if game.home_team_in_game.team_id == team_id {
+                            game.home_team_in_game.players.get(&self.id)
+                        } else {
+                            game.away_team_in_game.players.get(&self.id)
+                        } {
+                            morale = p.morale;
+                        }
+                    }
+                }
+            }
+        }
+
+        morale
+    }
+
     pub fn can_drink(&self, world: &World) -> AppResult<()> {
         if self.team.is_none() {
             return Err(anyhow!("Player has no team, so no rum to drink"));
@@ -551,7 +598,7 @@ impl Player {
         mut base_level: f32,
     ) -> Self {
         if position.is_none() {
-            let position = rng.gen_range(0..5);
+            let position = rng.gen_range(0..MAX_POSITION);
             return Self::random(rng, id, Some(position), home_planet, base_level);
         }
 
@@ -599,23 +646,23 @@ impl Player {
             morale: MAX_MORALE,
         };
 
-        player.apply_info_modifiers();
-        player.apply_skill_modifiers();
+        player.apply_population_skill_modifiers();
+        player.apply_info_skill_modifiers();
 
         if athletics.quickness < WOODEN_LEG_MAX_QUICKNESS {
             player.image.set_wooden_leg(rng);
-            player.mental.charisma = (player.mental.charisma + 0.5).bound();
-            player.technical.post_moves = (player.technical.post_moves + 0.5).bound();
+            player.mental.charisma = (player.mental.charisma + 1.25).bound();
+            player.technical.post_moves = (player.technical.post_moves + 0.75).bound();
         }
         if mental.vision < EYE_PATCH_MAX_VISION {
             player.image.set_eye_patch(rng, population);
-            player.mental.charisma = (player.mental.charisma + 1.0).bound();
+            player.mental.charisma = (player.mental.charisma + 2.0).bound();
         }
 
         if technical.ball_handling < HOOK_MAX_BALL_HANDLING {
             player.image.set_hook(rng, population);
-            player.athletics.strength = (player.athletics.strength + 0.75).bound();
-            player.mental.charisma = (player.mental.charisma + 0.25).bound();
+            player.athletics.strength = (player.athletics.strength + 1.25).bound();
+            player.mental.charisma = (player.mental.charisma + 0.75).bound();
         }
 
         if athletics.strength > 15.0 && rng.gen_bool(TRAIT_PROBABILITY) {
@@ -630,16 +677,20 @@ impl Player {
 
         player.previous_skills = player.current_skill_array();
 
-        let normal = Normal::new(0.0, 4.75).expect("Should create valid normal distribution");
+        // Extra potential has a variance that depends
+        let std_dev = 3.0 + 1.0 - player.info.relative_age();
+        let normal = Normal::new(0.0, std_dev).expect("Should create valid normal distribution");
         let extra_potential = (normal.sample(rng) as f32).abs();
-        player.potential = (player.average_skill() + extra_potential).bound();
+        player.potential = (player.average_skill() + extra_potential)
+            .max(player.average_skill())
+            .bound();
         player.reputation =
             (player.average_skill() as f32 / 5.0 + player.info.relative_age() * 5.0).bound();
 
         player
     }
 
-    fn apply_skill_modifiers(&mut self) {
+    fn apply_population_skill_modifiers(&mut self) {
         match self.info.population {
             Population::Human { region } => match region {
                 Region::Italy => self.info.height = (self.info.height * 1.02).min(225.0),
@@ -669,8 +720,8 @@ impl Player {
             }
             Population::Galdari => {
                 self.info.height = (self.info.height * 1.02).min(225.0);
-                self.mental.charisma = (self.mental.charisma * 1.1).bound();
-                self.mental.vision = (self.mental.vision * 1.25).bound();
+                self.mental.charisma = (self.mental.charisma * 1.15).bound();
+                self.mental.vision = (self.mental.vision * 1.35).bound();
                 self.defense.steal = (self.defense.steal * 1.2).bound();
             }
             Population::Pupparoll => {
@@ -698,7 +749,7 @@ impl Player {
         }
     }
 
-    fn apply_info_modifiers(&mut self) {
+    fn apply_info_skill_modifiers(&mut self) {
         self.athletics.quickness = skill_linear_interpolation(
             self.athletics.quickness,
             self.info.weight,
@@ -712,7 +763,7 @@ impl Player {
         self.athletics.strength = skill_linear_interpolation(
             self.athletics.strength,
             self.info.weight,
-            [75.0, 0.5, 135.0, 1.3],
+            [75.0, 0.75, 135.0, 1.25],
         );
         self.athletics.stamina = skill_linear_interpolation(
             self.athletics.stamina,
@@ -730,18 +781,21 @@ impl Player {
             [190.0, 0.75, 215.0, 1.25],
         );
 
-        self.mental.vision =
-            skill_linear_interpolation(self.mental.vision, self.info.age, [16.0, 0.5, 38.0, 1.75]);
+        self.mental.vision = skill_linear_interpolation(
+            self.mental.vision,
+            self.info.relative_age(),
+            [0.0, 0.75, 1.0, 1.25],
+        );
         self.mental.charisma = skill_linear_interpolation(
             self.mental.charisma,
-            self.info.age,
-            [16.0, 0.75, 38.0, 1.25],
+            self.info.relative_age(),
+            [0.0, 0.75, 1.0, 1.25],
         );
 
         self.athletics.stamina = skill_linear_interpolation(
             self.athletics.stamina,
-            self.info.age,
-            [16.0, 1.3, 44.0, 0.7],
+            self.info.relative_age(),
+            [0.0, 1.1, 1.0, 0.75],
         );
     }
 
@@ -904,7 +958,11 @@ impl Player {
     ) {
         // potential_modifier has a value ranging from 0.0 to 2.0.
         // Players with skills below their potential improve faster, above their potential improve slower.
-        let potential_modifier = 1.0 + (self.potential - self.average_skill()) / MAX_SKILL;
+        let potential_modifier = if self.average_skill() > self.potential {
+            (1.0 + (self.potential - self.average_skill()) / MAX_SKILL).powf(10.0)
+        } else {
+            1.0 + (self.potential - self.average_skill()) / MAX_SKILL
+        };
         for p in 0..MAX_POSITION {
             if experience_at_position[p as usize] == 0 {
                 continue;
@@ -958,6 +1016,13 @@ impl Player {
             return 0.0;
         }
         position.player_rating(self.current_skill_array()) * (MAX_TIREDNESS - self.tiredness / 2.0)
+    }
+
+    pub fn tiredness_weighted_rating(&self) -> f32 {
+        if self.is_knocked_out() {
+            return 0.0;
+        }
+        self.average_skill() * (MAX_TIREDNESS - self.tiredness / 2.0)
     }
 }
 
@@ -1096,8 +1161,10 @@ impl Trait {
 
 #[cfg(test)]
 mod test {
+    use itertools::Itertools;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+    use serde::{Deserialize, Serialize};
 
     use crate::{
         app::App,
@@ -1172,5 +1239,35 @@ mod test {
         player.tiredness = MIN_SKILL;
         player.morale = MIN_SKILL;
         print_player_rolls(&player, rng);
+    }
+
+    #[test]
+    fn test_players_generation() -> AppResult<()> {
+        let mut app = App::test_default()?;
+
+        let world = &mut app.world;
+
+        let players = world
+            .players
+            .values()
+            .sorted_by(|a, b| a.average_skill().partial_cmp(&b.average_skill()).unwrap())
+            .collect_vec();
+
+        let skills = players.iter().map(|p| p.average_skill()).collect_vec();
+        let potentials = players.iter().map(|p| p.potential).collect_vec();
+
+        #[derive(Serialize, Deserialize)]
+        struct GenerationData {
+            skills: Vec<f32>,
+            potentials: Vec<f32>,
+        }
+
+        let data = GenerationData { skills, potentials };
+
+        std::fs::write(
+            "./pytests/player_generation.json",
+            serde_json::to_vec(&data)?,
+        )?;
+        Ok(())
     }
 }

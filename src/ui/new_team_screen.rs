@@ -135,7 +135,7 @@ impl NewTeamScreen {
                 .title("Ship name"),
         );
         let rng = &mut ChaCha8Rng::from_entropy();
-        let mut color_presets = ColorPreset::iter().collect::<Vec<_>>();
+        let mut color_presets = ColorPreset::iter().collect_vec();
         color_presets.shuffle(rng);
         let red_color_preset = color_presets[0];
         let green_color_preset = color_presets[1];
@@ -604,7 +604,6 @@ impl NewTeamScreen {
 
     fn render_remaining_balance(&mut self, frame: &mut UiFrame, area: Rect) {
         let remaining_balance = self.get_remaining_balance();
-        // We don't use format_satoshi for aesthetic reasons.
         let text = format!(" Remaining balance: {:>} sat", remaining_balance);
 
         let block = if remaining_balance >= 0 {
@@ -1049,6 +1048,24 @@ impl Screen for NewTeamScreen {
                         KeyCode::Char('b') => {
                             return Some(UiCallback::SetTeamColors {
                                 color: self.blue_color_preset.next(),
+                                channel: 2,
+                            });
+                        }
+                        KeyCode::Char('R') => {
+                            return Some(UiCallback::SetTeamColors {
+                                color: self.red_color_preset.previous(),
+                                channel: 0,
+                            });
+                        }
+                        KeyCode::Char('G') => {
+                            return Some(UiCallback::SetTeamColors {
+                                color: self.green_color_preset.previous(),
+                                channel: 1,
+                            });
+                        }
+                        KeyCode::Char('B') => {
+                            return Some(UiCallback::SetTeamColors {
+                                color: self.blue_color_preset.previous(),
                                 channel: 2,
                             });
                         }

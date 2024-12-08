@@ -4,11 +4,12 @@ use crate::network::handler::NetworkHandler;
 use crate::store::{get_world_size, load_world, reset, save_world};
 use crate::tui::{EventHandler, TerminalEvent};
 use crate::tui::{Tui, WriterProxy};
-use crate::types::{AppResult, ResourceMap, SystemTimeTick, Tick};
+use crate::types::{AppResult, ResourceMap, StorableResourceMap, SystemTimeTick, Tick};
 use crate::ui::popup_message::PopupMessage;
 use crate::ui::ui::{Ui, UiState};
 use crate::ui::utils::SwarmPanelEvent;
 use crate::world::constants::{TickInterval, SECONDS};
+use crate::world::resources::Resource;
 use crate::world::types::TeamLocation;
 use crate::world::world::World;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -66,8 +67,12 @@ impl App {
             .clone();
         match own_team.current_location {
             TeamLocation::OnSpaceAdventure { around } => {
-                // The team loses all resources and fuel, tough shit.
+                // The team loses all resources but satoshis, we told you so!
+                let current_treasury = own_team.resources.value(&Resource::SATOSHI);
                 own_team.resources = ResourceMap::default();
+                own_team
+                    .add_resource(Resource::SATOSHI, current_treasury)
+                    .expect("It should always be possible to add satoshis");
                 own_team.spaceship.set_current_durability(0);
                 own_team.current_location = TeamLocation::OnPlanet { planet_id: around };
 
@@ -82,7 +87,7 @@ impl App {
         while self.world.is_simulating() {
             // Give a visual feedback by drawing.
             let now = Tick::now();
-            if now - last_tui_update > tui.simulation_update_interval() {
+            if now.saturating_sub(last_tui_update) > tui.simulation_update_interval() {
                 last_tui_update = now;
                 if let Err(e) = self.ui.update(&self.world, self.audio_player.as_ref()) {
                     error!("Error updating TUI during simulation: {e}")
@@ -157,7 +162,7 @@ impl App {
     }
 
     pub fn test_default() -> AppResult<Self> {
-        let mut app = App::new(None, true, true, true, false, None, None, None);
+        let mut app = App::new(Some(0), true, true, true, false, None, None, None);
         app.new_world();
         let home_planet_id = app
             .world

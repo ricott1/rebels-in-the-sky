@@ -76,12 +76,28 @@ impl SpaceshipImage {
         let engine_color_presets: Vec<[ColorPreset; 3]> = vec![
             [ColorPreset::Red, ColorPreset::Red, ColorPreset::Orange],
             [ColorPreset::Red, ColorPreset::Orange, ColorPreset::Yellow],
-            [ColorPreset::Red, ColorPreset::Yellow, ColorPreset::Gold],
+            [
+                ColorPreset::Red,
+                ColorPreset::Yellow,
+                ColorPreset::SandyBrown,
+            ],
             [ColorPreset::Orange, ColorPreset::Yellow, ColorPreset::Red],
-            [ColorPreset::Red, ColorPreset::Gold, ColorPreset::Yellow],
-            [ColorPreset::Red, ColorPreset::Gold, ColorPreset::Yellow],
+            [
+                ColorPreset::Red,
+                ColorPreset::SandyBrown,
+                ColorPreset::Yellow,
+            ],
+            [
+                ColorPreset::Red,
+                ColorPreset::SandyBrown,
+                ColorPreset::Yellow,
+            ],
             [ColorPreset::Red, ColorPreset::Orange, ColorPreset::Yellow],
-            [ColorPreset::Red, ColorPreset::Gold, ColorPreset::Orange],
+            [
+                ColorPreset::Red,
+                ColorPreset::SandyBrown,
+                ColorPreset::Orange,
+            ],
             [ColorPreset::Orange, ColorPreset::Red, ColorPreset::Orange],
         ];
 

@@ -84,6 +84,16 @@ pub fn store_path(filename: &str) -> AppResult<PathBuf> {
     Ok(path)
 }
 
+pub fn save_world_uncompressed(world: &World, store_prefix: &str) -> AppResult<()> {
+    let filename = prefixed_world_filename(store_prefix);
+    std::fs::write(
+        store_path(&format!("{}.json", filename))?,
+        &serde_json::to_string_pretty(&world)?,
+    )?;
+
+    Ok(())
+}
+
 pub fn save_world(world: &World, with_backup: bool, store_prefix: &str) -> AppResult<()> {
     let data = world.to_store()?;
     let filename = prefixed_world_filename(store_prefix);
@@ -238,11 +248,14 @@ mod tests {
         let deserialized_data = deserialize(&serialized_data)?;
         assert!(value == deserialized_data);
 
+        let rng = &mut ChaCha8Rng::from_entropy();
+
         let mut team = Team::random(
             TeamId::new_v4(),
             PlanetId::new_v4(),
             "name".to_string(),
             "ship_name".to_string(),
+            rng,
         );
 
         let mut players = vec![];
