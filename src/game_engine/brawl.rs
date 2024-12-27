@@ -90,6 +90,8 @@ impl EngineAction for Brawl {
             x if x > 0 => {
                 defender_update.extra_morale += MoraleModifier::SEVERE_MALUS;
                 attacker_update.extra_morale += MoraleModifier::SEVERE_BONUS;
+                attacker_update.brawls = [1, 0, 0];
+                defender_update.brawls = [0, 1, 0];
 
                 if attacker.has_hook() {
                     defender_update.extra_tiredness += TirednessCost::CRITICAL;
@@ -155,6 +157,9 @@ impl EngineAction for Brawl {
                 defender_update.extra_morale += MoraleModifier::SMALL_MALUS;
                 attacker_update.extra_morale += MoraleModifier::SMALL_MALUS;
 
+                attacker_update.brawls = [0, 0, 1];
+                defender_update.brawls = [0, 0, 1];
+
                 [
                     format!(
                         "A brawl between {} and {}! They both got some damage.",
@@ -194,6 +199,9 @@ impl EngineAction for Brawl {
             _ => {
                 defender_update.extra_morale += MoraleModifier::SEVERE_BONUS;
                 attacker_update.extra_morale += MoraleModifier::SEVERE_MALUS;
+                attacker_update.brawls = [0, 1, 0];
+                defender_update.brawls = [1, 0, 0];
+
                 if defender.has_hook() {
                     attacker_update.extra_tiredness += TirednessCost::CRITICAL;
                     format!(

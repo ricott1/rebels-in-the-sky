@@ -1,4 +1,4 @@
-use super::{resources::Resource, skill::MAX_SKILL};
+use super::skill::MAX_SKILL;
 use crate::{
     game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
     types::{PlanetId, Tick},
@@ -67,7 +67,7 @@ pub const SPACESHIP_BASE_COST_MULTIPLIER: f32 = 1.1;
 
 pub const LIGHT_SPEED: f32 = 1_079_252_848.8 * KILOMETERS as f32 / HOURS as f32;
 pub const BASE_SPEED: f32 = 0.55 * LIGHT_SPEED; // Very fast ;)
-pub const BASE_FUEL_CONSUMPTION: f32 = 1.85 / HOURS as f32; // TONNES per HOURS
+pub const BASE_FUEL_CONSUMPTION: f32 = 1.05 / HOURS as f32; // TONNES per HOURS
 pub const FUEL_CONSUMPTION_PER_UNIT_STORAGE: f32 = 1.0 / 3_000.0; // 3_000 storage units double the fuel consumption
 pub const SPEED_PENALTY_PER_UNIT_STORAGE: f32 = 1.0 / 6_000.0; // 6_000 storage units halves the speed
 
@@ -154,8 +154,3 @@ pub const TRAIT_PROBABILITY: f64 = 0.25;
 
 pub const MIN_RELATIVE_RETIREMENT_AGE: f32 = 0.96;
 pub const PEAK_PERFORMANCE_RELATIVE_AGE: f32 = 0.7;
-
-pub struct AsteroidFacilityCost;
-impl AsteroidFacilityCost {
-    pub const TELEPORTATION_POD: [(Resource, u32); 1] = [(Resource::GOLD, 25)];
-}

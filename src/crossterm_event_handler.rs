@@ -64,7 +64,7 @@ impl CrosstermEventHandler {
                     }
 
                     let now = Tick::now();
-                    if now - last_tick >= time_step_millis {
+                    if now.saturating_sub(last_tick) >= time_step_millis {
                         if let Err(e) = sender.send(TerminalEvent::Tick { tick: now }).await {
                             log::error!("Failed to send tick event: {e}");
                             break;

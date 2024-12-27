@@ -3,7 +3,7 @@ use glam::UVec2;
 use crate::ui::UI_SCREEN_SIZE;
 
 pub(crate) const FRICTION_COEFF: f32 = 0.1;
-pub(crate) const THRUST_MOD: f32 = 1.5;
+pub(crate) const THRUST_MOD: f32 = 1.25;
 pub(crate) const FUEL_CONSUMPTION_MOD: f32 = 215_000.0;
 pub(crate) const MAX_SPACESHIP_SPEED_MOD: f32 = 0.125;
 

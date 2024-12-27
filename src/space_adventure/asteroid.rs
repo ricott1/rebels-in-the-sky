@@ -103,9 +103,9 @@ impl AsteroidSize {
 
     fn durability(&self) -> f32 {
         match self {
-            AsteroidSize::Small => 2.0,
-            AsteroidSize::Big => 10.0,
-            AsteroidSize::Huge => 30.0,
+            AsteroidSize::Small => 3.0,
+            AsteroidSize::Big => 12.0,
+            AsteroidSize::Huge => 34.0,
             AsteroidSize::Planet => 0.0,
         }
     }

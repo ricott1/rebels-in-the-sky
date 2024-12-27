@@ -281,6 +281,15 @@ impl PlayerImage {
                     self.set_hat(Some(HatImage::Mask));
                 }
             },
+            CrewRole::Engineer => {
+                if info.population == Population::Galdari {
+                    self.set_hat(Some(HatImage::HipsterBlue));
+                } else if info.population == Population::Octopulp {
+                    self.set_hat(Some(HatImage::HipsterSlim));
+                } else {
+                    self.set_hat(Some(HatImage::Hipster));
+                }
+            }
             CrewRole::Mozzo => self.set_hat(None),
         }
 
@@ -529,6 +538,19 @@ impl PlayerImage {
             } else {
                 img_height - offset_y
             };
+            if let Some(hat) = self.hat.as_ref() {
+                // Clear extra hair from upper half of hat if hat is Classic, Infernal or Hipster and population is not Polpett
+                match hat {
+                    HatImage::Classic | HatImage::Infernal | HatImage::Hipster => {
+                        for cx in 0..other.width() {
+                            for cy in 0..5 {
+                                other.put_pixel(cx, cy, image::Rgba([0, 0, 0, 0]));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
 
             base.copy_non_trasparent_from(&other, x, y)?;
             blinking_base.copy_non_trasparent_from(&other, x, y)?;
@@ -573,24 +595,27 @@ impl PlayerImage {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
+    use super::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH};
     use crate::{
         image::player::PlayerImage,
-        types::AppResult,
-        world::{player::InfoStats, types::Population},
+        types::{AppResult, PlanetId, PlayerId},
+        world::{
+            jersey::Jersey,
+            player::{InfoStats, Player},
+            role::CrewRole,
+            types::Population,
+        },
     };
     use image::{self, GenericImage, RgbaImage};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+    use std::path::Path;
     use strum::IntoEnumIterator;
-
-    use super::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH};
 
     #[ignore]
     #[test]
-    fn test_generate_player_image() -> AppResult<()> {
-        let mut rng = ChaCha8Rng::seed_from_u64(0);
+    fn test_generate_naked_player_image() -> AppResult<()> {
+        let rng = &mut ChaCha8Rng::seed_from_u64(0);
         let n = 5;
         for population in Population::iter() {
             let mut base = RgbaImage::new(PLAYER_IMAGE_WIDTH * n, PLAYER_IMAGE_HEIGHT);
@@ -601,15 +626,69 @@ mod tests {
                     weight: 100.0,
                     ..Default::default()
                 };
-                let player_image = PlayerImage::from_info(&info, &mut rng);
+
+                let player_image = PlayerImage::from_info(&info, rng);
                 base.copy_from(
-                    &player_image.compose(&info).unwrap()[0],
+                    &player_image.compose(&info)?[0],
                     (PLAYER_IMAGE_WIDTH * i) as u32,
                     0,
                 )?;
             }
             image::save_buffer(
-                &Path::new(format!("tests/player_image_{}.png", population).as_str()),
+                &Path::new(
+                    format!(
+                        "tests/player_image_{}.png",
+                        population.to_string().to_lowercase()
+                    )
+                    .as_str(),
+                ),
+                &base,
+                PLAYER_IMAGE_WIDTH * n,
+                PLAYER_IMAGE_HEIGHT,
+                image::ColorType::Rgba8,
+            )?;
+        }
+        Ok(())
+    }
+
+    #[ignore]
+    #[test]
+    fn test_generate_jerseyed_player_image() -> AppResult<()> {
+        let rng = &mut ChaCha8Rng::seed_from_u64(0);
+        let n = 5;
+        for population in Population::iter() {
+            let mut base = RgbaImage::new(PLAYER_IMAGE_WIDTH * n, PLAYER_IMAGE_HEIGHT);
+            for i in 0..n {
+                let mut player = Player::random(
+                    rng,
+                    PlayerId::new_v4(),
+                    None,
+                    population,
+                    &PlanetId::default(),
+                    0.0,
+                );
+
+                let crew_role = match i {
+                    0 => CrewRole::Captain,
+                    1 => CrewRole::Doctor,
+                    2 => CrewRole::Pilot,
+                    3 => CrewRole::Engineer,
+                    _ => CrewRole::Mozzo,
+                };
+                player.info.crew_role = crew_role;
+                player.set_jersey(&Jersey::random(rng));
+
+                let player_image = player.compose_image()?;
+                base.copy_from(&player_image[0], (PLAYER_IMAGE_WIDTH * i) as u32, 0)?;
+            }
+            image::save_buffer(
+                &Path::new(
+                    format!(
+                        "tests/player_image_{}_with_jersey.png",
+                        population.to_string().to_lowercase()
+                    )
+                    .as_str(),
+                ),
                 &base,
                 PLAYER_IMAGE_WIDTH * n,
                 PLAYER_IMAGE_HEIGHT,

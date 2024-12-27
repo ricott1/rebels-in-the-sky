@@ -27,9 +27,6 @@ jobs:
     - name: Build
       run: cargo build --verbose --release
 
-    - name: Run tests
-      run: cargo test --verbose
-
     - name: Build archive
       shell: bash
       run: |

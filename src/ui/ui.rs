@@ -46,8 +46,8 @@ pub enum UiState {
 #[derive(Debug, Clone, Copy, Hash, Display, PartialEq)]
 pub enum UiTab {
     MyTeam,
-    Teams,
-    Players,
+    Crews,
+    Pirates,
     Galaxy,
     Games,
     Swarm,
@@ -88,8 +88,8 @@ impl Ui {
         let mut ui_tabs = vec![];
 
         ui_tabs.push(UiTab::MyTeam);
-        ui_tabs.push(UiTab::Teams);
-        ui_tabs.push(UiTab::Players);
+        ui_tabs.push(UiTab::Crews);
+        ui_tabs.push(UiTab::Pirates);
         ui_tabs.push(UiTab::Galaxy);
         ui_tabs.push(UiTab::Games);
 
@@ -181,8 +181,8 @@ impl Ui {
             UiState::NewTeam => &self.new_team_screen,
             UiState::Main => match self.ui_tabs[self.tab_index] {
                 UiTab::MyTeam => &self.my_team_panel,
-                UiTab::Teams => &self.team_panel,
-                UiTab::Players => &self.player_panel,
+                UiTab::Crews => &self.team_panel,
+                UiTab::Pirates => &self.player_panel,
                 UiTab::Galaxy => &self.galaxy_panel,
                 UiTab::Games => &self.game_panel,
                 UiTab::Swarm => &self.swarm_panel,
@@ -197,8 +197,8 @@ impl Ui {
             UiState::NewTeam => Some(&mut self.new_team_screen),
             _ => match self.ui_tabs[self.tab_index] {
                 UiTab::MyTeam => Some(&mut self.my_team_panel),
-                UiTab::Teams => Some(&mut self.team_panel),
-                UiTab::Players => Some(&mut self.player_panel),
+                UiTab::Crews => Some(&mut self.team_panel),
+                UiTab::Pirates => Some(&mut self.player_panel),
                 UiTab::Galaxy => Some(&mut self.galaxy_panel),
                 UiTab::Games => Some(&mut self.game_panel),
                 UiTab::Swarm => Some(&mut self.swarm_panel),
@@ -212,8 +212,8 @@ impl Ui {
             UiState::NewTeam => &mut self.new_team_screen,
             UiState::Main => match self.ui_tabs[self.tab_index] {
                 UiTab::MyTeam => &mut self.my_team_panel,
-                UiTab::Teams => &mut self.team_panel,
-                UiTab::Players => &mut self.player_panel,
+                UiTab::Crews => &mut self.team_panel,
+                UiTab::Pirates => &mut self.player_panel,
                 UiTab::Galaxy => &mut self.galaxy_panel,
                 UiTab::Games => &mut self.game_panel,
                 UiTab::Swarm => &mut self.swarm_panel,

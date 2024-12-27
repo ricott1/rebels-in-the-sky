@@ -417,11 +417,13 @@ impl TrainingFocus {
 #[derive(Clone, Copy, Debug)]
 pub enum TeamBonus {
     Exploration,       //pilot
-    Reputation,        //captain
     SpaceshipSpeed,    //pilot
+    Training,          //doctor
     TirednessRecovery, //doctor
     TradePrice,        //captain
-    Training,          //doctor
+    Reputation,        //captain
+    Weapons,           //engineer
+    Upgrades,          //engineer
 }
 
 impl Display for TeamBonus {
@@ -433,6 +435,8 @@ impl Display for TeamBonus {
             TeamBonus::TirednessRecovery => write!(f, "Recovery"),
             TeamBonus::TradePrice => write!(f, "Trading"),
             TeamBonus::Training => write!(f, "Training"),
+            TeamBonus::Weapons => write!(f, "Weapons"),
+            TeamBonus::Upgrades => write!(f, "Upgrades"),
         }
     }
 }
@@ -444,11 +448,13 @@ impl TeamBonus {
         let team = world.get_team_or_err(team_id)?;
         let player_id = match self {
             TeamBonus::Exploration => team.crew_roles.pilot,
-            TeamBonus::Reputation => team.crew_roles.captain,
             TeamBonus::SpaceshipSpeed => team.crew_roles.pilot,
+            TeamBonus::Training => team.crew_roles.doctor,
             TeamBonus::TirednessRecovery => team.crew_roles.doctor,
             TeamBonus::TradePrice => team.crew_roles.captain,
-            TeamBonus::Training => team.crew_roles.doctor,
+            TeamBonus::Reputation => team.crew_roles.captain,
+            TeamBonus::Weapons => team.crew_roles.engineer,
+            TeamBonus::Upgrades => team.crew_roles.engineer,
         };
 
         let skill = if let Some(id) = player_id {
@@ -485,6 +491,12 @@ impl TeamBonus {
                 + 0.25 * player.mental.intuition),
             TeamBonus::Training => Ok(0.25 * player.athletics.strength
                 + 0.25 * player.athletics.vertical
+                + 0.5 * player.mental.intuition),
+            TeamBonus::Weapons => Ok(0.33 * player.technical.ball_handling
+                + 0.33 * player.mental.aggression
+                + 0.34 * player.offense.brawl),
+            TeamBonus::Upgrades => Ok(0.25 * player.athletics.stamina
+                + 0.25 * player.mental.charisma
                 + 0.5 * player.mental.intuition),
         }
     }

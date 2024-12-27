@@ -11,6 +11,5 @@ pub enum CrewRole {
     Pilot,
     #[default]
     Mozzo,
-    // Chef,
-    // Engineer,
+    Engineer,
 }

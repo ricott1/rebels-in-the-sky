@@ -21,7 +21,7 @@ use crate::{
         timer::{Period, Timer},
         types::{GameStatsMap, Possession},
     },
-    image::game::{PitchStyle, PITCH_HEIGHT},
+    image::game::{PitchImage, PITCH_HEIGHT},
     image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
     types::GameId,
     ui::constants::*,
@@ -395,8 +395,10 @@ impl GamePanel {
 
         let planet = world.get_planet_or_err(&game.location)?;
         let pitch_style = match planet.planet_type {
-            PlanetType::Earth => PitchStyle::PitchBall,
-            _ => PitchStyle::PitchClassic,
+            PlanetType::Earth => PitchImage::PitchFancy,
+            PlanetType::Ring | PlanetType::Gas => PitchImage::PitchPlanet,
+            PlanetType::Rocky => PitchImage::PitchBall,
+            _ => PitchImage::PitchClassic,
         };
 
         let max_index = self.action_results.len() - self.commentary_index;
@@ -497,20 +499,20 @@ impl GamePanel {
                 if let Some(side) = should_display_shot_gif_for {
                     let shot_tick = game.starting_at + last_action.start_at.as_tick();
                     let now = Tick::now();
-                    let shot_frame = (now - shot_tick) as usize / 140;
+                    let shot_frame = now.saturating_sub(shot_tick) as usize / 140;
                     if shot_frame < RIGHT_SHOT_GIF.len() {
                         // After scoring the possesion is flipped, so the opposite team scored.
                         if side == Possession::Home {
-                            shot_img = Some(RIGHT_SHOT_GIF[shot_frame].clone());
+                            shot_img = Some(&RIGHT_SHOT_GIF[shot_frame]);
                         } else {
-                            shot_img = Some(LEFT_SHOT_GIF[shot_frame].clone());
+                            shot_img = Some(&LEFT_SHOT_GIF[shot_frame]);
                         }
                     }
                 }
             }
 
             if let Some(img) = shot_img {
-                frame.render_widget(Paragraph::new(img).centered(), split[0]);
+                frame.render_widget(Paragraph::new(img.clone()).centered(), split[0]);
             } else if self.pitch_view {
                 self.build_pitch_panel(frame, world, game, split[0])?;
             } else {
@@ -531,7 +533,7 @@ impl GamePanel {
 
     fn format_commentary(
         &self,
-        action_result: ActionOutput,
+        action_result: &ActionOutput,
         timer: Timer,
         switch_possession: bool,
     ) -> Line {
@@ -546,7 +548,7 @@ impl GamePanel {
             };
         }
         let timer = Span::styled(format!("[{}] ", timer.format()), UiStyle::HIGHLIGHT);
-        let text = Span::from(format!("{} ", action_result.description.clone()));
+        let text = Span::from(format!("{} ", action_result.description));
         Line::from(vec![timer, text, arrow])
     }
 
@@ -555,8 +557,8 @@ impl GamePanel {
         let max_index = self.action_results.len() - self.commentary_index;
 
         for idx in 0..max_index {
-            let result = self.action_results[idx].clone();
-            let situation = result.situation.clone();
+            let result = &self.action_results[idx];
+            let situation = &result.situation;
             let timer = self.action_results[idx].start_at;
             let switch_possession = if idx > 0 {
                 result.possession != self.action_results[idx - 1].possession
@@ -598,23 +600,23 @@ impl GamePanel {
         let mut offensive_rebounds_total = 0;
         let mut steals_total = 0;
         let mut blocks_total = 0;
-        let mut fouls_total = 0;
+        let mut brawls_total = 0;
         let mut plus_minus_total = 0;
 
         for player in players.iter() {
-            let player_data = players_data[&player.id].clone();
-            points_total += player_data.points as u16;
-            attempted_2pt_total += player_data.attempted_2pt as u16;
-            made_2pt_total += player_data.made_2pt as u16;
-            attempted_3pt_total += player_data.attempted_3pt as u16;
-            made_3pt_total += player_data.made_3pt as u16;
-            assists_total += player_data.assists as u16;
-            turnovers_total += player_data.turnovers as u16;
-            defensive_rebounds_total += player_data.defensive_rebounds as u16;
-            offensive_rebounds_total += player_data.offensive_rebounds as u16;
-            steals_total += player_data.steals as u16;
-            blocks_total += player_data.blocks as u16;
-            fouls_total += player_data.fouls as u16;
+            let player_data = &players_data[&player.id];
+            points_total += player_data.points;
+            attempted_2pt_total += player_data.attempted_2pt;
+            made_2pt_total += player_data.made_2pt;
+            attempted_3pt_total += player_data.attempted_3pt;
+            made_3pt_total += player_data.made_3pt;
+            assists_total += player_data.assists;
+            turnovers_total += player_data.turnovers;
+            defensive_rebounds_total += player_data.defensive_rebounds;
+            offensive_rebounds_total += player_data.offensive_rebounds;
+            steals_total += player_data.steals;
+            blocks_total += player_data.blocks;
+            brawls_total += player_data.brawls.iter().sum::<u16>();
             plus_minus_total += player_data.plus_minus as i16;
 
             let role = match player_data.position {
@@ -660,7 +662,10 @@ impl GamePanel {
                 )),
                 Cell::from(format!("{:^3}", players_data[&player.id].steals)),
                 Cell::from(format!("{:^3}", players_data[&player.id].blocks)),
-                Cell::from(format!("{:>2}", players_data[&player.id].fouls)),
+                Cell::from(format!(
+                    "{:^3}",
+                    players_data[&player.id].brawls.iter().sum::<u16>()
+                )),
                 Cell::from(format!("{:>+3}", players_data[&player.id].plus_minus)),
             ];
             rows.push(Row::new(cells).height(1));
@@ -685,7 +690,7 @@ impl GamePanel {
             )),
             Cell::from(format!("{:^3}", steals_total)),
             Cell::from(format!("{:^3}", blocks_total)),
-            Cell::from(format!("{:>2}", fouls_total)),
+            Cell::from(format!("{:^3}", brawls_total)),
             Cell::from(format!("{:>+3}", plus_minus_total / 5)),
         ];
 
@@ -718,7 +723,7 @@ impl GamePanel {
         let bars_length = 25;
 
         for player in players.iter() {
-            let player_data = players_data[&player.id].clone();
+            let player_data = &players_data[&player.id];
 
             let role = match player_data.position {
                 Some(p) => (p as Position).as_str().to_string(),
@@ -909,7 +914,7 @@ impl GamePanel {
             "DRb/ORb",
             "Stl",
             "Blk",
-            "PF",
+            "Brw",
             "+/-",
         ];
 
@@ -924,7 +929,7 @@ impl GamePanel {
             "DRb/ORb",
             "Stl",
             "Blk",
-            "PF",
+            "Brw",
             "+/-",
         ];
 
@@ -952,7 +957,7 @@ impl GamePanel {
             Constraint::Length(7),                          //defensive rebounds/offensive rebounds
             Constraint::Length(3),                          //steals
             Constraint::Length(3),                          //blocks
-            Constraint::Length(2),                          //personal fouls
+            Constraint::Length(3),                          //brawls
             Constraint::Length(3),                          //plus minus
             Constraint::Min(0),
         ];
@@ -1005,6 +1010,7 @@ impl Screen for GamePanel {
 
         if let Some(game) = self.selected_game(world) {
             if self.commentary_index == 0 {
+                // FIXME: we dont need to clone, remove self.action_results completely
                 self.action_results = game.action_results.clone();
             }
         } else {

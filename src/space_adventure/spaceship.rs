@@ -595,6 +595,8 @@ impl SpaceshipEntity {
     pub fn from_spaceship(
         spaceship: &Spaceship,
         resources: ResourceMap,
+        speed_bonus: f32,
+        weapons_bonus: f32,
         fuel: u32,
         collector_id: usize,
     ) -> AppResult<Self> {
@@ -649,7 +651,11 @@ impl SpaceshipEntity {
 
         let used_storage_capacity = resources.used_storage_capacity();
 
-        let shooter = Shooter::new(shooter_positions, spaceship.damage(), spaceship.fire_rate());
+        let shooter = Shooter::new(
+            shooter_positions,
+            spaceship.damage() * weapons_bonus,
+            spaceship.fire_rate(),
+        );
 
         Ok(Self {
             id: 0,
@@ -664,7 +670,7 @@ impl SpaceshipEntity {
             hit_boxes,
             current_durability: spaceship.current_durability() as f32,
             durability: spaceship.durability() as f32,
-            base_thrust: spaceship.speed(0) * THRUST_MOD,
+            base_thrust: spaceship.speed(0) * THRUST_MOD * speed_bonus.powf(0.35), // Assigning the full speed bonus would make the ship too fast
             base_speed: spaceship.speed(0) * MAX_SPACESHIP_SPEED_MOD,
             maneuverability: 0.0,
             fuel: fuel as f32,

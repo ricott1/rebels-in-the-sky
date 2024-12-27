@@ -203,7 +203,7 @@ mod tests {
     use crate::{
         network::types::{NetworkData, NetworkTeam},
         types::{AppResult, PlanetId, PlayerId, TeamId},
-        world::{planet::Planet, player::Player, team::Team, world::World},
+        world::{player::Player, team::Team, types::Population, world::World},
     };
     use directories;
     use itertools::Itertools;
@@ -261,7 +261,15 @@ mod tests {
         let mut players = vec![];
         let rng = &mut ChaCha8Rng::from_entropy();
         for _ in 0..5 {
-            let player = Player::random(rng, PlayerId::new_v4(), None, &Planet::default(), 0.0);
+            let population = Population::default();
+            let player = Player::random(
+                rng,
+                PlayerId::new_v4(),
+                None,
+                population,
+                &PlanetId::default(),
+                0.0,
+            );
             team.player_ids.push(player.id);
             players.push(player);
         }

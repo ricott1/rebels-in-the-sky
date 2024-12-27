@@ -47,14 +47,137 @@ impl Trade {
 #[cfg(test)]
 mod tests {
     use super::Trade;
-    use crate::{app::App, types::AppResult};
+    use crate::{app::App, types::AppResult, ui::ui_callback::UiCallback, world::skill::MAX_SKILL};
     use libp2p::PeerId;
-    use rand::SeedableRng;
+    use rand::{seq::IteratorRandom, SeedableRng};
     use rand_chacha::ChaCha8Rng;
+
+    #[test]
+    fn test_local_trade_success() -> AppResult<()> {
+        let mut app = App::test_default()?;
+
+        let own_team = app.world.teams.get(&app.world.own_team_id).unwrap();
+        let proposer_player_id = own_team.player_ids[0];
+        let mut proposer_player = app.world.players.get(&proposer_player_id).unwrap().clone();
+        assert!(proposer_player.team == Some(own_team.id));
+
+        // Increase player stats to increase bare value and make the trade accepted
+        proposer_player.info.age = proposer_player.info.population.min_age();
+        proposer_player.special_trait = Some(crate::world::player::Trait::Killer);
+        proposer_player.athletics.quickness = MAX_SKILL;
+        proposer_player.athletics.strength = MAX_SKILL;
+        proposer_player.athletics.vertical = MAX_SKILL;
+        proposer_player.athletics.stamina = MAX_SKILL;
+        proposer_player.offense.brawl = MAX_SKILL;
+        proposer_player.offense.close_range = MAX_SKILL;
+        proposer_player.offense.medium_range = MAX_SKILL;
+        proposer_player.offense.long_range = MAX_SKILL;
+
+        app.world
+            .players
+            .insert(proposer_player.id, proposer_player);
+
+        let target_team = app
+            .world
+            .teams
+            .values()
+            .filter(|team| team.id != own_team.id && team.home_planet_id == own_team.home_planet_id)
+            .choose(&mut rand::thread_rng())
+            .expect("There should be one team");
+
+        let target_team_id = target_team.id;
+
+        let target_player_id = target_team.player_ids[0];
+        let target_player = app.world.get_player_or_err(&target_player_id)?;
+        assert!(target_player.team == Some(target_team.id));
+
+        let cb = UiCallback::CreateTradeProposal {
+            proposer_player_id,
+            target_player_id,
+        };
+        assert!(cb.call(&mut app).is_ok());
+
+        let proposer_player = app.world.get_player_or_err(&proposer_player_id)?;
+        assert!(proposer_player.team == Some(target_team_id));
+
+        let target_player = app.world.get_player_or_err(&target_player_id)?;
+        assert!(target_player.team == Some(app.world.own_team_id));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_local_trade_fail_not_same_planet() -> AppResult<()> {
+        let mut app = App::test_default()?;
+
+        let own_team = app.world.teams.get(&app.world.own_team_id).unwrap();
+        let proposer_player_id = own_team.player_ids[0];
+        let proposer_player = app.world.players.get(&proposer_player_id).unwrap();
+        assert!(proposer_player.team == Some(own_team.id));
+
+        let target_team = app
+            .world
+            .teams
+            .values()
+            .filter(|team| team.home_planet_id != own_team.home_planet_id)
+            .choose(&mut rand::thread_rng())
+            .expect("There should be one team");
+
+        let target_team_id = target_team.id;
+
+        let target_player_id = target_team.player_ids[0];
+        let target_player = app.world.get_player_or_err(&target_player_id)?;
+        assert!(target_player.team == Some(target_team.id));
+
+        let cb = UiCallback::CreateTradeProposal {
+            proposer_player_id,
+            target_player_id,
+        };
+
+        assert!(cb.call(&mut app).unwrap_err().to_string() == "Not on the same planet".to_string());
+
+        let proposer_player = app.world.get_player_or_err(&proposer_player_id)?;
+        assert!(proposer_player.team == Some(app.world.own_team_id));
+
+        let target_player = app.world.get_player_or_err(&target_player_id)?;
+        assert!(target_player.team == Some(target_team_id));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_local_trade_fail_trade_with_oneself() -> AppResult<()> {
+        let mut app = App::test_default()?;
+
+        let own_team = app.world.teams.get(&app.world.own_team_id).unwrap();
+        let proposer_player_id = own_team.player_ids[0];
+        let proposer_player = app.world.players.get(&proposer_player_id).unwrap();
+        assert!(proposer_player.team == Some(own_team.id));
+
+        let target_player_id = own_team.player_ids[1];
+        let target_player = app.world.players.get(&target_player_id).unwrap();
+        assert!(target_player.team == Some(own_team.id));
+
+        let cb = UiCallback::CreateTradeProposal {
+            proposer_player_id,
+            target_player_id,
+        };
+        assert!(
+            cb.call(&mut app).unwrap_err().to_string() == "Cannot trade with oneself".to_string()
+        );
+
+        let proposer_player = app.world.get_player_or_err(&proposer_player_id)?;
+        assert!(proposer_player.team == Some(app.world.own_team_id));
+
+        let target_player = app.world.get_player_or_err(&target_player_id)?;
+        assert!(target_player.team == Some(app.world.own_team_id));
+
+        Ok(())
+    }
 
     #[ignore]
     #[test]
-    fn test_trade() -> AppResult<()> {
+    fn test_network_trade() -> AppResult<()> {
         let mut app = App::test_default()?;
 
         let world = &mut app.world;

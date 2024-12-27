@@ -3,6 +3,7 @@ use crate::types::AppResult;
 use image::{Rgba, RgbaImage};
 use std::cmp::min;
 use std::collections::HashMap;
+use strum::Display;
 
 pub const FLOOR_COLOR: Rgba<u8> = Rgba([254, 229, 165, 255]);
 pub const PITCH_WIDTH: u16 = 75;
@@ -13,11 +14,13 @@ pub fn floor_from_size(width: u32, height: u32) -> RgbaImage {
     RgbaImage::from_pixel(width, height, FLOOR_COLOR)
 }
 
-#[derive(Debug, Default)]
-pub enum PitchStyle {
+#[derive(Debug, Display, Default)]
+pub enum PitchImage {
     #[default]
     PitchClassic,
     PitchBall,
+    PitchPlanet,
+    PitchFancy,
     HomeCloseShotMask,
     AwayCloseShotMask,
     HomeMediumShotMask,
@@ -28,19 +31,21 @@ pub enum PitchStyle {
     AwayImpossibleShotMask,
 }
 
-impl PitchStyle {
+impl PitchImage {
     fn asset_filename(&self) -> &str {
         match self {
-            PitchStyle::PitchClassic => "game/pitch_classic.png",
-            PitchStyle::PitchBall => "game/pitch_ball.png",
-            PitchStyle::HomeCloseShotMask => "game/home_close_shot_mask.png",
-            PitchStyle::AwayCloseShotMask => "game/away_close_shot_mask.png",
-            PitchStyle::HomeMediumShotMask => "game/home_medium_shot_mask.png",
-            PitchStyle::AwayMediumShotMask => "game/away_medium_shot_mask.png",
-            PitchStyle::HomeLongShotMask => "game/home_long_shot_mask.png",
-            PitchStyle::AwayLongShotMask => "game/away_long_shot_mask.png",
-            PitchStyle::HomeImpossibleShotMask => "game/home_impossible_shot_mask.png",
-            PitchStyle::AwayImpossibleShotMask => "game/away_impossible_shot_mask.png",
+            PitchImage::PitchClassic => "game/pitch_classic.png",
+            PitchImage::PitchBall => "game/pitch_ball.png",
+            PitchImage::PitchPlanet => "game/pitch_planet.png",
+            PitchImage::PitchFancy => "game/pitch_fancy.png",
+            PitchImage::HomeCloseShotMask => "game/home_close_shot_mask.png",
+            PitchImage::AwayCloseShotMask => "game/away_close_shot_mask.png",
+            PitchImage::HomeMediumShotMask => "game/home_medium_shot_mask.png",
+            PitchImage::AwayMediumShotMask => "game/away_medium_shot_mask.png",
+            PitchImage::HomeLongShotMask => "game/home_long_shot_mask.png",
+            PitchImage::AwayLongShotMask => "game/away_long_shot_mask.png",
+            PitchImage::HomeImpossibleShotMask => "game/home_impossible_shot_mask.png",
+            PitchImage::AwayImpossibleShotMask => "game/away_impossible_shot_mask.png",
         }
     }
 
@@ -92,5 +97,36 @@ impl PitchStyle {
             img.put_pixel(x as u32, y as u32, pixel);
         }
         Ok(img)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    #[ignore]
+    fn test_generate_pitch_image() -> AppResult<()> {
+        for pitch in vec![
+            PitchImage::PitchClassic,
+            PitchImage::PitchBall,
+            PitchImage::PitchPlanet,
+            PitchImage::PitchFancy,
+        ] {
+            let img = pitch.image()?;
+
+            image::save_buffer(
+                &Path::new(
+                    format!("tests/{}_image.png", pitch.to_string().to_lowercase()).as_str(),
+                ),
+                &img,
+                PITCH_WIDTH as u32,
+                PITCH_HEIGHT as u32,
+                image::ColorType::Rgba8,
+            )?;
+        }
+
+        Ok(())
     }
 }

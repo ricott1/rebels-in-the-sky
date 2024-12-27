@@ -22,6 +22,7 @@ use crate::{
     world::{
         constants::*,
         jersey::{Jersey, JerseyStyle},
+        planet::{AsteroidUpgrade, AsteroidUpgradeTarget},
         player::Trait,
         resources::Resource,
         role::CrewRole,
@@ -85,9 +86,6 @@ pub enum UiCallback {
         resource: Resource,
         amount: i32,
         unit_cost: u32,
-    },
-    BuildTeleportationPod {
-        asteroid_id: PlanetId,
     },
     ChallengeTeam {
         team_id: TeamId,
@@ -186,6 +184,7 @@ pub enum UiCallback {
     },
     TogglePitchView,
     TogglePlayerStatusView,
+    TogglePlayerWidgetView,
     NextTrainingFocus {
         team_id: TeamId,
     },
@@ -211,11 +210,19 @@ pub enum UiCallback {
         name: String,
         filename: String,
     },
-    SetUpgradeSpaceship {
+    SetSpaceshipUpgrade {
         upgrade: SpaceshipUpgrade,
     },
     UpgradeSpaceship {
         upgrade: SpaceshipUpgrade,
+    },
+    SetAsteroidUpgrade {
+        asteroid_id: PlanetId,
+        upgrade: AsteroidUpgrade,
+    },
+    UpgradeAsteroid {
+        asteroid_id: PlanetId,
+        upgrade: AsteroidUpgrade,
     },
     StartSpaceAdventure,
     StopSpaceAdventure,
@@ -242,7 +249,7 @@ impl UiCallback {
             {
                 app.ui.team_panel.set_index(index);
                 app.ui.team_panel.player_index = 0;
-                app.ui.switch_to(super::ui::UiTab::Teams);
+                app.ui.switch_to(super::ui::UiTab::Crews);
             }
             Ok(None)
         })
@@ -259,7 +266,7 @@ impl UiCallback {
                 .position(|&x| x == player_id)
             {
                 app.ui.player_panel.set_index(index);
-                app.ui.switch_to(super::ui::UiTab::Players);
+                app.ui.switch_to(super::ui::UiTab::Pirates);
             }
 
             Ok(None)
@@ -291,7 +298,7 @@ impl UiCallback {
 
                 app.ui.player_panel.locked_player_id = Some(locked_player_id);
                 app.ui.player_panel.selected_player_id = selected_player_id;
-                app.ui.switch_to(super::ui::UiTab::Players);
+                app.ui.switch_to(super::ui::UiTab::Pirates);
             }
 
             Ok(None)
@@ -316,7 +323,7 @@ impl UiCallback {
                     .position(|&x| x == player_id)
                     .unwrap_or_default();
                 app.ui.team_panel.player_index = player_index;
-                app.ui.switch_to(super::ui::UiTab::Teams);
+                app.ui.switch_to(super::ui::UiTab::Crews);
             }
 
             Ok(None)
@@ -515,6 +522,7 @@ impl UiCallback {
             let proposer_player = app.world.get_player_or_err(&proposer_player_id)?;
             own_team.can_trade_players(proposer_player, target_player, target_team)?;
 
+            // Network trade
             if let Some(peer_id) = target_team.peer_id {
                 let trade = app
                     .network_handler
@@ -526,6 +534,7 @@ impl UiCallback {
                 return Ok(Some("Trade offer sent".to_string()));
             }
 
+            // Local trade
             if proposer_player.bare_value() >= target_player.bare_value() {
                 app.world
                     .swap_players_team(proposer_player_id, target_player_id)?;
@@ -864,16 +873,16 @@ impl UiCallback {
         })
     }
 
-    fn set_upgrade_spaceship(upgrade: SpaceshipUpgrade) -> AppCallback {
+    fn set_spaceship_upgrade(upgrade: SpaceshipUpgrade) -> AppCallback {
         Box::new(move |app: &mut App| {
             let mut team = app.world.get_own_team()?.clone();
-            team.can_set_upgrade_spaceship(upgrade.clone())?;
+            team.can_upgrade_spaceship(&upgrade)?;
 
             for (resource, amount) in &upgrade.cost() {
                 team.sub_resource(*resource, *amount)?;
             }
 
-            team.spaceship.pending_upgrade = Some(upgrade.clone());
+            team.spaceship.pending_upgrade = Some(upgrade);
             app.world.teams.insert(team.id, team);
 
             app.world.dirty = true;
@@ -886,30 +895,20 @@ impl UiCallback {
 
     fn upgrade_spaceship(upgrade: SpaceshipUpgrade) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let mut team = app.world.get_own_team()?.clone();
+            let team = app.world.get_own_team_mut()?;
 
             match upgrade.target {
-                SpaceshipUpgradeTarget::Hull { component } => {
-                    team.spaceship.hull = component.clone()
-                }
-                SpaceshipUpgradeTarget::Engine { component } => {
-                    team.spaceship.engine = component.clone()
-                }
-                SpaceshipUpgradeTarget::Storage { component } => {
-                    team.spaceship.storage = component.clone()
-                }
-                SpaceshipUpgradeTarget::Shooter { component } => {
-                    team.spaceship.shooter = component.clone()
-                }
+                SpaceshipUpgradeTarget::Hull { component } => team.spaceship.hull = component,
+                SpaceshipUpgradeTarget::Engine { component } => team.spaceship.engine = component,
+                SpaceshipUpgradeTarget::Storage { component } => team.spaceship.storage = component,
+                SpaceshipUpgradeTarget::Shooter { component } => team.spaceship.shooter = component,
                 SpaceshipUpgradeTarget::Repairs { .. } => {}
             };
 
             // In any case, fully repair ship.
             team.spaceship.reset_durability();
-
             team.spaceship.pending_upgrade = None;
 
-            app.world.teams.insert(team.id, team);
             let message = match upgrade.target {
                 SpaceshipUpgradeTarget::Repairs { .. } => {
                     "Spaceship repairs completed!".to_string()
@@ -925,6 +924,57 @@ impl UiCallback {
 
             app.world.dirty = true;
             app.world.dirty_network = true;
+            app.world.dirty_ui = true;
+
+            Ok(None)
+        })
+    }
+
+    fn set_asteroid_upgrade(asteroid_id: PlanetId, upgrade: AsteroidUpgrade) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let mut team = app.world.get_own_team()?.clone();
+            let asteroid = app.world.get_planet_or_err(&asteroid_id)?;
+            team.can_upgrade_asteroid(asteroid, &upgrade)?;
+
+            for (resource, amount) in &upgrade.cost() {
+                team.sub_resource(*resource, *amount)?;
+            }
+            app.world.teams.insert(team.id, team);
+
+            let mut asteroid = app.world.get_planet_or_err(&asteroid_id)?.clone();
+            asteroid.pending_upgrade = Some(upgrade);
+            app.world.planets.insert(asteroid.id, asteroid);
+
+            app.world.dirty = true;
+            app.world.dirty_network = true;
+            app.world.dirty_ui = true;
+
+            Ok(None)
+        })
+    }
+
+    fn upgrade_asteroid(asteroid_id: PlanetId, upgrade: AsteroidUpgrade) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let mut asteroid = app.world.get_planet_or_err(&asteroid_id)?.clone();
+            asteroid.pending_upgrade = None;
+            asteroid.version += 1;
+            asteroid.upgrades.push(upgrade.target);
+
+            let message = match upgrade.target {
+                AsteroidUpgradeTarget::TeleportationPad => format!(
+                    "Teleportation pad construction on {} completed!",
+                    asteroid.name
+                ),
+            };
+            app.world.planets.insert(asteroid.id, asteroid);
+
+            app.ui.push_popup(PopupMessage::Ok {
+                message,
+                is_skippable: true,
+                tick: Tick::now(),
+            });
+
+            app.world.dirty = true;
             app.world.dirty_ui = true;
 
             Ok(None)
@@ -1021,28 +1071,8 @@ impl UiCallback {
                 app.ui.game_panel.toggle_player_status_view();
                 Ok(None)
             }
-            UiCallback::BuildTeleportationPod { asteroid_id } => {
-                let own_team = app.world.get_own_team_mut()?;
-                if own_team.extra_teleportation_pods.contains(asteroid_id) {
-                    return Err(anyhow!("Teleportation pad already built"));
-                }
-
-                for (resource, amount) in AsteroidFacilityCost::TELEPORTATION_POD {
-                    if own_team.resources.value(&resource) < amount {
-                        return Err(anyhow!(
-                            "Not enough {} ({}/{}) to build teleportation pad",
-                            resource,
-                            own_team.resources.value(&resource),
-                            amount
-                        ));
-                    }
-                    own_team.sub_resource(resource, amount)?;
-                }
-
-                own_team.extra_teleportation_pods.push(*asteroid_id);
-
-                app.ui.push_popup(PopupMessage::Ok { message: "Teleportation pad built!\nNow you are able to teleport back to this asteroid.".to_string(), is_skippable: true, tick: Tick::now() });
-
+            UiCallback::TogglePlayerWidgetView => {
+                app.ui.player_panel.toggle_player_widget_view();
                 Ok(None)
             }
             UiCallback::ChallengeTeam { team_id } => Self::challenge_team(*team_id)(app),
@@ -1188,9 +1218,6 @@ impl UiCallback {
             UiCallback::ConfirmAbandonAsteroid { asteroid_id } => {
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.asteroid_ids.retain(|&id| id != *asteroid_id);
-                own_team
-                    .extra_teleportation_pods
-                    .retain(|&id| id != *asteroid_id);
                 app.ui.close_popup();
                 Ok(None)
             }
@@ -1380,12 +1407,20 @@ impl UiCallback {
             UiCallback::NameAndAcceptAsteroid { name, filename } => {
                 Self::name_and_accept_asteroid(name.clone(), filename.clone())(app)
             }
-            UiCallback::SetUpgradeSpaceship { upgrade } => {
-                Self::set_upgrade_spaceship(upgrade.clone())(app)
+            UiCallback::SetSpaceshipUpgrade { upgrade } => {
+                Self::set_spaceship_upgrade(upgrade.clone())(app)
             }
             UiCallback::UpgradeSpaceship { upgrade } => {
                 Self::upgrade_spaceship(upgrade.clone())(app)
             }
+            UiCallback::SetAsteroidUpgrade {
+                asteroid_id,
+                upgrade,
+            } => Self::set_asteroid_upgrade(*asteroid_id, upgrade.clone())(app),
+            UiCallback::UpgradeAsteroid {
+                asteroid_id,
+                upgrade,
+            } => Self::upgrade_asteroid(*asteroid_id, upgrade.clone())(app),
             UiCallback::StartSpaceAdventure => {
                 app.ui.set_state(UiState::SpaceAdventure);
                 let mut own_team = app.world.get_own_team()?.clone();
@@ -1400,9 +1435,16 @@ impl UiCallback {
                     _ => unreachable!(),
                 };
 
+                let speed_bonus =
+                    TeamBonus::SpaceshipSpeed.current_team_bonus(&app.world, &own_team.id)?;
+                let weapons_bonus =
+                    TeamBonus::Weapons.current_team_bonus(&app.world, &own_team.id)?;
+
                 let space = SpaceAdventure::new(should_spawn_asteroid)?.with_player(
                     &own_team.spaceship,
                     own_team.resources.clone(),
+                    speed_bonus,
+                    weapons_bonus,
                     own_team.fuel(),
                 )?;
 

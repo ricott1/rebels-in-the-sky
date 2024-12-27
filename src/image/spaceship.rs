@@ -171,3 +171,52 @@ impl SpaceshipImage {
         Ok(gif)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{SPACESHIP_IMAGE_HEIGHT, SPACESHIP_IMAGE_WIDTH};
+    use crate::{image::color_map::ColorMap, types::AppResult, world::spaceship::SpaceshipPrefab};
+    use image::{self, GenericImage, RgbaImage};
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+    use std::path::Path;
+    use strum::IntoEnumIterator;
+
+    #[ignore]
+    #[test]
+    fn test_generate_spaceship_image() -> AppResult<()> {
+        let rng = &mut ChaCha8Rng::seed_from_u64(0);
+        let n = 3;
+        for prefab in SpaceshipPrefab::iter() {
+            let spaceship = prefab
+                .spaceship("name")
+                .with_color_map(ColorMap::random(rng));
+            let mut base = RgbaImage::new(SPACESHIP_IMAGE_WIDTH * n, SPACESHIP_IMAGE_HEIGHT);
+            base.copy_from(&spaceship.compose_image()?[0], 0, 0)?;
+            base.copy_from(
+                &spaceship.compose_image_in_shipyard()?[0],
+                (SPACESHIP_IMAGE_WIDTH) as u32,
+                0,
+            )?;
+            base.copy_from(
+                &spaceship.compose_image_shooting()?[2],
+                (2 * SPACESHIP_IMAGE_WIDTH) as u32,
+                0,
+            )?;
+            image::save_buffer(
+                &Path::new(
+                    format!(
+                        "tests/spaceship_image_{}.png",
+                        prefab.to_string().to_lowercase()
+                    )
+                    .as_str(),
+                ),
+                &base,
+                SPACESHIP_IMAGE_WIDTH * n,
+                SPACESHIP_IMAGE_HEIGHT,
+                image::ColorType::Rgba8,
+            )?;
+        }
+        Ok(())
+    }
+}

@@ -181,6 +181,28 @@ impl App {
         Ok(app)
     }
 
+    pub fn test_with_network_handler() -> AppResult<Self> {
+        let mut app = App::new(Some(0), true, true, true, false, None, None, None);
+        app.new_world();
+        let home_planet_id = app
+            .world
+            .planets
+            .keys()
+            .next()
+            .expect("There should be at elast one planet")
+            .clone();
+        app.world.own_team_id = app.world.generate_random_team(
+            &mut ChaCha8Rng::from_entropy(),
+            home_planet_id,
+            "own team".into(),
+            "ship_name".into(),
+        )?;
+
+        app.network_handler = Some(NetworkHandler::test_default());
+
+        Ok(app)
+    }
+
     pub fn new(
         seed: Option<u64>,
         disable_network: bool,
@@ -267,9 +289,6 @@ impl App {
                         }
                         TerminalEvent::Key(key_event) => {
                             self.handle_key_events(key_event)?;
-                            if let Err(e) = tui.draw(&mut self.ui, &self.world, self.audio_player.as_ref()).await {
-                                error!("Drawing error: {e}");
-                            }
                         },
                         TerminalEvent::Mouse(mouse_event) => {
                             self.handle_mouse_events(mouse_event)?;
@@ -471,25 +490,23 @@ impl App {
         &mut self,
         network_event: SwarmEvent<gossipsub::Event>,
     ) -> AppResult<()> {
-        if let Some(network_handler) = &mut self.network_handler {
-            if let Some(callback) = network_handler.handle_network_events(network_event) {
-                match callback.call(self) {
-                    Ok(Some(message)) => {
-                        self.ui.push_popup(PopupMessage::Ok {
-                            message,
-                            is_skippable: true,
-                            tick: Tick::now(),
-                        });
-                    }
-                    Ok(None) => {}
-                    Err(e) => {
-                        // Append error to swarm log
-                        self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
-                            timestamp: Tick::now(),
-                            peer_id: None,
-                            text: e.to_string(),
-                        });
-                    }
+        if let Some(callback) = NetworkHandler::handle_network_events(network_event) {
+            match callback.call(self) {
+                Ok(Some(message)) => {
+                    self.ui.push_popup(PopupMessage::Ok {
+                        message,
+                        is_skippable: true,
+                        tick: Tick::now(),
+                    });
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    // Append error to swarm log
+                    self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
+                        timestamp: Tick::now(),
+                        peer_id: None,
+                        text: e.to_string(),
+                    });
                 }
             }
         }

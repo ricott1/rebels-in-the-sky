@@ -5,7 +5,9 @@ use super::gif_map::GifMap;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
 use super::utils::SwarmPanelEvent;
-use super::widgets::{render_player_description, render_spaceship_description, selectable_list};
+use super::widgets::{
+    render_player_description, render_spaceship_description, selectable_list, PlayerWidgetView,
+};
 use super::{
     traits::{Screen, SplitPanel},
     utils::input_from_key_event,
@@ -527,6 +529,7 @@ impl SwarmPanel {
         let (_, top_player) = &self.player_ranking[player_ranking_index];
         render_player_description(
             &top_player.player,
+            PlayerWidgetView::Skills,
             &mut self.gif_map,
             self.tick,
             world,

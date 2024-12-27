@@ -110,7 +110,6 @@ impl SpaceAdventure {
         } else {
             image
         };
-
         base.copy_non_trasparent_from(cropped_image, x as u32, y as u32)?;
 
         if debug_view {
@@ -312,12 +311,16 @@ impl SpaceAdventure {
         mut self,
         spaceship: &Spaceship,
         resources: ResourceMap,
+        speed_bonus: f32,
+        weapons_bonus: f32,
         fuel: u32,
     ) -> AppResult<Self> {
         let collector_id = self.insert_entity(Box::new(CollectorEntity::new()));
         let id = self.insert_entity(Box::new(SpaceshipEntity::from_spaceship(
             spaceship,
             resources,
+            speed_bonus,
+            weapons_bonus,
             fuel,
             collector_id,
         )?));
@@ -503,7 +506,9 @@ impl SpaceAdventure {
         // Draw starting from lowest layer
         for layer in 0..MAX_LAYER {
             for (_, entity) in self.entities[layer].iter() {
-                Self::draw_entity(&mut base, entity, debug_view)?;
+                if let Err(e) = Self::draw_entity(&mut base, entity, debug_view) {
+                    log::error!("Error in draw_entity {}: {}", entity.id(), e);
+                }
             }
         }
 

@@ -64,7 +64,7 @@ pub struct ActionOutput {
     pub foul_on: Option<usize>,
     pub home_score: u16,
     pub away_score: u16,
-    pub score_change: u8,
+    pub score_change: u16,
     pub possession: Possession,
 }
 

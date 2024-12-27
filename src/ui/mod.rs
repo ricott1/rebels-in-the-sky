@@ -12,7 +12,6 @@ mod my_team_panel;
 mod new_team_screen;
 mod player_panel;
 pub mod popup_message;
-// mod radio_button;
 mod space_screen;
 mod splash_screen;
 mod swarm_panel;

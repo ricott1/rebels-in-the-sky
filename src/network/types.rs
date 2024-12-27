@@ -21,7 +21,7 @@ use strum_macros::Display;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[repr(u8)]
-pub(crate) enum NetworkData {
+pub enum NetworkData {
     Team(Tick, NetworkTeam),
     Challenge(Tick, Challenge),
     Trade(Tick, Trade),

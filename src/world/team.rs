@@ -1,7 +1,7 @@
 use super::{
     constants::{INITIAL_TEAM_BALANCE, KILOMETER, MAX_PLAYERS_PER_GAME, MIN_PLAYERS_PER_GAME},
     jersey::Jersey,
-    planet::Planet,
+    planet::{AsteroidUpgrade, AsteroidUpgradeTarget, Planet},
     player::Player,
     position::MAX_POSITION,
     resources::Resource,
@@ -28,6 +28,7 @@ pub struct CrewRoles {
     pub captain: Option<PlayerId>,
     pub doctor: Option<PlayerId>,
     pub pilot: Option<PlayerId>,
+    pub engineer: Option<PlayerId>,
     pub mozzo: Vec<PlayerId>,
 }
 
@@ -54,7 +55,7 @@ pub struct Team {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub asteroid_ids: Vec<PlanetId>,
-    #[serde(skip_serializing_if = "is_default")]
+    #[serde(skip_serializing)] // To be removed in next version
     #[serde(default)]
     pub extra_teleportation_pods: Vec<PlanetId>,
     pub current_location: TeamLocation,
@@ -111,8 +112,11 @@ impl Team {
         }
     }
 
-    pub fn can_teleport_to(&self, to: PlanetId) -> bool {
-        self.home_planet_id == to || self.extra_teleportation_pods.contains(&to)
+    pub fn can_teleport_to(&self, to: &Planet) -> bool {
+        self.home_planet_id == to.id
+            || to
+                .upgrades
+                .contains(&AsteroidUpgradeTarget::TeleportationPad)
     }
 
     pub fn add_sent_challenge(&mut self, challenge: Challenge) {
@@ -587,9 +591,38 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_set_upgrade_spaceship(&self, upgrade: SpaceshipUpgrade) -> AppResult<()> {
+    pub fn can_upgrade_spaceship(&self, upgrade: &SpaceshipUpgrade) -> AppResult<()> {
         if self.is_on_planet().is_none() {
             return Err(anyhow!("Can only upgrade on a planet"));
+        }
+
+        for (resource, amount) in upgrade.cost().iter() {
+            if self.resources.value(resource) < *amount {
+                return Err(anyhow!("Insufficient resources"));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn can_upgrade_asteroid(
+        &self,
+        asteroid: &Planet,
+        upgrade: &AsteroidUpgrade,
+    ) -> AppResult<()> {
+        if asteroid.upgrades.contains(&upgrade.target) {
+            return Err(anyhow!("Asteroid already has this upgrade"));
+        }
+
+        if let Some(pending_upgrade) = &asteroid.pending_upgrade {
+            if pending_upgrade.target == upgrade.target {
+                return Err(anyhow!("Already bulding this upgrade"));
+            }
+            return Err(anyhow!("Already building another upgrade"));
+        }
+
+        if self.is_on_planet() != Some(asteroid.id) {
+            return Err(anyhow!("Can only upgrade on the asteroid"));
         }
 
         for (resource, amount) in upgrade.cost().iter() {

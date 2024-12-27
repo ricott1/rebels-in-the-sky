@@ -6,7 +6,7 @@ use super::traits::SplitPanel;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
 use super::utils::{format_satoshi, validate_textarea_input};
-use super::widgets::thick_block;
+use super::widgets::{thick_block, PlayerWidgetView};
 use super::{
     constants::UiStyle,
     traits::Screen,
@@ -699,7 +699,15 @@ impl NewTeamScreen {
         let planet_id = self.planet_ids[self.planet_index];
         let planet_players = self.planet_players.get(&planet_id).unwrap();
         let player = world.get_player_or_err(&planet_players[self.player_index].0)?;
-        render_player_description(player, &mut self.gif_map, self.tick, world, frame, area);
+        render_player_description(
+            player,
+            PlayerWidgetView::Skills,
+            &mut self.gif_map,
+            self.tick,
+            world,
+            frame,
+            area,
+        );
         Ok(())
     }
 

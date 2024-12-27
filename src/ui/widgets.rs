@@ -11,6 +11,7 @@ use super::{
     utils::format_satoshi,
 };
 use crate::world::skill::{Skill, MAX_SKILL, MIN_SKILL};
+use crate::world::types::TeamBonus;
 use crate::{
     game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
     image::{player::PLAYER_IMAGE_WIDTH, spaceship::SPACESHIP_IMAGE_WIDTH},
@@ -35,6 +36,7 @@ use ratatui::{
     text::Span,
     widgets::{Block, BorderType, Borders, List, Paragraph},
 };
+use strum::Display;
 
 pub const UP_ARROW_SPAN: Lazy<Span<'static>> = Lazy::new(|| Span::styled("↑", UiStyle::HEADER));
 pub const UP_RIGHT_ARROW_SPAN: Lazy<Span<'static>> = Lazy::new(|| Span::styled("↗", UiStyle::OK));
@@ -44,6 +46,13 @@ pub const DOWN_RIGHT_ARROW_SPAN: Lazy<Span<'static>> =
 
 pub const SWITCH_ARROW_SPAN: Lazy<Span<'static>> =
     Lazy::new(|| Span::styled("⇆", Style::default().fg(Color::Yellow)));
+
+#[derive(Debug, Default, Display, Clone, Copy)]
+pub enum PlayerWidgetView {
+    #[default]
+    Skills,
+    Stats,
+}
 
 pub fn default_block() -> Block<'static> {
     Block::default()
@@ -269,12 +278,16 @@ pub fn render_challenge_button<'a>(
         } else {
             "Local game".to_string()
         };
-        Button::new(
+        let mut b = Button::new(
             format!("Playing - {}", game_text),
             UiCallback::GoToGame { game_id },
         )
         .set_hover_text("Go to team's game")
-        .set_hotkey(UiKey::GO_TO_GAME)
+        .set_hotkey(UiKey::GO_TO_GAME);
+        if world.get_game_or_err(&game_id).is_err() {
+            b.disable(Some("Game is not visible"));
+        }
+        b
     } else {
         let mut button = Button::new("Challenge", UiCallback::ChallengeTeam { team_id: team.id })
             .set_hover_text(format!("Challenge {} to a game", team.name));
@@ -502,7 +515,6 @@ pub(crate) fn get_storage_lengths(
 
 pub fn upgrade_spaceship_button<'a>(
     team: &Team,
-
     upgrade: SpaceshipUpgrade,
 ) -> AppResult<Button<'a>> {
     if team.spaceship.pending_upgrade.is_some() {
@@ -518,7 +530,7 @@ pub fn upgrade_spaceship_button<'a>(
             },
             upgrade.duration.formatted()
         ),
-        UiCallback::SetUpgradeSpaceship {
+        UiCallback::SetSpaceshipUpgrade {
             upgrade: upgrade.clone(),
         },
     )
@@ -531,7 +543,7 @@ pub fn upgrade_spaceship_button<'a>(
         _ => UiKey::UPGRADE_SPACESHIP,
     });
 
-    let can_set_upgrade = team.can_set_upgrade_spaceship(upgrade);
+    let can_set_upgrade = team.can_upgrade_spaceship(&upgrade);
 
     if can_set_upgrade.is_err() {
         upgrade_button.disable(Some(can_set_upgrade.unwrap_err().to_string()));
@@ -708,6 +720,12 @@ pub fn render_spaceship_description(
 
     let spaceship_info = if full_info {
         let average_tiredness = team.average_tiredness(world);
+        let speed_bonus = TeamBonus::SpaceshipSpeed
+            .current_team_bonus(world, &team.id)
+            .unwrap_or(1.0);
+        let weapon_bonus = TeamBonus::Weapons
+            .current_team_bonus(world, &team.id)
+            .unwrap_or(1.0);
         Paragraph::new(vec![
             Line::from(get_crew_spans(
                 team.player_ids.len(),
@@ -731,11 +749,11 @@ pub fn render_spaceship_description(
             )),
             Line::from(format!(
                 "Speed {:.3} AU/h",
-                team.spaceship_speed() * HOURS as f32 / AU as f32
+                team.spaceship_speed() * speed_bonus * HOURS as f32 / AU as f32
             )),
             Line::from(format!(
                 "Shooters {}x{}",
-                (team.spaceship.damage() * team.spaceship.fire_rate()) as u8,
+                (team.spaceship.damage() * team.spaceship.fire_rate() * weapon_bonus) as u8,
                 team.spaceship.shooting_points()
             )),
             Line::from(format!(
@@ -1064,6 +1082,7 @@ pub fn render_spaceship_upgrade(
 
 pub fn render_player_description(
     player: &Player,
+    view: PlayerWidgetView,
     gif_map: &mut GifMap,
     tick: usize,
     world: &World,
@@ -1090,7 +1109,7 @@ pub fn render_player_description(
         Constraint::Length(1),  //header
         Constraint::Length(1),  //header
         Constraint::Length(1),  //margin
-        Constraint::Length(20), //stats
+        Constraint::Length(20), //skills/stats
     ])
     .split(h_split[1]);
 
@@ -1198,10 +1217,16 @@ pub fn render_player_description(
         header_body_stats[4],
     );
 
-    frame.render_widget(
-        Paragraph::new(format_player_data(player)),
-        header_body_stats[6],
-    );
+    match view {
+        PlayerWidgetView::Skills => frame.render_widget(
+            Paragraph::new(format_player_skills(player)),
+            header_body_stats[6],
+        ),
+        PlayerWidgetView::Stats => frame.render_widget(
+            Paragraph::new(format_player_stats(player)),
+            header_body_stats[6],
+        ),
+    }
 
     // Render main block
     let block = default_block().title(format!(
@@ -1228,7 +1253,7 @@ fn improvement_indicator<'a>(skill: f32, previous: f32) -> Span<'a> {
     }
 }
 
-fn format_player_data(player: &Player) -> Vec<Line> {
+fn format_player_skills(player: &Player) -> Vec<Line> {
     let skills = player.current_skill_array();
     let mut text = vec![];
     let mut roles = (0..MAX_POSITION)
@@ -1347,6 +1372,62 @@ fn format_player_data(player: &Player) -> Vec<Line> {
 
         text.push(Line::from(spans));
     }
+
+    text
+}
+
+fn format_player_stats(player: &Player) -> Vec<Line> {
+    let stats = &player.historical_stats;
+    let mut text = vec![];
+
+    text.push(Line::from(format!(
+        "{:<12} W{}/L{}/D{}",
+        "Games", stats.games[0], stats.games[1], stats.games[2]
+    )));
+
+    text.push(Line::from(format!(
+        "{:<12} {}",
+        "Play time",
+        (stats.seconds_played as Tick * SECONDS).formatted()
+    )));
+    text.push(Line::from(format!(
+        "{:<12} W{}/L{}/D{}",
+        "Brawls", stats.brawls[0], stats.brawls[1], stats.brawls[2]
+    )));
+    text.push(Line::from(format!(
+        "{:<12} {:+}",
+        "Plus/Minus", stats.plus_minus
+    )));
+    text.push(Line::from(""));
+
+    text.push(Line::from(format!("{:<12} {}", "Points", stats.points)));
+    text.push(Line::from(format!(
+        "{:<12} {}/{}",
+        "2 points", stats.made_2pt, stats.attempted_2pt
+    )));
+    text.push(Line::from(format!(
+        "{:<12} {}/{}",
+        "3 points", stats.made_3pt, stats.attempted_3pt
+    )));
+    text.push(Line::from(""));
+
+    text.push(Line::from(format!(
+        "{:<12} {}",
+        "Def Rebounds", stats.defensive_rebounds
+    )));
+    text.push(Line::from(format!(
+        "{:<12} {}",
+        "Off Rebounds", stats.offensive_rebounds
+    )));
+    text.push(Line::from(format!("{:<12} {}", "Assists", stats.assists)));
+    text.push(Line::from(""));
+
+    text.push(Line::from(format!("{:<12} {}", "Steals", stats.steals)));
+    text.push(Line::from(format!("{:<12} {}", "Blocks", stats.blocks)));
+    text.push(Line::from(format!(
+        "{:<12} {}",
+        "Turnovers", stats.turnovers
+    )));
 
     text
 }

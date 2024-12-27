@@ -554,14 +554,14 @@ pub enum Storage {
     PincherNone,
     PincherSingle,
     JesterNone,
+    JesterSingle,
 }
 
 impl Display for Storage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Storage::ShuttleSingle => write!(f, "Single"),
-            Storage::ShuttleDouble => write!(f, "Double"),
-            Storage::PincherSingle => write!(f, "Single"),
+            Self::ShuttleSingle | Self::PincherSingle | Self::JesterSingle => write!(f, "Single"),
+            Self::ShuttleDouble => write!(f, "Double"),
             _ => write!(f, "None"),
         }
     }
@@ -575,7 +575,8 @@ impl SpaceshipComponent for Storage {
             Self::ShuttleDouble => Self::ShuttleNone,
             Self::PincherNone => Self::PincherSingle,
             Self::PincherSingle => Self::PincherNone,
-            Self::JesterNone => Self::JesterNone,
+            Self::JesterNone => Self::JesterSingle,
+            Self::JesterSingle => Self::JesterNone,
         }
     }
 
@@ -586,7 +587,8 @@ impl SpaceshipComponent for Storage {
             Self::ShuttleDouble => Self::ShuttleSingle,
             Self::PincherNone => Self::PincherSingle,
             Self::PincherSingle => Self::PincherNone,
-            Self::JesterNone => Self::JesterNone,
+            Self::JesterNone => Self::JesterSingle,
+            Self::JesterSingle => Self::JesterNone,
         }
     }
 
@@ -598,11 +600,13 @@ impl SpaceshipComponent for Storage {
             Self::PincherNone => SpaceshipStyle::Pincher,
             Self::PincherSingle => SpaceshipStyle::Pincher,
             Self::JesterNone => SpaceshipStyle::Jester,
+            Self::JesterSingle => SpaceshipStyle::Jester,
         }
     }
     fn crew_capacity(&self) -> u8 {
         match self {
             Self::ShuttleDouble => 1,
+            Self::JesterSingle => 1,
             _ => 0,
         }
     }
@@ -630,6 +634,7 @@ impl SpaceshipComponent for Storage {
             Self::ShuttleSingle => 1.02,
             Self::ShuttleDouble => 1.03,
             Self::PincherSingle => 1.03,
+            Self::JesterSingle => 1.02,
             _ => 1.0,
         }
     }
@@ -639,6 +644,7 @@ impl SpaceshipComponent for Storage {
             Self::ShuttleSingle => 0.99,
             Self::ShuttleDouble => 0.98,
             Self::PincherSingle => 0.99,
+            Self::JesterSingle => 0.99,
             _ => 1.0,
         }
     }
@@ -648,6 +654,7 @@ impl SpaceshipComponent for Storage {
             Self::ShuttleSingle => 10,
             Self::ShuttleDouble => 11,
             Self::PincherSingle => 7,
+            Self::JesterSingle => 2,
             _ => 0,
         }
     }
@@ -656,6 +663,7 @@ impl SpaceshipComponent for Storage {
             Self::ShuttleSingle => 5000,
             Self::ShuttleDouble => 6000,
             Self::PincherSingle => 6000,
+            Self::JesterSingle => 18000,
             _ => 0,
         }
     }
@@ -667,10 +675,14 @@ impl SpaceshipComponent for Storage {
 
         let scraps_cost = (self.next().cost() - self.cost()) / 30;
 
-        let cost = vec![
+        let mut cost = vec![
             (Resource::SATOSHI, self.next().cost() - self.cost()),
             (Resource::SCRAPS, scraps_cost),
         ];
+
+        if self == &Storage::JesterSingle {
+            cost.push((Resource::RUM, 5));
+        }
 
         cost
     }
@@ -707,7 +719,7 @@ impl Display for SpaceshipUpgradeTarget {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default, Hash)]
 pub struct SpaceshipUpgrade {
     pub target: SpaceshipUpgradeTarget,
     pub started: Tick,
@@ -717,15 +729,16 @@ pub struct SpaceshipUpgrade {
 impl SpaceshipUpgrade {
     pub const REPAIR_BASE_COST: u32 = 120;
     pub const REPAIR_BASE_DURATION: Tick = 2 * MINUTES;
-    pub const SPACESHIP_UPGRADE_BASE_DURATION: Tick = 8 * HOURS;
+    pub const BASE_DURATION: Tick = 8 * HOURS;
 
-    pub fn new(target: SpaceshipUpgradeTarget) -> Self {
-        let duration = match target {
+    pub fn new(target: SpaceshipUpgradeTarget, bonus: f32) -> Self {
+        let duration = (match target {
             SpaceshipUpgradeTarget::Repairs { amount } => {
                 amount as Tick * SpaceshipUpgrade::REPAIR_BASE_DURATION
             }
-            _ => SpaceshipUpgrade::SPACESHIP_UPGRADE_BASE_DURATION,
-        };
+            _ => SpaceshipUpgrade::BASE_DURATION,
+        } as f32
+            / bonus) as Tick;
         SpaceshipUpgrade {
             started: Tick::now(),
             duration,

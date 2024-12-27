@@ -41,6 +41,7 @@ impl UiKey {
     pub const UNLOCK_PLAYER: KeyCode = KeyCode::Char('U');
     pub const SET_CAPTAIN: KeyCode = KeyCode::Char('c');
     pub const SET_DOCTOR: KeyCode = KeyCode::Char('d');
+    pub const SET_ENGINEER: KeyCode = KeyCode::Char('e');
     pub const SET_PILOT: KeyCode = KeyCode::Char('p');
     pub const PITCH_VIEW: KeyCode = KeyCode::Char('v');
     pub const PLAYER_STATUS_VIEW: KeyCode = KeyCode::Char('s');
@@ -80,6 +81,8 @@ impl UiKey {
             2 => KeyCode::Char('3'),
             3 => KeyCode::Char('4'),
             4 => KeyCode::Char('5'),
+            5 => KeyCode::Char('6'),
+            6 => KeyCode::Char('7'),
             _ => panic!("Invalid position for SET_PLAYER_POSITION UiKey."),
         }
     }

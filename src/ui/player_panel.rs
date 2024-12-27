@@ -5,6 +5,7 @@ use super::gif_map::GifMap;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
 use super::utils::format_satoshi;
+use super::widgets::PlayerWidgetView;
 use super::{
     constants::{UiKey, IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
     traits::{Screen, SplitPanel},
@@ -124,10 +125,10 @@ pub struct PlayerListPanel {
     pub index: usize,
     pub locked_player_id: Option<PlayerId>,
     pub selected_player_id: PlayerId,
+    player_widget_view: PlayerWidgetView,
     pub selected_team_id: Option<TeamId>,
     pub all_players: Vec<PlayerId>,
     pub players: Vec<PlayerId>,
-    own_team_id: TeamId,
     view: PlayerView,
     update_view: bool,
     tick: usize,
@@ -280,6 +281,7 @@ impl PlayerListPanel {
 
         render_player_description(
             player,
+            self.player_widget_view,
             &mut self.gif_map,
             self.tick,
             world,
@@ -295,6 +297,7 @@ impl PlayerListPanel {
             let locked_player = world.get_player_or_err(&locked_player_id)?;
             render_player_description(
                 locked_player,
+                self.player_widget_view,
                 &mut self.gif_map,
                 self.tick,
                 world,
@@ -320,8 +323,9 @@ impl PlayerListPanel {
         let buttons_split = Layout::vertical([
             Constraint::Length(3), //team
             Constraint::Length(3), //Lock/Unlock
+            Constraint::Length(3), //skills/stats
             Constraint::Length(3), //hire info for FA or optionally trade
-            Constraint::Min(1),
+            Constraint::Min(0),
         ])
         .split(area);
 
@@ -352,6 +356,21 @@ impl PlayerListPanel {
                 frame.render_interactive(button, buttons_split[0]);
             }
         }
+
+        let player_widget_view_button = Button::new(
+            format!(
+                "View {}",
+                self.player_widget_view.to_string().to_lowercase()
+            ),
+            UiCallback::TogglePlayerWidgetView,
+        )
+        .set_hover_text(format!(
+            "View player's {}",
+            self.player_widget_view.to_string().to_lowercase()
+        ))
+        .set_hotkey(UiKey::PLAYER_STATUS_VIEW);
+        frame.render_interactive(player_widget_view_button, buttons_split[1]);
+
         let lock_button =
             if self.locked_player_id.is_some() && self.locked_player_id.unwrap() == player.id {
                 Button::new(
@@ -377,7 +396,7 @@ impl PlayerListPanel {
                 ))
                 .set_hotkey(UiKey::LOCK_PLAYER)
             };
-        frame.render_interactive(lock_button, buttons_split[1]);
+        frame.render_interactive(lock_button, buttons_split[2]);
 
         // Add hire button for free pirates
         if player.team.is_none() {
@@ -399,7 +418,7 @@ impl PlayerListPanel {
                 button.disable(Some(format!("{}", can_hire.unwrap_err().to_string())));
             }
 
-            frame.render_interactive(button, buttons_split[2]);
+            frame.render_interactive(button, buttons_split[3]);
         }
         // or if a trade exists and player is part of it, add trade buttons
         else if let Some(trade) = open_trade {
@@ -427,7 +446,7 @@ impl PlayerListPanel {
                 if can_trade.is_err() {
                     button.disable(Some(format!("{}", can_trade.unwrap_err().to_string())));
                 }
-                frame.render_interactive(button, buttons_split[2]);
+                frame.render_interactive(button, buttons_split[3]);
             } else if player.id == self.locked_player_id.expect("One player should be locked") {
                 let button = Button::new(
                     "Decline trade",
@@ -442,7 +461,7 @@ impl PlayerListPanel {
                 ))
                 .set_hotkey(UiKey::DECLINE_TRADE);
 
-                frame.render_interactive(button, buttons_split[2]);
+                frame.render_interactive(button, buttons_split[3]);
             };
         }
         // or finally if either the selected or locked player are part of own_team (but not both)
@@ -480,7 +499,7 @@ impl PlayerListPanel {
                             trade_button.disable(Some("Trade already proposed"));
                         }
 
-                        frame.render_interactive(trade_button, buttons_split[2]);
+                        frame.render_interactive(trade_button, buttons_split[3]);
                     }
                 }
             }
@@ -497,12 +516,18 @@ impl PlayerListPanel {
     pub fn reset_view(&mut self) {
         self.set_view(PlayerView::All);
     }
+
+    pub fn toggle_player_widget_view(&mut self) {
+        match self.player_widget_view {
+            PlayerWidgetView::Skills => self.player_widget_view = PlayerWidgetView::Stats,
+            PlayerWidgetView::Stats => self.player_widget_view = PlayerWidgetView::Skills,
+        }
+    }
 }
 
 impl Screen for PlayerListPanel {
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
-        self.own_team_id = world.own_team_id;
         if world.dirty_ui || self.all_players.len() != world.players.len() {
             self.all_players = world.players.keys().into_iter().cloned().collect();
             self.all_players.sort_by(|a, b| {

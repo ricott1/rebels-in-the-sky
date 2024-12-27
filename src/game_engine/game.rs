@@ -101,7 +101,7 @@ impl GameSummary {
 pub struct GameMVPSummary {
     pub name: String,
     pub score: u32,
-    pub best_stats: [(String, u8, u32); 3],
+    pub best_stats: [(String, u16, u32); 3],
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -299,6 +299,19 @@ impl<'game> Game {
             ("Stl", stats.steals, 2.5),
             ("Blk", stats.blocks, 3.0),
             ("Ast", stats.assists, 2.0),
+            (
+                "Brw",
+                if stats.brawls[0] > stats.brawls[1] {
+                    stats.brawls[0] - stats.brawls[1]
+                } else {
+                    stats.brawls[1] - stats.brawls[0]
+                },
+                if stats.brawls[0] > stats.brawls[1] {
+                    3.0
+                } else {
+                    -3.0
+                },
+            ),
             ("TO", stats.turnovers, -1.5),
             (
                 "Acc",
@@ -404,7 +417,7 @@ impl<'game> Game {
         &mut self,
         attack_stats: Option<GameStatsMap>,
         defense_stats: Option<GameStatsMap>,
-        score_change: u8,
+        score_change: u16,
     ) {
         let (mut home_stats, mut away_stats) = match self.possession {
             Possession::Home => (attack_stats, defense_stats),
@@ -703,10 +716,10 @@ impl<'game> Game {
             );
 
             if result.score_change > 0 {
-                let home_plus_minus: i16 = if self.possession == Possession::Home {
-                    result.score_change as i16
+                let home_plus_minus = if self.possession == Possession::Home {
+                    result.score_change as i32
                 } else {
-                    -(result.score_change as i16)
+                    -(result.score_change as i32)
                 };
                 for (_, stats) in self.home_team_in_game.stats.iter_mut() {
                     if stats.is_playing() {

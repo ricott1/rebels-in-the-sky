@@ -1,3 +1,5 @@
+use crate::world::constants::TirednessCost;
+
 pub const ADV_ATTACK_LIMIT: i16 = 16;
 pub const ADV_NEUTRAL_LIMIT: i16 = 0;
 pub const ADV_DEFENSE_LIMIT: i16 = -20;
@@ -9,7 +11,7 @@ pub enum ShotDifficulty {
     Long = 28,
 }
 
-pub const RECOVERING_TIREDNESS_PER_SHORT_TICK: f32 = 0.01;
+pub const RECOVERING_TIREDNESS_PER_SHORT_TICK: f32 = TirednessCost::LOW;
 pub const MIN_TIREDNESS_FOR_SUB: f32 = 10.0;
 pub const MIN_TIREDNESS_FOR_ROLL_DECLINE: f32 = 10.0;
 

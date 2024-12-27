@@ -42,6 +42,44 @@ pub enum PlanetType {
     Asteroid,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Hash, EnumIter)]
+pub enum AsteroidUpgradeTarget {
+    TeleportationPad,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Hash)]
+pub struct AsteroidUpgrade {
+    pub target: AsteroidUpgradeTarget,
+    pub started: Tick,
+    pub duration: Tick,
+}
+
+impl AsteroidUpgrade {
+    pub const BASE_DURATION: Tick = 8 * HOURS;
+
+    pub fn new(target: AsteroidUpgradeTarget, bonus: f32) -> Self {
+        let duration = (Self::BASE_DURATION as f32 / bonus) as Tick;
+        Self {
+            started: Tick::now(),
+            duration,
+            target,
+        }
+    }
+
+    pub fn description(&self) -> String {
+        match self.target {
+            AsteroidUpgradeTarget::TeleportationPad => "Building teleportation pad".to_string(),
+        }
+    }
+    pub fn cost(&self) -> Vec<(Resource, u32)> {
+        match self.target {
+            AsteroidUpgradeTarget::TeleportationPad => {
+                vec![(Resource::SCRAPS, 125), (Resource::GOLD, 25)]
+            }
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Planet {
     pub id: PlanetId,
@@ -65,6 +103,12 @@ pub struct Planet {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub custom_radio_stream: Option<String>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub pending_upgrade: Option<AsteroidUpgrade>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub upgrades: Vec<AsteroidUpgradeTarget>,
 }
 
 impl Planet {
@@ -168,6 +212,8 @@ impl Planet {
             team_ids: vec![],
             //TODO: add option to customize asteroid radio stream
             custom_radio_stream: None,
+            pending_upgrade: None,
+            upgrades: vec![],
         }
     }
 }

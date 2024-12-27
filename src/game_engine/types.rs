@@ -1,6 +1,6 @@
 use super::{action::Action, tactic::Tactic};
 use crate::{
-    image::game::PitchStyle,
+    image::game::PitchImage,
     types::{AppResult, GameId, PlayerId, PlayerMap, TeamId, TeamMap},
     world::{
         constants::MAX_PLAYERS_PER_GAME,
@@ -23,58 +23,52 @@ use std::{collections::HashMap, ops::Not};
 pub struct GameStats {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
+    pub games: [u16; 3],
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub position: Option<Position>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub seconds_played: u16,
+    pub seconds_played: u32,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub fouls: u8,
+    pub points: u16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub technical_fouls: u8,
+    pub brawls: [u16; 3], // brawls as wins/losses/draws
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub points: u8,
+    pub attempted_2pt: u16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub attempted_ft: u8,
+    pub made_2pt: u16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub made_ft: u8,
+    pub attempted_3pt: u16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub attempted_2pt: u8,
+    pub made_3pt: u16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub made_2pt: u8,
+    pub offensive_rebounds: u16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub attempted_3pt: u8,
+    pub defensive_rebounds: u16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub made_3pt: u8,
+    pub assists: u16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub offensive_rebounds: u8,
+    pub steals: u16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub defensive_rebounds: u8,
+    pub blocks: u16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub assists: u8,
+    pub turnovers: u16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub steals: u8,
-    #[serde(skip_serializing_if = "is_default")]
-    #[serde(default)]
-    pub blocks: u8,
-    #[serde(skip_serializing_if = "is_default")]
-    #[serde(default)]
-    pub turnovers: u8,
-    #[serde(skip_serializing_if = "is_default")]
-    #[serde(default)]
-    pub plus_minus: i16,
+    pub plus_minus: i32,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub extra_morale: f32,
@@ -91,7 +85,7 @@ pub struct GameStats {
     pub last_action_shot: Option<(u8, u8, bool)>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub experience_at_position: [u16; 5],
+    pub experience_at_position: [u32; 5],
 }
 
 impl GameStats {
@@ -99,11 +93,10 @@ impl GameStats {
         //don't update is_playing and position because otherwise we would have a lot of non-default gamestats to write.
         // We instead update them by hand after the Substitution action.
         self.seconds_played += stats.seconds_played;
-        self.fouls += stats.fouls;
-        self.technical_fouls += stats.technical_fouls;
         self.points += stats.points;
-        self.attempted_ft += stats.attempted_ft;
-        self.made_ft += stats.made_ft;
+        for i in 0..self.brawls.len() {
+            self.brawls[i] += stats.brawls[i];
+        }
         self.attempted_2pt += stats.attempted_2pt;
         self.made_2pt += stats.made_2pt;
         self.attempted_3pt += stats.attempted_3pt;
@@ -120,9 +113,8 @@ impl GameStats {
         }
         self.last_action_shot = stats.last_action_shot;
         for (idx, exp) in stats.experience_at_position.iter().enumerate() {
-            // This loop should not nothing at the moment, but could be used to give extra experience during actions.
+            // This loop is used only for historical stats update, as we don't give extra experience during actions at the moment.
             self.experience_at_position[idx] += exp;
-            assert!(*exp == 0);
         }
     }
 
@@ -283,23 +275,23 @@ impl Not for Possession {
 pub type GameStatsMap = HashMap<GameId, GameStats>;
 
 pub static HOME_CLOSE_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchStyle::HomeCloseShotMask));
+    Lazy::new(|| get_shot_positions(PitchImage::HomeCloseShotMask));
 pub static AWAY_CLOSE_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchStyle::AwayCloseShotMask));
+    Lazy::new(|| get_shot_positions(PitchImage::AwayCloseShotMask));
 pub static HOME_MEDIUM_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchStyle::HomeMediumShotMask));
+    Lazy::new(|| get_shot_positions(PitchImage::HomeMediumShotMask));
 pub static AWAY_MEDIUM_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchStyle::AwayMediumShotMask));
+    Lazy::new(|| get_shot_positions(PitchImage::AwayMediumShotMask));
 pub static HOME_LONG_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchStyle::HomeLongShotMask));
+    Lazy::new(|| get_shot_positions(PitchImage::HomeLongShotMask));
 pub static AWAY_LONG_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchStyle::AwayLongShotMask));
+    Lazy::new(|| get_shot_positions(PitchImage::AwayLongShotMask));
 pub static HOME_IMPOSSIBLE_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchStyle::HomeImpossibleShotMask));
+    Lazy::new(|| get_shot_positions(PitchImage::HomeImpossibleShotMask));
 pub static AWAY_IMPOSSIBLE_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchStyle::AwayImpossibleShotMask));
+    Lazy::new(|| get_shot_positions(PitchImage::AwayImpossibleShotMask));
 
-fn get_shot_positions(mask: PitchStyle) -> Vec<(u8, u8)> {
+fn get_shot_positions(mask: PitchImage) -> Vec<(u8, u8)> {
     let img = mask.image().unwrap();
     // select the position of all pixels with positive alpha
     let mut positions = vec![];
@@ -320,11 +312,8 @@ fn get_shot_positions(mask: PitchStyle) -> Vec<(u8, u8)> {
 fn test_gamestats_serde() {
     let mut stats = GameStats::default();
     stats.seconds_played = 0;
-    stats.fouls = 2;
-    stats.technical_fouls = 3;
     stats.points = 4;
-    stats.attempted_ft = 5;
-    stats.made_ft = 6;
+    stats.brawls = [5, 5, 6];
     stats.attempted_2pt = 7;
     stats.made_2pt = 8;
     stats.attempted_3pt = 9;

@@ -10,10 +10,11 @@ use crate::types::{PlayerId, TeamId};
 use crate::types::{SystemTimeTick, Tick};
 use crate::world::world::World;
 use anyhow::anyhow;
-use libp2p::gossipsub::{self, IdentTopic, MessageId};
+use libp2p::gossipsub::{self, IdentTopic, MessageAuthenticity, MessageId, ValidationMode};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{identity, noise, tcp, yamux, PeerId};
 use libp2p::{Multiaddr, Swarm};
+use libp2p_swarm_test::SwarmExt;
 use log::{error, info};
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::Debug;
@@ -24,6 +25,7 @@ pub struct NetworkHandler {
     pub swarm: Swarm<gossipsub::Behaviour>,
     pub address: Multiaddr,
     pub seed_addresses: Vec<Multiaddr>,
+    test_environment: bool, // Hack to be able to easily run e2e tests
 }
 
 impl Debug for NetworkHandler {
@@ -35,6 +37,22 @@ impl Debug for NetworkHandler {
 }
 
 impl NetworkHandler {
+    pub fn test_default() -> Self {
+        Self {
+            swarm: Swarm::new_ephemeral(|identity| {
+                let peer_id = identity.public().to_peer_id();
+
+                let config = gossipsub::ConfigBuilder::default()
+                    .validation_mode(ValidationMode::Permissive)
+                    .build()
+                    .unwrap();
+                gossipsub::Behaviour::new(MessageAuthenticity::Author(peer_id), config).unwrap()
+            }),
+            address: Multiaddr::empty(),
+            seed_addresses: vec![],
+            test_environment: true,
+        }
+    }
     pub fn new(seed_ip: Option<String>, tcp_port: u16) -> AppResult<Self> {
         let local_key = identity::Keypair::generate_ed25519();
 
@@ -119,11 +137,15 @@ impl NetworkHandler {
             swarm,
             address: Multiaddr::empty(),
             seed_addresses,
+            test_environment: false,
         })
     }
 
-    fn _send(&mut self, data: NetworkData) -> AppResult<MessageId> {
-        let data = serialize(&data)?;
+    fn _send(&mut self, data: &NetworkData) -> AppResult<MessageId> {
+        if self.test_environment {
+            return Ok(MessageId::new(&[0]));
+        }
+        let data = serialize(data)?;
         let msg_id = self
             .swarm
             .behaviour_mut()
@@ -143,11 +165,11 @@ impl NetworkHandler {
     }
 
     pub fn send_msg(&mut self, msg: String) -> AppResult<MessageId> {
-        self._send(NetworkData::Message(Tick::now(), msg))
+        self._send(&NetworkData::Message(Tick::now(), msg))
     }
 
     pub fn send_seed_info(&mut self, seed_info: SeedInfo) -> AppResult<MessageId> {
-        self._send(NetworkData::SeedInfo(Tick::now(), seed_info))
+        self._send(&NetworkData::SeedInfo(Tick::now(), seed_info))
     }
 
     pub fn send_own_team(&mut self, world: &World) -> AppResult<MessageId> {
@@ -174,22 +196,22 @@ impl NetworkHandler {
 
     fn send_game(&mut self, world: &World, game_id: &GameId) -> AppResult<MessageId> {
         let network_game = NetworkGame::from_game_id(&world, game_id)?;
-        self._send(NetworkData::Game(Tick::now(), network_game))
+        self._send(&NetworkData::Game(Tick::now(), network_game))
     }
 
     fn send_team(&mut self, world: &World, team_id: TeamId) -> AppResult<MessageId> {
         let network_team =
             NetworkTeam::from_team_id(world, &team_id, self.swarm.local_peer_id().clone())?;
 
-        self._send(NetworkData::Team(Tick::now(), network_team))
+        self._send(&NetworkData::Team(Tick::now(), network_team))
     }
 
     pub fn send_challenge(&mut self, challenge: Challenge) -> AppResult<MessageId> {
-        self._send(NetworkData::Challenge(Tick::now(), challenge))
+        self._send(&NetworkData::Challenge(Tick::now(), challenge))
     }
 
     pub fn send_trade(&mut self, trade: Trade) -> AppResult<MessageId> {
-        self._send(NetworkData::Trade(Tick::now(), trade))
+        self._send(&NetworkData::Trade(Tick::now(), trade))
     }
 
     pub fn send_new_challenge(
@@ -201,11 +223,11 @@ impl NetworkHandler {
         self.send_own_team(world)?;
         let mut home_team_in_game =
             TeamInGame::from_team_id(&world.own_team_id, &world.teams, &world.players)
-                .ok_or(anyhow!("Cannot generate team in game"))?;
+                .ok_or(anyhow!("Cannot generate home team in game"))?;
         home_team_in_game.peer_id = Some(self.swarm.local_peer_id().clone());
 
         let away_team_in_game = TeamInGame::from_team_id(&team_id, &world.teams, &world.players)
-            .ok_or(anyhow!("Cannot generate team in game"))?;
+            .ok_or(anyhow!("Cannot generate away team in game"))?;
 
         let challenge = Challenge::new(
             self.swarm.local_peer_id().clone(),
@@ -373,10 +395,7 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub fn handle_network_events(
-        &mut self,
-        event: SwarmEvent<gossipsub::Event>,
-    ) -> Option<NetworkCallback> {
+    pub fn handle_network_events(event: SwarmEvent<gossipsub::Event>) -> Option<NetworkCallback> {
         match event {
             SwarmEvent::NewListenAddr { address, .. } => {
                 Some(NetworkCallback::BindAddress { address })
@@ -421,16 +440,177 @@ impl NetworkHandler {
 
 #[cfg(test)]
 mod tests {
+    use super::TOPIC;
     use crate::{
-        network::types::{NetworkData, NetworkTeam},
+        app::App,
+        network::{
+            network_callback::NetworkCallback,
+            types::{NetworkData, NetworkRequestState, NetworkTeam},
+        },
         store::{deserialize, serialize},
         types::{AppResult, SystemTimeTick, Tick},
-        world::world::World,
+        ui::ui_callback::UiCallback,
+        world::{constants::NETWORK_GAME_START_DELAY, types::TeamLocation, world::World},
     };
     use anyhow::anyhow;
-    use libp2p::PeerId;
+    use libp2p::{
+        gossipsub::{IdentTopic, Message},
+        PeerId,
+    };
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+
+    #[test]
+    fn test_network_challenge_success() -> AppResult<()> {
+        let topic = IdentTopic::new(TOPIC);
+
+        let mut app1 = App::test_with_network_handler()?;
+        let mut app2 = App::test_with_network_handler()?;
+
+        let proposer_peer_id = app1
+            .network_handler
+            .as_ref()
+            .unwrap()
+            .swarm
+            .local_peer_id()
+            .clone();
+        let target_peer_id = app2
+            .network_handler
+            .as_ref()
+            .unwrap()
+            .swarm
+            .local_peer_id()
+            .clone();
+
+        // Add other team by hand
+        let mut own_team1 = app1.world.get_own_team()?.clone();
+        own_team1.peer_id = Some(proposer_peer_id);
+        let planet_id = own_team1.home_planet_id;
+        for player_id in own_team1.player_ids.iter() {
+            let player = app1.world.players.get(&player_id).unwrap();
+            app2.world.players.insert(player_id.clone(), player.clone());
+        }
+        app2.world.teams.insert(own_team1.id, own_team1);
+
+        let mut own_team2 = app2.world.get_own_team()?.clone();
+        own_team2.peer_id = Some(target_peer_id);
+        // Override current location to ensure challenge is possible
+        own_team2.current_location = TeamLocation::OnPlanet { planet_id };
+
+        for player_id in own_team2.player_ids.iter() {
+            let player = app2.world.players.get(&player_id).unwrap();
+            app1.world.players.insert(player_id.clone(), player.clone());
+        }
+        app1.world.teams.insert(own_team2.id, own_team2.clone());
+        app2.world.teams.insert(own_team2.id, own_team2);
+
+        let cb = UiCallback::ChallengeTeam {
+            team_id: app2.world.own_team_id,
+        };
+
+        if let Err(e) = cb.call(&mut app1) {
+            return Err(e);
+        }
+
+        let own_team1 = app1.world.get_own_team()?;
+        assert!(own_team1
+            .sent_challenges
+            .get(&app2.world.own_team_id)
+            .is_some());
+        assert!(own_team1.current_game.is_none());
+
+        let syn_challenge = own_team1
+            .sent_challenges
+            .get(&app2.world.own_team_id)
+            .unwrap()
+            .clone();
+
+        // Mock up send_challenge
+        let network_data = NetworkData::Challenge(Tick::now(), syn_challenge);
+        let data = serialize::<NetworkData>(&network_data)?;
+
+        let message = Message {
+            source: None,
+            data,
+            sequence_number: None,
+            topic: topic.clone().into(),
+        };
+        let cb = NetworkCallback::HandleMessage { message };
+        assert!(cb.call(&mut app2).is_ok());
+
+        let own_team2 = app2.world.get_own_team()?.clone();
+        assert!(own_team2.current_game.is_none());
+        let received_challenge = own_team2.received_challenges.get(&app1.world.own_team_id);
+        assert!(received_challenge.is_some());
+
+        let cb = UiCallback::AcceptChallenge {
+            challenge: received_challenge.unwrap().clone(),
+        };
+
+        // Still no game
+        let own_team2 = app2.world.get_own_team()?.clone();
+        assert!(own_team2.current_game.is_none());
+
+        if let Err(e) = cb.call(&mut app2) {
+            return Err(e);
+        }
+
+        // Get response challenges
+        let mut syn_ack_challenge = received_challenge.unwrap().clone();
+        syn_ack_challenge.state = NetworkRequestState::SynAck;
+        let mut ack_challenge = received_challenge.unwrap().clone();
+        let starting_at = Tick::now() + NETWORK_GAME_START_DELAY;
+        ack_challenge.starting_at = Some(starting_at);
+        ack_challenge.state = NetworkRequestState::Ack;
+
+        let network_data = NetworkData::Challenge(Tick::now(), syn_ack_challenge);
+        let data = serialize::<NetworkData>(&network_data)?;
+
+        let message = Message {
+            source: None,
+            data,
+            sequence_number: None,
+            topic: topic.clone().into(),
+        };
+
+        // Check that challenge has been removed after accepting
+        let own_team2 = app2.world.get_own_team()?.clone();
+        let received_challenge = own_team2.received_challenges.get(&app1.world.own_team_id);
+        assert!(received_challenge.is_none());
+
+        let cb = NetworkCallback::HandleMessage { message };
+        let own_team1 = app1.world.get_own_team()?.clone();
+        assert!(own_team1.current_game.is_none());
+        assert!(cb.call(&mut app1).is_ok());
+        let own_team1 = app1.world.get_own_team()?.clone();
+        assert!(own_team1.current_game.is_some());
+
+        let game_id = own_team1.current_game.unwrap();
+
+        let network_data = NetworkData::Challenge(Tick::now(), ack_challenge);
+        let data = serialize::<NetworkData>(&network_data)?;
+
+        let message = Message {
+            source: None,
+            data,
+            sequence_number: None,
+            topic: topic.clone().into(),
+        };
+
+        let cb = NetworkCallback::HandleMessage { message };
+        let own_team2 = app2.world.get_own_team()?.clone();
+        assert!(own_team2.current_game.is_none());
+
+        if let Err(e) = cb.call(&mut app2) {
+            return Err(e);
+        }
+
+        let own_team2 = app2.world.get_own_team()?.clone();
+        println!("{:?}", own_team2.current_game);
+        assert!(own_team2.current_game == Some(game_id));
+
+        Ok(())
+    }
 
     #[test]
     fn test_send_own_team() -> AppResult<()> {

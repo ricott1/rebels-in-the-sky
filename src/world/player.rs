@@ -1,7 +1,6 @@
 use super::{
     constants::{COST_PER_VALUE, EXPERIENCE_PER_SKILL_MULTIPLIER, SPECIAL_TRAIT_VALUE_BONUS},
     jersey::Jersey,
-    planet::Planet,
     position::{GamePosition, MAX_POSITION},
     resources::Resource,
     role::CrewRole,
@@ -11,7 +10,7 @@ use super::{
     world::World,
 };
 use crate::{
-    game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
+    game_engine::{constants::MIN_TIREDNESS_FOR_ROLL_DECLINE, types::GameStats},
     image::{player::PlayerImage, types::Gif},
     types::{AppResult, PlanetId, PlayerId, StorableResourceMap, TeamId},
     world::{
@@ -57,6 +56,7 @@ pub struct Player {
     // pub skills_potential: [Skill; 20], // Each skill has a separate potential. For retrocompatibility reasons, we allow this array to be all zeros, in which case we initialize it during deserialization.
     pub tiredness: f32,
     pub morale: f32,
+    pub historical_stats: GameStats,
 }
 
 impl Serialize for Player {
@@ -81,6 +81,7 @@ impl Serialize for Player {
         state.serialize_field("tiredness", &self.tiredness)?;
         state.serialize_field("morale", &self.morale)?;
         state.serialize_field("compact_skills", &compact_skills)?;
+        state.serialize_field("historical_stats", &self.historical_stats)?;
         state.end()
     }
 }
@@ -106,6 +107,7 @@ impl<'de> Deserialize<'de> for Player {
             Tiredness,
             Morale,
             CompactSkills,
+            HistoricalStats,
         }
 
         impl<'de> Deserialize<'de> for Field {
@@ -139,6 +141,7 @@ impl<'de> Deserialize<'de> for Player {
                             "tiredness" => Ok(Field::Tiredness),
                             "morale" => Ok(Field::Morale),
                             "compact_skills" => Ok(Field::CompactSkills),
+                            "historical_stats" => Ok(Field::HistoricalStats),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -206,6 +209,7 @@ impl<'de> Deserialize<'de> for Player {
                 let compact_skills: Vec<Skill> = seq
                     .next_element()?
                     .ok_or_else(|| serde::de::Error::invalid_length(14, &self))?;
+                let historical_stats = seq.next_element()?.unwrap_or_default();
 
                 let mut player = Player {
                     id,
@@ -227,6 +231,7 @@ impl<'de> Deserialize<'de> for Player {
                     previous_skills,
                     tiredness,
                     morale,
+                    historical_stats,
                 };
 
                 player.athletics = Athletics {
@@ -282,6 +287,7 @@ impl<'de> Deserialize<'de> for Player {
                 let mut tiredness = None;
                 let mut morale = None;
                 let mut compact_skills: Option<Vec<Skill>> = None;
+                let mut historical_stats = None;
 
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -375,6 +381,13 @@ impl<'de> Deserialize<'de> for Player {
                             }
                             compact_skills = Some(map.next_value()?);
                         }
+
+                        Field::HistoricalStats => {
+                            if historical_stats.is_some() {
+                                return Err(serde::de::Error::duplicate_field("historical_statis"));
+                            }
+                            historical_stats = Some(map.next_value()?);
+                        }
                     }
                 }
 
@@ -401,6 +414,7 @@ impl<'de> Deserialize<'de> for Player {
                 let morale = morale.ok_or_else(|| serde::de::Error::missing_field("morale"))?;
                 let compact_skills = compact_skills
                     .ok_or_else(|| serde::de::Error::missing_field("compact_skills"))?;
+                let historical_stats = historical_stats.unwrap_or_default();
 
                 let mut player = Player {
                     id,
@@ -422,6 +436,7 @@ impl<'de> Deserialize<'de> for Player {
                     previous_skills,
                     tiredness,
                     morale,
+                    historical_stats,
                 };
 
                 player.athletics = Athletics {
@@ -594,15 +609,23 @@ impl Player {
         rng: &mut ChaCha8Rng,
         id: PlayerId,
         position: Option<Position>,
-        home_planet: &Planet,
+        population: Population,
+        home_planet_id: &PlanetId,
         mut base_level: f32,
     ) -> Self {
         if position.is_none() {
             let position = rng.gen_range(0..MAX_POSITION);
-            return Self::random(rng, id, Some(position), home_planet, base_level);
+            return Self::random(
+                rng,
+                id,
+                Some(position),
+                population,
+                home_planet_id,
+                base_level,
+            );
         }
 
-        let info = InfoStats::for_position(position, None, rng, home_planet);
+        let info = InfoStats::for_position(position, population, rng, home_planet_id);
         let population = info.population;
 
         // Base level modifier increases linearly from (0,0) to (PEAK_PERFORMANCE_RELATIVE_AGE, 1.0),
@@ -637,13 +660,14 @@ impl Player {
             defense,
             mental,
             current_location: PlayerLocation::OnPlanet {
-                planet_id: home_planet.id,
+                planet_id: home_planet_id.clone(),
             },
             image,
             skills_training: [Skill::default(); 20],
             previous_skills: [Skill::default(); 20],
             tiredness: 0.0,
             morale: MAX_MORALE,
+            historical_stats: GameStats::default(),
         };
 
         player.apply_population_skill_modifiers();
@@ -952,7 +976,7 @@ impl Player {
 
     pub fn update_skills_training(
         &mut self,
-        experience_at_position: [u16; MAX_POSITION as usize],
+        experience_at_position: [u32; MAX_POSITION as usize],
         training_bonus: f32,
         training_focus: Option<TrainingFocus>,
     ) {
@@ -1063,14 +1087,10 @@ impl InfoStats {
     }
     pub fn for_position(
         position: Option<Position>,
-        population: Option<Population>,
+        population: Population,
         rng: &mut ChaCha8Rng,
-        home_planet: &Planet,
+        home_planet_id: &PlanetId,
     ) -> Self {
-        let population = match population {
-            Some(p) => p,
-            None => home_planet.random_population(rng).unwrap_or_default(),
-        };
         let p_data = PLAYER_DATA.get(&population).unwrap();
         let pronouns = if population == Population::Polpett || population == Population::Octopulp {
             Pronoun::They
@@ -1121,7 +1141,7 @@ impl InfoStats {
             first_name,
             last_name,
             crew_role: CrewRole::default(),
-            home_planet_id: home_planet.id,
+            home_planet_id: home_planet_id.clone(),
             population,
             age,
             pronouns,
@@ -1168,10 +1188,10 @@ mod test {
 
     use crate::{
         app::App,
-        types::{AppResult, PlayerId},
+        types::{AppResult, PlanetId, PlayerId},
         world::{
-            planet::Planet,
             skill::{Rated, MAX_SKILL, MIN_SKILL},
+            types::Population,
         },
     };
 
@@ -1225,8 +1245,15 @@ mod test {
             }
         }
         let rng = &mut ChaCha8Rng::from_entropy();
-        let planet = Planet::default();
-        let mut player = Player::random(rng, PlayerId::new_v4(), None, &planet, 0.0);
+        let population = Population::default();
+        let mut player = Player::random(
+            rng,
+            PlayerId::new_v4(),
+            None,
+            population,
+            &PlanetId::default(),
+            0.0,
+        );
 
         print_player_rolls(&player, rng);
 

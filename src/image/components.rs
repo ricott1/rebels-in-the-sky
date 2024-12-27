@@ -316,6 +316,9 @@ pub enum HatImage {
     MaskPupparoll,
     MaskOctopulp1,
     MaskOctopulp2,
+    Hipster,
+    HipsterSlim,
+    HipsterBlue,
 }
 
 impl ImageComponent for HatImage {
@@ -335,8 +338,8 @@ impl SizedImageComponent for WoodenLegImage {
     fn select_file(&self, size: u8) -> String {
         match self {
             Self::Left | Self::Right => match size {
-                x if x < 7 => "wooden_leg/slim.png".into(),
-                _ => "wooden_leg/large.png".into(),
+                x if x < 7 => "accessories/small_wooden_leg.png".into(),
+                _ => "accessories/large_wooden_leg.png".into(),
             },
         }
     }
@@ -461,6 +464,7 @@ impl SizedImageComponent for Storage {
                 2 => "storage/pincher_single2.png".into(),
                 _ => unreachable!("No image should be required for this component"),
             },
+            Storage::JesterSingle => "storage/jester_single.png".into(),
             _ => unreachable!("No image should be required for this component"),
         }
     }
@@ -484,6 +488,7 @@ impl SizedImageComponent for Storage {
                 2 => "storage/mask_pincher_single2.png".into(),
                 _ => unreachable!("No image should be required for this component"),
             },
+            Storage::JesterSingle => "storage/mask_jester_single.png".into(),
             _ => unreachable!("No image should be required for this component"),
         }
     }
