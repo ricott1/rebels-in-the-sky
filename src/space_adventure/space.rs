@@ -63,6 +63,7 @@ pub struct SpaceAdventure {
     player_id: Option<usize>,
     asteroid_planet_state: AsteroidPlanetState,
     enemy_ship_spawned: bool,
+    gold_fragment_probability: f64,
 }
 
 impl SpaceAdventure {
@@ -213,7 +214,12 @@ impl SpaceAdventure {
         velocity: Vec2,
         size: AsteroidSize,
     ) -> usize {
-        self.insert_entity(Box::new(AsteroidEntity::new(position, velocity, size)))
+        self.insert_entity(Box::new(AsteroidEntity::new(
+            position,
+            velocity,
+            size,
+            self.gold_fragment_probability,
+        )))
     }
 
     pub fn generate_particle(
@@ -265,7 +271,7 @@ impl SpaceAdventure {
         }
     }
 
-    pub fn new(should_spawn_asteroid: bool) -> AppResult<Self> {
+    pub fn new(should_spawn_asteroid: bool, gold_fragment_probability: f64) -> AppResult<Self> {
         let bg = TRAVELLING_BACKGROUND.clone();
         let mut background = RgbaImage::new(bg.width() * 2, bg.height() * 3);
         background.copy_non_trasparent_from(&bg, 0, 0)?;
@@ -304,6 +310,7 @@ impl SpaceAdventure {
                 should_spawn_asteroid,
             },
             enemy_ship_spawned: false,
+            gold_fragment_probability,
         })
     }
 
@@ -327,7 +334,7 @@ impl SpaceAdventure {
         self.player_id = Some(id);
 
         for _ in 0..10 {
-            let asteroid = AsteroidEntity::new_at_screen_edge();
+            let asteroid = AsteroidEntity::new_at_screen_edge(self.gold_fragment_probability);
             self.insert_entity(Box::new(asteroid));
         }
 
@@ -468,7 +475,7 @@ impl SpaceAdventure {
         if self.entity_count() < difficulty_level.min(250)
             && self.rng.gen_bool(ASTEROID_GENERATION_PROBABILITY)
         {
-            let asteroid = AsteroidEntity::new_at_screen_edge();
+            let asteroid = AsteroidEntity::new_at_screen_edge(self.gold_fragment_probability);
             self.insert_entity(Box::new(asteroid));
         }
 

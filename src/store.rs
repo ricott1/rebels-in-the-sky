@@ -73,13 +73,18 @@ pub fn deserialize<T: for<'a> Deserialize<'a>>(bytes: &Vec<u8>) -> AppResult<T> 
     Ok(data)
 }
 
-pub fn store_path(filename: &str) -> AppResult<PathBuf> {
+fn config_dirs() -> AppResult<PathBuf> {
     let dirs = directories::ProjectDirs::from("org", "frittura", "rebels")
         .ok_or(anyhow!("Failed to get directories"))?;
-    let config_dirs = dirs.config_dir();
+    let config_dirs = dirs.config_dir().to_path_buf();
     if !config_dirs.exists() {
-        std::fs::create_dir_all(config_dirs)?;
+        std::fs::create_dir_all(&config_dirs)?;
     }
+    Ok(config_dirs)
+}
+
+pub fn store_path(filename: &str) -> AppResult<PathBuf> {
+    let config_dirs = config_dirs()?;
     let path = config_dirs.join(filename);
     Ok(path)
 }
@@ -116,6 +121,28 @@ pub fn save_game(game: &Game) -> AppResult<()> {
 
 pub fn load_game(game_id: GameId) -> AppResult<Game> {
     load_from_json::<Game>(&format!("{}{}", PERSISTED_GAMES_PREFIX, game_id))
+}
+
+pub fn load_relayer_messages() -> AppResult<Vec<String>> {
+    // Load every message in the 'relayer_messages' directory.
+    let config_dirs = config_dirs()?;
+    let relayer_messages_directory = config_dirs.join("relayer_messages");
+    if !relayer_messages_directory.exists() {
+        std::fs::create_dir_all(&relayer_messages_directory)?;
+        return Ok(vec![]);
+    }
+
+    let mut messages = vec![];
+    for entry in std::fs::read_dir(&relayer_messages_directory)? {
+        let entry = entry?;
+        let path = entry.path();
+        messages.push(std::fs::read_to_string(&path)?);
+
+        // Remove the file after reading it.
+        std::fs::remove_file(path)?;
+    }
+
+    Ok(messages)
 }
 
 pub fn save_team_ranking(
@@ -280,6 +307,22 @@ mod tests {
 
         let deserialized_data = deserialize(&serialized_data)?;
         assert!(value == deserialized_data);
+        Ok(())
+    }
+
+    #[test]
+    #[ignore]
+    fn test_load_relayer_message() -> AppResult<()> {
+        let message = "Hello, world!";
+        let config_dirs = super::config_dirs()?;
+        let relayer_messages_directory = config_dirs.join("relayer_messages");
+        if !relayer_messages_directory.exists() {
+            std::fs::create_dir_all(&relayer_messages_directory)?;
+        }
+        let path = relayer_messages_directory.join("test");
+        std::fs::write(&path, message)?;
+        let loaded_messages = super::load_relayer_messages()?;
+        assert_eq!(loaded_messages, vec![message]);
         Ok(())
     }
 }

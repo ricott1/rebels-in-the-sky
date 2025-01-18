@@ -28,6 +28,7 @@ pub enum NetworkData {
     Message(Tick, String),
     Game(Tick, NetworkGame),
     SeedInfo(Tick, SeedInfo),
+    RelayerMessageToTeam(Tick, String, TeamId),
 }
 
 #[derive(Debug, Clone, Display, Default, Serialize, Deserialize, PartialEq, Hash)]

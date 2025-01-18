@@ -1,31 +1,30 @@
-use std::collections::HashMap;
-
 use crate::network::constants::{DEFAULT_SEED_PORT, TOPIC};
 use crate::network::types::{NetworkData, PlayerRanking, TeamRanking};
 use crate::network::{handler::NetworkHandler, types::SeedInfo};
 use crate::store::{
-    deserialize, load_player_ranking, load_team_ranking, save_player_ranking, save_team_ranking,
+    deserialize, load_player_ranking, load_relayer_messages, load_team_ranking,
+    save_player_ranking, save_team_ranking,
 };
-use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId, Tick};
-use crate::world::constants::*;
+use crate::types::{AppResult, PlayerId, TeamId};
 use futures::StreamExt;
 use itertools::Itertools;
 use libp2p::gossipsub::IdentTopic;
 use libp2p::{gossipsub, swarm::SwarmEvent};
+use std::collections::HashMap;
 use tokio::select;
 
-const SEED_INFO_INTERVAL_MILLIS: Tick = 60 * SECONDS;
 const TOP_PLAYER_RANKING_LENGTH: usize = 20;
 const TOP_TEAM_RANKING_LENGTH: usize = 10;
 
 pub struct Relayer {
     pub running: bool,
     network_handler: NetworkHandler,
-    last_seed_info_tick: Tick,
     team_ranking: HashMap<TeamId, TeamRanking>,
     top_team_ranking: Vec<(TeamId, TeamRanking)>,
     player_ranking: HashMap<PlayerId, PlayerRanking>,
     top_player_ranking: Vec<(PlayerId, PlayerRanking)>,
+    messages: Vec<String>,
+    last_message_sent_to_team: HashMap<TeamId, usize>,
 }
 
 impl Relayer {
@@ -106,11 +105,12 @@ impl Relayer {
             running: true,
             network_handler: NetworkHandler::new(None, DEFAULT_SEED_PORT)
                 .expect("Failed to initialize network handler"),
-            last_seed_info_tick: Tick::now(),
             team_ranking,
             top_team_ranking,
             player_ranking,
             top_player_ranking,
+            messages: Vec::new(),
+            last_message_sent_to_team: HashMap::new(),
         }
     }
 
@@ -124,17 +124,6 @@ impl Relayer {
                             log::error!("Error handling network event: {:?}", result);
                         }
                 }
-            }
-
-            let now = Tick::now();
-            if now - self.last_seed_info_tick > SEED_INFO_INTERVAL_MILLIS {
-                self.network_handler.send_seed_info(SeedInfo::new(
-                    self.network_handler.swarm.connected_peers().count(),
-                    None,
-                    self.top_team_ranking.clone(),
-                    self.top_player_ranking.clone(),
-                )?)?;
-                self.last_seed_info_tick = now;
             }
         }
         Ok(())
@@ -169,6 +158,16 @@ impl Relayer {
                             if current_ranking.timestamp >= timestamp {
                                 return Ok(());
                             }
+                        } else {
+                            self.network_handler.send_seed_info(SeedInfo::new(
+                                self.network_handler.swarm.connected_peers().count(),
+                                Some(format!(
+                                    "A new crew has started roaming the galaxy: {}",
+                                    network_team.team.name
+                                )),
+                                self.top_team_ranking.clone(),
+                                self.top_player_ranking.clone(),
+                            )?)?;
                         }
 
                         let ranking = TeamRanking::from_network_team(timestamp, &network_team);
@@ -200,6 +199,29 @@ impl Relayer {
 
                         self.top_team_ranking = self.get_top_team_ranking();
                         self.top_player_ranking = self.get_top_player_ranking();
+
+                        // Check if there are new messages to send and append them to self.messages.
+                        self.messages.extend(load_relayer_messages()?);
+
+                        // Send messages starting from last sent message.
+                        let last_message_sent = self
+                            .last_message_sent_to_team
+                            .get(&network_team.team.id)
+                            .unwrap_or(&0);
+
+                        for (index, message) in self.messages.iter().enumerate() {
+                            if index < *last_message_sent {
+                                continue;
+                            }
+
+                            self.network_handler.send_relayer_message_to_team(
+                                message.clone(),
+                                network_team.team.id,
+                            )?;
+                        }
+
+                        self.last_message_sent_to_team
+                            .insert(network_team.team.id, self.messages.len());
                     }
                     _ => {}
                 }

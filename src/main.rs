@@ -25,6 +25,8 @@ struct Args {
     reset_world: bool,
     #[clap(long, short='f', action=ArgAction::SetFalse, help = "Disable generating local teams")]
     generate_local_world: bool,
+    #[clap(long, short='u', action=ArgAction::SetFalse, help = "Disable input reader (need to run with bots)")]
+    with_input_reader: bool,
     #[clap(long, short='n', action=ArgAction::SetTrue, help = "Run in network relayer mode (no game)")]
     relayer_mode: bool,
     #[clap(long, short='j', action=ArgAction::SetTrue, help = "Run SSH server")]
@@ -72,7 +74,7 @@ async fn main() -> AppResult<()> {
             Some(args.network_port.unwrap_or(DEFAULT_PORT))
         };
 
-        let events = CrosstermEventHandler::new(args.target_fps);
+        let events = CrosstermEventHandler::new(args.target_fps, args.with_input_reader);
         let tui = Tui::new_local(events)?;
 
         App::new(

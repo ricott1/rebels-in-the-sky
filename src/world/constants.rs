@@ -1,4 +1,3 @@
-use super::skill::MAX_SKILL;
 use crate::{
     game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
     types::{PlanetId, Tick},
@@ -44,8 +43,8 @@ pub const REPUTATION_PER_EXPERIENCE: f32 = 0.0001;
 pub const REPUTATION_DECREASE_PER_LONG_TICK: f32 = -0.15;
 pub const AGE_INCREASE_PER_LONG_TICK: f32 = 0.1; // 1 year every 10 LONG_TICK
 
-pub const INCOME_PER_ATTENDEE_HOME: u32 = 36;
-pub const INCOME_PER_ATTENDEE_AWAY: u32 = 36;
+pub const INCOME_PER_ATTENDEE_HOME: u32 = 18;
+pub const INCOME_PER_ATTENDEE_AWAY: u32 = 18;
 
 pub const INITIAL_TEAM_BALANCE: u32 = 120_000;
 pub const COST_PER_VALUE: f32 = 120.0;
@@ -103,7 +102,7 @@ pub struct TirednessCost;
 impl TirednessCost {
     pub const NONE: f32 = 0.0;
     pub const LOW: f32 = 0.005;
-    pub const MEDIUM: f32 = 0.15;
+    pub const MEDIUM: f32 = 0.2;
     pub const HIGH: f32 = 0.5;
     pub const SEVERE: f32 = 2.5;
     pub const CRITICAL: f32 = 5.0;
@@ -137,14 +136,12 @@ impl ReputationModifier {
     pub const BONUS_PER_DISTANCE: f32 = 0.000002;
 }
 
-pub const MAX_TIREDNESS: f32 = MAX_SKILL;
-pub const MAX_MORALE: f32 = MAX_SKILL;
 pub const MORALE_DECREASE_PER_LONG_TICK: f32 = MoraleModifier::MEDIUM_MALUS;
 pub const MORALE_INCREASE_PER_GAME: f32 = MoraleModifier::SEVERE_BONUS;
 pub const MORALE_RELEASE_MALUS: f32 = MoraleModifier::MEDIUM_MALUS;
 pub const MORALE_THRESHOLD_FOR_LEAVING: f32 = 2.0;
 pub const LEAVING_PROBABILITY_MORALE_MODIFIER: f64 =
-    0.025 * (1.0 / MORALE_THRESHOLD_FOR_LEAVING) as f64;
+    0.015 * (1.0 / MORALE_THRESHOLD_FOR_LEAVING) as f64;
 pub const MORALE_DEMOTION_MALUS: f32 = MoraleModifier::MEDIUM_MALUS;
 pub const MORALE_GAME_POPULATION_MODIFIER: f32 = 0.5;
 pub const MORALE_DRINK_BONUS: f32 = MoraleModifier::HIGH_BONUS;

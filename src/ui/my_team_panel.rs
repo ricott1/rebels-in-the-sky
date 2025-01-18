@@ -2278,6 +2278,13 @@ impl Screen for MyTeamPanel {
 
         None
     }
+
+    fn footer_spans(&self) -> Vec<String> {
+        vec![
+            format!(" {} ", UiKey::CYCLE_VIEW.to_string()),
+            " Next tab ".to_string(),
+        ]
+    }
 }
 
 impl SplitPanel for MyTeamPanel {

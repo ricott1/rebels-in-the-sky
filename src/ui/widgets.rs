@@ -47,7 +47,7 @@ pub const DOWN_RIGHT_ARROW_SPAN: Lazy<Span<'static>> =
 pub const SWITCH_ARROW_SPAN: Lazy<Span<'static>> =
     Lazy::new(|| Span::styled("⇆", Style::default().fg(Color::Yellow)));
 
-#[derive(Debug, Default, Display, Clone, Copy)]
+#[derive(Debug, Default, Display, Clone, Copy, PartialEq)]
 pub enum PlayerWidgetView {
     #[default]
     Skills,
@@ -604,8 +604,7 @@ pub fn get_crew_spans<'a>(crew_size: usize, crew_capacity: usize) -> Vec<Span<'a
 }
 
 pub fn get_energy_spans<'a>(average_tiredness: f32) -> Vec<Span<'a>> {
-    let tiredness_length =
-        (average_tiredness / MAX_TIREDNESS * BARS_LENGTH as f32).round() as usize;
+    let tiredness_length = (average_tiredness / MAX_SKILL * BARS_LENGTH as f32).round() as usize;
     let energy_string = format!(
         "{}{}",
         "▰".repeat(BARS_LENGTH.saturating_sub(tiredness_length)),
@@ -614,7 +613,7 @@ pub fn get_energy_spans<'a>(average_tiredness: f32) -> Vec<Span<'a>> {
     let energy_style = match average_tiredness {
         x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::OK,
         x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
-        x if x < MAX_TIREDNESS => UiStyle::ERROR,
+        x if x < MAX_SKILL => UiStyle::ERROR,
         _ => UiStyle::UNSELECTABLE,
     };
 
@@ -1124,6 +1123,7 @@ pub fn render_player_description(
             Trait::Relentless => UiStyle::TRAIT_RELENTLESS,
             Trait::Showpirate => UiStyle::TRAIT_SHOWPIRATE,
             Trait::Spugna => UiStyle::TRAIT_SPUGNA,
+            Trait::Crumiro => UiStyle::TRAIT_CRUMIRO,
         };
         Span::styled(format!("{t}"), trait_style)
     } else {
@@ -1150,14 +1150,14 @@ pub fn render_player_description(
     frame.render_interactive(line, header_body_stats[1]);
 
     let morale = player.current_morale(world);
-    let morale_length = (morale / MAX_MORALE * BARS_LENGTH as f32).round() as usize;
+    let morale_length = (morale / MAX_SKILL * BARS_LENGTH as f32).round() as usize;
     let morale_string = format!(
         "{}{}",
         "▰".repeat(morale_length),
         "▱".repeat(BARS_LENGTH.saturating_sub(morale_length)),
     );
     let morale_style = match morale {
-        x if x > 1.75 * MORALE_THRESHOLD_FOR_LEAVING => UiStyle::OK,
+        x if x > 5.0 * MORALE_THRESHOLD_FOR_LEAVING => UiStyle::OK,
         x if x > MORALE_THRESHOLD_FOR_LEAVING => UiStyle::WARNING,
         x if x > MIN_SKILL => UiStyle::ERROR,
         _ => UiStyle::UNSELECTABLE,
@@ -1181,7 +1181,7 @@ pub fn render_player_description(
     );
 
     let tiredness = player.current_tiredness(world);
-    let tiredness_length = (tiredness / MAX_TIREDNESS * BARS_LENGTH as f32).round() as usize;
+    let tiredness_length = (tiredness / MAX_SKILL * BARS_LENGTH as f32).round() as usize;
     let energy_string = format!(
         "{}{}",
         "▰".repeat(BARS_LENGTH.saturating_sub(tiredness_length)),
@@ -1190,7 +1190,7 @@ pub fn render_player_description(
     let energy_style = match tiredness {
         x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::OK,
         x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
-        x if x < MAX_TIREDNESS => UiStyle::ERROR,
+        x if x < MAX_SKILL => UiStyle::ERROR,
         _ => UiStyle::UNSELECTABLE,
     };
 
@@ -1198,7 +1198,7 @@ pub fn render_player_description(
         HoverTextLine::from(vec![
             HoverTextSpan::new(
                 Span::raw("Energy ".to_string()),
-                format!("Energy affects player's performance in a game. When the energy goes to 0, the player is exhausted and will fail most game actions. (current value {:.2})", (MAX_TIREDNESS-tiredness)),
+                format!("Energy affects player's performance in a game. When the energy goes to 0, the player is exhausted and will fail most game actions. (current value {:.2})", (MAX_SKILL-tiredness)),
             ),
             HoverTextSpan::new(Span::styled( energy_string, energy_style),"", 
            ),

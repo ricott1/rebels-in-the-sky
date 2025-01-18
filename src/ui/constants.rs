@@ -117,6 +117,7 @@ impl UiStyle {
     pub const TRAIT_SHOWPIRATE: Style = DEFAULT_STYLE.fg(Color::Magenta);
     pub const TRAIT_RELENTLESS: Style = DEFAULT_STYLE.fg(Color::Blue);
     pub const TRAIT_SPUGNA: Style = DEFAULT_STYLE.fg(Color::LightRed);
+    pub const TRAIT_CRUMIRO: Style = DEFAULT_STYLE.fg(Color::Rgb(212, 175, 55));
 }
 
 pub struct UiText;

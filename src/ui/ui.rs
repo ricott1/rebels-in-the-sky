@@ -483,9 +483,9 @@ impl Ui {
         if !self.debug_view && self.state == UiState::Main {
             spans.extend(vec![
                 format!(" {} ", UiKey::PREVIOUS_TAB.to_string()),
-                " Previous tab ".to_string(),
+                " Previous panel ".to_string(),
                 format!(" {} ", UiKey::NEXT_TAB.to_string()),
-                " Next tab ".to_string(),
+                " Next panel ".to_string(),
             ]);
         }
 

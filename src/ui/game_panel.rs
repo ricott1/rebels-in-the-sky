@@ -13,7 +13,8 @@ use super::{
 };
 use crate::game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE;
 use crate::types::{AppResult, SystemTimeTick, Tick};
-use crate::world::constants::{MAX_MORALE, MAX_PLAYERS_PER_GAME, MORALE_THRESHOLD_FOR_LEAVING};
+use crate::world::constants::{MAX_PLAYERS_PER_GAME, MORALE_THRESHOLD_FOR_LEAVING};
+use crate::world::skill::MAX_SKILL;
 use crate::{
     game_engine::{
         action::{ActionOutput, ActionSituation, Advantage},
@@ -26,7 +27,6 @@ use crate::{
     types::GameId,
     ui::constants::*,
     world::{
-        constants::MAX_TIREDNESS,
         planet::PlanetType,
         player::Player,
         position::{GamePosition, Position},
@@ -628,7 +628,7 @@ impl GamePanel {
                 let style = match player.tiredness {
                     x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::DEFAULT,
                     x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
-                    x if x < MAX_TIREDNESS => UiStyle::ERROR,
+                    x if x < MAX_SKILL => UiStyle::ERROR,
                     _ => UiStyle::UNSELECTABLE,
                 };
 
@@ -734,21 +734,21 @@ impl GamePanel {
                 let style = match player.tiredness {
                     x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::DEFAULT,
                     x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
-                    x if x < MAX_TIREDNESS => UiStyle::ERROR,
+                    x if x < MAX_SKILL => UiStyle::ERROR,
                     _ => UiStyle::UNSELECTABLE,
                 };
 
                 Span::styled(player.info.shortened_name(), style)
             };
 
-            let morale_length = (player.morale / MAX_MORALE * bars_length as f32).round() as usize;
+            let morale_length = (player.morale / MAX_SKILL * bars_length as f32).round() as usize;
             let morale_string = format!(
                 "{}{}",
                 "▰".repeat(morale_length),
                 "▱".repeat(bars_length - morale_length),
             );
             let morale_style = match player.morale {
-                x if x > 1.75 * MORALE_THRESHOLD_FOR_LEAVING => UiStyle::OK,
+                x if x > 5.0 * MORALE_THRESHOLD_FOR_LEAVING => UiStyle::OK,
                 x if x > MORALE_THRESHOLD_FOR_LEAVING => UiStyle::WARNING,
                 x if x > 0.0 => UiStyle::ERROR,
                 _ => UiStyle::UNSELECTABLE,
@@ -756,7 +756,7 @@ impl GamePanel {
             let morale_span = Span::styled(morale_string, morale_style);
 
             let tiredness_length =
-                (player.tiredness / MAX_TIREDNESS * bars_length as f32).round() as usize;
+                (player.tiredness / MAX_SKILL * bars_length as f32).round() as usize;
             let energy_string = format!(
                 "{}{}",
                 "▰".repeat(bars_length - tiredness_length),
@@ -765,7 +765,7 @@ impl GamePanel {
             let energy_style = match player.tiredness {
                 x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::OK,
                 x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
-                x if x < MAX_TIREDNESS => UiStyle::ERROR,
+                x if x < MAX_SKILL => UiStyle::ERROR,
                 _ => UiStyle::UNSELECTABLE,
             };
             let energy_span = Span::styled(energy_string, energy_style);
@@ -801,7 +801,9 @@ impl GamePanel {
             timer_lines.push(Line::from(Timer::from(timer.period().start()).format()));
             timer_lines.push(Line::from(format!(
                 "Starting in {}",
-                (game.starting_at - world.last_tick_short_interval).formatted()
+                game.starting_at
+                    .saturating_sub(world.last_tick_short_interval)
+                    .formatted()
             )));
         } else if timer.has_ended() {
             timer_lines.push(Line::from(Timer::from(timer.period().end()).format()));

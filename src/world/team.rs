@@ -55,9 +55,6 @@ pub struct Team {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub asteroid_ids: Vec<PlanetId>,
-    #[serde(skip_serializing)] // To be removed in next version
-    #[serde(default)]
-    pub extra_teleportation_pods: Vec<PlanetId>,
     pub current_location: TeamLocation,
     pub peer_id: Option<PeerId>,
     pub current_game: Option<GameId>,
@@ -83,6 +80,9 @@ pub struct Team {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub number_of_space_adventures: usize,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub auto_accept_network_challenges: bool,
 }
 
 impl Team {
@@ -113,10 +113,15 @@ impl Team {
     }
 
     pub fn can_teleport_to(&self, to: &Planet) -> bool {
-        self.home_planet_id == to.id
+        let rum_required = self.player_ids.len() as u32;
+        let has_rum = self.resources.value(&Resource::RUM) >= rum_required;
+
+        let has_teleportation_pad = self.home_planet_id == to.id
             || to
                 .upgrades
-                .contains(&AsteroidUpgradeTarget::TeleportationPad)
+                .contains(&AsteroidUpgradeTarget::TeleportationPad);
+
+        has_rum && has_teleportation_pad
     }
 
     pub fn add_sent_challenge(&mut self, challenge: Challenge) {
@@ -467,23 +472,31 @@ impl Team {
             return Err(anyhow!("Planet {} is inhabitable", planet.name));
         }
 
-        // If we can't get there with full tank, than the planet is too far.
-        let max_fuel = self.fuel_capacity();
+        let is_teleporting = if duration == 0 { true } else { false };
 
-        let fuel_consumption =
-            (duration as f64 * self.spaceship_fuel_consumption_per_tick() as f64).ceil() as u32;
+        if is_teleporting {
+            if !self.can_teleport_to(planet) {
+                return Err(anyhow!("Cannot teleport to planet {}", planet.name));
+            }
+        } else {
+            // If we can't get there with full tank, than the planet is too far.
+            let max_fuel = self.fuel_capacity();
 
-        if fuel_consumption > max_fuel {
-            return Err(anyhow!("Planet {} is too far", planet.name));
-        }
+            let fuel_consumption =
+                (duration as f64 * self.spaceship_fuel_consumption_per_tick() as f64).ceil() as u32;
 
-        // Else we check that we can go there with the current fuel.
-        // Note: this check seems wrong because there is a minimal consumption of 1 tonne of fuel for each travel,
-        //       regardless of the distance. However, this is only relevant if the current fuel is 0, in which case
-        //       any travel duration larger than 0 would fail this check.
-        let current_fuel = self.fuel();
-        if fuel_consumption > current_fuel {
-            return Err(anyhow!("Not enough fuel"));
+            if fuel_consumption > max_fuel {
+                return Err(anyhow!("Planet {} is too far", planet.name));
+            }
+
+            // Else we check that we can go there with the current fuel.
+            // Note: this check seems wrong because there is a minimal consumption of 1 tonne of fuel for each travel,
+            //       regardless of the distance. However, this is only relevant if the current fuel is 0, in which case
+            //       any travel duration larger than 0 would fail this check.
+            let current_fuel = self.fuel();
+            if fuel_consumption > current_fuel {
+                return Err(anyhow!("Not enough fuel"));
+            }
         }
 
         Ok(())

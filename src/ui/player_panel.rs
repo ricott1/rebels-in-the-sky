@@ -360,7 +360,11 @@ impl PlayerListPanel {
         let player_widget_view_button = Button::new(
             format!(
                 "View {}",
-                self.player_widget_view.to_string().to_lowercase()
+                if self.player_widget_view == PlayerWidgetView::Skills {
+                    PlayerWidgetView::Stats.to_string().to_lowercase()
+                } else {
+                    PlayerWidgetView::Skills.to_string().to_lowercase()
+                }
             ),
             UiCallback::TogglePlayerWidgetView,
         )
@@ -631,6 +635,13 @@ impl Screen for PlayerListPanel {
             _ => {}
         }
         None
+    }
+
+    fn footer_spans(&self) -> Vec<String> {
+        vec![
+            format!(" {} ", UiKey::CYCLE_VIEW.to_string()),
+            " Next tab ".to_string(),
+        ]
     }
 }
 

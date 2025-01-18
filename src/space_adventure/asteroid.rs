@@ -129,6 +129,7 @@ pub struct AsteroidEntity {
     orientation: f32,
     rotation_speed: f32,
     visual_effects: VisualEffectMap,
+    gold_fragment_probability: f64,
 }
 
 impl Body for AsteroidEntity {
@@ -344,7 +345,8 @@ impl Entity for AsteroidEntity {
                                     amount: 1,
                                 });
                             }
-                            if should_emit_fragments && rng.gen_bool(0.01) {
+                            if should_emit_fragments && rng.gen_bool(self.gold_fragment_probability)
+                            {
                                 callbacks.push(SpaceCallback::GenerateFragment {
                                     position,
                                     velocity: Vec2::new(
@@ -456,7 +458,12 @@ impl AsteroidEntity {
         self.orientation as usize % MAX_ROTATION
     }
 
-    pub fn new(position: Vec2, velocity: Vec2, size: AsteroidSize) -> Self {
+    pub fn new(
+        position: Vec2,
+        velocity: Vec2,
+        size: AsteroidSize,
+        gold_fragment_probability: f64,
+    ) -> Self {
         let rng = &mut ChaCha8Rng::from_entropy();
 
         let rotation_speed = if size == AsteroidSize::Planet {
@@ -473,11 +480,12 @@ impl AsteroidEntity {
             durability: size.durability(),
             position,
             velocity,
+            gold_fragment_probability,
             ..Default::default()
         }
     }
 
-    pub fn new_at_screen_edge() -> Self {
+    pub fn new_at_screen_edge(gold_fragment_probability: f64) -> Self {
         let rng = &mut ChaCha8Rng::from_entropy();
 
         let &size = [AsteroidSize::Small, AsteroidSize::Big, AsteroidSize::Huge]
@@ -519,7 +527,7 @@ impl AsteroidEntity {
             _ => unreachable!(),
         };
 
-        Self::new(position, velocity, size)
+        Self::new(position, velocity, size, gold_fragment_probability)
     }
 
     pub fn planet() -> Self {
@@ -530,7 +538,12 @@ impl AsteroidEntity {
         let vx = rng.gen_range(-4.0..-3.0);
         let vy = rng.gen_range(-0.25..0.25);
 
-        Self::new(Vec2::new(x, y), Vec2::new(vx, vy), AsteroidSize::Planet)
+        Self::new(
+            Vec2::new(x, y),
+            Vec2::new(vx, vy),
+            AsteroidSize::Planet,
+            0.0,
+        )
     }
 
     pub fn durability(&self) -> f32 {

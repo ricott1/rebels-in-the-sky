@@ -28,38 +28,42 @@ impl EventHandler for CrosstermEventHandler {
 impl CrosstermEventHandler {
     const DEFAULT_FPS: u8 = 30;
 
-    pub fn new(fps: Option<u8>) -> Self {
+    pub fn new(fps: Option<u8>, with_input_reader: bool) -> Self {
         let fps = fps.unwrap_or(CrosstermEventHandler::DEFAULT_FPS);
         let time_step_millis: Tick = (1000.0 / fps as f32) as Tick;
         let time_step: Duration = Duration::from_millis(time_step_millis as u64);
-        let (sender, receiver) = mpsc::channel(1);
+        let (sender, receiver) = mpsc::channel(100);
         let handler = {
             let sender = sender.clone();
             let mut last_tick = Tick::now();
             tokio::task::spawn(async move {
                 loop {
-                    if event::poll(time_step).expect("no events available") {
-                        let result = match event::read().expect("unable to read event") {
-                            CrosstermEvent::Key(key) => {
-                                if key.kind == KeyEventKind::Press {
-                                    sender.send(TerminalEvent::Key(key)).await
-                                } else {
+                    if with_input_reader {
+                        if event::poll(time_step).expect("no events available") {
+                            let result = match event::read().expect("unable to read event") {
+                                CrosstermEvent::Key(key) => {
+                                    if key.kind == KeyEventKind::Press {
+                                        sender.send(TerminalEvent::Key(key)).await
+                                    } else {
+                                        Ok(())
+                                    }
+                                }
+                                CrosstermEvent::Mouse(e) => {
+                                    sender.send(TerminalEvent::Mouse(e)).await
+                                }
+                                CrosstermEvent::Resize(w, h) => {
+                                    sender.send(TerminalEvent::Resize(w, h)).await
+                                }
+                                _ => {
+                                    log::info!("Crossterm event not implemented");
                                     Ok(())
                                 }
-                            }
-                            CrosstermEvent::Mouse(e) => sender.send(TerminalEvent::Mouse(e)).await,
-                            CrosstermEvent::Resize(w, h) => {
-                                sender.send(TerminalEvent::Resize(w, h)).await
-                            }
-                            _ => {
-                                log::info!("Crossterm event not implemented");
-                                Ok(())
-                            }
-                        };
+                            };
 
-                        if let Err(e) = result {
-                            log::error!("Failed to send terminal event: {e}");
-                            break;
+                            if let Err(e) = result {
+                                log::error!("Failed to send terminal event: {e}");
+                                break;
+                            }
                         }
                     }
 

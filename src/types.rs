@@ -194,10 +194,7 @@ pub trait SystemTimeTick {
 
 impl SystemTimeTick for Tick {
     fn now() -> Self {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Invalid system time")
-            .as_millis() as Tick
+        Self::from_system_time(SystemTime::now())
     }
 
     fn from_system_time(time: SystemTime) -> Tick {
@@ -264,7 +261,6 @@ impl SystemTimeTick for Tick {
     }
 }
 
-// Write tests here
 #[cfg(test)]
 mod tests {
     use super::{AppResult, ResourceMap, StorableResourceMap};

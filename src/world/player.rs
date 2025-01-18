@@ -10,7 +10,7 @@ use super::{
     world::World,
 };
 use crate::{
-    game_engine::{constants::MIN_TIREDNESS_FOR_ROLL_DECLINE, types::GameStats},
+    game_engine::types::GameStats,
     image::{player::PlayerImage, types::Gif},
     types::{AppResult, PlanetId, PlayerId, StorableResourceMap, TeamId},
     world::{
@@ -666,7 +666,7 @@ impl Player {
             skills_training: [Skill::default(); 20],
             previous_skills: [Skill::default(); 20],
             tiredness: 0.0,
-            morale: MAX_MORALE,
+            morale: MAX_SKILL,
             historical_stats: GameStats::default(),
         };
 
@@ -879,49 +879,34 @@ impl Player {
     }
 
     pub fn is_knocked_out(&self) -> bool {
-        self.tiredness == MAX_TIREDNESS
+        self.tiredness == MAX_SKILL
     }
 
     pub fn add_tiredness(&mut self, tiredness: f32) {
         let max_tiredness = if self.special_trait == Some(Trait::Relentless) {
-            MAX_TIREDNESS - 1.0
+            0.8 * MAX_SKILL
+        } else if self.special_trait == Some(Trait::Crumiro) {
+            0.85 * MAX_SKILL
         } else {
-            MAX_TIREDNESS
+            MAX_SKILL
         };
-        self.tiredness = (self.tiredness
-            + tiredness / (1.0 + self.athletics.stamina / MAX_TIREDNESS))
+
+        self.tiredness = (self.tiredness + tiredness / (1.0 + self.athletics.stamina / MAX_SKILL))
             .min(max_tiredness)
             .bound();
 
         if self.is_knocked_out() {
-            self.morale = 0.0;
+            self.morale = MIN_SKILL;
         }
     }
 
     pub fn add_morale(&mut self, morale: f32) {
-        self.morale = (self.morale + morale).bound();
-    }
-
-    fn min_roll(&self) -> u8 {
-        (self.morale / 2.0) as u8
-    }
-
-    fn max_roll(&self) -> u8 {
-        if self.tiredness == MAX_TIREDNESS {
-            return 0;
-        }
-
-        if self.tiredness <= MIN_TIREDNESS_FOR_ROLL_DECLINE {
-            return 2 * MAX_SKILL as u8;
-        }
-
-        2 * (MAX_TIREDNESS - (self.tiredness - MIN_TIREDNESS_FOR_ROLL_DECLINE)) as u8
-    }
-
-    pub fn roll(&self, rng: &mut ChaCha8Rng) -> u8 {
-        rng.gen_range(MIN_SKILL as u8..=2 * MAX_SKILL as u8)
-            .max(self.min_roll())
-            .min(self.max_roll())
+        let min_morale = if self.special_trait == Some(Trait::Crumiro) {
+            0.15 * MAX_SKILL
+        } else {
+            MIN_SKILL
+        };
+        self.morale = (self.morale + morale).max(min_morale).bound();
     }
 
     pub fn modify_skill(&mut self, idx: usize, mut value: f32) {
@@ -1039,14 +1024,14 @@ impl Player {
         if self.is_knocked_out() {
             return 0.0;
         }
-        position.player_rating(self.current_skill_array()) * (MAX_TIREDNESS - self.tiredness / 2.0)
+        position.player_rating(self.current_skill_array()) * (MAX_SKILL - self.tiredness / 2.0)
     }
 
     pub fn tiredness_weighted_rating(&self) -> f32 {
         if self.is_knocked_out() {
             return 0.0;
         }
-        self.average_skill() * (MAX_TIREDNESS - self.tiredness / 2.0)
+        self.average_skill() * (MAX_SKILL - self.tiredness / 2.0)
     }
 }
 
@@ -1158,6 +1143,7 @@ pub enum Trait {
     Relentless,
     Showpirate,
     Spugna,
+    Crumiro,
 }
 
 impl Trait {
@@ -1175,27 +1161,16 @@ impl Trait {
                 )
             }
             Trait::Spugna => format!("Immediately maximizes morale when drinking. It is said that a drunk pilot could bring you somewhere unexpected...",),
+            Trait::Crumiro => format!("Legendary trait of the emperor's crew members"),
         }
     }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::{app::App, types::AppResult, world::skill::Rated};
     use itertools::Itertools;
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
     use serde::{Deserialize, Serialize};
-
-    use crate::{
-        app::App,
-        types::{AppResult, PlanetId, PlayerId},
-        world::{
-            skill::{Rated, MAX_SKILL, MIN_SKILL},
-            types::Population,
-        },
-    };
-
-    use super::Player;
 
     #[test]
     fn test_bare_value() -> AppResult<()> {
@@ -1225,47 +1200,6 @@ mod test {
         }
 
         Ok(())
-    }
-
-    #[test]
-    fn test_roll() {
-        fn print_player_rolls(player: &Player, rng: &mut ChaCha8Rng) {
-            let roll = player.roll(rng);
-            println!(
-                "Tiredness={} Morale={} => Min={:2} Max={:2} Roll={:2}",
-                player.tiredness,
-                player.morale,
-                player.min_roll(),
-                player.max_roll(),
-                roll
-            );
-            assert!(player.max_roll() >= roll);
-            if player.max_roll() >= player.min_roll() {
-                assert!(player.min_roll() <= roll);
-            }
-        }
-        let rng = &mut ChaCha8Rng::from_entropy();
-        let population = Population::default();
-        let mut player = Player::random(
-            rng,
-            PlayerId::new_v4(),
-            None,
-            population,
-            &PlanetId::default(),
-            0.0,
-        );
-
-        print_player_rolls(&player, rng);
-
-        player.tiredness = MAX_SKILL;
-        print_player_rolls(&player, rng);
-
-        player.morale = MIN_SKILL;
-        print_player_rolls(&player, rng);
-
-        player.tiredness = MIN_SKILL;
-        player.morale = MIN_SKILL;
-        print_player_rolls(&player, rng);
     }
 
     #[ignore]

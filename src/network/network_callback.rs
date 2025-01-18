@@ -3,7 +3,7 @@ use super::trade::Trade;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::game_engine::types::TeamInGame;
 use crate::store::deserialize;
-use crate::types::{AppResult, SystemTimeTick, Tick};
+use crate::types::{AppResult, SystemTimeTick, TeamId, Tick};
 use crate::ui::popup_message::PopupMessage;
 use crate::ui::utils::SwarmPanelEvent;
 use crate::world::constants::NETWORK_GAME_START_DELAY;
@@ -11,6 +11,9 @@ use crate::{app::App, types::AppCallback};
 use anyhow::anyhow;
 use libp2p::gossipsub::TopicHash;
 use libp2p::{gossipsub::Message, Multiaddr, PeerId};
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 
 #[derive(Debug, Clone)]
 pub enum NetworkCallback {
@@ -181,6 +184,24 @@ impl NetworkCallback {
         })
     }
 
+    fn handle_relayer_message_to_team_topic(
+        timestamp: Tick,
+        message: String,
+        team_id: TeamId,
+    ) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            if app.world.own_team_id == team_id {
+                app.ui.push_popup(PopupMessage::Ok {
+                    message: message.clone(),
+                    is_skippable: false,
+                    tick: timestamp,
+                });
+            }
+
+            Ok(None)
+        })
+    }
+
     fn handle_game_topic(
         peer_id: Option<PeerId>,
         timestamp: Tick,
@@ -285,7 +306,7 @@ impl NetworkCallback {
             let network_handler = app
                 .network_handler
                 .as_mut()
-                .expect("The should be a network handler");
+                .expect("There should be a network handler");
 
             let self_peer_id = network_handler.swarm.local_peer_id();
             match &trade.state {
@@ -496,7 +517,7 @@ impl NetworkCallback {
             let network_handler = app
                 .network_handler
                 .as_mut()
-                .expect("The should be a network handler");
+                .expect("There should be a network handler");
 
             let event = SwarmPanelEvent {
                 timestamp,
@@ -517,6 +538,14 @@ impl NetworkCallback {
                     }
 
                     let own_team = app.world.get_own_team_mut()?;
+
+                    if own_team.auto_accept_network_challenges {
+                        let rng = &mut ChaCha8Rng::from_entropy();
+                        own_team.player_ids.shuffle(rng);
+                        network_handler.accept_challenge(&app.world, challenge.clone())?;
+                        return Ok(Some("Challenge received.\nAuto accepted".to_string()));
+                    }
+
                     own_team.add_received_challenge(challenge.clone());
 
                     return Ok(Some(
@@ -758,6 +787,9 @@ impl NetworkCallback {
                     }
                     NetworkData::SeedInfo(timestamp, seed_info) => {
                         Self::handle_seed_topic(peer_id, timestamp, seed_info)(app)
+                    }
+                    NetworkData::RelayerMessageToTeam(timestamp, message, team_id) => {
+                        Self::handle_relayer_message_to_team_topic(timestamp, message, team_id)(app)
                     }
                 }
             }

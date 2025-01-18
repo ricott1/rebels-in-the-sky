@@ -711,14 +711,21 @@ impl UiCallback {
                 distance,
             };
 
-            // For simplicity we just subtract the fuel upfront, maybe would be nicer on UI to
-            // show the fuel consumption as the team travels in world.tick_travel,
-            // but this would require more operations and checks in the tick function.
-            // fixme: centralize fuel cost calculation
-            let fuel_consumed = app
-                .world
-                .fuel_consumption_to_planet(own_team.id, planet_id)?;
-            own_team.sub_resource(Resource::FUEL, fuel_consumed)?;
+            let is_teleporting = if duration == 0 { true } else { false };
+
+            if is_teleporting {
+                let rum_consumed = own_team.player_ids.len() as u32;
+                own_team.sub_resource(Resource::RUM, rum_consumed)?;
+            } else {
+                // For simplicity we just subtract the fuel upfront, maybe would be nicer on UI to
+                // show the fuel consumption as the team travels in world.tick_travel,
+                // but this would require more operations and checks in the tick function.
+                // FIXME: centralize fuel cost calculation
+                let fuel_consumed = app
+                    .world
+                    .fuel_consumption_to_planet(own_team.id, planet_id)?;
+                own_team.sub_resource(Resource::FUEL, fuel_consumed)?;
+            }
 
             info!(
                 "Team {:?} is travelling from {:?} to {:?}, consuming {:.2} fuel",
@@ -823,7 +830,7 @@ impl UiCallback {
             app.network_handler
                 .as_mut()
                 .ok_or(anyhow!("Network handler is not initialized"))?
-                .send_msg(message.clone())?;
+                .send_message(message.clone())?;
 
             Ok(None)
         })
@@ -1440,13 +1447,24 @@ impl UiCallback {
                 let weapons_bonus =
                     TeamBonus::Weapons.current_team_bonus(&app.world, &own_team.id)?;
 
-                let space = SpaceAdventure::new(should_spawn_asteroid)?.with_player(
-                    &own_team.spaceship,
-                    own_team.resources.clone(),
-                    speed_bonus,
-                    weapons_bonus,
-                    own_team.fuel(),
-                )?;
+                let gold_fragment_probability = match own_team.current_location {
+                    TeamLocation::OnPlanet { planet_id } => {
+                        let current_planet = app.world.get_planet_or_err(&planet_id)?;
+                        0.001
+                            + 0.075 * (current_planet.resources.value(&Resource::GOLD) as f64)
+                                / MAX_SKILL as f64
+                    }
+                    _ => unreachable!(),
+                };
+
+                let space = SpaceAdventure::new(should_spawn_asteroid, gold_fragment_probability)?
+                    .with_player(
+                        &own_team.spaceship,
+                        own_team.resources.clone(),
+                        speed_bonus,
+                        weapons_bonus,
+                        own_team.fuel(),
+                    )?;
 
                 match own_team.current_location {
                     TeamLocation::OnPlanet { planet_id } => {

@@ -532,6 +532,8 @@ impl Screen for TeamListPanel {
 
     fn footer_spans(&self) -> Vec<String> {
         vec![
+            format!(" {} ", UiKey::CYCLE_VIEW.to_string()),
+            " Next tab ".to_string(),
             format!(
                 " {}/{} ",
                 UiKey::PREVIOUS_SELECTION.to_string(),

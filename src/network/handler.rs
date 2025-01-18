@@ -164,8 +164,20 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub fn send_msg(&mut self, msg: String) -> AppResult<MessageId> {
+    pub fn send_message(&mut self, msg: String) -> AppResult<MessageId> {
         self._send(&NetworkData::Message(Tick::now(), msg))
+    }
+
+    pub fn send_relayer_message_to_team(
+        &mut self,
+        msg: String,
+        team_id: TeamId,
+    ) -> AppResult<MessageId> {
+        self._send(&NetworkData::RelayerMessageToTeam(
+            Tick::now(),
+            msg,
+            team_id,
+        ))
     }
 
     pub fn send_seed_info(&mut self, seed_info: SeedInfo) -> AppResult<MessageId> {
@@ -265,12 +277,12 @@ impl NetworkHandler {
     }
 
     pub fn quit(&mut self) {
-        if let Err(e) = self
+        if !self
             .swarm
             .behaviour_mut()
             .unsubscribe(&IdentTopic::new(TOPIC))
         {
-            error!("Error unsubscribing from events: {e}");
+            error!("Cannot unsubscribe from events");
         }
 
         let peers = self

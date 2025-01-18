@@ -13,7 +13,8 @@ use crate::{
         planet::Planet,
         player::{Player, Trait},
         position::MAX_POSITION,
-        skill::GameSkill,
+        role::CrewRole,
+        skill::{GameSkill, MAX_SKILL},
     },
 };
 use itertools::Itertools;
@@ -186,10 +187,10 @@ impl<'game> Game {
         let seed = game.get_rng_seed();
         let mut rng = ChaCha8Rng::from_seed(seed);
 
-        let attendance =
-            (BASE_ATTENDANCE + total_reputation.value() as u32 * planet.total_population()) as f32
-                * rng.gen_range(0.75..1.25)
-                * (1.0 + bonus_attendance);
+        let attendance = (BASE_ATTENDANCE as f32
+            + (total_reputation.value() as f32).powf(2.0) * planet.total_population() as f32)
+            * rng.gen_range(0.75..1.25)
+            * (1.0 + bonus_attendance);
         game.attendance = attendance as u32;
         let mut default_output = ActionOutput::default();
 
@@ -424,6 +425,26 @@ impl<'game> Game {
             Possession::Away => (defense_stats, attack_stats),
         };
 
+        // Conditions for morale boost:
+        // shot success, team is losing at most by a margin equal to the captain charisma.
+        let attacking_player = self.attacking_players();
+        let team_captain = attacking_player
+            .iter()
+            .find(|&p| p.info.crew_role == CrewRole::Captain);
+
+        let mut losing_margin = 4;
+
+        if let Some(captain) = team_captain {
+            losing_margin += (captain.mental.charisma / 4.0) as u16
+        };
+
+        let score = self.get_score();
+
+        let is_losing_by_margin = match self.possession {
+            Possession::Home => score.0 < score.1 && score.1 - score.0 <= losing_margin,
+            Possession::Away => score.1 < score.0 && score.0 - score.1 <= losing_margin,
+        };
+
         if let Some(updates) = &mut home_stats {
             for (id, player_stats) in self.home_team_in_game.stats.iter_mut() {
                 let player = self.home_team_in_game.players.get_mut(&id).unwrap();
@@ -437,7 +458,15 @@ impl<'game> Game {
                     if self.possession == Possession::Home {
                         player.add_morale(MoraleModifier::SMALL_BONUS);
                     } else {
-                        player.add_morale(MoraleModifier::SMALL_MALUS);
+                        player.add_morale(
+                            MoraleModifier::SMALL_MALUS
+                                / (1.0 + player.mental.charisma / MAX_SKILL),
+                        );
+                    }
+
+                    if is_losing_by_margin {
+                        player
+                            .add_morale(MoraleModifier::SMALL_BONUS + player.mental.charisma / 8.0);
                     }
                 }
             }
@@ -456,7 +485,15 @@ impl<'game> Game {
                     if self.possession == Possession::Away {
                         player.add_morale(MoraleModifier::SMALL_BONUS);
                     } else {
-                        player.add_morale(MoraleModifier::SMALL_MALUS);
+                        player.add_morale(
+                            MoraleModifier::SMALL_MALUS
+                                / (1.0 + player.mental.charisma / MAX_SKILL),
+                        );
+                    }
+
+                    if is_losing_by_margin {
+                        player
+                            .add_morale(MoraleModifier::SMALL_BONUS + player.mental.charisma / 8.0);
                     }
                 }
             }
@@ -507,6 +544,7 @@ impl<'game> Game {
                 } else if player.tiredness > RECOVERING_TIREDNESS_PER_SHORT_TICK
                     && !player.is_knocked_out()
                 {
+                    // We don't use add_tiredness here because otherwise the stamina would have an effect.
                     player.tiredness -= RECOVERING_TIREDNESS_PER_SHORT_TICK;
                 }
             }

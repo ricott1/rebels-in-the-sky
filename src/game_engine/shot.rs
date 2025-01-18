@@ -350,7 +350,7 @@ fn execute_shot(
         .map(|&idx| defending_players[idx])
         .collect::<Vec<&Player>>();
 
-    let atk_skill = match shot.clone() {
+    let atk_skill = match shot {
         ShotDifficulty::Close => shooter.offense.close_range.value(),
         ShotDifficulty::Medium => shooter.offense.medium_range.value(),
         ShotDifficulty::Long => shooter.offense.long_range.value(),
@@ -378,6 +378,7 @@ fn execute_shot(
     };
 
     let success = roll > 0;
+
     let mut result = match success {
         false => {
             // Attackers and defenders will get a malus in the rebound action.

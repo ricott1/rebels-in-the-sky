@@ -4,7 +4,7 @@ use super::{
 };
 use crate::types::Tick;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use image::{Pixel, RgbaImage};
+use image::RgbaImage;
 use libp2p::PeerId;
 use ratatui::{
     style::{Color, Style},
@@ -59,8 +59,8 @@ pub fn img_to_lines<'a>(img: &RgbaImage) -> Vec<Line<'a>> {
         let mut line: Vec<Span> = vec![];
 
         for x in 0..width {
-            let top_pixel = img.get_pixel(x, y).to_rgba();
-            let btm_pixel = img.get_pixel(x, y + 1).to_rgba();
+            let top_pixel = img.get_pixel(x, y);
+            let btm_pixel = img.get_pixel(x, y + 1);
             if top_pixel[3] == 0 && btm_pixel[3] == 0 {
                 line.push(Span::raw(" "));
                 continue;
@@ -91,7 +91,7 @@ pub fn img_to_lines<'a>(img: &RgbaImage) -> Vec<Line<'a>> {
     if height % 2 == 1 {
         let mut line: Vec<Span> = vec![];
         for x in 0..width {
-            let top_pixel = img.get_pixel(x, height - 1).to_rgba();
+            let top_pixel = img.get_pixel(x, height - 1);
             if top_pixel[3] == 0 {
                 line.push(Span::raw(" "));
                 continue;

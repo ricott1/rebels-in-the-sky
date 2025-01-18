@@ -131,15 +131,15 @@ impl Body for SpaceshipEntity {
                 let position = self.center().as_vec2()
                     + Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0));
 
-                let smoke_color_rng = rng.gen_range(0..=130);
+                let smoke_color_rng = rng.gen_range(0..=80);
                 callbacks.push(SpaceCallback::GenerateParticle {
                     position,
                     velocity: -1.5 * self.acceleration.normalize()
                         + Vec2::new(rng.gen_range(-1.5..1.5), rng.gen_range(-2.5..2.5)),
                     color: Rgba([
-                        125 + smoke_color_rng,
-                        55 + smoke_color_rng,
-                        55 + smoke_color_rng,
+                        105 + smoke_color_rng,
+                        75 + smoke_color_rng,
+                        75 + smoke_color_rng,
                         255,
                     ]),
                     particle_state: EntityState::Decaying {

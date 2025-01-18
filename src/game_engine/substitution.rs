@@ -7,9 +7,9 @@ use super::{
 use crate::{
     types::SortablePlayerMap,
     world::{
-        constants::MAX_TIREDNESS,
         player::Player,
         position::{Position, MAX_POSITION},
+        skill::MAX_SKILL,
         team::Team,
     },
 };
@@ -120,7 +120,7 @@ fn make_substitution(
             )
             .as_str(),
         );
-    } else if tiredness > MAX_TIREDNESS / 4.0 {
+    } else if tiredness > MAX_SKILL / 4.0 {
         description.push_str(
             format!(
                 "{} {} a bit tired. ",

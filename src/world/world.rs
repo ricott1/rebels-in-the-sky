@@ -1,7 +1,7 @@
 use super::constants::*;
 use super::jersey::{Jersey, JerseyStyle};
 use super::planet::Planet;
-use super::player::Player;
+use super::player::{Player, Trait};
 use super::position::{Position, MAX_POSITION};
 use super::resources::Resource;
 use super::role::CrewRole;
@@ -425,7 +425,7 @@ impl World {
         player.info.crew_role = CrewRole::Mozzo;
         team.crew_roles.mozzo.push(player.id);
         // Demoted player is a bit demoralized :(
-        player.morale = (player.morale + MORALE_DEMOTION_MALUS).bound();
+        player.add_morale(MORALE_DEMOTION_MALUS);
         player.set_jersey(&jersey);
         self.players.insert(player.id, player);
         self.teams.insert(team.id, team);
@@ -810,7 +810,7 @@ impl World {
             CrewRole::Mozzo => team.crew_roles.mozzo.retain(|&p| p != player.id),
         }
         player.info.crew_role = CrewRole::Mozzo;
-        player.morale = (player.morale + MORALE_RELEASE_MALUS).bound();
+        player.add_morale(MORALE_RELEASE_MALUS);
         player.image.remove_jersey();
         player.compose_image()?;
         match team.current_location {
@@ -964,6 +964,9 @@ impl World {
         home_team_in_game: TeamInGame,
         away_team_in_game: TeamInGame,
     ) -> AppResult<GameId> {
+        // FIXME: When losing focus, several tick events start to get accumulated.
+        //        I thought that setting the game beginning using Tick::now() would only allow to start the game
+        //        after all the extra tick events have been processed, but it seems that it is not the case.
         let starting_at = Tick::now() + GAME_START_DELAY;
         let mut home_team = self.get_team_or_err(&home_team_in_game.team_id)?.clone();
         let mut away_team = self.get_team_or_err(&away_team_in_game.team_id)?.clone();
@@ -1471,8 +1474,8 @@ impl World {
             // Home team gets a bonus for playing at home.
             // If a team is knocked out, money goes to the other team.
             // If both are knocked out, they get no money.
-            let mut home_team_income = 100 + game.attendance * INCOME_PER_ATTENDEE_HOME;
-            let mut away_team_income = 100 + game.attendance * INCOME_PER_ATTENDEE_AWAY;
+            let mut home_team_income = 500 + game.attendance * INCOME_PER_ATTENDEE_HOME;
+            let mut away_team_income = 500 + game.attendance * INCOME_PER_ATTENDEE_AWAY;
             let home_knocked_out = game.is_team_knocked_out(Possession::Home);
             let away_knocked_out = game.is_team_knocked_out(Possession::Away);
 
@@ -1921,12 +1924,16 @@ impl World {
             player.previous_skills = player.current_skill_array();
             player.info.age = player.info.age + AGE_INCREASE_PER_LONG_TICK;
 
+            if player.special_trait == Some(Trait::Crumiro) {
+                player.skills_training = [0.0; 20];
+                continue;
+            }
+
             // Pirates slightly dislike being part of a team.
             // This is counteracted by the morale boost pirates get by playing games.
             // We do not apply this to computer teams since no games are played during simulation,
             // and hence it would result in all computer players to be completely demoralized.
-            // player.morale = (player.morale + MORALE_DECREASE_PER_LONG_TICK).bound();
-            player.morale = (player.morale + MORALE_DECREASE_PER_LONG_TICK).bound();
+            player.add_morale(MORALE_DECREASE_PER_LONG_TICK);
             player.reputation = (player.reputation + REPUTATION_DECREASE_PER_LONG_TICK).bound();
 
             for idx in 0..player.skills_training.len() {
@@ -2009,6 +2016,10 @@ impl World {
         for &player_id in self.players.keys() {
             let player = self.get_player_or_err(&player_id)?;
             if player.team.is_none() {
+                continue;
+            }
+
+            if player.special_trait == Some(Trait::Crumiro) {
                 continue;
             }
 
@@ -2281,7 +2292,9 @@ impl World {
             to_height
         };
 
-        let parent_id = bottom.satellite_of.expect("The should be a parent planet"); // This is guaranteed to be some, otherwise we would have matched already
+        let parent_id = bottom
+            .satellite_of
+            .expect("There should be a parent planet"); // This is guaranteed to be some, otherwise we would have matched already
 
         let distance =
             (bottom.axis.0).max(bottom.axis.1) / 24.0 * BASE_DISTANCES[bottom_height - 1] as f32;
@@ -2305,6 +2318,7 @@ impl World {
             ..Default::default()
         };
         w.filter_peer_data(None)?;
+
         Ok(w)
     }
 }
