@@ -326,10 +326,10 @@ mod tests {
 
     #[test]
     fn test_random_generation_times() -> AppResult<()> {
-        let thread_rng = &mut rand::thread_rng();
+        let rng = &mut rand::rng();
         let start = Instant::now();
         for _ in 0..1_000_000 {
-            let _: f32 = thread_rng.gen();
+            let _: f32 = rng.random();
         }
 
         println!(
@@ -337,10 +337,10 @@ mod tests {
             start.elapsed().as_micros()
         );
 
-        let chacha_rng = &mut ChaCha8Rng::from_entropy();
+        let chacha_rng = &mut ChaCha8Rng::from_os_rng();
         let start = Instant::now();
         for _ in 0..1_000_000 {
-            let _: f32 = chacha_rng.gen();
+            let _: f32 = chacha_rng.random();
         }
 
         println!(

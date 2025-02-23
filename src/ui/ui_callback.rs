@@ -478,8 +478,8 @@ impl UiCallback {
                 return Err(anyhow!("{} is too tired", team.name));
             }
             let own_team_id = app.world.own_team_id;
-            let (home_team_in_game, away_team_in_game) = match ChaCha8Rng::from_entropy()
-                .gen_range(0..=1)
+            let (home_team_in_game, away_team_in_game) = match ChaCha8Rng::from_os_rng()
+                .random_range(0..=1)
             {
                 0 => (
                     TeamInGame::from_team_id(&own_team_id, &app.world.teams, &app.world.players)
@@ -1300,10 +1300,10 @@ impl UiCallback {
 
                 //If player is a spugna and pilot and team is travelling or exploring and player was already maxxed in morale,
                 // there is a chance that the player enters a portal to a random planet.
-                let rng = &mut ChaCha8Rng::from_entropy();
+                let rng = &mut ChaCha8Rng::from_os_rng();
                 if matches!(player.special_trait, Some(Trait::Spugna))
                     && player.info.crew_role == CrewRole::Pilot
-                    && rng.gen_bool(
+                    && rng.random_bool(
                         (PORTAL_DISCOVERY_PROBABILITY
                             * TeamBonus::Exploration.current_player_bonus(&player)? as f64)
                             .min(1.0),

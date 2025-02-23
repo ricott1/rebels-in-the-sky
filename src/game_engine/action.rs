@@ -16,7 +16,7 @@ use super::{
 };
 use core::fmt::Debug;
 use rand_chacha::ChaCha8Rng;
-use rand_distr::{Distribution, WeightedIndex};
+use rand_distr::{weighted::WeightedIndex, Distribution};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 

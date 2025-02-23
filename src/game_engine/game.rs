@@ -18,7 +18,7 @@ use crate::{
     },
 };
 use itertools::Itertools;
-use rand::{seq::SliceRandom, Rng, SeedableRng};
+use rand::{seq::IndexedRandom, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -189,7 +189,7 @@ impl<'game> Game {
 
         let attendance = (BASE_ATTENDANCE as f32
             + (total_reputation.value() as f32).powf(2.0) * planet.total_population() as f32)
-            * rng.gen_range(0.75..1.25)
+            * rng.random_range(0.75..1.25)
             * (1.0 + bonus_attendance);
         game.attendance = attendance as u32;
         let mut default_output = ActionOutput::default();
@@ -383,7 +383,7 @@ impl<'game> Game {
                 let brawl_probability = BRAWL_ACTION_PROBABILITY
                     * (self.home_team_in_game.tactic.brawl_probability_modifier()
                         + self.away_team_in_game.tactic.brawl_probability_modifier());
-                if rng.gen_bool(brawl_probability as f64) {
+                if rng.random_bool(brawl_probability as f64) {
                     Action::Brawl
                 } else {
                     match self.possession {

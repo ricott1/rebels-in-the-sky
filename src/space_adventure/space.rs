@@ -297,7 +297,7 @@ impl SpaceAdventure {
 
         Ok(Self {
             id: 0,
-            rng: ChaCha8Rng::from_entropy(),
+            rng: ChaCha8Rng::from_os_rng(),
             state: SpaceAdventureState::Starting {
                 time: Instant::now(),
             },
@@ -473,7 +473,7 @@ impl SpaceAdventure {
         // Generate asteroids
         let difficulty_level = time.elapsed().as_secs() as usize;
         if self.entity_count() < difficulty_level.min(250)
-            && self.rng.gen_bool(ASTEROID_GENERATION_PROBABILITY)
+            && self.rng.random_bool(ASTEROID_GENERATION_PROBABILITY)
         {
             let asteroid = AsteroidEntity::new_at_screen_edge(self.gold_fragment_probability);
             self.insert_entity(Box::new(asteroid));

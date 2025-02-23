@@ -72,7 +72,7 @@ impl PlayerImage {
             _ => LegsImage::Normal,
         };
 
-        let head = match rng.gen_range(0..=1) {
+        let head = match rng.random_range(0..=1) {
             0 => match info.population {
                 Population::Polpett => HeadImage::Polpett1,
                 Population::Galdari => HeadImage::Gald1,
@@ -94,13 +94,13 @@ impl PlayerImage {
         };
 
         let hair = if info.population == Population::Galdari {
-            match rng.gen_range(0..=4) {
+            match rng.random_range(0..=4) {
                 0 => Some(HairImage::Hair1),
                 1 => Some(HairImage::Hair3),
                 _ => None,
             }
         } else if info.population == Population::Pupparoll {
-            match rng.gen_range(0..=1) {
+            match rng.random_range(0..=1) {
                 0 => Some(HairImage::Hair8),
                 _ => None,
             }
@@ -108,7 +108,7 @@ impl PlayerImage {
             None
         } else {
             let max_hair = if info.pronouns == Pronoun::She { 9 } else { 10 };
-            match rng.gen_range(0..=max_hair) {
+            match rng.random_range(0..=max_hair) {
                 0 => Some(HairImage::Hair1),
                 1 => Some(HairImage::Hair2),
                 2 => Some(HairImage::Hair3),
@@ -128,7 +128,7 @@ impl PlayerImage {
         } else {
             8
         };
-        let hair_color_map = match rng.gen_range(0..=max_hair_color) {
+        let hair_color_map = match rng.random_range(0..=max_hair_color) {
             0 => HairColorMap::Black,
             1 => HairColorMap::Blonde,
             2 => HairColorMap::BlondeInverted,
@@ -144,7 +144,7 @@ impl PlayerImage {
         let beard = if info.pronouns == Pronoun::She || info.population == Population::Pupparoll {
             None
         } else if info.population == Population::Galdari {
-            match rng.gen_range(1..=4) {
+            match rng.random_range(1..=4) {
                 0 => Some(BeardImage::Beard1),
                 1 => Some(BeardImage::Beard3),
                 2 => Some(BeardImage::Beard4),
@@ -152,13 +152,13 @@ impl PlayerImage {
                 _ => None,
             }
         } else if info.population == Population::Octopulp {
-            match rng.gen_range(0..=1) {
+            match rng.random_range(0..=1) {
                 0 => Some(BeardImage::Octobeard1),
                 1 => Some(BeardImage::Octobeard2),
                 _ => unreachable!(),
             }
         } else {
-            match rng.gen_range(1..=6) {
+            match rng.random_range(1..=6) {
                 0 => Some(BeardImage::Beard1),
                 1 => Some(BeardImage::Beard2),
                 2 => Some(BeardImage::Beard3),
@@ -201,7 +201,7 @@ impl PlayerImage {
             seed[(4 + i) % 8] = seed[(4 + i) % 8] ^ c;
         }
         let mut rng = ChaCha8Rng::seed_from_u64(u64::from_le_bytes(seed));
-        let r = rng.gen_range(0..=1);
+        let r = rng.random_range(0..=1);
 
         self.shirt = match jersey.style {
             JerseyStyle::Classic => Some(ShirtImage::Classic),
@@ -309,7 +309,7 @@ impl PlayerImage {
     }
 
     pub fn set_wooden_leg(&mut self, rng: &mut ChaCha8Rng) {
-        self.wooden_leg = match rng.gen_range(0..=1) {
+        self.wooden_leg = match rng.random_range(0..=1) {
             0 => Some(WoodenLegImage::Left),
             1 => Some(WoodenLegImage::Right),
             _ => unreachable!(),
@@ -318,13 +318,13 @@ impl PlayerImage {
 
     pub fn set_eye_patch(&mut self, rng: &mut ChaCha8Rng, population: Population) {
         self.eye_patch = match population {
-            Population::Galdari => match rng.gen_range(0..=2) {
+            Population::Galdari => match rng.random_range(0..=2) {
                 0 => Some(EyePatchImage::LeftLow),
                 1 => Some(EyePatchImage::RightLow),
                 2 => Some(EyePatchImage::Central),
                 _ => unreachable!(),
             },
-            Population::Polpett | Population::Yardalaim => match rng.gen_range(0..=1) {
+            Population::Polpett | Population::Yardalaim => match rng.random_range(0..=1) {
                 0 => Some(EyePatchImage::LeftLow),
                 1 => Some(EyePatchImage::RightLow),
                 _ => unreachable!(),
@@ -333,7 +333,7 @@ impl PlayerImage {
                 if self.head == HeadImage::Octopulp1 {
                     Some(EyePatchImage::OctopulpCentral)
                 } else if self.head == HeadImage::Octopulp2 {
-                    match rng.gen_range(0..=1) {
+                    match rng.random_range(0..=1) {
                         0 => Some(EyePatchImage::LeftLow),
                         1 => Some(EyePatchImage::RightLow),
                         _ => unreachable!(),
@@ -343,7 +343,7 @@ impl PlayerImage {
                 }
             }
             Population::Pupparoll => Some(EyePatchImage::Pupparoll),
-            _ => match rng.gen_range(0..=3) {
+            _ => match rng.random_range(0..=3) {
                 0 => Some(EyePatchImage::LeftHigh),
                 1 => Some(EyePatchImage::LeftLow),
                 2 => Some(EyePatchImage::RightHigh),
@@ -355,13 +355,13 @@ impl PlayerImage {
 
     pub fn set_hook(&mut self, rng: &mut ChaCha8Rng, population: Population) {
         self.hook = if population == Population::Pupparoll {
-            match rng.gen_range(0..=1) {
+            match rng.random_range(0..=1) {
                 0 => Some(HookImage::LeftPupparoll),
                 1 => Some(HookImage::RightPupparoll),
                 _ => unreachable!(),
             }
         } else {
-            match rng.gen_range(0..=1) {
+            match rng.random_range(0..=1) {
                 0 => Some(HookImage::Left),
                 1 => Some(HookImage::Right),
                 _ => unreachable!(),

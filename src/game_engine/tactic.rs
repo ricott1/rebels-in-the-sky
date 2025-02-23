@@ -2,7 +2,7 @@ use super::action::Action;
 use crate::types::AppResult;
 use rand::seq::IteratorRandom;
 use rand_chacha::ChaCha8Rng;
-use rand_distr::{Distribution, WeightedIndex};
+use rand_distr::{weighted::WeightedIndex, Distribution};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::fmt::Display;
 use strum::IntoEnumIterator;

@@ -134,7 +134,7 @@ impl NewTeamScreen {
                 .border_style(UiStyle::UNSELECTABLE)
                 .title("Ship name"),
         );
-        let rng = &mut ChaCha8Rng::from_entropy();
+        let rng = &mut ChaCha8Rng::from_os_rng();
         let mut color_presets = ColorPreset::iter().collect_vec();
         color_presets.shuffle(rng);
         let red_color_preset = color_presets[0];

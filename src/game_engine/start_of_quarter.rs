@@ -15,7 +15,7 @@ impl StartOfQuarter {
         game: &Game,
         rng: &mut ChaCha8Rng,
     ) -> Option<ActionOutput> {
-        let timer_increase = 6 + rng.gen_range(0..=6);
+        let timer_increase = 6 + rng.random_range(0..=6);
         let description = match input.end_at.period() {
             Period::B1 => format!("It's the start of the second quarter.",),
             Period::B2 => format!("It's the start of the third quarter.",),

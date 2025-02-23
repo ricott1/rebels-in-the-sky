@@ -8,7 +8,7 @@ use crate::world::{
     player::Trait,
     skill::GameSkill,
 };
-use rand::{seq::SliceRandom, Rng};
+use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
@@ -262,7 +262,7 @@ impl EngineAction for Brawl {
             }
         };
 
-        let timer_increase = 5 + rng.gen_range(0..=5);
+        let timer_increase = 5 + rng.random_range(0..=5);
 
         let mut result = ActionOutput {
             possession: input.possession,

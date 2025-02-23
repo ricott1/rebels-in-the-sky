@@ -57,7 +57,7 @@ impl SessionAuth {
 }
 
 pub fn generate_user_id() -> String {
-    let buf_id = ChaCha8Rng::from_entropy()
+    let buf_id = ChaCha8Rng::from_os_rng()
         .sample_iter(&Alphanumeric)
         .take(8)
         .collect::<Vec<u8>>()

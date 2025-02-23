@@ -13,7 +13,7 @@ use crate::world::constants::{DEBUG_TIME_MULTIPLIER, SOL_ID};
 use crate::{store::world_exists, world::world::World};
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use ratatui::layout::Margin;
@@ -45,7 +45,7 @@ pub struct SplashScreen {
     gif_map: GifMap,
 }
 
-const QUOTES: [&'static str;15] = [
+const QUOTES: [&'static str;16] = [
     " “What cannot be destroyed can, nonetheless, be diverted, frozen, transformed, and gradually deprived of its substance - which in the case of states, is ultimately their capacity to inspire terror.” - D. Graeber",
     " “Aber der Staat lügt in allen Zungen des Guten und Bösen; und was er auch redet, er lügt—und was er auch hat, gestohlen hat er's.” - F. Nietzsche",
     " “That is what I have always understood to be the essence of anarchism: the conviction that the burden of proof has to be placed on authority, and that it should be dismantled if that burden cannot be met.” - N. Chomsky",
@@ -61,7 +61,8 @@ const QUOTES: [&'static str;15] = [
     " “The only way to deal with an unfree world is to become so absolutely free that your very existence is an act of rebellion.” - A. Camus",
     " “He who can destroy a thing, controls a thing.” - F. Herbert",
     " “What's law? Control? Laws filter chaos and what drips through? Serenity? [..] Don't look too closely at the law. Do, and you'll find the rationalised interpretations, the legal casuistry, the precedents of convenience. You'll find the serenity, which is just another word for death.” - F. Herbert",
-    " “I do not demand any right, therefore I need not recognize any either.” - M. Stirner"
+    " “I do not demand any right, therefore I need not recognize any either.” - M. Stirner",
+    " “There is now a widespread tendency to argue that one can only defend democracy by totalitarian methods. If one loves democracy, the argument runs, one must crush its enemies by no matter what means. [..] In other words, defending democracy involves destroying all independence of thought.” - G. Orwell",
     ];
 
 const TITLE: [&'static str; 13] = [
@@ -104,7 +105,7 @@ impl SplashScreen {
         selection_text.push("Quit".to_string());
 
         let quote = QUOTES
-            .choose(&mut ChaCha8Rng::from_entropy())
+            .choose(&mut ChaCha8Rng::from_os_rng())
             .expect("There should be a quote");
         let index = if can_load_world { 0 } else { 1 };
         let title = big_text(&TITLE);
@@ -322,7 +323,7 @@ impl Screen for SplashScreen {
             },
             KeyCode::Char('r') => {
                 self.quote = QUOTES
-                    .choose(&mut ChaCha8Rng::from_entropy())
+                    .choose(&mut ChaCha8Rng::from_os_rng())
                     .expect("There should be a quote");
             }
 

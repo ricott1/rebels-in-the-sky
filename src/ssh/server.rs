@@ -2,9 +2,11 @@ use super::client::AppClient;
 use crate::network::constants::DEFAULT_PORT;
 use crate::types::AppResult;
 use itertools::Either;
-use rand::SeedableRng;
-use rand_chacha::ChaCha8Rng;
-use russh::server::{Config, Server};
+use rand::Rng;
+use russh::{
+    keys::ssh_key::private::{Ed25519Keypair, Ed25519PrivateKey, KeypairData},
+    server::{Config, Server},
+};
 use std::fs::File;
 use std::io::Write;
 use std::net::TcpListener;
@@ -17,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 const SERVER_SSH_PORT: u16 = 3788;
 const MAX_SSH_CLIENT_PORT: u16 = DEFAULT_PORT + 32;
 
-fn save_keys(signing_key: &russh_keys::PrivateKey) -> AppResult<()> {
+fn save_keys(signing_key: &russh::keys::PrivateKey) -> AppResult<()> {
     let file = File::create::<&str>("./keys".into())?;
     assert!(file.metadata()?.is_file());
     let mut buffer = std::io::BufWriter::new(file);
@@ -26,9 +28,9 @@ fn save_keys(signing_key: &russh_keys::PrivateKey) -> AppResult<()> {
     Ok(())
 }
 
-fn load_keys() -> AppResult<russh_keys::PrivateKey> {
+fn load_keys() -> AppResult<russh::keys::PrivateKey> {
     let bytes = std::fs::read("./keys")?;
-    let private_key = russh_keys::PrivateKey::from_bytes(&bytes)?;
+    let private_key = russh::keys::PrivateKey::from_bytes(&bytes)?;
     println!("Loaded keypair for SSH server.");
     Ok(private_key)
 }
@@ -63,11 +65,11 @@ impl AppServer {
         );
 
         let private_key = load_keys().unwrap_or_else(|_| {
-            let key = russh_keys::PrivateKey::random(
-                &mut ChaCha8Rng::from_entropy(),
-                russh_keys::Algorithm::Ed25519,
-            )
-            .expect("Failed to generate SSH keys.");
+            let rng = &mut rand::rng();
+            let seed: [u8; Ed25519PrivateKey::BYTE_SIZE] = rng.random();
+            let key_data = KeypairData::from(Ed25519Keypair::from_seed(&seed));
+            let key = russh::keys::PrivateKey::new(key_data, "Rebels ssh server key")
+                .expect("Failed to generate SSH keys.");
 
             save_keys(&key).expect("Failed to save SSH keys.");
             key

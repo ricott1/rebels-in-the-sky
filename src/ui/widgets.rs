@@ -1445,7 +1445,7 @@ mod tests {
 
     #[test]
     fn test_storage_spans() -> AppResult<()> {
-        let rng = &mut ChaCha8Rng::from_entropy();
+        let rng = &mut ChaCha8Rng::from_os_rng();
         let mut team = Team::random(TeamId::new_v4(), PlanetId::new_v4(), "test", "test", rng);
         team.spaceship = SpaceshipPrefab::Bresci.spaceship("test");
 

@@ -24,7 +24,7 @@ impl EngineAction for JumpBall {
         let home_result = home_jumper?.roll(rng) + jump_ball(home_jumper?);
         let away_result = away_jumper?.roll(rng) + jump_ball(away_jumper?);
 
-        let timer_increase = 4 + rng.gen_range(0..=8);
+        let timer_increase = 4 + rng.random_range(0..=8);
 
         let result = match home_result as i16 - away_result as i16 {
             x if x > 0 => {
@@ -59,7 +59,7 @@ impl EngineAction for JumpBall {
                 ..Default::default()
             },
             _ => {
-                let r = rng.gen_range(0..=1);
+                let r = rng.random_range(0..=1);
                 let ball_team = match r {
                     0 => game.home_team_in_game.name.clone(),
                     _ => game.away_team_in_game.name.clone(),

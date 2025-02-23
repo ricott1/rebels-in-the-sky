@@ -87,6 +87,7 @@ impl App {
         while self.world.is_simulating() {
             // Give a visual feedback by drawing.
             let now = Tick::now();
+
             if now.saturating_sub(last_tui_update) > tui.simulation_update_interval() {
                 last_tui_update = now;
                 if let Err(e) = self.ui.update(&self.world, self.audio_player.as_ref()) {
@@ -172,7 +173,7 @@ impl App {
             .expect("There should be at elast one planet")
             .clone();
         app.world.own_team_id = app.world.generate_random_team(
-            &mut ChaCha8Rng::from_entropy(),
+            &mut ChaCha8Rng::from_os_rng(),
             home_planet_id,
             "own team".into(),
             "ship_name".into(),
@@ -192,7 +193,7 @@ impl App {
             .expect("There should be at elast one planet")
             .clone();
         app.world.own_team_id = app.world.generate_random_team(
-            &mut ChaCha8Rng::from_entropy(),
+            &mut ChaCha8Rng::from_os_rng(),
             home_planet_id,
             "own team".into(),
             "ship_name".into(),
@@ -282,7 +283,7 @@ impl App {
                 app_event = tui.events.next() => {
                     match app_event{
                         TerminalEvent::Tick {tick} => {
-                                self.handle_tick_events(tick)?;
+                            self.handle_tick_events(tick)?;
                             if let Err(e) = tui.draw(&mut self.ui, &self.world, self.audio_player.as_ref()).await {
                                 error!("Drawing error: {e}");
                             }

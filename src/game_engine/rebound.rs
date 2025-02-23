@@ -11,7 +11,7 @@ use crate::{
     },
     world::constants::TirednessCost,
 };
-use rand::{seq::SliceRandom, Rng};
+use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use std::{
     cmp::{max, min},
@@ -178,7 +178,7 @@ impl EngineAction for Rebound {
                     attackers: vec![attack_rebounder_idx],
                     attack_stats_update: Some(attack_stats_update),
                     start_at: input.end_at,
-                    end_at: input.end_at.plus(1 + rng.gen_range(0..=1)),
+                    end_at: input.end_at.plus(1 + rng.random_range(0..=1)),
                     home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()
@@ -220,7 +220,7 @@ impl EngineAction for Rebound {
                     attackers: vec![attack_rebounder_idx],
                     attack_stats_update: Some(attack_stats_update),
                     start_at: input.end_at,
-                    end_at: input.end_at.plus(2 + rng.gen_range(0..=3)),
+                    end_at: input.end_at.plus(2 + rng.random_range(0..=3)),
                     home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()
@@ -262,7 +262,7 @@ impl EngineAction for Rebound {
                     .clone(),
                     defense_stats_update: Some(defence_stats_update),
                     start_at: input.end_at,
-                    end_at: input.end_at.plus(4 + rng.gen_range(0..=3)),
+                    end_at: input.end_at.plus(4 + rng.random_range(0..=3)),
                     home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()
@@ -280,7 +280,7 @@ impl EngineAction for Rebound {
                 .expect("There should be an option")
                 .to_string(),
                 start_at: input.end_at,
-                end_at: input.end_at.plus(5 + rng.gen_range(0..=4)),
+                end_at: input.end_at.plus(5 + rng.random_range(0..=4)),
                 home_score: input.home_score,
                 away_score: input.away_score,
                 ..Default::default()

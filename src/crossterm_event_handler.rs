@@ -2,7 +2,7 @@ use crate::tui::{EventHandler, TerminalEvent};
 use crate::types::{SystemTimeTick, Tick};
 use crate::world::constants::MILLISECONDS;
 use crossterm::event::{self, Event as CrosstermEvent, KeyEventKind};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 /// Terminal event handler.
@@ -30,12 +30,11 @@ impl CrosstermEventHandler {
 
     pub fn new(fps: Option<u8>, with_input_reader: bool) -> Self {
         let fps = fps.unwrap_or(CrosstermEventHandler::DEFAULT_FPS);
-        let time_step_millis: Tick = (1000.0 / fps as f32) as Tick;
-        let time_step: Duration = Duration::from_millis(time_step_millis as u64);
+        let time_step: Duration = Duration::from_secs_f32(1.0 / fps as f32);
         let (sender, receiver) = mpsc::channel(100);
         let handler = {
             let sender = sender.clone();
-            let mut last_tick = Tick::now();
+            let mut last_tick = Instant::now();
             tokio::task::spawn(async move {
                 loop {
                     if with_input_reader {
@@ -67,13 +66,16 @@ impl CrosstermEventHandler {
                         }
                     }
 
-                    let now = Tick::now();
-                    if now.saturating_sub(last_tick) >= time_step_millis {
-                        if let Err(e) = sender.send(TerminalEvent::Tick { tick: now }).await {
+                    if last_tick.elapsed() >= time_step {
+                        if let Err(e) = sender.send(TerminalEvent::Tick { tick: Tick::now() }).await
+                        {
                             log::error!("Failed to send tick event: {e}");
                             break;
                         }
-                        last_tick = now;
+                        last_tick = Instant::now();
+                    }
+                    if !with_input_reader {
+                        tokio::time::sleep(time_step).await;
                     }
                 }
             })

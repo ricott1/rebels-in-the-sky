@@ -1,6 +1,6 @@
 [package]
 name = "rebels"
-version = "1.0.28"
+version = "1.0.29"
 edition = "2021"
 authors = ["Alessandro Ricottone <ricott2@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -25,17 +25,16 @@ opt-level = 1
 opt-level = 3
 
 [dependencies]
-anyhow = "1.0.93"
-async-trait = "0.1.83"
+anyhow = "1.0.96"
 chrono = "0.4.39"
-clap = { version = "4.5.21", features = ["derive"] }
+clap = { version = "4.5.30", features = ["derive"] }
 crossterm = "0.28.1"
 directories = "6.0.0"
 ed25519-dalek = "2.1.1"
 flate2 = { version = "1.0.35", features = ["zlib-ng"], default-features = false }
 futures = "0.3.30"
 gif = "0.13.1"
-glam = "0.29.2"
+glam = "0.30.0"
 image = "0.25.5"
 imageproc = "0.25.0"
 include_dir = "0.7.4"
@@ -53,27 +52,26 @@ libp2p = { version = "0.55.0", features = [
     "yamux",
 ] }
 libp2p-swarm-test = "0.5.0"
-log = "0.4.25"
+log = "0.4.26"
 log4rs = { version = "1.3.0", features = ["file_appender", "pattern_encoder"] }
-once_cell = "1.20.2"
-rand = "0.8.5"
-rand_chacha = "0.3.1"
-rand_distr = "0.4.3"
+once_cell = "1.20.3"
+rand = "0.9.0"
+rand_chacha = "0.9.0"
+rand_distr = "0.5.1"
 ratatui = { version = "0.29.0", features = ["unstable-backend-writer"] }
 rodio = "0.20.1"
-russh = "0.49.0"
-russh-keys = "0.49.0"
-serde = { version = "1.0.216", features = ["derive", "default"] }
-serde_json = "1.0.133"
+russh = "0.50.4"
+serde = { version = "1.0.218", features = ["derive", "default"] }
+serde_json = "1.0.139"
 serde_repr = "0.1.19"
 sha2 = "0.10.8"
-stream-download = { version = "0.14.0", features = ["reqwest-rustls"] }
-strum = { version = "0.26.3", features = ["derive"] }
-strum_macros = "0.26.4"
+stream-download = { version = "0.15.1", features = ["reqwest-rustls"] }
+strum = { version = "0.27.1", features = ["derive"] }
+strum_macros = "0.27.1"
 tokio = { version = "1.41.1", features = ["full"] }
 tokio-util = "0.7.12"
 tui-textarea = "0.7.0"
 unicode-width = "0.2.0"
 url = "2.5.4"
-uuid = { version = "1.12.0", features = ["v4", "serde"] }
+uuid = { version = "1.14.0", features = ["v4", "serde"] }
 void = "1.0.2"

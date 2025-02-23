@@ -20,7 +20,7 @@ pub enum JerseyStyle {
 
 impl JerseyStyle {
     pub fn random(rng: &mut ChaCha8Rng) -> Self {
-        match rng.gen_range(0..=4) {
+        match rng.random_range(0..=4) {
             0 => Self::Classic,
             1 => Self::Stripe,
             2 => Self::Fancy,

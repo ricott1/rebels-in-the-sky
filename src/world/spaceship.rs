@@ -1144,7 +1144,7 @@ mod tests {
         let planet_ids = world.planets.keys().collect_vec();
         let from = planet_ids[0].clone();
         let to = planet_ids[1].clone();
-        let rng = &mut ChaCha8Rng::from_entropy();
+        let rng = &mut ChaCha8Rng::from_os_rng();
         let mut team = Team::random(TeamId::new_v4(), from.clone(), "test", "test", rng);
         team.spaceship = spaceship;
         team.current_location = TeamLocation::Travelling {

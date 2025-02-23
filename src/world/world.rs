@@ -26,7 +26,7 @@ use crate::world::utils::is_default;
 use anyhow::anyhow;
 use itertools::Itertools;
 use libp2p::PeerId;
-use rand::seq::{IteratorRandom, SliceRandom};
+use rand::seq::{IndexedRandom, IteratorRandom, SliceRandom};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -129,7 +129,7 @@ impl World {
         };
 
         for _ in 0..number_free_pirates {
-            let base_level = own_team_base_level + rng.gen_range(0.0..4.0);
+            let base_level = own_team_base_level + rng.random_range(0.0..4.0);
             self.generate_random_player(rng, Some(position), &planet, base_level)?;
             position = (position + 1) % MAX_POSITION;
         }
@@ -172,7 +172,7 @@ impl World {
 
         self.teams.insert(team.id, team);
 
-        let team_base_level = rng.gen_range(0..=8) as f32;
+        let team_base_level = rng.random_range(0..=8) as f32;
         for position in 0..MAX_POSITION {
             let player_id =
                 self.generate_random_player(rng, Some(position), &planet, team_base_level)?;
@@ -847,8 +847,10 @@ impl World {
             + away_team_in_game.team_id.as_u64_pair().0 as u128)
             % (u64::MAX as u128)) as u64;
         rng_seed = ((rng_seed as Tick + starting_at) % (u64::MAX as Tick)) as u64;
+        println!("Game seed {}", rng_seed);
+
         let rng = &mut ChaCha8Rng::seed_from_u64(rng_seed);
-        let game_id = GameId::from_u128(rng.gen());
+        let game_id = GameId::from_u128(rng.random());
 
         let planet = self.get_planet_or_err(&location)?;
 
@@ -1237,7 +1239,7 @@ impl World {
         planet: &Planet,
         duration: Tick,
     ) -> AppResult<ResourceMap> {
-        let mut rng = ChaCha8Rng::from_entropy();
+        let mut rng = ChaCha8Rng::from_os_rng();
         let mut resources = HashMap::new();
 
         for (&resource, &amount) in planet.resources.iter() {
@@ -1246,7 +1248,7 @@ impl World {
             // since we clamp at 0.
             let base = ((2.0_f32).powf(amount as f32 / 2.0) * bonus) as i32;
             for _ in 0..(duration / QUICK_EXPLORATION_TIME) {
-                found_amount += rng.gen_range(-base / 2..base).max(0) as u32;
+                found_amount += rng.random_range(-base / 2..base).max(0) as u32;
             }
             resources.insert(resource, found_amount);
         }
@@ -1259,19 +1261,19 @@ impl World {
         planet: &Planet,
         duration: Tick,
     ) -> AppResult<Vec<PlayerId>> {
-        let rng = &mut ChaCha8Rng::from_entropy();
+        let rng = &mut ChaCha8Rng::from_os_rng();
         let mut free_pirates = vec![];
 
         let duration_bonus = (duration as f32 / (1 * HOURS) as f32).powf(1.3);
         let population_bonus = planet.total_population() as f32;
 
         let amount = rng
-            .gen_range((-32 + (population_bonus + duration_bonus) as i32).min(0)..3)
+            .random_range((-32 + (population_bonus + duration_bonus) as i32).min(0)..3)
             .max(0);
 
         if amount > 0 {
             for _ in 0..amount {
-                let base_level = rng.gen_range(0.0..7.0);
+                let base_level = rng.random_range(0.0..7.0);
                 let player_id = self.generate_random_player(rng, None, planet, base_level)?;
 
                 free_pirates.push(player_id);
@@ -1315,7 +1317,7 @@ impl World {
         if current_tick >= self.last_tick_medium_interval + TickInterval::MEDIUM {
             self.tick_tiredness_recovery()?;
 
-            for cb in self.tick_player_leaving_team(current_tick)? {
+            for cb in self.tick_player_leaving_team_for_low_morale(current_tick)? {
                 callbacks.push(cb);
             }
 
@@ -1335,7 +1337,13 @@ impl World {
 
         if current_tick >= self.last_tick_long_interval + TickInterval::LONG {
             self.tick_players_update();
+
+            for cb in self.tick_player_retirement(current_tick)? {
+                callbacks.push(cb);
+            }
+
             self.tick_teams_reputation()?;
+
             // Create free pirates only if this is the last time window to do so.
             // This will run also during a simulation, but only once.
             if Tick::now() < current_tick + TickInterval::LONG {
@@ -1698,7 +1706,7 @@ impl World {
                     let mut around_planet = self.get_planet_or_err(&around)?.clone();
                     team.current_location = TeamLocation::OnPlanet { planet_id: around };
 
-                    let mut rng = ChaCha8Rng::from_entropy();
+                    let mut rng = ChaCha8Rng::from_os_rng();
 
                     // If team has already MAX_NUM_ASTEROID_PER_TEAM, it cannot find another one.
                     // Finding asteroids becomes progressively more difficult.
@@ -1712,14 +1720,14 @@ impl World {
                         .min(1.0);
 
                     if asteroid_discovery_probability > 0.0
-                        && rng.gen_bool(asteroid_discovery_probability)
+                        && rng.random_bool(asteroid_discovery_probability)
                     {
                         // We have temporarily set the team back on the exploration base planet,
                         // until the asteroid is accepted and generated.
                         callbacks.push(UiCallback::PushUiPopup {
                             popup_message: PopupMessage::AsteroidNameDialog {
                                 tick: current_tick,
-                                asteroid_type: rng.gen_range(0..30),
+                                asteroid_type: rng.random_range(0..30),
                             },
                         });
                     }
@@ -1875,7 +1883,7 @@ impl World {
             .filter(|p| p.team.is_none())
             .collect_vec();
 
-        let rng = &mut ChaCha8Rng::from_entropy();
+        let rng = &mut ChaCha8Rng::from_os_rng();
 
         let mut hired_player_ids: Vec<PlayerId> = vec![];
         let mut hiring_team_ids: Vec<TeamId> = vec![];
@@ -1926,6 +1934,7 @@ impl World {
 
             if player.special_trait == Some(Trait::Crumiro) {
                 player.skills_training = [0.0; 20];
+                player.reputation = 0.0; //fuck crumiris!
                 continue;
             }
 
@@ -2008,7 +2017,10 @@ impl World {
         Ok(())
     }
 
-    fn tick_player_leaving_team(&mut self, current_tick: Tick) -> AppResult<Vec<UiCallback>> {
+    fn tick_player_leaving_team_for_low_morale(
+        &mut self,
+        current_tick: Tick,
+    ) -> AppResult<Vec<UiCallback>> {
         let mut messages = vec![];
 
         let mut releasing_player_ids = vec![];
@@ -2029,10 +2041,9 @@ impl World {
                 continue;
             }
 
-            let rng = &mut ChaCha8Rng::from_entropy();
-
+            let rng = &mut ChaCha8Rng::from_os_rng();
             if player.morale < MORALE_THRESHOLD_FOR_LEAVING {
-                if rng.gen_bool(
+                if rng.random_bool(
                     (1.0 - player.morale / MAX_SKILL) as f64 * LEAVING_PROBABILITY_MORALE_MODIFIER,
                 ) {
                     releasing_player_ids.push(player_id);
@@ -2052,25 +2063,63 @@ impl World {
                         })
                     }
                 }
-            } else if player.info.relative_age() > MIN_RELATIVE_RETIREMENT_AGE {
+            }
+        }
+
+        for &player_id in releasing_player_ids.iter() {
+            self.release_player_from_team(player_id)?;
+        }
+
+        if releasing_player_ids.len() > 0 {
+            self.dirty = true;
+            self.dirty_network = true;
+            self.dirty_ui = true;
+        }
+
+        Ok(messages)
+    }
+
+    fn tick_player_retirement(&mut self, current_tick: Tick) -> AppResult<Vec<UiCallback>> {
+        let mut messages = vec![];
+
+        let mut releasing_player_ids = vec![];
+
+        for &player_id in self.players.keys() {
+            let player = self.get_player_or_err(&player_id)?;
+            if player.team.is_none() {
+                continue;
+            }
+
+            if player.special_trait == Some(Trait::Crumiro) {
+                continue;
+            }
+
+            let team = self.get_team_or_err(&player.team.expect("Player should have a team"))?;
+
+            if team.can_release_player(player).is_err() {
+                continue;
+            }
+
+            let rng = &mut ChaCha8Rng::from_os_rng();
+            if player.info.relative_age() > MIN_RELATIVE_RETIREMENT_AGE {
                 // Add extra check to avoid running rng call unnecessarily.
-                if player.info.relative_age() > rng.gen_range(MIN_RELATIVE_RETIREMENT_AGE..1.0) {
+                if player.info.relative_age() > rng.random_range(MIN_RELATIVE_RETIREMENT_AGE..1.0) {
                     releasing_player_ids.push(player_id);
 
                     if player.team.expect("Team should be some") == self.own_team_id {
                         messages.push(UiCallback::PushUiPopup {
-                    popup_message: PopupMessage::Ok{
-                        message:format!(
-                            "{} {} left the crew and retired to cultivate turnips\n{} {} been a great pirate...",
-                            player.info.first_name,
-                            player.info.last_name,
-                            player.info.pronouns.as_subject(),
-                            player.info.pronouns.to_have(),
-                        ),
-                        is_skippable:false,
-                        tick:current_tick
-                    },
-                })
+                            popup_message: PopupMessage::Ok{
+                                message:format!(
+                                    "{} {} left the crew and retired to cultivate turnips\n{} {} been a great pirate...",
+                                    player.info.first_name,
+                                    player.info.last_name,
+                                    player.info.pronouns.as_subject(),
+                                    player.info.pronouns.to_have(),
+                                ),
+                                is_skippable:false,
+                                tick:current_tick
+                            },
+                        })
                     }
                 }
             }
@@ -2080,11 +2129,17 @@ impl World {
             self.release_player_from_team(player_id)?;
         }
 
+        if releasing_player_ids.len() > 0 {
+            self.dirty = true;
+            self.dirty_network = true;
+            self.dirty_ui = true;
+        }
+
         Ok(messages)
     }
 
     fn generate_random_games(&mut self) -> AppResult<()> {
-        let rng = &mut ChaCha8Rng::from_entropy();
+        let rng = &mut ChaCha8Rng::from_os_rng();
         for planet in self.planets.values() {
             if planet.team_ids.len() < 2 {
                 continue;
@@ -2354,11 +2409,11 @@ mod test {
         let mut v1 = vec![];
         let mut v2 = vec![];
         for _ in 0..10 {
-            v1.push(rng.gen::<u8>());
+            v1.push(rng.random::<u8>());
         }
         let rng = &mut ChaCha8Rng::seed_from_u64(seed);
         for _ in 0..10 {
-            v2.push(rng.gen::<u8>());
+            v2.push(rng.random::<u8>());
         }
         assert_eq!(v1, v2);
     }
@@ -2386,7 +2441,7 @@ mod test {
     #[test]
     fn test_exploration_result() -> AppResult<()> {
         let mut world = World::new(None);
-        let rng = &mut ChaCha8Rng::from_entropy();
+        let rng = &mut ChaCha8Rng::from_os_rng();
         let jupiter_id = uuid!("71a43700-0000-0000-0002-000000000002");
         let planet = world.planets.get(&jupiter_id).unwrap().clone();
         println!(
@@ -2465,11 +2520,11 @@ mod test {
     #[test]
     fn test_spugna_portal() -> AppResult<()> {
         // To actually test this, set PORTAL_DISCOVERY_PROBABILITY to 1.0
-        let mut app = App::new(None, true, true, false, false, None, None, None);
+        let mut app = App::test_default()?;
         app.new_world();
 
         let world = &mut app.world;
-        let rng = &mut ChaCha8Rng::from_entropy();
+        let rng = &mut ChaCha8Rng::from_os_rng();
         let planet = PLANET_DATA[0].clone();
         let team_id =
             world.generate_random_team(rng, planet.id, "test".into(), "testship".into())?;
@@ -2635,7 +2690,7 @@ mod test {
 
         player.info.age = player.info.population.max_age();
         world.players.insert(player_id, player);
-        world.tick_player_leaving_team(Tick::now())?;
+        world.tick_player_retirement(Tick::now())?;
 
         let player = world.get_player_or_err(&player_id)?;
         assert!(player.team.is_none());
@@ -2660,7 +2715,7 @@ mod test {
         // Players with low morale quit a team randomly
         let mut idx = 0;
         loop {
-            world.tick_player_leaving_team(Tick::now())?;
+            world.tick_player_leaving_team_for_low_morale(Tick::now())?;
             let player: &crate::world::player::Player = world.get_player_or_err(&player_id)?;
             if player.team.is_none() {
                 break;

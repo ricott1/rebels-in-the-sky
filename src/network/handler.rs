@@ -598,6 +598,8 @@ mod tests {
         assert!(own_team1.current_game.is_some());
 
         let game_id = own_team1.current_game.unwrap();
+        let game = app1.world.get_game_or_err(&game_id)?;
+        println!("{:?}, starting_at {}", game_id, game.starting_at);
 
         let network_data = NetworkData::Challenge(Tick::now(), ack_challenge);
         let data = serialize::<NetworkData>(&network_data)?;
@@ -618,7 +620,9 @@ mod tests {
         }
 
         let own_team2 = app2.world.get_own_team()?.clone();
-        println!("{:?}", own_team2.current_game);
+        let game_id = own_team2.current_game.unwrap();
+        let game = app2.world.get_game_or_err(&game_id)?;
+        println!("{:?}, starting_at {}", game_id, game.starting_at);
         assert!(own_team2.current_game == Some(game_id));
 
         Ok(())
@@ -627,7 +631,7 @@ mod tests {
     #[test]
     fn test_send_own_team() -> AppResult<()> {
         let mut world = World::new(None);
-        let rng = &mut ChaCha8Rng::from_entropy();
+        let rng = &mut ChaCha8Rng::from_os_rng();
         let home_planet = world.planets.keys().next().unwrap().clone();
         let team_name = "Testen".to_string();
         let ship_name = "Tosten".to_string();

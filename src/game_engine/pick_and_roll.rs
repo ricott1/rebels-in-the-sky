@@ -8,7 +8,7 @@ use crate::world::{
     constants::{MoraleModifier, TirednessCost},
     skill::GameSkill,
 };
-use rand::{seq::SliceRandom, Rng};
+use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
@@ -47,7 +47,7 @@ impl EngineAction for PickAndRoll {
         let mut target_defender_update = GameStats::default();
         target_defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
-        let timer_increase = 2 + rng.gen_range(0..=3);
+        let timer_increase = 2 + rng.random_range(0..=3);
         let mut result: ActionOutput;
 
         if play_idx == target_idx {
@@ -130,7 +130,7 @@ impl EngineAction for PickAndRoll {
                     ..Default::default()
                 },
                 x if x > ADV_DEFENSE_LIMIT => {
-                    match rng.gen_bool(0.5) {
+                    match rng.random_bool(0.5) {
                         false => ActionOutput {
                             possession: input.possession,
                             advantage: Advantage::Defense,

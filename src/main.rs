@@ -4,7 +4,6 @@ use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use rebels::app::App;
-use rebels::crossterm_event_handler::CrosstermEventHandler;
 use rebels::network::constants::DEFAULT_PORT;
 use rebels::relayer::Relayer;
 use rebels::ssh::AppServer;
@@ -25,8 +24,8 @@ struct Args {
     reset_world: bool,
     #[clap(long, short='f', action=ArgAction::SetFalse, help = "Disable generating local teams")]
     generate_local_world: bool,
-    #[clap(long, short='u', action=ArgAction::SetFalse, help = "Disable input reader (need to run with bots)")]
-    with_input_reader: bool,
+    #[clap(long, short='u', action=ArgAction::SetTrue, help = "Disable UI and input reader (need to run with bots)")]
+    disable_ui: bool,
     #[clap(long, short='n', action=ArgAction::SetTrue, help = "Run in network relayer mode (no game)")]
     relayer_mode: bool,
     #[clap(long, short='j', action=ArgAction::SetTrue, help = "Run SSH server")]
@@ -74,21 +73,30 @@ async fn main() -> AppResult<()> {
             Some(args.network_port.unwrap_or(DEFAULT_PORT))
         };
 
-        let events = CrosstermEventHandler::new(args.target_fps, args.with_input_reader);
-        let tui = Tui::new_local(events)?;
+        let disable_audio = args.disable_audio || args.disable_ui;
 
-        App::new(
+        let mut app = App::new(
             args.seed,
             args.disable_network,
-            args.disable_audio,
+            disable_audio,
             args.generate_local_world,
             args.reset_world,
             args.seed_ip,
             network_port,
             None,
-        )
-        .run(tui)
-        .await?;
+        );
+
+        if args.disable_ui {
+            app.load_world();
+        }
+
+        if args.disable_ui {
+            let tui = Tui::new_dummy()?;
+            app.run(tui).await?;
+        } else {
+            let tui = Tui::new_local(args.target_fps)?;
+            app.run(tui).await?;
+        };
     }
 
     Ok(())

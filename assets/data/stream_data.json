@@ -1,19 +1,7 @@
 [
     {
         "name": "Radio Frittura",
-        "url_string": "https://radio.frittura.org/rebels.ogg"
-    },
-    {
-        "name": "Party Frittura",
-        "url_string": "https://radio.frittura.org/party.ogg"
-    },
-    {
-        "name": "LPAS Frittura",
-        "url_string": "https://radio.frittura.org/lpas.ogg"
-    },
-    {
-        "name": "Cumbia Frittura",
-        "url_string": "https://radio.frittura.org/pipa.ogg"
+        "url_string": "https://radio.frittura.org/frittura.ogg"
     },
     {
         "name": "Matt Johnson radio",

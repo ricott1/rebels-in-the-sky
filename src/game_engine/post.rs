@@ -9,9 +9,9 @@ use crate::world::{
     player::Player,
     skill::GameSkill,
 };
-use rand::{seq::SliceRandom, Rng};
+use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
-use rand_distr::{Distribution, WeightedIndex};
+use rand_distr::{weighted::WeightedIndex, Distribution};
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
@@ -30,7 +30,7 @@ impl EngineAction for Post {
         let poster = attacking_players[post_idx];
         let defender = defending_players[post_idx];
 
-        let timer_increase = 4 + rng.gen_range(0..=5);
+        let timer_increase = 4 + rng.random_range(0..=5);
 
         let mut attack_stats_update = HashMap::new();
         let mut post_update = GameStats::default();

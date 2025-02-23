@@ -12,7 +12,7 @@ use crate::{
         skill::GameSkill,
     },
 };
-use rand::{seq::SliceRandom, Rng};
+use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
@@ -402,7 +402,7 @@ fn execute_shot(
                     success,
                 )?,
                 start_at: input.end_at,
-                end_at: input.end_at.plus(rng.gen_range(1..=2)),
+                end_at: input.end_at.plus(rng.random_range(1..=2)),
                 home_score: input.home_score,
                 away_score: input.away_score,
                 ..Default::default()
@@ -441,7 +441,7 @@ fn execute_shot(
                     success,
                 )?,
                 start_at: input.end_at,
-                end_at: input.end_at.plus(10 + rng.gen_range(0..=8)),
+                end_at: input.end_at.plus(10 + rng.random_range(0..=8)),
                 ..Default::default()
             }
         }

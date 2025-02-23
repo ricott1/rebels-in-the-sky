@@ -361,7 +361,7 @@ impl EnginePlayer for Player {
     }
 
     fn roll(&self, rng: &mut ChaCha8Rng) -> u8 {
-        rng.gen_range(MIN_SKILL as u8..=2 * MAX_SKILL as u8)
+        rng.random_range(MIN_SKILL as u8..=2 * MAX_SKILL as u8)
             .max(self.min_roll())
             .min(self.max_roll())
     }
@@ -389,7 +389,7 @@ fn test_roll() {
             assert!(player.min_roll() <= roll);
         }
     }
-    let rng = &mut ChaCha8Rng::from_entropy();
+    let rng = &mut ChaCha8Rng::from_os_rng();
     let population = Population::default();
     let mut player = Player::random(
         rng,

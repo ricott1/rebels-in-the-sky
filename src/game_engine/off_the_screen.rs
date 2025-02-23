@@ -8,7 +8,7 @@ use crate::world::{
     constants::{MoraleModifier, TirednessCost},
     skill::GameSkill,
 };
-use rand::{seq::SliceRandom, Rng};
+use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
@@ -47,7 +47,7 @@ impl EngineAction for OffTheScreen {
         let mut target_defender_update = GameStats::default();
         target_defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
-        let timer_increase = 3 + rng.gen_range(0..=1);
+        let timer_increase = 3 + rng.random_range(0..=1);
 
         let atk_result = playmaker.roll(rng)
             + playmaker.mental.vision.value()

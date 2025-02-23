@@ -23,7 +23,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use libp2p::PeerId;
-use rand::{seq::SliceRandom, Rng};
+use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
 use serde::{de::Visitor, ser::SerializeStruct, Deserialize, Serialize};
@@ -614,7 +614,7 @@ impl Player {
         mut base_level: f32,
     ) -> Self {
         if position.is_none() {
-            let position = rng.gen_range(0..MAX_POSITION);
+            let position = rng.random_range(0..MAX_POSITION);
             return Self::random(
                 rng,
                 id,
@@ -689,13 +689,13 @@ impl Player {
             player.mental.charisma = (player.mental.charisma + 0.75).bound();
         }
 
-        if athletics.strength > 15.0 && rng.gen_bool(TRAIT_PROBABILITY) {
+        if athletics.strength > 15.0 && rng.random_bool(TRAIT_PROBABILITY) {
             player.special_trait = Some(Trait::Killer);
-        } else if mental.charisma > 15.0 && rng.gen_bool(TRAIT_PROBABILITY) {
+        } else if mental.charisma > 15.0 && rng.random_bool(TRAIT_PROBABILITY) {
             player.special_trait = Some(Trait::Showpirate);
-        } else if mental.intuition > 10.0 && rng.gen_bool(TRAIT_PROBABILITY) {
+        } else if mental.intuition > 10.0 && rng.random_bool(TRAIT_PROBABILITY) {
             player.special_trait = Some(Trait::Spugna);
-        } else if athletics.stamina > 15.0 && rng.gen_bool(TRAIT_PROBABILITY) {
+        } else if athletics.stamina > 15.0 && rng.random_bool(TRAIT_PROBABILITY) {
             player.special_trait = Some(Trait::Relentless);
         }
 
@@ -1093,7 +1093,7 @@ impl InfoStats {
                 .choose(rng)
                 .expect("No available name")
                 .to_string(),
-            Pronoun::They => match rng.gen_range(0..2) {
+            Pronoun::They => match rng.random_range(0..2) {
                 0 => p_data
                     .first_names_he
                     .choose(rng)
@@ -1112,14 +1112,14 @@ impl InfoStats {
             .expect("No available name")
             .to_string();
         let age = population.min_age()
-            + rng.gen_range(0.0..0.55) * (population.max_age() - population.min_age());
+            + rng.random_range(0.0..0.55) * (population.max_age() - population.min_age());
         let height = match position {
             Some(x) => Normal::new(192.0 + 3.5 * x as f32, 5.0)
                 .unwrap()
                 .sample(rng),
-            None => rng.gen_range(180..=220) as f32,
+            None => rng.random_range(180..=220) as f32,
         };
-        let bmi = rng.gen_range(12..22) as f32 + height / 20.0;
+        let bmi = rng.random_range(12..22) as f32 + height / 20.0;
         let weight = bmi * height * height / 10000.0;
 
         Self {

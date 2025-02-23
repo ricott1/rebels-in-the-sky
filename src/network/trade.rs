@@ -56,7 +56,7 @@ mod tests {
     fn test_local_trade_success() -> AppResult<()> {
         let mut app = App::test_default()?;
 
-        let own_team = app.world.teams.get(&app.world.own_team_id).unwrap();
+        let own_team = app.world.get_team_or_err(&app.world.own_team_id)?.clone();
         let proposer_player_id = own_team.player_ids[0];
         let mut proposer_player = app.world.players.get(&proposer_player_id).unwrap().clone();
         assert!(proposer_player.team == Some(own_team.id));
@@ -77,19 +77,22 @@ mod tests {
             .players
             .insert(proposer_player.id, proposer_player);
 
-        let target_team = app
+        // FIXME: This fails if there is only one team
+        let mut target_team = app
             .world
             .teams
             .values()
-            .filter(|team| team.id != own_team.id && team.home_planet_id == own_team.home_planet_id)
-            .choose(&mut rand::thread_rng())
-            .expect("There should be one team");
-
+            .filter(|team| team.id != own_team.id)
+            .choose(&mut rand::rng())
+            .expect("There should be one other team")
+            .clone();
+        target_team.current_location = own_team.current_location;
         let target_team_id = target_team.id;
-
         let target_player_id = target_team.player_ids[0];
+        app.world.teams.insert(target_team.id, target_team);
+
         let target_player = app.world.get_player_or_err(&target_player_id)?;
-        assert!(target_player.team == Some(target_team.id));
+        assert!(target_player.team == Some(target_team_id));
 
         let cb = UiCallback::CreateTradeProposal {
             proposer_player_id,
@@ -120,7 +123,7 @@ mod tests {
             .teams
             .values()
             .filter(|team| team.home_planet_id != own_team.home_planet_id)
-            .choose(&mut rand::thread_rng())
+            .choose(&mut rand::rng())
             .expect("There should be one team");
 
         let target_team_id = target_team.id;
@@ -181,7 +184,7 @@ mod tests {
         let mut app = App::test_default()?;
 
         let world = &mut app.world;
-        let rng = &mut ChaCha8Rng::from_entropy();
+        let rng = &mut ChaCha8Rng::from_os_rng();
 
         let home_planet_id = world.planets.keys().next().unwrap().clone();
 

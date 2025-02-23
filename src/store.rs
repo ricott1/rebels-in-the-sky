@@ -275,7 +275,7 @@ mod tests {
         let deserialized_data = deserialize(&serialized_data)?;
         assert!(value == deserialized_data);
 
-        let rng = &mut ChaCha8Rng::from_entropy();
+        let rng = &mut ChaCha8Rng::from_os_rng();
 
         let mut team = Team::random(
             TeamId::new_v4(),
@@ -286,7 +286,7 @@ mod tests {
         );
 
         let mut players = vec![];
-        let rng = &mut ChaCha8Rng::from_entropy();
+        let rng = &mut ChaCha8Rng::from_os_rng();
         for _ in 0..5 {
             let population = Population::default();
             let player = Player::random(

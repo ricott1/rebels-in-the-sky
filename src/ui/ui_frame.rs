@@ -61,18 +61,7 @@ impl<'a, 'b> UiFrame<'a, 'b> {
         &self.callback_registry
     }
 
-    // Create a rect with the correct coordinates relatevice to the centered screen.
-    pub fn screen_rect(&self, x: i16, y: i16, width: u16, height: u16) -> Rect {
-        let screen_area = self.screen_area();
-        Rect::new(
-            (x + screen_area.x as i16) as u16,
-            (y + screen_area.y as i16) as u16,
-            width,
-            height,
-        )
-    }
-
-    // Create a rect with the correct coordinates relatevice to the centered screen.
+    // Create a rect with the correct coordinates relative to the centered screen.
     pub fn to_screen_rect(&self, rect: Rect) -> Rect {
         let screen_area = self.screen_area();
         Rect::new(

@@ -8,9 +8,11 @@ use crate::{
     types::{PlanetId, TeamId},
 };
 use libp2p::PeerId;
-use rand::{seq::SliceRandom, Rng, SeedableRng};
+use rand::prelude::Distribution;
+use rand::seq::IndexedRandom;
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use rand_distr::Distribution;
+use rand_distr::weighted::WeightedIndex;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{
@@ -182,12 +184,12 @@ impl Planet {
             .map(|(pop, n)| (pop.clone(), n.clone()))
             .collect::<Vec<(Population, u32)>>();
 
-        let dist = rand_distr::WeightedIndex::new(weights.iter().map(|(_, w)| w)).ok()?;
+        let dist = WeightedIndex::new(weights.iter().map(|(_, w)| w)).ok()?;
         Some(weights[dist.sample(rng)].0)
     }
 
     pub fn asteroid(name: String, filename: String, satellite_of: PlanetId) -> Self {
-        let rng = &mut ChaCha8Rng::from_entropy();
+        let rng = &mut ChaCha8Rng::from_os_rng();
         let revolution_period: usize = vec![120, 180, 360]
             .choose(rng)
             .copied()
@@ -201,14 +203,14 @@ impl Planet {
             populations: HashMap::new(),
             resources: HashMap::new(),
             filename,
-            rotation_period: rng.gen_range(1..24),
+            rotation_period: rng.random_range(1..24),
             revolution_period,
-            gravity: rng.gen_range(1..4),
+            gravity: rng.random_range(1..4),
             asteroid_probability: 0.0,
             planet_type: PlanetType::Asteroid,
             satellites: vec![],
             satellite_of: Some(satellite_of),
-            axis: (rng.gen_range(10.0..60.0), rng.gen_range(10.0..60.0)),
+            axis: (rng.random_range(10.0..60.0), rng.random_range(10.0..60.0)),
             team_ids: vec![],
             //TODO: add option to customize asteroid radio stream
             custom_radio_stream: None,

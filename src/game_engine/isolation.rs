@@ -8,7 +8,7 @@ use crate::world::{
     constants::{MoraleModifier, TirednessCost},
     skill::GameSkill,
 };
-use rand::{seq::SliceRandom, Rng};
+use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
@@ -52,7 +52,7 @@ impl EngineAction for Isolation {
         let iso = attacking_players[iso_idx];
         let defender = defending_players[iso_idx];
 
-        let timer_increase = 2 + rng.gen_range(0..=3);
+        let timer_increase = 2 + rng.random_range(0..=3);
 
         let mut attack_stats_update = HashMap::new();
         let mut iso_update = GameStats::default();

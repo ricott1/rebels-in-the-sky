@@ -4,8 +4,6 @@ use crate::store::world_exists;
 use crate::types::AppResult;
 use anyhow::anyhow;
 use anyhow::Context;
-use async_trait::async_trait;
-use russh::keys::PublicKey;
 use russh::{
     server::{self, *},
     ChannelId,
@@ -41,7 +39,6 @@ impl AppClient {
     }
 }
 
-#[async_trait]
 impl server::Handler for AppClient {
     type Error = anyhow::Error;
 
@@ -63,7 +60,7 @@ impl server::Handler for AppClient {
     async fn auth_publickey(
         &mut self,
         user: &str,
-        public_key: &PublicKey,
+        public_key: &russh::keys::PublicKey,
     ) -> Result<Auth, Self::Error> {
         println!("User {} requested public key authentication", user);
         let username = if !world_exists(user) && user.len() == 0 {

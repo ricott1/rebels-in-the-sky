@@ -31,6 +31,20 @@ pub trait WriterProxy: io::Write + std::fmt::Debug {
 
 impl WriterProxy for io::Stdout {}
 
+#[derive(Debug)]
+pub struct DummyWriter {}
+
+impl io::Write for DummyWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+impl WriterProxy for DummyWriter {}
+
 #[derive(Clone, Copy, Debug)]
 pub enum TerminalEvent {
     Tick { tick: Tick },
@@ -56,6 +70,7 @@ pub trait EventHandler: Send + Sync {
 enum TuiType {
     Local,
     SSH,
+    Dummy,
 }
 
 #[derive(Debug)]
@@ -70,9 +85,10 @@ where
 }
 
 impl Tui<io::Stdout, CrosstermEventHandler> {
-    pub fn new_local(events: CrosstermEventHandler) -> AppResult<Self> {
+    pub fn new_local(target_fps: Option<u8>) -> AppResult<Self> {
         let backend = CrosstermBackend::new(io::stdout());
         let terminal = Terminal::new(backend)?;
+        let events = CrosstermEventHandler::new(target_fps, true);
         let mut tui = Self {
             tui_type: TuiType::Local,
             terminal,
@@ -98,6 +114,32 @@ impl Tui<SSHWriterProxy, SSHEventHandler> {
         let terminal = Terminal::with_options(backend, opts)?;
         let mut tui = Self {
             tui_type: TuiType::SSH,
+            terminal,
+            events,
+        };
+
+        tui.init()?;
+        Ok(tui)
+    }
+}
+
+impl Tui<DummyWriter, CrosstermEventHandler> {
+    pub fn new_dummy() -> AppResult<Self> {
+        let writer = DummyWriter {};
+        let backend = CrosstermBackend::new(writer);
+        let opts = TerminalOptions {
+            viewport: Viewport::Fixed(Rect {
+                x: 0,
+                y: 0,
+                width: UI_SCREEN_SIZE.0,
+                height: UI_SCREEN_SIZE.1,
+            }),
+        };
+
+        let terminal = Terminal::with_options(backend, opts)?;
+        let events = CrosstermEventHandler::new(Some(1), false);
+        let mut tui = Self {
+            tui_type: TuiType::Dummy,
             terminal,
             events,
         };
@@ -144,6 +186,7 @@ where
             io::stdout(),
             LeaveAlternateScreen,
             DisableMouseCapture,
+            SetTitle(""),
             Clear(crossterm::terminal::ClearType::All),
             Show
         )?;
