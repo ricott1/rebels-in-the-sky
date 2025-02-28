@@ -55,7 +55,7 @@ impl Debug for MusicPlayer {
 
 impl MusicPlayer {
     fn current_url(&self) -> AppResult<Url> {
-        Ok(self.streams[self.index].url()?)
+        Ok(self.streams.get(self.index).ok_or(anyhow!("No streams available"))?.url()?)
     }
 
     pub fn new() -> AppResult<MusicPlayer> {
@@ -126,7 +126,7 @@ impl MusicPlayer {
             if self.sink.empty() {
                 let is_buffering = self.is_buffering.clone();
                 if !is_buffering.load(Ordering::Relaxed) {
-                    let url = self.current_url()?.clone();
+                    let url = self.current_url()?;
                     let sender = self.sender.clone();
                     is_buffering.store(true, Ordering::Relaxed);
 
