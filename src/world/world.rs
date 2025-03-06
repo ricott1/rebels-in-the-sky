@@ -847,8 +847,6 @@ impl World {
             + away_team_in_game.team_id.as_u64_pair().0 as u128)
             % (u64::MAX as u128)) as u64;
         rng_seed = ((rng_seed as Tick + starting_at) % (u64::MAX as Tick)) as u64;
-        println!("Game seed {}", rng_seed);
-
         let rng = &mut ChaCha8Rng::seed_from_u64(rng_seed);
         let game_id = GameId::from_u128(rng.random());
 
