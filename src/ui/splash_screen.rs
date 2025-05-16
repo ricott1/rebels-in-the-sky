@@ -45,7 +45,7 @@ pub struct SplashScreen {
     gif_map: GifMap,
 }
 
-const QUOTES: [&'static str;16] = [
+const QUOTES: [&'static str;18] = [
     " “What cannot be destroyed can, nonetheless, be diverted, frozen, transformed, and gradually deprived of its substance - which in the case of states, is ultimately their capacity to inspire terror.” - D. Graeber",
     " “Aber der Staat lügt in allen Zungen des Guten und Bösen; und was er auch redet, er lügt—und was er auch hat, gestohlen hat er's.” - F. Nietzsche",
     " “That is what I have always understood to be the essence of anarchism: the conviction that the burden of proof has to be placed on authority, and that it should be dismantled if that burden cannot be met.” - N. Chomsky",
@@ -63,6 +63,8 @@ const QUOTES: [&'static str;16] = [
     " “What's law? Control? Laws filter chaos and what drips through? Serenity? [..] Don't look too closely at the law. Do, and you'll find the rationalised interpretations, the legal casuistry, the precedents of convenience. You'll find the serenity, which is just another word for death.” - F. Herbert",
     " “I do not demand any right, therefore I need not recognize any either.” - M. Stirner",
     " “There is now a widespread tendency to argue that one can only defend democracy by totalitarian methods. If one loves democracy, the argument runs, one must crush its enemies by no matter what means. [..] In other words, defending democracy involves destroying all independence of thought.” - G. Orwell",
+    " “Van a envejecer y van a tener arrugas, y un día se van a mirar en el espejo y tendrán que preguntarse, ese día, si traicionaron al niño que tenían adentro.” - José 'Pepe' Mujica",
+    " “Se ha generado una literatura contra el Estado falsa. Pero el Estado es como la caja de herramientas, no tiene conciencia. Los que fallamos somos los humanos que manejamos el Estado.” - José 'Pepe' Mujica",    
     ];
 
 const TITLE: [&'static str; 13] = [

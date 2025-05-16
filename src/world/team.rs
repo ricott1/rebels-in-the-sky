@@ -296,9 +296,15 @@ impl Team {
 
     pub fn can_hire_player(&self, player: &Player) -> AppResult<()> {
         self.can_add_player(player)?;
+
         let hiring_cost = player.hire_cost(self.reputation);
         if self.balance() < hiring_cost {
             return Err(anyhow!("Not enough money {}", hiring_cost));
+        }
+
+        // Check player age is not above limit
+        if player.info.relative_age() >= 1.0 {
+            return Err(anyhow!("Player is too old"));
         }
 
         Ok(())

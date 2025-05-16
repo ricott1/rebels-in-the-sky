@@ -313,6 +313,9 @@ impl UiCallback {
                 .ok_or(anyhow!("Player {:?} not found", player_id))?
                 .team
                 .ok_or(anyhow!("Player {:?} has no team", player_id))?;
+
+            app.ui.team_panel.reset_view();
+
             if let Some(index) = app.ui.team_panel.teams.iter().position(|&x| x == team_id) {
                 app.ui.team_panel.set_index(index);
                 let player_index = app
