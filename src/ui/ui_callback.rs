@@ -275,7 +275,6 @@ impl UiCallback {
 
     fn go_to_trade(trade: Trade) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.player_panel.update(&app.world)?;
             app.ui.player_panel.reset_view();
 
             // Display trade differently depending on who is the proposer.
@@ -309,14 +308,19 @@ impl UiCallback {
         Box::new(move |app: &mut App| {
             let team_id = app
                 .world
-                .get_player(&player_id)
-                .ok_or(anyhow!("Player {:?} not found", player_id))?
+                .get_player_or_err(&player_id)?
                 .team
                 .ok_or(anyhow!("Player {:?} has no team", player_id))?;
 
             app.ui.team_panel.reset_view();
 
-            if let Some(index) = app.ui.team_panel.teams.iter().position(|&x| x == team_id) {
+            if let Some(index) = app
+                .ui
+                .team_panel
+                .all_teams
+                .iter()
+                .position(|&x| x == team_id)
+            {
                 app.ui.team_panel.set_index(index);
                 let player_index = app
                     .world
