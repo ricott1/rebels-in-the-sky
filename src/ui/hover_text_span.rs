@@ -13,12 +13,6 @@ pub struct HoverTextSpan<'a> {
     layer: usize,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Hash)]
-pub struct Wrap {
-    /// Should leading whitespace be trimmed
-    pub trim: bool,
-}
-
 impl<'a> HoverTextSpan<'a> {
     pub fn new<T>(span: Span<'a>, hover_text: T) -> HoverTextSpan<'a>
     where

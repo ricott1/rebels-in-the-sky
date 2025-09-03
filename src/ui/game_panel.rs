@@ -532,11 +532,11 @@ impl GamePanel {
     }
 
     fn format_commentary(
-        &self,
+        &'_ self,
         action_result: &ActionOutput,
         timer: Timer,
         switch_possession: bool,
-    ) -> Line {
+    ) -> Line<'_> {
         let arrow: Span<'_>;
         if switch_possession {
             arrow = SWITCH_ARROW_SPAN.clone();

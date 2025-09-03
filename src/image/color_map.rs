@@ -13,6 +13,7 @@ pub struct ColorMap {
     pub green: Rgb<u8>,
     pub blue: Rgb<u8>,
 }
+
 impl Default for ColorMap {
     fn default() -> Self {
         Self {

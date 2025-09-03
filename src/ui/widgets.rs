@@ -553,10 +553,10 @@ pub fn upgrade_spaceship_button<'a>(
 }
 
 pub fn get_storage_spans(
-    resources: &ResourceMap,
+    resources: &'_ ResourceMap,
     storage_capacity: u32,
     bars_length: usize,
-) -> Vec<Span> {
+) -> Vec<Span<'_>> {
     if let [gold_length, scraps_length, rum_length, free_bars] =
         get_storage_lengths(resources, storage_capacity, bars_length)[..4]
     {
@@ -578,9 +578,6 @@ pub fn get_storage_spans(
 }
 
 pub fn get_crew_spans<'a>(crew_size: usize, crew_capacity: usize) -> Vec<Span<'a>> {
-    // let bars_length = team.spaceship.crew_capacity() as usize;
-    // let crew_length = team.player_ids.len();
-
     let bars_length = crew_capacity;
     let crew_length = crew_size;
 
@@ -1253,7 +1250,7 @@ fn improvement_indicator<'a>(skill: f32, previous: f32) -> Span<'a> {
     }
 }
 
-fn format_player_skills(player: &Player) -> Vec<Line> {
+fn format_player_skills(player: &'_ Player) -> Vec<Line<'_>> {
     let skills = player.current_skill_array();
     let mut text = vec![];
     let mut roles = (0..MAX_POSITION)
@@ -1376,7 +1373,7 @@ fn format_player_skills(player: &Player) -> Vec<Line> {
     text
 }
 
-fn format_player_stats(player: &Player) -> Vec<Line> {
+fn format_player_stats(player: &'_ Player) -> Vec<Line<'_>> {
     let stats = &player.historical_stats;
     let mut text = vec![];
 

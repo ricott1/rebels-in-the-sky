@@ -23,6 +23,7 @@ use crate::ui::ui_callback::UiCallback;
 use crate::world::planet::AsteroidUpgrade;
 use crate::world::spaceship::SpaceshipUpgrade;
 use crate::world::utils::is_default;
+use crate::world::AutonomousStrategy;
 use anyhow::anyhow;
 use itertools::Itertools;
 use libp2p::PeerId;
@@ -227,6 +228,7 @@ impl World {
             current_location,
             spaceship,
             resources,
+            autonomous_strategy: AutonomousStrategy::new_for_own_team(),
             ..Default::default()
         };
         self.teams.insert(team.id, team);
@@ -2153,9 +2155,10 @@ impl World {
                         if team.player_ids.len() < MIN_PLAYERS_PER_GAME {
                             return false;
                         }
+
                         let average_tiredness = team.average_tiredness(self);
                         return team.current_game.is_none()
-                            && team.id != self.own_team_id
+                            && team.autonomous_strategy.challenge_local
                             && team.peer_id.is_none()
                             && average_tiredness <= MAX_AVG_TIREDNESS_PER_AUTO_GAME;
                     }

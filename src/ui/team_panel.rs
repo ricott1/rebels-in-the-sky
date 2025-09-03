@@ -165,11 +165,11 @@ impl TeamListPanel {
         if self.teams.len() > 0 {
             let mut options = vec![];
             for team_id in self.teams.iter() {
-                let team = world.get_team(team_id);
-                if team.is_none() {
+                let team = if let Some(team) = world.get_team(team_id) {
+                    team
+                } else {
                     continue;
-                }
-                let team = team.unwrap();
+                };
                 let mut style = UiStyle::DEFAULT;
                 if team.id == world.own_team_id {
                     style = UiStyle::OWN_TEAM;
@@ -204,7 +204,7 @@ impl TeamListPanel {
         if self.index >= self.teams.len() {
             return Ok(());
         }
-        let team = world.get_team_or_err(&self.teams[self.index]).unwrap();
+        let team = world.get_team_or_err(&self.teams[self.index])?;
         self.current_team_players_length = team.player_ids.len();
         let vertical_split = Layout::vertical([
             Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2), //players

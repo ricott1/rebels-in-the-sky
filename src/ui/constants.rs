@@ -34,6 +34,8 @@ impl UiKey {
     pub const TRAINING_FOCUS: KeyCode = KeyCode::Char('T');
     pub const AUTO_ASSIGN: KeyCode = KeyCode::Char('a');
     pub const SET_TACTIC: KeyCode = KeyCode::Char('t');
+    pub const TOGGLE_ACCEPT_LOCAL_CHALLENGES: KeyCode = KeyCode::Char('l');
+    pub const TOGGLE_ACCEPT_NETWORK_CHALLENGES: KeyCode = KeyCode::Char('n');
     pub const CYCLE_VIEW: KeyCode = KeyCode::Tab;
     pub const HIRE: KeyCode = KeyCode::Char('H');
     pub const FIRE: KeyCode = KeyCode::Char('F');

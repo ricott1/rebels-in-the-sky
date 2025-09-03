@@ -55,7 +55,11 @@ impl Debug for MusicPlayer {
 
 impl MusicPlayer {
     fn current_url(&self) -> AppResult<Url> {
-        Ok(self.streams.get(self.index).ok_or(anyhow!("No streams available"))?.url()?)
+        Ok(self
+            .streams
+            .get(self.index)
+            .ok_or(anyhow!("No streams available"))?
+            .url()?)
     }
 
     pub fn new() -> AppResult<MusicPlayer> {

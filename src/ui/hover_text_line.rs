@@ -57,12 +57,12 @@ impl<'a> HoverTextLine<'a> {
     }
 
     /// Returns an iterator over the spans of this line.
-    pub fn iter(&self) -> std::slice::Iter<HoverTextSpan<'a>> {
+    pub fn iter(&'_ self) -> std::slice::Iter<'_, HoverTextSpan<'a>> {
         self.spans.iter()
     }
 
     /// Returns a mutable iterator over the spans of this line.
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<HoverTextSpan<'a>> {
+    pub fn iter_mut(&'_ mut self) -> std::slice::IterMut<'_, HoverTextSpan<'a>> {
         self.spans.iter_mut()
     }
 }

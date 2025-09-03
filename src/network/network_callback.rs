@@ -539,7 +539,7 @@ impl NetworkCallback {
 
                     let own_team = app.world.get_own_team_mut()?;
 
-                    if own_team.auto_accept_network_challenges {
+                    if own_team.autonomous_strategy.challenge_network {
                         let rng = &mut ChaCha8Rng::from_os_rng();
                         own_team.player_ids.shuffle(rng);
                         network_handler.accept_challenge(&app.world, challenge.clone())?;

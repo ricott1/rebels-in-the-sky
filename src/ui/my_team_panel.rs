@@ -45,6 +45,7 @@ use strum::IntoEnumIterator;
 pub enum MyTeamView {
     #[default]
     Info,
+    Team,
     Games,
     Market,
     Shipyard,
@@ -54,7 +55,8 @@ pub enum MyTeamView {
 impl MyTeamView {
     fn next(&self) -> Self {
         match self {
-            MyTeamView::Info => MyTeamView::Games,
+            MyTeamView::Info => MyTeamView::Team,
+            MyTeamView::Team => MyTeamView::Games,
             MyTeamView::Games => MyTeamView::Market,
             MyTeamView::Market => MyTeamView::Shipyard,
             MyTeamView::Shipyard => MyTeamView::Asteroids,
@@ -105,7 +107,16 @@ impl MyTeamPanel {
             },
         )
         .set_hotkey(UiKey::CYCLE_VIEW)
-        .set_hover_text("View own_team information.");
+        .set_hover_text("View crew information.");
+
+        let mut view_team_button = Button::new(
+            "Team",
+            UiCallback::SetMyTeamPanelView {
+                view: MyTeamView::Team,
+            },
+        )
+        .set_hotkey(UiKey::CYCLE_VIEW)
+        .set_hover_text("View team information.");
 
         let mut view_games_button = Button::new(
             "Games",
@@ -145,6 +156,7 @@ impl MyTeamPanel {
 
         match self.view {
             MyTeamView::Info => view_info_button.select(),
+            MyTeamView::Team => view_team_button.select(),
             MyTeamView::Games => view_games_button.select(),
             MyTeamView::Market => view_market_button.select(),
             MyTeamView::Shipyard => view_shipyard_button.select(),
@@ -157,15 +169,17 @@ impl MyTeamPanel {
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
+            Constraint::Length(3),
             Constraint::Min(0),
         ])
         .split(area);
 
         frame.render_interactive(view_info_button, split[0]);
-        frame.render_interactive(view_games_button, split[1]);
-        frame.render_interactive(view_market_button, split[2]);
-        frame.render_interactive(view_shipyard_button, split[3]);
-        frame.render_interactive(view_asteroids_button, split[4]);
+        frame.render_interactive(view_team_button, split[1]);
+        frame.render_interactive(view_games_button, split[2]);
+        frame.render_interactive(view_market_button, split[3]);
+        frame.render_interactive(view_shipyard_button, split[4]);
+        frame.render_interactive(view_asteroids_button, split[5]);
 
         Ok(())
     }
@@ -601,61 +615,16 @@ impl MyTeamPanel {
             }),
         );
 
-        let btm_split = Layout::vertical([
-            Constraint::Min(0),
-            Constraint::Length(3),
-            Constraint::Length(3),
-        ])
-        .split(split[0].inner(Margin {
-            horizontal: 1,
-            vertical: 1,
-        }));
-
-        let top_button_split =
-            Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-                .split(btm_split[1]);
-
-        let tactic_button = Button::new(
-            format!("tactic: {}", own_team.game_tactic),
-            UiCallback::SetTeamTactic {
-                tactic: own_team.game_tactic.next(),
-            },
-        )
-        .set_hover_text(format!(
-            "Tactics affect the actions the own_team will choose during the game. {}: {}",
-            own_team.game_tactic,
-            own_team.game_tactic.description()
-        ))
-        .set_hotkey(UiKey::SET_TACTIC);
-        frame.render_interactive(tactic_button, top_button_split[0]);
-
-        let can_change_training_focus = own_team.can_change_training_focus();
-        let mut training_button = Button::new(
-            format!(
-                "Training: {}",
-                if let Some(focus) = own_team.training_focus {
-                    focus.to_string()
-                } else {
-                    "General".to_string()
-                }
-            ),
-            UiCallback::NextTrainingFocus {
-                team_id: own_team.id,
-            },
-        )
-        .set_hover_text("Change the training focus, which affects how player skills increase.")
-        .set_hotkey(UiKey::TRAINING_FOCUS);
-        if can_change_training_focus.is_err() {
-            training_button.disable(Some(format!(
-                "{}",
-                can_change_training_focus.unwrap_err().to_string()
-            )));
-        }
-        frame.render_interactive(training_button, top_button_split[1]);
+        let btm_split = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(
+            split[0].inner(Margin {
+                horizontal: 1,
+                vertical: 1,
+            }),
+        );
 
         let btm_button_split =
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-                .split(btm_split[2]);
+                .split(btm_split[1]);
 
         if let Ok(go_to_team_current_planet_button) =
             go_to_team_current_planet_button(world, &own_team.id)
@@ -701,6 +670,97 @@ impl MyTeamPanel {
                 return Err(anyhow!("Team is on a space adventure"))
             }
         }
+        Ok(())
+    }
+
+    fn render_team(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
+        let own_team = world.get_own_team()?;
+        let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
+
+        frame.render_widget(default_block().title("Team"), split[0]);
+
+        let btm_split = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+        ])
+        .split(split[0].inner(Margin {
+            horizontal: 1,
+            vertical: 1,
+        }));
+
+        let top_button_split =
+            Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                .split(btm_split[0]);
+
+        let tactic_button = Button::new(
+            format!("tactic: {}", own_team.game_tactic),
+            UiCallback::SetTeamTactic {
+                tactic: own_team.game_tactic.next(),
+            },
+        )
+        .set_hover_text(format!(
+            "Tactics affect the actions the own_team will choose during the game. {}: {}",
+            own_team.game_tactic,
+            own_team.game_tactic.description()
+        ))
+        .set_hotkey(UiKey::SET_TACTIC);
+        frame.render_interactive(tactic_button, top_button_split[0]);
+
+        let can_change_training_focus = own_team.can_change_training_focus();
+        let mut training_button = Button::new(
+            format!(
+                "Training: {}",
+                if let Some(focus) = own_team.training_focus {
+                    focus.to_string()
+                } else {
+                    "General".to_string()
+                }
+            ),
+            UiCallback::NextTrainingFocus {
+                team_id: own_team.id,
+            },
+        )
+        .set_hover_text("Change the training focus, which affects how player skills increase.")
+        .set_hotkey(UiKey::TRAINING_FOCUS);
+        if can_change_training_focus.is_err() {
+            training_button.disable(Some(format!(
+                "{}",
+                can_change_training_focus.unwrap_err().to_string()
+            )));
+        }
+        frame.render_interactive(training_button, top_button_split[1]);
+
+        let local_challenge_button = Button::new(
+            format!(
+                "Accept local challenges: {}",
+                if own_team.autonomous_strategy.challenge_local {
+                    "on"
+                } else {
+                    "off"
+                }
+            ),
+            UiCallback::ToggleTeamAutonomousStrategyForLocalChallenges,
+        )
+        .set_hover_text(format!("Accept automatically challenges from local teams.",))
+        .set_hotkey(UiKey::TOGGLE_ACCEPT_LOCAL_CHALLENGES);
+        frame.render_interactive(local_challenge_button, btm_split[1]);
+
+        let network_challenge_button = Button::new(
+            format!(
+                "Accept network challenges: {}",
+                if own_team.autonomous_strategy.challenge_network {
+                    "on"
+                } else {
+                    "off"
+                }
+            ),
+            UiCallback::ToggleTeamAutonomousStrategyForNetworkChallenges,
+        )
+        .set_hover_text(format!("Accept automatically challenges from local teams.",))
+        .set_hotkey(UiKey::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
+        frame.render_interactive(network_challenge_button, btm_split[2]);
+
         Ok(())
     }
 
@@ -1585,11 +1645,11 @@ impl MyTeamPanel {
     }
 
     fn build_players_table(
-        &self,
+        &'_ self,
         players: &Vec<PlayerId>,
         world: &World,
         table_width: u16,
-    ) -> AppResult<ClickableTable> {
+    ) -> AppResult<ClickableTable<'_>> {
         let own_team = world.get_own_team()?;
         let header_cells = [
             " Name",
@@ -2243,6 +2303,7 @@ impl Screen for MyTeamPanel {
 
         match self.view {
             MyTeamView::Info => self.render_info(frame, world, bottom_split[1])?,
+            MyTeamView::Team => self.render_team(frame, world, bottom_split[1])?,
             MyTeamView::Games => self.render_games(frame, world, bottom_split[1])?,
             MyTeamView::Market => self.render_market(frame, world, bottom_split[1])?,
             MyTeamView::Shipyard => self.render_shipyard(frame, world, bottom_split[1])?,

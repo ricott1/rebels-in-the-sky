@@ -1,15 +1,4 @@
-use super::{
-    constants::{INITIAL_TEAM_BALANCE, KILOMETER, MAX_PLAYERS_PER_GAME, MIN_PLAYERS_PER_GAME},
-    jersey::Jersey,
-    planet::{AsteroidUpgrade, AsteroidUpgradeTarget, Planet},
-    player::Player,
-    position::MAX_POSITION,
-    resources::Resource,
-    skill::GameSkill,
-    spaceship::{Spaceship, SpaceshipUpgrade},
-    types::{TeamLocation, TrainingFocus},
-    world::World,
-};
+use super::*;
 use crate::{
     game_engine::tactic::Tactic,
     network::{challenge::Challenge, trade::Trade},
@@ -80,9 +69,12 @@ pub struct Team {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub number_of_space_adventures: usize,
+    // #[serde(skip_serializing_if = "is_default")]
+    // #[serde(default)]
+    // pub auto_accept_network_challenges: bool,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub auto_accept_network_challenges: bool,
+    pub autonomous_strategy: AutonomousStrategy,
 }
 
 impl Team {

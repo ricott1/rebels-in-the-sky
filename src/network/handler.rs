@@ -39,7 +39,7 @@ impl Debug for NetworkHandler {
 impl NetworkHandler {
     pub fn test_default() -> Self {
         Self {
-            swarm: Swarm::new_ephemeral(|identity| {
+            swarm: Swarm::new_ephemeral_tokio(|identity| {
                 let peer_id = identity.public().to_peer_id();
 
                 let config = gossipsub::ConfigBuilder::default()
@@ -53,6 +53,7 @@ impl NetworkHandler {
             test_environment: true,
         }
     }
+
     pub fn new(seed_ip: Option<String>, tcp_port: u16) -> AppResult<Self> {
         let local_key = identity::Keypair::generate_ed25519();
 

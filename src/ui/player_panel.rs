@@ -442,6 +442,7 @@ impl PlayerListPanel {
                     target_player.info.shortened_name(),
                     proposer_player.info.shortened_name(),
                 ))
+                .block(default_block().border_style(UiStyle::OK))
                 .set_hotkey(UiKey::ACCEPT_TRADE);
 
                 let can_trade =
@@ -463,6 +464,7 @@ impl PlayerListPanel {
                     target_player.info.shortened_name(),
                     proposer_player.info.shortened_name(),
                 ))
+                .block(default_block().border_style(UiStyle::ERROR))
                 .set_hotkey(UiKey::DECLINE_TRADE);
 
                 frame.render_interactive(button, buttons_split[3]);

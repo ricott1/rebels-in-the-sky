@@ -25,7 +25,6 @@ pub type PlanetId = uuid::Uuid;
 pub type GameId = uuid::Uuid;
 pub type KartoffelId = uuid::Uuid;
 
-// pub type AppResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 pub type AppResult<T> = Result<T, anyhow::Error>;
 pub type AppCallback = Box<dyn Fn(&mut App) -> AppResult<Option<String>>>;
 

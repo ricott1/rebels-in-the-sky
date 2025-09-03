@@ -414,6 +414,30 @@ impl TrainingFocus {
     }
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct AutonomousStrategy {
+    pub challenge_local: bool,   // controls whether to challenge local teams
+    pub challenge_network: bool, // controls whether to accept challenges from network teams
+}
+
+impl Default for AutonomousStrategy {
+    fn default() -> Self {
+        Self {
+            challenge_local: true,
+            challenge_network: false,
+        }
+    }
+}
+
+impl AutonomousStrategy {
+    pub fn new_for_own_team() -> Self {
+        Self {
+            challenge_local: false,
+            challenge_network: false,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum TeamBonus {
     Exploration,       //pilot

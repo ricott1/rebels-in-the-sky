@@ -251,7 +251,7 @@ impl InteractiveWidget for Button<'_> {
         }
     }
 
-    fn hover_text(&self) -> Text {
+    fn hover_text(&'_ self) -> Text<'_> {
         let mut spans = vec![];
         if let Some(hover_text) = self.hover_text.as_ref() {
             spans.push(Span::raw(hover_text.to_string()));

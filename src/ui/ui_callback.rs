@@ -234,6 +234,8 @@ pub enum UiCallback {
     SpaceToggleAutofire,
     SpaceShoot,
     SpaceReleaseScraps,
+    ToggleTeamAutonomousStrategyForLocalChallenges,
+    ToggleTeamAutonomousStrategyForNetworkChallenges,
 }
 
 impl UiCallback {
@@ -1633,6 +1635,20 @@ impl UiCallback {
                     space.handle_player_input(PlayerInput::ReleaseScraps)?;
                 }
 
+                Ok(None)
+            }
+
+            UiCallback::ToggleTeamAutonomousStrategyForLocalChallenges => {
+                let own_team = app.world.get_own_team_mut()?;
+                own_team.autonomous_strategy.challenge_local =
+                    !own_team.autonomous_strategy.challenge_local;
+                Ok(None)
+            }
+
+            UiCallback::ToggleTeamAutonomousStrategyForNetworkChallenges => {
+                let own_team = app.world.get_own_team_mut()?;
+                own_team.autonomous_strategy.challenge_network =
+                    !own_team.autonomous_strategy.challenge_network;
                 Ok(None)
             }
         }
