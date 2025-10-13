@@ -733,7 +733,7 @@ impl MyTeamPanel {
 
         let local_challenge_button = Button::new(
             format!(
-                "Accept local challenges: {}",
+                "Auto-accept local challenges: {}",
                 if own_team.autonomous_strategy.challenge_local {
                     "on"
                 } else {
@@ -748,7 +748,7 @@ impl MyTeamPanel {
 
         let network_challenge_button = Button::new(
             format!(
-                "Accept network challenges: {}",
+                "Auto-accept network challenges: {}",
                 if own_team.autonomous_strategy.challenge_network {
                     "on"
                 } else {
@@ -761,6 +761,40 @@ impl MyTeamPanel {
         .set_hotkey(UiKey::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
         frame.render_interactive(network_challenge_button, btm_split[2]);
 
+        match own_team.current_location {
+            TeamLocation::OnPlanet { .. } => {
+                if let Some(upgrade) = &own_team.spaceship.pending_upgrade {
+                    self.render_upgrading_spaceship(frame, world, split[1], upgrade)?
+                } else {
+                    self.render_on_planet_spaceship(frame, world, split[1])?
+                }
+            }
+            TeamLocation::Travelling {
+                to,
+                started,
+                duration,
+                ..
+            } => {
+                let countdown = (started + duration)
+                    .saturating_sub(world.last_tick_short_interval)
+                    .formatted();
+                self.render_travelling_spaceship(frame, world, split[1], &to, countdown)?
+            }
+            TeamLocation::Exploring {
+                around,
+                started,
+                duration,
+                ..
+            } => {
+                let countdown = (started + duration)
+                    .saturating_sub(world.last_tick_short_interval)
+                    .formatted();
+                self.render_exploring_spaceship(frame, world, split[1], &around, countdown)?
+            }
+            TeamLocation::OnSpaceAdventure { .. } => {
+                return Err(anyhow!("Team is on a space adventure"))
+            }
+        }
         Ok(())
     }
 

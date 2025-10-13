@@ -1,6 +1,6 @@
 use super::channel::AppChannel;
-use crate::ssh::utils::{generate_user_id, SessionAuth};
-use crate::store::world_exists;
+use crate::ssh::utils::{generate_user_id, Password, SessionAuth};
+use crate::store::{load_data, save_data, save_game_exists};
 use crate::types::AppResult;
 use anyhow::anyhow;
 use anyhow::Context;
@@ -44,7 +44,7 @@ impl server::Handler for AppClient {
 
     async fn auth_password(&mut self, user: &str, password: &str) -> Result<Auth, Self::Error> {
         println!("User {} requested password authentication", user);
-        let username = if !world_exists(user) && user.len() == 0 {
+        let username = if !save_game_exists(user) && user.len() == 0 {
             generate_user_id()
         } else {
             user.to_string()
@@ -63,7 +63,7 @@ impl server::Handler for AppClient {
         public_key: &russh::keys::PublicKey,
     ) -> Result<Auth, Self::Error> {
         println!("User {} requested public key authentication", user);
-        let username = if !world_exists(user) && user.len() == 0 {
+        let username = if !save_game_exists(user) && user.len() == 0 {
             generate_user_id()
         } else {
             user.to_string()
@@ -84,20 +84,31 @@ impl server::Handler for AppClient {
         println!("User connected with {:?}", self.session_auth);
 
         // If a world exists in the store for the session_aut username, we check the password
-        if world_exists(&self.session_auth.username) {
-            if self
-                .session_auth
-                .check_password(self.session_auth.hashed_password)
-                == false
-            {
-                let error_string = format!("\n\rWrong password.\n");
-                session.disconnect(Disconnect::ByApplication, error_string.as_str(), "")?;
-                session.close(channel.id())?;
-                return Ok(false);
-            }
+        let store_prefix = &self.session_auth.username;
+        let filename = format!("{store_prefix}.sshpwd");
+        if save_game_exists(store_prefix) {
             println!("Found valid save file");
+            // If the password exists, we check it
+            if let Ok(persisted_password) = load_data(&filename) {
+                let password: Password = persisted_password.try_into().unwrap_or_default();
+                if self.session_auth.check_password(password) == false {
+                    let error_string = format!("\n\rWrong password.\n");
+                    session.disconnect(Disconnect::ByApplication, error_string.as_str(), "")?;
+                    session.close(channel.id())?;
+                    return Ok(false);
+                }
+            } else {
+                // Otherwise, we just accept the new password and we persist it.
+                println!("Persisting sshpwd");
+                if let Err(_) = save_data(&filename, &self.session_auth.hashed_password) {
+                    let error_string = format!("\n\rError storing password.\n");
+                    session.disconnect(Disconnect::ByApplication, error_string.as_str(), "")?;
+                    session.close(channel.id())?;
+                    return Ok(false);
+                }
+            }
         }
-        // Else, we check the username and persist it
+        // Else, we check the username and persist the session auth
         else {
             if self.session_auth.username.len() < MIN_USERNAME_LENGTH
                 || self.session_auth.username.len() > MAX_USERNAME_LENGTH
@@ -111,6 +122,14 @@ impl server::Handler for AppClient {
                 return Ok(false);
             }
             println!("No valid save file, starting from scratch.");
+
+            println!("Persisting sshpwd");
+            if let Err(_) = save_data(&filename, &self.session_auth.hashed_password) {
+                let error_string = format!("\n\rError storing password.\n");
+                session.disconnect(Disconnect::ByApplication, error_string.as_str(), "")?;
+                session.close(channel.id())?;
+                return Ok(false);
+            }
         }
 
         self.session_auth.update_last_active_time();

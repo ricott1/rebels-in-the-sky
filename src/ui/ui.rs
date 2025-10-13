@@ -3,7 +3,7 @@ use super::constants::UiKey;
 use super::galaxy_panel::GalaxyPanel;
 use super::popup_message::PopupMessage;
 use super::space_screen::SpaceScreen;
-use super::splash_screen::{AudioPlayerState, SplashScreen};
+use super::splash_screen::SplashScreen;
 use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::ui_frame::UiFrame;
@@ -15,10 +15,12 @@ use super::{
     traits::Screen,
 };
 use crate::audio::music_player::MusicPlayer;
+use crate::audio::AudioPlayerState;
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::world::world::World;
 use core::fmt::Debug;
 use itertools::Itertools;
+use libp2p::PeerId;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
@@ -167,12 +169,29 @@ impl Ui {
         self.popup_messages.remove(0);
     }
 
+    pub fn push_log_event(&mut self, timestamp: Tick, peer_id: Option<PeerId>, text: String) {
+        self.swarm_panel.push_log_event(SwarmPanelEvent {
+            timestamp,
+            peer_id,
+            text,
+        });
+    }
+
     pub fn set_state(&mut self, state: UiState) {
         self.state = state;
     }
 
     pub fn toggle_data_view(&mut self) {
         self.debug_view = !self.debug_view;
+    }
+
+    pub fn switch_to(&mut self, tab: UiTab) {
+        for i in 0..self.ui_tabs.len() {
+            if self.ui_tabs[i] == tab {
+                self.tab_index = i;
+                return;
+            }
+        }
     }
 
     fn get_active_screen(&self) -> &dyn Screen {
@@ -300,14 +319,15 @@ impl Ui {
         match self.state {
             UiState::Splash => {
                 // This is only to get a nice view in the splash screen
-                let audio_state =
-                    if audio_player.is_some() && audio_player.as_ref().unwrap().is_playing() {
+                let audio_state = if let Some(player) = audio_player {
+                    if player.is_playing() {
                         AudioPlayerState::Playing
-                    } else if audio_player.is_some() {
-                        AudioPlayerState::Paused
                     } else {
-                        AudioPlayerState::Disabled
-                    };
+                        AudioPlayerState::Paused
+                    }
+                } else {
+                    AudioPlayerState::Disabled
+                };
                 self.splash_screen.set_audio_player_state(audio_state);
                 self.splash_screen.update(world)?
             }
@@ -419,24 +439,22 @@ impl Ui {
         };
 
         if let Err(err) = render_result {
-            let event = SwarmPanelEvent {
-                timestamp: Tick::now(),
-                peer_id: None,
-                text: format!("Render error\n{}", err.to_string()),
-            };
-            self.swarm_panel.push_log_event(event);
+            self.push_log_event(
+                Tick::now(),
+                None,
+                format!("Render error\n{}", err.to_string()),
+            );
         }
 
         // Render footer
         self.render_footer(&mut ui_frame, world, audio_player, split[1]);
 
         if let Err(err) = self.render_popup_messages(&mut ui_frame, screen_area) {
-            let event = SwarmPanelEvent {
-                timestamp: Tick::now(),
-                peer_id: None,
-                text: format!("Popup render error\n{}", err.to_string()),
-            };
-            self.swarm_panel.push_log_event(event);
+            self.push_log_event(
+                Tick::now(),
+                None,
+                format!("Popup render error\n{}", err.to_string()),
+            );
             log::error!("Popup render error\n{}", err.to_string());
         }
         self.last_update = Instant::now();
@@ -450,15 +468,6 @@ impl Ui {
             self.popup_messages[0].render(frame, area, &mut self.popup_input)?;
         }
         Ok(())
-    }
-
-    pub fn switch_to(&mut self, tab: UiTab) {
-        for i in 0..self.ui_tabs.len() {
-            if self.ui_tabs[i] == tab {
-                self.tab_index = i;
-                return;
-            }
-        }
     }
 
     fn render_footer(

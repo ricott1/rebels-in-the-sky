@@ -738,6 +738,7 @@ impl World {
         player.peer_id = team.peer_id;
         player.current_location = PlayerLocation::WithTeam;
         player.info.crew_role = CrewRole::Mozzo;
+        player.add_morale(MORALE_HIRE_BONUS);
         player.version += 1;
 
         self.players.insert(player.id, player);
@@ -752,12 +753,10 @@ impl World {
     }
 
     pub fn hire_player_for_team(&mut self, player_id: PlayerId, team_id: TeamId) -> AppResult<()> {
-        let player = self.get_player_or_err(&player_id)?.clone();
+        let player = self.get_player_or_err(&player_id)?;
         let mut team = self.get_team_or_err(&team_id)?.clone();
         team.can_hire_player(&player)?;
         team.sub_resource(Resource::SATOSHI, player.hire_cost(team.reputation))?;
-
-        self.players.insert(player.id, player);
         self.teams.insert(team.id, team);
 
         self.add_player_to_team(player_id, team_id)?;
@@ -967,10 +966,7 @@ impl World {
         home_team_in_game: TeamInGame,
         away_team_in_game: TeamInGame,
     ) -> AppResult<GameId> {
-        // FIXME: When losing focus, several tick events start to get accumulated.
-        //        I thought that setting the game beginning using Tick::now() would only allow to start the game
-        //        after all the extra tick events have been processed, but it seems that it is not the case.
-        let starting_at = Tick::now() + GAME_START_DELAY;
+        let starting_at = self.last_tick_short_interval + GAME_START_DELAY;
         let mut home_team = self.get_team_or_err(&home_team_in_game.team_id)?.clone();
         let mut away_team = self.get_team_or_err(&away_team_in_game.team_id)?.clone();
 
@@ -1298,7 +1294,9 @@ impl World {
 
         if current_tick >= self.last_tick_short_interval + TickInterval::SHORT {
             self.tick_games(current_tick)?;
-            self.cleanup_games(current_tick)?;
+            if let Some(cb) = self.cleanup_games(current_tick)? {
+                callbacks.push(cb);
+            }
 
             callbacks.append(&mut self.tick_travel(current_tick)?);
 
@@ -1324,14 +1322,15 @@ impl World {
 
             if !is_simulating {
                 self.tick_team_position_assignment()?;
-                // Once every MEDIUM interval, set dirty_network flag,
-                // so that we send our team to the network.
-                self.dirty_network = true;
             }
 
             if self.games.len() < AUTO_GENERATE_GAMES_NUMBER {
                 self.generate_random_games()?;
             }
+
+            // Once every MEDIUM interval, set dirty_network flag,
+            // so that we send our team to the network.
+            self.dirty_network = true;
 
             self.last_tick_medium_interval += TickInterval::MEDIUM;
         }
@@ -1359,7 +1358,9 @@ impl World {
         Ok(callbacks)
     }
 
-    fn cleanup_games(&mut self, current_tick: Tick) -> AppResult<()> {
+    fn cleanup_games(&mut self, current_tick: Tick) -> AppResult<Option<UiCallback>> {
+        let mut own_team_game_notification = None;
+
         for game in self.games.values() {
             if !game.has_ended() {
                 continue;
@@ -1477,6 +1478,20 @@ impl World {
                 save_game(&game)?;
                 // Update network that game has ended.
                 self.dirty_network = true;
+
+                own_team_game_notification = Some(UiCallback::PushUiPopup {
+                    popup_message: PopupMessage::Ok {
+                        message: format!(
+                            "Game ended\n{} {}-{} {}",
+                            game.home_team_in_game.name,
+                            game.get_score().0,
+                            game.get_score().1,
+                            game.away_team_in_game.name
+                        ),
+                        is_skippable: false,
+                        tick: current_tick,
+                    },
+                });
             }
 
             // Teams get money depending on game attendance.
@@ -1621,7 +1636,7 @@ impl World {
             !game.has_ended() || current_tick <= game.ended_at.unwrap() + GAME_CLEANUP_TIME
         });
 
-        Ok(())
+        Ok(own_team_game_notification)
     }
 
     fn tick_games(&mut self, current_tick: Tick) -> AppResult<()> {
@@ -2179,7 +2194,7 @@ impl World {
                     .ok_or(anyhow!("Team {:?} not found in world", teams[1].id))?;
 
             self.generate_local_game(home_team_in_game, away_team_in_game)?;
-            return Ok(());
+            return Ok(()); // Generate only one game per call
         }
 
         Ok(())

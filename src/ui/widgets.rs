@@ -1377,53 +1377,100 @@ fn format_player_stats(player: &'_ Player) -> Vec<Line<'_>> {
     let stats = &player.historical_stats;
     let mut text = vec![];
 
+    let games_played = stats.games.iter().sum::<u16>().max(1) as f32;
+
     text.push(Line::from(format!(
         "{:<12} W{}/L{}/D{}",
         "Games", stats.games[0], stats.games[1], stats.games[2]
     )));
 
     text.push(Line::from(format!(
-        "{:<12} {}",
-        "Play time",
-        (stats.seconds_played as Tick * SECONDS).formatted()
-    )));
-    text.push(Line::from(format!(
         "{:<12} W{}/L{}/D{}",
         "Brawls", stats.brawls[0], stats.brawls[1], stats.brawls[2]
     )));
-    text.push(Line::from(format!(
-        "{:<12} {:+}",
-        "Plus/Minus", stats.plus_minus
-    )));
-    text.push(Line::from(""));
 
-    text.push(Line::from(format!("{:<12} {}", "Points", stats.points)));
-    text.push(Line::from(format!(
-        "{:<12} {}/{}",
-        "2 points", stats.made_2pt, stats.attempted_2pt
-    )));
-    text.push(Line::from(format!(
-        "{:<12} {}/{}",
-        "3 points", stats.made_3pt, stats.attempted_3pt
-    )));
     text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        format!("{:<12} {:^9} {:>9}", "Stat", "Total", "Per game"),
+        UiStyle::HEADER,
+    )));
 
     text.push(Line::from(format!(
-        "{:<12} {}",
-        "Def Rebounds", stats.defensive_rebounds
+        "{:<12} {:>9} {:>9}",
+        "Play time",
+        (stats.seconds_played as Tick * SECONDS).formatted(),
+        ((stats.seconds_played as f32 * SECONDS as f32 / games_played) as Tick).formatted()
     )));
-    text.push(Line::from(format!(
-        "{:<12} {}",
-        "Off Rebounds", stats.offensive_rebounds
-    )));
-    text.push(Line::from(format!("{:<12} {}", "Assists", stats.assists)));
-    text.push(Line::from(""));
 
-    text.push(Line::from(format!("{:<12} {}", "Steals", stats.steals)));
-    text.push(Line::from(format!("{:<12} {}", "Blocks", stats.blocks)));
     text.push(Line::from(format!(
-        "{:<12} {}",
-        "Turnovers", stats.turnovers
+        "{:<12} {:>+9} {:>+9.1}",
+        "Plus/Minus",
+        stats.plus_minus,
+        stats.plus_minus as f32 / games_played
+    )));
+
+    text.push(Line::from(format!(
+        "{:<12} {:>9} {:>9}",
+        "2 points",
+        format!("{}/{}", stats.made_2pt, stats.attempted_2pt),
+        format!(
+            "{:3.1}/{:3.1}",
+            stats.made_2pt as f32 / games_played,
+            stats.attempted_2pt as f32 / games_played
+        ),
+    )));
+    text.push(Line::from(format!(
+        "{:<12} {:>9} {:>9}",
+        "3 points",
+        format!("{}/{}", stats.made_3pt, stats.attempted_3pt),
+        format!(
+            "{:3.1}/{:3.1}",
+            stats.made_3pt as f32 / games_played,
+            stats.attempted_3pt as f32 / games_played
+        ),
+    )));
+    text.push(Line::from(format!(
+        "{:<12} {:>9} {:>9.1}",
+        "Points",
+        stats.points,
+        stats.points as f32 / games_played
+    )));
+
+    text.push(Line::from(format!(
+        "{:<12} {:>9} {:>9.1}",
+        "Def Rebounds",
+        stats.defensive_rebounds,
+        stats.defensive_rebounds as f32 / games_played
+    )));
+    text.push(Line::from(format!(
+        "{:<12} {:>9} {:>9.1}",
+        "Off Rebounds",
+        stats.offensive_rebounds,
+        stats.offensive_rebounds as f32 / games_played
+    )));
+    text.push(Line::from(format!(
+        "{:<12} {:>9} {:>9.1}",
+        "Assists",
+        stats.assists,
+        stats.assists as f32 / games_played
+    )));
+    text.push(Line::from(format!(
+        "{:<12} {:>9} {:>9.1}",
+        "Steals",
+        stats.steals,
+        stats.steals as f32 / games_played
+    )));
+    text.push(Line::from(format!(
+        "{:<12} {:>9} {:>9.1}",
+        "Blocks",
+        stats.blocks,
+        stats.blocks as f32 / games_played
+    )));
+    text.push(Line::from(format!(
+        "{:<12} {:>9} {:>9.1}",
+        "Turnovers",
+        stats.turnovers,
+        stats.turnovers as f32 / games_played
     )));
 
     text

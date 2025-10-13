@@ -60,26 +60,10 @@ impl NetworkCallback {
         })
     }
 
-    fn push_swarm_panel_log(timestamp: Tick, text: String) -> AppCallback {
-        Box::new(move |app: &mut App| {
-            let event = SwarmPanelEvent {
-                timestamp,
-                peer_id: None,
-                text: text.clone(),
-            };
-            app.ui.swarm_panel.push_log_event(event);
-            Ok(None)
-        })
-    }
-
     fn bind_address(address: Multiaddr) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let event = SwarmPanelEvent {
-                timestamp: Tick::now(),
-                peer_id: None,
-                text: format!("Bound to {}", address),
-            };
-            app.ui.swarm_panel.push_log_event(event);
+            app.ui
+                .push_log_event(Tick::now(), None, format!("Bound to {}", address));
 
             let network_handler = app
                 .network_handler
@@ -95,12 +79,8 @@ impl NetworkCallback {
 
     fn subscribe(topic: TopicHash) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let event = SwarmPanelEvent {
-                timestamp: Tick::now(),
-                peer_id: None,
-                text: format!("Subscribed to topic: {}", topic),
-            };
-            app.ui.swarm_panel.push_log_event(event);
+            app.ui
+                .push_log_event(Tick::now(), None, format!("Subscribed to topic: {}", topic));
             app.world.dirty_network = true;
             Ok(None)
         })
@@ -108,12 +88,11 @@ impl NetworkCallback {
 
     fn unsubscribe(peer_id: PeerId, topic: TopicHash) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let event = SwarmPanelEvent {
-                timestamp: Tick::now(),
-                peer_id: Some(peer_id),
-                text: format!("Peer {peer_id} unsubscribed from topic: {topic}"),
-            };
-            app.ui.swarm_panel.push_log_event(event);
+            app.ui.push_log_event(
+                Tick::now(),
+                Some(peer_id),
+                format!("Peer {peer_id} unsubscribed from topic: {topic}"),
+            );
             app.world.filter_peer_data(Some(peer_id))?;
             app.ui.swarm_panel.remove_peer_id(&peer_id);
             Ok(None)
@@ -129,12 +108,11 @@ impl NetworkCallback {
                 .swarm
                 .is_connected(&peer_id)
             {
-                let event = SwarmPanelEvent {
-                    timestamp: Tick::now(),
-                    peer_id: None,
-                    text: format!("Closing connection: {}", peer_id),
-                };
-                app.ui.swarm_panel.push_log_event(event);
+                app.ui.push_log_event(
+                    Tick::now(),
+                    Some(peer_id),
+                    format!("Closing connection: {}", peer_id),
+                );
                 // FIXME: read connection protocol and understand when this is called.
                 //        For example, we could check that num_established >0 or that cause = None
             }
@@ -148,26 +126,25 @@ impl NetworkCallback {
         network_team: NetworkTeam,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let event = SwarmPanelEvent {
-                timestamp,
+            app.ui.push_log_event(
+                Tick::now(),
                 peer_id,
-                text: format!("Got a team from peer: {:?}", peer_id),
-            };
-            app.ui.swarm_panel.push_log_event(event);
+                format!("Got a team from peer: {:?}", peer_id),
+            );
 
             if let Some(id) = peer_id {
                 app.ui.swarm_panel.add_peer_id(id, network_team.team.id);
             }
             app.world.add_network_team(network_team.clone())?;
-            let event = SwarmPanelEvent {
+
+            app.ui.push_log_event(
                 timestamp,
                 peer_id,
-                text: format!(
+                format!(
                     "Deserialized team: {} {}",
                     network_team.team.name, network_team.team.version
                 ),
-            };
-            app.ui.swarm_panel.push_log_event(event);
+            );
             Ok(None)
         })
     }
@@ -208,19 +185,11 @@ impl NetworkCallback {
         game: NetworkGame,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let event = SwarmPanelEvent {
+            app.ui.push_log_event(
                 timestamp,
                 peer_id,
-                text: format!("Got a game from peer: {:?}", peer_id),
-            };
-            app.ui.swarm_panel.push_log_event(event);
-
-            let event = SwarmPanelEvent {
-                timestamp,
-                peer_id,
-                text: format!("Deserialized game: {}", game.id),
-            };
-            app.ui.swarm_panel.push_log_event(event);
+                format!("Deserialized game {} from peer {:?}", game.id, peer_id),
+            );
             app.world.add_network_game(game.clone())?;
             Ok(None)
         })
@@ -233,12 +202,11 @@ impl NetworkCallback {
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
             log::info!("Got seed info");
-            let event = SwarmPanelEvent {
+            app.ui.push_log_event(
                 timestamp,
                 peer_id,
-                text: format!("Total peers: {}", seed_info.connected_peers_count),
-            };
-            app.ui.swarm_panel.push_log_event(event);
+                format!("Total peers: {}", seed_info.connected_peers_count),
+            );
 
             if let Some(message) = seed_info.message.clone() {
                 app.ui.push_popup(PopupMessage::Ok {
@@ -289,19 +257,15 @@ impl NetworkCallback {
 
     fn handle_trade_topic(peer_id: Option<PeerId>, timestamp: Tick, trade: Trade) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let event = SwarmPanelEvent {
+            app.ui.push_log_event(
                 timestamp,
                 peer_id,
-                text: format!("Got a trade offer from peer: {:?}", peer_id),
-            };
-            app.ui.swarm_panel.push_log_event(event);
-
-            let event = SwarmPanelEvent {
-                timestamp,
-                peer_id,
-                text: format!("Deserialized trade: {}", trade.format()),
-            };
-            app.ui.swarm_panel.push_log_event(event);
+                format!(
+                    "Deserialized trade from peer {:?}: {}",
+                    peer_id,
+                    trade.format()
+                ),
+            );
 
             let network_handler = app
                 .network_handler
@@ -373,12 +337,11 @@ impl NetworkCallback {
                         let own_team = app.world.get_own_team_mut()?;
                         own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
 
-                        let event = SwarmPanelEvent {
+                        app.ui.push_log_event(
                             timestamp,
                             peer_id,
-                            text: format!("Trade accepted, players swapped"),
-                        };
-                        app.ui.swarm_panel.push_log_event(event);
+                            format!("Trade accepted, players swapped"),
+                        );
 
                         app.ui.push_popup(PopupMessage::Ok {
                             message: format!("Trade accepted, players swapped."),
@@ -407,12 +370,11 @@ impl NetworkCallback {
                     if trade.proposer_peer_id != *self_peer_id
                         && trade.target_peer_id != *self_peer_id
                     {
-                        let event = SwarmPanelEvent {
+                        app.ui.push_log_event(
                             timestamp,
                             peer_id,
-                            text: format!("A trade is happening in the network"),
-                        };
-                        app.ui.swarm_panel.push_log_event(event);
+                            format!("A trade is happening in the network"),
+                        );
 
                         return Ok(None);
                     }
@@ -460,12 +422,11 @@ impl NetworkCallback {
                         let own_team = app.world.get_own_team_mut()?;
                         own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
 
-                        let event = SwarmPanelEvent {
+                        app.ui.push_log_event(
                             timestamp,
                             peer_id,
-                            text: format!("Trade accepted, players swapped"),
-                        };
-                        app.ui.swarm_panel.push_log_event(event);
+                            format!("Trade accepted, players swapped"),
+                        );
 
                         app.ui.push_popup(PopupMessage::Ok {
                             message: format!("Trade accepted, players swapped."),
@@ -519,12 +480,11 @@ impl NetworkCallback {
                 .as_mut()
                 .expect("There should be a network handler");
 
-            let event = SwarmPanelEvent {
+            app.ui.push_log_event(
                 timestamp,
                 peer_id,
-                text: format!("\nChallenge: {}", challenge.format()),
-            };
-            app.ui.swarm_panel.push_log_event(event);
+                format!("\nChallenge: {}", challenge.format()),
+            );
 
             let self_peer_id = network_handler.swarm.local_peer_id();
             match &challenge.state {
@@ -580,12 +540,11 @@ impl NetworkCallback {
                         challenge.state = NetworkRequestState::Ack;
                         challenge.starting_at = Some(starting_at);
 
-                        let event = SwarmPanelEvent {
+                        app.ui.push_log_event(
                             timestamp,
                             peer_id,
-                            text: format!("Challenge accepted, generating game"),
-                        };
-                        app.ui.swarm_panel.push_log_event(event);
+                            format!("Challenge accepted, generating game"),
+                        );
 
                         let own_team = app.world.get_own_team_mut()?;
                         own_team.remove_challenge(
@@ -632,12 +591,11 @@ impl NetworkCallback {
                     if challenge.proposer_peer_id != *self_peer_id
                         && challenge.target_peer_id != *self_peer_id
                     {
-                        let event = SwarmPanelEvent {
+                        app.ui.push_log_event(
                             timestamp,
                             peer_id,
-                            text: format!("Adding challenge from network"),
-                        };
-                        app.ui.swarm_panel.push_log_event(event);
+                            format!("Adding challenge from network"),
+                        );
 
                         if let Some(starting_at) = challenge.starting_at {
                             app.world.generate_network_game(
@@ -661,12 +619,11 @@ impl NetworkCallback {
                     }
 
                     let mut handle_ack = || -> AppResult<()> {
-                        let event = SwarmPanelEvent {
+                        app.ui.push_log_event(
                             timestamp,
                             peer_id,
-                            text: format!("Challenge accepted, generating game"),
-                        };
-                        app.ui.swarm_panel.push_log_event(event);
+                            format!("Challenge accepted, generating game"),
+                        );
 
                         if let Some(starting_at) = challenge.starting_at {
                             // In generate_game we check again if the challenge is valid.
@@ -743,7 +700,8 @@ impl NetworkCallback {
                 app,
             ),
             Self::PushSwarmPanelLog { timestamp, text } => {
-                Self::push_swarm_panel_log(timestamp.clone(), text.clone())(app)
+                app.ui.push_log_event(*timestamp, None, text.clone());
+                Ok(None)
             }
             Self::BindAddress { address } => Self::bind_address(address.clone())(app),
             Self::Subscribe { peer_id: _, topic } => Self::subscribe(topic.clone())(app),
@@ -757,12 +715,12 @@ impl NetworkCallback {
                     .as_mut()
                     .expect("Should have network handler");
                 network_handler.send_own_team(&app.world)?;
-                let event = SwarmPanelEvent {
-                    timestamp: Tick::now(),
-                    peer_id: Some(peer_id.clone()),
-                    text: format!("Connected to peer: {}", peer_id),
-                };
-                app.ui.swarm_panel.push_log_event(event);
+
+                app.ui.push_log_event(
+                    Tick::now(),
+                    Some(peer_id.clone()),
+                    format!("Connected to peer: {}", peer_id),
+                );
                 Ok(None)
             }
             Self::HandleMessage { message } => {

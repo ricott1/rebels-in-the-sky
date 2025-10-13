@@ -74,6 +74,9 @@ pub fn deserialize<T: for<'a> Deserialize<'a>>(bytes: &Vec<u8>) -> AppResult<T> 
 }
 
 fn config_dirs() -> AppResult<PathBuf> {
+    // Linux:   /home/alice/.config/barapp
+    // Windows: C:\Users\Alice\AppData\Roaming\Foo Corp\Bar App
+    // macOS:   /Users/Alice/Library/Application Support/com.Foo-Corp.Bar-App
     let dirs = directories::ProjectDirs::from("org", "frittura", "rebels")
         .ok_or(anyhow!("Failed to get directories"))?;
     let config_dirs = dirs.config_dir().to_path_buf();
@@ -193,9 +196,8 @@ pub fn reset() -> AppResult<()> {
     Ok(())
 }
 
-pub fn world_exists(store_prefix: &str) -> bool {
+pub fn save_game_exists(store_prefix: &str) -> bool {
     let filename = prefixed_world_filename(store_prefix);
-
     if let Ok(path) = store_path(&format!("{}.json.compressed", filename)) {
         if path.exists() {
             return true;
@@ -209,6 +211,16 @@ pub fn world_exists(store_prefix: &str) -> bool {
     }
 
     false
+}
+
+pub fn save_data<C: AsRef<[u8]>>(filename: &str, data: &C) -> AppResult<()> {
+    std::fs::write(store_path(&filename)?, data)?;
+    Ok(())
+}
+
+pub fn load_data(filename: &str) -> AppResult<Vec<u8>> {
+    let bytes = std::fs::read(store_path(&filename)?)?;
+    Ok(bytes)
 }
 
 pub fn world_file_data(store_prefix: &str) -> AppResult<std::fs::Metadata> {

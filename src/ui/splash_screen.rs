@@ -7,10 +7,11 @@ use super::{
     traits::{Screen, SplitPanel},
     widgets::default_block,
 };
+use crate::audio::AudioPlayerState;
 use crate::store::world_file_data;
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::world::constants::{DEBUG_TIME_MULTIPLIER, SOL_ID};
-use crate::{store::world_exists, world::world::World};
+use crate::{store::save_game_exists, world::world::World};
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use rand::seq::IndexedRandom;
@@ -25,13 +26,6 @@ use std::vec;
 
 const TITLE_WIDTH: u16 = 71;
 const BUTTON_WIDTH: u16 = 36;
-
-#[derive(Debug, PartialEq)]
-pub enum AudioPlayerState {
-    Playing,
-    Paused,
-    Disabled,
-}
 
 #[derive(Debug)]
 pub struct SplashScreen {
@@ -91,7 +85,7 @@ impl SplashScreen {
         let mut can_load_world = false;
         let mut continue_text = "Continue".to_string();
 
-        if world_exists(store_prefix) {
+        if save_game_exists(store_prefix) {
             if let Ok(continue_data) = world_file_data(store_prefix) {
                 if let Ok(last_modified) = continue_data.modified() {
                     continue_text = format!(

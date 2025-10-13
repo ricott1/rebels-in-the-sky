@@ -1,8 +1,8 @@
 use crate::app::App;
 use crate::audio;
 use crate::crossterm_event_handler::CrosstermEventHandler;
-use crate::ssh::SSHEventHandler;
-use crate::ssh::SSHWriterProxy;
+#[cfg(feature = "ssh")]
+use crate::ssh::{SSHEventHandler, SSHWriterProxy};
 use crate::types::{AppResult, Tick};
 use crate::ui::ui::Ui;
 use crate::ui::UI_SCREEN_SIZE;
@@ -99,6 +99,7 @@ impl Tui<io::Stdout, CrosstermEventHandler> {
     }
 }
 
+#[cfg(feature = "ssh")]
 impl Tui<SSHWriterProxy, SSHEventHandler> {
     pub fn new_ssh(writer: SSHWriterProxy, events: SSHEventHandler) -> AppResult<Self> {
         let backend = CrosstermBackend::new(writer);

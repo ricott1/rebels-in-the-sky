@@ -1,4 +1,3 @@
-use crate::audio;
 use crate::audio::music_player::MusicPlayer;
 use crate::network::handler::NetworkHandler;
 use crate::store::{get_world_size, load_world, reset, save_world};
@@ -7,7 +6,6 @@ use crate::tui::{Tui, WriterProxy};
 use crate::types::{AppResult, ResourceMap, StorableResourceMap, SystemTimeTick, Tick};
 use crate::ui::popup_message::PopupMessage;
 use crate::ui::ui::{Ui, UiState};
-use crate::ui::utils::SwarmPanelEvent;
 use crate::world::constants::{TickInterval, SECONDS};
 use crate::world::resources::Resource;
 use crate::world::types::TeamLocation;
@@ -212,25 +210,30 @@ impl App {
         reset_world: bool,
         seed_ip: Option<String>,
         network_port: Option<u16>,
-        store_prefix: Option<&str>,
+        store_prefix: Option<String>,
     ) -> Self {
         // If the reset_world flag is set, reset the world.
         if reset_world {
             reset().expect("Failed to reset world");
         }
 
-        let store_prefix = store_prefix.unwrap_or("local");
+        let store_prefix = store_prefix.unwrap_or("local".to_string());
 
-        let ui = Ui::new(store_prefix, disable_network);
-        let audio_player = if disable_audio {
-            None
-        } else {
-            if let Ok(player) = audio::music_player::MusicPlayer::new() {
-                info!("Audio player created succesfully");
-                Some(player)
-            } else {
-                warn!("Could not create audio player");
-                None
+        let ui = Ui::new(store_prefix.as_str(), disable_network);
+
+        let audio_player = {
+            {
+                if disable_audio {
+                    None
+                } else {
+                    if let Ok(player) = MusicPlayer::new() {
+                        info!("Audio player created succesfully");
+                        Some(player)
+                    } else {
+                        warn!("Could not create audio player");
+                        None
+                    }
+                }
             }
         };
 
@@ -340,7 +343,7 @@ impl App {
     pub fn render(
         ui: &mut Ui,
         world: &World,
-        audio_player: Option<&audio::music_player::MusicPlayer>,
+        audio_player: Option<&MusicPlayer>,
         frame: &mut ratatui::Frame,
     ) {
         ui.render(frame, world, audio_player);
@@ -383,11 +386,11 @@ impl App {
             Ok(_) => {}
             Err(e) => {
                 // We push to Logs rather than Error popup since otherwise it would spam too much
-                self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
-                    timestamp: Tick::now(),
-                    peer_id: None,
-                    text: format!("Ui update error\n{}", e.to_string()),
-                })
+                self.ui.push_log_event(
+                    Tick::now(),
+                    None,
+                    format!("Ui update error\n{}", e.to_string()),
+                )
             }
         }
         self.world.dirty_ui = false;
@@ -398,11 +401,11 @@ impl App {
             self.world.serialized_size =
                 get_world_size(&self.store_prefix).expect("Failed to get world size");
 
-            self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
-                timestamp: Tick::now(),
-                peer_id: None,
-                text: format!("World saved, size: {} bytes", self.world.serialized_size),
-            });
+            self.ui.push_log_event(
+                Tick::now(),
+                None,
+                format!("World saved, size: {} bytes", self.world.serialized_size),
+            );
         }
 
         // Send own team to peers if dirty
@@ -411,18 +414,18 @@ impl App {
             if let Some(network_handler) = &mut self.network_handler {
                 if network_handler.swarm.connected_peers().count() > 0 {
                     if let Err(e) = network_handler.send_own_team(&self.world) {
-                        self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
-                            timestamp: Tick::now(),
-                            peer_id: None,
-                            text: format!("Failed to send own team to peers: {}", e),
-                        });
+                        self.ui.push_log_event(
+                            Tick::now(),
+                            None,
+                            format!("Failed to send own team to peers: {}", e),
+                        );
                     }
                 } else if let Err(e) = network_handler.dial_seed() {
-                    self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
-                        timestamp: Tick::now(),
-                        peer_id: None,
-                        text: format!("Failed to dial seed: {}", e),
-                    });
+                    self.ui.push_log_event(
+                        Tick::now(),
+                        None,
+                        format!("Failed to dial seed: {}", e),
+                    );
                 }
             }
         }
@@ -502,12 +505,7 @@ impl App {
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    // Append error to swarm log
-                    self.ui.swarm_panel.push_log_event(SwarmPanelEvent {
-                        timestamp: Tick::now(),
-                        peer_id: None,
-                        text: e.to_string(),
-                    });
+                    self.ui.push_log_event(Tick::now(), None, e.to_string());
                 }
             }
         }

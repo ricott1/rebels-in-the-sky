@@ -707,7 +707,6 @@ impl Screen for SwarmPanel {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
             UiKey::CYCLE_VIEW => {
-                //FIXME: this means the chat can't use the capital V
                 return Some(UiCallback::SetSwarmPanelView {
                     topic: self.view.next(),
                 });

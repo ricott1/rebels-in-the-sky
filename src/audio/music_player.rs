@@ -75,9 +75,7 @@ impl MusicPlayer {
         let data = file
             .contents_utf8()
             .expect("Could not read stream_data.json");
-        let streams = serde_json::from_str(&data).unwrap_or_else(|e| {
-            panic!("Could not parse stream_data.json: {}", e);
-        });
+        let streams = serde_json::from_str(&data)?;
 
         Ok(MusicPlayer {
             _stream,
@@ -95,70 +93,69 @@ impl MusicPlayer {
         !self.sink.is_paused()
     }
 
-    pub fn previous_audio_sample(&mut self) -> AppResult<()> {
+    pub fn previous_radio_stream(&mut self) -> AppResult<()> {
         if self.streams.len() == 0 {
             return Err(anyhow!("No streams available"));
         }
         self.index = (self.index + self.streams.len() - 1) % self.streams.len();
         if self.is_playing() {
             self.sink.clear();
-            self.toggle()?;
+            self.toggle_state()?;
         } else {
             self.sink.clear();
         }
         Ok(())
     }
 
-    pub fn next_audio_sample(&mut self) -> AppResult<()> {
+    pub fn next_radio_stream(&mut self) -> AppResult<()> {
         if self.streams.len() == 0 {
             return Err(anyhow!("No streams available"));
         }
         self.index = (self.index + 1) % self.streams.len();
         if self.is_playing() {
             self.sink.clear();
-            self.toggle()?;
+            self.toggle_state()?;
         } else {
             self.sink.clear();
         }
         Ok(())
     }
 
-    pub fn toggle(&mut self) -> AppResult<()> {
+    pub fn toggle_state(&mut self) -> AppResult<()> {
         if self.is_playing() {
             self.sink.pause();
-        } else {
-            if self.sink.empty() {
-                let is_buffering = self.is_buffering.clone();
-                if !is_buffering.load(Ordering::Relaxed) {
-                    let url = self.current_url()?;
-                    let sender = self.sender.clone();
-                    is_buffering.store(true, Ordering::Relaxed);
+        } else if self.sink.empty() {
+            let is_buffering = self.is_buffering.clone();
+            if !is_buffering.load(Ordering::Relaxed) {
+                let url = self.current_url()?;
+                let sender = self.sender.clone();
+                is_buffering.store(true, Ordering::Relaxed);
 
-                    tokio::spawn(tokio::time::timeout(
-                        Duration::from_millis(STREAMING_TIMEOUT_MILLIS),
-                        async move {
-                            if let Ok(data) = StreamDownload::new_http(
-                                url,
-                                TempStorageProvider::default(),
-                                Settings::default(),
-                            )
-                            .await
-                            {
-                                sender.send(data)?;
-                                is_buffering.store(false, Ordering::Relaxed);
-                                return Ok(());
-                            } else {
-                                log::error!("Unable to play stream");
-                                is_buffering.store(false, Ordering::Relaxed);
-                                return Err(anyhow!("Unable to start stream"));
-                            }
-                        },
-                    ));
-                }
-            } else {
-                self.sink.play();
+                tokio::spawn(tokio::time::timeout(
+                    Duration::from_millis(STREAMING_TIMEOUT_MILLIS),
+                    async move {
+                        if let Ok(data) = StreamDownload::new_http(
+                            url,
+                            TempStorageProvider::default(),
+                            Settings::default(),
+                        )
+                        .await
+                        {
+                            sender.send(data)?;
+                            is_buffering.store(false, Ordering::Relaxed);
+                            return Ok(());
+                        } else {
+                            log::error!("Unable to play stream");
+                            is_buffering.store(false, Ordering::Relaxed);
+                            return Err(anyhow!("Unable to start stream"));
+                        }
+                    },
+                ));
             }
+        } else {
+            self.sink.play();
         }
+
         Ok(())
     }
 

@@ -1182,7 +1182,7 @@ impl UiCallback {
             }
             UiCallback::ToggleAudio => {
                 if let Some(player) = app.audio_player.as_mut() {
-                    player.toggle()?;
+                    player.toggle_state()?;
                 } else {
                     info!("No audio player, cannot toggle it");
                 }
@@ -1191,7 +1191,7 @@ impl UiCallback {
             }
             UiCallback::PreviousRadio => {
                 if let Some(player) = app.audio_player.as_mut() {
-                    player.previous_audio_sample()?;
+                    player.previous_radio_stream()?;
                 } else {
                     info!("No audio player, cannot select previous sample");
                 }
@@ -1199,7 +1199,7 @@ impl UiCallback {
             }
             UiCallback::NextRadio => {
                 if let Some(player) = app.audio_player.as_mut() {
-                    player.next_audio_sample()?;
+                    player.next_radio_stream()?;
                 } else {
                     info!("No audio player, cannot select next sample");
                 }

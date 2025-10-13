@@ -117,7 +117,7 @@ impl AppChannel {
         height: u32,
         session: &mut Session,
     ) -> AppResult<()> {
-        // FIXME: this is the server shitdown token, we should use it to stop the app (which stops everything else).
+        // FIXME: this is the server shutdown token, we should use it to stop the app (which stops everything else).
         let AppChannelState::AwaitingPty { shutdown } = &mut self.state else {
             return Err(anyhow!("pty has been already allocated"));
         };
@@ -134,7 +134,7 @@ impl AppChannel {
 
         // Main loop to run the update, including updating and drawing.
         task::spawn(async move {
-            let store_prefix = Some(username.as_str());
+            let store_prefix = Some(username);
             if let Err(e) = App::new(
                 None,
                 false,

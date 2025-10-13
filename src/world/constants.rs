@@ -144,7 +144,8 @@ pub const LEAVING_PROBABILITY_MORALE_MODIFIER: f64 =
     0.015 * (1.0 / MORALE_THRESHOLD_FOR_LEAVING) as f64;
 pub const MORALE_DEMOTION_MALUS: f32 = MoraleModifier::MEDIUM_MALUS;
 pub const MORALE_GAME_POPULATION_MODIFIER: f32 = 0.5;
-pub const MORALE_DRINK_BONUS: f32 = MoraleModifier::HIGH_BONUS;
+pub const MORALE_DRINK_BONUS: f32 = MoraleModifier::SEVERE_BONUS;
+pub const MORALE_HIRE_BONUS: f32 = MoraleModifier::SMALL_BONUS;
 pub const TIREDNESS_DRINK_MALUS: f32 = TirednessCost::SEVERE;
 pub const TIREDNESS_DRINK_MALUS_SPUGNA: f32 = TirednessCost::HIGH;
 pub const TRAIT_PROBABILITY: f64 = 0.25;
