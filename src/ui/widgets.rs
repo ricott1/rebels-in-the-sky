@@ -359,7 +359,7 @@ pub fn trade_resource_button<'a>(
 }
 
 pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
-    let duration = LONG_EXPLORATION_TIME;
+    let duration = EXPLORATION_DURATION;
     let mut button = Button::new(
         format!("Explore ({})", duration.formatted()),
         UiCallback::ExploreAroundPlanet { duration },
@@ -714,7 +714,7 @@ pub fn render_spaceship_description(
         );
     }
 
-    let spaceship_info = if full_info {
+    if full_info {
         let average_tiredness = team.average_tiredness(world);
         let speed_bonus = TeamBonus::SpaceshipSpeed
             .current_team_bonus(world, &team.id)
@@ -722,7 +722,7 @@ pub fn render_spaceship_description(
         let weapon_bonus = TeamBonus::Weapons
             .current_team_bonus(world, &team.id)
             .unwrap_or(1.0);
-        Paragraph::new(vec![
+        let widget = Paragraph::new(vec![
             Line::from(get_crew_spans(
                 team.player_ids.len(),
                 team.spaceship.crew_capacity() as usize,
@@ -765,8 +765,42 @@ pub fn render_spaceship_description(
                 team.total_travelled as f32 / AU as f32
             )),
             Line::from(format!("Value {}", format_satoshi(team.spaceship.cost()),)),
-        ])
+        ]);
+
+        frame.render_widget(
+            widget,
+            spaceship_split[1].inner(Margin {
+                horizontal: 0,
+                vertical: 1,
+            }),
+        );
     } else {
+        let area = spaceship_split[1].inner(Margin {
+            horizontal: 0,
+            vertical: 1,
+        });
+
+        let split = Layout::vertical([Constraint::Length(1),Constraint::Length(1), Constraint::Min(0)]).split(area);
+
+        let rating_span =  HoverTextSpan::new(
+            Span::raw(format!(
+                "Rating {}  ",
+                team_rating.stars()
+            )),
+            format!("The rating is an indicator of the overall basketball proficiency of the crew. (current value {})", team_rating.value()),
+        );
+        frame.render_interactive(rating_span, split[0]);
+
+        let reputation_span = 
+        HoverTextSpan::new(
+            Span::raw(format!(
+                "Reputation {}  ",
+                team.reputation.stars()
+            )),
+            format!("Reputation indicates how much the team is respected in the galaxy. It affects hiring costs. (current value {})", team.reputation.value()),
+        );
+        frame.render_interactive(reputation_span, split[1]);
+
         let game_record = if team.peer_id.is_some() {
             format!(
                 "Network record W{}/L{}/D{}",
@@ -782,8 +816,6 @@ pub fn render_spaceship_description(
         };
 
         let mut lines = vec![
-            Line::from(format!("Rating {}", team_rating.stars())),
-            Line::from(format!("Reputation {}", team.reputation.stars())),
             Line::from(format!("Treasury {}", format_satoshi(team.balance()))),
             Line::from(game_record),
             Line::from(get_crew_spans(
@@ -797,16 +829,8 @@ pub fn render_spaceship_description(
             lines.push(Line::from(get_energy_spans(average_tiredness)));
         }
 
-        Paragraph::new(lines)
-    };
-
-    frame.render_widget(
-        spaceship_info,
-        spaceship_split[1].inner(Margin {
-            horizontal: 0,
-            vertical: 1,
-        }),
-    );
+        frame.render_widget(Paragraph::new(lines), split[2]);
+    }
 
     // Render main block
     let block = default_block().title(format!("Spaceship - {}", team.spaceship.name.to_string()));
@@ -1133,7 +1157,7 @@ pub fn render_player_description(
                 "Reputation {}  ",
                 player.reputation.stars()
             )),
-            format!("Reputation indicates how much the player is respected in the galaxy. It influences special bonuses and hiring cost. (current value {})", player.reputation.value()),
+            format!("Reputation indicates how much the player is respected in the galaxy. It affects special bonuses. (current value {})", player.reputation.value()),
         ),
         HoverTextSpan::new(
             trait_span,

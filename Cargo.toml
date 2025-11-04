@@ -1,6 +1,6 @@
 [package]
 name = "rebels"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 authors = ["Alessandro Ricottone <ricott2@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -29,14 +29,14 @@ opt-level = 3
 [dependencies]
 anyhow = "1.0.99"
 chrono = "0.4.41"
-clap = { version = "4.5.47", features = ["derive"] }
+clap = { version = "4.5.51", features = ["derive"] }
 crossterm = "0.29.0"
 directories = "6.0.0"
 ed25519-dalek = "2.2.0"
-flate2 = { version = "1.1.2", features = ["zlib-ng"], default-features = false }
+flate2 = { version = "1.1.5", features = ["zlib-ng"], default-features = false }
 futures = "0.3.31"
 gif = "0.13.3"
-glam = "0.30.5"
+glam = "0.30.9"
 image = "0.25.8"
 imageproc = "0.25.0"
 include_dir = "0.7.4"
@@ -66,19 +66,19 @@ serde = { version = "1.0.219", features = ["derive", "default"] }
 serde_json = "1.0.143"
 serde_repr = "0.1.20"
 sha2 = "0.10.9"
-stream-download = { version = "0.22.4", features = ["reqwest-rustls"] }
+stream-download = { version = "0.22.8", features = ["reqwest-rustls"] }
 strum = { version = "0.27.2", features = ["derive"] }
 strum_macros = "0.27.2"
-tokio = { version = "1.47.1", features = ["rt", "time", "macros", "sync"] }
+tokio = { version = "1.48.0", features = ["rt", "time", "macros", "sync"] }
 tui-textarea = "0.7.0"
-unicode-width = "0.2.0"
+unicode-width = "0.2"
 url = "2.5.7"
 uuid = { version = "1.18.1", features = ["v4", "serde"] }
 void = "1.0.2"
 
 # Feature deps
 russh = { version = "0.54.3", optional = true }
-tokio-util = { version = "0.7.16", optional = true }
+tokio-util = { version = "0.7.17", optional = true }
 
 
 [features]

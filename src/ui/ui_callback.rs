@@ -1238,8 +1238,8 @@ impl UiCallback {
                 Ok(None)
             }
             UiCallback::HirePlayer { player_id } => {
-                app.world
-                    .hire_player_for_team(*player_id, app.world.own_team_id)?;
+                let own_team_id = app.world.own_team_id;
+                app.world.hire_player_for_team(player_id, &own_team_id)?;
 
                 Ok(None)
             }
@@ -1530,7 +1530,8 @@ impl UiCallback {
                     {
                         continue;
                     }
-
+                    // The player_control.resources are the sum of the resources the plahyer had
+                    // at the beginning of the adventure + the resources gathered.
                     new_resources.insert(resource, amount);
                     // Gathered amount should always be larger equal to amount, apart from fuel.
                     let gathered_amount = amount.saturating_sub(current_amount);

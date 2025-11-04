@@ -57,6 +57,7 @@ pub enum PopupMessage {
         tick: Tick,
     },
     ExplorationResult {
+        planet_name: String,
         resources: ResourceMap,
         players: Vec<Player>,
         tick: Tick,
@@ -593,6 +594,7 @@ impl PopupMessage {
             }
 
             PopupMessage::ExplorationResult {
+                planet_name,
                 resources,
                 players,
                 tick,
@@ -646,6 +648,8 @@ impl PopupMessage {
                         );
                         text.push_str(p_text.as_str());
                     }
+
+                    text.push_str(format!("You can hire them on {}", planet_name).as_str());
                 }
 
                 if text.len() == 0 {

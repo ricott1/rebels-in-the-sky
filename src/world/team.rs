@@ -207,12 +207,20 @@ impl Team {
         self.spaceship.fuel_capacity()
     }
 
+    pub fn available_fuel_capacity(&self) -> u32 {
+        self.fuel_capacity() - self.used_fuel_capacity()
+    }
+
     pub fn used_storage_capacity(&self) -> u32 {
         self.resources.used_storage_capacity()
     }
 
     pub fn storage_capacity(&self) -> u32 {
         self.spaceship.storage_capacity()
+    }
+
+    pub fn available_storage_capacity(&self) -> u32 {
+        self.storage_capacity() - self.used_storage_capacity()
     }
 
     pub fn spaceship_speed(&self) -> f32 {
