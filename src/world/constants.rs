@@ -20,6 +20,8 @@ pub const KILOMETERS: KILOMETER = 1;
 pub const AU: KILOMETER = 149_597_870_700 * KILOMETERS;
 pub const LIGHT_YEAR: KILOMETER = 9_460_730_472_580_800 * KILOMETERS;
 
+pub const SATOSHI_PER_BITCOIN: u32 = 100_000_000;
+
 // The CALENDAR_OFFSET is the number of years to add to the current year
 // to get the year in the game world.
 pub const CALENDAR_OFFSET: i32 = 77;
@@ -75,6 +77,9 @@ pub const LANDING_TIME_OVERHEAD: Tick = 10 * MINUTES;
 pub const EXPLORATION_DURATION: Tick = 8 * HOURS;
 pub const ASTEROID_DISCOVERY_PROBABILITY: f64 = 0.15;
 pub const PORTAL_DISCOVERY_PROBABILITY: f64 = 0.05;
+pub const PORTAL_TRAVEL_DURATION: Tick = 10 * SECONDS;
+// This is used to check if a travel was done using a portal or teleporting.
+pub const TELEPORT_MAX_DURATION: Tick = PORTAL_TRAVEL_DURATION;
 
 pub const MAX_NUM_ASTEROID_PER_TEAM: usize = 5;
 

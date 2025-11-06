@@ -108,8 +108,8 @@ fn make_substitution(
 
     let mut description = format!(
         "{} is substituted by {}. ",
-        player_out.info.shortened_name(),
-        player_in.info.shortened_name()
+        player_out.info.short_name(),
+        player_in.info.short_name()
     );
 
     if tiredness > MIN_TIREDNESS_FOR_SUB {

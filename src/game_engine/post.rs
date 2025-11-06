@@ -60,28 +60,28 @@ impl EngineAction for Post {
                 description: [
                     format!(
                         "{} worked {}'s perfectly and got to the basket.",
-                        poster.info.shortened_name(),
-                        defender.info.shortened_name()
+                        poster.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} beats {}'s defense to create space and drive to the hoop.",
-                        poster.info.shortened_name(),
-                        defender.info.shortened_name()
+                        poster.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} beats {} with a slick step and makes a strong move to the basket.",
-                        poster.info.shortened_name(),
-                        defender.info.shortened_name()
+                        poster.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} spun past {} and now has an open lane to the basket.",
-                        poster.info.shortened_name(),
-                        defender.info.shortened_name()
+                        poster.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} took advantage of {}'s mistake and easily attacked the basket.",
-                        poster.info.shortened_name(),
-                        defender.info.shortened_name()
+                        poster.info.short_name(),
+                        defender.info.short_name()
                     ),
                 ]
                 .choose(rng)
@@ -102,28 +102,28 @@ impl EngineAction for Post {
                 description: [
                     format!(
                         "{} bumps on {} and gathers the ball to shoot.",
-                        poster.info.shortened_name(),
-                        defender.info.shortened_name(),
+                        poster.info.short_name(),
+                        defender.info.short_name(),
                     ),
                     format!(
                         "{} backs down {} and collects the ball, looking for a shot.",
-                        poster.info.shortened_name(),
-                        defender.info.shortened_name(),
+                        poster.info.short_name(),
+                        defender.info.short_name(),
                     ),
                     format!(
                         "{} establishes position against {} and prepares for the shot.",
-                        poster.info.shortened_name(),
-                        defender.info.shortened_name(),
+                        poster.info.short_name(),
+                        defender.info.short_name(),
                     ),
                     format!(
                         "{} powers through {}'s defense to secure the ball and get ready to shoot.",
-                        poster.info.shortened_name(),
-                        defender.info.shortened_name(),
+                        poster.info.short_name(),
+                        defender.info.short_name(),
                     ),
                     format!(
                         "{} muscles up against {} and pulls in the ball for a post move.",
-                        poster.info.shortened_name(),
-                        defender.info.shortened_name(),
+                        poster.info.short_name(),
+                        defender.info.short_name(),
                     ),
                 ]
                 .choose(rng)
@@ -150,23 +150,23 @@ impl EngineAction for Post {
                         description: [
                             format!(
                                 "{} is struggling from the post due to {}'s defense. The ball is passed to {} to reset.",
-                                poster.info.shortened_name(), defender.info.shortened_name(), target.info.shortened_name()
+                                poster.info.short_name(), defender.info.short_name(), target.info.short_name()
                             ),
                             format!(
                                 "{} can't shake off {}'s defense in the post, so the ball is passed to {} to reset the offense.",
-                                poster.info.shortened_name(), defender.info.shortened_name(), target.info.shortened_name()
+                                poster.info.short_name(), defender.info.short_name(), target.info.short_name()
                             ),
                             format!(
                                 "{} is bottled up by {} in the post. The play resets as {} gets the ball.",
-                                poster.info.shortened_name(), defender.info.shortened_name(), target.info.shortened_name()
+                                poster.info.short_name(), defender.info.short_name(), target.info.short_name()
                             ),
                             format!(
                                 "{} is having trouble in the post against {}'s tough defense. The ball is swung to {} for a reset.",
-                                poster.info.shortened_name(), defender.info.shortened_name(), target.info.shortened_name()
+                                poster.info.short_name(), defender.info.short_name(), target.info.short_name()
                             ),
                             format!(
                                 "{} can't find an opening against {}'s defense, so the ball is passed out to {} to reset.",
-                                poster.info.shortened_name(), defender.info.shortened_name(), target.info.shortened_name()
+                                poster.info.short_name(), defender.info.short_name(), target.info.short_name()
                             ),
                         ].choose(rng)
                         .expect("There should be one option")
@@ -187,23 +187,23 @@ impl EngineAction for Post {
                         description: [
                             format!(
                                 "{} tries to make the post moves work against {} but {} is all over {}.",
-                                poster.info.shortened_name(), defender.info.shortened_name(), defender.info.shortened_name(),  poster.info.pronouns.as_object()
+                                poster.info.short_name(), defender.info.short_name(), defender.info.short_name(),  poster.info.pronouns.as_object()
                             ),
                             format!(
                                 "{} attempts a post move on {} but can't shake off the tight defense, resulting in a bad shot.",
-                                poster.info.shortened_name(), defender.info.shortened_name()
+                                poster.info.short_name(), defender.info.short_name()
                             ),
                             format!(
                                 "{} tries to power through {}'s defense in the post, but {} smothers {}, forcing a difficult shot.",
-                                poster.info.shortened_name(), defender.info.shortened_name(), defender.info.shortened_name(), poster.info.pronouns.as_object()
+                                poster.info.short_name(), defender.info.short_name(), defender.info.short_name(), poster.info.pronouns.as_object()
                             ),
                             format!(
                                 "{} works the post against {} but the defense is too strong, leading to an off-balance shot.",
-                                poster.info.shortened_name(), defender.info.shortened_name()
+                                poster.info.short_name(), defender.info.short_name()
                             ),
                             format!(
                                 "{} makes an attempt in the post against {} but is completely shut down, forcing a bad shot.",
-                                poster.info.shortened_name(), defender.info.shortened_name()
+                                poster.info.short_name(), defender.info.short_name()
                             ),
                         ].choose(rng)
                         .expect("There should be one option")
@@ -227,8 +227,8 @@ impl EngineAction for Post {
                     possession: !input.possession,
                     description: format!(
                         "{} steals the ball from {} on the post.",
-                        defender.info.shortened_name(),
-                        poster.info.shortened_name(),
+                        defender.info.short_name(),
+                        poster.info.short_name(),
                     ),
                     start_at: input.end_at,
                     end_at: input.end_at.plus(3),

@@ -1055,7 +1055,7 @@ pub struct InfoStats {
 }
 
 impl InfoStats {
-    pub fn shortened_name(&self) -> String {
+    pub fn short_name(&self) -> String {
         format!(
             "{}.{}",
             self.first_name.chars().next().unwrap_or_default(),

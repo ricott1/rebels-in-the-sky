@@ -398,9 +398,9 @@ impl SwarmPanel {
                 Button::new(
                     format!(
                         "{} {} ⇄ {} {}",
-                        target_player.info.shortened_name(),
+                        target_player.info.short_name(),
                         target_player.stars(),
-                        proposer_player.info.shortened_name(),
+                        proposer_player.info.short_name(),
                         proposer_player.stars()
                     ),
                     UiCallback::GoToTrade {
@@ -419,8 +419,8 @@ impl SwarmPanel {
                 .block(default_block().border_style(UiStyle::OK))
                 .set_hover_text(format!(
                     "Accept to trade {} for {}.",
-                    target_player.info.shortened_name(),
-                    proposer_player.info.shortened_name()
+                    target_player.info.short_name(),
+                    proposer_player.info.short_name()
                 ));
                 if idx == 0 {
                     accept_button = accept_button.set_hotkey(UiKey::YES_TO_DIALOG);
@@ -435,8 +435,8 @@ impl SwarmPanel {
                 .block(default_block().border_style(UiStyle::ERROR))
                 .set_hover_text(format!(
                     "Decline to trade {} for {}.",
-                    target_player.info.shortened_name(),
-                    proposer_player.info.shortened_name()
+                    target_player.info.short_name(),
+                    proposer_player.info.short_name()
                 ));
                 if idx == 0 {
                     decline_button = decline_button.set_hotkey(UiKey::NO_TO_DIALOG);

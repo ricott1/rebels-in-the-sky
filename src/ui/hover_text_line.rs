@@ -1,4 +1,5 @@
 use super::{hover_text_span::HoverTextSpan, traits::InteractiveWidget};
+use itertools::Itertools;
 use ratatui::{prelude::*, widgets::Widget};
 
 #[derive(Debug, Default, Clone)]
@@ -109,6 +110,46 @@ impl<'a> From<HoverTextSpan<'a>> for HoverTextLine<'a> {
     }
 }
 
+impl<'a> From<Line<'a>> for HoverTextLine<'a> {
+    fn from(value: Line<'a>) -> Self {
+        Self {
+            spans: value
+                .spans
+                .iter()
+                .map(|s| HoverTextSpan::new(s.clone(), ""))
+                .collect_vec(),
+            ..Default::default()
+        }
+    }
+}
+
+impl<'a> From<Vec<Span<'a>>> for HoverTextLine<'a> {
+    fn from(spans: Vec<Span<'a>>) -> Self {
+        Self {
+            spans: spans
+                .iter()
+                .map(|s| HoverTextSpan::new(s.clone(), ""))
+                .collect_vec(),
+            ..Default::default()
+        }
+    }
+}
+
+impl<'a> From<Span<'a>> for HoverTextLine<'a> {
+    fn from(span: Span<'a>) -> Self {
+        Self::from(vec![span])
+    }
+}
+
+impl<'a> From<String> for HoverTextLine<'a> {
+    fn from(value: String) -> Self {
+        Self {
+            spans: vec![HoverTextSpan::new(Span::raw(value), "")],
+            ..Default::default()
+        }
+    }
+}
+
 impl Widget for HoverTextLine<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let area = area.intersection(buf.area);
@@ -152,7 +193,11 @@ impl InteractiveWidget for HoverTextLine<'_> {
     }
 
     fn hover_text(&self) -> Text<'_> {
-        self.spans[self.hovered_span_index].hover_text()
+        if self.hovered_span_index < self.spans.len() {
+            self.spans[self.hovered_span_index].hover_text()
+        } else {
+            "".into()
+        }
     }
 
     fn before_rendering(

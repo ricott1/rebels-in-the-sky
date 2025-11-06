@@ -35,9 +35,9 @@ impl Trade {
         format!(
             "Trade ({}): {} {} ⇄ {} {} {:+}",
             self.state,
-            self.proposer_player.info.shortened_name(),
+            self.proposer_player.info.short_name(),
             self.proposer_player.stars(),
-            self.target_player.info.shortened_name(),
+            self.target_player.info.short_name(),
             self.target_player.stars(),
             self.extra_satoshis
         )

@@ -1658,7 +1658,7 @@ impl MyTeamPanel {
 
         let can_release = own_team.can_release_player(&player);
         let mut release_button = Button::new(
-            format!("Fire {}", player.info.shortened_name()),
+            format!("Fire {}", player.info.short_name()),
             UiCallback::PromptReleasePlayer { player_id },
         )
         .set_hover_text("Fire pirate from the crew!")
@@ -1792,7 +1792,7 @@ impl MyTeamPanel {
                 let name = if name_header_width >= 2 * MAX_NAME_LENGTH as u16 + 2 {
                     player.info.full_name()
                 } else {
-                    player.info.shortened_name()
+                    player.info.short_name()
                 };
 
                 let cells = [

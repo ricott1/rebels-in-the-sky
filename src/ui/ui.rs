@@ -154,15 +154,22 @@ impl Ui {
             }
         }
 
-        self.popup_messages.push(popup_message);
+        // Insert new popup at the front so it becomes the active one
+        self.popup_messages.insert(0, popup_message);
         if self.popup_messages.len() >= MAX_POPUP_MESSAGES {
-            for index in 0..self.popup_messages.len() {
+            // Remove a skippable message starting from the end (oldest) so we keep the newest
+            for index in (0..self.popup_messages.len()).rev() {
                 if self.popup_messages[index].is_skippable() {
                     self.popup_messages.remove(index);
                     break;
                 }
             }
         }
+    }
+
+    pub fn push_popup_to_top(&mut self, popup_message: PopupMessage) {
+        // Ensure popup is placed at the top (index 0)
+        self.popup_messages.insert(0, popup_message);
     }
 
     pub fn close_popup(&mut self) {

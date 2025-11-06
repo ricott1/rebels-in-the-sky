@@ -79,55 +79,55 @@ impl EngineAction for Isolation {
                 description: [
                     format!(
                         "{} breaks {}'s ankles and is now alone at the basket.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} blows by {} with a lightning-quick crossover and soars for the dunk.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} fakes out {} with a smooth hesitation dribble and glides to the rim.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} spins past {} effortlessly.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} crosses over {}, leaving {} stumbling, and goes for the open jumper.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name(),
+                        iso.info.short_name(),
+                        defender.info.short_name(),
                         defender.info.pronouns.as_object()
                     ),
                     format!(
                         "{} uses a killer step-back move to create space from {}.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
 
                     format!(
                         "{} weaves through traffic, leaving {} behind.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} fakes out {} with a jab step and drives straight to the basket.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} cuts through {} and the help defense.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} shakes off {} with a crafty behind-the-back dribble and goes for a clean jumper.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                 ].choose(rng).expect("There should be one option").clone(),
                 start_at: input.end_at,
@@ -145,43 +145,43 @@ impl EngineAction for Isolation {
                 description: [
                     format!(
                         "{} gets through {} and gathers the ball to shoot.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} crosses over {}, creating a bit of space to rise for the jumper.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} blows past {} with a quick first step and attacks the rim.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} spins around {} and lines up for a clean look at the basket.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} uses a hesitation move to freeze {} and drives to the hoop.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} accelerates past {} and floats a shot over the defense.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} gets a step on {}, pivots, and pulls up for a shot.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} shakes off {} with a step-back dribble and fires.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name()
                     ),
                 ].choose(rng).expect("There should be one option").clone(),
                 start_at: input.end_at,
@@ -199,47 +199,47 @@ impl EngineAction for Isolation {
                 description:  [
                     format!(
                         "{} tries to dribble past {} but {} is all over {}.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name(),
-                        defender.info.shortened_name(),
+                        iso.info.short_name(),
+                        defender.info.short_name(),
+                        defender.info.short_name(),
                         iso.info.pronouns.as_object()
                     ),
                     format!(
                         "{} attempts a quick crossover on {}, but {} anticipates the move perfectly.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} goes for a step-back jumper against {}, but {} contests the shot heavily.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} spins into the lane trying to shake {}, but {} holds {} ground.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name(),
-                        defender.info.shortened_name(),
+                        iso.info.short_name(),
+                        defender.info.short_name(),
+                        defender.info.short_name(),
                         defender.info.pronouns.as_possessive()
                     ),
                     format!(
                         "{} executes a behind-the-back dribble to beat {}, but {} recovers quickly.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} pulls up for a mid-range shot over {}, but {} contests it fiercely.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name(),
+                        defender.info.short_name()
                     ),
                     format!(
                         "{} drives baseline against {}, but {} cuts off the angle superbly.",
-                        iso.info.shortened_name(),
-                        defender.info.shortened_name(),
-                        defender.info.shortened_name()
+                        iso.info.short_name(),
+                        defender.info.short_name(),
+                        defender.info.short_name()
                     ),
                 ].choose(rng).expect("There should be one option").clone(),
                 start_at: input.end_at,
@@ -260,56 +260,56 @@ impl EngineAction for Isolation {
                     description: [
                         format!(
                             "{} tries to dribble past {} but {} steals the ball. Terrible choice.",
-                            iso.info.shortened_name(),
-                            defender.info.shortened_name(),
-                            defender.info.shortened_name()
+                            iso.info.short_name(),
+                            defender.info.short_name(),
+                            defender.info.short_name()
                         ),
                         format!(
                             "{} pulls up for a three-pointer over {}, but {} blocks the shot cleanly. What a play!",
-                            iso.info.shortened_name(),
-                            defender.info.shortened_name(),
-                            defender.info.shortened_name()
+                            iso.info.short_name(),
+                            defender.info.short_name(),
+                            defender.info.short_name()
                         ),
                         format!(
                             "{} goes for a flashy behind-the-back pass, but {} intercepts it easily. Risky decision!",
-                            iso.info.shortened_name(),
-                            defender.info.shortened_name(),
+                            iso.info.short_name(),
+                            defender.info.short_name(),
                         ),
                         format!(
                             "{} attempts a spin move to beat {}, but {} strips the ball mid-spin. Incredible defense!",
-                            iso.info.shortened_name(),
-                            defender.info.shortened_name(),
-                            defender.info.shortened_name()
+                            iso.info.short_name(),
+                            defender.info.short_name(),
+                            defender.info.short_name()
                         ),
                         format!(
                             "{} tries a fadeaway jumper over {}, but {} contests it perfectly. Poor shot selection!",
-                            iso.info.shortened_name(),
-                            defender.info.shortened_name(),
-                            defender.info.shortened_name()
+                            iso.info.short_name(),
+                            defender.info.short_name(),
+                            defender.info.short_name()
                         ),
                         format!(
                             "{} charges down the lane, hoping to outmuscle {}, but {} blocks the dunk attempt. Denied!",
-                            iso.info.shortened_name(),
-                            defender.info.shortened_name(),
-                            defender.info.shortened_name()
+                            iso.info.short_name(),
+                            defender.info.short_name(),
+                            defender.info.short_name()
                         ),
                         format!(
                             "{} attempts a quick crossover to get past {}, but {} picks {} pocket clean. Too predictable!",
-                            iso.info.shortened_name(),
-                            defender.info.shortened_name(),
-                            defender.info.shortened_name(),
+                            iso.info.short_name(),
+                            defender.info.short_name(),
+                            defender.info.short_name(),
                             iso.info.pronouns.as_possessive()
                         ),
                         format!(
                             "{} goes for an ill-advised lob pass, but {} jumps the passing lane. What a read!",
-                            iso.info.shortened_name(),
-                            defender.info.shortened_name(),
+                            iso.info.short_name(),
+                            defender.info.short_name(),
                         ),
                         format!(
                             "{} tries to force a layup against {}, but {} stuffs it at the rim. No chance!",
-                            iso.info.shortened_name(),
-                            defender.info.shortened_name(),
-                            defender.info.shortened_name()
+                            iso.info.short_name(),
+                            defender.info.short_name(),
+                            defender.info.short_name()
                         ),
                     ].choose(rng).expect("There should be one option").clone(),
                     start_at: input.end_at,

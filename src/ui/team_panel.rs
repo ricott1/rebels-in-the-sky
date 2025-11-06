@@ -279,7 +279,7 @@ impl TeamListPanel {
             }
 
             frame.render_widget(
-                Paragraph::new(player.info.shortened_name()).centered(),
+                Paragraph::new(player.info.short_name()).centered(),
                 player_name_split[i + 1],
             );
 
@@ -339,7 +339,7 @@ impl TeamListPanel {
                 .enumerate()
             {
                 if let Some(player) = world.get_player(player_id) {
-                    let info = format!("{}\n", player.info.shortened_name());
+                    let info = format!("{}\n", player.info.short_name());
                     let skills = player.current_skill_array();
                     let best_role = Position::best(skills);
 

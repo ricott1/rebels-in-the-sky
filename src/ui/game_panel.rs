@@ -632,7 +632,7 @@ impl GamePanel {
                     _ => UiStyle::UNSELECTABLE,
                 };
 
-                Span::styled(player.info.shortened_name(), style)
+                Span::styled(player.info.short_name(), style)
             };
 
             let cells = vec![
@@ -738,7 +738,7 @@ impl GamePanel {
                     _ => UiStyle::UNSELECTABLE,
                 };
 
-                Span::styled(player.info.shortened_name(), style)
+                Span::styled(player.info.short_name(), style)
             };
 
             let morale_length = (player.morale / MAX_SKILL * bars_length as f32).round() as usize;

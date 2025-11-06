@@ -26,6 +26,9 @@ pub struct Team {
     pub id: TeamId,
     pub version: u64,
     pub name: String,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub creation_time: Tick,
     pub reputation: f32,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
@@ -69,9 +72,6 @@ pub struct Team {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub number_of_space_adventures: usize,
-    // #[serde(skip_serializing_if = "is_default")]
-    // #[serde(default)]
-    // pub auto_accept_network_challenges: bool,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub autonomous_strategy: AutonomousStrategy,
@@ -92,6 +92,7 @@ impl Team {
         Self {
             id,
             name: name.into(),
+            creation_time: Tick::now(),
             jersey,
             home_planet_id,
             current_location: TeamLocation::OnPlanet {
@@ -478,7 +479,11 @@ impl Team {
             return Err(anyhow!("Planet {} is inhabitable", planet.name));
         }
 
-        let is_teleporting = if duration == 0 { true } else { false };
+        let is_teleporting = if duration <= TELEPORT_MAX_DURATION {
+            true
+        } else {
+            false
+        };
 
         if is_teleporting {
             if !self.can_teleport_to(planet) {

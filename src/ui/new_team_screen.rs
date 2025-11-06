@@ -132,7 +132,7 @@ impl NewTeamScreen {
         ship_name_textarea.set_block(
             default_block()
                 .border_style(UiStyle::UNSELECTABLE)
-                .title("Ship name"),
+                .title("Spaceship name"),
         );
         let rng = &mut ChaCha8Rng::from_os_rng();
         let mut color_presets = ColorPreset::iter().collect_vec();
@@ -236,7 +236,7 @@ impl NewTeamScreen {
         let spaceship = self.selected_ship();
         let storage_units = 0;
         let spaceship_info = Paragraph::new(vec![
-            Line::from(format!("Ship name: {}", spaceship.name.to_string())),
+            Line::from(format!("Spaceship name: {}", spaceship.name.to_string())),
             Line::from(format!(
                 "Max speed: {:.3} AU/h",
                 spaceship.speed(storage_units) * HOURS as f32 / AU as f32
@@ -357,7 +357,7 @@ impl NewTeamScreen {
         let planet_players = &self
             .planet_players
             .get(&planet_id)
-            .unwrap_or_else(|| panic!("No players found for planet {}", planet_id.to_string()));
+            .unwrap_or_else(|| panic!("No players found on planet {}", planet_id.to_string()));
         let mut player = world.get_player_or_err(&planet_players[0].0)?.clone();
         let jersey = Jersey {
             style,
@@ -499,7 +499,7 @@ impl NewTeamScreen {
                 Paragraph::new(format!(" {}", selected_planet.name.clone())).block(
                     thick_block()
                         .border_style(UiStyle::OK)
-                        .title("Choose planet ↓/↑"),
+                        .title("Choose home planet ↓/↑"),
                 ),
                 area,
             );
@@ -518,7 +518,7 @@ impl NewTeamScreen {
                 list.block(
                     default_block()
                         .border_style(UiStyle::DEFAULT)
-                        .title("Choose planet ↓/↑"),
+                        .title("Choose home planet ↓/↑"),
                 ),
                 area,
                 &mut ClickableListState::default().with_selected(Some(self.planet_index)),
@@ -527,7 +527,7 @@ impl NewTeamScreen {
             frame.render_widget(
                 default_block()
                     .border_style(UiStyle::UNSELECTABLE)
-                    .title("Choose planet ↓/↑"),
+                    .title("Choose home planet ↓/↑"),
                 area,
             );
         }
@@ -658,7 +658,7 @@ impl NewTeamScreen {
                 let name = if full_name.len() <= max_width {
                     full_name
                 } else {
-                    player.info.shortened_name()
+                    player.info.short_name()
                 };
                 (
                     format!(
@@ -866,7 +866,7 @@ impl Screen for NewTeamScreen {
         let h_split = Layout::vertical([
             Constraint::Length(3),                   // remaining balance
             Constraint::Length(3),                   // team name
-            Constraint::Length(3),                   // ship name
+            Constraint::Length(3),                   // spaceship name
             Constraint::Length(planet_split_height), // planet
             Constraint::Length(4),                   // colors
             Constraint::Length(jersey_split_height), // jersey style
@@ -960,7 +960,7 @@ impl Screen for NewTeamScreen {
                             self.ship_name_textarea.set_block(
                                 default_block()
                                     .border_style(UiStyle::DEFAULT)
-                                    .title("Ship name"),
+                                    .title("Spaceship name"),
                             );
 
                             self.ship_name_textarea.set_cursor_style(UiStyle::SELECTED);
@@ -975,7 +975,10 @@ impl Screen for NewTeamScreen {
                     },
                     CreationState::ShipName => match key_event.code {
                         KeyCode::Enter => {
-                            if !validate_textarea_input(&mut self.ship_name_textarea, "Ship name") {
+                            if !validate_textarea_input(
+                                &mut self.ship_name_textarea,
+                                "Spaceship name",
+                            ) {
                                 return None;
                             }
                             let mut name = self.ship_name_textarea.lines()[0].trim().to_string();
@@ -993,7 +996,9 @@ impl Screen for NewTeamScreen {
                             self.ship_name_textarea.set_cursor_style(UiStyle::DEFAULT);
 
                             self.ship_name_textarea.set_block(
-                                thick_block().border_style(UiStyle::OK).title("Ship name"),
+                                thick_block()
+                                    .border_style(UiStyle::OK)
+                                    .title("Spaceship name"),
                             );
                             self.set_state(self.state.next())
                         }
@@ -1004,7 +1009,7 @@ impl Screen for NewTeamScreen {
                                 self.ship_name_textarea.set_block(
                                     default_block()
                                         .border_style(UiStyle::UNSELECTABLE)
-                                        .title("Ship name"),
+                                        .title("Spaceship name"),
                                 );
                                 self.team_name_textarea.set_cursor_style(UiStyle::SELECTED);
                                 self.ship_name_textarea.set_cursor_style(UiStyle::DEFAULT);
@@ -1013,20 +1018,23 @@ impl Screen for NewTeamScreen {
                             } else {
                                 self.ship_name_textarea
                                     .input(input_from_key_event(key_event));
-                                validate_textarea_input(&mut self.ship_name_textarea, "Ship name");
+                                validate_textarea_input(
+                                    &mut self.ship_name_textarea,
+                                    "Spaceship name",
+                                );
                             }
                         }
                         _ => {
                             self.ship_name_textarea
                                 .input(input_from_key_event(key_event));
-                            validate_textarea_input(&mut self.ship_name_textarea, "Ship name");
+                            validate_textarea_input(&mut self.ship_name_textarea, "Spaceship name");
                         }
                     },
                     CreationState::Planet => match key_event.code {
                         KeyCode::Enter => self.set_state(self.state.next()),
                         KeyCode::Backspace => {
                             self.ship_name_textarea
-                                .set_block(default_block().title("Ship name"));
+                                .set_block(default_block().title("Spaceship name"));
                             self.ship_name_textarea.set_cursor_style(UiStyle::SELECTED);
                             self.set_state(self.state.previous());
                         }

@@ -1,4 +1,5 @@
 pub mod constants;
+pub mod honours;
 pub mod jersey;
 pub mod kartoffel;
 pub mod planet;
@@ -14,6 +15,7 @@ pub mod utils;
 pub mod world;
 
 pub use constants::*;
+pub use honours::*;
 pub use jersey::*;
 pub use kartoffel::*;
 pub use planet::*;

@@ -68,23 +68,23 @@ impl EngineAction for OffTheScreen {
                 description: [
                     format!(
                         "{} gets the pass from {} and is now open for the shot.",
-                        target.info.shortened_name(), playmaker.info.shortened_name(),
+                        target.info.short_name(), playmaker.info.short_name(),
                     ),
                     format!(
                         "{} catches the pass from {} and is wide open for a clean shot.",
-                        target.info.shortened_name(), playmaker.info.shortened_name(),
+                        target.info.short_name(), playmaker.info.short_name(),
                     ),
                     format!(
                         "{} receives the pass from {} and has a clear look at the basket.",
-                        target.info.shortened_name(), playmaker.info.shortened_name(),
+                        target.info.short_name(), playmaker.info.short_name(),
                     ),
                     format!(
                         "{} gets the ball from {} and steps into an open shot attempt.",
-                        target.info.shortened_name(), playmaker.info.shortened_name(),
+                        target.info.short_name(), playmaker.info.short_name(),
                     ),
                     format!(
                         "{} grabs the pass from {} and now has an easy opportunity for a shot.",
-                        target.info.shortened_name(), playmaker.info.shortened_name(),
+                        target.info.short_name(), playmaker.info.short_name(),
                     ),
                 ].choose(rng).expect("There should be one option").clone(),
                 assist_from: Some(play_idx),
@@ -103,23 +103,23 @@ impl EngineAction for OffTheScreen {
                 description: [
                     format!(
                         "{} passes to {} after the screen.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(),
+                        playmaker.info.short_name(), target.info.short_name(),
                     ),
                     format!(
                         "{} finds {} open after the screen and makes the pass for a shot.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(),
+                        playmaker.info.short_name(), target.info.short_name(),
                     ),
                     format!(
                         "{} passes to {} following a screen, setting up for a quick shot.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(),
+                        playmaker.info.short_name(), target.info.short_name(),
                     ),
                     format!(
                         "{} uses the screen to get free, then passes to {} for the shot.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(),
+                        playmaker.info.short_name(), target.info.short_name(),
                     ),
                     format!(
                         "{} passes to {} as they come off the screen for a look at the basket.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(),
+                        playmaker.info.short_name(), target.info.short_name(),
                     ),
                 ].choose(rng).expect("There should be one option").clone(),
                 assist_from: Some(play_idx),
@@ -138,23 +138,23 @@ impl EngineAction for OffTheScreen {
                 description: [
                     format!(
                         "{} passes to {} who tried to get free using the screen, but {} is all over {}.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(), target_defender.info.shortened_name(), target.info.pronouns.as_possessive()
+                        playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name(), target.info.pronouns.as_possessive()
                     ),
                     format!(
                         "{} attempts to shake off {} with the screen, but {} sticks to {} like glue.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(), target_defender.info.shortened_name(), target.info.pronouns.as_possessive()
+                        playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name(), target.info.pronouns.as_possessive()
                     ),
                     format!(
                         "{} tries to use the screen to get open for the shot, but {} is right there, forcing a bad attempt.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(),
+                        playmaker.info.short_name(), target.info.short_name(),
                                         ),
                     format!(
                         "{} receives the pass from {} but can't escape {}'s tight defense, resulting in a rushed shot.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(), target_defender.info.shortened_name()
+                        playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name()
                     ),
                     format!(
                         "{} gets the pass after the screen, but {} doesn't give an inch, and the shot is off balance.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(),
+                        playmaker.info.short_name(), target.info.short_name(),
                     ),
                 ].choose(rng).expect("There should be one option").clone(),
                 assist_from: Some(play_idx),
@@ -177,23 +177,23 @@ impl EngineAction for OffTheScreen {
                     description:[
                         format!(
                             "{} tries to pass to {} off-the-screen but {} blocks the pass.",
-                            playmaker.info.shortened_name(), target.info.shortened_name(), target_defender.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name()
                         ),
                         format!(
                             "{} attempts the pass to {} after the screen, but {} jumps in the way, blocking it.",
-                            playmaker.info.shortened_name(), target.info.shortened_name(), target_defender.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name()
                         ),
                         format!(
                             "{} looks for {} off the screen, but {} intercepts the pass with perfect timing.",
-                            playmaker.info.shortened_name(), target.info.shortened_name(), target_defender.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name()
                         ),
                         format!(
                             "{} tries to feed the ball to {} after the screen, but {} steals it away.",
-                            playmaker.info.shortened_name(), target.info.shortened_name(), target_defender.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name()
                         ),
                         format!(
                             "{} passes to {} off the screen, but the pass is too high and goes out of bounds.",
-                            playmaker.info.shortened_name(), target.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name()
                         ),
                     ].choose(rng).expect("There should be one option").clone(),
                     start_at: input.end_at,

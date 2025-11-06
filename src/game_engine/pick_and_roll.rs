@@ -70,23 +70,23 @@ impl EngineAction for PickAndRoll {
                     description: [
                         format!(
                             "{} uses the screen perfectly and is now open for the shot.",
-                            playmaker.info.shortened_name()
+                            playmaker.info.short_name()
                         ),
                         format!(
                             "{} navigates {}'s screen flawlessly and gets wide open for the shot.",
-                            playmaker.info.shortened_name(), target.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name()
                         ),
                         format!(
                             "{} reads the defense well and uses the screen to get free for an open shot.",
-                            playmaker.info.shortened_name()
+                            playmaker.info.short_name()
                         ),
                         format!(
                             "{} uses the pick to perfection, getting a clean look at the basket.",
-                            playmaker.info.shortened_name()
+                            playmaker.info.short_name()
                         ),
                         format!(
                             "{} takes full advantage of {}'s screen and has an easy opportunity for a shot.",
-                            playmaker.info.shortened_name(), target.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name()
                         ),
                     ].choose(rng).expect("There should be one option").clone(),
                     start_at: input.end_at,
@@ -104,23 +104,23 @@ impl EngineAction for PickAndRoll {
                     description: [
                         format!(
                             "They go for the pick'n'roll. {} goes through {}'s screen and manages to get a bit of space to shot.",
-                            playmaker.info.shortened_name(), target.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name()
                         ),
                         format!(
                             "The pick'n'roll is set up. {} uses {}'s screen to create just enough separation for a shot.",
-                            playmaker.info.shortened_name(), target.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name()
                         ),
                         format!(
                             "The pick'n'roll play is in motion. {} fights through {}'s screen and gets a little space to shoot.",
-                            playmaker.info.shortened_name(), target.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name()
                         ),
                         format!(
                             "They run the pick'n'roll. {} navigates through {}'s screen and manages a slight opening for the shot.",
-                            playmaker.info.shortened_name(), target.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name()
                         ),
                         format!(
                             "In the pick'n'roll, {} uses {}'s screen and finds just enough room to take a shot.",
-                            playmaker.info.shortened_name(), target.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name()
                         ),
                     ].choose(rng).expect("There should be one option").clone(),
                     start_at: input.end_at,
@@ -140,15 +140,15 @@ impl EngineAction for PickAndRoll {
                             description:[
                                 format!(
                                     "{} tries to use the screen but {} slides nicely to cover.",
-                                    playmaker.info.shortened_name(), target_defender.info.shortened_name()
+                                    playmaker.info.short_name(), target_defender.info.short_name()
                                 ),
                                 format!(
                                     "{} eludes {}'s screen and slides to cover {}.",
-                                    target_defender.info.shortened_name(), target.info.shortened_name(),playmaker.info.shortened_name()
+                                    target_defender.info.short_name(), target.info.short_name(),playmaker.info.short_name()
                                 ),
                                 format!(
                                     "{} tries to move past {} using the screen but {} swaps cover and is all over {}.",
-                                    playmaker.info.shortened_name(), playmaker_defender.info.shortened_name(),target_defender.info.shortened_name(),playmaker.info.pronouns.as_object()
+                                    playmaker.info.short_name(), playmaker_defender.info.short_name(),target_defender.info.short_name(),playmaker.info.pronouns.as_object()
                                 ),
                             ] .choose(rng).expect("There should be one option").clone(),
                             start_at: input.end_at,
@@ -166,19 +166,19 @@ impl EngineAction for PickAndRoll {
                             description:[
                                 format!(
                                     "{} attempts to navigate the screen, but {} stays right with {}, denying the space.",
-                                    playmaker.info.shortened_name(), playmaker_defender.info.shortened_name(), playmaker.info.pronouns.as_object()
+                                    playmaker.info.short_name(), playmaker_defender.info.short_name(), playmaker.info.pronouns.as_object()
                                 ),
                                 format!(
                                     "{} goes for the screen, but {} expertly fights through, staying tight on defense.",
-                                    playmaker.info.shortened_name(), playmaker_defender.info.shortened_name()
+                                    playmaker.info.short_name(), playmaker_defender.info.short_name()
                                 ),
                                 format!(
                                     "{} tries to use the pick, but {} anticipates the move and stays in front.",
-                                    playmaker.info.shortened_name(), playmaker_defender.info.shortened_name()
+                                    playmaker.info.short_name(), playmaker_defender.info.short_name()
                                 ),
                                 format!(
                                     "{} tries to get open off the screen, but {} moves with him step for step, preventing any separation.",
-                                    playmaker.info.shortened_name(), playmaker_defender.info.shortened_name()
+                                    playmaker.info.short_name(), playmaker_defender.info.short_name()
                                 ),
                             ] .choose(rng).expect("There should be one option").clone(),
                             start_at: input.end_at,
@@ -201,23 +201,23 @@ impl EngineAction for PickAndRoll {
                         description: [
                             format!(
                                 "{} tries to use the screen but {} snatches the ball from {} hands.",
-                                playmaker.info.shortened_name(), playmaker_defender.info.shortened_name(), playmaker.info.pronouns.as_possessive()
+                                playmaker.info.short_name(), playmaker_defender.info.short_name(), playmaker.info.pronouns.as_possessive()
                             ),
                             format!(
                                 "{} attempts to use the screen, but {} swipes the ball right out of {} hands.",
-                                playmaker.info.shortened_name(), playmaker_defender.info.shortened_name(), playmaker.info.pronouns.as_possessive()
+                                playmaker.info.short_name(), playmaker_defender.info.short_name(), playmaker.info.pronouns.as_possessive()
                             ),
                             format!(
                                 "{} tries to get open with the screen, but {} anticipates the play and steals the ball.",
-                                playmaker.info.shortened_name(), playmaker_defender.info.shortened_name()
+                                playmaker.info.short_name(), playmaker_defender.info.short_name()
                             ),
                             format!(
                                 "{} attempts the screen play, but {} jumps the passing lane and takes the ball.",
-                                playmaker.info.shortened_name(), target_defender.info.shortened_name()
+                                playmaker.info.short_name(), target_defender.info.short_name()
                             ),
                             format!(
                                 "{} goes for the screen, but {} is quick to jump in, stealing the ball away from {}.",
-                                playmaker.info.shortened_name(), target_defender.info.shortened_name(), playmaker.info.pronouns.as_possessive()
+                                playmaker.info.short_name(), target_defender.info.short_name(), playmaker.info.pronouns.as_possessive()
                             ),
                         ].choose(rng).expect("There should be one option").clone(),
                         start_at: input.end_at,
@@ -248,23 +248,23 @@ impl EngineAction for PickAndRoll {
                 description: [
                     format!(
                         "{} and {} execute the pick'n'roll perfectly! {} is now open for the shot.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(), target.info.shortened_name()
+                        playmaker.info.short_name(), target.info.short_name(), target.info.short_name()
                     ),
                     format!(
                         "{} and {} run the pick'n'roll to perfection, and now {} has a wide-open shot.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(), target.info.shortened_name()
+                        playmaker.info.short_name(), target.info.short_name(), target.info.short_name()
                     ),
                     format!(
                         "{} and {} work the pick'n'roll flawlessly! {} is left with a clean look at the basket.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(), target.info.shortened_name()
+                        playmaker.info.short_name(), target.info.short_name(), target.info.short_name()
                     ),
                     format!(
                         "{} and {} execute the pick'n'roll to perfection, freeing {} for an easy shot attempt.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(), target.info.shortened_name()
+                        playmaker.info.short_name(), target.info.short_name(), target.info.short_name()
                     ),
                     format!(
                         "{} and {} perform a flawless pick'n'roll, and now {} is in prime position for the shot.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(), target.info.shortened_name()
+                        playmaker.info.short_name(), target.info.short_name(), target.info.short_name()
                     ),
                 ].choose(rng).expect("There should be one option").clone(),
                 assist_from: Some(play_idx),
@@ -283,23 +283,23 @@ impl EngineAction for PickAndRoll {
                 description:[
                     format!(
                         "They go for the pick'n'roll. {} passes to {} and is now ready to shoot.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(),
+                        playmaker.info.short_name(), target.info.short_name(),
                     ),
                     format!(
                         "The pick'n'roll is executed smoothly. {} passes to {} who now has an opportunity to shoot.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(),
+                        playmaker.info.short_name(), target.info.short_name(),
                     ),
                     format!(
                         "They run the pick'n'roll, and after a solid pass from {} to {}, the shot is ready.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(),
+                        playmaker.info.short_name(), target.info.short_name(),
                     ),
                     format!(
                         "Nice pick'n'roll execution. {} delivers a pass to {} who's now in position to take the shot.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(),
+                        playmaker.info.short_name(), target.info.short_name(),
                     ),
                     format!(
                         "The pick'n'roll is set up well, and {} passes to {} who prepares for the shot.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(),
+                        playmaker.info.short_name(), target.info.short_name(),
                     ),
                 ].choose(rng).expect("There should be one option").clone(),
                 assist_from: Some(play_idx),
@@ -318,23 +318,23 @@ impl EngineAction for PickAndRoll {
                 description:[
                     format!(
                         "They go for the pick'n'roll. {} passes to {} but {} is all over {}.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(), target_defender.info.shortened_name(), target.info.pronouns.as_object()
+                        playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name(), target.info.pronouns.as_object()
                     ),
                     format!(
                         "The pick'n'roll is executed, but {} is quick to cover as {} passes to {}.",
-                       target_defender.info.shortened_name(), playmaker.info.shortened_name(), target.info.shortened_name(),
+                       target_defender.info.short_name(), playmaker.info.short_name(), target.info.short_name(),
                     ),
                     format!(
                         "They try the pick'n'roll. {} passes to {} but {} sticks to {} like glue.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(), target_defender.info.shortened_name(), target.info.pronouns.as_object()
+                        playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name(), target.info.pronouns.as_object()
                     ),
                     format!(
                         "They run the pick'n'roll, but {} anticipates it perfectly, covering {} as soon as the pass is made.",
-                        target_defender.info.shortened_name(), target.info.shortened_name()
+                        target_defender.info.short_name(), target.info.short_name()
                     ),
                     format!(
                         "On the pick'n'roll, {} passes to {} but {} is right there, denying any space for a shot.",
-                        playmaker.info.shortened_name(), target.info.shortened_name(), target_defender.info.shortened_name()
+                        playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name()
                     ),
                 ].choose(rng).expect("There should be one option").clone(),
                 assist_from: Some(play_idx),
@@ -357,23 +357,23 @@ impl EngineAction for PickAndRoll {
                     description:[
                         format!(
                             "They go for the pick'n'roll but the defender reads that perfectly. {} tries to pass to {} but {} blocks the pass.",
-                            playmaker.info.shortened_name(), target.info.shortened_name(), playmaker_defender.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name(), playmaker_defender.info.short_name()
                         ),
                         format!(
                             "On the pick'n'roll, the defender anticipates the play perfectly. {} tries to pass to {} but {} deflects the ball.",
-                            playmaker.info.shortened_name(), target.info.shortened_name(), playmaker_defender.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name(), playmaker_defender.info.short_name()
                         ),
                         format!(
                             "They attempt the pick'n'roll, but the defender reads it like a book. {} passes to {} but {} blocks the pass attempt.",
-                            playmaker.info.shortened_name(), target.info.shortened_name(), playmaker_defender.info.shortened_name()
+                            playmaker.info.short_name(), target.info.short_name(), playmaker_defender.info.short_name()
                         ),
                         format!(
                             "The pick'n'roll is set, but {} sees it coming and blocks the pass to {}.",
-                            playmaker_defender.info.shortened_name(), target.info.shortened_name()
+                            playmaker_defender.info.short_name(), target.info.short_name()
                         ),
                         format!(
                             "They try the pick'n'roll, but {} reads the move perfectly, blocking {}'s pass to {}.",
-                            playmaker_defender.info.shortened_name(), playmaker.info.shortened_name(), target.info.shortened_name()
+                            playmaker_defender.info.short_name(), playmaker.info.short_name(), target.info.short_name()
                         ),
                     ].choose(rng).expect("There should be one option").clone(),
                     start_at: input.end_at,

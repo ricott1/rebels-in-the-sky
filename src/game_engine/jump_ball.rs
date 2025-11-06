@@ -34,8 +34,8 @@ impl EngineAction for JumpBall {
                     situation: ActionSituation::AfterDefensiveRebound,
                     description: format!(
                         "{} and {} prepare for the jump ball. {} wins the jump ball. {} will have the first possession.",
-                        home_jumper?.info.shortened_name(),
-                        away_jumper?.info.shortened_name(), home_jumper?.info.shortened_name(), game.home_team_in_game.name
+                        home_jumper?.info.short_name(),
+                        away_jumper?.info.short_name(), home_jumper?.info.short_name(), game.home_team_in_game.name
                     ),
                     start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),
@@ -49,8 +49,8 @@ impl EngineAction for JumpBall {
                 situation: ActionSituation::AfterDefensiveRebound,
                 description: format!(
                     "{} and {} prepare for the jump ball. {} wins the jump ball. {} will have the first possession.",
-                    home_jumper?.info.shortened_name(),
-                    away_jumper?.info.shortened_name(),away_jumper?.info.shortened_name(), game.away_team_in_game.name
+                    home_jumper?.info.short_name(),
+                    away_jumper?.info.short_name(),away_jumper?.info.short_name(), game.away_team_in_game.name
                 ),
                 start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),
@@ -72,8 +72,8 @@ impl EngineAction for JumpBall {
                     situation: ActionSituation::AfterDefensiveRebound,
                     description: format!(
                         "{} and {} prepare for the jump ball.\nNobody wins the jump ball, but {} hustles for it.",
-                        home_jumper?.info.shortened_name(),
-                        away_jumper?.info.shortened_name(), ball_team
+                        home_jumper?.info.short_name(),
+                        away_jumper?.info.short_name(), ball_team
                     ),
                     start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),

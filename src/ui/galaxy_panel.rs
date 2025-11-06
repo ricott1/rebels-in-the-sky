@@ -8,6 +8,7 @@ use super::widgets::{space_adventure_button, thick_block};
 use super::{traits::Screen, widgets::default_block};
 use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId};
 use crate::ui::constants::*;
+use crate::ui::utils::format_au;
 use crate::world::skill::Rated;
 use crate::world::types::PlayerLocation;
 use crate::{
@@ -292,9 +293,12 @@ impl GalaxyPanel {
                 TeamLocation::OnPlanet { planet_id } => {
                     let duration = world.travel_time_to_planet(own_team.id, planet.id)?;
                     let hover_text = format!(
-                        "Travel to {}: Distance {} AU - Duration {} - Fuel {}",
+                        "Travel to {}: Distance {} - Duration {} - Fuel {}",
                         planet.name,
-                        world.distance_between_planets(planet_id, planet.id)? as f32 / AU as f32,
+                        format_au(
+                            world.distance_between_planets(planet_id, planet.id)? as f32
+                                / AU as f32
+                        ),
                         duration.formatted(),
                         world.fuel_consumption_to_planet(own_team.id, planet.id)?
                     );

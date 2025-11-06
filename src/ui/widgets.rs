@@ -1,3 +1,5 @@
+use std::iter::zip;
+
 use super::ui_frame::UiFrame;
 use super::{
     button::Button,
@@ -10,8 +12,10 @@ use super::{
     ui_callback::UiCallback,
     utils::format_satoshi,
 };
+use crate::ui::utils::format_au;
 use crate::world::skill::{Skill, MAX_SKILL, MIN_SKILL};
 use crate::world::types::TeamBonus;
+use crate::world::Honour;
 use crate::{
     game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
     image::{player::PLAYER_IMAGE_WIDTH, spaceship::SPACESHIP_IMAGE_WIDTH},
@@ -30,13 +34,14 @@ use crate::{
 };
 use anyhow::anyhow;
 use crossterm::event::KeyCode;
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use ratatui::{
     prelude::*,
     text::Span,
     widgets::{Block, BorderType, Borders, List, Paragraph},
 };
-use strum::Display;
+use strum::{Display, IntoEnumIterator};
 
 pub const UP_ARROW_SPAN: Lazy<Span<'static>> = Lazy::new(|| Span::styled("↑", UiStyle::HEADER));
 pub const UP_RIGHT_ARROW_SPAN: Lazy<Span<'static>> = Lazy::new(|| Span::styled("↗", UiStyle::OK));
@@ -761,8 +766,8 @@ pub fn render_spaceship_description(
                 team.spaceship.max_distance(team.fuel()) / AU as f32
             )),
             Line::from(format!(
-                "Travelled {:.3} AU",
-                team.total_travelled as f32 / AU as f32
+                "Travelled {}",
+                format_au(team.total_travelled as f32 / AU as f32)
             )),
             Line::from(format!("Value {}", format_satoshi(team.spaceship.cost()),)),
         ]);
@@ -780,7 +785,12 @@ pub fn render_spaceship_description(
             vertical: 1,
         });
 
-        let split = Layout::vertical([Constraint::Length(1),Constraint::Length(1), Constraint::Min(0)]).split(area);
+        let split = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(area);
 
         let rating_span =  HoverTextSpan::new(
             Span::raw(format!(
@@ -816,9 +826,9 @@ pub fn render_spaceship_description(
         };
 
         let mut lines = vec![
-            Line::from(format!("Treasury {}", format_satoshi(team.balance()))),
-            Line::from(game_record),
-            Line::from(get_crew_spans(
+            HoverTextLine::from(format!("Treasury {}", format_satoshi(team.balance()))),
+            HoverTextLine::from(game_record),
+            HoverTextLine::from(get_crew_spans(
                 team.player_ids.len(),
                 team.spaceship.crew_capacity() as usize,
             )),
@@ -826,15 +836,79 @@ pub fn render_spaceship_description(
 
         if with_average_energy {
             let average_tiredness = team.average_tiredness(world);
-            lines.push(Line::from(get_energy_spans(average_tiredness)));
+            lines.push(HoverTextLine::from(get_energy_spans(average_tiredness)));
         }
 
-        frame.render_widget(Paragraph::new(lines), split[2]);
+        if team.creation_time != Tick::default() {
+            let creation_date = team.creation_time.formatted_as_date();
+            lines.push(HoverTextLine::from(format!(
+                "Roaming the galaxy since {}",
+                creation_date
+            )));
+        } else{
+            lines.push(HoverTextLine::default());
+        }
+
+
+        let team_honours = Honour::iter()
+            .filter(|h| h.conditions_met(team))
+            .collect_vec();
+
+        if team_honours.len() > 0 {
+            lines.append(&mut honour_lines(team_honours));
+        } 
+
+        let lines_split = Layout::vertical([1].repeat(lines.len())).split(split[2]);
+        for (line, &split) in zip(lines, lines_split.iter()) {
+            frame.render_interactive(line, split);
+        }
     }
 
     // Render main block
     let block = default_block().title(format!("Spaceship - {}", team.spaceship.name.to_string()));
     frame.render_widget(block, area);
+}
+
+fn honour_lines<'a>(team_honours: Vec<Honour>) -> Vec<HoverTextLine<'a>> {
+    let honour_color = |honour| match honour {
+        Honour::Maximalist => (Color::Yellow, Color::DarkGray),
+        Honour::MultiKulti => (Color::Red, Color::LightCyan),
+        Honour::Traveller => (Color::Blue, Color::LightMagenta),
+        Honour::Veteran => (Color::DarkGray, Color::White),
+    };
+
+    let mut top_spans = vec![];
+    let mut spans = vec![];
+    let mut btm_spans = vec![];
+
+    let title = "Honours ";
+    top_spans.push(HoverTextSpan::new(Span::raw(" ".repeat(title.len())), ""));
+    spans.push(HoverTextSpan::new(Span::raw(title), ""));
+    btm_spans.push(HoverTextSpan::new(Span::raw(" ".repeat(title.len())), ""));
+
+    for honour in team_honours {
+        let (fg, bg) = honour_color(honour);
+        top_spans.push(HoverTextSpan::new(
+            Span::styled("▄ ▄", Style::default().fg(bg)),
+            honour.description(),
+        ));
+        spans.push(HoverTextSpan::new(
+            Span::styled(
+                format!(" {} ", honour.symbol()),
+                Style::default().bg(bg).fg(fg).bold(),
+            ),
+            honour.description(),
+        ));
+        btm_spans.push(HoverTextSpan::new(
+            Span::styled(" ▀ ", Style::default().fg(bg)),
+            honour.description(),
+        ));
+    }
+    vec![
+        HoverTextLine::from(top_spans),
+        HoverTextLine::from(spans),
+        HoverTextLine::from(btm_spans),
+    ]
 }
 
 pub fn render_spaceship_upgrade(

@@ -2,7 +2,10 @@ use super::{
     constants::{UiStyle, MAX_NAME_LENGTH, MIN_NAME_LENGTH},
     widgets::default_block,
 };
-use crate::types::Tick;
+use crate::{
+    types::Tick,
+    world::{AU, LIGHT_YEAR, SATOSHI_PER_BITCOIN},
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use image::RgbaImage;
 use libp2p::PeerId;
@@ -145,7 +148,6 @@ pub fn validate_textarea_input<'a>(
 }
 
 pub fn format_satoshi(amount: u32) -> String {
-    const SATOSHI_PER_BITCOIN: u32 = 100_000_000;
     if amount >= 1_000_000 {
         let f_amount =
             (amount as f32 / SATOSHI_PER_BITCOIN as f32 * 1_000_000.0).round() / 1_000_000.0;
@@ -153,6 +155,16 @@ pub fn format_satoshi(amount: u32) -> String {
     }
 
     format!("{amount} sat")
+}
+
+pub fn format_au(amount: f32) -> String {
+    const AU_PER_LIGHT_YEAR: f32 = LIGHT_YEAR as f32 / AU as f32;
+    if amount >= 10_000.0 {
+        let f_amount = (amount as f32 / AU_PER_LIGHT_YEAR as f32 * 10_000.0).round() / 10_000.0;
+        return format!("{:.4} ly", f_amount);
+    }
+
+    format!("{amount:.4} AU")
 }
 
 #[cfg(test)]

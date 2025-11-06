@@ -1,6 +1,6 @@
 use crate::audio::music_player::MusicPlayer;
 use crate::network::handler::NetworkHandler;
-use crate::store::{get_world_size, load_world, reset, save_world};
+use crate::store::{get_world_size, load_world, reset, save_world, world_file_data};
 use crate::tui::{EventHandler, TerminalEvent};
 use crate::tui::{Tui, WriterProxy};
 use crate::types::{AppResult, ResourceMap, StorableResourceMap, SystemTimeTick, Tick};
@@ -319,6 +319,21 @@ impl App {
         match load_world(&self.store_prefix) {
             Ok(w) => self.world = w,
             Err(e) => panic!("Failed to load world: {}", e),
+        }
+
+        let own_team = self
+            .world
+            .get_own_team_mut()
+            .expect("Loaded world should have an own team.");
+
+        if own_team.creation_time == Tick::default() {
+            let mut creation_time = Tick::now();
+            if let Ok(data) = world_file_data(&self.store_prefix) {
+                if let Ok(time) = data.created() {
+                    creation_time = Tick::from_system_time(time);
+                }
+            }
+            own_team.creation_time = creation_time;
         }
         self.state = AppState::Simulating;
     }

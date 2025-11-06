@@ -720,7 +720,11 @@ impl UiCallback {
                 distance,
             };
 
-            let is_teleporting = if duration == 0 { true } else { false };
+            let is_teleporting = if duration <= TELEPORT_MAX_DURATION {
+                true
+            } else {
+                false
+            };
 
             if is_teleporting {
                 let rum_consumed = own_team.player_ids.len() as u32;
@@ -1015,7 +1019,7 @@ impl UiCallback {
             }
             UiCallback::PushTutorialPage { index } => {
                 app.ui.close_popup();
-                app.ui.push_popup(PopupMessage::Tutorial {
+                app.ui.push_popup_to_top(PopupMessage::Tutorial {
                     index: *index,
                     tick: Tick::now(),
                 });
@@ -1310,13 +1314,13 @@ impl UiCallback {
                 //If player is a spugna and pilot and team is travelling or exploring and player was already maxxed in morale,
                 // there is a chance that the player enters a portal to a random planet.
                 let rng = &mut ChaCha8Rng::from_os_rng();
+
+                let discovery_probability = (PORTAL_DISCOVERY_PROBABILITY
+                    * TeamBonus::Exploration.current_player_bonus(&player)? as f64)
+                    .min(1.0);
                 if matches!(player.special_trait, Some(Trait::Spugna))
                     && player.info.crew_role == CrewRole::Pilot
-                    && rng.random_bool(
-                        (PORTAL_DISCOVERY_PROBABILITY
-                            * TeamBonus::Exploration.current_player_bonus(&player)? as f64)
-                            .min(1.0),
-                    )
+                    && rng.random_bool(discovery_probability)
                 {
                     let portal_target_id = match team.current_location {
                         TeamLocation::OnPlanet { .. } | TeamLocation::OnSpaceAdventure { .. } => {
@@ -1363,12 +1367,12 @@ impl UiCallback {
                             from,
                             to,
                             started: Tick::now(),
-                            duration: 10 * SECONDS,
+                            duration: PORTAL_TRAVEL_DURATION,
                             distance,
                         };
 
                         app.ui.push_popup(PopupMessage::PortalFound {
-                            player_name: player.info.shortened_name(),
+                            player_name: player.info.short_name(),
                             portal_target: portal_target.name.to_string(),
                             tick: Tick::now(),
                         });

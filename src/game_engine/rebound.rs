@@ -119,26 +119,26 @@ impl EngineAction for Rebound {
                     description = [
                         format!(
                             "{} grabs {} own rebound with a quick reaction.",
-                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.short_name(),
                             attack_rebounder.info.pronouns.as_possessive()
                         ),
                         format!(
                             "{} snatches the ball after missing the shot, showing persistence.",
-                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.short_name(),
                         ),
                         format!(
                             "{} secures {} own miss for a second chance.",
-                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.short_name(),
                             attack_rebounder.info.pronouns.as_possessive()
                         ),
                         format!(
                             "{} quickly leaps and grabs {} missed shot, avoiding defenders.",
-                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.short_name(),
                             attack_rebounder.info.pronouns.as_possessive()
                         ),
                         format!(
                             "{} fights through the defenders to secure {} own rebound.",
-                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.short_name(),
                             attack_rebounder.info.pronouns.as_possessive()
                         ),
                     ]
@@ -149,23 +149,23 @@ impl EngineAction for Rebound {
                     description = [
                         format!(
                             "{} leaps above the defenders and snags the offensive rebound.",
-                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.short_name(),
                         ),
                         format!(
                             "{} outmuscles the competition to grab the offensive rebound.",
-                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.short_name(),
                         ),
                         format!(
                             "{} beats everyone to the ball, securing the offensive rebound.",
-                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.short_name(),
                         ),
                         format!(
                             "{} extends high and grabs the ball over the defenders for an offensive rebound.",
-                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.short_name(),
                         ),
                         format!(
                             "{} crashes the boards and comes down with the offensive rebound.",
-                            attack_rebounder.info.shortened_name(),
+                            attack_rebounder.info.short_name(),
                         ),
                     ].choose(rng)
                     .expect("There should be an option")
@@ -194,19 +194,19 @@ impl EngineAction for Rebound {
                 let description = [
                     format!(
                         "The ball got to {} who can restart the offensive action.",
-                        attack_rebounder.info.shortened_name(),
+                        attack_rebounder.info.short_name(),
                     ),
                     format!(
                         "{} secures the offensive rebound and looks to reset the play.",
-                        attack_rebounder.info.shortened_name(),
+                        attack_rebounder.info.short_name(),
                     ),
                     format!(
                         "{} snags the rebound and reset the offense.",
-                        attack_rebounder.info.shortened_name(),
+                        attack_rebounder.info.short_name(),
                     ),
                     format!(
                         "{} pulls down the board and surveys the floor for the next move.",
-                        attack_rebounder.info.shortened_name(),
+                        attack_rebounder.info.short_name(),
                     ),
                 ]
                 .choose(rng)
@@ -239,23 +239,23 @@ impl EngineAction for Rebound {
                     description: [
                         format!(
                             "{} jumps high and gets the defensive rebound.",
-                            defence_rebounder.info.shortened_name(),
+                            defence_rebounder.info.short_name(),
                         ),
                         format!(
                             "{} reaches up to snare the ball, grabbing the defensive rebound.",
-                            defence_rebounder.info.shortened_name(),
+                            defence_rebounder.info.short_name(),
                         ),
                         format!(
                             "{} outmuscles the offense and secures the defensive board.",
-                            defence_rebounder.info.shortened_name(),
+                            defence_rebounder.info.short_name(),
                         ),
                         format!(
                             "{} claims the rebound, boxing out the attacker and controlling the ball.",
-                            defence_rebounder.info.shortened_name(),
+                            defence_rebounder.info.short_name(),
                         ),
                         format!(
                             "{} uses great positioning to grab the defensive rebound and take control.",
-                            defence_rebounder.info.shortened_name(),
+                            defence_rebounder.info.short_name(),
                         ),
                     ] .choose(rng)
                     .expect("There should be an option")

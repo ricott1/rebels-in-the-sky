@@ -331,7 +331,7 @@ impl<'game> Game {
         } else {
             self.away_team_in_game.players.get(&player_id)?
         };
-        let name = player.info.shortened_name();
+        let name = player.info.short_name();
 
         Some(GameMVPSummary {
             name,

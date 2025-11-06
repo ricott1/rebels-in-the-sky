@@ -217,7 +217,7 @@ impl PlayerListPanel {
                 let name = if full_name.len() <= name_length {
                     full_name
                 } else {
-                    player.info.shortened_name()
+                    player.info.short_name()
                 };
 
                 let text = format!("{:<name_length$} {}", name, player.stars());
@@ -439,8 +439,8 @@ impl PlayerListPanel {
                 )
                 .set_hover_text(format!(
                     "Accept to trade {} for {}",
-                    target_player.info.shortened_name(),
-                    proposer_player.info.shortened_name(),
+                    target_player.info.short_name(),
+                    proposer_player.info.short_name(),
                 ))
                 .block(default_block().border_style(UiStyle::OK))
                 .set_hotkey(UiKey::ACCEPT_TRADE);
@@ -461,8 +461,8 @@ impl PlayerListPanel {
                 )
                 .set_hover_text(format!(
                     "Decline to trade {} for {}",
-                    target_player.info.shortened_name(),
-                    proposer_player.info.shortened_name(),
+                    target_player.info.short_name(),
+                    proposer_player.info.short_name(),
                 ))
                 .block(default_block().border_style(UiStyle::ERROR))
                 .set_hotkey(UiKey::DECLINE_TRADE);
@@ -492,8 +492,8 @@ impl PlayerListPanel {
                         )
                         .set_hover_text(format!(
                             "Propose to trade {} for {}",
-                            proposer_player.info.shortened_name(),
-                            target_player.info.shortened_name(),
+                            proposer_player.info.short_name(),
+                            target_player.info.short_name(),
                         ))
                         .set_hotkey(UiKey::CREATE_TRADE);
 

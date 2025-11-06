@@ -220,6 +220,7 @@ impl World {
         let team = Team {
             id: team_id,
             name,
+            creation_time: Tick::now(),
             jersey: Jersey {
                 style: jersey_style,
                 color: jersey_colors,
@@ -1701,7 +1702,12 @@ impl World {
 
                     // Increase team reputation based on the travel distance if the team didn't use a teleport pad.
                     // Note: if the team switches a pilot at the last moment, they lose this bonus as the duration is reset.
-                    if duration > 0 {
+                    let is_teleporting = if duration <= TELEPORT_MAX_DURATION {
+                        true
+                    } else {
+                        false
+                    };
+                    if !is_teleporting {
                         team.total_travelled += distance;
                         let reputation_bonus = Self::team_reputation_bonus_per_distance(distance);
                         team.reputation = (team.reputation + reputation_bonus).bound();
@@ -2664,44 +2670,57 @@ mod test {
         let mut app = App::test_default()?;
         app.new_world();
 
-        let world = &mut app.world;
+        // let world = &mut app.world;
         let rng = &mut ChaCha8Rng::from_os_rng();
         let planet = PLANET_DATA[0].clone();
         let team_id =
-            world.generate_random_team(rng, planet.id, "test".into(), "testship".into())?;
+            app.world
+                .generate_random_team(rng, planet.id, "test".into(), "testship".into())?;
 
-        let mut team = world.get_team_or_err(&team_id)?.clone();
+        // Add rum to team
+        let mut team = app.world.get_team_or_err(&team_id)?.clone();
         team.add_resource(Resource::RUM, 20)?;
 
-        let mut spugna = world.get_player_or_err(&team.player_ids[0])?.clone();
+        // Give player Spugna skill and set it as pilot
+        let mut spugna = app.world.get_player_or_err(&team.player_ids[0])?.clone();
         let spugna_id = spugna.id.clone();
         spugna.special_trait = Some(Trait::Spugna);
         if spugna.info.crew_role != CrewRole::Pilot {
-            world.set_team_crew_role(CrewRole::Pilot, spugna.id)?;
+            app.world.set_team_crew_role(CrewRole::Pilot, spugna.id)?;
         }
-        world.players.insert(spugna.id, spugna);
+        app.world.players.insert(spugna.id, spugna);
 
+        // Travel to a random planet
         let target = PLANET_DATA[1].clone();
         team.current_location = TeamLocation::Travelling {
             from: planet.id,
             to: target.id,
             started: 0,
-            duration: world.travel_time_to_planet(team.id, target.id)?,
-            distance: world.distance_between_planets(planet.id, target.id)?,
+            duration: app.world.travel_time_to_planet(team.id, target.id)?,
+            distance: app.world.distance_between_planets(planet.id, target.id)?,
         };
 
         println!("Team resources {:?}", team.resources);
         println!("Team location {:?}", team.current_location);
-        world.teams.insert(team.id, team);
+        println!("Travelled distance {}", team.total_travelled);
+        assert!(team.total_travelled == 0);
+        app.world.teams.insert(team.id, team);
 
+        // Drink to trigger portal discovery
         UiCallback::Drink {
             player_id: spugna_id,
         }
         .call(&mut app)?;
 
+        app.world
+            .handle_tick_events(app.world.last_tick_short_interval + TickInterval::SHORT)?;
+
         let team = app.world.get_team_or_err(&team_id)?;
         println!("Team resources {:?}", team.resources);
         println!("Team location {:?}", team.current_location);
+        println!("Travelled distance {}", team.total_travelled);
+        // Teleportation does not add to total_travelled
+        assert!(team.total_travelled == 0);
 
         Ok(())
     }

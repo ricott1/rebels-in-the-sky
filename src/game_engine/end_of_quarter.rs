@@ -27,7 +27,7 @@ impl EngineAction for EndOfQuarter {
                 description.push_str(
                     format!(
                         " {} didn't get to shoot in time.",
-                        shooter.info.shortened_name()
+                        shooter.info.short_name()
                     )
                     .as_str(),
                 );

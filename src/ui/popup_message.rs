@@ -641,11 +641,8 @@ impl PopupMessage {
                     }else{""}}.as_str(),
                 );
                     for player in players.iter() {
-                        let p_text = format!(
-                            "  {:<16} {}\n",
-                            player.info.shortened_name(),
-                            player.stars()
-                        );
+                        let p_text =
+                            format!("  {:<16} {}\n", player.info.short_name(), player.stars());
                         text.push_str(p_text.as_str());
                     }
 

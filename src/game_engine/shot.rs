@@ -54,276 +54,255 @@ fn description(
 ) -> Option<String> {
     let text = match (shot, advantage, success) {
         (ShotDifficulty::Close, Advantage::Attack, true) => vec![
-            format!("{} scores an easy layup.", shooter.info.shortened_name()),
+            format!("{} scores an easy layup.", shooter.info.short_name()),
             format!(
                 "{} would never miss in this situation.",
-                shooter.info.shortened_name()
+                shooter.info.short_name()
             ),
-            format!("{} scores with ease.", shooter.info.shortened_name()),
-            format!("{} scores the easy layup.", shooter.info.shortened_name()),
+            format!("{} scores with ease.", shooter.info.short_name()),
+            format!("{} scores the easy layup.", shooter.info.short_name()),
             format!(
                 "{} glides to the rim for an effortless finish.",
-                shooter.info.shortened_name()
+                shooter.info.short_name()
             ),
         ],
 
         (ShotDifficulty::Close, Advantage::Neutral, true) => vec![
-            format!("{} scores.", shooter.info.shortened_name()),
-            format!("{} scores the layup.", shooter.info.shortened_name()),
-            format!(
-                "{} makes the shot in traffic.",
-                shooter.info.shortened_name()
-            ),
-            format!(
-                "{} finishes strong at the rim.",
-                shooter.info.shortened_name()
-            ),
+            format!("{} scores.", shooter.info.short_name()),
+            format!("{} scores the layup.", shooter.info.short_name()),
+            format!("{} makes the shot in traffic.", shooter.info.short_name()),
+            format!("{} finishes strong at the rim.", shooter.info.short_name()),
         ],
         (ShotDifficulty::Close, Advantage::Defense, true) => vec![
-            format!("{} scores with a miracle!", shooter.info.shortened_name()),
+            format!("{} scores with a miracle!", shooter.info.short_name()),
             format!(
                 "{} scores the layup over {}.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
             format!(
                 "{} somehow gets the layup to fall over {}.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
             format!(
                 "{} banks it in against heavy defense from {}.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
             format!(
                 "{} fights through contact and scores over {}.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
         ],
         (ShotDifficulty::Close, Advantage::Attack, false) => vec![
             format!(
                 "{} manages to miss the open layup! The coach is furious...",
-                shooter.info.shortened_name()
+                shooter.info.short_name()
             ),
             format!(
                 "{} misses the layup, what a shame!",
-                shooter.info.shortened_name()
+                shooter.info.short_name()
             ),
             format!(
                 "{} blows an easy layup, what a shame!",
-                shooter.info.shortened_name()
+                shooter.info.short_name()
             ),
             format!(
                 "{} can't believe {} missed that! Wide open!",
-                shooter.info.shortened_name(),
+                shooter.info.short_name(),
                 shooter.info.pronouns.as_possessive()
             ),
             format!(
                 "{} fumbles the layup despite having no one near {}.",
-                shooter.info.shortened_name(),
+                shooter.info.short_name(),
                 shooter.info.pronouns.as_object()
             ),
         ],
         (ShotDifficulty::Close, Advantage::Neutral, false) => {
             vec![
-                format!("{} misses the shot.", shooter.info.shortened_name()),
-                format!(
-                    "{} can't get the layup to fall.",
-                    shooter.info.shortened_name()
-                ),
-                format!(
-                    "{} tries but misses at the rim.",
-                    shooter.info.shortened_name()
-                ),
+                format!("{} misses the shot.", shooter.info.short_name()),
+                format!("{} can't get the layup to fall.", shooter.info.short_name()),
+                format!("{} tries but misses at the rim.", shooter.info.short_name()),
             ]
         }
         (ShotDifficulty::Close, Advantage::Defense, false) => vec![
             format!(
                 "{} misses the layup, blocked by {}.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
             format!(
                 "{} misses the layup, {} got a piece of it.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
             format!(
                 "{} has {} layup denied by {} at the rim.",
-                shooter.info.shortened_name(),
+                shooter.info.short_name(),
                 shooter.info.pronouns.as_possessive(),
-                defenders[0].info.shortened_name()
+                defenders[0].info.short_name()
             ),
             format!(
                 "{} misses as {} swats the ball away.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
         ],
 
         (ShotDifficulty::Medium, Advantage::Attack, true) => vec![
             format!(
                 "{} converts all alone from mid range.",
-                shooter.info.shortened_name()
+                shooter.info.short_name()
             ),
-            format!("{} nails the open jumper.", shooter.info.shortened_name()),
+            format!("{} nails the open jumper.", shooter.info.short_name()),
             format!(
                 "{} hits a smooth mid-range shot.",
-                shooter.info.shortened_name()
+                shooter.info.short_name()
             ),
         ],
         (ShotDifficulty::Medium, Advantage::Neutral, true) => {
             vec![
-                format!("{} scores the jumper.", shooter.info.shortened_name()),
-                format!(
-                    "{} drains the mid-range shot.",
-                    shooter.info.shortened_name()
-                ),
+                format!("{} scores the jumper.", shooter.info.short_name()),
+                format!("{} drains the mid-range shot.", shooter.info.short_name()),
                 format!(
                     "{} makes a clean jumper from the elbow.",
-                    shooter.info.shortened_name()
+                    shooter.info.short_name()
                 ),
             ]
         }
         (ShotDifficulty::Medium, Advantage::Defense, true) => vec![
             format!(
                 "{} scores a contested mid ranger.",
-                shooter.info.shortened_name()
+                shooter.info.short_name()
             ),
             format!(
                 "{} scores a mid ranger over {}.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
             format!(
                 "{} drains a tough shot over {}.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
             format!(
                 "{} hits a difficult jumper in {}'s face.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
         ],
         (ShotDifficulty::Medium, Advantage::Attack, false) => {
             vec![
-                format!("{} misses an open shot!", shooter.info.shortened_name()),
+                format!("{} misses an open shot!", shooter.info.short_name()),
                 format!(
                     "{} can't connect from mid-range despite being wide open.",
-                    shooter.info.shortened_name()
+                    shooter.info.short_name()
                 ),
                 format!(
                     "{} bricks an uncontested jumper.",
-                    shooter.info.shortened_name()
+                    shooter.info.short_name()
                 ),
             ]
         }
         (ShotDifficulty::Medium, Advantage::Neutral, false) => {
             vec![
-                format!("{} misses the shot.", shooter.info.shortened_name()),
+                format!("{} misses the shot.", shooter.info.short_name()),
                 format!(
                     "{} can't get the jumper to fall.",
-                    shooter.info.shortened_name()
+                    shooter.info.short_name()
                 ),
             ]
         }
         (ShotDifficulty::Medium, Advantage::Defense, false) => vec![
             format!(
                 "{} misses the jumper, blocked by {}.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
             format!(
                 "{} is denied by {} on the mid-range attempt.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
         ],
 
         (ShotDifficulty::Long, Advantage::Attack, true) => {
             vec![
-                format!("{} scores the open three!", shooter.info.shortened_name()),
+                format!("{} scores the open three!", shooter.info.short_name()),
                 format!(
                     "{} sinks the wide-open three-pointer.",
-                    shooter.info.shortened_name()
+                    shooter.info.short_name()
                 ),
                 format!(
                     "{} nails the triple with no one around.",
-                    shooter.info.shortened_name()
+                    shooter.info.short_name()
                 ),
             ]
         }
         (ShotDifficulty::Long, Advantage::Neutral, true) => vec![
-            format!(
-                "{} scores the contested jumper!",
-                shooter.info.shortened_name()
-            ),
-            format!(
-                "{} drills the long-range shot.",
-                shooter.info.shortened_name()
-            ),
-            format!("{} makes the three-pointer.", shooter.info.shortened_name()),
+            format!("{} scores the contested jumper!", shooter.info.short_name()),
+            format!("{} drills the long-range shot.", shooter.info.short_name()),
+            format!("{} makes the three-pointer.", shooter.info.short_name()),
         ],
         (ShotDifficulty::Long, Advantage::Defense, true) => vec![
             format!(
                 "{} makes the three-pointer under pressure.",
-                shooter.info.shortened_name()
+                shooter.info.short_name()
             ),
             format!(
                 "{} scores a bomb in the face of {}!",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
             format!(
                 "{} drills an incredible three over {}.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
             format!(
                 "{} hits a dagger with {} right on {} face.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name(),
+                shooter.info.short_name(),
+                defenders[0].info.short_name(),
                 shooter.info.pronouns.as_possessive()
             ),
         ],
         (ShotDifficulty::Long, Advantage::Attack, false) => vec![
-            format!("{} misses the open three!", shooter.info.shortened_name()),
+            format!("{} misses the open three!", shooter.info.short_name()),
             format!(
                 "{} can't capitalize on the wide-open three.",
-                shooter.info.shortened_name()
+                shooter.info.short_name()
             ),
             format!(
                 "{} bricks the uncontested three-pointer.",
-                shooter.info.shortened_name()
+                shooter.info.short_name()
             ),
         ],
         (ShotDifficulty::Long, Advantage::Neutral, false) => vec![
-            format!("{} misses from long range.", shooter.info.shortened_name()),
+            format!("{} misses from long range.", shooter.info.short_name()),
             format!(
                 "{} can't connect on the deep shot.",
-                shooter.info.shortened_name()
+                shooter.info.short_name()
             ),
         ],
         (ShotDifficulty::Long, Advantage::Defense, false) => vec![
             format!(
                 "{} misses the three, blocked by {}.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
             format!(
                 "{} is rejected by {} on the long-range attempt.",
-                shooter.info.shortened_name(),
-                defenders[0].info.shortened_name()
+                shooter.info.short_name(),
+                defenders[0].info.short_name()
             ),
         ],
     };
 
     let mut description = text.choose(rng)?.to_string();
     if let Some(passer) = assist {
-        description.push_str(format!(" Assist from {}.", passer.info.shortened_name()).as_str());
+        description.push_str(format!(" Assist from {}.", passer.info.short_name()).as_str());
     };
     Some(description)
 }

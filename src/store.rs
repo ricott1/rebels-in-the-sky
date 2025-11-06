@@ -74,9 +74,9 @@ pub fn deserialize<T: for<'a> Deserialize<'a>>(bytes: &Vec<u8>) -> AppResult<T> 
 }
 
 fn config_dirs() -> AppResult<PathBuf> {
-    // Linux:   /home/alice/.config/barapp
-    // Windows: C:\Users\Alice\AppData\Roaming\Foo Corp\Bar App
-    // macOS:   /Users/Alice/Library/Application Support/com.Foo-Corp.Bar-App
+    // Linux:   /home/alice/.config/rebels
+    // Windows: C:\Users\Alice\AppData\Roaming\frittura\rebels
+    // macOS:   /Users/Alice/Library/Application Support/org.frittura.rebels
     let dirs = directories::ProjectDirs::from("org", "frittura", "rebels")
         .ok_or(anyhow!("Failed to get directories"))?;
     let config_dirs = dirs.config_dir().to_path_buf();
@@ -126,6 +126,7 @@ pub fn load_game(game_id: GameId) -> AppResult<Game> {
     load_from_json::<Game>(&format!("{}{}", PERSISTED_GAMES_PREFIX, game_id))
 }
 
+#[cfg(feature = "relayer")]
 pub fn load_relayer_messages() -> AppResult<Vec<String>> {
     // Load every message in the 'relayer_messages' directory.
     let config_dirs = config_dirs()?;
@@ -322,6 +323,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "relayer")]
     #[test]
     #[ignore]
     fn test_load_relayer_message() -> AppResult<()> {
