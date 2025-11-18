@@ -21,8 +21,11 @@ impl UiKey {
     pub const NEXT_SELECTION: KeyCode = KeyCode::Char(']');
     pub const PREVIOUS_SELECTION: KeyCode = KeyCode::Char('[');
     pub const UI_DEBUG_MODE: KeyCode = KeyCode::Char('`');
+    #[cfg(feature = "audio")]
     pub const TOGGLE_AUDIO: KeyCode = KeyCode::Char('|');
+    #[cfg(feature = "audio")]
     pub const PREVIOUS_RADIO: KeyCode = KeyCode::Char('<');
+    #[cfg(feature = "audio")]
     pub const NEXT_RADIO: KeyCode = KeyCode::Char('>');
     pub const GO_TO_TEAM: KeyCode = KeyCode::Backspace;
     pub const GO_TO_TEAM_ALTERNATIVE: KeyCode = KeyCode::Char('t');

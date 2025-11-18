@@ -1,20 +1,21 @@
+use crate::app::AppEvent;
 use crate::network::constants::{DEFAULT_SEED_PORT, TOPIC};
 use crate::network::types::{NetworkData, PlayerRanking, TeamRanking};
 use crate::network::{handler::NetworkHandler, types::SeedInfo};
 use crate::store::*;
 use crate::types::{AppResult, PlayerId, TeamId};
-use futures::StreamExt;
 use itertools::Itertools;
 use libp2p::gossipsub::IdentTopic;
 use libp2p::{gossipsub, swarm::SwarmEvent};
 use std::collections::HashMap;
-use tokio::select;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 const TOP_PLAYER_RANKING_LENGTH: usize = 20;
 const TOP_TEAM_RANKING_LENGTH: usize = 10;
 
 pub struct Relayer {
-    pub running: bool,
+    running: bool,
     network_handler: NetworkHandler,
     team_ranking: HashMap<TeamId, TeamRanking>,
     top_team_ranking: Vec<(TeamId, TeamRanking)>,
@@ -100,7 +101,7 @@ impl Relayer {
 
         Self {
             running: true,
-            network_handler: NetworkHandler::new(None, DEFAULT_SEED_PORT)
+            network_handler: NetworkHandler::new(None)
                 .expect("Failed to initialize network handler"),
             team_ranking,
             top_team_ranking,
@@ -113,16 +114,30 @@ impl Relayer {
 
     pub async fn run(&mut self) -> AppResult<()> {
         println!("Starting relayer. Press Ctrl-C to exit.");
+        let (event_sender, mut event_receiver) = mpsc::channel(256);
+
+        let cancellation_token = CancellationToken::new();
+        self.network_handler.start_polling_events(
+            event_sender,
+            cancellation_token.clone(),
+            DEFAULT_SEED_PORT,
+        );
         while self.running {
-            select! {
-                    swarm_event = self.network_handler.swarm.select_next_some() =>  {
+            if let Some(app_event) = event_receiver.recv().await {
+                match app_event {
+                    
+                    AppEvent::NetworkEvent(swarm_event) => {
                         let result = self.handle_network_events(swarm_event);
                         if result.is_err() {
                             log::error!("Error handling network event: {:?}", result);
                         }
+                    }
+                    _ => {}
                 }
             }
         }
+
+        cancellation_token.cancel();
         Ok(())
     }
 
@@ -137,7 +152,7 @@ impl Relayer {
                     println!("Sending info to {}", peer_id);
 
                     self.network_handler.send_seed_info(SeedInfo::new(
-                        self.network_handler.swarm.connected_peers().count(),
+                        self.network_handler.connected_peers_count,
                         None,
                         self.top_team_ranking.clone(),
                         self.top_player_ranking.clone(),
@@ -157,7 +172,7 @@ impl Relayer {
                             }
                         } else {
                             self.network_handler.send_seed_info(SeedInfo::new(
-                                self.network_handler.swarm.connected_peers().count(),
+                                self.network_handler.connected_peers_count,
                                 Some(format!(
                                     "A new crew has started roaming the galaxy: {}",
                                     network_team.team.name

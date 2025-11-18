@@ -1,9 +1,8 @@
-use crate::app::App;
+#[cfg(feature = "audio")]
 use crate::audio;
-use crate::crossterm_event_handler::CrosstermEventHandler;
 #[cfg(feature = "ssh")]
-use crate::ssh::{SSHEventHandler, SSHWriterProxy};
-use crate::types::{AppResult, Tick};
+use crate::ssh::SSHWriterProxy;
+use crate::types::AppResult;
 use crate::ui::ui::Ui;
 use crate::ui::UI_SCREEN_SIZE;
 use crate::world::world::World;
@@ -12,7 +11,6 @@ use crossterm::event::{DisableMouseCapture, EnableMouseCapture, KeyEvent, MouseE
 use crossterm::terminal::Clear;
 use crossterm::terminal::SetTitle;
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
-use futures::Future;
 use ratatui::layout::Rect;
 use ratatui::prelude::CrosstermBackend;
 use ratatui::Terminal;
@@ -20,8 +18,6 @@ use ratatui::TerminalOptions;
 use ratatui::Viewport;
 use std::io::{self};
 use std::panic;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 
 pub trait WriterProxy: io::Write + std::fmt::Debug {
     fn send(&mut self) -> impl std::future::Future<Output = std::io::Result<usize>> + Send {
@@ -47,23 +43,10 @@ impl WriterProxy for DummyWriter {}
 
 #[derive(Clone, Copy, Debug)]
 pub enum TerminalEvent {
-    Tick { tick: Tick },
     Key(KeyEvent),
     Mouse(MouseEvent),
     Resize(u16, u16),
     Quit,
-}
-
-impl Future for TerminalEvent {
-    type Output = Self;
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Poll::Ready(*self)
-    }
-}
-
-pub trait EventHandler: Send + Sync {
-    fn next(&mut self) -> impl std::future::Future<Output = TerminalEvent> + Send;
-    fn simulation_update_interval(&self) -> Tick;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -74,25 +57,21 @@ enum TuiType {
 }
 
 #[derive(Debug)]
-pub struct Tui<W, E>
+pub struct Tui<W>
 where
     W: WriterProxy,
-    E: EventHandler,
 {
     tui_type: TuiType,
-    pub terminal: Terminal<CrosstermBackend<W>>,
-    pub events: E,
+    terminal: Terminal<CrosstermBackend<W>>,
 }
 
-impl Tui<io::Stdout, CrosstermEventHandler> {
-    pub fn new_local(target_fps: Option<u8>) -> AppResult<Self> {
+impl Tui<io::Stdout> {
+    pub fn new_local() -> AppResult<Self> {
         let backend = CrosstermBackend::new(io::stdout());
         let terminal = Terminal::new(backend)?;
-        let events = CrosstermEventHandler::new(target_fps, true);
         let mut tui = Self {
             tui_type: TuiType::Local,
             terminal,
-            events,
         };
         tui.init()?;
         Ok(tui)
@@ -100,8 +79,8 @@ impl Tui<io::Stdout, CrosstermEventHandler> {
 }
 
 #[cfg(feature = "ssh")]
-impl Tui<SSHWriterProxy, SSHEventHandler> {
-    pub fn new_ssh(writer: SSHWriterProxy, events: SSHEventHandler) -> AppResult<Self> {
+impl Tui<SSHWriterProxy> {
+    pub fn new_ssh(writer: SSHWriterProxy) -> AppResult<Self> {
         let backend = CrosstermBackend::new(writer);
         let opts = TerminalOptions {
             viewport: Viewport::Fixed(Rect {
@@ -116,7 +95,6 @@ impl Tui<SSHWriterProxy, SSHEventHandler> {
         let mut tui = Self {
             tui_type: TuiType::SSH,
             terminal,
-            events,
         };
 
         tui.init()?;
@@ -124,7 +102,7 @@ impl Tui<SSHWriterProxy, SSHEventHandler> {
     }
 }
 
-impl Tui<DummyWriter, CrosstermEventHandler> {
+impl Tui<DummyWriter> {
     pub fn new_dummy() -> AppResult<Self> {
         let writer = DummyWriter {};
         let backend = CrosstermBackend::new(writer);
@@ -138,11 +116,9 @@ impl Tui<DummyWriter, CrosstermEventHandler> {
         };
 
         let terminal = Terminal::with_options(backend, opts)?;
-        let events = CrosstermEventHandler::new(Some(1), false);
         let mut tui = Self {
             tui_type: TuiType::Dummy,
             terminal,
-            events,
         };
 
         tui.init()?;
@@ -150,10 +126,9 @@ impl Tui<DummyWriter, CrosstermEventHandler> {
     }
 }
 
-impl<W, E> Tui<W, E>
+impl<W> Tui<W>
 where
     W: WriterProxy,
-    E: EventHandler,
 {
     fn init(&mut self) -> AppResult<()> {
         if self.tui_type == TuiType::Local {
@@ -199,20 +174,26 @@ where
         &mut self,
         ui: &mut Ui,
         world: &World,
-        audio_player: Option<&audio::music_player::MusicPlayer>,
+        #[cfg(feature = "audio")] audio_player: Option<&audio::music_player::MusicPlayer>,
     ) -> AppResult<()> {
-        self.terminal
-            .draw(|frame| App::render(ui, world, audio_player, frame))?;
+        if self.tui_type == TuiType::Dummy {
+            return Ok(());
+        }
+
+        self.terminal.draw(|frame| {
+            ui.render(
+                frame,
+                world,
+                #[cfg(feature = "audio")]
+                audio_player,
+            )
+        })?;
 
         if self.tui_type == TuiType::SSH {
             self.terminal.backend_mut().writer_mut().send().await?;
         }
 
         Ok(())
-    }
-
-    pub fn simulation_update_interval(&self) -> Tick {
-        self.events.simulation_update_interval()
     }
 
     pub fn resize(&mut self, size: (u16, u16)) -> AppResult<()> {

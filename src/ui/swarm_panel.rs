@@ -4,7 +4,6 @@ use super::constants::*;
 use super::gif_map::GifMap;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
-use super::utils::SwarmPanelEvent;
 use super::widgets::{
     render_player_description, render_spaceship_description, selectable_list, PlayerWidgetView,
 };
@@ -55,6 +54,13 @@ impl SwarmView {
             SwarmView::Ranking => SwarmView::Chat,
         }
     }
+}
+
+#[derive(Debug)]
+pub struct SwarmPanelEvent {
+    pub timestamp: Tick,
+    pub peer_id: Option<PeerId>,
+    pub text: String,
 }
 
 #[derive(Debug, Display, Default, PartialEq)]

@@ -32,10 +32,12 @@ impl Honour {
 
     pub fn description(&self) -> String {
         match self {
-            Self::Maximalist => "Held at least 1 BTC at some point in time.",
-            Self::MultiKulti => "Have pirates from 7 different populations in the crew.",
-            Self::Traveller => "Travel through the galaxy for at least 1 light year.",
-            Self::Veteran => "Played for a year.",
+            Self::Maximalist => "Maximalist: Held at least 1 BTC at some point in time.",
+            Self::MultiKulti => {
+                "MultiKulti: Have pirates from 7 different populations in the crew."
+            }
+            Self::Traveller => "Traveller: Travel through the galaxy for at least 1 light year.",
+            Self::Veteran => "Veteran: Played for a year.",
         }
         .to_string()
     }

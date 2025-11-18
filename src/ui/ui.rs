@@ -4,27 +4,32 @@ use super::galaxy_panel::GalaxyPanel;
 use super::popup_message::PopupMessage;
 use super::space_screen::SpaceScreen;
 use super::splash_screen::SplashScreen;
+
+use super::swarm_panel::{SwarmPanel, SwarmPanelEvent};
 use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::ui_frame::UiFrame;
-use super::utils::SwarmPanelEvent;
 use super::widgets::default_block;
 use super::{
     game_panel::GamePanel, my_team_panel::MyTeamPanel, new_team_screen::NewTeamScreen,
-    player_panel::PlayerListPanel, swarm_panel::SwarmPanel, team_panel::TeamListPanel,
-    traits::Screen,
+    player_panel::PlayerListPanel, team_panel::TeamListPanel, traits::Screen,
 };
-use crate::audio::music_player::MusicPlayer;
-use crate::audio::AudioPlayerState;
-use crate::types::{AppResult, SystemTimeTick, Tick};
+#[cfg(feature = "audio")]
+use crate::audio::{music_player::MusicPlayer, AudioPlayerState};
+
+use crate::types::Tick;
+use crate::types::{AppResult, SystemTimeTick};
 use crate::world::world::World;
 use core::fmt::Debug;
 use itertools::Itertools;
+
 use libp2p::PeerId;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Clear, Paragraph};
+use ratatui::widgets::Clear;
+#[cfg(feature = "audio")]
+use ratatui::widgets::Paragraph;
 use ratatui::{
     layout::{Constraint, Layout},
     Frame,
@@ -52,6 +57,7 @@ pub enum UiTab {
     Pirates,
     Galaxy,
     Games,
+    
     Swarm,
 }
 
@@ -68,6 +74,7 @@ pub struct Ui {
     pub player_panel: PlayerListPanel,
     pub team_panel: TeamListPanel,
     pub game_panel: GamePanel,
+    
     pub swarm_panel: SwarmPanel,
     pub my_team_panel: MyTeamPanel,
     pub galaxy_panel: GalaxyPanel,
@@ -82,6 +89,7 @@ impl Ui {
         let player_panel = PlayerListPanel::new();
         let team_panel = TeamListPanel::new();
         let game_panel = GamePanel::new();
+        
         let swarm_panel = SwarmPanel::new();
         let my_team_panel = MyTeamPanel::new();
         let new_team_screen = NewTeamScreen::new();
@@ -95,6 +103,7 @@ impl Ui {
         ui_tabs.push(UiTab::Galaxy);
         ui_tabs.push(UiTab::Games);
 
+        
         if !disable_network {
             ui_tabs.push(UiTab::Swarm);
         }
@@ -113,6 +122,7 @@ impl Ui {
             player_panel,
             team_panel,
             game_panel,
+            
             swarm_panel,
             my_team_panel,
             galaxy_panel,
@@ -154,11 +164,9 @@ impl Ui {
             }
         }
 
-        // Insert new popup at the front so it becomes the active one
-        self.popup_messages.insert(0, popup_message);
+        self.popup_messages.push(popup_message);
         if self.popup_messages.len() >= MAX_POPUP_MESSAGES {
-            // Remove a skippable message starting from the end (oldest) so we keep the newest
-            for index in (0..self.popup_messages.len()).rev() {
+            for index in 0..self.popup_messages.len() {
                 if self.popup_messages[index].is_skippable() {
                     self.popup_messages.remove(index);
                     break;
@@ -168,7 +176,6 @@ impl Ui {
     }
 
     pub fn push_popup_to_top(&mut self, popup_message: PopupMessage) {
-        // Ensure popup is placed at the top (index 0)
         self.popup_messages.insert(0, popup_message);
     }
 
@@ -176,6 +183,7 @@ impl Ui {
         self.popup_messages.remove(0);
     }
 
+    
     pub fn push_log_event(&mut self, timestamp: Tick, peer_id: Option<PeerId>, text: String) {
         self.swarm_panel.push_log_event(SwarmPanelEvent {
             timestamp,
@@ -211,6 +219,7 @@ impl Ui {
                 UiTab::Pirates => &self.player_panel,
                 UiTab::Galaxy => &self.galaxy_panel,
                 UiTab::Games => &self.game_panel,
+                
                 UiTab::Swarm => &self.swarm_panel,
             },
             UiState::SpaceAdventure => &self.space_screen,
@@ -227,6 +236,7 @@ impl Ui {
                 UiTab::Pirates => Some(&mut self.player_panel),
                 UiTab::Galaxy => Some(&mut self.galaxy_panel),
                 UiTab::Games => Some(&mut self.game_panel),
+                
                 UiTab::Swarm => Some(&mut self.swarm_panel),
             },
         }
@@ -242,6 +252,7 @@ impl Ui {
                 UiTab::Pirates => &mut self.player_panel,
                 UiTab::Galaxy => &mut self.galaxy_panel,
                 UiTab::Games => &mut self.game_panel,
+                
                 UiTab::Swarm => &mut self.swarm_panel,
             },
             UiState::SpaceAdventure => &mut self.space_screen,
@@ -321,21 +332,28 @@ impl Ui {
         self.tab_index = (self.tab_index + self.ui_tabs.len() - 1) % self.ui_tabs.len();
     }
 
-    pub fn update(&mut self, world: &World, audio_player: Option<&MusicPlayer>) -> AppResult<()> {
+    pub fn update(
+        &mut self,
+        world: &World,
+        #[cfg(feature = "audio")] audio_player: Option<&MusicPlayer>,
+    ) -> AppResult<()> {
         self.inner_registry.clear();
         match self.state {
             UiState::Splash => {
-                // This is only to get a nice view in the splash screen
-                let audio_state = if let Some(player) = audio_player {
-                    if player.is_playing() {
-                        AudioPlayerState::Playing
+                #[cfg(feature = "audio")]
+                {
+                    // This is only to get a nice view in the splash screen
+                    let audio_state = if let Some(player) = audio_player {
+                        if player.is_playing() {
+                            AudioPlayerState::Playing
+                        } else {
+                            AudioPlayerState::Paused
+                        }
                     } else {
-                        AudioPlayerState::Paused
-                    }
-                } else {
-                    AudioPlayerState::Disabled
-                };
-                self.splash_screen.set_audio_player_state(audio_state);
+                        AudioPlayerState::Disabled
+                    };
+                    self.splash_screen.set_audio_player_state(audio_state);
+                }
                 self.splash_screen.update(world)?
             }
             UiState::NewTeam => self.new_team_screen.update(world)?,
@@ -347,6 +365,7 @@ impl Ui {
                 self.player_panel.update(world)?;
                 self.game_panel.update(world)?;
                 self.galaxy_panel.update(world)?;
+                
                 self.swarm_panel.update(world)?;
             }
             UiState::SpaceAdventure => self.space_screen.update(world)?,
@@ -356,7 +375,12 @@ impl Ui {
     }
 
     /// Renders the user interface widgets.
-    pub fn render(&mut self, frame: &mut Frame, world: &World, audio_player: Option<&MusicPlayer>) {
+    pub fn render(
+        &mut self,
+        frame: &mut Frame,
+        world: &World,
+        #[cfg(feature = "audio")] audio_player: Option<&MusicPlayer>,
+    ) {
         let mut ui_frame = UiFrame::new(frame);
         ui_frame.set_hovering(self.inner_registry.hovering());
         if self.popup_messages.len() > 0 {
@@ -445,6 +469,7 @@ impl Ui {
             }
         };
 
+        
         if let Err(err) = render_result {
             self.push_log_event(
                 Tick::now(),
@@ -454,9 +479,16 @@ impl Ui {
         }
 
         // Render footer
-        self.render_footer(&mut ui_frame, world, audio_player, split[1]);
+        self.render_footer(
+            &mut ui_frame,
+            world,
+            #[cfg(feature = "audio")]
+            audio_player,
+            split[1],
+        );
 
         if let Err(err) = self.render_popup_messages(&mut ui_frame, screen_area) {
+            
             self.push_log_event(
                 Tick::now(),
                 None,
@@ -481,7 +513,7 @@ impl Ui {
         &self,
         frame: &mut UiFrame,
         world: &World,
-        audio_player: Option<&MusicPlayer>,
+        #[cfg(feature = "audio")] audio_player: Option<&MusicPlayer>,
         area: Rect,
     ) {
         frame.render_widget(Clear, area);
@@ -549,6 +581,7 @@ impl Ui {
             split[0],
         );
 
+        #[cfg(feature = "audio")]
         if let Some(audio_player) = &audio_player {
             frame.render_interactive(
                 Button::no_box(

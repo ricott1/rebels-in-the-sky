@@ -114,9 +114,13 @@ It is almost guaranteed that you will encounter bugs along your journey. If you 
 
 Running a relayer node helps keep the game decentralized. You can do so by running `rebels -n`. Other players can connect with your relayer at startup using `rebels -i <RELAYER-NODE-IP4-OR-IP6>`. If you do so, please consider opening a PR to add your address to the following list of known relayers.
 
+To run a relayer, you must build with the "relayer" feature enabled.
+
 ## Running a SSH server
 
 You can also run a SSH server with `rebels -j`.  Other players can connect with your server using `ssh <USERNAME>@<SERVER-IP4-OR-IP6> -p 3788`.
+
+To run a SSH server, you must build with the "ssh" feature enabled.
 
 ## License
 

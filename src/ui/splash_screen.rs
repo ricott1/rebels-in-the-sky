@@ -123,6 +123,7 @@ impl SplashScreen {
         match index {
             0 => UiCallback::ContinueGame,
             1 => UiCallback::NewGame,
+            #[cfg(feature = "audio")]
             2 => UiCallback::ToggleAudio,
             _ => UiCallback::QuitGame,
         }
@@ -309,6 +310,7 @@ impl Screen for SplashScreen {
                     return Some(UiCallback::NewGame);
                 }
                 //options
+                #[cfg(feature = "audio")]
                 2 => {
                     return Some(UiCallback::ToggleAudio);
                 }

@@ -1,5 +1,6 @@
 use super::{planet::Planet, types::KartoffelLocation};
 use crate::types::{KartoffelId, TeamId};
+
 use libp2p::PeerId;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,7 @@ pub enum KartoffelRarity {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Kartoffel {
     pub id: KartoffelId,
+    
     pub peer_id: Option<PeerId>,
     pub rarity: KartoffelRarity,
     pub version: u64,
@@ -33,6 +35,7 @@ impl Kartoffel {
         name.truncate(6);
         Self {
             id,
+            
             peer_id: None,
             rarity: KartoffelRarity::default(),
             version: 0,

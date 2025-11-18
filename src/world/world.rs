@@ -1305,7 +1305,6 @@ impl World {
 
         if let Some(space) = self.space_adventure.as_mut() {
             let deltatime = (current_tick - self.last_tick_min_interval) as f32 / SECONDS as f32;
-
             callbacks.append(&mut space.update(deltatime)?);
         }
 

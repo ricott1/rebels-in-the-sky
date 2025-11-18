@@ -5,8 +5,9 @@ use crate::game_engine::types::TeamInGame;
 use crate::store::deserialize;
 use crate::types::{AppResult, SystemTimeTick, TeamId, Tick};
 use crate::ui::popup_message::PopupMessage;
-use crate::ui::utils::SwarmPanelEvent;
+use crate::ui::SwarmPanelEvent;
 use crate::world::constants::NETWORK_GAME_START_DELAY;
+use crate::world::MAX_AVG_TIREDNESS_PER_AUTO_GAME;
 use crate::{app::App, types::AppCallback};
 use anyhow::anyhow;
 use libp2p::gossipsub::TopicHash;
@@ -65,13 +66,7 @@ impl NetworkCallback {
             app.ui
                 .push_log_event(Tick::now(), None, format!("Bound to {}", address));
 
-            let network_handler = app
-                .network_handler
-                .as_mut()
-                .expect("Should have network handler");
-            network_handler.address = address.clone();
-
-            network_handler.dial_seed()?;
+            app.network_handler.dial_seed()?;
 
             Ok(None)
         })
@@ -101,21 +96,15 @@ impl NetworkCallback {
 
     fn close_connection(peer_id: PeerId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            if !app
-                .network_handler
-                .as_ref()
-                .expect("Should have network handler")
-                .swarm
-                .is_connected(&peer_id)
-            {
-                app.ui.push_log_event(
-                    Tick::now(),
-                    Some(peer_id),
-                    format!("Closing connection: {}", peer_id),
-                );
-                // FIXME: read connection protocol and understand when this is called.
-                //        For example, we could check that num_established >0 or that cause = None
-            }
+            // if !app.network_handler.swarm.is_connected(&peer_id) {
+            app.ui.push_log_event(
+                Tick::now(),
+                Some(peer_id),
+                format!("Closing connection: {}", peer_id),
+            );
+            // FIXME: read connection protocol and understand when this is called.
+            //        For example, we could check that num_established >0 or that cause = None
+            // }
             Ok(None)
         })
     }
@@ -267,12 +256,7 @@ impl NetworkCallback {
                 ),
             );
 
-            let network_handler = app
-                .network_handler
-                .as_mut()
-                .expect("There should be a network handler");
-
-            let self_peer_id = network_handler.swarm.local_peer_id();
+            let self_peer_id = app.network_handler.own_peer_id();
             match &trade.state {
                 NetworkRequestState::Syn => {
                     if trade.proposer_peer_id == *self_peer_id {
@@ -349,7 +333,7 @@ impl NetworkCallback {
                             tick: Tick::now(),
                         });
                         trade.state = NetworkRequestState::Ack;
-                        network_handler.send_trade(trade)?;
+                        app.network_handler.send_trade(trade)?;
                         Ok(())
                     };
 
@@ -360,7 +344,7 @@ impl NetworkCallback {
                         };
                         let own_team = app.world.get_own_team_mut()?;
                         own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
-                        network_handler.send_trade(trade)?;
+                        app.network_handler.send_trade(trade)?;
 
                         return Err(anyhow!(err.to_string()));
                     }
@@ -441,7 +425,7 @@ impl NetworkCallback {
                         trade.state = NetworkRequestState::Failed {
                             error_message: err.to_string(),
                         };
-                        network_handler.send_trade(trade)?;
+                        app.network_handler.send_trade(trade)?;
                         return Err(anyhow!(err.to_string()));
                     }
                 }
@@ -475,18 +459,13 @@ impl NetworkCallback {
         challenge: Challenge,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let network_handler = app
-                .network_handler
-                .as_mut()
-                .expect("There should be a network handler");
-
             app.ui.push_log_event(
                 timestamp,
                 peer_id,
                 format!("\nChallenge: {}", challenge.format()),
             );
 
-            let self_peer_id = network_handler.swarm.local_peer_id();
+            let self_peer_id = app.network_handler.own_peer_id();
             match &challenge.state {
                 NetworkRequestState::Syn => {
                     if challenge.proposer_peer_id == *self_peer_id {
@@ -497,12 +476,19 @@ impl NetworkCallback {
                         return Err(anyhow!("Team is not challenge receiver"));
                     }
 
+                    let own_team = app.world.get_own_team()?;
+                    let average_tiredness = own_team.average_tiredness(&app.world);
+
                     let own_team = app.world.get_own_team_mut()?;
 
-                    if own_team.autonomous_strategy.challenge_network {
+                    if own_team.current_game.is_none()
+                        && own_team.autonomous_strategy.challenge_network
+                        && average_tiredness <= MAX_AVG_TIREDNESS_PER_AUTO_GAME
+                    {
                         let rng = &mut ChaCha8Rng::from_os_rng();
                         own_team.player_ids.shuffle(rng);
-                        network_handler.accept_challenge(&app.world, challenge.clone())?;
+                        app.network_handler
+                            .accept_challenge(&app.world, challenge.clone())?;
                         return Ok(Some("Challenge received.\nAuto accepted".to_string()));
                     }
 
@@ -531,8 +517,7 @@ impl NetworkCallback {
                         )
                         .ok_or(anyhow!("Cannot generate team in game"))?;
 
-                        home_team_in_game.peer_id =
-                            Some(network_handler.swarm.local_peer_id().clone());
+                        home_team_in_game.peer_id = Some(app.network_handler.own_peer_id().clone());
 
                         let mut challenge = challenge.clone();
                         challenge.home_team_in_game = home_team_in_game;
@@ -560,7 +545,7 @@ impl NetworkCallback {
                             challenge.state = NetworkRequestState::Failed {
                                 error_message: err.to_string(),
                             };
-                            network_handler.send_challenge(challenge)?;
+                            app.network_handler.send_challenge(challenge)?;
 
                             return Err(anyhow!(err.to_string()));
                         }
@@ -571,7 +556,7 @@ impl NetworkCallback {
                             tick: Tick::now(),
                         });
 
-                        network_handler.send_challenge(challenge)?;
+                        app.network_handler.send_challenge(challenge)?;
                         Ok(())
                     };
 
@@ -581,7 +566,7 @@ impl NetworkCallback {
                         challenge.state = NetworkRequestState::Failed {
                             error_message: err.to_string(),
                         };
-                        network_handler.send_challenge(challenge)?;
+                        app.network_handler.send_challenge(challenge)?;
                         return Err(anyhow!(err.to_string()));
                     }
                 }
@@ -654,7 +639,7 @@ impl NetworkCallback {
                         challenge.state = NetworkRequestState::Failed {
                             error_message: err.to_string(),
                         };
-                        network_handler.send_challenge(challenge)?;
+                        app.network_handler.send_challenge(challenge)?;
                         app.ui.push_popup(PopupMessage::Error {
                             message: format!("Challenge failed: {}", err),
                             tick: Tick::now(),
@@ -710,11 +695,7 @@ impl NetworkCallback {
             }
             Self::CloseConnection { peer_id } => Self::close_connection(peer_id.clone())(app),
             Self::HandleConnectionEstablished { peer_id } => {
-                let network_handler = app
-                    .network_handler
-                    .as_mut()
-                    .expect("Should have network handler");
-                network_handler.send_own_team(&app.world)?;
+                app.network_handler.send_own_team(&app.world)?;
 
                 app.ui.push_log_event(
                     Tick::now(),

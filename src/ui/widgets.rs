@@ -216,6 +216,7 @@ pub fn render_challenge_button<'a>(
         }
     };
 
+    
     // If we received a challenge from that team, display the accept/decline buttons
     if let Some(challenge) = own_team.received_challenges.get(&team.id) {
         let c_split = Layout::horizontal([

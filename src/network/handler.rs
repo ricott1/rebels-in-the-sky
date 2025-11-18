@@ -2,7 +2,10 @@ use super::challenge::Challenge;
 use super::constants::*;
 use super::network_callback::NetworkCallback;
 use super::trade::Trade;
-use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
+#[cfg(feature = "relayer")]
+use super::types::SeedInfo;
+use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam};
+use crate::app::AppEvent;
 use crate::game_engine::types::TeamInGame;
 use crate::store::serialize;
 use crate::types::{AppResult, GameId};
@@ -10,53 +13,48 @@ use crate::types::{PlayerId, TeamId};
 use crate::types::{SystemTimeTick, Tick};
 use crate::world::world::World;
 use anyhow::anyhow;
-use libp2p::gossipsub::{self, IdentTopic, MessageAuthenticity, MessageId, ValidationMode};
+use futures::StreamExt;
+use itertools::Itertools;
+use libp2p::gossipsub::{self, IdentTopic};
+use libp2p::identity::Keypair;
 use libp2p::swarm::SwarmEvent;
 use libp2p::{identity, noise, tcp, yamux, PeerId};
 use libp2p::{Multiaddr, Swarm};
-use libp2p_swarm_test::SwarmExt;
 use log::{error, info};
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
-pub struct NetworkHandler {
-    pub swarm: Swarm<gossipsub::Behaviour>,
-    pub address: Multiaddr,
-    pub seed_addresses: Vec<Multiaddr>,
-    test_environment: bool, // Hack to be able to easily run e2e tests
+#[derive(Debug, Default, Clone)]
+enum SwarmStatus {
+    #[default]
+    Uninitialized,
+    Ready {
+        sender: mpsc::Sender<SwarmCommand>,
+    },
 }
 
-impl Debug for NetworkHandler {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NetworkHandler")
-            .field("address", &self.address)
-            .finish()
-    }
+#[derive(Debug, Clone)]
+enum SwarmCommand {
+    Dial { address: Multiaddr },
+    Send { topic: IdentTopic, data: Vec<u8> },
+}
+
+#[derive(Debug)]
+pub struct NetworkHandler {
+    local_keypair: Keypair,
+    pub connected_peers_count: usize, //FIXME: this should be updated somewhere
+    own_peer_id: PeerId,
+    pub seed_addresses: Vec<Multiaddr>,
+    swarm_status: SwarmStatus,
 }
 
 impl NetworkHandler {
-    pub fn test_default() -> Self {
-        Self {
-            swarm: Swarm::new_ephemeral_tokio(|identity| {
-                let peer_id = identity.public().to_peer_id();
-
-                let config = gossipsub::ConfigBuilder::default()
-                    .validation_mode(ValidationMode::Permissive)
-                    .build()
-                    .unwrap();
-                gossipsub::Behaviour::new(MessageAuthenticity::Author(peer_id), config).unwrap()
-            }),
-            address: Multiaddr::empty(),
-            seed_addresses: vec![],
-            test_environment: true,
-        }
-    }
-
-    pub fn new(seed_ip: Option<String>, tcp_port: u16) -> AppResult<Self> {
-        let local_key = identity::Keypair::generate_ed25519();
-
+    fn new_swarm(keypair: Keypair, tcp_port: u16) -> AppResult<Swarm<gossipsub::Behaviour>> {
         // To content-address message, we can take the hash of message and use it as an ID.
         let message_id_fn = |message: &gossipsub::Message| {
             let mut s = DefaultHasher::new();
@@ -74,14 +72,13 @@ impl NetworkHandler {
 
         // build a gossipsub network behaviour
         let mut gossipsub = gossipsub::Behaviour::new(
-            gossipsub::MessageAuthenticity::Signed(local_key),
+            gossipsub::MessageAuthenticity::Signed(keypair.clone()),
             gossipsub_config,
         )
         .expect("Correct configuration");
 
         gossipsub.subscribe(&IdentTopic::new(TOPIC))?;
-
-        let mut swarm = libp2p::SwarmBuilder::with_new_identity()
+        let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
             .with_tokio()
             .with_tcp(
                 tcp::Config::default(),
@@ -111,6 +108,23 @@ impl NetworkHandler {
             return Err(anyhow!("Swarm could not start listening."));
         }
 
+        Ok(swarm)
+    }
+
+    pub fn test_default() -> Self {
+        let local_keypair = identity::Keypair::generate_ed25519();
+        let own_peer_id = PeerId::from_public_key(&local_keypair.public());
+        Self {
+            local_keypair,
+            connected_peers_count: 0,
+            own_peer_id,
+            seed_addresses: vec![],
+            swarm_status: SwarmStatus::Uninitialized,
+        }
+    }
+
+    pub fn new(seed_ip: Option<String>) -> AppResult<Self> {
+        let local_keypair = identity::Keypair::generate_ed25519();
         let mut seed_addresses = vec![
             format!("/dns4/{DEFAULT_SEED_URL}/tcp/{DEFAULT_SEED_PORT}")
                 .parse()
@@ -129,51 +143,128 @@ impl NetworkHandler {
         }
 
         info!(
-            "Network handler started on port {} with {} seed addresses.",
-            tcp_port,
+            "Network handler created with {} seed addresses.",
             seed_addresses.len()
         );
 
+        let own_peer_id = PeerId::from_public_key(&local_keypair.public());
+
         Ok(Self {
-            swarm,
-            address: Multiaddr::empty(),
+            local_keypair,
+            connected_peers_count: 0,
+            own_peer_id,
             seed_addresses,
-            test_environment: false,
+            swarm_status: SwarmStatus::Uninitialized,
         })
     }
 
-    fn _send(&mut self, data: &NetworkData) -> AppResult<MessageId> {
-        if self.test_environment {
-            return Ok(MessageId::new(&[0]));
-        }
-        let data = serialize(data)?;
-        let msg_id = self
-            .swarm
-            .behaviour_mut()
-            .publish(IdentTopic::new(TOPIC), data)?;
-        Ok(msg_id)
+    pub fn own_peer_id(&self) -> &PeerId {
+        &self.own_peer_id
     }
 
-    pub fn dial_seed(&mut self) -> AppResult<()> {
-        for address in self.seed_addresses.iter() {
-            if *address != self.address {
-                if let Err(e) = self.swarm.dial(address.clone()) {
-                    log::error!("Dial error: {}", e);
+    pub fn start_polling_events(
+        &mut self,
+        event_sender: mpsc::Sender<AppEvent>,
+        cancellation_token: CancellationToken,
+        tcp_port: u16,
+    ) -> JoinHandle<()> {
+        let local_keypair = self.local_keypair.clone();
+        let own_peer_id = self.own_peer_id().clone();
+
+        let (sender, mut receiver) = mpsc::channel(64);
+
+        self.swarm_status = SwarmStatus::Ready { sender };
+        let handle = tokio::spawn(async move {
+            let mut swarm = if let Ok(swarm) = Self::new_swarm(local_keypair, tcp_port) {
+                swarm
+            } else {
+                return;
+            };
+
+            assert_eq!(own_peer_id, *swarm.local_peer_id());
+
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        log::info!("NetworkHandler background task shutting down.");
+                        if !swarm.behaviour_mut().unsubscribe(&IdentTopic::new(TOPIC)) {
+                            error!("Cannot unsubscribe from events");
+                        }
+
+                        let connected_peers = swarm.connected_peers().cloned().collect_vec();
+                        for peer_id in connected_peers {
+                            let _ = swarm
+                                .disconnect_peer_id(peer_id)
+                                .map_err(|e| error!("Error disconnecting peer id {}: {:?}", peer_id, e));
+                        }
+
+                        break;
+                    }
+
+                    event = swarm.select_next_some() => {
+                        if event_sender.send(AppEvent::NetworkEvent(event)).await.is_err() {
+                                log::warn!("App receiver dropped; stopping network loop");
+                                break;
+                            }
+                    }
+
+                    Some(command) = receiver.recv() => {
+                        match command {
+                            SwarmCommand::Send { topic, data } => {
+                                if let Err(e) = swarm
+                                    .behaviour_mut()
+                                    .publish(topic, data) {
+                                        error!("Swarm send error: {e}");
+                                    }
+                            }
+                            SwarmCommand::Dial {address} => {
+                                 if let Err(e) = swarm.dial(address){
+                                        error!("Swarm dial error: {e}");
+                                    }
+                            }
+                        }
+                    }
                 }
+            }
+        });
+
+        handle
+    }
+
+    fn _send(&mut self, data: &NetworkData) -> AppResult<()> {
+        match &self.swarm_status {
+            SwarmStatus::Uninitialized => {}
+            SwarmStatus::Ready { sender } => {
+                let data = serialize(data)?;
+                sender.try_send(SwarmCommand::Send {
+                    topic: IdentTopic::new(TOPIC),
+                    data,
+                })?;
             }
         }
         Ok(())
     }
 
-    pub fn send_message(&mut self, msg: String) -> AppResult<MessageId> {
+    pub fn dial_seed(&mut self) -> AppResult<()> {
+        match &self.swarm_status {
+            SwarmStatus::Uninitialized => {}
+            SwarmStatus::Ready { sender } => {
+                for address in self.seed_addresses.iter() {
+                    sender.try_send(SwarmCommand::Dial {
+                        address: address.clone(),
+                    })?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn send_message(&mut self, msg: String) -> AppResult<()> {
         self._send(&NetworkData::Message(Tick::now(), msg))
     }
 
-    pub fn send_relayer_message_to_team(
-        &mut self,
-        msg: String,
-        team_id: TeamId,
-    ) -> AppResult<MessageId> {
+    pub fn send_relayer_message_to_team(&mut self, msg: String, team_id: TeamId) -> AppResult<()> {
         self._send(&NetworkData::RelayerMessageToTeam(
             Tick::now(),
             msg,
@@ -181,12 +272,13 @@ impl NetworkHandler {
         ))
     }
 
-    pub fn send_seed_info(&mut self, seed_info: SeedInfo) -> AppResult<MessageId> {
+    #[cfg(feature = "relayer")]
+    pub fn send_seed_info(&mut self, seed_info: SeedInfo) -> AppResult<()> {
         self._send(&NetworkData::SeedInfo(Tick::now(), seed_info))
     }
 
-    pub fn send_own_team(&mut self, world: &World) -> AppResult<MessageId> {
-        let message_id = if world.has_own_team() {
+    pub fn send_own_team(&mut self, world: &World) -> AppResult<()> {
+        if world.has_own_team() {
             self.send_team(world, world.own_team_id)?
         } else {
             return Err(anyhow!("No own team"));
@@ -204,26 +296,25 @@ impl NetworkHandler {
             }
         }
 
-        Ok(message_id)
+        Ok(())
     }
 
-    fn send_game(&mut self, world: &World, game_id: &GameId) -> AppResult<MessageId> {
+    fn send_game(&mut self, world: &World, game_id: &GameId) -> AppResult<()> {
         let network_game = NetworkGame::from_game_id(&world, game_id)?;
         self._send(&NetworkData::Game(Tick::now(), network_game))
     }
 
-    fn send_team(&mut self, world: &World, team_id: TeamId) -> AppResult<MessageId> {
-        let network_team =
-            NetworkTeam::from_team_id(world, &team_id, self.swarm.local_peer_id().clone())?;
+    fn send_team(&mut self, world: &World, team_id: TeamId) -> AppResult<()> {
+        let network_team = NetworkTeam::from_team_id(world, &team_id, self.own_peer_id().clone())?;
 
         self._send(&NetworkData::Team(Tick::now(), network_team))
     }
 
-    pub fn send_challenge(&mut self, challenge: Challenge) -> AppResult<MessageId> {
+    pub fn send_challenge(&mut self, challenge: Challenge) -> AppResult<()> {
         self._send(&NetworkData::Challenge(Tick::now(), challenge))
     }
 
-    pub fn send_trade(&mut self, trade: Trade) -> AppResult<MessageId> {
+    pub fn send_trade(&mut self, trade: Trade) -> AppResult<()> {
         self._send(&NetworkData::Trade(Tick::now(), trade))
     }
 
@@ -237,13 +328,13 @@ impl NetworkHandler {
         let mut home_team_in_game =
             TeamInGame::from_team_id(&world.own_team_id, &world.teams, &world.players)
                 .ok_or(anyhow!("Cannot generate home team in game"))?;
-        home_team_in_game.peer_id = Some(self.swarm.local_peer_id().clone());
+        home_team_in_game.peer_id = Some(self.own_peer_id().clone());
 
         let away_team_in_game = TeamInGame::from_team_id(&team_id, &world.teams, &world.players)
             .ok_or(anyhow!("Cannot generate away team in game"))?;
 
         let challenge = Challenge::new(
-            self.swarm.local_peer_id().clone(),
+            self.own_peer_id().clone(),
             peer_id,
             home_team_in_game,
             away_team_in_game,
@@ -266,7 +357,7 @@ impl NetworkHandler {
         let target_player = world.get_player_or_err(&target_player_id)?.clone();
 
         let trade = Trade::new(
-            self.swarm.local_peer_id().clone(),
+            self.own_peer_id().clone(),
             target_peer_id,
             proposer_player,
             target_player,
@@ -275,41 +366,6 @@ impl NetworkHandler {
 
         self.send_trade(trade.clone())?;
         Ok(trade)
-    }
-
-    pub fn quit(&mut self) {
-        if !self
-            .swarm
-            .behaviour_mut()
-            .unsubscribe(&IdentTopic::new(TOPIC))
-        {
-            error!("Cannot unsubscribe from events");
-        }
-
-        let peers = self
-            .swarm
-            .connected_peers()
-            .map(|id| id.clone())
-            .collect::<Vec<PeerId>>();
-
-        for peer_id in peers {
-            if self.swarm.is_connected(&peer_id) {
-                let _ = self
-                    .swarm
-                    .disconnect_peer_id(peer_id)
-                    .map_err(|e| error!("Error disconnecting peer id {}: {:?}", peer_id, e));
-            }
-        }
-
-        let external_addresses = self
-            .swarm
-            .external_addresses()
-            .map(|addr| addr.clone())
-            .collect::<Vec<Multiaddr>>();
-
-        for addr in external_addresses {
-            self.swarm.remove_external_address(&addr);
-        }
     }
 
     pub fn accept_challenge(&mut self, world: &World, challenge: Challenge) -> AppResult<()> {
@@ -329,7 +385,7 @@ impl NetworkHandler {
                 TeamInGame::from_team_id(&world.own_team_id, &world.teams, &world.players)
                     .ok_or(anyhow!("Cannot generate team in game"))?;
 
-            away_team_in_game.peer_id = Some(self.swarm.local_peer_id().clone());
+            away_team_in_game.peer_id = Some(self.own_peer_id().clone());
 
             // Note: we do not start immediately the game at this point,
             // because it could take a long time to accept a challenge
@@ -408,7 +464,10 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub fn handle_network_events(event: SwarmEvent<gossipsub::Event>) -> Option<NetworkCallback> {
+    pub fn handle_network_events(
+        &mut self,
+        event: SwarmEvent<gossipsub::Event>,
+    ) -> Option<NetworkCallback> {
         match event {
             SwarmEvent::NewListenAddr { address, .. } => {
                 Some(NetworkCallback::BindAddress { address })
@@ -438,9 +497,11 @@ impl NetworkHandler {
                 text: format!("Expired listen address: {}", address),
             }),
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                self.connected_peers_count += 1;
                 Some(NetworkCallback::HandleConnectionEstablished { peer_id })
             }
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                self.connected_peers_count -= 1;
                 Some(NetworkCallback::CloseConnection { peer_id })
             }
             _ => Some(NetworkCallback::PushSwarmPanelLog {
@@ -480,20 +541,8 @@ mod tests {
         let mut app1 = App::test_with_network_handler()?;
         let mut app2 = App::test_with_network_handler()?;
 
-        let proposer_peer_id = app1
-            .network_handler
-            .as_ref()
-            .unwrap()
-            .swarm
-            .local_peer_id()
-            .clone();
-        let target_peer_id = app2
-            .network_handler
-            .as_ref()
-            .unwrap()
-            .swarm
-            .local_peer_id()
-            .clone();
+        let proposer_peer_id = app1.network_handler.own_peer_id().clone();
+        let target_peer_id = app2.network_handler.own_peer_id().clone();
 
         // Add other team by hand
         let mut own_team1 = app1.world.get_own_team()?.clone();

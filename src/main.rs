@@ -42,8 +42,6 @@ struct Args {
     network_port: Option<u16>,
     #[clap(long, action=ArgAction::Set, help = "Set store prefix")]
     store_prefix: Option<String>,
-    #[clap(long, action=ArgAction::Set, help = "Set target FPS")]
-    target_fps: Option<u8>,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -61,15 +59,6 @@ async fn main() -> AppResult<()> {
     log4rs::init_config(config)?;
     let args = Args::parse();
 
-    if let Some(fps) = args.target_fps {
-        if fps == 0 {
-            eprintln!(
-                "error: invalid value '{fps}' for '--target-fps <TARGET_FPS>': {fps} is not in 1..=255"
-            );
-            return Ok(());
-        }
-    }
-
     #[cfg(feature = "ssh")]
     if args.ssh_server {
         return AppServer::new().run().await;
@@ -86,29 +75,28 @@ async fn main() -> AppResult<()> {
         Some(args.network_port.unwrap_or(DEFAULT_PORT))
     };
 
+    #[cfg(feature = "audio")]
     let disable_audio = args.disable_audio || args.disable_ui;
 
     let mut app = App::new(
         args.seed,
         args.disable_network,
+        #[cfg(feature = "audio")]
         disable_audio,
         args.generate_local_world,
         args.reset_world,
         args.seed_ip,
-        network_port,
         args.store_prefix,
-    );
+    )?;
 
     if args.disable_ui {
+        // With no UI, world must be loaded from file.
         app.load_world();
-    }
-
-    if args.disable_ui {
         let tui = Tui::new_dummy()?;
-        app.run(tui).await?;
+        app.run(tui, network_port).await?;
     } else {
-        let tui = Tui::new_local(args.target_fps)?;
-        app.run(tui).await?;
+        let tui = Tui::new_local()?;
+        app.run(tui, network_port).await?;
     };
 
     Ok(())

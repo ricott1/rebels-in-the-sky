@@ -1931,7 +1931,7 @@ impl MyTeamPanel {
                 Constraint::Length(6),  //c
                 Constraint::Length(6),  //bench
                 Constraint::Length(6),  //bench
-                Constraint::Length(32), //auto-assign
+                Constraint::Length(30), //auto-assign
                 Constraint::Min(0),
             ])
             .split(table_bottom[1].inner(Margin {

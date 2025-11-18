@@ -1,6 +1,6 @@
-use crate::types::AppResult;
+use crate::{app::AppEvent, tui::TerminalEvent, types::AppResult};
 use anyhow::anyhow;
-use crossterm::event::KeyModifiers;
+use crossterm::event::{KeyEventKind, KeyModifiers};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::Alphanumeric;
@@ -8,9 +8,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::SystemTime;
 
-use super::SSHEventHandler;
-
 static PASSWORD_SALT: &'static str = "agfg34g";
+pub const CMD_RESIZE: u8 = 0x04;
 
 pub type Password = [u8; 32];
 
@@ -163,8 +162,8 @@ fn convert_data_to_mouse_event(data: &[u8]) -> Option<crossterm::event::MouseEve
     Some(event)
 }
 
-pub fn convert_data_to_crossterm_event(data: &[u8]) -> Option<crossterm::event::Event> {
-    if let Some(size) = data.strip_prefix(&[SSHEventHandler::CMD_RESIZE]) {
+fn convert_data_to_crossterm_event(data: &[u8]) -> Option<crossterm::event::Event> {
+    if let Some(size) = data.strip_prefix(&[CMD_RESIZE]) {
         let cols = size.first().copied().unwrap_or(0) as u16;
         let rows = size.last().copied().unwrap_or(0) as u16;
         return Some(crossterm::event::Event::Resize(cols, rows));
@@ -181,4 +180,27 @@ pub fn convert_data_to_crossterm_event(data: &[u8]) -> Option<crossterm::event::
     }
 
     None
+}
+
+pub fn convert_data_to_app_event(data: &[u8]) -> Option<AppEvent> {
+    if let Some(event) = convert_data_to_crossterm_event(data) {
+        match event {
+            crossterm::event::Event::Key(key) => {
+                if key.kind == KeyEventKind::Press {
+                    Some(AppEvent::TerminalEvent(TerminalEvent::Key(key)))
+                } else {
+                    None
+                }
+            }
+            crossterm::event::Event::Mouse(e) => {
+                Some(AppEvent::TerminalEvent(TerminalEvent::Mouse(e)))
+            }
+            crossterm::event::Event::Resize(w, h) => {
+                Some(AppEvent::TerminalEvent(TerminalEvent::Resize(w, h)))
+            }
+            _ => None,
+        }
+    } else {
+        None
+    }
 }

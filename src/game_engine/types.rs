@@ -13,6 +13,7 @@ use crate::{
     },
 };
 use itertools::Itertools;
+
 use libp2p::PeerId;
 use once_cell::sync::Lazy;
 use rand::Rng;
@@ -127,6 +128,7 @@ impl GameStats {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct TeamInGame {
     pub team_id: TeamId,
+    
     pub peer_id: Option<PeerId>,
     pub reputation: f32,
     pub version: u64,
@@ -166,6 +168,7 @@ impl<'game> TeamInGame {
             .collect();
         Self {
             team_id: team.id,
+            
             peer_id: team.peer_id,
             reputation: team.reputation,
             name: team.name.clone(),

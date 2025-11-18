@@ -2,26 +2,15 @@ use super::{
     constants::{UiStyle, MAX_NAME_LENGTH, MIN_NAME_LENGTH},
     widgets::default_block,
 };
-use crate::{
-    types::Tick,
-    world::{AU, LIGHT_YEAR, SATOSHI_PER_BITCOIN},
-};
+use crate::world::{AU, LIGHT_YEAR, SATOSHI_PER_BITCOIN};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use image::RgbaImage;
-use libp2p::PeerId;
 use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
     widgets::{block::Title, Paragraph},
 };
 use tui_textarea::{Input, Key, TextArea};
-
-#[derive(Debug)]
-pub struct SwarmPanelEvent {
-    pub timestamp: Tick,
-    pub peer_id: Option<PeerId>,
-    pub text: String,
-}
 
 pub fn input_from_key_event(key: KeyEvent) -> Input {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);

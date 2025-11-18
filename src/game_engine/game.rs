@@ -126,6 +126,7 @@ pub struct Game {
 }
 
 impl<'game> Game {
+    
     pub fn is_network(&self) -> bool {
         self.home_team_in_game.peer_id.is_some() && self.away_team_in_game.peer_id.is_some()
     }

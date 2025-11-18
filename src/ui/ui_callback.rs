@@ -1,19 +1,21 @@
+
+use super::swarm_panel::SwarmView;
 use super::{
     galaxy_panel::ZoomLevel,
     my_team_panel::MyTeamView,
     new_team_screen::CreationState,
     player_panel::PlayerView,
     popup_message::PopupMessage,
-    swarm_panel::SwarmView,
     team_panel::TeamView,
     traits::{Screen, SplitPanel},
     ui::{UiState, UiTab},
 };
+
+use crate::network::{challenge::Challenge, trade::Trade};
 use crate::{
     app::App,
     game_engine::{tactic::Tactic, types::TeamInGame},
     image::color_map::{ColorMap, ColorPreset},
-    network::{challenge::Challenge, trade::Trade},
     space_adventure::{ControllableSpaceship, PlayerInput, SpaceAdventure},
     types::{
         AppCallback, AppResult, GameId, PlanetId, PlayerId, ResourceMap, StorableResourceMap,
@@ -90,9 +92,11 @@ pub enum UiCallback {
     ChallengeTeam {
         team_id: TeamId,
     },
+    
     AcceptChallenge {
         challenge: Challenge,
     },
+    
     DeclineChallenge {
         challenge: Challenge,
     },
@@ -100,12 +104,15 @@ pub enum UiCallback {
         proposer_player_id: PlayerId,
         target_player_id: PlayerId,
     },
+    
     AcceptTrade {
         trade: Trade,
     },
+    
     DeclineTrade {
         trade: Trade,
     },
+    
     GoToTrade {
         trade: Trade,
     },
@@ -128,9 +135,13 @@ pub enum UiCallback {
     NewGame,
     ContinueGame,
     QuitGame,
+    #[cfg(feature = "audio")]
     ToggleAudio,
+    #[cfg(feature = "audio")]
     PreviousRadio,
+    #[cfg(feature = "audio")]
     NextRadio,
+    
     SetSwarmPanelView {
         topic: SwarmView,
     },
@@ -469,8 +480,6 @@ impl UiCallback {
                 own_team.can_challenge_network_team(team)?;
                 let challenge = app
                     .network_handler
-                    .as_mut()
-                    .ok_or(anyhow!("Network handler is not initialized"))?
                     .send_new_challenge(&app.world, peer_id, team.id)?;
 
                 let own_team = app.world.get_own_team_mut()?;
@@ -533,11 +542,12 @@ impl UiCallback {
 
             // Network trade
             if let Some(peer_id) = target_team.peer_id {
-                let trade = app
-                    .network_handler
-                    .as_mut()
-                    .ok_or(anyhow!("Network handler is not initialized"))?
-                    .send_new_trade(&app.world, peer_id, proposer_player_id, target_player_id)?;
+                let trade = app.network_handler.send_new_trade(
+                    &app.world,
+                    peer_id,
+                    proposer_player_id,
+                    target_player_id,
+                )?;
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.add_sent_trade(trade);
                 return Ok(Some("Trade offer sent".to_string()));
@@ -840,10 +850,7 @@ impl UiCallback {
 
     fn send(message: String) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.network_handler
-                .as_mut()
-                .ok_or(anyhow!("Network handler is not initialized"))?
-                .send_message(message.clone())?;
+            app.network_handler.send_message(message.clone())?;
 
             Ok(None)
         })
@@ -1099,8 +1106,6 @@ impl UiCallback {
             UiCallback::AcceptChallenge { challenge } => {
                 if let Err(e) = app
                     .network_handler
-                    .as_mut()
-                    .ok_or(anyhow!("Network handler is not initialized"))?
                     .accept_challenge(&app.world, challenge.clone())
                 {
                     let own_team = app.world.get_own_team_mut()?;
@@ -1120,10 +1125,7 @@ impl UiCallback {
                 Ok(None)
             }
             UiCallback::DeclineChallenge { challenge } => {
-                app.network_handler
-                    .as_mut()
-                    .ok_or(anyhow!("Network handler is not initialized"))?
-                    .decline_challenge(challenge.clone())?;
+                app.network_handler.decline_challenge(challenge.clone())?;
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.remove_challenge(
                     challenge.home_team_in_game.team_id,
@@ -1136,12 +1138,7 @@ impl UiCallback {
                 target_player_id,
             } => Self::trade_players(*proposer_player_id, *target_player_id)(app),
             UiCallback::AcceptTrade { trade } => {
-                if let Err(e) = app
-                    .network_handler
-                    .as_mut()
-                    .ok_or(anyhow!("Network handler is not initialized"))?
-                    .accept_trade(&&app.world, trade.clone())
-                {
+                if let Err(e) = app.network_handler.accept_trade(&&app.world, trade.clone()) {
                     let own_team = app.world.get_own_team_mut()?;
                     own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
                     return Err(e);
@@ -1152,10 +1149,7 @@ impl UiCallback {
                 Ok(None)
             }
             UiCallback::DeclineTrade { trade } => {
-                app.network_handler
-                    .as_mut()
-                    .ok_or(anyhow!("Network handler is not initialized"))?
-                    .decline_trade(trade.clone())?;
+                app.network_handler.decline_trade(trade.clone())?;
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
                 Ok(None)
@@ -1184,6 +1178,7 @@ impl UiCallback {
                 app.quit()?;
                 Ok(None)
             }
+            #[cfg(feature = "audio")]
             UiCallback::ToggleAudio => {
                 if let Some(player) = app.audio_player.as_mut() {
                     player.toggle_state()?;
@@ -1193,6 +1188,7 @@ impl UiCallback {
 
                 Ok(None)
             }
+            #[cfg(feature = "audio")]
             UiCallback::PreviousRadio => {
                 if let Some(player) = app.audio_player.as_mut() {
                     player.previous_radio_stream()?;
@@ -1201,6 +1197,7 @@ impl UiCallback {
                 }
                 Ok(None)
             }
+            #[cfg(feature = "audio")]
             UiCallback::NextRadio => {
                 if let Some(player) = app.audio_player.as_mut() {
                     player.next_radio_stream()?;

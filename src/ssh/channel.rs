@@ -1,5 +1,5 @@
-use super::SSHEventHandler;
-use crate::app::App;
+use crate::app::{App, AppEvent};
+use crate::ssh::utils::{convert_data_to_app_event, CMD_RESIZE};
 use crate::tui::{Tui, WriterProxy};
 use crate::types::AppResult;
 use anyhow::{anyhow, Result};
@@ -80,13 +80,18 @@ pub struct AppChannel {
 
 #[derive(Debug)]
 enum AppChannelState {
-    AwaitingPty { shutdown: CancellationToken },
-    Ready { stdin: mpsc::Sender<Vec<u8>> },
+    AwaitingPty {
+        _shutdown: CancellationToken,
+    },
+    // Ready { stdin: mpsc::Sender<Vec<u8>> },
+    Ready {
+        app_event_sender: mpsc::Sender<AppEvent>,
+    },
 }
 
 impl AppChannel {
-    pub fn new(shutdown: CancellationToken, network_port: Option<u16>, username: String) -> Self {
-        let state = AppChannelState::AwaitingPty { shutdown };
+    pub fn new(_shutdown: CancellationToken, network_port: Option<u16>, username: String) -> Self {
+        let state = AppChannelState::AwaitingPty { _shutdown };
 
         println!("New AppChannel created for {}", username);
 
@@ -98,14 +103,16 @@ impl AppChannel {
     }
 
     pub async fn data(&mut self, data: &[u8]) -> Result<()> {
-        let AppChannelState::Ready { stdin } = &mut self.state else {
+        let AppChannelState::Ready { app_event_sender } = &mut self.state else {
             return Err(anyhow!("pty hasn't been allocated yet"));
         };
 
-        stdin
-            .send(data.to_vec())
-            .await
-            .map_err(|_| anyhow!("lost ui"))?;
+        if let Some(app_event) = convert_data_to_app_event(data) {
+            app_event_sender
+                .send(app_event)
+                .await
+                .map_err(|_| anyhow!("lost ssh connection"))?;
+        }
 
         Ok(())
     }
@@ -118,40 +125,29 @@ impl AppChannel {
         session: &mut Session,
     ) -> AppResult<()> {
         // FIXME: this is the server shutdown token, we should use it to stop the app (which stops everything else).
-        let AppChannelState::AwaitingPty { shutdown } = &mut self.state else {
+        let AppChannelState::AwaitingPty { .. } = &mut self.state else {
             return Err(anyhow!("pty has been already allocated"));
         };
 
-        let (stdin_tx, stdin_rx) = mpsc::channel(1);
-        let app_shutdown = CancellationToken::new();
-        let events = SSHEventHandler::new(stdin_rx, app_shutdown.clone(), shutdown.clone());
         let writer = SSHWriterProxy::new(id, session.handle());
-        let tui = Tui::new_ssh(writer, events)?;
 
         let username = self.username.clone();
         let network_port = self.network_port.clone();
-        self.state = AppChannelState::Ready { stdin: stdin_tx };
+
+        let store_prefix = Some(username);
+        let mut app = App::new(None, false, true, true, false, None, store_prefix)?;
+
+        let tui = Tui::new_ssh(writer)?;
+
+        self.state = AppChannelState::Ready {
+            app_event_sender: app.get_event_sender(),
+        };
 
         // Main loop to run the update, including updating and drawing.
         task::spawn(async move {
-            let store_prefix = Some(username);
-            if let Err(e) = App::new(
-                None,
-                false,
-                true,
-                true,
-                false,
-                None,
-                network_port,
-                store_prefix,
-            )
-            .run(tui)
-            .await
-            {
+            if let Err(e) = app.run(tui, network_port).await {
                 log::error!("Error running app: {e}")
             };
-            // App has closed.
-            app_shutdown.cancel();
         });
 
         self.window_change_request(width, height).await?;
@@ -160,17 +156,20 @@ impl AppChannel {
     }
 
     pub async fn window_change_request(&mut self, width: u32, height: u32) -> Result<()> {
-        let AppChannelState::Ready { stdin } = &mut self.state else {
+        let AppChannelState::Ready { app_event_sender } = &mut self.state else {
             return Err(anyhow!("pty hasn't been allocated yet"));
         };
 
         let width = width.min(255);
         let height = height.min(255);
 
-        stdin
-            .send(vec![SSHEventHandler::CMD_RESIZE, width as u8, height as u8])
-            .await
-            .map_err(|_| anyhow!("lost ui"))?;
+        let data = vec![CMD_RESIZE, width as u8, height as u8];
+        if let Some(app_event) = convert_data_to_app_event(&data) {
+            app_event_sender
+                .send(app_event)
+                .await
+                .map_err(|_| anyhow!("lost ssh connection"))?;
+        }
 
         Ok(())
     }
