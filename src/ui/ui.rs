@@ -57,7 +57,7 @@ pub enum UiTab {
     Pirates,
     Galaxy,
     Games,
-    
+
     Swarm,
 }
 
@@ -67,14 +67,14 @@ pub struct Ui {
     ui_tabs: Vec<UiTab>,
     pub tab_index: usize,
     debug_view: bool,
-    last_update: Instant,
+    last_render: Instant,
     pub splash_screen: SplashScreen,
     pub new_team_screen: NewTeamScreen,
     pub space_screen: SpaceScreen,
     pub player_panel: PlayerListPanel,
     pub team_panel: TeamListPanel,
     pub game_panel: GamePanel,
-    
+
     pub swarm_panel: SwarmPanel,
     pub my_team_panel: MyTeamPanel,
     pub galaxy_panel: GalaxyPanel,
@@ -89,7 +89,7 @@ impl Ui {
         let player_panel = PlayerListPanel::new();
         let team_panel = TeamListPanel::new();
         let game_panel = GamePanel::new();
-        
+
         let swarm_panel = SwarmPanel::new();
         let my_team_panel = MyTeamPanel::new();
         let new_team_screen = NewTeamScreen::new();
@@ -103,7 +103,6 @@ impl Ui {
         ui_tabs.push(UiTab::Galaxy);
         ui_tabs.push(UiTab::Games);
 
-        
         if !disable_network {
             ui_tabs.push(UiTab::Swarm);
         }
@@ -115,14 +114,14 @@ impl Ui {
             ui_tabs,
             tab_index: 0,
             debug_view: false,
-            last_update: Instant::now(),
+            last_render: Instant::now(),
             splash_screen,
             new_team_screen,
             space_screen,
             player_panel,
             team_panel,
             game_panel,
-            
+
             swarm_panel,
             my_team_panel,
             galaxy_panel,
@@ -183,7 +182,6 @@ impl Ui {
         self.popup_messages.remove(0);
     }
 
-    
     pub fn push_log_event(&mut self, timestamp: Tick, peer_id: Option<PeerId>, text: String) {
         self.swarm_panel.push_log_event(SwarmPanelEvent {
             timestamp,
@@ -219,7 +217,7 @@ impl Ui {
                 UiTab::Pirates => &self.player_panel,
                 UiTab::Galaxy => &self.galaxy_panel,
                 UiTab::Games => &self.game_panel,
-                
+
                 UiTab::Swarm => &self.swarm_panel,
             },
             UiState::SpaceAdventure => &self.space_screen,
@@ -236,7 +234,7 @@ impl Ui {
                 UiTab::Pirates => Some(&mut self.player_panel),
                 UiTab::Galaxy => Some(&mut self.galaxy_panel),
                 UiTab::Games => Some(&mut self.game_panel),
-                
+
                 UiTab::Swarm => Some(&mut self.swarm_panel),
             },
         }
@@ -252,7 +250,7 @@ impl Ui {
                 UiTab::Pirates => &mut self.player_panel,
                 UiTab::Galaxy => &mut self.galaxy_panel,
                 UiTab::Games => &mut self.game_panel,
-                
+
                 UiTab::Swarm => &mut self.swarm_panel,
             },
             UiState::SpaceAdventure => &mut self.space_screen,
@@ -365,7 +363,7 @@ impl Ui {
                 self.player_panel.update(world)?;
                 self.game_panel.update(world)?;
                 self.galaxy_panel.update(world)?;
-                
+
                 self.swarm_panel.update(world)?;
             }
             UiState::SpaceAdventure => self.space_screen.update(world)?,
@@ -469,7 +467,6 @@ impl Ui {
             }
         };
 
-        
         if let Err(err) = render_result {
             self.push_log_event(
                 Tick::now(),
@@ -488,7 +485,6 @@ impl Ui {
         );
 
         if let Err(err) = self.render_popup_messages(&mut ui_frame, screen_area) {
-            
             self.push_log_event(
                 Tick::now(),
                 None,
@@ -496,7 +492,7 @@ impl Ui {
             );
             log::error!("Popup render error\n{}", err.to_string());
         }
-        self.last_update = Instant::now();
+        self.last_render = Instant::now();
 
         self.inner_registry = ui_frame.callback_registry().clone();
     }
@@ -538,7 +534,7 @@ impl Ui {
         }
 
         let extra_spans = if self.debug_view {
-            let fps = (1.0 / self.last_update.elapsed().as_secs_f64()).round() as u32;
+            let fps = (1.0 / self.last_render.elapsed().as_secs_f64()).round() as u32;
             let world_size = world.serialized_size / 1024;
 
             let mut spans = vec![

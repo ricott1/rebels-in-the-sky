@@ -47,6 +47,16 @@ pub enum PlanetType {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Hash, EnumIter)]
 pub enum AsteroidUpgradeTarget {
     TeleportationPad,
+    TortugaSpacePort,
+}
+
+impl AsteroidUpgradeTarget {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::TeleportationPad => "Teleportation pad",
+            Self::TortugaSpacePort => "Tortuga space port",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Hash)]
@@ -71,12 +81,18 @@ impl AsteroidUpgrade {
     pub fn description(&self) -> String {
         match self.target {
             AsteroidUpgradeTarget::TeleportationPad => "Building teleportation pad".to_string(),
+            AsteroidUpgradeTarget::TortugaSpacePort => {
+                "Building the Tortuga space port".to_string()
+            }
         }
     }
     pub fn cost(&self) -> Vec<(Resource, u32)> {
         match self.target {
             AsteroidUpgradeTarget::TeleportationPad => {
                 vec![(Resource::SCRAPS, 125), (Resource::GOLD, 25)]
+            }
+            AsteroidUpgradeTarget::TortugaSpacePort => {
+                vec![(Resource::SCRAPS, 250), (Resource::GOLD, 1000)]
             }
         }
     }

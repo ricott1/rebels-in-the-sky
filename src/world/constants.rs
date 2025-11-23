@@ -81,7 +81,7 @@ pub const PORTAL_TRAVEL_DURATION: Tick = 10 * SECONDS;
 // This is used to check if a travel was done using a portal or teleporting.
 pub const TELEPORT_MAX_DURATION: Tick = PORTAL_TRAVEL_DURATION;
 
-pub const MAX_NUM_ASTEROID_PER_TEAM: usize = 5;
+pub const MAX_NUM_ASTEROID_PER_TEAM: usize = 7;
 
 pub struct TickInterval;
 impl TickInterval {

@@ -38,7 +38,7 @@ const WOODEN_LEG_MAX_QUICKNESS: f32 = 4.0;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Player {
     pub id: PlayerId,
-    
+
     pub peer_id: Option<PeerId>,
     pub version: u64,
     pub info: InfoStats,
@@ -69,7 +69,7 @@ impl Serialize for Player {
         let compact_skills = self.current_skill_array().to_vec();
         let mut state = serializer.serialize_struct("Player", 14)?;
         state.serialize_field("id", &self.id)?;
-        
+
         state.serialize_field("peer_id", &self.peer_id)?;
         state.serialize_field("version", &self.version)?;
         state.serialize_field("info", &self.info)?;
@@ -216,7 +216,7 @@ impl<'de> Deserialize<'de> for Player {
 
                 let mut player = Player {
                     id,
-                    
+
                     peer_id,
                     version,
                     info,
@@ -422,7 +422,7 @@ impl<'de> Deserialize<'de> for Player {
 
                 let mut player = Player {
                     id,
-                    
+
                     peer_id,
                     version,
                     info,
@@ -652,7 +652,7 @@ impl Player {
 
         let mut player = Self {
             id,
-            
+
             peer_id: None,
             version: 0,
             info,

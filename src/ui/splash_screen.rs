@@ -204,10 +204,10 @@ impl Screen for SplashScreen {
         .split(split[3]);
 
         let mut gif_lines = if self.index == 0 {
-            SPINNING_BALL_GIF[(self.tick / 4) % SPINNING_BALL_GIF.len()].clone()
+            SPINNING_BALL_GIF[(self.tick) % SPINNING_BALL_GIF.len()].clone()
         } else {
             self.gif_map
-                .planet_zoom_in_frame_lines(&SOL_ID, self.tick / 3, world)?
+                .planet_zoom_in_frame_lines(&SOL_ID, self.tick, world)?
         };
 
         let offset = if gif_lines.len() > split[3].height as usize {

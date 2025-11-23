@@ -1,5 +1,6 @@
 use super::{action::Action, constants::MIN_TIREDNESS_FOR_ROLL_DECLINE, tactic::Tactic};
 use crate::{
+    game_engine::constants::NUMBER_OF_ROLLS,
     image::game::PitchImage,
     types::{AppResult, GameId, PlayerId, PlayerMap, TeamId, TeamMap},
     world::{
@@ -128,7 +129,7 @@ impl GameStats {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct TeamInGame {
     pub team_id: TeamId,
-    
+
     pub peer_id: Option<PeerId>,
     pub reputation: f32,
     pub version: u64,
@@ -168,7 +169,7 @@ impl<'game> TeamInGame {
             .collect();
         Self {
             team_id: team.id,
-            
+
             peer_id: team.peer_id,
             reputation: team.reputation,
             name: team.name.clone(),
@@ -341,30 +342,30 @@ fn test_gamestats_serde() {
 }
 
 pub trait EnginePlayer {
-    fn min_roll(&self) -> u8;
-    fn max_roll(&self) -> u8;
-    fn roll(&self, rng: &mut ChaCha8Rng) -> u8;
+    fn min_roll(&self) -> u16;
+    fn max_roll(&self) -> u16;
+    fn roll(&self, rng: &mut ChaCha8Rng) -> u16;
 }
 
 impl EnginePlayer for Player {
-    fn min_roll(&self) -> u8 {
-        (self.morale / 2.5) as u8
+    fn min_roll(&self) -> u16 {
+        (self.morale / 2.5) as u16
     }
 
-    fn max_roll(&self) -> u8 {
+    fn max_roll(&self) -> u16 {
         if self.tiredness == MAX_SKILL {
             return 0;
         }
 
         if self.tiredness <= MIN_TIREDNESS_FOR_ROLL_DECLINE {
-            return 2 * MAX_SKILL as u8;
+            return NUMBER_OF_ROLLS * MAX_SKILL as u16;
         }
 
-        2 * (MAX_SKILL - (self.tiredness - MIN_TIREDNESS_FOR_ROLL_DECLINE)) as u8
+        NUMBER_OF_ROLLS * (MAX_SKILL - (self.tiredness - MIN_TIREDNESS_FOR_ROLL_DECLINE)) as u16
     }
 
-    fn roll(&self, rng: &mut ChaCha8Rng) -> u8 {
-        rng.random_range(MIN_SKILL as u8..=2 * MAX_SKILL as u8)
+    fn roll(&self, rng: &mut ChaCha8Rng) -> u16 {
+        rng.random_range(MIN_SKILL as u16..=NUMBER_OF_ROLLS * MAX_SKILL as u16)
             .max(self.min_roll())
             .min(self.max_roll())
     }

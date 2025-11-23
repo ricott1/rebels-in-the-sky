@@ -1,4 +1,5 @@
 use super::position::{GamePosition, Position};
+use crate::world::Player;
 use core::fmt;
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
@@ -75,6 +76,9 @@ pub trait GameSkill: fmt::Display + fmt::Debug {
     fn raw_value(&self) -> f32 {
         self.bound()
     }
+    fn game_value(&self) -> u16 {
+        self.bound() as u16
+    }
     fn bound(&self) -> f32;
     fn normal_sample(&self, rng: &mut ChaCha8Rng) -> f32;
 }
@@ -89,6 +93,26 @@ impl GameSkill for Skill {
             .unwrap()
             .sample(rng)
             .bound()
+    }
+}
+
+pub trait RatedPlayers {
+    fn sort_by_rating(self) -> Self;
+}
+
+impl RatedPlayers for Vec<&Player> {
+    fn sort_by_rating(mut self) -> Self {
+        self.sort_by(|a, b| {
+            if a.rating() == b.rating() {
+                b.average_skill()
+                    .partial_cmp(&a.average_skill())
+                    .expect("Skill value should exist")
+            } else {
+                b.rating().cmp(&a.rating())
+            }
+        });
+
+        self
     }
 }
 

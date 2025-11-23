@@ -30,7 +30,7 @@ impl EngineAction for Post {
         let poster = attacking_players[post_idx];
         let defender = defending_players[post_idx];
 
-        let timer_increase = 4 + rng.random_range(0..=5);
+        let timer_increase = 5 + rng.random_range(0..=5);
 
         let mut attack_stats_update = HashMap::new();
         let mut post_update = GameStats::default();
@@ -41,17 +41,17 @@ impl EngineAction for Post {
         defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
         let atk_result = poster.roll(rng)
-            + poster.technical.post_moves.value()
-            + poster.athletics.strength.value();
+            + poster.technical.post_moves.game_value()
+            + poster.athletics.strength.game_value();
 
         let def_result = defender.roll(rng)
-            + defender.defense.interior_defense.value()
-            + defender.athletics.strength.value();
+            + defender.defense.interior_defense.game_value()
+            + defender.athletics.strength.game_value();
 
         let mut result = match atk_result as i16 - def_result as i16
             + Self::tactic_modifier(game, &Action::Post)
         {
-            x if x > ADV_ATTACK_LIMIT => ActionOutput {
+            x if x >= ADV_ATTACK_LIMIT => ActionOutput {
                 possession: input.possession,
                 advantage: Advantage::Attack,
                 attackers: vec![post_idx],
@@ -219,17 +219,32 @@ impl EngineAction for Post {
             _ => {
                 post_update.turnovers = 1;
                 post_update.extra_morale += MoraleModifier::SMALL_MALUS;
-                defender_update.steals = 1;
                 defender_update.extra_morale += MoraleModifier::MEDIUM_BONUS;
+
+                let with_steal = def_result >= 3 * NUMBER_OF_ROLLS;
+
+                if with_steal {
+                    defender_update.steals = 1;
+                }
+
+                let description = if with_steal {
+                    format!(
+                        "{} steals the ball from {} on the post.",
+                        defender.info.short_name(),
+                        poster.info.short_name(),
+                    )
+                } else {
+                    format!(
+                        "{}'s good defense is too much for {}, who fumbles the ball.",
+                        defender.info.short_name(),
+                        poster.info.short_name(),
+                    )
+                };
 
                 ActionOutput {
                     situation: ActionSituation::Turnover,
                     possession: !input.possession,
-                    description: format!(
-                        "{} steals the ball from {} on the post.",
-                        defender.info.short_name(),
-                        poster.info.short_name(),
-                    ),
+                    description,
                     start_at: input.end_at,
                     end_at: input.end_at.plus(3),
                     home_score: input.home_score,

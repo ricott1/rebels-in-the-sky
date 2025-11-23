@@ -31,7 +31,7 @@ use ratatui::{
 };
 use std::{cmp::min, vec};
 
-const TICKS_PER_REVOLUTION: usize = 2;
+const TICKS_PER_REVOLUTION: usize = 1;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum ZoomLevel {

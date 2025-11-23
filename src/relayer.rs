@@ -125,7 +125,6 @@ impl Relayer {
         while self.running {
             if let Some(app_event) = event_receiver.recv().await {
                 match app_event {
-                    
                     AppEvent::NetworkEvent(swarm_event) => {
                         let result = self.handle_network_events(swarm_event);
                         if result.is_err() {

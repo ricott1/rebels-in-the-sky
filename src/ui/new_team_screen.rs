@@ -367,7 +367,7 @@ impl NewTeamScreen {
 
         // We cannot use the gif map because we are changing the jersey style
         if let Ok(gif) = player.compose_image() {
-            let img = gif[(self.tick / 8) % gif.len()].clone();
+            let img = gif[(self.tick / 5) % gif.len()].clone();
             let paragraph = Paragraph::new(img_to_lines(&img));
             frame.render_widget(
                 paragraph.centered(),

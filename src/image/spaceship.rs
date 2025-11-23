@@ -103,7 +103,7 @@ impl SpaceshipImage {
 
         let max_tick = if in_shipyard { 1 } else { 72 };
         for tick in 0..max_tick {
-            let color_presets = &engine_color_presets[(tick / 4) % engine_color_presets.len()];
+            let color_presets = &engine_color_presets[(tick / 3) % engine_color_presets.len()];
             let color_map = ColorMap {
                 red: color_presets[0].to_rgb(),
                 green: color_presets[1].to_rgb(),

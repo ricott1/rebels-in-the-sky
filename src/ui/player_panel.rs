@@ -289,14 +289,7 @@ impl PlayerListPanel {
             frame,
             h_split[0],
         );
-        self.render_buttons(
-            player,
-            
-            open_trade,
-            frame,
-            world,
-            button_split[0],
-        )?;
+        self.render_buttons(player, open_trade, frame, world, button_split[0])?;
 
         // If there is an open trade for the locked and selected players,
         // display a button to accept
@@ -312,14 +305,7 @@ impl PlayerListPanel {
                 frame,
                 h_split[1],
             );
-            self.render_buttons(
-                locked_player,
-                
-                open_trade,
-                frame,
-                world,
-                button_split[1],
-            )?;
+            self.render_buttons(locked_player, open_trade, frame, world, button_split[1])?;
         }
 
         Ok(())
@@ -328,7 +314,7 @@ impl PlayerListPanel {
     fn render_buttons(
         &self,
         player: &Player,
-         open_trade: Option<&Trade>,
+        open_trade: Option<&Trade>,
         frame: &mut UiFrame,
         world: &World,
         area: Rect,

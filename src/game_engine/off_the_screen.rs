@@ -47,19 +47,19 @@ impl EngineAction for OffTheScreen {
         let mut target_defender_update = GameStats::default();
         target_defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
-        let timer_increase = 3 + rng.random_range(0..=1);
+        let timer_increase = 4 + rng.random_range(0..=2);
 
         let atk_result = playmaker.roll(rng)
-            + playmaker.mental.vision.value()
-            + playmaker.technical.passing.value()
-            + target.mental.intuition.value();
+            + playmaker.mental.vision.game_value()
+            + playmaker.technical.passing.game_value()
+            + target.mental.intuition.game_value();
 
         let def_result = playmaker_defender.roll(rng)
-            + target_defender.defense.perimeter_defense.value()
-            + target_defender.athletics.quickness.value();
+            + target_defender.defense.perimeter_defense.game_value()
+            + target_defender.athletics.quickness.game_value();
 
         let mut result = match atk_result as i16 - def_result as i16 + Self::tactic_modifier(game, &Action::OffTheScreen) {
-            x if x > ADV_ATTACK_LIMIT => ActionOutput {
+            x if x >= ADV_ATTACK_LIMIT => ActionOutput {
                 possession: input.possession,
                 advantage: Advantage::Attack,
                 attackers: vec![target_idx],
@@ -166,15 +166,16 @@ impl EngineAction for OffTheScreen {
             },
             _ => {
                 playmaker_update.turnovers = 1;
-                target_defender_update.steals = 1;
                 playmaker_update.extra_morale += MoraleModifier::SMALL_MALUS;
                 target_defender_update.extra_morale += MoraleModifier::MEDIUM_BONUS;
 
+                let with_steal =  def_result >= 3* NUMBER_OF_ROLLS;
 
-                ActionOutput {
-                    situation: ActionSituation::Turnover,
-                    possession: !input.possession,
-                    description:[
+                if with_steal{
+                target_defender_update.steals = 1;
+                }
+
+                let description = if with_steal {[
                         format!(
                             "{} tries to pass to {} off-the-screen but {} blocks the pass.",
                             playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name()
@@ -190,14 +191,24 @@ impl EngineAction for OffTheScreen {
                         format!(
                             "{} tries to feed the ball to {} after the screen, but {} steals it away.",
                             playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name()
-                        ),
-                        format!(
+                        )
+                    ].choose(rng).expect("There should be one option").clone()} else {
+                        [format!(
                             "{} passes to {} off the screen, but the pass is too high and goes out of bounds.",
                             playmaker.info.short_name(), target.info.short_name()
-                        ),
-                    ].choose(rng).expect("There should be one option").clone(),
+                        ), 
+                        format!(
+                            "{} sends it to {}, but the pass is off the mark.",
+                            playmaker.info.short_name(), target.info.short_name()
+                        )].choose(rng).expect("There should be one option").clone()
+                    };
+
+                ActionOutput {
+                    situation: ActionSituation::Turnover,
+                    possession: !input.possession,
+                    description,
                     start_at: input.end_at,
-                end_at: input.end_at.plus(3),
+                end_at: input.end_at.plus(3 +  rng.random_range(0..=2)),
                 home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()

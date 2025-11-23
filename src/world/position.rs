@@ -8,10 +8,9 @@ pub trait GamePosition {
     fn weights(&self) -> [f32; 20];
     fn player_rating(&self, skills: [Skill; 20]) -> f32 {
         let mut rating = 0.0;
-        let weights = self.weights();
         let mut total_weight = 0.0;
         for i in 0..skills.len() {
-            let w = weights[i] as f32;
+            let w = self.weights()[i] as f32;
             rating += w * w * skills[i];
             total_weight += w * w;
         }
@@ -58,7 +57,7 @@ impl GamePosition for Position {
                 1.0, 3.0, 3.0, 3.0,
             ],
 
-            _ => panic!("Invalid position"),
+            idx => panic!("Invalid position: {idx}"),
         }
     }
 
@@ -67,9 +66,9 @@ impl GamePosition for Position {
         let weights = self.weights();
         let mut total_weight = 0 as f32;
         for i in 0..skills.len() {
-            let w = weights[i] as f32;
-            rating += w * w * skills[i];
-            total_weight += w * w;
+            let w = (weights[i] as f32).powf(4.0);
+            rating += w * skills[i];
+            total_weight += w;
         }
         (rating / total_weight).round()
     }

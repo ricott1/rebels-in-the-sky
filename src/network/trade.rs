@@ -193,6 +193,7 @@ mod tests {
             home_planet_id,
             "target team".into(),
             "ship_name".into(),
+            None,
         )?;
 
         let mut target_team = world.get_team_or_err(&target_team_id)?.clone();

@@ -26,5 +26,4 @@ pub mod widgets;
 
 pub use constants::UI_SCREEN_SIZE;
 
-
 pub use swarm_panel::SwarmPanelEvent;

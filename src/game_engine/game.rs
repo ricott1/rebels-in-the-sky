@@ -126,7 +126,6 @@ pub struct Game {
 }
 
 impl<'game> Game {
-    
     pub fn is_network(&self) -> bool {
         self.home_team_in_game.peer_id.is_some() && self.away_team_in_game.peer_id.is_some()
     }
@@ -889,46 +888,45 @@ impl<'game> Game {
 #[cfg(test)]
 mod tests {
     use super::Game;
-    use crate::game_engine::types::TeamInGame;
+    use crate::game_engine::action::Advantage;
+    use crate::game_engine::constants::NUMBER_OF_ROLLS;
+    use crate::game_engine::game::GameSummary;
+    use crate::game_engine::types::{GameStats, GameStatsMap, TeamInGame};
     use crate::types::{AppResult, GameId};
     use crate::types::{SystemTimeTick, Tick};
     use crate::world::constants::DEFAULT_PLANET_ID;
     use crate::world::world::World;
+    use itertools::Itertools;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+    use std::collections::{BTreeMap, HashMap};
 
-    #[ignore]
     #[test]
     fn test_game() -> AppResult<()> {
         let mut world = World::new(None);
         let rng = &mut ChaCha8Rng::seed_from_u64(world.seed);
-
         let id0 = world.generate_random_team(
             rng,
             DEFAULT_PLANET_ID.clone(),
             "Testen".to_string(),
             "Tosten".to_string(),
+            Some(0.0),
         )?;
         let id1 = world.generate_random_team(
             rng,
             DEFAULT_PLANET_ID.clone(),
             "Holalo".to_string(),
             "Halley".to_string(),
+            Some(0.0),
         )?;
-
-        let home_team = world.get_team(&id0).unwrap().clone();
-
-        let checked_player_id = home_team.player_ids[0];
-        let quickness_before = world
-            .get_player_or_err(&checked_player_id)?
-            .athletics
-            .quickness
-            .clone();
 
         let home_team_in_game = TeamInGame::from_team_id(&id0, &world.teams, &world.players);
         let away_team_in_game = TeamInGame::from_team_id(&id1, &world.teams, &world.players);
 
-        let mut game = Game::new(
+        let home_rating = world.team_rating(&id0).unwrap_or_default();
+        let away_rating = world.team_rating(&id1).unwrap_or_default();
+
+        let game = Game::new(
             GameId::new_v4(),
             home_team_in_game.unwrap(),
             away_team_in_game.unwrap(),
@@ -936,38 +934,388 @@ mod tests {
             &world.get_planet(&DEFAULT_PLANET_ID).unwrap(),
         );
 
-        game.home_team_in_game
-            .players
-            .remove(&home_team.player_ids[1]);
-        game.home_team_in_game
-            .players
-            .remove(&home_team.player_ids[2]);
-        game.home_team_in_game
-            .players
-            .remove(&home_team.player_ids[3]);
-
-        game.home_team_in_game
-            .stats
-            .remove(&home_team.player_ids[1]);
-        game.home_team_in_game
-            .stats
-            .remove(&home_team.player_ids[2]);
-        game.home_team_in_game
-            .stats
-            .remove(&home_team.player_ids[3]);
-
-        println!("{:?}", game.home_team_in_game.players.len());
+        let game_id = game.id;
+        let home_tactic = game.home_team_in_game.tactic;
+        let away_tactic = game.away_team_in_game.tactic;
 
         world.games.insert(game.id, game);
+
+        // Call parts of the internal handle_tick loop by hand, to make the simulation go faster.
+        let mut game_action_results = vec![];
+        let mut game_stats = GameStatsMap::new();
         while world.games.len() > 0 {
-            let _ = world.handle_tick_events(Tick::now());
+            let current_tick = Tick::now();
+            for game in world.games.values_mut() {
+                if game.has_started(current_tick) && !game.has_ended() {
+                    game.tick(current_tick);
+                }
+
+                if game.has_ended() {
+                    let game_summary = GameSummary::from_game(&game);
+                    game_action_results = game.action_results.clone();
+                    game_stats = game.home_team_in_game.stats.clone();
+                    game_stats.extend(game.away_team_in_game.stats.clone());
+                    world.past_games.insert(game_summary.id, game_summary);
+                }
+            }
+
+            world.games.retain(|_, g| !g.has_ended());
         }
-        let quickness_after = world
-            .get_player_or_err(&checked_player_id)?
-            .athletics
-            .quickness
-            .clone();
-        println!("{} {}", quickness_before, quickness_after);
+
+        let result = world.past_games.get(&game_id).unwrap();
+        let home_score: u16 = result.home_quarters_score.iter().sum();
+        let away_score: u16 = result.away_quarters_score.iter().sum();
+
+        println!(
+            "{:.2} vs {:.2} --> {}:{}\n{} -- {}",
+            home_rating, away_rating, home_score, away_score, home_tactic, away_tactic
+        );
+
+        let num_attack_advantages = game_action_results
+            .iter()
+            .filter(|a| a.advantage == Advantage::Attack)
+            .count();
+
+        let num_no_advantages = game_action_results
+            .iter()
+            .filter(|a| a.advantage == Advantage::Neutral)
+            .count();
+
+        let num_defense_advantages = game_action_results
+            .iter()
+            .filter(|a| a.advantage == Advantage::Defense)
+            .count();
+
+        println!(
+            "Advantages: {} {} {}",
+            num_attack_advantages, num_no_advantages, num_defense_advantages
+        );
+
+        let num_offensive_rebounds: u16 = game_stats
+            .iter()
+            .map(|(_, stat)| stat.offensive_rebounds)
+            .sum();
+
+        let num_defense_rebounds: u16 = game_stats
+            .iter()
+            .map(|(_, stat)| stat.defensive_rebounds)
+            .sum();
+        println!(
+            "Rebounds: off:{} def:{}",
+            num_offensive_rebounds, num_defense_rebounds,
+        );
+
+        let attempted_2pt: u16 = game_stats.iter().map(|(_, stat)| stat.attempted_2pt).sum();
+        let made_2pt: u16 = game_stats.iter().map(|(_, stat)| stat.made_2pt).sum();
+        let attempted_3pt: u16 = game_stats.iter().map(|(_, stat)| stat.attempted_3pt).sum();
+        let made_3pt: u16 = game_stats.iter().map(|(_, stat)| stat.made_3pt).sum();
+
+        println!(
+            "Shots: 2pt:{}/{} 3pt:{}/{}",
+            made_2pt, attempted_2pt, made_3pt, attempted_3pt
+        );
+
+        Ok(())
+    }
+
+    /// Sum the provided selector over a team's GameStatsMap.
+    /// `stats` is a GameStatsMap (player_id -> GameStats).
+    fn team_stat_sum<F>(stats: &GameStatsMap, selector: F) -> f32
+    where
+        F: Fn(&GameStats) -> f32,
+    {
+        stats.values().map(|stat| selector(stat)).sum()
+    }
+
+    fn get_simulated_game_stats(
+        world: &mut World,
+        rng: &mut ChaCha8Rng,
+        n_games: usize,
+    ) -> AppResult<Vec<(f32, GameStatsMap, GameStatsMap)>> {
+        let mut samples = Vec::with_capacity(n_games);
+        const DELTA: f32 = 6.0;
+        for i in 0..n_games {
+            let id0 = world.generate_random_team(
+                rng,
+                DEFAULT_PLANET_ID.clone(),
+                "Testen".to_string(),
+                "Tosten".to_string(),
+                Some(DELTA * i as f32 / n_games as f32),
+            )?;
+            let id1 = world.generate_random_team(
+                rng,
+                DEFAULT_PLANET_ID.clone(),
+                "Holalo".to_string(),
+                "Halley".to_string(),
+                Some(-DELTA * i as f32 / n_games as f32),
+            )?;
+
+            let home_team_in_game = TeamInGame::from_team_id(&id0, &world.teams, &world.players);
+            let away_team_in_game = TeamInGame::from_team_id(&id1, &world.teams, &world.players);
+
+            let home_rating = world.team_rating(&id0).unwrap_or_default();
+            let away_rating = world.team_rating(&id1).unwrap_or_default();
+
+            let mut game = Game::new(
+                GameId::new_v4(),
+                home_team_in_game.unwrap(),
+                away_team_in_game.unwrap(),
+                Tick::now(),
+                &world.get_planet(&DEFAULT_PLANET_ID).unwrap(),
+            );
+
+            // Simulate until finished
+            while !game.has_ended() {
+                let current_tick = Tick::now();
+                if game.has_started(current_tick) {
+                    game.tick(current_tick);
+                }
+            }
+
+            // Reorder so home team is always higher rated one.
+            if home_rating >= away_rating {
+                samples.push((
+                    home_rating - away_rating,
+                    game.home_team_in_game.stats.clone(),
+                    game.away_team_in_game.stats.clone(),
+                ));
+            } else {
+                samples.push((
+                    away_rating - home_rating,
+                    game.away_team_in_game.stats.clone(),
+                    game.home_team_in_game.stats.clone(),
+                ));
+            }
+        }
+
+        Ok(samples)
+    }
+
+    /// Returns (mean, stddev, count) per bin_center (int)
+    fn compute_binned_stats<F>(
+        samples: &Vec<(f32, GameStatsMap, GameStatsMap)>, // (rating_diff, home_stas, away_stats)
+        bin_size: f32,
+        selectors: Vec<F>,
+    ) -> BTreeMap<i32, ((Vec<f32>, Vec<f32>), (Vec<f32>, Vec<f32>), usize)>
+    where
+        F: Fn(&GameStats) -> f32,
+    {
+        // First pass: sum and count for each selector
+        let default_entry = (
+            vec![0.0f32].repeat(selectors.len()), // away avg/stddev for each selector
+            vec![0.0f32].repeat(selectors.len()), // home avg/stddev for each selector
+            0usize,
+        );
+        let mut sums: BTreeMap<i32, (Vec<f32>, Vec<f32>, usize)> = BTreeMap::new();
+        for (rating_diff, home_stats, away_stats) in samples {
+            let bin = ((*rating_diff) / bin_size).round() as i32;
+            let entry = sums.entry(bin).or_insert(default_entry.clone());
+            for (idx, selector) in selectors.iter().enumerate() {
+                entry.0[idx] += team_stat_sum(home_stats, selector);
+                entry.1[idx] += team_stat_sum(away_stats, selector);
+            }
+            entry.2 += 1;
+        }
+
+        // Means
+        let mut means: BTreeMap<i32, (Vec<f32>, Vec<f32>)> = BTreeMap::new();
+        for (bin, (home_sums, away_sums, count)) in &sums {
+            let home_means = (0..selectors.len())
+                .map(|idx| home_sums[idx] / *count as f32)
+                .collect();
+
+            let away_means = (0..selectors.len())
+                .map(|idx| away_sums[idx] / *count as f32)
+                .collect();
+
+            means.insert(*bin, (home_means, away_means));
+        }
+
+        // Second pass: sum squared deviations
+        let default_entry = (
+            vec![0.0f32].repeat(selectors.len()), // away avg/stddev for each selector
+            vec![0.0f32].repeat(selectors.len()), // home avg/stddev for each selector
+        );
+        let mut sqdevs: BTreeMap<i32, (Vec<f32>, Vec<f32>)> = BTreeMap::new();
+        for (rating_diff, home_stats, away_stats) in samples {
+            let bin = ((*rating_diff) / bin_size).round() as i32;
+            let (home_means, away_means) = means[&bin].clone();
+            let entry = sqdevs.entry(bin).or_insert(default_entry.clone());
+            for (idx, selector) in selectors.iter().enumerate() {
+                entry.0[idx] += (team_stat_sum(home_stats, selector) - home_means[idx]).powi(2);
+                entry.1[idx] += (team_stat_sum(away_stats, selector) - away_means[idx]).powi(2);
+            }
+        }
+
+        // Final assembly: compute sample variance (N-1), stddev, and count
+        let mut out = BTreeMap::new();
+        for (bin, (_, _, count)) in sums {
+            let (home_means, away_means) = means[&bin].clone();
+            let (home_ss, away_ss) = sqdevs.get(&bin).unwrap();
+            let home_variances = home_ss
+                .iter()
+                .map(|s| {
+                    if count > 1 {
+                        (s / (count as f32 - 1.0)).sqrt()
+                    } else {
+                        0.0
+                    }
+                })
+                .collect_vec();
+            let away_variances = away_ss
+                .iter()
+                .map(|s| {
+                    if count > 1 {
+                        (s / (count as f32 - 1.0)).sqrt()
+                    } else {
+                        0.0
+                    }
+                })
+                .collect_vec();
+
+            let bin_center = (bin as f32 * bin_size) as i32;
+            out.insert(
+                bin_center,
+                (
+                    (home_means, home_variances),
+                    (away_means, away_variances),
+                    count,
+                ),
+            );
+        }
+        out
+    }
+
+    #[ignore]
+    #[test]
+    fn test_multiple_games() -> AppResult<()> {
+        // Example usage: compute stat for made_2pt (you can change to any selector)
+        let mut world = World::new(None);
+        let mut rng = ChaCha8Rng::seed_from_u64(world.seed);
+
+        const N: usize = 10_000;
+        let samples = get_simulated_game_stats(&mut world, &mut rng, N)?;
+        let bin_size = 1.0;
+
+        let point_selector = |s: &GameStats| 2.0 * s.made_2pt as f32 + 3.0 * s.made_3pt as f32;
+        let win_samples = samples
+            .iter()
+            .filter(|(_, home_stats, away_stats)| {
+                team_stat_sum(home_stats, point_selector)
+                    > team_stat_sum(away_stats, point_selector)
+            })
+            .map(|(rating_diff, _, _)| ((*rating_diff) / bin_size).round() as i32)
+            .collect_vec();
+
+        let mut win_counts = HashMap::new();
+        for bin in win_samples {
+            *win_counts.entry(bin).or_insert(0) += 1;
+        }
+
+        println!("N={}", NUMBER_OF_ROLLS);
+
+        let selectors = vec![
+            |s: &GameStats| 2.0 * s.made_2pt as f32 + 3.0 * s.made_3pt as f32, // points
+            |s: &GameStats| s.made_2pt as f32,
+            |s: &GameStats| s.attempted_2pt as f32,
+            |s: &GameStats| s.made_3pt as f32,
+            |s: &GameStats| s.attempted_3pt as f32,
+            |s: &GameStats| s.defensive_rebounds as f32,
+            |s: &GameStats| s.offensive_rebounds as f32,
+            |s: &GameStats| s.assists as f32,
+            |s: &GameStats| s.turnovers as f32,
+            |s: &GameStats| s.steals as f32,
+            |s: &GameStats| s.blocks as f32,
+            |s: &GameStats| s.brawls[0] as f32 + 0.5 * s.brawls[1] as f32,
+        ];
+        let bin_stats = compute_binned_stats(&samples, bin_size, selectors);
+
+        for (bin_center, ((home_avg, home_stddev), (away_avg, away_stddev), count)) in bin_stats {
+            println!("Δrating={:+2} ({} samples)", bin_center, count);
+
+            let bin_win_counts = win_counts.get(&bin_center).copied().unwrap_or_default();
+
+            // The following formulas are not exact cause we consider draws a loss.
+            println!(
+                "  Win% = {:3.1} ± {:3.1} ({}/{})",
+                100.0 * (bin_win_counts + 1) as f32 / (count + 2) as f32,
+                100.0
+                    * (((bin_win_counts + 1) * (count - bin_win_counts + 1)) as f32
+                        / ((count + 2).pow(2) * (count + 3)) as f32)
+                        .sqrt(),
+                bin_win_counts,
+                count
+            );
+            println!(
+                "  points = {:3.1} ± {:3.1} vs {:3.1} ± {:3.1}",
+                home_avg[0], home_stddev[0], away_avg[0], away_stddev[0],
+            );
+            println!(
+                "  2pt = {:3.1}/{:3.1} ± {:3.1}/{:3.1} vs {:3.1}/{:3.1} ± {:3.1}/{:3.1}",
+                home_avg[1],
+                home_avg[2],
+                home_stddev[1],
+                home_stddev[2],
+                away_avg[1],
+                away_avg[2],
+                away_stddev[1],
+                away_stddev[2],
+            );
+            println!(
+                "  3pt = {:3.1}/{:3.1} ± {:3.1}/{:3.1} vs {:3.1}/{:3.1} ± {:3.1}/{:3.1}",
+                home_avg[3],
+                home_avg[4],
+                home_stddev[3],
+                home_stddev[4],
+                away_avg[3],
+                away_avg[4],
+                away_stddev[3],
+                away_stddev[4],
+            );
+
+            println!(
+                "  Def/Off Rebounds = {:3.1}/{:3.1} ± {:3.1}/{:3.1} vs {:3.1}/{:3.1} ± {:3.1}/{:3.1}",
+                home_avg[5],
+                home_avg[6],
+                home_stddev[5],
+                home_stddev[6],
+                away_avg[5],
+                away_avg[6],
+                away_stddev[5],
+                away_stddev[6],
+            );
+
+            println!(
+                "  Assists/Turnovers = {:3.1}/{:3.1} ± {:3.1}/{:3.1} vs {:3.1}/{:3.1} ± {:3.1}/{:3.1}",
+                home_avg[7],
+                home_avg[8],
+                home_stddev[7],
+                home_stddev[8],
+                away_avg[7],
+                away_avg[8],
+                away_stddev[7],
+                away_stddev[8],
+            );
+
+            println!(
+                "  Steals/Blocks = {:3.1}/{:3.1} ± {:3.1}/{:3.1} vs {:3.1}/{:3.1} ± {:3.1}/{:3.1}",
+                home_avg[9],
+                home_avg[10],
+                home_stddev[9],
+                home_stddev[10],
+                away_avg[9],
+                away_avg[10],
+                away_stddev[9],
+                away_stddev[10],
+            );
+
+            println!(
+                "  Brawls = {:3.1} ± {:3.1} vs {:3.1} ± {:3.1}",
+                home_avg[11], home_stddev[11], away_avg[11], away_stddev[11],
+            );
+
+            println!("");
+        }
 
         Ok(())
     }

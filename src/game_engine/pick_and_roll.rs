@@ -47,21 +47,21 @@ impl EngineAction for PickAndRoll {
         let mut target_defender_update = GameStats::default();
         target_defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
-        let timer_increase = 2 + rng.random_range(0..=3);
+        let timer_increase = 3 + rng.random_range(0..=3);
         let mut result: ActionOutput;
 
         if play_idx == target_idx {
             let atk_result = playmaker.roll(rng)
-                + playmaker.technical.ball_handling.value()
-                + playmaker.athletics.quickness.value()
-                + target.mental.vision.value();
+                + playmaker.technical.ball_handling.game_value()
+                + playmaker.athletics.quickness.game_value()
+                + target.mental.vision.game_value();
 
             let def_result = playmaker_defender.roll(rng)
-                + playmaker_defender.defense.perimeter_defense.value()
-                + playmaker_defender.mental.vision.value();
+                + playmaker_defender.defense.perimeter_defense.game_value()
+                + playmaker_defender.mental.vision.game_value();
 
             result = match atk_result as i16 - def_result as i16 + Self::tactic_modifier(game, &Action::PickAndRoll) {
-                x if x > ADV_ATTACK_LIMIT => ActionOutput {
+                x if x >= ADV_ATTACK_LIMIT => ActionOutput {
                     possession: input.possession,
                     advantage: Advantage::Attack,
                     attackers: vec![play_idx],
@@ -221,7 +221,7 @@ impl EngineAction for PickAndRoll {
                             ),
                         ].choose(rng).expect("There should be one option").clone(),
                         start_at: input.end_at,
-                end_at: input.end_at.plus(3),
+                end_at: input.end_at.plus(3 + rng.random_range(0..=1)),
                 home_score: input.home_score,
                     away_score: input.away_score,
                         ..Default::default()
@@ -230,16 +230,16 @@ impl EngineAction for PickAndRoll {
             };
         } else {
             let atk_result = playmaker.roll(rng)
-                + playmaker.technical.ball_handling.value()
-                + playmaker.technical.passing.value()
-                + target.mental.intuition.value();
+                + playmaker.technical.ball_handling.game_value()
+                + playmaker.technical.passing.game_value()
+                + target.mental.intuition.game_value();
 
             let def_result = playmaker_defender.roll(rng)
-                + playmaker_defender.defense.perimeter_defense.value()
-                + target_defender.athletics.quickness.value();
+                + playmaker_defender.defense.perimeter_defense.game_value()
+                + target_defender.athletics.quickness.game_value();
 
             result = match atk_result as i16 - def_result as i16 + Self::tactic_modifier(game, &Action::PickAndRoll){
-            x if x > ADV_ATTACK_LIMIT => ActionOutput {
+            x if x >= ADV_ATTACK_LIMIT => ActionOutput {
                 possession: input.possession,
                 advantage: Advantage::Attack,
                 attackers: vec![target_idx],
@@ -377,7 +377,7 @@ impl EngineAction for PickAndRoll {
                         ),
                     ].choose(rng).expect("There should be one option").clone(),
                     start_at: input.end_at,
-                end_at: input.end_at.plus(2),
+                end_at: input.end_at.plus(2+ rng.random_range(0..=1)),
                 home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()

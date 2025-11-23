@@ -216,7 +216,6 @@ pub fn render_challenge_button<'a>(
         }
     };
 
-    
     // If we received a challenge from that team, display the accept/decline buttons
     if let Some(challenge) = own_team.received_challenges.get(&team.id) {
         let c_split = Layout::horizontal([
@@ -802,7 +801,7 @@ pub fn render_spaceship_description(
         );
         frame.render_interactive(rating_span, split[0]);
 
-        let reputation_span = 
+        let reputation_span =
         HoverTextSpan::new(
             Span::raw(format!(
                 "Reputation {}  ",
@@ -846,10 +845,9 @@ pub fn render_spaceship_description(
                 "Roaming the galaxy since {}",
                 creation_date
             )));
-        } else{
+        } else {
             lines.push(HoverTextLine::default());
         }
-
 
         let team_honours = Honour::iter()
             .filter(|h| h.conditions_met(team))
@@ -857,7 +855,7 @@ pub fn render_spaceship_description(
 
         if team_honours.len() > 0 {
             lines.append(&mut honour_lines(team_honours));
-        } 
+        }
 
         let lines_split = Layout::vertical([1].repeat(lines.len())).split(split[2]);
         for (line, &split) in zip(lines, lines_split.iter()) {

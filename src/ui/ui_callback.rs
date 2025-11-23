@@ -1,4 +1,3 @@
-
 use super::swarm_panel::SwarmView;
 use super::{
     galaxy_panel::ZoomLevel,
@@ -24,7 +23,7 @@ use crate::{
     world::{
         constants::*,
         jersey::{Jersey, JerseyStyle},
-        planet::{AsteroidUpgrade, AsteroidUpgradeTarget},
+        planet::AsteroidUpgrade,
         player::Trait,
         resources::Resource,
         role::CrewRole,
@@ -92,11 +91,11 @@ pub enum UiCallback {
     ChallengeTeam {
         team_id: TeamId,
     },
-    
+
     AcceptChallenge {
         challenge: Challenge,
     },
-    
+
     DeclineChallenge {
         challenge: Challenge,
     },
@@ -104,15 +103,15 @@ pub enum UiCallback {
         proposer_player_id: PlayerId,
         target_player_id: PlayerId,
     },
-    
+
     AcceptTrade {
         trade: Trade,
     },
-    
+
     DeclineTrade {
         trade: Trade,
     },
-    
+
     GoToTrade {
         trade: Trade,
     },
@@ -141,7 +140,7 @@ pub enum UiCallback {
     PreviousRadio,
     #[cfg(feature = "audio")]
     NextRadio,
-    
+
     SetSwarmPanelView {
         topic: SwarmView,
     },
@@ -478,9 +477,12 @@ impl UiCallback {
             // Challenge to network team.
             if let Some(peer_id) = team.peer_id {
                 own_team.can_challenge_network_team(team)?;
-                let challenge = app
-                    .network_handler
-                    .send_new_challenge(&app.world, peer_id, team.id)?;
+                let challenge = app.network_handler.send_new_challenge(
+                    &app.world,
+                    peer_id,
+                    team.id,
+                    app.app_version(),
+                )?;
 
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.add_sent_challenge(challenge);
@@ -987,12 +989,11 @@ impl UiCallback {
             asteroid.version += 1;
             asteroid.upgrades.push(upgrade.target);
 
-            let message = match upgrade.target {
-                AsteroidUpgradeTarget::TeleportationPad => format!(
-                    "Teleportation pad construction on {} completed!",
-                    asteroid.name
-                ),
-            };
+            let message = format!(
+                "{} construction on {} completed!",
+                upgrade.target.name(),
+                asteroid.name
+            );
             app.world.planets.insert(asteroid.id, asteroid);
 
             app.ui.push_popup(PopupMessage::Ok {

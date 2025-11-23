@@ -23,11 +23,11 @@ use crate::ui::ui_callback::UiCallback;
 use crate::world::planet::AsteroidUpgrade;
 use crate::world::spaceship::SpaceshipUpgrade;
 use crate::world::utils::is_default;
-use crate::world::AutonomousStrategy;
+use crate::world::{AutonomousStrategy, Rated, RatedPlayers};
 use anyhow::anyhow;
 use itertools::Itertools;
 use libp2p::PeerId;
-use rand::seq::{IndexedRandom, IteratorRandom, SliceRandom};
+use rand::seq::{IteratorRandom, SliceRandom};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -38,9 +38,9 @@ const GAME_CLEANUP_TIME: Tick = 10 * SECONDS;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct World {
-    pub dirty: bool,
-    pub dirty_network: bool,
-    pub dirty_ui: bool,
+    pub dirty: bool, // Whether anything relevant for the world state has changed and thus should be stored.
+    pub dirty_network: bool, // Whether anything relevant for the entwork has changed and thus should be sent over.
+    pub dirty_ui: bool, // Whether anything relevant for UI has changed and thus should be drawn.
     pub serialized_size: u64,
     pub seed: u64,
     #[serde(skip_serializing_if = "is_default")]
@@ -153,7 +153,7 @@ impl World {
             let (team_name, ship_name) = team_data[idx].clone();
             // Assign 2 teams to each planet
             let home_planet_id = home_planet_ids[(idx / 2) % home_planet_ids.len()];
-            self.generate_random_team(rng, home_planet_id, team_name, ship_name)?;
+            self.generate_random_team(rng, home_planet_id, team_name, ship_name, None)?;
         }
         Ok(())
     }
@@ -164,6 +164,7 @@ impl World {
         home_planet_id: PlanetId,
         team_name: String,
         ship_name: String,
+        team_base_level: Option<f32>,
     ) -> AppResult<TeamId> {
         let team_id = TeamId::new_v4();
         let team = Team::random(team_id, home_planet_id, team_name, ship_name, rng);
@@ -173,7 +174,7 @@ impl World {
 
         self.teams.insert(team.id, team);
 
-        let team_base_level = rng.random_range(0..=8) as f32;
+        let team_base_level = team_base_level.unwrap_or(rng.random_range(2..=14) as f32);
         for position in 0..MAX_POSITION {
             let player_id =
                 self.generate_random_player(rng, Some(position), &planet, team_base_level)?;
@@ -1299,14 +1300,18 @@ impl World {
         Ok(free_pirates)
     }
 
-    pub fn handle_tick_events(&mut self, current_tick: Tick) -> AppResult<Vec<UiCallback>> {
-        let mut callbacks: Vec<UiCallback> = vec![];
-        let is_simulating = self.is_simulating();
-
+    pub fn handle_fast_tick_events(&mut self, current_tick: Tick) -> AppResult<Vec<UiCallback>> {
         if let Some(space) = self.space_adventure.as_mut() {
             let deltatime = (current_tick - self.last_tick_min_interval) as f32 / SECONDS as f32;
-            callbacks.append(&mut space.update(deltatime)?);
+            return space.update(deltatime);
         }
+
+        Ok(vec![])
+    }
+
+    pub fn handle_slow_tick_events(&mut self, current_tick: Tick) -> AppResult<Vec<UiCallback>> {
+        let mut callbacks: Vec<UiCallback> = vec![];
+        let is_simulating = self.is_simulating();
 
         self.last_tick_min_interval = current_tick;
 
@@ -1362,13 +1367,15 @@ impl World {
 
             self.tick_teams_reputation()?;
 
+            // Local teams hire free pirates just before refreshing team,
+            // so own team has had already time to hire them.
+            self.tick_auto_hire_free_pirates()?;
+
             // Create free pirates only if this is the last time window to do so.
             // This will run also during a simulation, but only once.
             if Tick::now() < current_tick + TickInterval::LONG {
                 callbacks.push(self.tick_free_pirates(current_tick)?);
             }
-
-            self.tick_auto_hire_free_pirates()?;
 
             self.last_tick_long_interval += TickInterval::LONG;
         }
@@ -1938,37 +1945,64 @@ impl World {
             .players
             .values()
             .filter(|p| p.team.is_none())
-            .collect_vec();
+            .collect_vec()
+            .sort_by_rating();
 
-        let rng = &mut ChaCha8Rng::from_os_rng();
-
+        let mut released_player_ids: Vec<PlayerId> = vec![];
         let mut hired_player_ids: Vec<PlayerId> = vec![];
         let mut hiring_team_ids: Vec<TeamId> = vec![];
 
         for (&team_id, team) in self.teams.iter() {
-            if team.player_ids.len() == team.spaceship.crew_capacity() as usize {
+            if team_id == self.own_team_id {
                 continue;
             }
 
-            if team_id == self.own_team_id {
+            if team.is_on_planet().is_none() {
+                continue;
+            }
+
+            if team.current_game.is_some() {
                 continue;
             }
 
             let available_free_pirates = free_pirates
                 .iter()
                 .filter(|&player| {
-                    !hired_player_ids.contains(&player.id) && team.can_hire_player(player).is_ok()
+                    !hired_player_ids.contains(&player.id)
+                        && team.can_consider_hiring_player(player).is_ok()
+                        && team.is_on_player_planet(player)
                 })
-                .map(|player| player.id)
                 .collect_vec();
 
-            if let Some(player_id) = available_free_pirates.choose(rng) {
-                hired_player_ids.push(player_id.clone());
+            if available_free_pirates.len() > 0 {
+                let best_pirate = available_free_pirates[0];
+                if team.player_ids.len() == team.spaceship.crew_capacity() as usize {
+                    // Check if weakest pirate is worse than best free pirate.
+                    // If not, continue.
+                    let worst_pirate = *team
+                        .player_ids
+                        .iter()
+                        .map(|id| self.get_player(id).unwrap())
+                        .collect_vec()
+                        .sort_by_rating()
+                        .last()
+                        .expect("There should be at least one pirate in the crew.");
+
+                    if worst_pirate.rating() >= best_pirate.rating() {
+                        continue;
+                    }
+                    released_player_ids.push(worst_pirate.id);
+                }
+                hired_player_ids.push(best_pirate.id);
                 hiring_team_ids.push(team.id);
             }
         }
-
         assert!(hired_player_ids.len() == hiring_team_ids.len());
+
+        for &player_id in released_player_ids.iter() {
+            self.release_player_from_team(player_id)?;
+        }
+
         for idx in 0..hired_player_ids.len() {
             let player_id = hired_player_ids[idx];
             let team_id = hiring_team_ids[idx];
@@ -2453,6 +2487,7 @@ mod test {
             types::TeamLocation,
             utils::PLANET_DATA,
             world::{TickInterval, AU, EXPLORATION_DURATION},
+            RatedPlayers, DEFAULT_PLANET_ID,
         },
     };
     use itertools::Itertools;
@@ -2523,7 +2558,7 @@ mod test {
         );
 
         let team_id =
-            world.generate_random_team(rng, planet.id, "test".into(), "testship".into())?;
+            world.generate_random_team(rng, planet.id, "test".into(), "testship".into(), None)?;
 
         world.own_team_id = team_id;
 
@@ -2602,7 +2637,7 @@ mod test {
         );
 
         let team_id =
-            world.generate_random_team(rng, planet.id, "test".into(), "testship".into())?;
+            world.generate_random_team(rng, planet.id, "test".into(), "testship".into(), None)?;
 
         world.own_team_id = team_id;
 
@@ -2672,9 +2707,13 @@ mod test {
         // let world = &mut app.world;
         let rng = &mut ChaCha8Rng::from_os_rng();
         let planet = PLANET_DATA[0].clone();
-        let team_id =
-            app.world
-                .generate_random_team(rng, planet.id, "test".into(), "testship".into())?;
+        let team_id = app.world.generate_random_team(
+            rng,
+            planet.id,
+            "test".into(),
+            "testship".into(),
+            None,
+        )?;
 
         // Add rum to team
         let mut team = app.world.get_team_or_err(&team_id)?.clone();
@@ -2712,7 +2751,7 @@ mod test {
         .call(&mut app)?;
 
         app.world
-            .handle_tick_events(app.world.last_tick_short_interval + TickInterval::SHORT)?;
+            .handle_slow_tick_events(app.world.last_tick_short_interval + TickInterval::SHORT)?;
 
         let team = app.world.get_team_or_err(&team_id)?;
         println!("Team resources {:?}", team.resources);
@@ -2886,6 +2925,64 @@ mod test {
     }
 
     #[test]
+    fn test_auto_hiring() -> AppResult<()> {
+        let mut app = App::test_default()?;
+
+        for team in app.world.teams.values_mut() {
+            team.add_resource(Resource::SATOSHI, 200_000)?;
+        }
+
+        let rng = &mut ChaCha8Rng::seed_from_u64(app.world.seed);
+        let team_id = app.world.generate_random_team(
+            rng,
+            DEFAULT_PLANET_ID.clone(),
+            "Testen".to_string(),
+            "Tosten".to_string(),
+            Some(0.0),
+        )?;
+
+        let team = app.world.get_team_or_err(&team_id)?;
+
+        assert!(team.player_ids.len() <= team.spaceship.crew_capacity() as usize);
+
+        let players = team
+            .player_ids
+            .iter()
+            .map(|id| app.world.get_player(id).unwrap())
+            .collect_vec()
+            .sort_by_rating();
+
+        let worst_pirate = players.last().unwrap();
+        let prev_worst_rating = worst_pirate.average_skill();
+        println!(
+            "Worst player {} rating {}",
+            worst_pirate.info.short_name(),
+            prev_worst_rating
+        );
+
+        app.world.tick_auto_hire_free_pirates()?;
+
+        let team = app.world.get_team_or_err(&team_id)?;
+        let players = team
+            .player_ids
+            .iter()
+            .map(|id| app.world.get_player(id).unwrap())
+            .collect_vec()
+            .sort_by_rating();
+        let worst_pirate = players.last().unwrap();
+        let new_worst_rating = worst_pirate.average_skill();
+        println!(
+            "Worst player {} rating {}",
+            worst_pirate.info.short_name(),
+            new_worst_rating
+        );
+
+        assert!(prev_worst_rating <= new_worst_rating);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_is_simulating() -> AppResult<()> {
         let mut app = App::test_default()?;
 
@@ -2904,7 +3001,7 @@ mod test {
         assert!(world.is_simulating() == true);
         let mut runs = 0;
         while world.is_simulating() {
-            world.handle_tick_events(Tick::now())?;
+            world.handle_slow_tick_events(Tick::now())?;
             runs += 1;
         }
 

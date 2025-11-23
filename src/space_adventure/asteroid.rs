@@ -109,7 +109,7 @@ impl AsteroidSize {
 
     fn max_image_type(&self) -> usize {
         match self {
-            Self::Planet => MAX_ASTEROID_PLANET_IMAGE_TYPE,
+            Self::Planet => MAX_ASTEROID_PLANET_IMAGE_NUMBER,
             _ => 3,
         }
     }

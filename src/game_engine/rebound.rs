@@ -104,7 +104,8 @@ impl EngineAction for Rebound {
             MIN_REBOUND_VALUE
         );
         let result = match attack_result as i16 - defence_result as i16 + Self::tactic_modifier(game, &Action::Rebound){
-            x if x > ADV_ATTACK_LIMIT
+            // Here we use ADV_ATTACK_LIMIT not to give an advantage, but to get the offensive rebound.
+            x if x >= ADV_ATTACK_LIMIT
                 || (x > 0
                     && attack_result >= MIN_REBOUND_VALUE
                     && attack_rebounder_idx == input.attackers[0]) =>
@@ -220,7 +221,7 @@ impl EngineAction for Rebound {
                     attackers: vec![attack_rebounder_idx],
                     attack_stats_update: Some(attack_stats_update),
                     start_at: input.end_at,
-                    end_at: input.end_at.plus(2 + rng.random_range(0..=3)),
+                    end_at: input.end_at.plus(4 + rng.random_range(0..=3)),
                     home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()
@@ -262,7 +263,7 @@ impl EngineAction for Rebound {
                     .clone(),
                     defense_stats_update: Some(defence_stats_update),
                     start_at: input.end_at,
-                    end_at: input.end_at.plus(4 + rng.random_range(0..=3)),
+                    end_at: input.end_at.plus(5 + rng.random_range(0..=6)),
                     home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()
@@ -280,7 +281,7 @@ impl EngineAction for Rebound {
                 .expect("There should be an option")
                 .to_string(),
                 start_at: input.end_at,
-                end_at: input.end_at.plus(5 + rng.random_range(0..=4)),
+                end_at: input.end_at.plus(5 + rng.random_range(0..=6)),
                 home_score: input.home_score,
                 away_score: input.away_score,
                 ..Default::default()

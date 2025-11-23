@@ -12,9 +12,15 @@
         "gravity": 1000,
         "asteroid_probability": 0.0,
         "planet_type": 0,
-        "satellites": ["71a43700-0000-0000-0001-000000000000", "71a43700-0000-0000-0001-000000000001"],
+        "satellites": [
+            "71a43700-0000-0000-0001-000000000000",
+            "71a43700-0000-0000-0001-000000000001"
+        ],
         "satellite_of": null,
-        "axis": [0.0, 0.0]
+        "axis": [
+            0.0,
+            0.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0001-000000000000",
@@ -24,7 +30,7 @@
         "populations": {},
         "resources": {},
         "filename": "sol",
-        "rotation_period": 6,
+        "rotation_period": 3,
         "revolution_period": 360,
         "gravity": 100,
         "asteroid_probability": 0.0,
@@ -37,7 +43,10 @@
             "71a43700-0000-0000-0002-000000000004"
         ],
         "satellite_of": "71a43700-0000-0000-0000-000000000000",
-        "axis": [30.0, 20.0]
+        "axis": [
+            30.0,
+            20.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0001-000000000001",
@@ -47,14 +56,20 @@
         "populations": {},
         "resources": {},
         "filename": "proxima",
-        "rotation_period": 3,
+        "rotation_period": 2,
         "revolution_period": 360,
         "gravity": 80,
         "asteroid_probability": 0.0,
         "planet_type": 1,
-        "satellites": ["71a43700-0000-0000-0002-000000000005", "71a43700-0000-0000-0002-000000000006"],
+        "satellites": [
+            "71a43700-0000-0000-0002-000000000005",
+            "71a43700-0000-0000-0002-000000000006"
+        ],
         "satellite_of": "71a43700-0000-0000-0000-000000000000",
-        "axis": [45.0, 35.0]
+        "axis": [
+            45.0,
+            35.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0002-000000000005",
@@ -72,14 +87,17 @@
             "4": 2
         },
         "filename": "weird",
-        "rotation_period": 6,
+        "rotation_period": 3,
         "revolution_period": 180,
         "gravity": 2,
         "asteroid_probability": 0.3,
         "planet_type": 2,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0001-000000000001",
-        "axis": [31.0, 69.0]
+        "axis": [
+            31.0,
+            69.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0002-000000000006",
@@ -95,23 +113,32 @@
             "1": 1,
             "2": 8,
             "3": 5,
-            "4": 1},
+            "4": 1
+        },
         "filename": "redgreen",
-        "rotation_period": 9,
+        "rotation_period": 4,
         "revolution_period": 360,
         "gravity": 3,
         "asteroid_probability": 0.1,
         "planet_type": 5,
-        "satellites": ["71a43700-0000-0000-0003-000000000003", "71a43700-0000-0000-0003-000000000004"],
+        "satellites": [
+            "71a43700-0000-0000-0003-000000000003",
+            "71a43700-0000-0000-0003-000000000004"
+        ],
         "satellite_of": "71a43700-0000-0000-0001-000000000001",
-        "axis": [68.0, 24.0]
+        "axis": [
+            68.0,
+            24.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0003-000000000003",
         "peer_id": null,
         "version": 0,
         "name": "Frittura",
-        "populations": { "4": 11 },
+        "populations": {
+            "4": 11
+        },
         "resources": {
             "1": 2,
             "2": 4,
@@ -119,21 +146,27 @@
             "4": 10
         },
         "filename": "venom",
-        "rotation_period": 6,
+        "rotation_period": 3,
         "revolution_period": 360,
         "gravity": 3,
         "asteroid_probability": 0.3,
         "planet_type": 2,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0002-000000000006",
-        "axis": [44.0, 44.0]
+        "axis": [
+            44.0,
+            44.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0003-000000000004",
         "peer_id": null,
         "version": 0,
         "name": "Mizu",
-        "populations": {"6": 16, "103": 1},
+        "populations": {
+            "6": 16,
+            "103": 1
+        },
         "resources": {
             "1": 4,
             "2": 3,
@@ -141,14 +174,17 @@
             "4": 2
         },
         "filename": "water",
-        "rotation_period": 6,
+        "rotation_period": 3,
         "revolution_period": 360,
         "gravity": 2,
         "asteroid_probability": 0.15,
         "planet_type": 2,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0002-000000000006",
-        "axis": [40.0, 46.0]
+        "axis": [
+            40.0,
+            46.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0002-000000000000",
@@ -172,14 +208,19 @@
             "4": 4
         },
         "filename": "earth",
-        "rotation_period": 9,
+        "rotation_period": 4,
         "revolution_period": 180,
         "gravity": 10,
         "asteroid_probability": 0.5,
         "planet_type": 2,
-        "satellites": ["71a43700-0000-0000-0003-000000000000"],
+        "satellites": [
+            "71a43700-0000-0000-0003-000000000000"
+        ],
         "satellite_of": "71a43700-0000-0000-0001-000000000000",
-        "axis": [22.0, 24.0]
+        "axis": [
+            22.0,
+            24.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0002-000000000001",
@@ -199,35 +240,49 @@
             "3": 6
         },
         "filename": "lava",
-        "rotation_period": 9,
+        "rotation_period": 4,
         "revolution_period": 180,
         "gravity": 8,
         "asteroid_probability": 0.5,
         "planet_type": 3,
-        "satellites": ["71a43700-0000-0000-0003-000000000001", "71a43700-0000-0000-0003-000000000002"],
+        "satellites": [
+            "71a43700-0000-0000-0003-000000000001",
+            "71a43700-0000-0000-0003-000000000002"
+        ],
         "satellite_of": "71a43700-0000-0000-0001-000000000000",
-        "axis": [38.0, 33.0]
+        "axis": [
+            38.0,
+            33.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0002-000000000002",
         "peer_id": null,
         "version": 0,
         "name": "Jupiter",
-        "populations": { "1": 8, "106": 1 ,"107": 1 ,"109": 1 },
+        "populations": {
+            "1": 8,
+            "106": 1,
+            "107": 1,
+            "109": 1
+        },
         "resources": {
             "1": 1,
             "2": 7,
             "3": 12
         },
         "filename": "gas",
-        "rotation_period": 9,
+        "rotation_period": 4,
         "revolution_period": 360,
         "gravity": 25,
         "asteroid_probability": 0.95,
         "planet_type": 5,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0001-000000000000",
-        "axis": [46.0, 44.0]
+        "axis": [
+            46.0,
+            44.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0002-000000000003",
@@ -246,35 +301,44 @@
             "3": 8
         },
         "filename": "ring",
-        "rotation_period": 6,
+        "rotation_period": 3,
         "revolution_period": 360,
         "gravity": 20,
         "asteroid_probability": 0.86,
         "planet_type": 7,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0001-000000000000",
-        "axis": [54.0, 42.0]
+        "axis": [
+            54.0,
+            42.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0002-000000000004",
         "peer_id": null,
         "version": 0,
         "name": "Uranus",
-        "populations": { "3": 9, "101": 1 },
+        "populations": {
+            "3": 9,
+            "101": 1
+        },
         "resources": {
             "1": 2,
             "2": 6,
             "3": 4
         },
         "filename": "ice",
-        "rotation_period": 9,
+        "rotation_period": 4,
         "revolution_period": 360,
         "gravity": 16,
         "asteroid_probability": 0.7,
         "planet_type": 4,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0001-000000000000",
-        "axis": [61.0, 51.0]
+        "axis": [
+            61.0,
+            51.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0003-000000000000",
@@ -295,14 +359,17 @@
             "4": 3
         },
         "filename": "rocky",
-        "rotation_period": 9,
+        "rotation_period": 4,
         "revolution_period": 360,
         "gravity": 2,
         "asteroid_probability": 0.0,
         "planet_type": 8,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0002-000000000000",
-        "axis": [35.0, 34.0]
+        "axis": [
+            35.0,
+            34.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0003-000000000001",
@@ -322,14 +389,17 @@
             "4": 2
         },
         "filename": "phobos",
-        "rotation_period": 6,
+        "rotation_period": 3,
         "revolution_period": 180,
         "gravity": 2,
         "asteroid_probability": 0.0,
         "planet_type": 8,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0002-000000000001",
-        "axis": [35.0, 34.0]
+        "axis": [
+            35.0,
+            34.0
+        ]
     },
     {
         "id": "71a43700-0000-0000-0003-000000000002",
@@ -348,13 +418,16 @@
             "4": 2
         },
         "filename": "deimos",
-        "rotation_period": 9,
+        "rotation_period": 4,
         "revolution_period": 180,
         "gravity": 2,
         "asteroid_probability": 0.0,
         "planet_type": 8,
         "satellites": [],
         "satellite_of": "71a43700-0000-0000-0002-000000000001",
-        "axis": [55.0, 64.0]
+        "axis": [
+            55.0,
+            64.0
+        ]
     }
 ]

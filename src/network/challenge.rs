@@ -12,6 +12,7 @@ pub struct Challenge {
     pub home_team_in_game: TeamInGame,
     pub away_team_in_game: TeamInGame,
     pub starting_at: Option<Tick>,
+    pub app_version: [usize; 3],
 }
 
 impl Challenge {
@@ -20,6 +21,7 @@ impl Challenge {
         target_peer_id: PeerId,
         mut home_team_in_game: TeamInGame,
         mut away_team_in_game: TeamInGame,
+        app_version: [usize; 3],
     ) -> Self {
         home_team_in_game.peer_id = Some(proposer_peer_id);
         away_team_in_game.peer_id = Some(target_peer_id);
@@ -30,6 +32,7 @@ impl Challenge {
             home_team_in_game,
             away_team_in_game,
             starting_at: None,
+            app_version,
         }
     }
 

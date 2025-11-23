@@ -252,7 +252,16 @@ impl SwarmPanel {
             }
         }
         let list = List::new(items);
-        frame.render_widget(list.block(default_block().title("Peers")), split[4]);
+
+        let connected_peers_count = self
+            .connected_peers
+            .keys()
+            .filter(|peer_id| self.is_peer_connected(peer_id))
+            .count();
+        frame.render_widget(
+            list.block(default_block().title(format!("Peers ({})", connected_peers_count))),
+            split[4],
+        );
 
         let dial_button = Button::new("Ping", UiCallback::Ping);
 

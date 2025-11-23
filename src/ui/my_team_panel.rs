@@ -12,13 +12,14 @@ use super::{
 };
 use crate::world::constants::MAX_PLAYERS_PER_GAME;
 use crate::world::planet::{AsteroidUpgrade, AsteroidUpgradeTarget};
+use crate::world::{Player, MAX_NUM_ASTEROID_PER_TEAM};
 use crate::{
     game_engine::game::Game,
     store::load_game,
-    types::{AppResult, GameId, PlayerId, StorableResourceMap, SystemTimeTick},
+    types::{AppResult, GameId, StorableResourceMap, SystemTimeTick},
     world::{
         position::{GamePosition, Position, MAX_POSITION},
-        skill::Rated,
+        skill::{Rated, RatedPlayers},
         spaceship::{SpaceshipComponent, SpaceshipUpgrade, SpaceshipUpgradeTarget},
         types::{TeamBonus, TeamLocation},
         world::World,
@@ -146,7 +147,15 @@ impl MyTeamPanel {
         .set_hover_text("View shipyard, improve your spaceship.");
 
         let mut view_asteroids_button = Button::new(
-            format!("Asteroids ({})", self.asteroid_ids.len()),
+            format!(
+                "Asteroids ({}{})",
+                self.asteroid_ids.len(),
+                if self.asteroid_ids.len() == MAX_NUM_ASTEROID_PER_TEAM {
+                    " MAX"
+                } else {
+                    ""
+                }
+            ),
             UiCallback::SetMyTeamPanelView {
                 view: MyTeamView::Asteroids,
             },
@@ -1530,20 +1539,20 @@ impl MyTeamPanel {
 
     fn render_player_buttons(
         &self,
-        players: Vec<PlayerId>,
+        players: &Vec<&Player>,
         frame: &mut UiFrame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
         let player_index = if let Some(index) = self.player_index {
-            index
+            index.min(players.len() - 1)
         } else {
             return Ok(());
         };
 
-        let player_id = players[player_index];
-        let player = world.get_player_or_err(&player_id)?;
+        let player = players[player_index];
+        let player_id = player.id;
         let button_splits = Layout::horizontal([
             Constraint::Length(12),
             Constraint::Length(12),
@@ -1680,13 +1689,13 @@ impl MyTeamPanel {
 
     fn build_players_table(
         &'_ self,
-        players: &Vec<PlayerId>,
+        players: &Vec<&Player>,
         world: &World,
         table_width: u16,
     ) -> AppResult<ClickableTable<'_>> {
         let own_team = world.get_own_team()?;
         let header_cells = [
-            " Name",
+            "Name",
             "Overall",
             "Potential",
             "Current",
@@ -1700,12 +1709,13 @@ impl MyTeamPanel {
 
         // Calculate the available space for the players name in order to display the
         // full or shortened version.
-        let name_header_width = table_width - (9 + 10 + 10 + 10 + 9 + 15 + 17);
+        let name_header_width = table_width
+            .saturating_sub(9 + 10 + 10 + 10 + 9 + 15 + 17)
+            .max(1);
 
         let rows = players
             .iter()
-            .map(|id| {
-                let player = world.get_player(id).unwrap();
+            .map(|player| {
                 let skills = player.current_skill_array();
 
                 let current_role = match own_team.player_ids.iter().position(|id| *id == player.id)
@@ -1794,7 +1804,7 @@ impl MyTeamPanel {
                 } else {
                     player.info.short_name()
                 };
-
+                log::info!("P rat 2 {}", best_role);
                 let cells = [
                     ClickableCell::from(name),
                     ClickableCell::from(overall),
@@ -1837,22 +1847,24 @@ impl MyTeamPanel {
         area: Rect,
     ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
-        let mut players = own_team.player_ids.clone();
-        players.sort_by(|a, b| {
-            let a = world.get_player(a).unwrap();
-            let b = world.get_player(b).unwrap();
-            if a.rating() == b.rating() {
-                b.average_skill()
-                    .partial_cmp(&a.average_skill())
-                    .expect("Skill value should exist")
-            } else {
-                b.rating().cmp(&a.rating())
-            }
-        });
+        let sorted_players = own_team
+            .player_ids
+            .iter()
+            .map(|id| world.get_player(id).unwrap())
+            .collect_vec()
+            .sort_by_rating();
+
+        let player_index = if let Some(index) = self.player_index {
+            index.min(sorted_players.len() - 1)
+        } else {
+            return Ok(());
+        };
+        let player = sorted_players[player_index];
+
         let top_split =
             Layout::horizontal([Constraint::Min(10), Constraint::Length(60)]).split(area);
 
-        let table = self.build_players_table(&players, world, top_split[0].width)?;
+        let table = self.build_players_table(&sorted_players, world, top_split[0].width)?;
         frame.render_stateful_interactive(
             table.block(default_block().title(format!(
                 "{} {} ↓/↑",
@@ -1862,16 +1874,6 @@ impl MyTeamPanel {
             top_split[0],
             &mut ClickableTableState::default().with_selected(self.player_index),
         );
-
-        if self.player_index.is_none() {
-            return Ok(());
-        }
-
-        let player_id = players[self.player_index.unwrap()];
-
-        let player = world
-            .get_player(&player_id)
-            .ok_or(anyhow!("Player {:?} not found", player_id))?;
 
         render_player_description(
             player,
@@ -1939,6 +1941,7 @@ impl MyTeamPanel {
                 horizontal: 1,
             }));
 
+            let player_id = player.id;
             for idx in 0..MAX_PLAYERS_PER_GAME as usize {
                 let position = idx as Position;
                 let rect = position_button_splits[idx];
@@ -1977,7 +1980,7 @@ impl MyTeamPanel {
                     .set_hover_text("Auto-assign players' initial position.")
                     .set_hotkey(UiKey::AUTO_ASSIGN);
             frame.render_interactive(auto_assign_button, position_button_splits[7]);
-            self.render_player_buttons(players, frame, world, table_bottom[2])?;
+            self.render_player_buttons(&sorted_players, frame, world, table_bottom[2])?;
         }
         Ok(())
     }

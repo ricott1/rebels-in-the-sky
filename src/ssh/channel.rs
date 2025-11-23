@@ -135,7 +135,16 @@ impl AppChannel {
         let network_port = self.network_port.clone();
 
         let store_prefix = Some(username);
-        let mut app = App::new(None, false, true, true, false, None, store_prefix)?;
+        let mut app = App::new(
+            None,
+            false,
+            #[cfg(feature = "audio")]
+            true,
+            true,
+            false,
+            None,
+            store_prefix,
+        )?;
 
         let tui = Tui::new_ssh(writer)?;
 

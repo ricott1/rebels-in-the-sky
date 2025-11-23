@@ -38,9 +38,9 @@ pub enum AppState {
 
 #[derive(Debug)]
 pub enum AppEvent {
-    Tick(Tick),
+    SlowTick(Tick),
+    FastTick(Tick),
     TerminalEvent(TerminalEvent),
-
     NetworkEvent(SwarmEvent<gossipsub::Event>),
     #[cfg(feature = "audio")]
     AudioEvent(StreamDownload<TempStorageProvider>),
@@ -59,10 +59,17 @@ pub struct App {
 
     pub network_handler: NetworkHandler,
     store_prefix: String,
-    pub new_version_notified: bool,
+    new_version_notified: bool,
+
+    cancellation_token: CancellationToken,
+
+    app_version: [usize; 3],
 }
 
 impl App {
+    pub fn app_version(&self) -> [usize; 3] {
+        self.app_version
+    }
     pub fn get_event_sender(&self) -> mpsc::Sender<AppEvent> {
         self.event_sender.clone()
     }
@@ -114,22 +121,12 @@ impl App {
                 ) {
                     error!("Error updating TUI during simulation: {e}")
                 };
-                if let Err(e) = tui
-                    .draw(
-                        &mut self.ui,
-                        &self.world,
-                        #[cfg(feature = "audio")]
-                        self.audio_player.as_ref(),
-                    )
-                    .await
-                {
-                    error!("Error drawing TUI during simulation: {e}")
-                };
+                self.draw(tui).await;
             }
 
             let mut cb = match self
                 .world
-                .handle_tick_events(self.world.last_tick_short_interval + TickInterval::SHORT)
+                .handle_slow_tick_events(self.world.last_tick_short_interval + TickInterval::SHORT)
             {
                 Ok(callbacks) => callbacks,
                 Err(e) => panic!("Failed to simulate world: {}", e),
@@ -184,6 +181,7 @@ impl App {
             home_planet_id,
             "own team".into(),
             "ship_name".into(),
+            None,
         )?;
 
         Ok(app)
@@ -213,6 +211,7 @@ impl App {
             home_planet_id,
             "own team".into(),
             "ship_name".into(),
+            None,
         )?;
 
         {
@@ -274,6 +273,12 @@ impl App {
             network_handler,
             store_prefix: store_prefix.to_string(),
             new_version_notified: false,
+            cancellation_token: CancellationToken::new(),
+            app_version: [
+                env!("CARGO_PKG_VERSION_MAJOR").parse()?,
+                env!("CARGO_PKG_VERSION_MINOR").parse()?,
+                env!("CARGO_PKG_VERSION_PATCH").parse()?,
+            ],
         })
     }
 
@@ -282,18 +287,16 @@ impl App {
         mut tui: Tui<W>,
         network_port: Option<u16>,
     ) -> AppResult<()> {
-        let cancellation_token = CancellationToken::new();
-
         crossterm_event_handler::start_event_handler(
             self.get_event_sender(),
-            cancellation_token.clone(),
+            self.cancellation_token.clone(),
         );
 
         let mut network_started = false;
 
         tick_event_handler::start_tick_event_loop(
             self.get_event_sender(),
-            cancellation_token.clone(),
+            self.cancellation_token.clone(),
         );
 
         while self.state != AppState::Quitting {
@@ -303,11 +306,11 @@ impl App {
                 info!("...Done");
             }
 
-            if !network_started {
+            if !network_started && self.world.has_own_team() {
                 if let Some(tcp_port) = network_port {
                     self.network_handler.start_polling_events(
                         self.get_event_sender(),
-                        cancellation_token.clone(),
+                        self.cancellation_token.clone(),
                         tcp_port,
                     );
                 }
@@ -316,27 +319,33 @@ impl App {
 
             if let Some(app_event) = self.event_receiver.recv().await {
                 match app_event {
-                    AppEvent::Tick(tick) => {
-                        if self.handle_tick_events(tick)? {
+                    AppEvent::SlowTick(tick) => {
+                        self.handle_slow_tick_events(tick);
+                        self.draw(&mut tui).await;
+                    }
+                    AppEvent::FastTick(tick) => {
+                        if self.should_draw_fast_tick_events(tick) {
                             self.draw(&mut tui).await
                         }
                     }
 
-                    AppEvent::TerminalEvent(terminal_event) => {
-                        match terminal_event {
-                            TerminalEvent::Key(key_event) => {
-                                self.handle_key_events(key_event)?;
+                    AppEvent::TerminalEvent(terminal_event) => match terminal_event {
+                        TerminalEvent::Key(key_event) => {
+                            if self.should_draw_key_events(key_event)? {
+                                self.draw(&mut tui).await;
                             }
-                            TerminalEvent::Mouse(mouse_event) => {
-                                self.handle_mouse_events(mouse_event)?;
-                            }
-                            TerminalEvent::Resize(w, h) => {
-                                tui.resize((w, h))?;
-                            }
-                            TerminalEvent::Quit => self.quit()?,
                         }
-                        self.draw(&mut tui).await;
-                    }
+                        TerminalEvent::Mouse(mouse_event) => {
+                            if self.should_draw_mouse_events(mouse_event)? {
+                                self.draw(&mut tui).await;
+                            }
+                        }
+                        TerminalEvent::Resize(w, h) => {
+                            tui.resize((w, h))?;
+                            self.draw(&mut tui).await;
+                        }
+                        TerminalEvent::Quit => self.quit()?,
+                    },
 
                     AppEvent::NetworkEvent(swarm_event) => {
                         self.handle_network_events(swarm_event)?;
@@ -349,9 +358,34 @@ impl App {
                 }
             }
         }
-        cancellation_token.cancel();
+        self.cancellation_token.cancel();
         info!("Game loop closed");
         tui.exit().await?;
+        Ok(())
+    }
+
+    pub fn notify_seed_version(&mut self, seed_version: [usize; 3]) -> AppResult<()> {
+        if !self.new_version_notified {
+            let [own_version_major, own_version_minor, own_version_patch] = self.app_version;
+            let [version_major, version_minor, version_patch] = seed_version;
+            if version_major > own_version_major
+                || (version_major == own_version_major && version_minor > own_version_minor)
+                || (version_major == own_version_major
+                    && version_minor == own_version_minor
+                    && version_patch > own_version_patch)
+            {
+                let message = format!(
+                    "New version {}.{}.{} available. Download at https://rebels.frittura.org",
+                    version_major, version_minor, version_patch,
+                );
+                self.ui.push_popup(PopupMessage::Ok {
+                    message,
+                    is_skippable: false,
+                    tick: Tick::now(),
+                });
+                self.new_version_notified = true;
+            }
+        }
         Ok(())
     }
 
@@ -414,12 +448,9 @@ impl App {
         };
     }
 
-    fn handle_tick_events(&mut self, current_tick: Tick) -> AppResult<bool> {
-        // If there was a callback, or ui was updated --> draw.
-        let mut should_draw = false;
-
+    fn should_draw_fast_tick_events(&mut self, current_tick: Tick) -> bool {
         if self.world.has_own_team() {
-            match self.world.handle_tick_events(current_tick) {
+            match self.world.handle_fast_tick_events(current_tick) {
                 Ok(callbacks) => {
                     for callback in callbacks.iter() {
                         match callback.call(self) {
@@ -439,7 +470,45 @@ impl App {
                             }
                         }
                     }
-                    should_draw = true;
+                    if callbacks.len() > 0 {
+                        return true;
+                    }
+                }
+                Err(e) => {
+                    self.ui.push_popup(PopupMessage::Error {
+                        message: format!("Tick error\n{}", e.to_string()),
+                        tick: Tick::now(),
+                    });
+                }
+            }
+        }
+
+        false
+    }
+
+    fn handle_slow_tick_events(&mut self, current_tick: Tick) {
+        // If there was a callback, or ui was updated --> draw.
+        if self.world.has_own_team() {
+            match self.world.handle_slow_tick_events(current_tick) {
+                Ok(callbacks) => {
+                    for callback in callbacks.iter() {
+                        match callback.call(self) {
+                            Ok(Some(message)) => {
+                                self.ui.push_popup(PopupMessage::Ok {
+                                    message,
+                                    is_skippable: true,
+                                    tick: Tick::now(),
+                                });
+                            }
+                            Ok(None) => {}
+                            Err(e) => {
+                                self.ui.push_popup(PopupMessage::Error {
+                                    message: e.to_string(),
+                                    tick: Tick::now(),
+                                });
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
                     self.ui.push_popup(PopupMessage::Error {
@@ -455,7 +524,7 @@ impl App {
             #[cfg(feature = "audio")]
             self.audio_player.as_ref(),
         ) {
-            Ok(_) => should_draw = true,
+            Ok(_) => {}
             Err(e) => {
                 // We push to Logs rather than Error popup since otherwise it would spam too much
                 self.ui.push_log_event(
@@ -468,7 +537,7 @@ impl App {
         self.world.dirty_ui = false;
 
         if !self.world.has_own_team() {
-            return Ok(should_draw);
+            return;
         }
 
         if self.world.dirty {
@@ -500,11 +569,10 @@ impl App {
                     .push_log_event(Tick::now(), None, format!("Failed to dial seed: {}", e));
             }
         }
-
-        Ok(should_draw)
     }
 
-    fn handle_key_events(&mut self, key_event: crossterm::event::KeyEvent) -> AppResult<()> {
+    fn should_draw_key_events(&mut self, key_event: crossterm::event::KeyEvent) -> AppResult<bool> {
+        let mut should_draw = false;
         match key_event.code {
             // Exit application directly on `Ctrl-C`. `Esc` asks for confirmation first.
             KeyCode::Char('c') | KeyCode::Char('C')
@@ -530,13 +598,22 @@ impl App {
                             });
                         }
                     }
+
+                    // Don't redraw during space adventure to keep consistent fps.
+                    if self.world.space_adventure.is_none() {
+                        should_draw = true;
+                    }
                 }
             }
         }
-        Ok(())
+        Ok(should_draw)
     }
 
-    fn handle_mouse_events(&mut self, mouse_event: crossterm::event::MouseEvent) -> AppResult<()> {
+    fn should_draw_mouse_events(
+        &mut self,
+        mouse_event: crossterm::event::MouseEvent,
+    ) -> AppResult<bool> {
+        let mut should_draw = false;
         if let Some(callback) = self.ui.handle_mouse_events(mouse_event) {
             match callback.call(self) {
                 Ok(Some(message)) => {
@@ -554,8 +631,9 @@ impl App {
                     });
                 }
             }
+            should_draw = true;
         }
-        Ok(())
+        Ok(should_draw)
     }
 
     fn handle_network_events(
@@ -589,5 +667,11 @@ impl App {
             audio_player.handle_streaming_ready(data)?;
         }
         Ok(())
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        self.cancellation_token.cancel();
     }
 }

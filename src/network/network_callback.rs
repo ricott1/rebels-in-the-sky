@@ -205,31 +205,8 @@ impl NetworkCallback {
                 });
             }
 
-            let own_version_major = env!("CARGO_PKG_VERSION_MAJOR").parse()?;
-            let own_version_minor = env!("CARGO_PKG_VERSION_MINOR").parse()?;
-            let own_version_patch = env!("CARGO_PKG_VERSION_PATCH").parse()?;
-
             // Notify about new version (only once).
-            if app.new_version_notified == false {
-                if seed_info.version_major > own_version_major
-                    || (seed_info.version_major == own_version_major
-                        && seed_info.version_minor > own_version_minor)
-                    || (seed_info.version_major == own_version_major
-                        && seed_info.version_minor == own_version_minor
-                        && seed_info.version_patch > own_version_patch)
-                {
-                    let message = format!(
-                        "New version {}.{}.{} available. Download at https://rebels.frittura.org",
-                        seed_info.version_major, seed_info.version_minor, seed_info.version_patch,
-                    );
-                    app.ui.push_popup(PopupMessage::Ok {
-                        message,
-                        is_skippable: false,
-                        tick: timestamp,
-                    });
-                    app.new_version_notified = true;
-                }
-            }
+            app.notify_seed_version(seed_info.version)?;
 
             app.ui
                 .swarm_panel
@@ -476,6 +453,20 @@ impl NetworkCallback {
                         return Err(anyhow!("Team is not challenge receiver"));
                     }
 
+                    let [own_major_version, own_minor_version, own_patch_version] =
+                        app.app_version();
+                    let [challenge_major_version, challenge_minor_version, challenge_patch_version] =
+                        challenge.app_version;
+                    if challenge_major_version != own_major_version
+                        || challenge_minor_version != own_minor_version
+                    {
+                        return Err(anyhow!(
+                            "App versions do not match: Proposer version {}.{}.{} - Target version {}.{}.{}",
+                            challenge_major_version, challenge_minor_version, challenge_patch_version,
+                            own_major_version, own_minor_version,own_patch_version
+                        ));
+                    }
+
                     let own_team = app.world.get_own_team()?;
                     let average_tiredness = own_team.average_tiredness(&app.world);
 
@@ -509,6 +500,21 @@ impl NetworkCallback {
                     if challenge.proposer_peer_id != *self_peer_id {
                         return Err(anyhow!("Invalid challenge: team is not challenge sender"));
                     }
+
+                    let [own_major_version, own_minor_version, own_patch_version] =
+                        app.app_version();
+                    let [challenge_major_version, challenge_minor_version, challenge_patch_version] =
+                        challenge.app_version;
+                    if challenge_major_version != own_major_version
+                        || challenge_minor_version != own_minor_version
+                    {
+                        return Err(anyhow!(
+                            "App versions do not match: Proposer version {}.{}.{} - Target version {}.{}.{}",
+                            challenge_major_version, challenge_minor_version, challenge_patch_version,
+                            own_major_version, own_minor_version,own_patch_version
+                        ));
+                    }
+
                     let mut handle_syn_ack = || -> AppResult<()> {
                         let mut home_team_in_game = TeamInGame::from_team_id(
                             &app.world.own_team_id,

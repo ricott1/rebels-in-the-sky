@@ -330,29 +330,29 @@ fn execute_shot(
         .collect::<Vec<&Player>>();
 
     let atk_skill = match shot {
-        ShotDifficulty::Close => shooter.offense.close_range.value(),
-        ShotDifficulty::Medium => shooter.offense.medium_range.value(),
-        ShotDifficulty::Long => shooter.offense.long_range.value(),
+        ShotDifficulty::Close => shooter.offense.close_range.game_value(),
+        ShotDifficulty::Medium => shooter.offense.medium_range.game_value(),
+        ShotDifficulty::Long => shooter.offense.long_range.game_value(),
     };
     let def_skill = defenders
         .iter()
         .map(|&p| {
-            p.roll(rng) / defenders.len() as u8
+            p.roll(rng) / defenders.len() as u16
                 + if p.is_knocked_out() {
                     0
                 } else {
-                    p.defense.block.value()
+                    p.defense.block.game_value()
                 }
         })
-        .sum::<u8>();
+        .sum::<u16>();
 
     let roll = match input.advantage {
         Advantage::Attack => (shooter.roll(rng) + atk_skill) as i16 - (shot as u8) as i16,
         Advantage::Neutral => {
-            (shooter.roll(rng) + atk_skill) as i16 - (shot as u8 + def_skill / 2) as i16
+            (shooter.roll(rng) + atk_skill) as i16 - (shot as u16 + def_skill / 2) as i16
         }
         Advantage::Defense => {
-            (shooter.roll(rng) + atk_skill) as i16 - (shot as u8 + def_skill) as i16
+            (shooter.roll(rng) + atk_skill) as i16 - (shot as u16 + def_skill) as i16
         }
     };
 
@@ -381,7 +381,7 @@ fn execute_shot(
                     success,
                 )?,
                 start_at: input.end_at,
-                end_at: input.end_at.plus(rng.random_range(1..=2)),
+                end_at: input.end_at.plus(1 + rng.random_range(0..=2)),
                 home_score: input.home_score,
                 away_score: input.away_score,
                 ..Default::default()
@@ -420,7 +420,7 @@ fn execute_shot(
                     success,
                 )?,
                 start_at: input.end_at,
-                end_at: input.end_at.plus(10 + rng.random_range(0..=8)),
+                end_at: input.end_at.plus(12 + rng.random_range(0..=6)),
                 ..Default::default()
             }
         }

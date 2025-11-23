@@ -1,19 +1,22 @@
 use crate::world::constants::TirednessCost;
 
-pub const ADV_ATTACK_LIMIT: i16 = 16;
-pub const ADV_NEUTRAL_LIMIT: i16 = 0;
-pub const ADV_DEFENSE_LIMIT: i16 = -20;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ShotDifficulty {
-    Close = 15,
-    Medium = 22,
-    Long = 28,
-}
-
-pub const RECOVERING_TIREDNESS_PER_SHORT_TICK: f32 = TirednessCost::LOW;
-pub const MIN_TIREDNESS_FOR_ROLL_DECLINE: f32 = 10.0;
-pub const MIN_TIREDNESS_FOR_SUB: f32 = MIN_TIREDNESS_FOR_ROLL_DECLINE;
+pub(crate) const RECOVERING_TIREDNESS_PER_SHORT_TICK: f32 = TirednessCost::LOW;
+pub(crate) const MIN_TIREDNESS_FOR_ROLL_DECLINE: f32 = 10.0;
+pub(crate) const MIN_TIREDNESS_FOR_SUB: f32 = MIN_TIREDNESS_FOR_ROLL_DECLINE;
 
 pub const BASE_ATTENDANCE: u32 = 60;
-pub const BRAWL_ACTION_PROBABILITY: f32 = 0.06;
+pub(crate) const BRAWL_ACTION_PROBABILITY: f32 = 0.06;
+
+pub(crate) const NUMBER_OF_ROLLS: u16 = 9;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ShotDifficulty {
+    Close = 6 * (NUMBER_OF_ROLLS as isize - 1),
+    Medium = 6 + 7 * (NUMBER_OF_ROLLS as isize - 1),
+    Long = 15 + 8 * (NUMBER_OF_ROLLS as isize - 1),
+}
+
+// FIXME: these limits should diverge away from zero uniformly
+pub(crate) const ADV_ATTACK_LIMIT: i16 = 6 * (NUMBER_OF_ROLLS as i16 - 1);
+pub(crate) const ADV_NEUTRAL_LIMIT: i16 = 0;
+pub(crate) const ADV_DEFENSE_LIMIT: i16 = -6 * (NUMBER_OF_ROLLS as i16 - 1);

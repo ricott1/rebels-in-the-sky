@@ -262,6 +262,11 @@ impl Team {
         (tiredness_iter.sum::<f32>() / n as f32).bound()
     }
 
+    pub fn is_on_player_planet(&self, player: &Player) -> bool {
+        // Player must be on same planet as team current_location
+        self.is_on_planet() == player.is_on_planet()
+    }
+
     pub fn can_add_player(&self, player: &Player) -> AppResult<()> {
         if player.team.is_some() {
             return Err(anyhow!("Already in a team"));
@@ -295,9 +300,8 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_hire_player(&self, player: &Player) -> AppResult<()> {
-        self.can_add_player(player)?;
-
+    // This function is necessary for local teams to consider hiring a player (even if the crew is full).
+    pub fn can_consider_hiring_player(&self, player: &Player) -> AppResult<()> {
         let hiring_cost = player.hire_cost(self.reputation);
         if self.balance() < hiring_cost {
             return Err(anyhow!("Not enough money {}", hiring_cost));
@@ -307,6 +311,13 @@ impl Team {
         if player.info.relative_age() >= 1.0 {
             return Err(anyhow!("Player is too old"));
         }
+
+        Ok(())
+    }
+
+    pub fn can_hire_player(&self, player: &Player) -> AppResult<()> {
+        self.can_add_player(player)?;
+        self.can_consider_hiring_player(player)?;
 
         Ok(())
     }

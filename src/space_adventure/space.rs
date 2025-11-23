@@ -490,7 +490,7 @@ impl SpaceAdventure {
                         let asteroid = AsteroidEntity::planet();
                         let id = self.insert_entity(Box::new(asteroid));
                         self.asteroid_planet_state = AsteroidPlanetState::Spawned {
-                            image_number: id % MAX_ASTEROID_PLANET_IMAGE_TYPE,
+                            image_number: id % MAX_ASTEROID_PLANET_IMAGE_NUMBER,
                         };
                         ui_callbacks.push(UiCallback::PushUiPopup { popup_message:
                             PopupMessage::Ok {

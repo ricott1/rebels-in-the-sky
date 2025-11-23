@@ -126,7 +126,6 @@ impl GamePanel {
                 {
                     style = UiStyle::OWN_TEAM
                 } else {
-                    
                     {
                         if game.home_team_in_game.peer_id.is_some()
                             || game.away_team_in_game.peer_id.is_some()

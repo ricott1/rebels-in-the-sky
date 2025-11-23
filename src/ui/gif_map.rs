@@ -26,20 +26,24 @@ const MAX_GIF_HEIGHT: u32 = 140;
 pub const FRAMES_PER_REVOLUTION: usize = 360;
 
 pub static SPINNING_BALL_GIF: Lazy<GifLines> = Lazy::new(|| {
+    const X_BLIT: u32 = MAX_GIF_WIDTH / 2 + 30;
+    const Y_BLIT: u32 = MAX_GIF_HEIGHT / 2 + 20;
     Gif::open("game/spinning_ball.gif".to_string())
         .expect("Left shot gif should open")
         .iter()
         .map(|img: &RgbaImage| {
             let base = &mut UNIVERSE_BACKGROUND.clone();
             // FIXME: Hardcoded from assets file, should be taken from Sol planet.
-            let x_blit = MAX_GIF_WIDTH / 2 + 30;
-            let y_blit = MAX_GIF_HEIGHT / 2 + 20;
+            base.copy_non_trasparent_from(&mut img.clone(), X_BLIT, Y_BLIT)
+                .expect(
+                    format!(
+                        "Could not copy_non_trasparent_from at {} {}",
+                        X_BLIT, Y_BLIT,
+                    )
+                    .as_str(),
+                );
 
-            // Blit img on base
-            base.copy_non_trasparent_from(&mut img.clone(), x_blit, y_blit)
-                .unwrap();
-
-            let center = (x_blit + img.width() / 2, y_blit + img.height() / 2);
+            let center = (X_BLIT + img.width() / 2, Y_BLIT + img.height() / 2);
             base.view(
                 center.0 - MAX_GIF_WIDTH / 2,
                 center.1 - MAX_GIF_HEIGHT / 2,
@@ -132,15 +136,17 @@ impl GifMap {
     }
 
     pub fn player_frame_lines(&mut self, player: &Player, tick: usize) -> AppResult<ImageLines> {
+        const TICKS_PER_FRAME: usize = 5;
+
         if let Some((version, lines)) = self.players_lines.get(&player.id) {
             if player.version == *version {
-                return Ok(lines[(tick / 8) % lines.len()].clone());
+                return Ok(lines[(tick / TICKS_PER_FRAME) % lines.len()].clone());
             }
         }
 
         let gif = self.player(player)?;
         let lines = gif.to_lines();
-        let frame = lines[(tick / 8) % lines.len()].clone();
+        let frame = lines[(tick / TICKS_PER_FRAME) % lines.len()].clone();
         self.players_lines
             .insert(player.id, (player.version, lines));
         Ok(frame)

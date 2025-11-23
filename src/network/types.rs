@@ -192,9 +192,7 @@ impl PlayerRanking {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SeedInfo {
     pub connected_peers_count: usize,
-    pub version_major: usize,
-    pub version_minor: usize,
-    pub version_patch: usize,
+    pub version: [usize; 3],
     pub message: Option<String>,
     pub team_ranking: Vec<(TeamId, TeamRanking)>,
     pub player_ranking: Vec<(PlayerId, PlayerRanking)>,
@@ -209,9 +207,11 @@ impl SeedInfo {
     ) -> AppResult<Self> {
         Ok(Self {
             connected_peers_count,
-            version_major: env!("CARGO_PKG_VERSION_MAJOR").parse()?,
-            version_minor: env!("CARGO_PKG_VERSION_MINOR").parse()?,
-            version_patch: env!("CARGO_PKG_VERSION_PATCH").parse()?,
+            version: [
+                env!("CARGO_PKG_VERSION_MAJOR").parse()?,
+                env!("CARGO_PKG_VERSION_MINOR").parse()?,
+                env!("CARGO_PKG_VERSION_PATCH").parse()?,
+            ],
             message,
             team_ranking,
             player_ranking,

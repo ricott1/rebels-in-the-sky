@@ -323,6 +323,7 @@ impl NetworkHandler {
         world: &World,
         peer_id: PeerId,
         team_id: TeamId,
+        app_version: [usize; 3],
     ) -> AppResult<Challenge> {
         self.send_own_team(world)?;
         let mut home_team_in_game =
@@ -338,6 +339,7 @@ impl NetworkHandler {
             peer_id,
             home_team_in_game,
             away_team_in_game,
+            app_version,
         );
 
         self.send_challenge(challenge.clone())?;
@@ -685,7 +687,7 @@ mod tests {
         let home_planet = world.planets.keys().next().unwrap().clone();
         let team_name = "Testen".to_string();
         let ship_name = "Tosten".to_string();
-        let own_team_id = world.generate_random_team(rng, home_planet, team_name, ship_name);
+        let own_team_id = world.generate_random_team(rng, home_planet, team_name, ship_name, None);
         let network_team =
             NetworkTeam::from_team_id(&world, &own_team_id.unwrap(), PeerId::random()).unwrap();
 

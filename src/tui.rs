@@ -2,6 +2,7 @@
 use crate::audio;
 #[cfg(feature = "ssh")]
 use crate::ssh::SSHWriterProxy;
+use crate::tick_event_handler::FAST_TICK_FPS;
 use crate::types::AppResult;
 use crate::ui::ui::Ui;
 use crate::ui::UI_SCREEN_SIZE;
@@ -18,6 +19,7 @@ use ratatui::TerminalOptions;
 use ratatui::Viewport;
 use std::io::{self};
 use std::panic;
+use std::time::{Duration, Instant};
 
 pub trait WriterProxy: io::Write + std::fmt::Debug {
     fn send(&mut self) -> impl std::future::Future<Output = std::io::Result<usize>> + Send {
@@ -52,6 +54,7 @@ pub enum TerminalEvent {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum TuiType {
     Local,
+    #[cfg(feature = "ssh")]
     SSH,
     Dummy,
 }
@@ -63,15 +66,20 @@ where
 {
     tui_type: TuiType,
     terminal: Terminal<CrosstermBackend<W>>,
+    last_draw: Instant,
+    min_duration_between_draws: Duration,
 }
 
 impl Tui<io::Stdout> {
     pub fn new_local() -> AppResult<Self> {
         let backend = CrosstermBackend::new(io::stdout());
         let terminal = Terminal::new(backend)?;
+        const MAX_FPS: f32 = FAST_TICK_FPS as f32;
         let mut tui = Self {
             tui_type: TuiType::Local,
             terminal,
+            last_draw: Instant::now(),
+            min_duration_between_draws: Duration::from_secs_f32(1.0 / MAX_FPS),
         };
         tui.init()?;
         Ok(tui)
@@ -92,9 +100,12 @@ impl Tui<SSHWriterProxy> {
         };
 
         let terminal = Terminal::with_options(backend, opts)?;
+        const MAX_FPS: f32 = FAST_TICK_FPS as f32 / 2.0;
         let mut tui = Self {
             tui_type: TuiType::SSH,
             terminal,
+            last_draw: Instant::now(),
+            min_duration_between_draws: Duration::from_secs_f32(1.0 / MAX_FPS),
         };
 
         tui.init()?;
@@ -119,6 +130,8 @@ impl Tui<DummyWriter> {
         let mut tui = Self {
             tui_type: TuiType::Dummy,
             terminal,
+            last_draw: Instant::now(),
+            min_duration_between_draws: Duration::default(),
         };
 
         tui.init()?;
@@ -180,17 +193,21 @@ where
             return Ok(());
         }
 
-        self.terminal.draw(|frame| {
-            ui.render(
-                frame,
-                world,
-                #[cfg(feature = "audio")]
-                audio_player,
-            )
-        })?;
+        // Draw at most at MAX_FPS
+        if self.last_draw.elapsed() > self.min_duration_between_draws {
+            self.terminal.draw(|frame| {
+                ui.render(
+                    frame,
+                    world,
+                    #[cfg(feature = "audio")]
+                    audio_player,
+                )
+            })?;
 
-        if self.tui_type == TuiType::SSH {
-            self.terminal.backend_mut().writer_mut().send().await?;
+            #[cfg(feature = "ssh")]
+            if self.tui_type == TuiType::SSH {
+                self.terminal.backend_mut().writer_mut().send().await?;
+            }
         }
 
         Ok(())
@@ -219,6 +236,7 @@ where
             terminal::disable_raw_mode()?;
         }
 
+        #[cfg(feature = "ssh")]
         if self.tui_type == TuiType::SSH {
             self.terminal.backend_mut().writer_mut().send().await?;
         }

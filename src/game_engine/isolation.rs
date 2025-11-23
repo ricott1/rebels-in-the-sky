@@ -40,7 +40,7 @@ impl EngineAction for Isolation {
                     "Oh no! The whole team is wasted! {name} just turned the ball over like that.",
                 ),
                 start_at: input.end_at,
-                end_at: input.end_at.plus(4),
+                end_at: input.end_at.plus(4 + rng.random_range(0..=3)),
                 home_score: input.home_score,
                 away_score: input.away_score,
                 ..Default::default()
@@ -62,15 +62,16 @@ impl EngineAction for Isolation {
         let mut defender_update = GameStats::default();
         defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
-        let atk_result =
-            iso.roll(rng) + iso.technical.ball_handling.value() + iso.athletics.quickness.value();
+        let atk_result = iso.roll(rng)
+            + iso.technical.ball_handling.game_value()
+            + iso.athletics.quickness.game_value();
 
         let def_result = defender.roll(rng)
-            + defender.defense.perimeter_defense.value()
-            + defender.athletics.quickness.value();
+            + defender.defense.perimeter_defense.game_value()
+            + defender.athletics.quickness.game_value();
 
         let mut result = match atk_result as i16 - def_result as i16 + Self::tactic_modifier(game, &Action::Isolation) {
-            x if x > ADV_ATTACK_LIMIT => ActionOutput {
+            x if x >= ADV_ATTACK_LIMIT => ActionOutput {
                 possession: input.possession,
                 advantage: Advantage::Attack,
                 attackers: vec![iso_idx],
@@ -313,7 +314,7 @@ impl EngineAction for Isolation {
                         ),
                     ].choose(rng).expect("There should be one option").clone(),
                     start_at: input.end_at,
-                    end_at: input.end_at.plus(2),
+                    end_at: input.end_at.plus(3),
                     home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()
