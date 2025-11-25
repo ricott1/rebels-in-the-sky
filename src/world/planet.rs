@@ -190,14 +190,14 @@ impl Planet {
     }
 
     pub fn total_population(&self) -> u32 {
-        self.populations.iter().map(|(_, p)| p).sum()
+        self.populations.values().sum()
     }
 
     pub fn random_population(&self, rng: &mut ChaCha8Rng) -> Option<Population> {
         let weights = self
             .populations
             .iter()
-            .map(|(pop, n)| (pop.clone(), n.clone()))
+            .map(|(pop, n)| (*pop, *n))
             .collect::<Vec<(Population, u32)>>();
 
         let dist = WeightedIndex::new(weights.iter().map(|(_, w)| w)).ok()?;
@@ -206,7 +206,7 @@ impl Planet {
 
     pub fn asteroid(name: String, filename: String, satellite_of: PlanetId) -> Self {
         let rng = &mut ChaCha8Rng::from_os_rng();
-        let revolution_period: usize = vec![120, 180, 360]
+        let revolution_period: usize = [120, 180, 360]
             .choose(rng)
             .copied()
             .expect("Should select a random value");

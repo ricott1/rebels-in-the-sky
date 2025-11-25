@@ -672,11 +672,8 @@ impl SpaceshipComponent for Storage {
         if self.next().cost() < self.cost() {
             return vec![];
         }
-        match self {
-            Storage::JesterNone => {
-                return vec![(Resource::SATOSHI, 30_000), (Resource::RUM, 50)];
-            }
-            _ => {}
+        if self == &Storage::JesterNone {
+            return vec![(Resource::SATOSHI, 30_000), (Resource::RUM, 50)];
         }
 
         let scraps_cost = (self.next().cost() - self.cost()) / 30;

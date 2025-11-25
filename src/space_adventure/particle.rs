@@ -35,7 +35,7 @@ impl Body for ParticleEntity {
 
     fn update_body(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
         self.previous_position = self.position;
-        self.position = self.position + self.velocity * deltatime;
+        self.position += self.velocity * deltatime;
 
         if self.position.x < 0.0 || self.position.x > SCREEN_SIZE.x as f32 {
             return vec![SpaceCallback::DestroyEntity { id: self.id() }];
@@ -44,18 +44,15 @@ impl Body for ParticleEntity {
             return vec![SpaceCallback::DestroyEntity { id: self.id() }];
         }
 
-        match self.state {
-            EntityState::Decaying { lifetime } => {
-                let new_lifetime = lifetime - deltatime;
-                if new_lifetime > 0.0 {
-                    self.state = EntityState::Decaying {
-                        lifetime: new_lifetime,
-                    };
-                } else {
-                    return vec![SpaceCallback::DestroyEntity { id: self.id() }];
-                }
+        if let EntityState::Decaying { lifetime } = self.state {
+            let new_lifetime = lifetime - deltatime;
+            if new_lifetime > 0.0 {
+                self.state = EntityState::Decaying {
+                    lifetime: new_lifetime,
+                };
+            } else {
+                return vec![SpaceCallback::DestroyEntity { id: self.id() }];
             }
-            _ => {}
         }
 
         vec![]

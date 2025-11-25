@@ -16,7 +16,12 @@ use std::collections::HashMap;
 pub struct Isolation;
 
 impl EngineAction for Isolation {
-    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
+    fn execute(
+        input: &ActionOutput,
+        game: &Game,
+        action_rng: &mut ChaCha8Rng,
+        description_rng: &mut ChaCha8Rng,
+    ) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
 
@@ -40,19 +45,19 @@ impl EngineAction for Isolation {
                     "Oh no! The whole team is wasted! {name} just turned the ball over like that.",
                 ),
                 start_at: input.end_at,
-                end_at: input.end_at.plus(4 + rng.random_range(0..=3)),
+                end_at: input.end_at.plus(4 + action_rng.random_range(0..=3)),
                 home_score: input.home_score,
                 away_score: input.away_score,
                 ..Default::default()
             });
         }
 
-        let iso_idx = Self::sample(rng, weights)?;
+        let iso_idx = Self::sample(action_rng, weights)?;
 
         let iso = attacking_players[iso_idx];
         let defender = defending_players[iso_idx];
 
-        let timer_increase = 2 + rng.random_range(0..=3);
+        let timer_increase = 2 + action_rng.random_range(0..=3);
 
         let mut attack_stats_update = HashMap::new();
         let mut iso_update = GameStats::default();
@@ -62,11 +67,11 @@ impl EngineAction for Isolation {
         let mut defender_update = GameStats::default();
         defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
-        let atk_result = iso.roll(rng)
+        let atk_result = iso.roll(action_rng)
             + iso.technical.ball_handling.game_value()
             + iso.athletics.quickness.game_value();
 
-        let def_result = defender.roll(rng)
+        let def_result = defender.roll(action_rng)
             + defender.defense.perimeter_defense.game_value()
             + defender.athletics.quickness.game_value();
 
@@ -130,7 +135,7 @@ impl EngineAction for Isolation {
                         iso.info.short_name(),
                         defender.info.short_name()
                     ),
-                ].choose(rng).expect("There should be one option").clone(),
+                ].choose(description_rng).expect("There should be one option").clone(),
                 start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),
                 home_score: input.home_score,
@@ -184,7 +189,7 @@ impl EngineAction for Isolation {
                         iso.info.short_name(),
                         defender.info.short_name()
                     ),
-                ].choose(rng).expect("There should be one option").clone(),
+                ].choose(description_rng).expect("There should be one option").clone(),
                 start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),
                 home_score: input.home_score,
@@ -242,7 +247,7 @@ impl EngineAction for Isolation {
                         defender.info.short_name(),
                         defender.info.short_name()
                     ),
-                ].choose(rng).expect("There should be one option").clone(),
+                ].choose(description_rng).expect("There should be one option").clone(),
                 start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),
                 home_score: input.home_score,
@@ -312,7 +317,7 @@ impl EngineAction for Isolation {
                             defender.info.short_name(),
                             defender.info.short_name()
                         ),
-                    ].choose(rng).expect("There should be one option").clone(),
+                    ].choose(description_rng).expect("There should be one option").clone(),
                     start_at: input.end_at,
                     end_at: input.end_at.plus(3),
                     home_score: input.home_score,

@@ -18,19 +18,24 @@ use std::collections::HashMap;
 pub struct Post;
 
 impl EngineAction for Post {
-    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
+    fn execute(
+        input: &ActionOutput,
+        game: &Game,
+        action_rng: &mut ChaCha8Rng,
+        description_rng: &mut ChaCha8Rng,
+    ) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
 
         let post_idx = match input.attackers.len() {
-            0 => Self::sample(rng, [0, 0, 1, 2, 3])?,
+            0 => Self::sample(action_rng, [0, 0, 1, 2, 3])?,
             _ => input.attackers[0],
         };
 
         let poster = attacking_players[post_idx];
         let defender = defending_players[post_idx];
 
-        let timer_increase = 5 + rng.random_range(0..=5);
+        let timer_increase = 5 + action_rng.random_range(0..=5);
 
         let mut attack_stats_update = HashMap::new();
         let mut post_update = GameStats::default();
@@ -40,11 +45,11 @@ impl EngineAction for Post {
         let mut defender_update = GameStats::default();
         defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
-        let atk_result = poster.roll(rng)
+        let atk_result = poster.roll(action_rng)
             + poster.technical.post_moves.game_value()
             + poster.athletics.strength.game_value();
 
-        let def_result = defender.roll(rng)
+        let def_result = defender.roll(action_rng)
             + defender.defense.interior_defense.game_value()
             + defender.athletics.strength.game_value();
 
@@ -84,7 +89,7 @@ impl EngineAction for Post {
                         defender.info.short_name()
                     ),
                 ]
-                .choose(rng)
+                .choose(description_rng)
                 .expect("There should be one option")
                 .clone(),
                 start_at: input.end_at,
@@ -126,7 +131,7 @@ impl EngineAction for Post {
                         defender.info.short_name(),
                     ),
                 ]
-                .choose(rng)
+                .choose(description_rng)
                 .expect("There should be one option")
                 .clone(),
                 start_at: input.end_at,
@@ -139,7 +144,7 @@ impl EngineAction for Post {
                 if poster.mental.vision as i16 + x > ADV_NEUTRAL_LIMIT {
                     let mut weights = [3, 3, 2, 2, 1];
                     weights[post_idx] = 0;
-                    let target_idx = WeightedIndex::new(&weights).ok()?.sample(rng);
+                    let target_idx = WeightedIndex::new(weights).ok()?.sample(action_rng);
                     let target: &Player = attacking_players[target_idx];
                     ActionOutput {
                         possession: input.possession,
@@ -168,7 +173,7 @@ impl EngineAction for Post {
                                 "{} can't find an opening against {}'s defense, so the ball is passed out to {} to reset.",
                                 poster.info.short_name(), defender.info.short_name(), target.info.short_name()
                             ),
-                        ].choose(rng)
+                        ].choose(description_rng)
                         .expect("There should be one option")
                         .clone(),
                         start_at: input.end_at,
@@ -205,7 +210,7 @@ impl EngineAction for Post {
                                 "{} makes an attempt in the post against {} but is completely shut down, forcing a bad shot.",
                                 poster.info.short_name(), defender.info.short_name()
                             ),
-                        ].choose(rng)
+                        ].choose(description_rng)
                         .expect("There should be one option")
                         .clone(),
                         start_at: input.end_at,
@@ -228,11 +233,22 @@ impl EngineAction for Post {
                 }
 
                 let description = if with_steal {
-                    format!(
-                        "{} steals the ball from {} on the post.",
-                        defender.info.short_name(),
-                        poster.info.short_name(),
-                    )
+                    [
+                        format!(
+                            "{} steals the ball from {} on the post.",
+                            defender.info.short_name(),
+                            poster.info.short_name(),
+                        ),
+                        format!(
+                            "{} stops {} on the post and snaps the ball from {} hands.",
+                            defender.info.short_name(),
+                            poster.info.short_name(),
+                            poster.info.pronouns.as_possessive()
+                        ),
+                    ]
+                    .choose(description_rng)
+                    .expect("There should be one option")
+                    .clone()
                 } else {
                     format!(
                         "{}'s good defense is too much for {}, who fumbles the ball.",
@@ -246,7 +262,7 @@ impl EngineAction for Post {
                     possession: !input.possession,
                     description,
                     start_at: input.end_at,
-                    end_at: input.end_at.plus(3),
+                    end_at: input.end_at.plus(5 + action_rng.random_range(0..=6)),
                     home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()

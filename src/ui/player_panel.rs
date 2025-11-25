@@ -31,9 +31,8 @@ use ratatui::{
     prelude::Rect,
     widgets::Paragraph,
 };
-use strum_macros::Display;
 
-#[derive(Debug, Clone, Copy, Display, Default, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Hash)]
 pub enum PlayerView {
     #[default]
     All,
@@ -152,7 +151,7 @@ impl PlayerListPanel {
         .split(area);
 
         let mut filter_all_button = Button::new(
-            format!("{}", PlayerView::All.to_string()),
+            PlayerView::All.to_string(),
             UiCallback::SetPlayerPanelView {
                 view: PlayerView::All,
             },
@@ -161,7 +160,7 @@ impl PlayerListPanel {
         .set_hover_text("View all players.");
 
         let mut filter_free_pirates_button = Button::new(
-            format!("{}", PlayerView::FreePirates.to_string()),
+            PlayerView::FreePirates.to_string(),
             UiCallback::SetPlayerPanelView {
                 view: PlayerView::FreePirates,
             },
@@ -170,7 +169,7 @@ impl PlayerListPanel {
         .set_hover_text("View free pirates.");
 
         let mut filter_tradable_button = Button::new(
-            format!("{}", PlayerView::Tradable.to_string()),
+            PlayerView::Tradable.to_string(),
             UiCallback::SetPlayerPanelView {
                 view: PlayerView::Tradable,
             },
@@ -179,7 +178,7 @@ impl PlayerListPanel {
         .set_hover_text("View pirates open for trade.");
 
         let mut filter_own_team_button = Button::new(
-            format!("{}", PlayerView::OwnTeam.to_string()),
+            PlayerView::OwnTeam.to_string(),
             UiCallback::SetPlayerPanelView {
                 view: PlayerView::OwnTeam,
             },
@@ -198,7 +197,7 @@ impl PlayerListPanel {
         frame.render_interactive(filter_tradable_button, split[2]);
         frame.render_interactive(filter_own_team_button, split[3]);
 
-        if self.players.len() > 0 {
+        if !self.players.is_empty() {
             let mut options = vec![];
 
             let name_length = 2 * MAX_NAME_LENGTH + 2;
@@ -376,36 +375,33 @@ impl PlayerListPanel {
         .set_hotkey(UiKey::PLAYER_STATUS_VIEW);
         frame.render_interactive(player_widget_view_button, buttons_split[1]);
 
-        let lock_button =
-            if self.locked_player_id.is_some() && self.locked_player_id.unwrap() == player.id {
-                Button::new(
-                    "Unlock",
-                    UiCallback::LockPlayerPanel {
-                        player_id: player.id,
-                    },
-                )
-                .set_hover_text(format!(
-                    "Unlock the player panel to allow browsing other players"
-                ))
-                .set_hotkey(UiKey::UNLOCK_PLAYER)
-                .selected()
-            } else {
-                Button::new(
-                    "Lock",
-                    UiCallback::LockPlayerPanel {
-                        player_id: self.selected_player_id,
-                    },
-                )
-                .set_hover_text(format!(
-                    "Lock the player panel to keep the info while browsing"
-                ))
-                .set_hotkey(UiKey::LOCK_PLAYER)
-            };
+        let lock_button = if self.locked_player_id.is_some()
+            && self.locked_player_id.unwrap() == player.id
+        {
+            Button::new(
+                "Unlock",
+                UiCallback::LockPlayerPanel {
+                    player_id: player.id,
+                },
+            )
+            .set_hover_text("Unlock the player panel to allow browsing other players".to_string())
+            .set_hotkey(UiKey::UNLOCK_PLAYER)
+            .selected()
+        } else {
+            Button::new(
+                "Lock",
+                UiCallback::LockPlayerPanel {
+                    player_id: self.selected_player_id,
+                },
+            )
+            .set_hover_text("Lock the player panel to keep the info while browsing".to_string())
+            .set_hotkey(UiKey::LOCK_PLAYER)
+        };
         frame.render_interactive(lock_button, buttons_split[2]);
 
         // Add hire button for free pirates
         if player.team.is_none() {
-            let can_hire = own_team.can_hire_player(&player);
+            let can_hire = own_team.can_hire_player(player);
             let hire_cost = player.hire_cost(own_team.reputation);
 
             let mut button = Button::new(
@@ -420,7 +416,7 @@ impl PlayerListPanel {
             ))
             .set_hotkey(UiKey::HIRE);
             if can_hire.is_err() {
-                button.disable(Some(format!("{}", can_hire.unwrap_err().to_string())));
+                button.disable(Some(format!("{}", can_hire.unwrap_err())));
             }
 
             frame.render_interactive(button, buttons_split[3]);
@@ -450,7 +446,7 @@ impl PlayerListPanel {
                     proposer_team.can_trade_players(proposer_player, target_player, own_team);
 
                 if can_trade.is_err() {
-                    button.disable(Some(format!("{}", can_trade.unwrap_err().to_string())));
+                    button.disable(Some(format!("{}", can_trade.unwrap_err())));
                 }
                 frame.render_interactive(button, buttons_split[3]);
             } else if player.id == self.locked_player_id.expect("One player should be locked") {
@@ -500,8 +496,7 @@ impl PlayerListPanel {
 
                         if own_team
                             .sent_trades
-                            .get(&(proposer_player.id, target_player.id))
-                            .is_some()
+                            .contains_key(&(proposer_player.id, target_player.id))
                         {
                             trade_button.disable(Some("Trade already proposed"));
                         }
@@ -536,7 +531,7 @@ impl Screen for PlayerListPanel {
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
         if world.dirty_ui || self.all_players.len() != world.players.len() {
-            self.all_players = world.players.keys().into_iter().cloned().collect();
+            self.all_players = world.players.keys().cloned().collect();
             self.all_players.sort_by(|a, b| {
                 let a = world.get_player(a).unwrap();
                 let b = world.get_player(b).unwrap();
@@ -556,18 +551,18 @@ impl Screen for PlayerListPanel {
                 .iter()
                 .filter(|&&player_id| {
                     let player = world.get_player(&player_id).unwrap();
-                    self.view.rule(player, &world)
+                    self.view.rule(player, world)
                 })
-                .map(|&player_id| player_id)
+                .copied()
                 .collect();
             self.update_view = false;
         }
 
-        if self.index >= self.players.len() && self.players.len() > 0 {
+        if self.index >= self.players.len() && !self.players.is_empty() {
             self.set_index(self.players.len() - 1);
         }
 
-        if self.index < self.players.len() && self.players.len() > 0 {
+        if self.index < self.players.len() && !self.players.is_empty() {
             self.selected_player_id = self.players[self.index];
             self.selected_team_id = world.get_player_or_err(&self.selected_player_id)?.team;
         }
@@ -580,7 +575,7 @@ impl Screen for PlayerListPanel {
         area: Rect,
         _debug_view: bool,
     ) -> AppResult<()> {
-        if self.all_players.len() == 0 {
+        if self.all_players.is_empty() {
             frame.render_widget(
                 Paragraph::new(" No player yet!"),
                 area.inner(Margin {
@@ -623,7 +618,7 @@ impl Screen for PlayerListPanel {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
             UiKey::GO_TO_TEAM => {
-                if let Some(_) = self.selected_team_id.clone() {
+                if self.selected_team_id.is_some() {
                     return Some(UiCallback::GoToPlayerTeam {
                         player_id: self.selected_player_id,
                     });

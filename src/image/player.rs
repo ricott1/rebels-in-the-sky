@@ -170,7 +170,7 @@ impl PlayerImage {
 
         // set two random bits to 1
         let bits = (0..8).choose_multiple(rng, 2);
-        let blinking_bitmap = (0 | (1 << bits[0])) | (1 << bits[1]);
+        let blinking_bitmap = (1 << bits[0]) | (1 << bits[1]);
 
         Self {
             head,
@@ -195,10 +195,10 @@ impl PlayerImage {
     pub fn set_jersey(&mut self, jersey: &Jersey, info: &InfoStats) {
         let mut seed = [0; 8];
         for (i, c) in info.first_name.as_bytes().iter().take(4).enumerate() {
-            seed[i % 8] = seed[i % 8] ^ c;
+            seed[i % 8] ^= c;
         }
         for (i, c) in info.last_name.as_bytes().iter().take(4).enumerate() {
-            seed[(4 + i) % 8] = seed[(4 + i) % 8] ^ c;
+            seed[(4 + i) % 8] ^= c;
         }
         let mut rng = ChaCha8Rng::seed_from_u64(u64::from_le_bytes(seed));
         let r = rng.random_range(0..=1);

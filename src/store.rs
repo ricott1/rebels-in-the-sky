@@ -23,12 +23,12 @@ static PERSISTED_PLAYER_RANKING_FILENAME: &str = "player_ranking";
 const COMPRESSION_LEVEL: u32 = 3;
 
 fn prefixed_world_filename(store_prefix: &str) -> String {
-    format!("{}_{}", store_prefix, PERSISTED_WORLD_FILENAME)
+    format!("{store_prefix}_{PERSISTED_WORLD_FILENAME}")
 }
 
 fn save_to_json<T: Serialize>(filename: &str, data: &T) -> AppResult<()> {
     std::fs::write(
-        store_path(&format!("{}.json.compressed", filename))?,
+        store_path(&format!("{filename}.json.compressed"))?,
         &serialize(data)?,
     )?;
     Ok(())
@@ -36,18 +36,18 @@ fn save_to_json<T: Serialize>(filename: &str, data: &T) -> AppResult<()> {
 
 fn load_from_json<T: for<'a> Deserialize<'a>>(filename: &str) -> AppResult<T> {
     let data: T =
-        if let Ok(bytes) = std::fs::read(store_path(&format!("{}.json.compressed", filename))?) {
+        if let Ok(bytes) = std::fs::read(store_path(&format!("{filename}.json.compressed"))?) {
             deserialize(&bytes)?
         } else {
             // This fallback serves to migrate old files to the new compressed format
-            let file = std::fs::File::open(store_path(&format!("{}.json", filename))?)?;
+            let file = std::fs::File::open(store_path(&format!("{filename}.json"))?)?;
             serde_json::from_reader(file)?
         };
 
     Ok(data)
 }
 
-fn compress(bytes: &Vec<u8>, level: u32) -> AppResult<Vec<u8>> {
+fn compress(bytes: &[u8], level: u32) -> AppResult<Vec<u8>> {
     let mut e = ZlibEncoder::new(Vec::new(), Compression::new(level));
     e.write_all(bytes)?;
     let compressed_bytes = e.finish()?;
@@ -55,7 +55,7 @@ fn compress(bytes: &Vec<u8>, level: u32) -> AppResult<Vec<u8>> {
 }
 
 fn decompress(bytes: &[u8]) -> AppResult<Vec<u8>> {
-    let mut d = ZlibDecoder::new(&bytes[..]);
+    let mut d = ZlibDecoder::new(bytes);
     let mut buf = Vec::new();
     d.read_to_end(&mut buf)?;
     Ok(buf)
@@ -67,8 +67,8 @@ pub fn serialize<T: Serialize>(value: &T) -> AppResult<Vec<u8>> {
     Ok(compressed)
 }
 
-pub fn deserialize<T: for<'a> Deserialize<'a>>(bytes: &Vec<u8>) -> AppResult<T> {
-    let value = decompress(&bytes)?;
+pub fn deserialize<T: for<'a> Deserialize<'a>>(bytes: &[u8]) -> AppResult<T> {
+    let value = decompress(bytes)?;
     let data = serde_json::from_slice::<T>(&value)?;
     Ok(data)
 }
@@ -95,7 +95,7 @@ pub fn store_path(filename: &str) -> AppResult<PathBuf> {
 pub fn save_world_uncompressed(world: &World, store_prefix: &str) -> AppResult<()> {
     let filename = prefixed_world_filename(store_prefix);
     std::fs::write(
-        store_path(&format!("{}.json", filename))?,
+        store_path(&format!("{filename}.json"))?,
         &serde_json::to_string_pretty(&world)?,
     )?;
 
@@ -107,7 +107,7 @@ pub fn save_world(world: &World, with_backup: bool, store_prefix: &str) -> AppRe
     let filename = prefixed_world_filename(store_prefix);
     save_to_json(&filename, &data)?;
     if with_backup {
-        let backup_filename = format!("{}.back", filename);
+        let backup_filename = format!("{filename}.back");
         save_to_json(&backup_filename, &data)?;
     }
     Ok(())
@@ -123,7 +123,7 @@ pub fn save_game(game: &Game) -> AppResult<()> {
 }
 
 pub fn load_game(game_id: GameId) -> AppResult<Game> {
-    load_from_json::<Game>(&format!("{}{}", PERSISTED_GAMES_PREFIX, game_id))
+    load_from_json::<Game>(&format!("{PERSISTED_GAMES_PREFIX}{game_id}"))
 }
 
 #[cfg(feature = "relayer")]
@@ -155,7 +155,7 @@ pub fn save_team_ranking(
 ) -> AppResult<()> {
     save_to_json(PERSISTED_TEAM_RANKING_FILENAME, &team_ranking)?;
     if with_backup {
-        let backup_filename = format!("{}.back", PERSISTED_TEAM_RANKING_FILENAME);
+        let backup_filename = format!("{PERSISTED_TEAM_RANKING_FILENAME}.back");
         save_to_json(&backup_filename, &team_ranking)?;
     }
     Ok(())
@@ -171,7 +171,7 @@ pub fn save_player_ranking(
 ) -> AppResult<()> {
     save_to_json(PERSISTED_PLAYER_RANKING_FILENAME, &player_ranking)?;
     if with_backup {
-        let backup_filename = format!("{}.back", PERSISTED_PLAYER_RANKING_FILENAME);
+        let backup_filename = format!("{PERSISTED_PLAYER_RANKING_FILENAME}.back");
         save_to_json(&backup_filename, &player_ranking)?;
     }
     Ok(())
@@ -199,13 +199,13 @@ pub fn reset() -> AppResult<()> {
 
 pub fn save_game_exists(store_prefix: &str) -> bool {
     let filename = prefixed_world_filename(store_prefix);
-    if let Ok(path) = store_path(&format!("{}.json.compressed", filename)) {
+    if let Ok(path) = store_path(&format!("{filename}.json.compressed")) {
         if path.exists() {
             return true;
         }
     }
 
-    if let Ok(path) = store_path(&format!("{}.json", filename)) {
+    if let Ok(path) = store_path(&format!("{filename}.json")) {
         if path.exists() {
             return true;
         }
@@ -215,12 +215,12 @@ pub fn save_game_exists(store_prefix: &str) -> bool {
 }
 
 pub fn save_data<C: AsRef<[u8]>>(filename: &str, data: &C) -> AppResult<()> {
-    std::fs::write(store_path(&filename)?, data)?;
+    std::fs::write(store_path(filename)?, data)?;
     Ok(())
 }
 
 pub fn load_data(filename: &str) -> AppResult<Vec<u8>> {
-    let bytes = std::fs::read(store_path(&filename)?)?;
+    let bytes = std::fs::read(store_path(filename)?)?;
     Ok(bytes)
 }
 
@@ -228,11 +228,11 @@ pub fn world_file_data(store_prefix: &str) -> AppResult<std::fs::Metadata> {
     let filename = prefixed_world_filename(store_prefix);
 
     if let Ok(compressed_metadata) =
-        std::fs::metadata(store_path(&format!("{}.json.compressed", filename))?)
+        std::fs::metadata(store_path(&format!("{filename}.json.compressed"))?)
     {
         Ok(compressed_metadata)
     } else {
-        let metadata = std::fs::metadata(store_path(&format!("{}.json", filename))?)?;
+        let metadata = std::fs::metadata(store_path(&format!("{filename}.json"))?)?;
         Ok(metadata)
     }
 }

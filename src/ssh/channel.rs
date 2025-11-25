@@ -93,7 +93,7 @@ impl AppChannel {
     pub fn new(_shutdown: CancellationToken, network_port: Option<u16>, username: String) -> Self {
         let state = AppChannelState::AwaitingPty { _shutdown };
 
-        println!("New AppChannel created for {}", username);
+        println!("New AppChannel created for {username}");
 
         Self {
             state,
@@ -132,7 +132,7 @@ impl AppChannel {
         let writer = SSHWriterProxy::new(id, session.handle());
 
         let username = self.username.clone();
-        let network_port = self.network_port.clone();
+        let network_port = self.network_port;
 
         let store_prefix = Some(username);
         let mut app = App::new(

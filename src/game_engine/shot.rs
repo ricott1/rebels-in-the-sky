@@ -26,25 +26,58 @@ pub struct MediumShot;
 pub struct LongShot;
 
 impl EngineAction for CloseShot {
-    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
-        return execute_shot(input, game, rng, ShotDifficulty::Close);
+    fn execute(
+        input: &ActionOutput,
+        game: &Game,
+        action_rng: &mut ChaCha8Rng,
+        description_rng: &mut ChaCha8Rng,
+    ) -> Option<ActionOutput> {
+        execute_shot(
+            input,
+            game,
+            action_rng,
+            description_rng,
+            ShotDifficulty::Close,
+        )
     }
 }
 
 impl EngineAction for MediumShot {
-    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
-        return execute_shot(input, game, rng, ShotDifficulty::Medium);
+    fn execute(
+        input: &ActionOutput,
+        game: &Game,
+        action_rng: &mut ChaCha8Rng,
+        description_rng: &mut ChaCha8Rng,
+    ) -> Option<ActionOutput> {
+        execute_shot(
+            input,
+            game,
+            action_rng,
+            description_rng,
+            ShotDifficulty::Medium,
+        )
     }
 }
 
 impl EngineAction for LongShot {
-    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
-        return execute_shot(input, game, rng, ShotDifficulty::Long);
+    fn execute(
+        input: &ActionOutput,
+        game: &Game,
+        action_rng: &mut ChaCha8Rng,
+        description_rng: &mut ChaCha8Rng,
+    ) -> Option<ActionOutput> {
+        execute_shot(
+            input,
+            game,
+            action_rng,
+            description_rng,
+            ShotDifficulty::Long,
+        )
     }
 }
 
 fn description(
-    rng: &mut ChaCha8Rng,
+    description_rng: &mut ChaCha8Rng,
     shooter: &Player,
     assist: Option<&Player>,
     defenders: Vec<&Player>,
@@ -300,7 +333,7 @@ fn description(
         ],
     };
 
-    let mut description = text.choose(rng)?.to_string();
+    let mut description = text.choose(description_rng)?.to_string();
     if let Some(passer) = assist {
         description.push_str(format!(" Assist from {}.", passer.info.short_name()).as_str());
     };
@@ -310,7 +343,8 @@ fn description(
 fn execute_shot(
     input: &ActionOutput,
     game: &Game,
-    rng: &mut ChaCha8Rng,
+    action_rng: &mut ChaCha8Rng,
+    description_rng: &mut ChaCha8Rng,
     shot: ShotDifficulty,
 ) -> Option<ActionOutput> {
     let attacking_players = game.attacking_players();
@@ -321,7 +355,7 @@ fn execute_shot(
     let shooter = attacking_players[shooter_idx];
 
     if input.advantage == Advantage::Defense {
-        assert!(input.defenders.len() > 0);
+        assert!(!input.defenders.is_empty());
     }
     let defenders = input
         .defenders
@@ -337,7 +371,7 @@ fn execute_shot(
     let def_skill = defenders
         .iter()
         .map(|&p| {
-            p.roll(rng) / defenders.len() as u16
+            p.roll(action_rng) / defenders.len() as u16
                 + if p.is_knocked_out() {
                     0
                 } else {
@@ -347,12 +381,12 @@ fn execute_shot(
         .sum::<u16>();
 
     let roll = match input.advantage {
-        Advantage::Attack => (shooter.roll(rng) + atk_skill) as i16 - (shot as u8) as i16,
+        Advantage::Attack => (shooter.roll(action_rng) + atk_skill) as i16 - (shot as u8) as i16,
         Advantage::Neutral => {
-            (shooter.roll(rng) + atk_skill) as i16 - (shot as u16 + def_skill / 2) as i16
+            (shooter.roll(action_rng) + atk_skill) as i16 - (shot as u16 + def_skill / 2) as i16
         }
         Advantage::Defense => {
-            (shooter.roll(rng) + atk_skill) as i16 - (shot as u16 + def_skill) as i16
+            (shooter.roll(action_rng) + atk_skill) as i16 - (shot as u16 + def_skill) as i16
         }
     };
 
@@ -367,12 +401,12 @@ fn execute_shot(
             };
             ActionOutput {
                 advantage,
-                possession: input.possession.clone(),
+                possession: input.possession,
                 attackers: vec![shooter_idx],
                 defenders: input.defenders.clone(),
                 situation: ActionSituation::MissedShot,
                 description: description(
-                    rng,
+                    description_rng,
                     shooter,
                     None,
                     defenders.clone(),
@@ -381,7 +415,7 @@ fn execute_shot(
                     success,
                 )?,
                 start_at: input.end_at,
-                end_at: input.end_at.plus(1 + rng.random_range(0..=2)),
+                end_at: input.end_at.plus(1 + action_rng.random_range(0..=2)),
                 home_score: input.home_score,
                 away_score: input.away_score,
                 ..Default::default()
@@ -393,7 +427,7 @@ fn execute_shot(
             } else {
                 None
             };
-            let score_change = match shot.clone() {
+            let score_change = match shot {
                 ShotDifficulty::Close => 2,
                 ShotDifficulty::Medium => 2,
                 ShotDifficulty::Long => 3,
@@ -401,17 +435,17 @@ fn execute_shot(
             ActionOutput {
                 score_change,
                 home_score: match input.possession {
-                    Possession::Home => input.home_score + score_change as u16,
+                    Possession::Home => input.home_score + score_change,
                     Possession::Away => input.home_score,
                 },
                 away_score: match input.possession {
                     Possession::Home => input.away_score,
-                    Possession::Away => input.away_score + score_change as u16,
+                    Possession::Away => input.away_score + score_change,
                 },
-                possession: !input.possession.clone(),
+                possession: !input.possession,
                 situation: ActionSituation::BallInBackcourt,
                 description: description(
-                    rng,
+                    description_rng,
                     shooter,
                     assist,
                     defenders.clone(),
@@ -420,7 +454,7 @@ fn execute_shot(
                     success,
                 )?,
                 start_at: input.end_at,
-                end_at: input.end_at.plus(12 + rng.random_range(0..=6)),
+                end_at: input.end_at.plus(12 + action_rng.random_range(0..=6)),
                 ..Default::default()
             }
         }
@@ -437,11 +471,11 @@ fn execute_shot(
             shooter_update.extra_tiredness = TirednessCost::MEDIUM;
             shooter_update.last_action_shot = match game.possession {
                 Possession::Home => {
-                    let (x, y) = HOME_CLOSE_SHOT_POSITIONS.choose(rng)?.clone();
+                    let (x, y) = *HOME_CLOSE_SHOT_POSITIONS.choose(action_rng)?;
                     Some((x, y, result.score_change > 0))
                 }
                 Possession::Away => {
-                    let (x, y) = AWAY_CLOSE_SHOT_POSITIONS.choose(rng)?.clone();
+                    let (x, y) = *AWAY_CLOSE_SHOT_POSITIONS.choose(action_rng)?;
                     Some((x, y, result.score_change > 0))
                 }
             }
@@ -451,11 +485,11 @@ fn execute_shot(
             shooter_update.extra_tiredness = TirednessCost::MEDIUM;
             shooter_update.last_action_shot = match game.possession {
                 Possession::Home => {
-                    let (x, y) = HOME_MEDIUM_SHOT_POSITIONS.choose(rng)?.clone();
+                    let (x, y) = *HOME_MEDIUM_SHOT_POSITIONS.choose(action_rng)?;
                     Some((x, y, result.score_change > 0))
                 }
                 Possession::Away => {
-                    let (x, y) = AWAY_MEDIUM_SHOT_POSITIONS.choose(rng)?.clone();
+                    let (x, y) = *AWAY_MEDIUM_SHOT_POSITIONS.choose(action_rng)?;
                     Some((x, y, result.score_change > 0))
                 }
             }
@@ -466,21 +500,21 @@ fn execute_shot(
             shooter_update.last_action_shot = match input.advantage {
                 Advantage::Defense => match game.possession {
                     Possession::Home => {
-                        let (x, y) = HOME_IMPOSSIBLE_SHOT_POSITIONS.choose(rng)?.clone();
+                        let (x, y) = *HOME_IMPOSSIBLE_SHOT_POSITIONS.choose(action_rng)?;
                         Some((x, y, result.score_change > 0))
                     }
                     Possession::Away => {
-                        let (x, y) = AWAY_IMPOSSIBLE_SHOT_POSITIONS.choose(rng)?.clone();
+                        let (x, y) = *AWAY_IMPOSSIBLE_SHOT_POSITIONS.choose(action_rng)?;
                         Some((x, y, result.score_change > 0))
                     }
                 },
                 _ => match game.possession {
                     Possession::Home => {
-                        let (x, y) = HOME_LONG_SHOT_POSITIONS.choose(rng)?.clone();
+                        let (x, y) = *HOME_LONG_SHOT_POSITIONS.choose(action_rng)?;
                         Some((x, y, result.score_change > 0))
                     }
                     Possession::Away => {
-                        let (x, y) = AWAY_LONG_SHOT_POSITIONS.choose(rng)?.clone();
+                        let (x, y) = *AWAY_LONG_SHOT_POSITIONS.choose(action_rng)?;
                         Some((x, y, result.score_change > 0))
                     }
                 },
@@ -530,5 +564,5 @@ fn execute_shot(
     }
     result.attack_stats_update = Some(attack_stats_update);
     result.defense_stats_update = Some(defense_stats_update);
-    return Some(result);
+    Some(result)
 }

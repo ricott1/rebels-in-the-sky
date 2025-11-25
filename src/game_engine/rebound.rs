@@ -29,7 +29,7 @@ fn position_rebound_bonus(idx: usize) -> f32 {
 pub struct Rebound;
 
 impl EngineAction for Rebound {
-    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
+    fn execute(input: &ActionOutput, game: &Game, action_rng: &mut ChaCha8Rng, description_rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
 
@@ -55,17 +55,17 @@ impl EngineAction for Rebound {
             match input.advantage {
                 Advantage::Attack => {
                     attack_rebounds[idx] += max(
-                        attacking_players[idx].roll(rng) as u16,
-                        attacking_players[idx].roll(rng) as u16,
+                        attacking_players[idx].roll(action_rng),
+                        attacking_players[idx].roll(action_rng),
                     );
                 }
                 Advantage::Neutral => {
-                    attack_rebounds[idx] += attacking_players[idx].roll(rng) as u16;
+                    attack_rebounds[idx] += attacking_players[idx].roll(action_rng);
                 }
                 Advantage::Defense => {
                     attack_rebounds[idx] += min(
-                        attacking_players[idx].roll(rng) as u16,
-                        attacking_players[idx].roll(rng) as u16,
+                        attacking_players[idx].roll(action_rng),
+                        attacking_players[idx].roll(action_rng),
                     );
                 }
             }
@@ -79,7 +79,7 @@ impl EngineAction for Rebound {
             defense_rebounds[idx] =
                 (defense_rebounds[idx] as f32 * position_rebound_bonus(idx)) as u16;
             //add random roll
-            defense_rebounds[idx] += defending_players[idx].roll(rng) as u16;
+            defense_rebounds[idx] += defending_players[idx].roll(action_rng);
         }
 
         let attack_result = *attack_rebounds
@@ -98,10 +98,7 @@ impl EngineAction for Rebound {
         let defence_rebounder = defending_players[defence_rebounder_idx];
 
         log::debug!(
-            "Rebound debugging: {} vs {}, to beat {}",
-            attack_result,
-            defence_result,
-            MIN_REBOUND_VALUE
+            "Rebound debugging: {attack_result} vs {defence_result}, to beat {MIN_REBOUND_VALUE}"
         );
         let result = match attack_result as i16 - defence_result as i16 + Self::tactic_modifier(game, &Action::Rebound){
             // Here we use ADV_ATTACK_LIMIT not to give an advantage, but to get the offensive rebound.
@@ -115,9 +112,8 @@ impl EngineAction for Rebound {
                 rebounder_update.offensive_rebounds = 1;
                 rebounder_update.extra_tiredness = TirednessCost::LOW;
                 attack_stats_update.insert(attack_rebounder.id, rebounder_update);
-                let description: String;
-                if attack_rebounder_idx == input.attackers[0] {
-                    description = [
+                let description =  if attack_rebounder_idx == input.attackers[0] {
+                     [
                         format!(
                             "{} grabs {} own rebound with a quick reaction.",
                             attack_rebounder.info.short_name(),
@@ -143,11 +139,11 @@ impl EngineAction for Rebound {
                             attack_rebounder.info.pronouns.as_possessive()
                         ),
                     ]
-                    .choose(rng)
+                    .choose(description_rng)
                     .expect("There should be an option")
                     .clone()
                 } else {
-                    description = [
+                   [
                         format!(
                             "{} leaps above the defenders and snags the offensive rebound.",
                             attack_rebounder.info.short_name(),
@@ -168,10 +164,10 @@ impl EngineAction for Rebound {
                             "{} crashes the boards and comes down with the offensive rebound.",
                             attack_rebounder.info.short_name(),
                         ),
-                    ].choose(rng)
+                    ].choose(description_rng)
                     .expect("There should be an option")
                     .clone()
-                }
+                };
                 ActionOutput {
                     possession: input.possession,
                     situation: ActionSituation::AfterOffensiveRebound,
@@ -179,7 +175,7 @@ impl EngineAction for Rebound {
                     attackers: vec![attack_rebounder_idx],
                     attack_stats_update: Some(attack_stats_update),
                     start_at: input.end_at,
-                    end_at: input.end_at.plus(1 + rng.random_range(0..=1)),
+                    end_at: input.end_at.plus(1 + action_rng.random_range(0..=1)),
                     home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()
@@ -210,7 +206,7 @@ impl EngineAction for Rebound {
                         attack_rebounder.info.short_name(),
                     ),
                 ]
-                .choose(rng)
+                .choose(description_rng)
                 .expect("There should be an option")
                 .clone();
 
@@ -221,7 +217,7 @@ impl EngineAction for Rebound {
                     attackers: vec![attack_rebounder_idx],
                     attack_stats_update: Some(attack_stats_update),
                     start_at: input.end_at,
-                    end_at: input.end_at.plus(4 + rng.random_range(0..=3)),
+                    end_at: input.end_at.plus(4 + action_rng.random_range(0..=3)),
                     home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()
@@ -229,9 +225,11 @@ impl EngineAction for Rebound {
             }
             x if x < 0 && defence_result >= MIN_REBOUND_VALUE => {
                 let mut defence_stats_update: GameStatsMap = HashMap::new();
-                let mut rebounder_update = GameStats::default();
-                rebounder_update.defensive_rebounds = 1;
-                rebounder_update.extra_tiredness = TirednessCost::LOW;
+                let rebounder_update = GameStats {
+                    defensive_rebounds: 1, 
+                    extra_tiredness:TirednessCost::LOW,
+                    ..Default::default()
+                };
                 defence_stats_update.insert(defence_rebounder.id, rebounder_update);
 
                 ActionOutput {
@@ -258,12 +256,12 @@ impl EngineAction for Rebound {
                             "{} uses great positioning to grab the defensive rebound and take control.",
                             defence_rebounder.info.short_name(),
                         ),
-                    ] .choose(rng)
+                    ] .choose(description_rng)
                     .expect("There should be an option")
                     .clone(),
                     defense_stats_update: Some(defence_stats_update),
                     start_at: input.end_at,
-                    end_at: input.end_at.plus(5 + rng.random_range(0..=6)),
+                    end_at: input.end_at.plus(5 + action_rng.random_range(0..=6)),
                     home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()
@@ -277,11 +275,11 @@ impl EngineAction for Rebound {
                     "Neither team secures the board, and the ball rolls to the defensive side.",
                     "The rebound bounces loose, and the defense grabs it.",
                     "The ball is up for grabs but nobody claims it, and it’s recovered by the defense.",
-                ].choose(rng)
+                ].choose(description_rng)
                 .expect("There should be an option")
                 .to_string(),
                 start_at: input.end_at,
-                end_at: input.end_at.plus(5 + rng.random_range(0..=6)),
+                end_at: input.end_at.plus(5 + action_rng.random_range(0..=6)),
                 home_score: input.home_score,
                 away_score: input.away_score,
                 ..Default::default()

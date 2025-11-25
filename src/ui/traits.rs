@@ -4,7 +4,6 @@ use super::ui_frame::UiFrame;
 use crate::world::resources::Resource;
 use crate::world::world::World;
 use crate::{types::AppResult, world::skill::Rated};
-use core::fmt::Debug;
 use ratatui::text::Text;
 use ratatui::widgets::{StatefulWidget, Widget};
 use ratatui::{
@@ -35,12 +34,6 @@ pub trait Screen {
     }
 }
 
-impl Debug for dyn Screen {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "Screen{{{:?}}}", self)
-    }
-}
-
 pub trait SplitPanel {
     fn index(&self) -> usize;
     fn max_index(&self) -> usize;
@@ -56,12 +49,6 @@ pub trait SplitPanel {
             let current_index = self.index();
             self.set_index((current_index + self.max_index() - 1) % self.max_index());
         }
-    }
-}
-
-impl Debug for dyn SplitPanel {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "SplitPanel{{{:?}}}", self)
     }
 }
 

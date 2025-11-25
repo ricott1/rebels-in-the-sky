@@ -154,61 +154,61 @@ impl Population {
 
     pub fn random_skin_map(&self, rng: &mut ChaCha8Rng) -> SkinColorMap {
         let weights = match self {
-            Self::Human { region } => match region {
-                &Region::Italy => vec![
+            Self::Human { region } => match *region {
+                Region::Italy => vec![
                     (SkinColorMap::Pale, 0.1),
                     (SkinColorMap::Light, 0.2),
                     (SkinColorMap::Medium, 0.2),
                     (SkinColorMap::Dark, 0.1),
                 ],
-                &Region::Germany => vec![
+                Region::Germany => vec![
                     (SkinColorMap::Pale, 0.2),
                     (SkinColorMap::Light, 0.2),
                     (SkinColorMap::Medium, 0.1),
                     (SkinColorMap::Dark, 0.05),
                 ],
-                &Region::Spain => vec![
+                Region::Spain => vec![
                     (SkinColorMap::Pale, 0.15),
                     (SkinColorMap::Light, 0.1),
                     (SkinColorMap::Medium, 0.2),
                     (SkinColorMap::Dark, 0.15),
                 ],
-                &Region::Greece => vec![
+                Region::Greece => vec![
                     (SkinColorMap::Pale, 0.1),
                     (SkinColorMap::Light, 0.2),
                     (SkinColorMap::Medium, 0.2),
                     (SkinColorMap::Dark, 0.1),
                 ],
-                &Region::Nigeria => vec![
+                Region::Nigeria => vec![
                     (SkinColorMap::Pale, 0.025),
                     (SkinColorMap::Light, 0.05),
                     (SkinColorMap::Medium, 0.1),
                     (SkinColorMap::Dark, 0.3),
                 ],
-                &Region::India => vec![
+                Region::India => vec![
                     (SkinColorMap::Pale, 0.05),
                     (SkinColorMap::Light, 0.1),
                     (SkinColorMap::Medium, 0.3),
                     (SkinColorMap::Dark, 0.2),
                 ],
-                &Region::Euskadi => vec![
+                Region::Euskadi => vec![
                     (SkinColorMap::Pale, 0.2),
                     (SkinColorMap::Light, 0.2),
                     (SkinColorMap::Medium, 0.15),
                     (SkinColorMap::Dark, 0.05),
                 ],
-                &Region::Kurdistan => vec![
+                Region::Kurdistan => vec![
                     (SkinColorMap::Pale, 0.01),
                     (SkinColorMap::Light, 0.1),
                     (SkinColorMap::Medium, 0.5),
                     (SkinColorMap::Dark, 0.1),
                 ],
-                &Region::Palestine => vec![
+                Region::Palestine => vec![
                     (SkinColorMap::Light, 0.05),
                     (SkinColorMap::Medium, 0.5),
                     (SkinColorMap::Dark, 0.2),
                 ],
-                &Region::Japan => vec![
+                Region::Japan => vec![
                     (SkinColorMap::Pale, 0.2),
                     (SkinColorMap::Light, 0.25),
                     (SkinColorMap::Medium, 0.1),
@@ -278,7 +278,7 @@ impl PartialEq for PlayerLocation {
 impl Default for PlayerLocation {
     fn default() -> Self {
         Self::OnPlanet {
-            planet_id: DEFAULT_PLANET_ID.clone(),
+            planet_id: *DEFAULT_PLANET_ID,
         }
     }
 }
@@ -317,7 +317,7 @@ impl PartialEq for TeamLocation {
 impl Default for TeamLocation {
     fn default() -> Self {
         Self::OnPlanet {
-            planet_id: DEFAULT_PLANET_ID.clone(),
+            planet_id: *DEFAULT_PLANET_ID,
         }
     }
 }
@@ -333,7 +333,7 @@ pub enum Pronoun {
 
 impl Pronoun {
     pub fn random(rng: &mut ChaCha8Rng) -> Self {
-        if let Some(dist) = WeightedIndex::new(&[8, 8, 1]).ok() {
+        if let Ok(dist) = WeightedIndex::new([8, 8, 1]) {
             return Self::from_repr(dist.sample(rng) as u8).unwrap_or_default();
         }
 
@@ -396,9 +396,9 @@ impl TrainingFocus {
     pub fn is_focus(&self, skill_index: usize) -> bool {
         match self {
             Self::Athletics => skill_index < 4,
-            Self::Offense => skill_index >= 4 && skill_index < 8,
-            Self::Defense => skill_index >= 8 && skill_index < 12,
-            Self::Technical => skill_index >= 12 && skill_index < 16,
+            Self::Offense => (4..8).contains(&skill_index),
+            Self::Defense => (8..12).contains(&skill_index),
+            Self::Technical => (12..16).contains(&skill_index),
             Self::Mental => skill_index >= 16,
         }
     }

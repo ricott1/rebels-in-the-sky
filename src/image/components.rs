@@ -133,7 +133,7 @@ impl SizedImageComponent for BodyImage {
             _ => 12,
         };
 
-        format!("body/{}{}.png", name, number)
+        format!("body/{name}{number}.png")
     }
 
     fn select_mask_file(&self, size: u8) -> String {
@@ -152,7 +152,7 @@ impl SizedImageComponent for BodyImage {
             _ => 12,
         };
 
-        format!("body/mask_{}{}.png", name, number)
+        format!("body/mask_{name}{number}.png")
     }
 }
 
@@ -241,7 +241,7 @@ impl SizedImageComponent for ShirtImage {
             _ => 12,
         };
 
-        format!("shirt/mask{}.png", number)
+        format!("shirt/mask{number}.png")
     }
 }
 
@@ -279,8 +279,8 @@ impl SizedImageComponent for ShortsImage {
             return "shorts/mask_pupparoll.png".into();
         }
         match size {
-            x if x < 7 => format!("shorts/mask_slim.png"),
-            _ => format!("shorts/mask_large.png"),
+            x if x < 7 => "shorts/mask_slim.png".to_string(),
+            _ => "shorts/mask_large.png".to_string(),
         }
     }
 }
@@ -511,10 +511,10 @@ impl SizedImageComponent for Shooter {
 
     fn select_file(&self, size: u8) -> String {
         match self {
-            Self::ShuttleSingle => format!("shooter/shuttle_single{}.png", size),
-            Self::ShuttleTriple => format!("shooter/shuttle_triple{}.png", size),
-            Self::PincherDouble => format!("shooter/pincher_double{}.png", size),
-            Self::PincherQuadruple => format!("shooter/pincher_quadruple{}.png", size),
+            Self::ShuttleSingle => format!("shooter/shuttle_single{size}.png"),
+            Self::ShuttleTriple => format!("shooter/shuttle_triple{size}.png"),
+            Self::PincherDouble => format!("shooter/pincher_double{size}.png"),
+            Self::PincherQuadruple => format!("shooter/pincher_quadruple{size}.png"),
             Self::JesterDouble => "shooter/jester_double.png".into(),
             Self::JesterQuadruple => "shooter/jester_quadruple.png".into(),
             _ => unreachable!("No image should be required for this component"),

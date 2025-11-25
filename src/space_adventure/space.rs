@@ -74,7 +74,7 @@ impl SpaceAdventure {
     ) -> AppResult<()> {
         let [x, y] = entity.position().to_array();
         let image = if entity.should_apply_visual_effects() {
-            &entity.apply_visual_effects(&entity.image())
+            &entity.apply_visual_effects(entity.image())
         } else {
             entity.image()
         };
@@ -132,8 +132,8 @@ impl SpaceAdventure {
     }
 
     fn insert_entity(&mut self, mut entity: Box<dyn Entity>) -> usize {
-        let id = self.id.clone();
-        let layer = entity.layer().clone();
+        let id = self.id;
+        let layer = entity.layer();
         entity.set_id(id);
 
         self.entities[layer].insert(entity.id(), entity);
@@ -143,17 +143,11 @@ impl SpaceAdventure {
     }
 
     pub fn is_starting(&self) -> bool {
-        match self.state {
-            SpaceAdventureState::Starting { .. } => true,
-            _ => false,
-        }
+        matches!(self.state, SpaceAdventureState::Starting { .. })
     }
 
     pub fn is_ending(&self) -> bool {
-        match self.state {
-            SpaceAdventureState::Ending { .. } => true,
-            _ => false,
-        }
+        matches!(self.state, SpaceAdventureState::Ending { .. })
     }
 
     pub fn entity_count(&self) -> usize {
@@ -441,28 +435,25 @@ impl SpaceAdventure {
         }
 
         // Resolve collisions (only if state is running)
-        match self.state {
-            SpaceAdventureState::Running { .. } => {
-                for layer in 0..MAX_LAYER {
-                    let layer_entities = self.entities[layer].keys().collect_vec();
-                    if layer_entities.len() == 0 {
-                        continue;
-                    }
+        if let SpaceAdventureState::Running { .. } = self.state {
+            for layer in 0..MAX_LAYER {
+                let layer_entities = self.entities[layer].keys().collect_vec();
+                if layer_entities.is_empty() {
+                    continue;
+                }
 
-                    for idx in 0..layer_entities.len() - 1 {
-                        let entity = self.entities[layer]
-                            .get(layer_entities[idx])
+                for idx in 0..layer_entities.len() - 1 {
+                    let entity = self.entities[layer]
+                        .get(layer_entities[idx])
+                        .expect("Entity should exist.");
+                    for other_idx in idx + 1..layer_entities.len() {
+                        let other = self.entities[layer]
+                            .get(layer_entities[other_idx])
                             .expect("Entity should exist.");
-                        for other_idx in idx + 1..layer_entities.len() {
-                            let other = self.entities[layer]
-                                .get(layer_entities[other_idx])
-                                .expect("Entity should exist.");
-                            callbacks.append(&mut resolve_collision_between(entity, other));
-                        }
+                        callbacks.append(&mut resolve_collision_between(entity, other));
                     }
                 }
             }
-            _ => {}
         }
 
         // Execute callbacks
@@ -482,24 +473,22 @@ impl SpaceAdventure {
         let mut ui_callbacks = vec![];
 
         if difficulty_level > DIFFICULTY_FOR_ASTEROID_PLANET_GENERATION {
-            match self.asteroid_planet_state {
-                AsteroidPlanetState::NotSpawned {
-                    should_spawn_asteroid,
-                } => {
-                    if should_spawn_asteroid {
-                        let asteroid = AsteroidEntity::planet();
-                        let id = self.insert_entity(Box::new(asteroid));
-                        self.asteroid_planet_state = AsteroidPlanetState::Spawned {
-                            image_number: id % MAX_ASTEROID_PLANET_IMAGE_NUMBER,
-                        };
-                        ui_callbacks.push(UiCallback::PushUiPopup { popup_message:
-                            PopupMessage::Ok {
-                            message: "You've found an asteroid! Bring the spaceship in touch with it to claim it.".to_string(),
-                                is_skippable:true, tick:Tick::now()}
-                            });
-                    }
+            if let AsteroidPlanetState::NotSpawned {
+                should_spawn_asteroid,
+            } = self.asteroid_planet_state
+            {
+                if should_spawn_asteroid {
+                    let asteroid = AsteroidEntity::planet();
+                    let id = self.insert_entity(Box::new(asteroid));
+                    self.asteroid_planet_state = AsteroidPlanetState::Spawned {
+                        image_number: id % MAX_ASTEROID_PLANET_IMAGE_NUMBER,
+                    };
+                    ui_callbacks.push(UiCallback::PushUiPopup { popup_message:
+                        PopupMessage::Ok {
+                        message: "You've found an asteroid! Bring the spaceship in touch with it to claim it.".to_string(),
+                            is_skippable:true, tick:Tick::now()}
+                        });
                 }
-                _ => {}
             }
         }
 

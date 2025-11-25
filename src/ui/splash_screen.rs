@@ -39,7 +39,7 @@ pub struct SplashScreen {
     gif_map: GifMap,
 }
 
-const QUOTES: [&'static str;19] = [
+const QUOTES: [&str;19] = [
     " “What cannot be destroyed can, nonetheless, be diverted, frozen, transformed, and gradually deprived of its substance - which in the case of states, is ultimately their capacity to inspire terror.” - D. Graeber",
     " “Aber der Staat lügt in allen Zungen des Guten und Bösen; und was er auch redet, er lügt—und was er auch hat, gestohlen hat er's.” - F. Nietzsche",
     " “That is what I have always understood to be the essence of anarchism: the conviction that the burden of proof has to be placed on authority, and that it should be dismantled if that burden cannot be met.” - N. Chomsky",
@@ -62,7 +62,7 @@ const QUOTES: [&'static str;19] = [
     " “Chi trova il coraggio di costruire la propria esistenza nel mare mosso dell’incerto riuscirà più facilmente a trovare il proprio spazio nel presente di chi invece tenta di gettare l’ancora verso i lidi di epoche passate.” - Alexander Langer"
     ];
 
-const TITLE: [&'static str; 13] = [
+const TITLE: [&str; 13] = [
     "            ██████╗ ███████╗██████╗ ███████╗██╗     ███████╗           ",
     "            ██╔══██╗██╔════╝██╔══██╗██╔════╝██║     ██╔════╝           ",
     "            ██████╔╝█████╗  ██████╔╝█████╗  ██║     ███████╗           ",

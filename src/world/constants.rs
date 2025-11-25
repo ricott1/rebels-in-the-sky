@@ -57,8 +57,8 @@ pub const MAX_AVG_TIREDNESS_PER_AUTO_GAME: f32 = 2.0;
 pub const MAX_AVG_TIREDNESS_PER_CHALLENGED_GAME: f32 = MIN_TIREDNESS_FOR_ROLL_DECLINE;
 
 pub const BASE_DISTANCES: [u64; 5] = [
-    1 * LIGHT_YEAR,
-    1 * AU,
+    LIGHT_YEAR,
+    AU,
     400_000 * KILOMETERS,
     80_000 * KILOMETERS,
     1_000 * KILOMETERS,
@@ -85,8 +85,8 @@ pub const MAX_NUM_ASTEROID_PER_TEAM: usize = 7;
 
 pub struct TickInterval;
 impl TickInterval {
-    pub const SHORT: Tick = 1 * SECONDS;
-    pub const MEDIUM: Tick = 1 * MINUTES;
+    pub const SHORT: Tick = SECONDS;
+    pub const MEDIUM: Tick = MINUTES;
     pub const LONG: Tick = 24 * HOURS;
 }
 
@@ -96,11 +96,11 @@ pub const NETWORK_GAME_START_DELAY: Tick = 30 * SECONDS;
 static GALAXY_ROOT_STR: &str = "71a43700-0000-0000-0000-000000000000";
 static DEFAULT_PLANET_STR: &str = "71a43700-0000-0000-0002-000000000000";
 static SOL_STR: &str = "71a43700-0000-0000-0001-000000000000";
-pub const GALAXY_ROOT_ID: Lazy<PlanetId> =
+pub static GALAXY_ROOT_ID: Lazy<PlanetId> =
     Lazy::new(|| PlanetId::try_parse(GALAXY_ROOT_STR).unwrap());
-pub const DEFAULT_PLANET_ID: Lazy<PlanetId> =
+pub static DEFAULT_PLANET_ID: Lazy<PlanetId> =
     Lazy::new(|| PlanetId::try_parse(DEFAULT_PLANET_STR).unwrap());
-pub const SOL_ID: Lazy<PlanetId> = Lazy::new(|| PlanetId::try_parse(SOL_STR).unwrap());
+pub static SOL_ID: Lazy<PlanetId> = Lazy::new(|| PlanetId::try_parse(SOL_STR).unwrap());
 
 pub struct TirednessCost;
 impl TirednessCost {

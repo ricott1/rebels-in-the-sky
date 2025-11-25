@@ -16,17 +16,22 @@ use std::collections::HashMap;
 pub struct PickAndRoll;
 
 impl EngineAction for PickAndRoll {
-    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
+    fn execute(
+        input: &ActionOutput,
+        game: &Game,
+        action_rng: &mut ChaCha8Rng,
+        description_rng: &mut ChaCha8Rng,
+    ) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
 
         let play_idx = match input.attackers.len() {
-            0 => Self::sample(rng, [6, 1, 2, 0, 0])?,
+            0 => Self::sample(action_rng, [6, 1, 2, 0, 0])?,
             _ => input.attackers[0],
         };
 
         let target_idx = match input.attackers.len() {
-            0 | 1 => Self::sample(rng, [1, 2, 3, 3, 2])?,
+            0 | 1 => Self::sample(action_rng, [1, 2, 3, 3, 2])?,
             _ => input.attackers[1],
         };
 
@@ -47,16 +52,16 @@ impl EngineAction for PickAndRoll {
         let mut target_defender_update = GameStats::default();
         target_defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
-        let timer_increase = 3 + rng.random_range(0..=3);
+        let timer_increase = 3 + action_rng.random_range(0..=3);
         let mut result: ActionOutput;
 
         if play_idx == target_idx {
-            let atk_result = playmaker.roll(rng)
+            let atk_result = playmaker.roll(action_rng)
                 + playmaker.technical.ball_handling.game_value()
                 + playmaker.athletics.quickness.game_value()
                 + target.mental.vision.game_value();
 
-            let def_result = playmaker_defender.roll(rng)
+            let def_result = playmaker_defender.roll(action_rng)
                 + playmaker_defender.defense.perimeter_defense.game_value()
                 + playmaker_defender.mental.vision.game_value();
 
@@ -88,7 +93,7 @@ impl EngineAction for PickAndRoll {
                             "{} takes full advantage of {}'s screen and has an easy opportunity for a shot.",
                             playmaker.info.short_name(), target.info.short_name()
                         ),
-                    ].choose(rng).expect("There should be one option").clone(),
+                    ].choose(description_rng).expect("There should be one option").clone(),
                     start_at: input.end_at,
                         end_at: input.end_at.plus(timer_increase),
                         home_score: input.home_score,
@@ -122,7 +127,7 @@ impl EngineAction for PickAndRoll {
                             "In the pick'n'roll, {} uses {}'s screen and finds just enough room to take a shot.",
                             playmaker.info.short_name(), target.info.short_name()
                         ),
-                    ].choose(rng).expect("There should be one option").clone(),
+                    ].choose(description_rng).expect("There should be one option").clone(),
                     start_at: input.end_at,
                         end_at: input.end_at.plus(timer_increase),
                         home_score: input.home_score,
@@ -130,7 +135,7 @@ impl EngineAction for PickAndRoll {
                     ..Default::default()
                 },
                 x if x > ADV_DEFENSE_LIMIT => {
-                    match rng.random_bool(0.5) {
+                    match action_rng.random_bool(0.5) {
                         false => ActionOutput {
                             possession: input.possession,
                             advantage: Advantage::Defense,
@@ -150,7 +155,7 @@ impl EngineAction for PickAndRoll {
                                     "{} tries to move past {} using the screen but {} swaps cover and is all over {}.",
                                     playmaker.info.short_name(), playmaker_defender.info.short_name(),target_defender.info.short_name(),playmaker.info.pronouns.as_object()
                                 ),
-                            ] .choose(rng).expect("There should be one option").clone(),
+                            ] .choose(description_rng).expect("There should be one option").clone(),
                             start_at: input.end_at,
                                 end_at: input.end_at.plus(timer_increase),
                                 home_score: input.home_score,
@@ -180,7 +185,7 @@ impl EngineAction for PickAndRoll {
                                     "{} tries to get open off the screen, but {} moves with him step for step, preventing any separation.",
                                     playmaker.info.short_name(), playmaker_defender.info.short_name()
                                 ),
-                            ] .choose(rng).expect("There should be one option").clone(),
+                            ] .choose(description_rng).expect("There should be one option").clone(),
                             start_at: input.end_at,
                                 end_at: input.end_at.plus(timer_increase),
                                 home_score: input.home_score,
@@ -219,9 +224,9 @@ impl EngineAction for PickAndRoll {
                                 "{} goes for the screen, but {} is quick to jump in, stealing the ball away from {}.",
                                 playmaker.info.short_name(), target_defender.info.short_name(), playmaker.info.pronouns.as_possessive()
                             ),
-                        ].choose(rng).expect("There should be one option").clone(),
+                        ].choose(description_rng).expect("There should be one option").clone(),
                         start_at: input.end_at,
-                end_at: input.end_at.plus(3 + rng.random_range(0..=1)),
+                end_at: input.end_at.plus(3 + action_rng.random_range(0..=1)),
                 home_score: input.home_score,
                     away_score: input.away_score,
                         ..Default::default()
@@ -229,12 +234,12 @@ impl EngineAction for PickAndRoll {
                 }
             };
         } else {
-            let atk_result = playmaker.roll(rng)
+            let atk_result = playmaker.roll(action_rng)
                 + playmaker.technical.ball_handling.game_value()
                 + playmaker.technical.passing.game_value()
                 + target.mental.intuition.game_value();
 
-            let def_result = playmaker_defender.roll(rng)
+            let def_result = playmaker_defender.roll(action_rng)
                 + playmaker_defender.defense.perimeter_defense.game_value()
                 + target_defender.athletics.quickness.game_value();
 
@@ -266,7 +271,7 @@ impl EngineAction for PickAndRoll {
                         "{} and {} perform a flawless pick'n'roll, and now {} is in prime position for the shot.",
                         playmaker.info.short_name(), target.info.short_name(), target.info.short_name()
                     ),
-                ].choose(rng).expect("There should be one option").clone(),
+                ].choose(description_rng).expect("There should be one option").clone(),
                 assist_from: Some(play_idx),
                 start_at: input.end_at,
                         end_at: input.end_at.plus(timer_increase),
@@ -301,7 +306,7 @@ impl EngineAction for PickAndRoll {
                         "The pick'n'roll is set up well, and {} passes to {} who prepares for the shot.",
                         playmaker.info.short_name(), target.info.short_name(),
                     ),
-                ].choose(rng).expect("There should be one option").clone(),
+                ].choose(description_rng).expect("There should be one option").clone(),
                 assist_from: Some(play_idx),
                 start_at: input.end_at,
                         end_at: input.end_at.plus(timer_increase),
@@ -336,7 +341,7 @@ impl EngineAction for PickAndRoll {
                         "On the pick'n'roll, {} passes to {} but {} is right there, denying any space for a shot.",
                         playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name()
                     ),
-                ].choose(rng).expect("There should be one option").clone(),
+                ].choose(description_rng).expect("There should be one option").clone(),
                 assist_from: Some(play_idx),
                 start_at: input.end_at,
                         end_at: input.end_at.plus(timer_increase),
@@ -375,9 +380,9 @@ impl EngineAction for PickAndRoll {
                             "They try the pick'n'roll, but {} reads the move perfectly, blocking {}'s pass to {}.",
                             playmaker_defender.info.short_name(), playmaker.info.short_name(), target.info.short_name()
                         ),
-                    ].choose(rng).expect("There should be one option").clone(),
+                    ].choose(description_rng).expect("There should be one option").clone(),
                     start_at: input.end_at,
-                end_at: input.end_at.plus(2+ rng.random_range(0..=1)),
+                end_at: input.end_at.plus(2+ action_rng.random_range(0..=1)),
                 home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()

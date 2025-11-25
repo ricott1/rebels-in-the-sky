@@ -35,25 +35,25 @@ pub fn body_data_from_image(image: &RgbaImage, should_crop: bool) -> (RgbaImage,
     let min_x = contours_vec
         .iter()
         .map(|p| p.x)
-        .min_by(|pa, pb| pa.cmp(&pb))
+        .min_by(|pa, pb| pa.cmp(pb))
         .unwrap_or_default();
 
     let max_x = contours_vec
         .iter()
         .map(|p| p.x)
-        .max_by(|pa, pb| pa.cmp(&pb))
+        .max_by(|pa, pb| pa.cmp(pb))
         .unwrap_or_default();
 
     let min_y = contours_vec
         .iter()
         .map(|p| p.y)
-        .min_by(|pa, pb| pa.cmp(&pb))
+        .min_by(|pa, pb| pa.cmp(pb))
         .unwrap_or_default();
 
     let max_y = contours_vec
         .iter()
         .map(|p| p.y)
-        .max_by(|pa, pb| pa.cmp(&pb))
+        .max_by(|pa, pb| pa.cmp(pb))
         .unwrap_or_default();
 
     let final_image = if should_crop {
@@ -92,7 +92,7 @@ pub fn body_data_from_image(image: &RgbaImage, should_crop: bool) -> (RgbaImage,
     }
 
     let hit_box: HitBox = hit_box.into();
-    log::info!("Created hitbox with size {:#?}", hit_box.size());
+    log::debug!("Created hitbox with size {:#?}", hit_box.size());
     (final_image, hit_box)
 }
 

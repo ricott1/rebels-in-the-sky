@@ -10,7 +10,7 @@ pub trait GamePosition {
         let mut rating = 0.0;
         let mut total_weight = 0.0;
         for i in 0..skills.len() {
-            let w = self.weights()[i] as f32;
+            let w = self.weights()[i];
             rating += w * w * skills[i];
             total_weight += w * w;
         }
@@ -66,7 +66,7 @@ impl GamePosition for Position {
         let weights = self.weights();
         let mut total_weight = 0 as f32;
         for i in 0..skills.len() {
-            let w = (weights[i] as f32).powf(4.0);
+            let w = weights[i].powf(4.0);
             rating += w * skills[i];
             total_weight += w;
         }

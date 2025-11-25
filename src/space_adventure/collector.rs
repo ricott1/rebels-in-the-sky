@@ -72,12 +72,9 @@ impl Entity for CollectorEntity {
     }
 
     fn handle_space_callback(&mut self, callback: SpaceCallback) -> Vec<SpaceCallback> {
-        match callback {
-            SpaceCallback::SetPosition { position, .. } => {
-                self.previous_position = self.position;
-                self.position = position.as_vec2();
-            }
-            _ => {}
+        if let SpaceCallback::SetPosition { position, .. } = callback {
+            self.previous_position = self.position;
+            self.position = position.as_vec2();
         }
         vec![]
     }

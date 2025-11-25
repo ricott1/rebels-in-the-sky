@@ -90,7 +90,7 @@ pub struct SwarmPanel {
 impl SwarmPanel {
     pub fn remove_player_from_ranking(&mut self, player_id: PlayerId) {
         self.player_ranking.retain(|&(id, _)| id != player_id);
-        if self.player_ranking.len() == 0 {
+        if self.player_ranking.is_empty() {
             self.player_ranking_index = None;
         }
     }
@@ -105,16 +105,16 @@ impl SwarmPanel {
         }
     }
 
-    pub fn update_team_ranking(&mut self, team_ranking: &Vec<(TeamId, TeamRanking)>) {
-        self.team_ranking = team_ranking.clone();
-        if self.team_ranking_index.is_none() && self.team_ranking.len() > 0 {
+    pub fn update_team_ranking(&mut self, team_ranking: &[(TeamId, TeamRanking)]) {
+        self.team_ranking = team_ranking.to_vec();
+        if self.team_ranking_index.is_none() && !self.team_ranking.is_empty() {
             self.team_ranking_index = Some(0);
         }
     }
 
-    pub fn update_player_ranking(&mut self, player_ranking: &Vec<(PlayerId, PlayerRanking)>) {
-        self.player_ranking = player_ranking.clone();
-        if self.player_ranking_index.is_none() && self.player_ranking.len() > 0 {
+    pub fn update_player_ranking(&mut self, player_ranking: &[(PlayerId, PlayerRanking)]) {
+        self.player_ranking = player_ranking.to_vec();
+        if self.player_ranking_index.is_none() && !self.player_ranking.is_empty() {
             self.player_ranking_index = Some(0);
         }
     }
@@ -259,7 +259,7 @@ impl SwarmPanel {
             .filter(|peer_id| self.is_peer_connected(peer_id))
             .count();
         frame.render_widget(
-            list.block(default_block().title(format!("Peers ({})", connected_peers_count))),
+            list.block(default_block().title(format!("Peers ({connected_peers_count})"))),
             split[4],
         );
 
@@ -558,7 +558,7 @@ impl SwarmPanel {
             .iter()
             .enumerate()
             .map(|(idx, (player_id, ranking))| {
-                let player = if let Ok(p) = world.get_player_or_err(&player_id) {
+                let player = if let Ok(p) = world.get_player_or_err(player_id) {
                     p
                 } else {
                     &ranking.player
@@ -660,7 +660,7 @@ impl SwarmPanel {
                             format!("[{}] ", event.timestamp.formatted_as_time()),
                             UiStyle::HIGHLIGHT,
                         ),
-                        Span::styled(format!("{}: ", from), UiStyle::NETWORK),
+                        Span::styled(format!("{from}: "), UiStyle::NETWORK),
                         Span::raw(event.text.clone()),
                     ]));
                 }
@@ -805,16 +805,14 @@ impl SplitPanel for SwarmPanel {
     fn set_index(&mut self, index: usize) {
         if self.max_index() == 0 {
             if self.active_list == PanelList::Players && self.view == SwarmView::Ranking {
-                return self.player_ranking_index = None;
+                self.player_ranking_index = None
             } else {
                 self.team_ranking_index = None;
             }
+        } else if self.active_list == PanelList::Players && self.view == SwarmView::Ranking {
+            self.player_ranking_index = Some(index % self.max_index())
         } else {
-            if self.active_list == PanelList::Players && self.view == SwarmView::Ranking {
-                return self.player_ranking_index = Some(index % self.max_index());
-            } else {
-                self.team_ranking_index = Some(index % self.max_index());
-            }
+            self.team_ranking_index = Some(index % self.max_index());
         }
     }
 }

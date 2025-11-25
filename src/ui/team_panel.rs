@@ -35,12 +35,11 @@ use ratatui::{
     prelude::Rect,
     widgets::Paragraph,
 };
-use std::vec;
-use strum_macros::Display;
+use std::fmt::Display;
 
 const IMG_FRAME_WIDTH: u16 = 80;
 
-#[derive(Debug, Clone, Copy, Display, Default, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Hash)]
 pub enum TeamView {
     #[default]
     All,
@@ -67,12 +66,14 @@ impl TeamView {
             TeamView::Peers => team.peer_id.is_some(),
         }
     }
+}
 
-    fn to_string(&self) -> String {
+impl Display for TeamView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TeamView::All => "All".to_string(),
-            TeamView::OpenToChallenge => "Open to challenge".to_string(),
-            TeamView::Peers => "From swarm".to_string(),
+            Self::All => write!(f, "All"),
+            Self::OpenToChallenge => write!(f, "Open to challenge"),
+            Self::Peers => write!(f, "From swarm"),
         }
     }
 }
@@ -124,7 +125,7 @@ impl TeamListPanel {
         .split(area);
 
         let mut filter_all_button = Button::new(
-            format!("{}", TeamView::All.to_string()),
+            TeamView::All.to_string(),
             UiCallback::SetTeamPanelView {
                 view: TeamView::All,
             },
@@ -133,7 +134,7 @@ impl TeamListPanel {
         .set_hover_text("View all teams.");
 
         let mut filter_challenge_button = Button::new(
-            format!("{}", TeamView::OpenToChallenge.to_string()),
+            TeamView::OpenToChallenge.to_string(),
             UiCallback::SetTeamPanelView {
                 view: TeamView::OpenToChallenge,
             },
@@ -142,7 +143,7 @@ impl TeamListPanel {
         .set_hover_text("View all teams that can be currently challenged to a game.");
 
         let mut filter_peers_button = Button::new(
-            format!("{}", TeamView::Peers.to_string()),
+            TeamView::Peers.to_string(),
             UiCallback::SetTeamPanelView {
                 view: TeamView::Peers,
             },
@@ -162,7 +163,7 @@ impl TeamListPanel {
         frame.render_interactive(filter_challenge_button, split[1]);
         frame.render_interactive(filter_peers_button, split[2]);
 
-        if self.teams.len() > 0 {
+        if !self.teams.is_empty() {
             let mut options = vec![];
             for team_id in self.teams.iter() {
                 let team = if let Some(team) = world.get_team(team_id) {
@@ -224,12 +225,11 @@ impl TeamListPanel {
             }),
         );
 
-        let side_length: u16;
-        if area.width > (PLAYER_IMAGE_WIDTH as u16 + 2) * 5 {
-            side_length = (area.width - (PLAYER_IMAGE_WIDTH as u16 + 2) * 5) / 2;
+        let side_length = if area.width > (PLAYER_IMAGE_WIDTH as u16 + 2) * 5 {
+            (area.width - (PLAYER_IMAGE_WIDTH as u16 + 2) * 5) / 2
         } else {
-            side_length = 0;
-        }
+            0
+        };
 
         let constraints = [
             Constraint::Min(side_length),
@@ -245,7 +245,7 @@ impl TeamListPanel {
         let player_name_split = Layout::horizontal(constraints).split(vertical_split[2]);
         let player_rating_split = Layout::horizontal(constraints).split(vertical_split[3]);
 
-        for i in 0..MIN_PLAYERS_PER_GAME as usize {
+        for i in 0..MIN_PLAYERS_PER_GAME {
             if i >= team.player_ids.len() {
                 break;
             }
@@ -349,7 +349,7 @@ impl TeamListPanel {
                         best_role.player_rating(skills).stars()
                     );
                     let mut button = Button::new(
-                        format!("{}{}", info, role_info),
+                        format!("{info}{role_info}"),
                         UiCallback::GoToPlayer {
                             player_id: team.player_ids[i + MIN_PLAYERS_PER_GAME],
                         },
@@ -386,7 +386,7 @@ impl TeamListPanel {
             Ok(go_to_team_current_planet_button) => {
                 frame.render_interactive(go_to_team_current_planet_button, button_split[0])
             }
-            Err(e) => log::error!("go_to_team_current_planet_button error: {} ", e.to_string()),
+            Err(e) => log::error!("go_to_team_current_planet_button error: {e} "),
         }
 
         if team.id != world.own_team_id {
@@ -394,7 +394,7 @@ impl TeamListPanel {
         }
 
         render_spaceship_description(
-            &team,
+            team,
             world,
             world.team_rating(&team.id).unwrap_or_default(),
             false,
@@ -435,7 +435,7 @@ impl Screen for TeamListPanel {
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
         if world.dirty_ui || self.all_teams.len() != world.teams.len() {
-            self.all_teams = world.teams.keys().into_iter().cloned().collect();
+            self.all_teams = world.teams.keys().cloned().collect();
             self.all_teams.sort_by(|a, b| {
                 let a = world.get_team_or_err(a).unwrap();
                 let b = world.get_team_or_err(b).unwrap();
@@ -456,12 +456,12 @@ impl Screen for TeamListPanel {
                     let team = world.get_team_or_err(team_id).unwrap();
                     self.view.rule(team, world.get_own_team().unwrap())
                 })
-                .map(|&player_id| player_id)
+                .copied()
                 .collect();
             self.update_view = false;
         }
 
-        if self.index >= self.teams.len() && self.teams.len() > 0 {
+        if self.index >= self.teams.len() && !self.teams.is_empty() {
             self.set_index(self.teams.len() - 1);
         }
         if self.index < self.teams.len() {
@@ -484,7 +484,7 @@ impl Screen for TeamListPanel {
 
         _debug_view: bool,
     ) -> AppResult<()> {
-        if self.all_teams.len() == 0 {
+        if self.all_teams.is_empty() {
             frame.render_widget(
                 Paragraph::new(" No team yet!"),
                 area.inner(Margin {
@@ -522,7 +522,7 @@ impl Screen for TeamListPanel {
                 });
             }
             KeyCode::Enter => {
-                let player_id = self.selected_player_id.clone();
+                let player_id = self.selected_player_id;
                 return Some(UiCallback::GoToPlayer { player_id });
             }
             _ => {}

@@ -94,12 +94,12 @@ impl NetworkHandler {
 
         let mut succesful_listen_on = false;
         if let Err(e) = swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{tcp_port}").parse()?) {
-            log::error!("Could not listen on ip4: {}", e);
+            log::error!("Could not listen on ip4: {e}");
         } else {
             succesful_listen_on = true;
         }
         if let Err(e) = swarm.listen_on(format!("/ip6/::/tcp/{tcp_port}").parse()?) {
-            log::error!("Could not listen on ip6: {}", e);
+            log::error!("Could not listen on ip6: {e}");
         } else {
             succesful_listen_on = true;
         };
@@ -169,7 +169,7 @@ impl NetworkHandler {
         tcp_port: u16,
     ) -> JoinHandle<()> {
         let local_keypair = self.local_keypair.clone();
-        let own_peer_id = self.own_peer_id().clone();
+        let own_peer_id = *self.own_peer_id();
 
         let (sender, mut receiver) = mpsc::channel(64);
 
@@ -195,7 +195,7 @@ impl NetworkHandler {
                         for peer_id in connected_peers {
                             let _ = swarm
                                 .disconnect_peer_id(peer_id)
-                                .map_err(|e| error!("Error disconnecting peer id {}: {:?}", peer_id, e));
+                                .map_err(|e| error!("Error disconnecting peer id {peer_id}: {e:?}"));
                         }
 
                         break;
@@ -300,12 +300,12 @@ impl NetworkHandler {
     }
 
     fn send_game(&mut self, world: &World, game_id: &GameId) -> AppResult<()> {
-        let network_game = NetworkGame::from_game_id(&world, game_id)?;
+        let network_game = NetworkGame::from_game_id(world, game_id)?;
         self._send(&NetworkData::Game(Tick::now(), network_game))
     }
 
     fn send_team(&mut self, world: &World, team_id: TeamId) -> AppResult<()> {
-        let network_team = NetworkTeam::from_team_id(world, &team_id, self.own_peer_id().clone())?;
+        let network_team = NetworkTeam::from_team_id(world, &team_id, *self.own_peer_id())?;
 
         self._send(&NetworkData::Team(Tick::now(), network_team))
     }
@@ -329,13 +329,13 @@ impl NetworkHandler {
         let mut home_team_in_game =
             TeamInGame::from_team_id(&world.own_team_id, &world.teams, &world.players)
                 .ok_or(anyhow!("Cannot generate home team in game"))?;
-        home_team_in_game.peer_id = Some(self.own_peer_id().clone());
+        home_team_in_game.peer_id = Some(*self.own_peer_id());
 
         let away_team_in_game = TeamInGame::from_team_id(&team_id, &world.teams, &world.players)
             .ok_or(anyhow!("Cannot generate away team in game"))?;
 
         let challenge = Challenge::new(
-            self.own_peer_id().clone(),
+            *self.own_peer_id(),
             peer_id,
             home_team_in_game,
             away_team_in_game,
@@ -359,7 +359,7 @@ impl NetworkHandler {
         let target_player = world.get_player_or_err(&target_player_id)?.clone();
 
         let trade = Trade::new(
-            self.own_peer_id().clone(),
+            *self.own_peer_id(),
             target_peer_id,
             proposer_player,
             target_player,
@@ -387,7 +387,7 @@ impl NetworkHandler {
                 TeamInGame::from_team_id(&world.own_team_id, &world.teams, &world.players)
                     .ok_or(anyhow!("Cannot generate team in game"))?;
 
-            away_team_in_game.peer_id = Some(self.own_peer_id().clone());
+            away_team_in_game.peer_id = Some(*self.own_peer_id());
 
             // Note: we do not start immediately the game at this point,
             // because it could take a long time to accept a challenge
@@ -496,7 +496,7 @@ impl NetworkHandler {
                 address,
             } => Some(NetworkCallback::PushSwarmPanelLog {
                 timestamp: Tick::now(),
-                text: format!("Expired listen address: {}", address),
+                text: format!("Expired listen address: {address}"),
             }),
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                 self.connected_peers_count += 1;
@@ -508,7 +508,7 @@ impl NetworkHandler {
             }
             _ => Some(NetworkCallback::PushSwarmPanelLog {
                 timestamp: Tick::now(),
-                text: format!("Event: {:?}", event),
+                text: format!("Event: {event:?}"),
             }),
         }
     }

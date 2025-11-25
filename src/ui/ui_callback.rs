@@ -322,7 +322,7 @@ impl UiCallback {
                 .world
                 .get_player_or_err(&player_id)?
                 .team
-                .ok_or(anyhow!("Player {:?} has no team", player_id))?;
+                .ok_or(anyhow!("Player {player_id:?} has no team"))?;
 
             app.ui.team_panel.reset_view();
 
@@ -503,16 +503,16 @@ impl UiCallback {
             {
                 0 => (
                     TeamInGame::from_team_id(&own_team_id, &app.world.teams, &app.world.players)
-                        .ok_or(anyhow!("Own team {:?} not found", own_team_id))?,
+                        .ok_or(anyhow!("Own team {own_team_id:?} not found"))?,
                     TeamInGame::from_team_id(&team_id, &app.world.teams, &app.world.players)
-                        .ok_or(anyhow!("Team {:?} not found", team_id))?,
+                        .ok_or(anyhow!("Team {team_id:?} not found"))?,
                 ),
 
                 1 => (
                     TeamInGame::from_team_id(&team_id, &app.world.teams, &app.world.players)
-                        .ok_or(anyhow!("Team {:?} not found", team_id))?,
+                        .ok_or(anyhow!("Team {team_id:?} not found"))?,
                     TeamInGame::from_team_id(&own_team_id, &app.world.teams, &app.world.players)
-                        .ok_or(anyhow!("Own team {:?} not found", own_team_id))?,
+                        .ok_or(anyhow!("Own team {own_team_id:?} not found"))?,
                 ),
                 _ => unreachable!(),
             };
@@ -524,7 +524,7 @@ impl UiCallback {
             app.ui.game_panel.update(&app.world)?;
             app.ui.game_panel.set_active_game(game_id)?;
             app.ui.switch_to(super::ui::UiTab::Games);
-            return Ok(Some("Challenge accepted".to_string()));
+            Ok(Some("Challenge accepted".to_string()))
         })
     }
 
@@ -569,7 +569,7 @@ impl UiCallback {
 
                 return Ok(Some("Trade accepted".to_string()));
             }
-            return Ok(Some("Trade Rejected".to_string()));
+            Ok(Some("Trade Rejected".to_string()))
         })
     }
     fn next_ui_tab() -> AppCallback {
@@ -720,7 +720,7 @@ impl UiCallback {
             let duration = app
                 .world
                 .travel_time_to_planet(own_team.id, target_planet.id)?;
-            own_team.can_travel_to_planet(&target_planet, duration)?;
+            own_team.can_travel_to_planet(target_planet, duration)?;
             let distance = app
                 .world
                 .distance_between_planets(current_planet.id, target_planet.id)?;
@@ -732,11 +732,7 @@ impl UiCallback {
                 distance,
             };
 
-            let is_teleporting = if duration <= TELEPORT_MAX_DURATION {
-                true
-            } else {
-                false
-            };
+            let is_teleporting = duration <= TELEPORT_MAX_DURATION;
 
             if is_teleporting {
                 let rum_consumed = own_team.player_ids.len() as u32;
@@ -765,7 +761,7 @@ impl UiCallback {
 
             let pirate_jersey = Jersey {
                 style: JerseyStyle::Pirate,
-                color: own_team.jersey.color.clone(),
+                color: own_team.jersey.color,
             };
 
             for player in own_team.player_ids.iter() {
@@ -818,7 +814,7 @@ impl UiCallback {
 
             let pirate_jersey = Jersey {
                 style: JerseyStyle::Pirate,
-                color: own_team.jersey.color.clone(),
+                color: own_team.jersey.color,
             };
 
             for player_id in own_team.player_ids.iter() {
@@ -1074,7 +1070,7 @@ impl UiCallback {
             UiCallback::SetTeamTactic { tactic } => {
                 let own_team = app.world.get_own_team()?;
                 let mut team = own_team.clone();
-                team.game_tactic = tactic.clone();
+                team.game_tactic = *tactic;
                 app.world.teams.insert(team.id, team);
                 app.world.dirty = true;
                 app.world.dirty_ui = true;
@@ -1139,7 +1135,7 @@ impl UiCallback {
                 target_player_id,
             } => Self::trade_players(*proposer_player_id, *target_player_id)(app),
             UiCallback::AcceptTrade { trade } => {
-                if let Err(e) = app.network_handler.accept_trade(&&app.world, trade.clone()) {
+                if let Err(e) = app.network_handler.accept_trade(&app.world, trade.clone()) {
                     let own_team = app.world.get_own_team_mut()?;
                     own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
                     return Err(e);
@@ -1249,11 +1245,7 @@ impl UiCallback {
                 let player = app.world.get_player_or_err(player_id)?;
                 let own_team = app.world.get_own_team()?;
                 let not_enough_players_for_game =
-                    if own_team.player_ids.len() - 1 < MIN_PLAYERS_PER_GAME {
-                        true
-                    } else {
-                        false
-                    };
+                    own_team.player_ids.len() - 1 < MIN_PLAYERS_PER_GAME;
                 app.ui.push_popup(PopupMessage::ReleasePlayer {
                     player_name: player.info.full_name(),
                     player_id: *player_id,
@@ -1335,7 +1327,7 @@ impl UiCallback {
                                     && p.peer_id.is_none()
                             })
                             .choose(rng)
-                            .map(|(&id, _)| id.clone()),
+                            .map(|(&id, _)| id),
 
                         TeamLocation::Exploring { around, .. } => app
                             .world
@@ -1345,7 +1337,7 @@ impl UiCallback {
                                 id != around && p.total_population() > 0 && p.peer_id.is_none()
                             })
                             .choose(rng)
-                            .map(|(&id, _)| id.clone()),
+                            .map(|(&id, _)| id),
                     };
                     if let Some(to) = portal_target_id {
                         let portal_target = app.world.get_planet_or_err(&to)?;
@@ -1409,7 +1401,7 @@ impl UiCallback {
             UiCallback::NextTrainingFocus { team_id } => Self::next_training_focus(*team_id)(app),
             UiCallback::TravelToPlanet { planet_id } => Self::travel_to_planet(*planet_id)(app),
             UiCallback::ExploreAroundPlanet { duration } => {
-                Self::explore_around_planet(duration.clone())(app)
+                Self::explore_around_planet(*duration)(app)
             }
             UiCallback::ZoomToPlanet {
                 planet_id,
@@ -1426,19 +1418,19 @@ impl UiCallback {
                 Self::name_and_accept_asteroid(name.clone(), filename.clone())(app)
             }
             UiCallback::SetSpaceshipUpgrade { upgrade } => {
-                Self::set_spaceship_upgrade(upgrade.clone())(app)
+                Self::set_spaceship_upgrade(*upgrade)(app)
             }
             UiCallback::UpgradeSpaceship { upgrade } => {
-                Self::upgrade_spaceship(upgrade.clone())(app)
+                Self::upgrade_spaceship(*upgrade)(app)
             }
             UiCallback::SetAsteroidUpgrade {
                 asteroid_id,
                 upgrade,
-            } => Self::set_asteroid_upgrade(*asteroid_id, upgrade.clone())(app),
+            } => Self::set_asteroid_upgrade(*asteroid_id, *upgrade)(app),
             UiCallback::UpgradeAsteroid {
                 asteroid_id,
                 upgrade,
-            } => Self::upgrade_asteroid(*asteroid_id, upgrade.clone())(app),
+            } => Self::upgrade_asteroid(*asteroid_id, *upgrade)(app),
             UiCallback::StartSpaceAdventure => {
                 app.ui.set_state(UiState::SpaceAdventure);
                 let mut own_team = app.world.get_own_team()?.clone();
@@ -1480,7 +1472,7 @@ impl UiCallback {
                 match own_team.current_location {
                     TeamLocation::OnPlanet { planet_id } => {
                         own_team.current_location = TeamLocation::OnSpaceAdventure {
-                            around: planet_id.clone(),
+                            around: planet_id,
                         }
                     }
                     _ => {
@@ -1554,7 +1546,7 @@ impl UiCallback {
                     }
                 }
 
-                if resources_gathered_text.len() == 0 {
+                if resources_gathered_text.is_empty() {
                     resources_gathered_text.push_str("No resources collected!")
                 } else {
                     resources_gathered_text.push_str("collected.")
@@ -1585,10 +1577,9 @@ impl UiCallback {
                     });
                 }
 
-                return Ok(Some(format!(
-                    "Team returned from space adventure:\n{}",
-                    resources_gathered_text
-                )));
+                Ok(Some(format!(
+                    "Team returned from space adventure:\n{resources_gathered_text}"
+                )))
             }
             UiCallback::SpaceMovePlayerLeft => {
                 if let Some(space) = app.world.space_adventure.as_mut() {
@@ -1691,7 +1682,7 @@ impl CallbackRegistry {
     ) {
         self.mouse_callbacks
             .entry(event_kind)
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(rect, callback);
     }
 

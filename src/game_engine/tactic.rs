@@ -63,7 +63,7 @@ impl Tactic {
             Self::Arrembaggio => [3, 1, 3, 1],
             Self::Shooters => [1, 4, 2, 1],
         };
-        let action = match WeightedIndex::new(&weights)?.sample(rng) {
+        let action = match WeightedIndex::new(weights)?.sample(rng) {
             0 => Action::Isolation,
             1 => Action::OffTheScreen,
             2 => Action::PickAndRoll,

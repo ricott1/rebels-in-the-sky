@@ -97,7 +97,7 @@ impl ExtraImageUtils for RgbaImage {
                 let p = self.get_pixel(i, k);
                 if p[3] > 0 {
                     let mask_p = mask.get_pixel_checked(i, k).unwrap_or_else(|| {
-                        log::error!("Failed to get pixel from mask: {:?}", color_map);
+                        log::error!("Failed to get pixel from mask: {color_map:?}");
                         &Rgba([0, 0, 0, 0])
                     });
                     let mapped_pixel = match *p {
@@ -147,7 +147,7 @@ impl ExtraImageUtils for RgbaImage {
 pub fn open_image(path: &str) -> AppResult<RgbaImage> {
     let file = ASSETS_DIR.get_file(path);
     if file.is_none() {
-        return Err(anyhow!("File {} not found", path));
+        return Err(anyhow!("File {path} not found"));
     }
     let img = ImageReader::new(Cursor::new(file.unwrap().contents()))
         .with_guessed_format()?

@@ -31,10 +31,7 @@ impl JerseyStyle {
     }
 
     pub fn is_available_at_creation(&self) -> bool {
-        match self {
-            Self::Pirate => false,
-            _ => true,
-        }
+        !matches!(self, Self::Pirate)
     }
 }
 

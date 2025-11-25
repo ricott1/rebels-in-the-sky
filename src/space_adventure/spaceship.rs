@@ -176,7 +176,7 @@ impl Body for SpaceshipEntity {
             }
         }
 
-        self.acceleration = self.acceleration - self.friction_coeff * self.velocity;
+        self.acceleration -= self.friction_coeff * self.velocity;
 
         let prev_velocity = self.velocity;
         self.velocity += self.acceleration * deltatime;
@@ -242,12 +242,12 @@ impl Sprite for SpaceshipEntity {
     }
 
     fn should_apply_visual_effects<'a>(&self) -> bool {
-        self.visual_effects.len() > 0
+        !self.visual_effects.is_empty()
     }
 
     fn apply_visual_effects<'a>(&'a self, image: &'a RgbaImage) -> RgbaImage {
         let mut image = image.clone();
-        if self.visual_effects.len() > 0 {
+        if !self.visual_effects.is_empty() {
             for (effect, time) in self.visual_effects.iter() {
                 effect.apply(self, &mut image, *time);
             }
@@ -260,7 +260,7 @@ impl Sprite for SpaceshipEntity {
     }
 
     fn remove_visual_effect(&mut self, effect: &VisualEffect) {
-        self.visual_effects.remove(&effect);
+        self.visual_effects.remove(effect);
     }
 
     fn update_sprite(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
@@ -295,18 +295,15 @@ impl Entity for SpaceshipEntity {
 
         if !self.is_player {
             let rng = &mut rand::rng();
-            match self.shooter.state {
-                ShooterState::Ready { charge } => {
-                    if !self.auto_shoot
-                        && charge > ShooterState::MAX_CHARGE * rng.random_range(0.25..1.0)
-                    {
-                        self.auto_shoot = true;
-                    }
-                    if charge <= 0.25 {
-                        self.auto_shoot = false;
-                    }
+            if let ShooterState::Ready { charge } = self.shooter.state {
+                if !self.auto_shoot
+                    && charge > ShooterState::MAX_CHARGE * rng.random_range(0.25..1.0)
+                {
+                    self.auto_shoot = true;
                 }
-                _ => {}
+                if charge <= 0.25 {
+                    self.auto_shoot = false;
+                }
             }
         }
 
@@ -545,7 +542,7 @@ impl SpaceshipEntity {
         if self.is_player {
             return 1;
         }
-        return -1;
+        -1
     }
 
     fn thrust(&self) -> f32 {
@@ -586,10 +583,7 @@ impl SpaceshipEntity {
     }
 
     fn shoot(&mut self) {
-        match self.shooter.state {
-            ShooterState::Ready { charge } => self.shooter.shoot(charge),
-            _ => {}
-        }
+        if let ShooterState::Ready { charge } = self.shooter.state { self.shooter.shoot(charge) }
     }
 
     fn release_scraps(&mut self) {

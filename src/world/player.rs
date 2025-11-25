@@ -479,7 +479,7 @@ impl<'de> Deserialize<'de> for Player {
             }
         }
 
-        const FIELDS: &'static [&'static str] = &[
+        const FIELDS: &[&str] = &[
             "id",
             "peer_id",
             "version",
@@ -666,7 +666,7 @@ impl Player {
             defense,
             mental,
             current_location: PlayerLocation::OnPlanet {
-                planet_id: home_planet_id.clone(),
+                planet_id: *home_planet_id,
             },
             image,
             skills_training: [Skill::default(); 20],
@@ -710,12 +710,12 @@ impl Player {
         // Extra potential has a variance that depends
         let std_dev = 3.0 + 1.0 - player.info.relative_age();
         let normal = Normal::new(0.0, std_dev).expect("Should create valid normal distribution");
-        let extra_potential = (normal.sample(rng) as f32).abs();
+        let extra_potential = normal.sample(rng).abs();
         player.potential = (player.average_skill() + extra_potential)
             .max(player.average_skill())
             .bound();
         player.reputation =
-            (player.average_skill() as f32 / 5.0 + player.info.relative_age() * 5.0).bound();
+            (player.average_skill() / 5.0 + player.info.relative_age() * 5.0).bound();
 
         player
     }
@@ -740,7 +740,7 @@ impl Player {
                 self.athletics.strength = (self.athletics.strength * 1.35).bound();
             }
             Population::Polpett => {
-                self.info.height = self.info.height * 0.95;
+                self.info.height *= 0.95;
                 self.mental.aggression = (self.mental.aggression * 1.35).bound();
                 self.defense.steal = (self.defense.steal * 1.2).bound();
             }
@@ -961,7 +961,7 @@ impl Player {
             17 => self.mental.aggression = new_value,
             18 => self.mental.intuition = new_value,
             19 => self.mental.charisma = new_value,
-            _ => panic!("Invalid skill index {}", idx),
+            _ => panic!("Invalid skill index {idx}"),
         }
     }
 
@@ -1132,7 +1132,7 @@ impl InfoStats {
             first_name,
             last_name,
             crew_role: CrewRole::default(),
-            home_planet_id: home_planet_id.clone(),
+            home_planet_id: *home_planet_id,
             population,
             age,
             pronouns,
@@ -1159,15 +1159,15 @@ impl Trait {
                 "Better at brawling during games. Bonus is based on reputation (+{}).",
                 player.reputation.value()
             ),
-            Trait::Relentless => format!("Cannot get exhausted"),
+            Trait::Relentless => "Cannot get exhausted".to_string(),
             Trait::Showpirate => {
                 format!(
                     "Increase games attendance based on reputation (+{}%)",
                     player.reputation.value()
                 )
             }
-            Trait::Spugna => format!("Immediately maximizes morale when drinking. It is said that a drunk pilot could bring you somewhere unexpected...",),
-            Trait::Crumiro => format!("Legendary trait of the emperor's crew members"),
+            Trait::Spugna => "Immediately maximizes morale when drinking. It is said that a drunk pilot could bring you somewhere unexpected...".to_string(),
+            Trait::Crumiro => "Legendary trait of the emperor's crew members".to_string(),
         }
     }
 }

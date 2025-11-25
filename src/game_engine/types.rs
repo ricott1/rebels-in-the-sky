@@ -112,7 +112,7 @@ impl GameStats {
         self.turnovers += stats.turnovers;
         if let Some(shot) = stats.last_action_shot {
             self.shots.push(shot);
-            assert!(self.shots.len() > 0);
+            assert!(!self.shots.is_empty());
         }
         self.last_action_shot = stats.last_action_shot;
         for (idx, exp) in stats.experience_at_position.iter().enumerate() {
@@ -173,7 +173,7 @@ impl<'game> TeamInGame {
             peer_id: team.peer_id,
             reputation: team.reputation,
             name: team.name.clone(),
-            initial_positions: players.keys().map(|id| id.clone()).collect_vec(),
+            initial_positions: players.keys().copied().collect_vec(),
             initial_tiredness,
             initial_morale,
             version: team.version,
@@ -216,7 +216,7 @@ impl PersistedTeamInGame {
     pub fn from_team_in_game(team_in_game: &TeamInGame) -> Self {
         let mut players = HashMap::new();
         for (player_id, player) in team_in_game.players.iter() {
-            players.insert(player_id.clone(), PersistedPlayer::from_player(player));
+            players.insert(*player_id, PersistedPlayer::from_player(player));
         }
         Self {
             team_id: team_in_game.team_id,

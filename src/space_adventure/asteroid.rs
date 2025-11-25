@@ -144,7 +144,7 @@ impl Body for AsteroidEntity {
 
     fn update_body(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
         self.previous_position = self.position;
-        self.position = self.position + self.velocity * deltatime;
+        self.position += self.velocity * deltatime;
 
         if self.size != AsteroidSize::Planet {
             if self.position.x < 0.0 || self.position.x > MAX_ENTITY_POSITION.x as f32 {
@@ -178,12 +178,12 @@ impl Sprite for AsteroidEntity {
     }
 
     fn should_apply_visual_effects<'a>(&self) -> bool {
-        self.visual_effects.len() > 0
+        !self.visual_effects.is_empty()
     }
 
     fn apply_visual_effects<'a>(&'a self, image: &'a RgbaImage) -> RgbaImage {
         let mut image = image.clone();
-        if self.visual_effects.len() > 0 {
+        if !self.visual_effects.is_empty() {
             for (effect, time) in self.visual_effects.iter() {
                 effect.apply(self, &mut image, *time);
             }
@@ -199,7 +199,7 @@ impl Sprite for AsteroidEntity {
     }
 
     fn remove_visual_effect(&mut self, effect: &VisualEffect) {
-        self.visual_effects.remove(&effect);
+        self.visual_effects.remove(effect);
     }
 
     fn update_sprite(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
@@ -268,15 +268,9 @@ impl Entity for AsteroidEntity {
             }
             SpaceCallback::DestroyEntity { .. } => {
                 // If the asteroid got destroyed by going out-of-screen, don't spawn smaller ones.
-                let should_emit_fragments = if self.position.x < 0.0
+                let should_emit_fragments = !(self.position.x < 0.0
                     || self.position.x > MAX_ENTITY_POSITION.x as f32
-                    || self.position.y < 0.0
-                    || self.position.y > MAX_ENTITY_POSITION.y as f32
-                {
-                    false
-                } else {
-                    true
-                };
+                    || self.position.y < 0.0 || self.position.y > MAX_ENTITY_POSITION.y as f32);
 
                 let rng = &mut ChaCha8Rng::from_os_rng();
                 let mut callbacks = vec![];

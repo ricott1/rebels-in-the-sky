@@ -16,12 +16,12 @@ use std::collections::HashMap;
 pub struct OffTheScreen;
 
 impl EngineAction for OffTheScreen {
-    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
+    fn execute(input: &ActionOutput, game: &Game, action_rng: &mut ChaCha8Rng, description_rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
 
         let play_idx = match input.attackers.len() {
-            0 => Self::sample(rng, [6, 1, 2, 0, 0])?,
+            0 => Self::sample(action_rng, [6, 1, 2, 0, 0])?,
             _ => input.attackers[0],
         };
         let target_idx = match input.attackers.len() {
@@ -29,7 +29,7 @@ impl EngineAction for OffTheScreen {
             _ => {
                 let mut weights = [1, 2, 3, 3, 2];
                 weights[play_idx] = 0;
-                Self::sample(rng, weights)?
+                Self::sample(action_rng, weights)?
             }
         };
 
@@ -47,14 +47,14 @@ impl EngineAction for OffTheScreen {
         let mut target_defender_update = GameStats::default();
         target_defender_update.extra_tiredness = TirednessCost::MEDIUM;
 
-        let timer_increase = 4 + rng.random_range(0..=2);
+        let timer_increase = 4 + action_rng.random_range(0..=2);
 
-        let atk_result = playmaker.roll(rng)
+        let atk_result = playmaker.roll(action_rng)
             + playmaker.mental.vision.game_value()
             + playmaker.technical.passing.game_value()
             + target.mental.intuition.game_value();
 
-        let def_result = playmaker_defender.roll(rng)
+        let def_result = playmaker_defender.roll(action_rng)
             + target_defender.defense.perimeter_defense.game_value()
             + target_defender.athletics.quickness.game_value();
 
@@ -86,7 +86,7 @@ impl EngineAction for OffTheScreen {
                         "{} grabs the pass from {} and now has an easy opportunity for a shot.",
                         target.info.short_name(), playmaker.info.short_name(),
                     ),
-                ].choose(rng).expect("There should be one option").clone(),
+                ].choose(description_rng).expect("There should be one option").clone(),
                 assist_from: Some(play_idx),
                 start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),
@@ -121,7 +121,7 @@ impl EngineAction for OffTheScreen {
                         "{} passes to {} as they come off the screen for a look at the basket.",
                         playmaker.info.short_name(), target.info.short_name(),
                     ),
-                ].choose(rng).expect("There should be one option").clone(),
+                ].choose(description_rng).expect("There should be one option").clone(),
                 assist_from: Some(play_idx),
                 start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),
@@ -156,7 +156,7 @@ impl EngineAction for OffTheScreen {
                         "{} gets the pass after the screen, but {} doesn't give an inch, and the shot is off balance.",
                         playmaker.info.short_name(), target.info.short_name(),
                     ),
-                ].choose(rng).expect("There should be one option").clone(),
+                ].choose(description_rng).expect("There should be one option").clone(),
                 assist_from: Some(play_idx),
                 start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),
@@ -192,7 +192,7 @@ impl EngineAction for OffTheScreen {
                             "{} tries to feed the ball to {} after the screen, but {} steals it away.",
                             playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name()
                         )
-                    ].choose(rng).expect("There should be one option").clone()} else {
+                    ].choose(description_rng).expect("There should be one option").clone()} else {
                         [format!(
                             "{} passes to {} off the screen, but the pass is too high and goes out of bounds.",
                             playmaker.info.short_name(), target.info.short_name()
@@ -200,7 +200,7 @@ impl EngineAction for OffTheScreen {
                         format!(
                             "{} sends it to {}, but the pass is off the mark.",
                             playmaker.info.short_name(), target.info.short_name()
-                        )].choose(rng).expect("There should be one option").clone()
+                        )].choose(description_rng).expect("There should be one option").clone()
                     };
 
                 ActionOutput {
@@ -208,7 +208,7 @@ impl EngineAction for OffTheScreen {
                     possession: !input.possession,
                     description,
                     start_at: input.end_at,
-                end_at: input.end_at.plus(3 +  rng.random_range(0..=2)),
+                end_at: input.end_at.plus(3 +  action_rng.random_range(0..=2)),
                 home_score: input.home_score,
                     away_score: input.away_score,
                     ..Default::default()

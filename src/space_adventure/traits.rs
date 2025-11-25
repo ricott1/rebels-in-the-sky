@@ -80,7 +80,7 @@ pub trait Sprite {
 
     fn network_image_type(&self) -> ImageType;
 
-    fn should_apply_visual_effects<'a>(&self) -> bool {
+    fn should_apply_visual_effects(&self) -> bool {
         false
     }
 

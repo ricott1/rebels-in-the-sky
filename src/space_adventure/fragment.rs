@@ -37,18 +37,15 @@ impl Body for FragmentEntity {
     }
 
     fn update_body(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
-        match self.state {
-            EntityState::Decaying { lifetime } => {
-                let new_lifetime = lifetime - deltatime;
-                if new_lifetime > 0.0 {
-                    self.state = EntityState::Decaying {
-                        lifetime: new_lifetime,
-                    };
-                } else {
-                    return vec![SpaceCallback::DestroyEntity { id: self.id() }];
-                }
+        if let EntityState::Decaying { lifetime } = self.state {
+            let new_lifetime = lifetime - deltatime;
+            if new_lifetime > 0.0 {
+                self.state = EntityState::Decaying {
+                    lifetime: new_lifetime,
+                };
+            } else {
+                return vec![SpaceCallback::DestroyEntity { id: self.id() }];
             }
-            _ => {}
         }
 
         self.previous_position = self.position;

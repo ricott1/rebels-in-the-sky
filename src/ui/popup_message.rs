@@ -82,7 +82,7 @@ impl PopupMessage {
             PopupMessage::AsteroidNameDialog { .. } => (54, 28),
             PopupMessage::PortalFound { .. } => (54, 44),
             PopupMessage::ExplorationResult { resources, .. } => {
-                if resources.value(&&Resource::GOLD) > 0 {
+                if resources.value(&Resource::GOLD) > 0 {
                     (54, 26)
                 } else {
                     (54, 16)
@@ -148,7 +148,7 @@ impl PopupMessage {
                         return Some(UiCallback::NameAndAcceptAsteroid { name, filename });
                     }
                 } else if key_event.code == UiKey::NO_TO_DIALOG {
-                    if popup_input.lines()[0].len() == 0 {
+                    if popup_input.lines()[0].is_empty() {
                         return Some(UiCallback::CloseUiPopup);
                     }
                     popup_input.input(input_from_key_event(key_event));
@@ -160,7 +160,7 @@ impl PopupMessage {
             PopupMessage::ReleasePlayer { player_id, .. } => {
                 if key_event.code == UiKey::YES_TO_DIALOG {
                     return Some(UiCallback::ConfirmReleasePlayer {
-                        player_id: player_id.clone(),
+                        player_id: *player_id,
                     });
                 } else if key_event.code == UiKey::NO_TO_DIALOG {
                     return Some(UiCallback::CloseUiPopup);
@@ -170,7 +170,7 @@ impl PopupMessage {
             PopupMessage::AbandonAsteroid { asteroid_id, .. } => {
                 if key_event.code == UiKey::YES_TO_DIALOG {
                     return Some(UiCallback::ConfirmAbandonAsteroid {
-                        asteroid_id: asteroid_id.clone(),
+                        asteroid_id: *asteroid_id,
                     });
                 } else if key_event.code == UiKey::NO_TO_DIALOG {
                     return Some(UiCallback::CloseUiPopup);
@@ -294,7 +294,7 @@ impl PopupMessage {
                 ..
             } => {
                 frame.render_widget(
-                    Paragraph::new(format!("Attention!"))
+                    Paragraph::new("Attention!".to_string())
                         .block(default_block().border_style(UiStyle::HIGHLIGHT))
                         .centered(),
                     split[0],
@@ -306,8 +306,7 @@ impl PopupMessage {
                 };
                 frame.render_widget(
                     Paragraph::new(format!(
-                        "Are you sure you want to release {} from the crew?{}",
-                        player_name, extra_warning
+                        "Are you sure you want to release {player_name} from the crew?{extra_warning}"
                     ))
                     .centered()
                     .wrap(Wrap { trim: true }),
@@ -324,10 +323,10 @@ impl PopupMessage {
                 let confirm_button = Button::new(
                     UiText::YES,
                     UiCallback::ConfirmReleasePlayer {
-                        player_id: player_id.clone(),
+                        player_id: *player_id,
                     },
                 )
-                .set_hover_text(format!("Confirm releasing {}", player_name))
+                .set_hover_text(format!("Confirm releasing {player_name}"))
                 .set_hotkey(UiKey::YES_TO_DIALOG)
                 .block(default_block().border_style(UiStyle::OK))
                 .set_layer(1);
@@ -335,7 +334,7 @@ impl PopupMessage {
                 frame.render_interactive(confirm_button, buttons_split[0]);
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
-                    .set_hover_text(format!("Don't release {}", player_name))
+                    .set_hover_text(format!("Don't release {player_name}"))
                     .set_hotkey(UiKey::NO_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::ERROR))
                     .set_layer(1);
@@ -349,15 +348,14 @@ impl PopupMessage {
                 ..
             } => {
                 frame.render_widget(
-                    Paragraph::new(format!("Attention!"))
+                    Paragraph::new("Attention!".to_string())
                         .block(default_block().border_style(UiStyle::HIGHLIGHT))
                         .centered(),
                     split[0],
                 );
                 frame.render_widget(
                     Paragraph::new(format!(
-                        "Are you sure you want to abandon {}?\nYou will not be able to come back!",
-                        asteroid_name
+                        "Are you sure you want to abandon {asteroid_name}?\nYou will not be able to come back!"
                     ))
                     .centered()
                     .wrap(Wrap { trim: true }),
@@ -374,10 +372,10 @@ impl PopupMessage {
                 let confirm_button = Button::new(
                     UiText::YES,
                     UiCallback::ConfirmAbandonAsteroid {
-                        asteroid_id: asteroid_id.clone(),
+                        asteroid_id: *asteroid_id,
                     },
                 )
-                .set_hover_text(format!("Confirm abandoning {}", asteroid_name))
+                .set_hover_text(format!("Confirm abandoning {asteroid_name}"))
                 .set_hotkey(UiKey::YES_TO_DIALOG)
                 .block(default_block().border_style(UiStyle::OK))
                 .set_layer(1);
@@ -385,7 +383,7 @@ impl PopupMessage {
                 frame.render_interactive(confirm_button, buttons_split[0]);
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
-                    .set_hover_text(format!("Don't abandon {}", asteroid_name))
+                    .set_hover_text(format!("Don't abandon {asteroid_name}"))
                     .set_hotkey(UiKey::NO_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::ERROR))
                     .set_layer(1);
@@ -398,7 +396,7 @@ impl PopupMessage {
                 ..
             } => {
                 frame.render_widget(
-                    Paragraph::new(format!("Attention!"))
+                    Paragraph::new("Attention!".to_string())
                         .block(default_block().border_style(UiStyle::HIGHLIGHT))
                         .centered(),
                     split[0],
@@ -422,7 +420,7 @@ impl PopupMessage {
                         .split(split[2]);
 
                 let confirm_button = Button::new(UiText::YES, UiCallback::QuitGame)
-                    .set_hover_text(format!("Confirm quitting."))
+                    .set_hover_text("Confirm quitting.".to_string())
                     .set_hotkey(UiKey::YES_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::OK))
                     .set_layer(1);
@@ -430,7 +428,7 @@ impl PopupMessage {
                 frame.render_interactive(confirm_button, buttons_split[0]);
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
-                    .set_hover_text(format!("Please don't go, don't goooooo..."))
+                    .set_hover_text("Please don't go, don't goooooo...".to_string())
                     .set_hotkey(UiKey::NO_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::ERROR))
                     .set_layer(1);
@@ -449,10 +447,10 @@ impl PopupMessage {
                     split[0],
                 );
 
-                let filename = format!("asteroid{}", asteroid_type);
+                let filename = format!("asteroid{asteroid_type}");
                 let asteroid_img = img_to_lines(&gif_map::GifMap::asteroid_zoom_out(&filename)?[0]);
 
-                if asteroid_img.len() == 0 {
+                if asteroid_img.is_empty() {
                     return Err(anyhow!("Invalid asteroid image"));
                 }
 
@@ -543,7 +541,7 @@ impl PopupMessage {
                 // Select a portal pseudorandomly.
                 let portal = &PORTAL_GIFS[*tick as usize % PORTAL_GIFS.len()];
 
-                if portal.len() == 0 {
+                if portal.is_empty() {
                     return Err(anyhow!("Invalid portal gif"));
                 }
 
@@ -557,8 +555,7 @@ impl PopupMessage {
                 .split(split[1]);
 
                 let text = format!(
-                    "{} got drunk while driving and accidentally found a portal to {}!",
-                    player_name, portal_target
+                    "{player_name} got drunk while driving and accidentally found a portal to {portal_target}!"
                 );
                 frame.render_widget(
                     Paragraph::new(text).centered().wrap(Wrap { trim: true }),
@@ -608,7 +605,7 @@ impl PopupMessage {
 
                 let treasure = &TREASURE_GIF;
 
-                if treasure.len() == 0 {
+                if treasure.is_empty() {
                     return Err(anyhow!("Invalid treasure gif"));
                 }
 
@@ -634,7 +631,7 @@ impl PopupMessage {
                     }
                 }
 
-                if players.len() > 0 {
+                if !players.is_empty() {
                     text.push_str(
                     format! {"\nFound {} stranded pirate{}:\n", players.len(), if players.len() > 1 {
                         "s"
@@ -646,10 +643,10 @@ impl PopupMessage {
                         text.push_str(p_text.as_str());
                     }
 
-                    text.push_str(format!("You can hire them on {}", planet_name).as_str());
+                    text.push_str(format!("You can hire them on {planet_name}").as_str());
                 }
 
-                if text.len() == 0 {
+                if text.is_empty() {
                     text.push_str("Nothing found!")
                 }
 
@@ -711,12 +708,12 @@ impl PopupMessage {
                 let planet_gif = if *planet_type == PlanetType::Asteroid {
                     GifMap::asteroid_zoom_out(planet_filename)?
                 } else {
-                    Gif::open(format!("planets/{}_zoomout.gif", planet_filename))?
+                    Gif::open(format!("planets/{planet_filename}_zoomout.gif"))?
                 };
 
                 let planet_gif_lines = planet_gif.to_lines();
 
-                if planet_gif_lines.len() == 0 {
+                if planet_gif_lines.is_empty() {
                     return Err(anyhow!("Invalid planet gif"));
                 }
 
@@ -729,7 +726,7 @@ impl PopupMessage {
                 ])
                 .split(split[1]);
 
-                let text = format!("{} landed on planet {}.", team_name, planet_name);
+                let text = format!("{team_name} landed on planet {planet_name}.");
                 frame.render_widget(
                     Paragraph::new(text).centered().wrap(Wrap { trim: true }),
                     m_split[0].inner(Margin {

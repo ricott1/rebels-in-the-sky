@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::SystemTime;
 
-static PASSWORD_SALT: &'static str = "agfg34g";
+static PASSWORD_SALT: &str = "agfg34g";
 pub const CMD_RESIZE: u8 = 0x04;
 
 pub type Password = [u8; 32];
@@ -33,7 +33,7 @@ impl Default for SessionAuth {
 impl SessionAuth {
     pub fn new(username: String, password: String) -> Self {
         let mut hasher = Sha256::new();
-        let salted_password = format!("{}{}", password, PASSWORD_SALT);
+        let salted_password = format!("{password}{PASSWORD_SALT}");
         hasher.update(salted_password);
         let hashed_password = hasher.finalize().to_vec()[..]
             .try_into()
@@ -173,10 +173,8 @@ fn convert_data_to_crossterm_event(data: &[u8]) -> Option<crossterm::event::Even
         if let Some(event) = convert_data_to_mouse_event(data) {
             return Some(crossterm::event::Event::Mouse(event));
         }
-    } else {
-        if let Some(event) = convert_data_to_key_event(data) {
-            return Some(crossterm::event::Event::Key(event));
-        }
+    } else if let Some(event) = convert_data_to_key_event(data) {
+        return Some(crossterm::event::Event::Key(event));
     }
 
     None

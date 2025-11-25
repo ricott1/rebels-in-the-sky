@@ -2,7 +2,6 @@
 use crate::audio;
 #[cfg(feature = "ssh")]
 use crate::ssh::SSHWriterProxy;
-use crate::tick_event_handler::FAST_TICK_FPS;
 use crate::types::AppResult;
 use crate::ui::ui::Ui;
 use crate::ui::UI_SCREEN_SIZE;
@@ -20,6 +19,8 @@ use ratatui::Viewport;
 use std::io::{self};
 use std::panic;
 use std::time::{Duration, Instant};
+
+const MAX_DRAW_FPS: u8 = 30;
 
 pub trait WriterProxy: io::Write + std::fmt::Debug {
     fn send(&mut self) -> impl std::future::Future<Output = std::io::Result<usize>> + Send {
@@ -74,12 +75,11 @@ impl Tui<io::Stdout> {
     pub fn new_local() -> AppResult<Self> {
         let backend = CrosstermBackend::new(io::stdout());
         let terminal = Terminal::new(backend)?;
-        const MAX_FPS: f32 = FAST_TICK_FPS as f32;
         let mut tui = Self {
             tui_type: TuiType::Local,
             terminal,
             last_draw: Instant::now(),
-            min_duration_between_draws: Duration::from_secs_f32(1.0 / MAX_FPS),
+            min_duration_between_draws: Duration::from_secs_f32(1.0 / MAX_DRAW_FPS as f32),
         };
         tui.init()?;
         Ok(tui)
@@ -100,12 +100,11 @@ impl Tui<SSHWriterProxy> {
         };
 
         let terminal = Terminal::with_options(backend, opts)?;
-        const MAX_FPS: f32 = FAST_TICK_FPS as f32 / 2.0;
         let mut tui = Self {
             tui_type: TuiType::SSH,
             terminal,
             last_draw: Instant::now(),
-            min_duration_between_draws: Duration::from_secs_f32(1.0 / MAX_FPS),
+            min_duration_between_draws: Duration::from_secs_f32(2.0 * 1.0 / MAX_DRAW_FPS as f32), // Draw with half the FPS of the local TUI.
         };
 
         tui.init()?;
@@ -193,8 +192,15 @@ where
             return Ok(());
         }
 
+        log::info!(
+            "last draw {:#?} min duration {:#?} => {}",
+            self.last_draw.elapsed(),
+            self.min_duration_between_draws,
+            self.last_draw.elapsed() >= self.min_duration_between_draws
+        );
+
         // Draw at most at MAX_FPS
-        if self.last_draw.elapsed() > self.min_duration_between_draws {
+        if self.last_draw.elapsed() >= self.min_duration_between_draws {
             self.terminal.draw(|frame| {
                 ui.render(
                     frame,
@@ -208,6 +214,8 @@ where
             if self.tui_type == TuiType::SSH {
                 self.terminal.backend_mut().writer_mut().send().await?;
             }
+
+            self.last_draw = Instant::now();
         }
 
         Ok(())

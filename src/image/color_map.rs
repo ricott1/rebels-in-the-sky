@@ -129,18 +129,12 @@ pub enum ColorPreset {
 
 impl ColorPreset {
     pub fn next(&self) -> Self {
-        return match Self::from_repr(*self as u8 + 1) {
-            Some(color_preset) => color_preset,
-            None => Self::default(),
-        };
+        Self::from_repr(*self as u8 + 1).unwrap_or_default()
     }
 
     pub fn previous(&self) -> Self {
         if *self as u8 > 0 {
-            return match Self::from_repr(*self as u8 - 1) {
-                Some(color_preset) => color_preset,
-                None => Self::default(),
-            };
+            return Self::from_repr(*self as u8 - 1).unwrap_or_default();
         }
 
         Self::Black

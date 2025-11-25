@@ -64,11 +64,7 @@ impl<'a> Button<'a> {
 
     pub fn disable(&mut self, text: Option<impl Into<Text<'a>>>) {
         self.disabled = true;
-        self.disabled_text = if let Some(t) = text {
-            Some(t.into())
-        } else {
-            None
-        };
+        self.disabled_text = text.map(|t| t.into());
     }
 
     pub fn disabled(mut self, text: Option<impl Into<Text<'a>>>) -> Self {
@@ -259,7 +255,7 @@ impl InteractiveWidget for Button<'_> {
             if self.disabled {
                 if let Some(disabled_text) = self.disabled_text.as_ref() {
                     spans.push(Span::styled(
-                        format!("  Disabled: {}", disabled_text),
+                        format!("  Disabled: {disabled_text}"),
                         UiStyle::ERROR,
                     ));
                 }

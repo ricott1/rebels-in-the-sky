@@ -64,7 +64,7 @@ impl NetworkCallback {
     fn bind_address(address: Multiaddr) -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui
-                .push_log_event(Tick::now(), None, format!("Bound to {}", address));
+                .push_log_event(Tick::now(), None, format!("Bound to {address}"));
 
             app.network_handler.dial_seed()?;
 
@@ -75,7 +75,7 @@ impl NetworkCallback {
     fn subscribe(topic: TopicHash) -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui
-                .push_log_event(Tick::now(), None, format!("Subscribed to topic: {}", topic));
+                .push_log_event(Tick::now(), None, format!("Subscribed to topic: {topic}"));
             app.world.dirty_network = true;
             Ok(None)
         })
@@ -100,7 +100,7 @@ impl NetworkCallback {
             app.ui.push_log_event(
                 Tick::now(),
                 Some(peer_id),
-                format!("Closing connection: {}", peer_id),
+                format!("Closing connection: {peer_id}"),
             );
             // FIXME: read connection protocol and understand when this is called.
             //        For example, we could check that num_established >0 or that cause = None
@@ -118,7 +118,7 @@ impl NetworkCallback {
             app.ui.push_log_event(
                 Tick::now(),
                 peer_id,
-                format!("Got a team from peer: {:?}", peer_id),
+                format!("Got a team from peer: {peer_id:?}"),
             );
 
             if let Some(id) = peer_id {
@@ -301,11 +301,11 @@ impl NetworkCallback {
                         app.ui.push_log_event(
                             timestamp,
                             peer_id,
-                            format!("Trade accepted, players swapped"),
+                            "Trade accepted, players swapped".to_string(),
                         );
 
                         app.ui.push_popup(PopupMessage::Ok {
-                            message: format!("Trade accepted, players swapped."),
+                            message: "Trade accepted, players swapped.".to_string(),
                             is_skippable: false,
                             tick: Tick::now(),
                         });
@@ -334,7 +334,7 @@ impl NetworkCallback {
                         app.ui.push_log_event(
                             timestamp,
                             peer_id,
-                            format!("A trade is happening in the network"),
+                            "A trade is happening in the network".to_string(),
                         );
 
                         return Ok(None);
@@ -386,11 +386,11 @@ impl NetworkCallback {
                         app.ui.push_log_event(
                             timestamp,
                             peer_id,
-                            format!("Trade accepted, players swapped"),
+                            "Trade accepted, players swapped".to_string(),
                         );
 
                         app.ui.push_popup(PopupMessage::Ok {
-                            message: format!("Trade accepted, players swapped."),
+                            message: "Trade accepted, players swapped.".to_string(),
                             is_skippable: false,
                             tick: Tick::now(),
                         });
@@ -418,11 +418,11 @@ impl NetworkCallback {
                     own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
 
                     app.ui.push_popup(PopupMessage::Error {
-                        message: format!("Trade failed: {}", error_message),
+                        message: format!("Trade failed: {error_message}"),
                         tick: Tick::now(),
                     });
 
-                    return Err(anyhow!(format!("Trade failed: {}", error_message)))?;
+                    return Err(anyhow!(format!("Trade failed: {error_message}")))?;
                 }
             }
 
@@ -461,9 +461,7 @@ impl NetworkCallback {
                         || challenge_minor_version != own_minor_version
                     {
                         return Err(anyhow!(
-                            "App versions do not match: Proposer version {}.{}.{} - Target version {}.{}.{}",
-                            challenge_major_version, challenge_minor_version, challenge_patch_version,
-                            own_major_version, own_minor_version,own_patch_version
+                            "App versions do not match: Proposer version {challenge_major_version}.{challenge_minor_version}.{challenge_patch_version} - Target version {own_major_version}.{own_minor_version}.{own_patch_version}"
                         ));
                     }
 
@@ -509,9 +507,7 @@ impl NetworkCallback {
                         || challenge_minor_version != own_minor_version
                     {
                         return Err(anyhow!(
-                            "App versions do not match: Proposer version {}.{}.{} - Target version {}.{}.{}",
-                            challenge_major_version, challenge_minor_version, challenge_patch_version,
-                            own_major_version, own_minor_version,own_patch_version
+                            "App versions do not match: Proposer version {challenge_major_version}.{challenge_minor_version}.{challenge_patch_version} - Target version {own_major_version}.{own_minor_version}.{own_patch_version}"
                         ));
                     }
 
@@ -523,7 +519,7 @@ impl NetworkCallback {
                         )
                         .ok_or(anyhow!("Cannot generate team in game"))?;
 
-                        home_team_in_game.peer_id = Some(app.network_handler.own_peer_id().clone());
+                        home_team_in_game.peer_id = Some(*app.network_handler.own_peer_id());
 
                         let mut challenge = challenge.clone();
                         challenge.home_team_in_game = home_team_in_game;
@@ -534,7 +530,7 @@ impl NetworkCallback {
                         app.ui.push_log_event(
                             timestamp,
                             peer_id,
-                            format!("Challenge accepted, generating game"),
+                            "Challenge accepted, generating game".to_string(),
                         );
 
                         let own_team = app.world.get_own_team_mut()?;
@@ -557,7 +553,7 @@ impl NetworkCallback {
                         }
 
                         app.ui.push_popup(PopupMessage::Ok {
-                            message: format!("Challenge accepted, game is starting."),
+                            message: "Challenge accepted, game is starting.".to_string(),
                             is_skippable: false,
                             tick: Tick::now(),
                         });
@@ -585,7 +581,7 @@ impl NetworkCallback {
                         app.ui.push_log_event(
                             timestamp,
                             peer_id,
-                            format!("Adding challenge from network"),
+                            "Adding challenge from network".to_string(),
                         );
 
                         if let Some(starting_at) = challenge.starting_at {
@@ -613,7 +609,7 @@ impl NetworkCallback {
                         app.ui.push_log_event(
                             timestamp,
                             peer_id,
-                            format!("Challenge accepted, generating game"),
+                            "Challenge accepted, generating game".to_string(),
                         );
 
                         if let Some(starting_at) = challenge.starting_at {
@@ -633,7 +629,7 @@ impl NetworkCallback {
                         }
 
                         app.ui.push_popup(PopupMessage::Ok {
-                            message: format!("Challenge accepted, game is starting."),
+                            message: "Challenge accepted, game is starting.".to_string(),
                             is_skippable: false,
                             tick: Tick::now(),
                         });
@@ -647,7 +643,7 @@ impl NetworkCallback {
                         };
                         app.network_handler.send_challenge(challenge)?;
                         app.ui.push_popup(PopupMessage::Error {
-                            message: format!("Challenge failed: {}", err),
+                            message: format!("Challenge failed: {err}"),
                             tick: Tick::now(),
                         });
 
@@ -669,11 +665,11 @@ impl NetworkCallback {
                     );
 
                     app.ui.push_popup(PopupMessage::Error {
-                        message: format!("Challenge failed: {}", error_message),
+                        message: format!("Challenge failed: {error_message}"),
                         tick: Tick::now(),
                     });
 
-                    return Err(anyhow!("Challenge failed: {}", error_message))?;
+                    return Err(anyhow!("Challenge failed: {error_message}"))?;
                 }
             }
 
@@ -687,7 +683,7 @@ impl NetworkCallback {
                 timestamp,
                 peer_id,
                 text,
-            } => Self::push_swarm_panel_message(timestamp.clone(), peer_id.clone(), text.clone())(
+            } => Self::push_swarm_panel_message(*timestamp, *peer_id, text.clone())(
                 app,
             ),
             Self::PushSwarmPanelLog { timestamp, text } => {
@@ -697,16 +693,16 @@ impl NetworkCallback {
             Self::BindAddress { address } => Self::bind_address(address.clone())(app),
             Self::Subscribe { peer_id: _, topic } => Self::subscribe(topic.clone())(app),
             Self::Unsubscribe { peer_id, topic } => {
-                Self::unsubscribe(peer_id.clone(), topic.clone())(app)
+                Self::unsubscribe(*peer_id, topic.clone())(app)
             }
-            Self::CloseConnection { peer_id } => Self::close_connection(peer_id.clone())(app),
+            Self::CloseConnection { peer_id } => Self::close_connection(*peer_id)(app),
             Self::HandleConnectionEstablished { peer_id } => {
                 app.network_handler.send_own_team(&app.world)?;
 
                 app.ui.push_log_event(
                     Tick::now(),
-                    Some(peer_id.clone()),
-                    format!("Connected to peer: {}", peer_id),
+                    Some(*peer_id),
+                    format!("Connected to peer: {peer_id}"),
                 );
                 Ok(None)
             }

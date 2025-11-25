@@ -60,11 +60,11 @@ impl Debug for MusicPlayer {
 
 impl MusicPlayer {
     fn current_url(&self) -> AppResult<Url> {
-        Ok(self
+        self
             .streams
             .get(self.index)
             .ok_or(anyhow!("No streams available"))?
-            .url()?)
+            .url()
     }
 
     fn task_handle(&self) -> MusicPlayerTask {
@@ -123,7 +123,7 @@ impl MusicPlayer {
         let data = file
             .contents_utf8()
             .expect("Could not read stream_data.json");
-        let streams = serde_json::from_str(&data)?;
+        let streams = serde_json::from_str(data)?;
 
         Ok(MusicPlayer {
             _stream,
@@ -141,7 +141,7 @@ impl MusicPlayer {
     }
 
     pub fn previous_radio_stream(&mut self) -> AppResult<()> {
-        if self.streams.len() == 0 {
+        if self.streams.is_empty() {
             return Err(anyhow!("No streams available"));
         }
         self.index = (self.index + self.streams.len() - 1) % self.streams.len();
@@ -155,7 +155,7 @@ impl MusicPlayer {
     }
 
     pub fn next_radio_stream(&mut self) -> AppResult<()> {
-        if self.streams.len() == 0 {
+        if self.streams.is_empty() {
             return Err(anyhow!("No streams available"));
         }
         self.index = (self.index + 1) % self.streams.len();

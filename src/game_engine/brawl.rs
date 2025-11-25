@@ -16,7 +16,12 @@ use std::collections::HashMap;
 pub struct Brawl;
 
 impl EngineAction for Brawl {
-    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
+    fn execute(
+        input: &ActionOutput,
+        game: &Game,
+        action_rng: &mut ChaCha8Rng,
+        description_rng: &mut ChaCha8Rng,
+    ) -> Option<ActionOutput> {
         let (attacking_players, defending_players) =
             (game.attacking_players(), game.defending_players());
         let weights = attacking_players
@@ -35,7 +40,7 @@ impl EngineAction for Brawl {
             .ok()?;
 
         // This will return None if all players are knocked out
-        let attacker_idx = Self::sample(rng, weights)?;
+        let attacker_idx = Self::sample(action_rng, weights)?;
 
         let weights = defending_players
             .iter()
@@ -53,20 +58,24 @@ impl EngineAction for Brawl {
             .ok()?;
 
         // This will return None if all players are knocked out
-        let defender_idx = Self::sample(rng, weights)?;
+        let defender_idx = Self::sample(action_rng, weights)?;
 
         let attacker = attacking_players[attacker_idx];
         let defender = defending_players[defender_idx];
 
         let mut attack_stats_update = HashMap::new();
-        let mut attacker_update = GameStats::default();
-        attacker_update.extra_tiredness = TirednessCost::HIGH;
+        let mut attacker_update = GameStats {
+            extra_tiredness: TirednessCost::HIGH,
+            ..Default::default()
+        };
 
         let mut defense_stats_update = HashMap::new();
-        let mut defender_update = GameStats::default();
-        defender_update.extra_tiredness = TirednessCost::MEDIUM;
+        let mut defender_update = GameStats {
+            extra_tiredness: TirednessCost::MEDIUM,
+            ..Default::default()
+        };
 
-        let mut atk_result = attacker.roll(rng)
+        let mut atk_result = attacker.roll(action_rng)
             + attacker.athletics.strength.game_value() / 2
             + attacker.mental.aggression.game_value() / 2
             + attacker.offense.brawl.game_value();
@@ -75,7 +84,7 @@ impl EngineAction for Brawl {
             atk_result += attacker.reputation.game_value();
         }
 
-        let mut def_result = defender.roll(rng)
+        let mut def_result = defender.roll(action_rng)
             + defender.athletics.strength.game_value() / 2
             + defender.mental.aggression.game_value() / 2
             + defender.offense.brawl.game_value();
@@ -146,7 +155,7 @@ impl EngineAction for Brawl {
                             attacker.info.short_name()
                         ),
                     ]
-                    .choose(rng)
+                    .choose(description_rng)
                     .expect("There should be an option")
                     .clone()
                 }
@@ -192,7 +201,7 @@ impl EngineAction for Brawl {
                         defender.info.short_name()
                     ),
                 ]
-                .choose(rng)
+                .choose(description_rng)
                 .expect("There should be one choice")
                 .clone()
             }
@@ -255,14 +264,14 @@ impl EngineAction for Brawl {
                             defender.info.short_name()
                         ),
                     ]
-                    .choose(rng)
+                    .choose(description_rng)
                     .expect("There should be an option")
                     .clone()
                 }
             }
         };
 
-        let timer_increase = 7 + rng.random_range(0..=5);
+        let timer_increase = 7 + action_rng.random_range(0..=5);
 
         let mut result = ActionOutput {
             possession: input.possession,

@@ -78,7 +78,7 @@ impl GamePanel {
             .game_ids
             .iter()
             .position(|&x| x == game_id)
-            .ok_or(anyhow!("Game {:?} not found", game_id))?;
+            .ok_or(anyhow!("Game {game_id:?} not found"))?;
 
         self.set_index(index);
 
@@ -210,28 +210,26 @@ impl GamePanel {
         ])
         .split(area);
 
-        let side_length: u16;
-        let score_panel_width = 59;
-        if area.width > 2 * PLAYER_IMAGE_WIDTH as u16 + score_panel_width {
-            side_length = (area.width - 2 * PLAYER_IMAGE_WIDTH as u16 - score_panel_width) / 2;
+        const SCORE_PANEL_WIDTH: u16 = 59;
+        let side_length = if area.width > 2 * PLAYER_IMAGE_WIDTH as u16 + SCORE_PANEL_WIDTH {
+            (area.width - 2 * PLAYER_IMAGE_WIDTH as u16 - SCORE_PANEL_WIDTH) / 2
         } else {
-            side_length = 0;
-        }
+            0
+        };
         let top_split = Layout::horizontal([
             Constraint::Length(side_length),
             Constraint::Length(PLAYER_IMAGE_WIDTH as u16),
-            Constraint::Length(score_panel_width),
+            Constraint::Length(SCORE_PANEL_WIDTH),
             Constraint::Length(PLAYER_IMAGE_WIDTH as u16),
             Constraint::Length(side_length),
         ])
         .split(split[0]);
 
-        let margin_height: u16;
-        if top_split[2].height > 12 {
-            margin_height = (top_split[2].height - 12) / 2;
+        let margin_height = if top_split[2].height > 12 {
+            (top_split[2].height - 12) / 2
         } else {
-            margin_height = 0;
-        }
+            0
+        };
         let central_split = Layout::vertical([
             Constraint::Length(margin_height),
             Constraint::Length(1),
@@ -304,18 +302,12 @@ impl GamePanel {
             })
             .unwrap();
 
-        if let Ok(mut lines) = self
-            .gif_map
-            .player_frame_lines(&base_home_player, self.tick)
-        {
+        if let Ok(mut lines) = self.gif_map.player_frame_lines(base_home_player, self.tick) {
             lines.remove(0);
             let paragraph = Paragraph::new(lines).centered();
             frame.render_widget(paragraph, top_split[1]);
         }
-        if let Ok(mut lines) = self
-            .gif_map
-            .player_frame_lines(&base_away_player, self.tick)
-        {
+        if let Ok(mut lines) = self.gif_map.player_frame_lines(base_away_player, self.tick) {
             lines.remove(0);
             let paragraph = Paragraph::new(lines).centered();
             frame.render_widget(paragraph, top_split[3]);
@@ -411,18 +403,15 @@ impl GamePanel {
         let mut shots_map: HashMap<(u32, u32), (u8, u8)> = HashMap::new();
         let mut last_shot = None;
         for result in game.action_results.iter().take(max_index) {
-            match self.pitch_view_filter {
-                Some(period) => {
-                    if result.start_at.period() == period.next() {
-                        last_shot = None;
-                        break;
-                    }
-
-                    if result.start_at.period() != period {
-                        continue;
-                    }
+            if let Some(period) = self.pitch_view_filter {
+                if result.start_at.period() == period.next() {
+                    last_shot = None;
+                    break;
                 }
-                None => {}
+
+                if result.start_at.period() != period {
+                    continue;
+                }
             }
 
             // Data about the shots (missed/made/position) is stored in the attack_stats_update.
@@ -466,7 +455,7 @@ impl GamePanel {
         };
 
         let line = Line::from(vec![
-            Span::raw(format!("{:<16}", quarter)),
+            Span::raw(format!("{quarter:<16}")),
             Span::styled(format!("{:<16}", "██ made shot"), UiStyle::OWN_TEAM),
             Span::styled(format!("{:<16}", "██ missed shot"), UiStyle::ERROR),
         ]);
@@ -541,16 +530,15 @@ impl GamePanel {
         timer: Timer,
         switch_possession: bool,
     ) -> Line<'_> {
-        let arrow: Span<'_>;
-        if switch_possession {
-            arrow = SWITCH_ARROW_SPAN.clone();
+        let arrow = if switch_possession {
+            SWITCH_ARROW_SPAN.clone()
         } else {
-            arrow = match action_result.advantage {
+            match action_result.advantage {
                 Advantage::Attack => UP_ARROW_SPAN.clone(),
                 Advantage::Defense => DOWN_ARROW_SPAN.clone(),
                 Advantage::Neutral => Span::raw(""),
-            };
-        }
+            }
+        };
         let timer = Span::styled(format!("[{}] ", timer.format()), UiStyle::HIGHLIGHT);
         let text = Span::from(format!("{} ", action_result.description));
         Line::from(vec![timer, text, arrow])
@@ -640,7 +628,7 @@ impl GamePanel {
             };
 
             let cells = vec![
-                Cell::from(format!("{:<2}", role,)),
+                Cell::from(format!("{role:<2}",)),
                 Cell::from(name_span),
                 Cell::from(format!(
                     "{:^3}",
@@ -681,20 +669,19 @@ impl GamePanel {
         }
 
         let totals = vec![
-            Cell::from(format!("")),
-            Cell::from(format!("Total")),
+            Cell::from(String::new()),
+            Cell::from("Total".to_string()),
             Cell::from(""),
-            Cell::from(format!("{:^3}", points_total)),
-            Cell::from(format!("{:>2}/{:<2}", made_2pt_total, attempted_2pt_total)),
-            Cell::from(format!("{:>2}/{:<2}", made_3pt_total, attempted_3pt_total)),
-            Cell::from(format!("{:>3}/{:<2}", assists_total, turnovers_total)),
+            Cell::from(format!("{points_total:^3}")),
+            Cell::from(format!("{made_2pt_total:>2}/{attempted_2pt_total:<2}")),
+            Cell::from(format!("{made_3pt_total:>2}/{attempted_3pt_total:<2}")),
+            Cell::from(format!("{assists_total:>3}/{turnovers_total:<2}")),
             Cell::from(format!(
-                "{:>3}/{:<3}",
-                defensive_rebounds_total, offensive_rebounds_total
+                "{defensive_rebounds_total:>3}/{offensive_rebounds_total:<3}"
             )),
-            Cell::from(format!("{:^3}", steals_total)),
-            Cell::from(format!("{:^3}", blocks_total)),
-            Cell::from(format!("{:^3}", brawls_total)),
+            Cell::from(format!("{steals_total:^3}")),
+            Cell::from(format!("{blocks_total:^3}")),
+            Cell::from(format!("{brawls_total:^3}")),
             Cell::from(format!("{:>+3}", plus_minus_total / 5)),
         ];
 
@@ -775,7 +762,7 @@ impl GamePanel {
             let energy_span = Span::styled(energy_string, energy_style);
 
             let cells = vec![
-                Cell::from(format!("{:<2}", role,)),
+                Cell::from(format!("{role:<2}",)),
                 Cell::from(name_span),
                 Cell::from(morale_span),
                 Cell::from(energy_span),
@@ -999,7 +986,7 @@ impl Screen for GamePanel {
             .games
             .iter()
             .sorted_by(|&(_, a), &(_, b)| a.starting_at.cmp(&b.starting_at))
-            .map(|(k, _)| k.clone())
+            .map(|(k, _)| *k)
             .collect_vec();
 
         if world.dirty_ui {
@@ -1033,7 +1020,7 @@ impl Screen for GamePanel {
 
         _debug_view: bool,
     ) -> AppResult<()> {
-        if self.game_ids.len() == 0 {
+        if self.game_ids.is_empty() {
             frame.render_widget(
                 Paragraph::new(" No games at the moment!").block(default_block()),
                 area,

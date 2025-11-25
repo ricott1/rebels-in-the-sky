@@ -190,8 +190,7 @@ impl NewTeamScreen {
     }
 
     fn render_intro(&mut self, frame: &mut UiFrame, area: Rect) {
-        let text = format!(
-            "
+        let text = "
         It's the year 2101. Corporations have taken over the world. 
         The only way to be free is to join a pirate crew and start plundering the galaxy.
         The only means of survival is to play basketball.
@@ -202,8 +201,7 @@ impl NewTeamScreen {
         Choose your team name, customize your ship, and select a worthy crew.
         You won't keep any leftover money, so spend wisely!
 
-        [Press enter to confirm selections.]"
-        );
+        [Press enter to confirm selections.]".to_string();
 
         let paragraph = Paragraph::new(text);
         frame.render_widget(paragraph.wrap(Wrap { trim: true }).centered(), area);
@@ -236,7 +234,7 @@ impl NewTeamScreen {
         let spaceship = self.selected_ship();
         let storage_units = 0;
         let spaceship_info = Paragraph::new(vec![
-            Line::from(format!("Spaceship name: {}", spaceship.name.to_string())),
+            Line::from(format!("Spaceship name: {}", spaceship.name)),
             Line::from(format!(
                 "Max speed: {:.3} AU/h",
                 spaceship.speed(storage_units) * HOURS as f32 / AU as f32
@@ -271,7 +269,7 @@ impl NewTeamScreen {
         if self.state > CreationState::ShipModel {
             let selected_ship = SPACESHIP_MODELS[self.spaceship_model_index];
             frame.render_widget(
-                Paragraph::new(format!(" {}", selected_ship)).block(
+                Paragraph::new(format!(" {selected_ship}")).block(
                     thick_block()
                         .border_style(UiStyle::OK)
                         .title("Choose spaceship model ↓/↑"),
@@ -317,7 +315,7 @@ impl NewTeamScreen {
         if self.state > CreationState::Jersey {
             let selected_jersey_style = self.jersey_styles[self.jersey_style_index];
             frame.render_widget(
-                Paragraph::new(format!(" {}", selected_jersey_style)).block(
+                Paragraph::new(format!(" {selected_jersey_style}")).block(
                     thick_block()
                         .border_style(UiStyle::OK)
                         .title("Choose jersey style ↓/↑"),
@@ -328,7 +326,7 @@ impl NewTeamScreen {
             let options = self
                 .jersey_styles
                 .iter()
-                .map(|jersey_style| (format!("{}", jersey_style), UiStyle::DEFAULT))
+                .map(|jersey_style| (format!("{jersey_style}"), UiStyle::DEFAULT))
                 .collect_vec();
 
             let list = selectable_list(options);
@@ -582,7 +580,7 @@ impl NewTeamScreen {
         let hiring_costs = if let Some(planet_players) =
             self.planet_players.get(&self.planet_ids[self.planet_index])
         {
-            let mut hiring_costs = 0 as i32;
+            let mut hiring_costs = 0_i32;
             for (player_id, hire_cost) in planet_players.iter() {
                 if !self.selected_players.contains(player_id) {
                     continue;
@@ -604,7 +602,7 @@ impl NewTeamScreen {
 
     fn render_remaining_balance(&mut self, frame: &mut UiFrame, area: Rect) {
         let remaining_balance = self.get_remaining_balance();
-        let text = format!(" Remaining balance: {:>} sat", remaining_balance);
+        let text = format!(" Remaining balance: {remaining_balance:>} sat");
 
         let block = if remaining_balance >= 0 {
             thick_block().border_style(UiStyle::OK)
@@ -756,7 +754,7 @@ impl NewTeamScreen {
             UiText::YES,
             UiCallback::GeneratePlayerTeam {
                 name: self.team_name_textarea.lines()[0].clone(),
-                home_planet: self.planet_ids[self.planet_index].clone(),
+                home_planet: self.planet_ids[self.planet_index],
                 jersey_style: self.jersey_styles[self.jersey_style_index],
                 jersey_colors: self.get_team_colors(),
                 players: self.selected_players.clone(),
@@ -790,7 +788,7 @@ impl Screen for NewTeamScreen {
         self.tick += 1;
 
         // If planets is empty, we initialize the list of planets and planet_players
-        if self.planet_ids.len() == 0 {
+        if self.planet_ids.is_empty() {
             self.planet_ids = world
                 .planets
                 .keys()
@@ -798,15 +796,14 @@ impl Screen for NewTeamScreen {
                     let planet = world.get_planet(planet_id).unwrap();
                     planet.total_population() > 0
                 })
-                .sorted_by(|a, b| a.cmp(&b))
-                .map(|id| *id)
+                .sorted_by(|a, b| a.cmp(b)).copied()
                 .collect_vec();
             for player in world.players.values() {
                 if player.team.is_none() {
                     let planet_players = self
                         .planet_players
                         .entry(player.info.home_planet_id)
-                        .or_insert(vec![]);
+                        .or_default();
                     planet_players.push((player.id, player.hire_cost(0.0)));
                     planet_players.sort_by(|a, b| {
                         let p1 = world.get_player(&a.0).unwrap();
@@ -828,7 +825,7 @@ impl Screen for NewTeamScreen {
 
         _debug_view: bool,
     ) -> AppResult<()> {
-        if self.planet_ids.len() == 0 {
+        if self.planet_ids.is_empty() {
             return Ok(());
         }
         let v_split = Layout::horizontal([
@@ -1138,7 +1135,7 @@ impl Screen for NewTeamScreen {
                         KeyCode::Enter => {
                             return Some(UiCallback::GeneratePlayerTeam {
                                 name: self.team_name_textarea.lines()[0].clone(),
-                                home_planet: self.planet_ids[self.planet_index].clone(),
+                                home_planet: self.planet_ids[self.planet_index],
                                 jersey_style: self.jersey_styles[self.jersey_style_index],
                                 jersey_colors: self.get_team_colors(),
                                 players: self.selected_players.clone(),

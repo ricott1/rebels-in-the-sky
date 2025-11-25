@@ -78,17 +78,15 @@ impl StorableResourceMap for ResourceMap {
                 );
                 return Err(anyhow!("Not enough space in the tank to add fuel"));
             }
-        } else {
-            if self.used_storage_capacity() + resource.to_storing_space() * amount > max_capacity {
-                log::debug!(
-                    "Adding {} {}, used is {}, max is {}",
-                    amount,
-                    resource,
-                    self.used_storage_capacity(),
-                    max_capacity
-                );
-                return Err(anyhow!("Not enough storage to add resource"));
-            }
+        } else if self.used_storage_capacity() + resource.to_storing_space() * amount > max_capacity {
+            log::debug!(
+                "Adding {} {}, used is {}, max is {}",
+                amount,
+                resource,
+                self.used_storage_capacity(),
+                max_capacity
+            );
+            return Err(anyhow!("Not enough storage to add resource"));
         }
 
         self.entry(resource)
@@ -103,15 +101,13 @@ impl StorableResourceMap for ResourceMap {
     fn saturating_add(&mut self, resource: Resource, amount: u32, max_capacity: u32) {
         let max_amount = if resource == Resource::FUEL {
             amount.min(max_capacity.saturating_sub(self.used_fuel_capacity()))
+        } else if resource.to_storing_space() == 0 {
+            amount
         } else {
-            if resource.to_storing_space() == 0 {
-                amount
-            } else {
-                amount.min(
-                    max_capacity.saturating_sub(self.used_storage_capacity())
-                        / resource.to_storing_space(),
-                )
-            }
+            amount.min(
+                max_capacity.saturating_sub(self.used_storage_capacity())
+                    / resource.to_storing_space(),
+            )
         };
 
         self.entry(resource)
@@ -219,7 +215,7 @@ impl SystemTimeTick for Tick {
     }
 
     fn as_system_time(&self) -> SystemTime {
-        UNIX_EPOCH + std::time::Duration::from_millis(*self as u64)
+        UNIX_EPOCH + std::time::Duration::from_millis(*self)
     }
 
     fn formatted_as_date(&self) -> String {
@@ -249,13 +245,12 @@ impl SystemTimeTick for Tick {
 
         if years > 0 {
             format!(
-                "{}y {}d {:02}:{:02}:{:02}",
-                years, days, hours, minutes, seconds
+                "{years}y {days}d {hours:02}:{minutes:02}:{seconds:02}"
             )
         } else if days > 0 {
-            format!("{}d {:02}:{:02}:{:02}", days, hours, minutes, seconds)
+            format!("{days}d {hours:02}:{minutes:02}:{seconds:02}")
         } else {
-            format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+            format!("{hours:02}:{minutes:02}:{seconds:02}")
         }
     }
 }

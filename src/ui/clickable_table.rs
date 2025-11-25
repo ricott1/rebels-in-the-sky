@@ -390,7 +390,7 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
                 height: table_row.height,
             };
             buf.set_style(table_row_area, table_row.style);
-            let is_selected = state.selected.map_or(false, |s| s == i);
+            let is_selected = state.selected == Some(i);
             if selection_width > 0 && is_selected {
                 // this should in normal cases be safe, because "get_columns_widths" allocates
                 // "highlight_symbol.width()" space but "get_columns_widths"

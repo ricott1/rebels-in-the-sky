@@ -13,24 +13,25 @@ impl StartOfQuarter {
     pub fn execute(
         input: &ActionOutput,
         game: &Game,
-        rng: &mut ChaCha8Rng,
+        action_rng: &mut ChaCha8Rng,
+        _description_rng: &mut ChaCha8Rng,
     ) -> Option<ActionOutput> {
-        let timer_increase = 6 + rng.random_range(0..=6);
+        let timer_increase = 6 + action_rng.random_range(0..=6);
         let description = match input.end_at.period() {
-            Period::B1 => format!("It's the start of the second quarter.",),
-            Period::B2 => format!("It's the start of the third quarter.",),
-            Period::B3 => format!("It's the start of the last period.",),
+            Period::B1 => "It's the start of the second quarter.".to_string(),
+            Period::B2 => "It's the start of the third quarter.".to_string(),
+            Period::B3 => "It's the start of the last period.".to_string(),
             _ => panic!("Invalid period {}", input.end_at.period()),
         };
         let possession = match input.end_at.period() {
             // Q2: Assign possession to team that did not win the jump ball
-            Period::B1 => !game.won_jump_ball.clone(),
+            Period::B1 => !game.won_jump_ball,
             // Q3: Assign possession to team that did not win the jump ball
-            Period::B2 => !game.won_jump_ball.clone(),
+            Period::B2 => !game.won_jump_ball,
             // Q4: Assign possession to team that won the jump ball
-            Period::B3 => game.won_jump_ball.clone(),
+            Period::B3 => game.won_jump_ball,
             // OT: FIXME: for the moment we just switch, but in reality OT are not handled atm
-            _ => !game.won_jump_ball.clone(),
+            _ => !game.won_jump_ball,
         };
 
         let result = ActionOutput {

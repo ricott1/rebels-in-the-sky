@@ -34,14 +34,10 @@ pub static SPINNING_BALL_GIF: Lazy<GifLines> = Lazy::new(|| {
         .map(|img: &RgbaImage| {
             let base = &mut UNIVERSE_BACKGROUND.clone();
             // FIXME: Hardcoded from assets file, should be taken from Sol planet.
-            base.copy_non_trasparent_from(&mut img.clone(), X_BLIT, Y_BLIT)
-                .expect(
-                    format!(
-                        "Could not copy_non_trasparent_from at {} {}",
-                        X_BLIT, Y_BLIT,
-                    )
-                    .as_str(),
-                );
+            base.copy_non_trasparent_from(img, X_BLIT, Y_BLIT)
+                .unwrap_or_else(|_| {
+                    panic!("Could not copy_non_trasparent_from at {X_BLIT} {Y_BLIT}")
+                });
 
             let center = (X_BLIT + img.width() / 2, Y_BLIT + img.height() / 2);
             base.view(
@@ -169,7 +165,7 @@ impl GifMap {
                     let base = &mut UNIVERSE_BACKGROUND.clone();
 
                     // Blit img on base
-                    base.copy_non_trasparent_from(&img, x_blit, y_blit).unwrap();
+                    base.copy_non_trasparent_from(img, x_blit, y_blit).unwrap();
 
                     let center = (x_blit + img.width() / 2, y_blit + img.height() / 2);
                     base.view(
@@ -191,7 +187,7 @@ impl GifMap {
         tick: usize,
         world: &World,
     ) -> AppResult<ImageLines> {
-        if let Some(lines) = self.planets_zoom_in_lines.get(&planet_id) {
+        if let Some(lines) = self.planets_zoom_in_lines.get(planet_id) {
             return Ok(lines[tick % lines.len()].clone());
         }
 
@@ -351,7 +347,7 @@ impl GifMap {
         let gif = if planet.planet_type == PlanetType::Asteroid {
             Self::asteroid_zoom_out(&planet.filename)?
         } else {
-            Self::planet_zoom_out(&planet, world)?
+            Self::planet_zoom_out(planet, world)?
         };
         let lines = gif.to_lines();
         let frame = lines[tick % lines.len()].clone();

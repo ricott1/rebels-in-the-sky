@@ -53,7 +53,7 @@ pub struct GalaxyPanel {
 impl GalaxyPanel {
     pub fn new() -> Self {
         Self {
-            planet_id: GALAXY_ROOT_ID.clone(),
+            planet_id: *GALAXY_ROOT_ID,
             ..Default::default()
         }
     }
@@ -191,7 +191,7 @@ impl GalaxyPanel {
             };
 
             let target = world.get_planet_or_err(&target_id)?;
-            let zoom_level = if self.planet_index == 0 || target.satellites.len() == 0 {
+            let zoom_level = if self.planet_index == 0 || target.satellites.is_empty() {
                 ZoomLevel::In
             } else {
                 ZoomLevel::Out
@@ -245,7 +245,7 @@ impl GalaxyPanel {
             let parent_id = world.get_planet_or_err(&current_id)?.satellite_of.unwrap();
             let parent = world.get_planet_or_err(&parent_id)?;
             let button = Button::new(
-                format!("{}", parent.name),
+                parent.name.to_string(),
                 UiCallback::GoToPlanetZoomOut {
                     planet_id: parent_id,
                 },
@@ -257,7 +257,7 @@ impl GalaxyPanel {
         //Order from parent to child
         buttons.reverse();
 
-        let target_button = if target.satellites.len() > 0 {
+        let target_button = if !target.satellites.is_empty() {
             Button::new(
                 target.name.clone(),
                 UiCallback::GoToPlanetZoomOut {
@@ -312,13 +312,13 @@ impl GalaxyPanel {
                     .set_hotkey(UiKey::TRAVEL)
                     .set_hover_text(hover_text);
 
-                    if let Err(e) = own_team.can_travel_to_planet(&planet, duration) {
+                    if let Err(e) = own_team.can_travel_to_planet(planet, duration) {
                         travel_to_planet_button.disable(Some(e.to_string()));
                     } else if duration > 0 {
                         travel_to_planet_button
                             .set_text(format!("Travel ({})", duration.formatted()));
                     } else {
-                        travel_to_planet_button.set_text(format!("Teleport"));
+                        travel_to_planet_button.set_text("Teleport".to_string());
                         travel_to_planet_button = travel_to_planet_button
                             .set_hover_text(format!("Travel instantaneously to {}", planet.name));
                     }
@@ -335,7 +335,7 @@ impl GalaxyPanel {
                         let countdown = (started + duration)
                             .saturating_sub(world.last_tick_short_interval)
                             .formatted();
-                        format!("Getting there ({})", countdown)
+                        format!("Getting there ({countdown})")
                     } else {
                         "Travel".to_string()
                     };
@@ -378,7 +378,7 @@ impl GalaxyPanel {
             }
         }
 
-        let mut constraints = vec![Constraint::Length(3)].repeat(buttons.len());
+        let mut constraints = [Constraint::Length(3)].repeat(buttons.len());
         constraints.push(Constraint::Length(target.team_ids.len() as u16 + 2));
         constraints.push(Constraint::Min(0));
 
@@ -451,7 +451,7 @@ impl GalaxyPanel {
 
                 let team_planet_id = target.id;
 
-                player_planet_id == team_planet_id.clone()
+                player_planet_id == team_planet_id
             })
             .sorted_by(|a, b| b.rating().cmp(&a.rating()))
             .map(|player| {
@@ -469,26 +469,26 @@ impl GalaxyPanel {
         let resource_options = target
             .resources
             .iter()
-            .sorted_by(|a, b| b.1.cmp(&a.1))
+            .sorted_by(|a, b| b.1.cmp(a.1))
             .map(|(resource, &amount)| {
                 let text = format!("{:<7} {}", resource.to_string(), (amount as f32).stars(),);
                 (text, UiStyle::DEFAULT)
             })
             .collect::<Vec<(String, Style)>>();
 
-        let team_list_height = if team_options.len() > 0 {
+        let team_list_height = if !team_options.is_empty() {
             team_options.len() as u16 + 2
         } else {
             0
         };
 
-        let player_list_height = if player_options.len() > 0 {
+        let player_list_height = if !player_options.is_empty() {
             player_options.len() as u16 + 2
         } else {
             0
         };
 
-        let resource_list_height = if resource_options.len() > 0 {
+        let resource_list_height = if !resource_options.is_empty() {
             resource_options.len() as u16 + 2
         } else {
             0
@@ -503,7 +503,7 @@ impl GalaxyPanel {
         ])
         .split(area);
 
-        if team_options.len() > 0 {
+        if !team_options.is_empty() {
             frame.render_widget(Clear, split[1]);
             let l_split = Layout::vertical([Constraint::Length(1)].repeat(team_options.len()))
                 .split(split[1].inner(Margin {
@@ -514,9 +514,9 @@ impl GalaxyPanel {
             for (idx, (team_id, text, style)) in team_options.iter().enumerate() {
                 frame.render_interactive(
                     Button::no_box(
-                        Span::styled(text.clone(), style.clone()).into_left_aligned_line(),
+                        Span::styled(text.clone(), *style).into_left_aligned_line(),
                         UiCallback::GoToTeam {
-                            team_id: team_id.clone(),
+                            team_id: *team_id,
                         },
                     )
                     .set_hover_style(UiStyle::HIGHLIGHT),
@@ -526,7 +526,7 @@ impl GalaxyPanel {
             frame.render_widget(default_block().title("Teams "), split[1]);
         }
 
-        if player_options.len() > 0 {
+        if !player_options.is_empty() {
             frame.render_widget(Clear, split[2]);
             let l_split = Layout::vertical([Constraint::Length(1)].repeat(player_options.len()))
                 .split(split[2].inner(Margin {
@@ -537,9 +537,9 @@ impl GalaxyPanel {
             for (idx, (player_id, text, style)) in player_options.iter().enumerate() {
                 frame.render_interactive(
                     Button::no_box(
-                        Span::styled(text.clone(), style.clone()).into_left_aligned_line(),
+                        Span::styled(text.clone(), *style).into_left_aligned_line(),
                         UiCallback::GoToPlayer {
-                            player_id: player_id.clone(),
+                            player_id: *player_id,
                         },
                     ),
                     l_split[idx],
@@ -548,14 +548,14 @@ impl GalaxyPanel {
             frame.render_widget(default_block().title("Top free pirates "), split[2]);
         }
 
-        if resource_options.len() > 0 {
+        if !resource_options.is_empty() {
             frame.render_widget(Clear, split[3]);
             frame.render_widget(
                 List::new(
                     resource_options
                         .iter()
                         .map(|(text, style)| {
-                            ListItem::new(Span::styled(format!(" {}", text), *style))
+                            ListItem::new(Span::styled(format!(" {text}"), *style))
                         })
                         .collect::<Vec<ListItem>>(),
                 )
@@ -594,7 +594,7 @@ impl GalaxyPanel {
                     .get_planet_or_err(&central_planet.satellites[index - 1])
                     .unwrap();
                 let size = ImageResizeInGalaxyGif::ZoomOutSatellite {
-                    planet_type: satellite.planet_type.clone(),
+                    planet_type: satellite.planet_type,
                 }
                 .size() as u16;
 
@@ -620,7 +620,7 @@ impl GalaxyPanel {
         match self.zoom_level {
             ZoomLevel::In => {}
             ZoomLevel::Out => {
-                let zoom_level = if self.planet_index == 0 || target.satellites.len() == 0 {
+                let zoom_level = if self.planet_index == 0 || target.satellites.is_empty() {
                     ZoomLevel::In
                 } else {
                     ZoomLevel::Out
@@ -674,11 +674,7 @@ impl Screen for GalaxyPanel {
     }
 
     fn handle_key_events(&mut self, key_event: KeyEvent, world: &World) -> Option<UiCallback> {
-        let planet = if let Some(planet) = self.planets.get(&self.planet_id) {
-            planet
-        } else {
-            return None;
-        };
+        let planet = self.planets.get(&self.planet_id)?;
 
         match key_event.code {
             KeyCode::Up => match self.zoom_level {
@@ -707,8 +703,8 @@ impl Screen for GalaxyPanel {
                 }
             }
             KeyCode::Backspace => {
-                if self.zoom_level == ZoomLevel::Out || planet.satellites.len() == 0 {
-                    if let Some(parent) = planet.satellite_of.clone() {
+                if self.zoom_level == ZoomLevel::Out || planet.satellites.is_empty() {
+                    if let Some(parent) = planet.satellite_of {
                         self.planet_id = parent;
                     }
                 }

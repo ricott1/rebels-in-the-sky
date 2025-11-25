@@ -29,7 +29,7 @@ impl VisualEffect {
             VisualEffect::ColorMask { color } => {
                 for (point, &is_border) in entity.hit_box().iter() {
                     if is_border {
-                        let mut pixel = img.get_pixel(point.x as u32, point.y as u32).clone();
+                        let mut pixel = *img.get_pixel(point.x as u32, point.y as u32);
 
                         for idx in 0..color.len() {
                             if color[idx] > 0 {
@@ -50,10 +50,10 @@ impl VisualEffect {
     pub fn apply_global_effect(&self, img: &mut RgbaImage, time: f32) {
         match &self {
             VisualEffect::FadeIn => {
-                let modifier = (time / Self::FADE_IN_LIFETIME).min(1.0).max(0.0);
+                let modifier = (time / Self::FADE_IN_LIFETIME).clamp(0.0, 1.0);
                 for x in 0..img.width() {
                     for y in 0..img.height() {
-                        let mut pixel = img.get_pixel(x, y).clone();
+                        let mut pixel = *img.get_pixel(x, y);
 
                         for idx in 0..4 {
                             pixel.0[idx] = (modifier * pixel.0[idx] as f32) as u8;
@@ -64,11 +64,11 @@ impl VisualEffect {
             }
 
             VisualEffect::FadeOut => {
-                let modifier = (1.0 - time / Self::FADE_IN_LIFETIME).min(1.0).max(0.0);
+                let modifier = (1.0 - time / Self::FADE_IN_LIFETIME).clamp(0.0, 1.0);
 
                 for x in 0..img.width() {
                     for y in 0..img.height() {
-                        let mut pixel = img.get_pixel(x, y).clone();
+                        let mut pixel = *img.get_pixel(x, y);
                         for idx in 0..4 {
                             pixel.0[idx] = (modifier * pixel.0[idx] as f32) as u8;
                         }

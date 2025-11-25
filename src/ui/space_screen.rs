@@ -14,7 +14,7 @@ use ratatui::text::Line;
 use ratatui::widgets::Clear;
 use ratatui::{prelude::Rect, widgets::Paragraph};
 
-const CONTROLS: [&'static str; 5] = [
+const CONTROLS: [&str; 5] = [
     "      ╔═════╗         ╔═════╗            ╔═════╗                     ",
     "      ║  ↑  ║         ║  a  ║ autofire   ║  s  ║ release scraps      ",
     "╔═════╬═════╬═════╗   ╚═════╝╔═════╗     ╚═════╝╔═════╗              ",
@@ -103,16 +103,14 @@ impl Screen for SpaceScreen {
                 info_split[0],
             );
 
-            let is_recharing = match description.shooter_state() {
-                ShooterState::Recharging { .. } => true,
-                _ => false,
-            };
+            let is_recharging =
+                matches!(description.shooter_state(), ShooterState::Recharging { .. });
 
             frame.render_widget(
                 Line::from(get_charge_spans(
                     description.charge(),
                     description.max_charge(),
-                    is_recharing,
+                    is_recharging,
                     bars_length,
                 )),
                 info_split[1],
@@ -151,7 +149,7 @@ impl Screen for SpaceScreen {
         key_event: crossterm::event::KeyEvent,
         _world: &World,
     ) -> Option<super::ui_callback::UiCallback> {
-        return match key_event.code {
+        match key_event.code {
             UiKey::SPACE_MOVE_LEFT => Some(UiCallback::SpaceMovePlayerLeft),
             UiKey::SPACE_MOVE_RIGHT => Some(UiCallback::SpaceMovePlayerRight),
             UiKey::SPACE_MOVE_DOWN => Some(UiCallback::SpaceMovePlayerDown),
@@ -161,7 +159,7 @@ impl Screen for SpaceScreen {
             UiKey::SPACE_BACK_TO_BASE => Some(UiCallback::StopSpaceAdventure),
             UiKey::SPACE_RELEASE_SCRAPS => Some(UiCallback::SpaceReleaseScraps),
             _ => None,
-        };
+        }
     }
 
     fn footer_spans(&self) -> Vec<String> {

@@ -41,12 +41,14 @@ pub struct GameSummary {
     pub starting_at: Tick,
     pub ended_at: Option<Tick>,
     pub winner: Option<TeamId>,
+    #[serde(default)]
+    pub is_network: bool,
 }
 
 impl GameSummary {
     pub fn from_game(game: &Game) -> GameSummary {
-        let mut home_quarters_score = [0 as u16; 4];
-        let mut away_quarters_score = [0 as u16; 4];
+        let mut home_quarters_score = [0_u16; 4];
+        let mut away_quarters_score = [0_u16; 4];
         for action in game.action_results.iter() {
             // We need to loop over every action to cover the case in which the game ends abrutly because one team is knocked out.
             // For quarters>1, we need to remove previous quarters score to get only the partial score of the quarter.
@@ -80,7 +82,7 @@ impl GameSummary {
         }
 
         Self {
-            id: game.id.clone(),
+            id: game.id,
             home_team_id: game.home_team_in_game.team_id,
             away_team_id: game.away_team_in_game.team_id,
             home_team_name: game.home_team_in_game.name.clone(),
@@ -94,6 +96,8 @@ impl GameSummary {
             starting_at: game.starting_at,
             ended_at: game.ended_at,
             winner: game.winner,
+            is_network: game.home_team_in_game.peer_id.is_some()
+                || game.away_team_in_game.peer_id.is_some(),
         }
     }
 }
@@ -143,8 +147,8 @@ impl<'game> Game {
 
         let bonus_attendance = home_team_in_game
             .players
-            .iter()
-            .map(|(_, player)| {
+            .values()
+            .map(|player| {
                 if player.special_trait == Some(Trait::Showpirate) {
                     player.reputation.value()
                 } else {
@@ -155,8 +159,8 @@ impl<'game> Game {
             / 100.0
             + away_team_in_game
                 .players
-                .iter()
-                .map(|(_, player)| {
+                .values()
+                .map(|player| {
                     if player.special_trait == Some(Trait::Showpirate) {
                         player.reputation.value()
                     } else {
@@ -185,11 +189,11 @@ impl<'game> Game {
             away_team_mvps: None,
         };
         let seed = game.get_rng_seed();
-        let mut rng = ChaCha8Rng::from_seed(seed);
+        let mut action_rng = ChaCha8Rng::from_seed(seed);
 
         let attendance = (BASE_ATTENDANCE as f32
             + (total_reputation.value() as f32).powf(2.0) * planet.total_population() as f32)
-            * rng.random_range(0.75..1.25)
+            * action_rng.random_range(0.75..1.25)
             * (1.0 + bonus_attendance);
         game.attendance = attendance as u32;
         let mut default_output = ActionOutput::default();
@@ -275,7 +279,7 @@ impl<'game> Game {
         game.attendance,
         if game.attendance == 69 { " (nice)" } else { "" }
     ),
-].choose(&mut rng).expect("There should be one option").clone();
+].choose(&mut action_rng).expect("There should be one option").clone();
 
         default_output.description = opening_text;
         default_output.random_seed = seed;
@@ -290,7 +294,7 @@ impl<'game> Game {
             self.away_team_in_game.stats.get(&player_id)?
         };
 
-        let best_stats = vec![
+        let best_stats = [
             ("Pts", stats.points, 100.0), //We want points to show as number 1
             (
                 "Reb",
@@ -302,11 +306,7 @@ impl<'game> Game {
             ("Ast", stats.assists, 2.0),
             (
                 "Brw",
-                if stats.brawls[0] > stats.brawls[1] {
-                    stats.brawls[0] - stats.brawls[1]
-                } else {
-                    stats.brawls[1] - stats.brawls[0]
-                },
+                stats.brawls[0].abs_diff(stats.brawls[1]),
                 if stats.brawls[0] > stats.brawls[1] {
                     3.0
                 } else {
@@ -323,7 +323,7 @@ impl<'game> Game {
 
         let score = best_stats
             .iter()
-            .map(|(_, s, m)| s.clone() as f32 * m.clone())
+            .map(|(_, s, m)| *s as f32 * *m)
             .sum::<f32>() as u32;
 
         let player = if let Some(p) = self.home_team_in_game.players.get(&player_id) {
@@ -338,13 +338,7 @@ impl<'game> Game {
             score,
             best_stats: best_stats
                 .iter()
-                .map(|(t, s, m)| {
-                    (
-                        t.to_string(),
-                        s.clone(),
-                        (s.clone() as f32 * m.clone()) as u32,
-                    )
-                })
+                .map(|(t, s, m)| (t.to_string(), *s, (*s as f32 * *m) as u32))
                 .sorted_by(|(_, _, a), (_, _, b)| b.cmp(a))
                 .take(3)
                 .collect_vec()
@@ -366,10 +360,8 @@ impl<'game> Game {
             .collect()
     }
 
-    fn pick_action(&self, rng: &mut ChaCha8Rng) -> Action {
-        let situation = self.action_results[self.action_results.len() - 1]
-            .situation
-            .clone();
+    fn pick_action(&self, action_rng: &mut ChaCha8Rng) -> Action {
+        let situation = self.action_results[self.action_results.len() - 1].situation;
 
         match situation {
             ActionSituation::JumpBall => Action::JumpBall,
@@ -383,17 +375,17 @@ impl<'game> Game {
                 let brawl_probability = BRAWL_ACTION_PROBABILITY
                     * (self.home_team_in_game.tactic.brawl_probability_modifier()
                         + self.away_team_in_game.tactic.brawl_probability_modifier());
-                if rng.random_bool(brawl_probability as f64) {
+                if action_rng.random_bool(brawl_probability as f64) {
                     Action::Brawl
                 } else {
                     match self.possession {
                         Possession::Home => self
                             .home_team_in_game
-                            .pick_action(rng)
+                            .pick_action(action_rng)
                             .unwrap_or(Action::Isolation),
                         Possession::Away => self
                             .away_team_in_game
-                            .pick_action(rng)
+                            .pick_action(action_rng)
                             .unwrap_or(Action::Isolation),
                     }
                 }
@@ -404,11 +396,11 @@ impl<'game> Game {
             | ActionSituation::Turnover => match self.possession {
                 Possession::Home => self
                     .home_team_in_game
-                    .pick_action(rng)
+                    .pick_action(action_rng)
                     .unwrap_or(Action::Isolation),
                 Possession::Away => self
                     .away_team_in_game
-                    .pick_action(rng)
+                    .pick_action(action_rng)
                     .unwrap_or(Action::Isolation),
             },
         }
@@ -447,8 +439,8 @@ impl<'game> Game {
 
         if let Some(updates) = &mut home_stats {
             for (id, player_stats) in self.home_team_in_game.stats.iter_mut() {
-                let player = self.home_team_in_game.players.get_mut(&id).unwrap();
-                if let Some(stats) = updates.get_mut(&id) {
+                let player = self.home_team_in_game.players.get_mut(id).unwrap();
+                if let Some(stats) = updates.get_mut(id) {
                     player_stats.update(stats);
                     player.add_tiredness(stats.extra_tiredness);
                     player.add_morale(stats.extra_morale);
@@ -473,9 +465,9 @@ impl<'game> Game {
         }
         if let Some(updates) = &mut away_stats {
             for (id, player_stats) in self.away_team_in_game.stats.iter_mut() {
-                let player = self.away_team_in_game.players.get_mut(&id).unwrap();
+                let player = self.away_team_in_game.players.get_mut(id).unwrap();
 
-                if let Some(stats) = updates.get_mut(&id) {
+                if let Some(stats) = updates.get_mut(id) {
                     player_stats.update(stats);
                     player.add_tiredness(stats.extra_tiredness);
                     player.add_morale(stats.extra_morale);
@@ -512,14 +504,14 @@ impl<'game> Game {
 
         if let Some(updates) = home_stats {
             for (id, player_stats) in self.home_team_in_game.stats.iter_mut() {
-                if let Some(update) = updates.get(&id) {
+                if let Some(update) = updates.get(id) {
                     player_stats.position = update.position;
                 }
             }
         }
         if let Some(updates) = away_stats {
             for (id, player_stats) in self.away_team_in_game.stats.iter_mut() {
-                if let Some(update) = updates.get(&id) {
+                if let Some(update) = updates.get(id) {
                     player_stats.position = update.position;
                 }
             }
@@ -531,7 +523,7 @@ impl<'game> Game {
     fn apply_tiredness_update(&mut self) {
         for team in [&mut self.home_team_in_game, &mut self.away_team_in_game] {
             for (id, player) in team.players.iter_mut() {
-                let stats = team.stats.get_mut(&id).expect("Player should have stats");
+                let stats = team.stats.get_mut(id).expect("Player should have stats");
                 if stats.is_playing() && !self.timer.is_break() {
                     stats.seconds_played += 1;
                     if !player.is_knocked_out() {
@@ -559,7 +551,7 @@ impl<'game> Game {
                 .by_position(&self.home_team_in_game.stats)
                 .iter()
                 .take(MAX_POSITION as usize)
-                .map(|&p| p)
+                .copied()
                 .collect::<Vec<&Player>>(),
             Possession::Away => self
                 .away_team_in_game
@@ -567,7 +559,7 @@ impl<'game> Game {
                 .by_position(&self.away_team_in_game.stats)
                 .iter()
                 .take(MAX_POSITION as usize)
-                .map(|&p| p)
+                .copied()
                 .collect::<Vec<&Player>>(),
         }
     }
@@ -580,7 +572,7 @@ impl<'game> Game {
                 .by_position(&self.away_team_in_game.stats)
                 .iter()
                 .take(5)
-                .map(|&p| p)
+                .copied()
                 .collect::<Vec<&Player>>(),
             Possession::Away => self
                 .home_team_in_game
@@ -588,7 +580,7 @@ impl<'game> Game {
                 .by_position(&self.home_team_in_game.stats)
                 .iter()
                 .take(5)
-                .map(|&p| p)
+                .copied()
                 .collect::<Vec<&Player>>(),
         }
     }
@@ -656,7 +648,7 @@ impl<'game> Game {
     fn game_end_description(&self, winner: Option<&str>) -> String {
         let (home, away) = self.get_score();
         if let Some(winner_name) = winner {
-            let loser_name = if winner_name.to_string() == self.home_team_in_game.name {
+            let loser_name = if winner_name == self.home_team_in_game.name {
                 self.away_team_in_game.name.clone()
             } else {
                 self.home_team_in_game.name.clone()
@@ -727,8 +719,12 @@ impl<'game> Game {
 
         self.apply_tiredness_update();
 
-        let seed = self.get_rng_seed();
-        let rng = &mut ChaCha8Rng::from_seed(seed);
+        let mut seed = self.get_rng_seed();
+        let action_rng = &mut ChaCha8Rng::from_seed(seed);
+
+        // Reverse seed just to get a different rng generator.
+        seed.reverse();
+        let description_rng = &mut ChaCha8Rng::from_seed(seed);
         let action_input = &self.action_results[self.action_results.len() - 1];
 
         if !self.timer.reached(self.next_step) {
@@ -737,16 +733,21 @@ impl<'game> Game {
 
         // If next tick is at a break, we are at the end of the quarter and should stop.
         if self.timer.is_break() {
-            if let Some(eoq) = EndOfQuarter::execute(action_input, self, rng) {
+            if let Some(eoq) =
+                EndOfQuarter::execute(action_input, self, action_rng, description_rng)
+            {
                 self.next_step = self.timer.period().next().start();
                 self.action_results.push(eoq);
                 return;
             }
         }
 
-        self.current_action = self.pick_action(rng);
+        self.current_action = self.pick_action(action_rng);
 
-        if let Some(mut result) = self.current_action.execute(action_input, self, rng) {
+        if let Some(mut result) =
+            self.current_action
+                .execute(action_input, self, action_rng, description_rng)
+        {
             self.apply_game_stats_update(
                 result.attack_stats_update.clone(),
                 result.defense_stats_update.clone(),
@@ -818,8 +819,7 @@ impl<'game> Game {
 
                         self.action_results.push(ActionOutput {
                             description: format!(
-                    "Both team are completely done! {} They should get some rest now...",
-                    description
+                    "Both team are completely done! {description} They should get some rest now..."
                 ),
                             start_at: self.timer,
                             end_at: self.timer,
@@ -871,7 +871,9 @@ impl<'game> Game {
                     (false, false) =>
                     // Check if teams make substitutions. Only if ball is out
                     {
-                        if let Some(sub) = Substitution::execute(action_input, self, rng) {
+                        if let Some(sub) =
+                            Substitution::execute(action_input, self, action_rng, description_rng)
+                        {
                             self.apply_sub_update(
                                 sub.attack_stats_update.clone(),
                                 sub.defense_stats_update.clone(),
@@ -904,16 +906,16 @@ mod tests {
     #[test]
     fn test_game() -> AppResult<()> {
         let mut world = World::new(None);
-        let rng = &mut ChaCha8Rng::seed_from_u64(world.seed);
+        let action_rng = &mut ChaCha8Rng::seed_from_u64(world.seed);
         let id0 = world.generate_random_team(
-            rng,
+            action_rng,
             DEFAULT_PLANET_ID.clone(),
             "Testen".to_string(),
             "Tosten".to_string(),
             Some(0.0),
         )?;
         let id1 = world.generate_random_team(
-            rng,
+            action_rng,
             DEFAULT_PLANET_ID.clone(),
             "Holalo".to_string(),
             "Halley".to_string(),
@@ -1029,21 +1031,21 @@ mod tests {
 
     fn get_simulated_game_stats(
         world: &mut World,
-        rng: &mut ChaCha8Rng,
+        action_rng: &mut ChaCha8Rng,
         n_games: usize,
     ) -> AppResult<Vec<(f32, GameStatsMap, GameStatsMap)>> {
         let mut samples = Vec::with_capacity(n_games);
         const DELTA: f32 = 6.0;
         for i in 0..n_games {
             let id0 = world.generate_random_team(
-                rng,
+                action_rng,
                 DEFAULT_PLANET_ID.clone(),
                 "Testen".to_string(),
                 "Tosten".to_string(),
                 Some(DELTA * i as f32 / n_games as f32),
             )?;
             let id1 = world.generate_random_team(
-                rng,
+                action_rng,
                 DEFAULT_PLANET_ID.clone(),
                 "Holalo".to_string(),
                 "Halley".to_string(),
@@ -1191,10 +1193,10 @@ mod tests {
     fn test_multiple_games() -> AppResult<()> {
         // Example usage: compute stat for made_2pt (you can change to any selector)
         let mut world = World::new(None);
-        let mut rng = ChaCha8Rng::seed_from_u64(world.seed);
+        let mut action_rng = ChaCha8Rng::seed_from_u64(world.seed);
 
         const N: usize = 10_000;
-        let samples = get_simulated_game_stats(&mut world, &mut rng, N)?;
+        let samples = get_simulated_game_stats(&mut world, &mut action_rng, N)?;
         let bin_size = 1.0;
 
         let point_selector = |s: &GameStats| 2.0 * s.made_2pt as f32 + 3.0 * s.made_3pt as f32;

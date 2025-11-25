@@ -11,7 +11,12 @@ use rand_chacha::ChaCha8Rng;
 pub struct JumpBall;
 
 impl EngineAction for JumpBall {
-    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
+    fn execute(
+        input: &ActionOutput,
+        game: &Game,
+        action_rng: &mut ChaCha8Rng,
+        _description_rng: &mut ChaCha8Rng,
+    ) -> Option<ActionOutput> {
         let attacking_players = game.attacking_players();
         let defending_players = game.defending_players();
 
@@ -22,10 +27,10 @@ impl EngineAction for JumpBall {
         let home_jumper = attacking_players.iter().max_by_key(|&p| jump_ball(p));
         let away_jumper = defending_players.iter().max_by_key(|&p| jump_ball(p));
 
-        let home_result = home_jumper?.roll(rng) + jump_ball(home_jumper?);
-        let away_result = away_jumper?.roll(rng) + jump_ball(away_jumper?);
+        let home_result = home_jumper?.roll(action_rng) + jump_ball(home_jumper?);
+        let away_result = away_jumper?.roll(action_rng) + jump_ball(away_jumper?);
 
-        let timer_increase = 6 + rng.random_range(0..=7);
+        let timer_increase = 6 + action_rng.random_range(0..=7);
 
         let result = match home_result as i16 - away_result as i16 {
             x if x > 0 => {
@@ -60,7 +65,7 @@ impl EngineAction for JumpBall {
                 ..Default::default()
             },
             _ => {
-                let r = rng.random_range(0..=1);
+                let r = action_rng.random_range(0..=1);
                 let ball_team = match r {
                     0 => game.home_team_in_game.name.clone(),
                     _ => game.away_team_in_game.name.clone(),

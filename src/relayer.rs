@@ -25,6 +25,12 @@ pub struct Relayer {
     last_message_sent_to_team: HashMap<TeamId, usize>,
 }
 
+impl Default for Relayer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Relayer {
     fn get_top_player_ranking(&self) -> Vec<(PlayerId, PlayerRanking)> {
         self.player_ranking
@@ -36,7 +42,7 @@ impl Relayer {
                     .expect("Reputation should exist")
             })
             .take(TOP_PLAYER_RANKING_LENGTH)
-            .map(|(id, ranking)| (id.clone(), ranking.clone()))
+            .map(|(id, ranking)| (*id, ranking.clone()))
             .collect()
     }
 
@@ -50,7 +56,7 @@ impl Relayer {
                     .expect("Reputation should exist")
             })
             .take(TOP_TEAM_RANKING_LENGTH)
-            .map(|(id, ranking)| (id.clone(), ranking.clone()))
+            .map(|(id, ranking)| (*id, ranking.clone()))
             .collect()
     }
 
@@ -74,7 +80,7 @@ impl Relayer {
                     .expect("Reputation should exist")
             })
             .take(TOP_TEAM_RANKING_LENGTH)
-            .map(|(id, ranking)| (id.clone(), ranking.clone()))
+            .map(|(id, ranking)| (*id, ranking.clone()))
             .collect();
 
         let player_ranking = match load_player_ranking() {
@@ -96,7 +102,7 @@ impl Relayer {
                     .expect("Reputation should exist")
             })
             .take(TOP_PLAYER_RANKING_LENGTH)
-            .map(|(id, ranking)| (id.clone(), ranking.clone()))
+            .map(|(id, ranking)| (*id, ranking.clone()))
             .collect();
 
         Self {
@@ -123,15 +129,10 @@ impl Relayer {
             DEFAULT_SEED_PORT,
         );
         while self.running {
-            if let Some(app_event) = event_receiver.recv().await {
-                match app_event {
-                    AppEvent::NetworkEvent(swarm_event) => {
-                        let result = self.handle_network_events(swarm_event);
-                        if result.is_err() {
-                            log::error!("Error handling network event: {:?}", result);
-                        }
-                    }
-                    _ => {}
+            if let Some(AppEvent::NetworkEvent(swarm_event)) = event_receiver.recv().await {
+                let result = self.handle_network_events(swarm_event);
+                if result.is_err() {
+                    log::error!("Error handling network event: {result:?}");
                 }
             }
         }
@@ -144,11 +145,11 @@ impl Relayer {
         &mut self,
         network_event: SwarmEvent<gossipsub::Event>,
     ) -> AppResult<()> {
-        println!("Received network event: {:?}", network_event);
+        println!("Received network event: {network_event:?}");
         match network_event {
             SwarmEvent::Behaviour(gossipsub::Event::Subscribed { peer_id, topic }) => {
                 if topic == IdentTopic::new(TOPIC).hash() {
-                    println!("Sending info to {}", peer_id);
+                    println!("Sending info to {peer_id}");
 
                     self.network_handler.send_seed_info(SeedInfo::new(
                         self.network_handler.connected_peers_count,
@@ -162,79 +163,72 @@ impl Relayer {
             SwarmEvent::Behaviour(gossipsub::Event::Message { message, .. }) => {
                 assert!(message.topic == IdentTopic::new(TOPIC).hash());
                 let network_data = deserialize::<NetworkData>(&message.data)?;
-                match network_data {
-                    NetworkData::Team(timestamp, network_team) => {
-                        if let Some(current_ranking) = self.team_ranking.get(&network_team.team.id)
-                        {
-                            if current_ranking.timestamp >= timestamp {
-                                return Ok(());
-                            }
-                        } else {
-                            self.network_handler.send_seed_info(SeedInfo::new(
-                                self.network_handler.connected_peers_count,
-                                Some(format!(
-                                    "A new crew has started roaming the galaxy: {}",
-                                    network_team.team.name
-                                )),
-                                self.top_team_ranking.clone(),
-                                self.top_player_ranking.clone(),
-                            )?)?;
+                if let NetworkData::Team(timestamp, network_team) = network_data {
+                    if let Some(current_ranking) = self.team_ranking.get(&network_team.team.id) {
+                        if current_ranking.timestamp >= timestamp {
+                            return Ok(());
                         }
-
-                        let ranking = TeamRanking::from_network_team(timestamp, &network_team);
-
-                        // If the team is already stored, remove players from previous version.
-                        // This is to ensure that fired players are removed.
-                        if let Some(current_ranking) = self.team_ranking.get(&network_team.team.id)
-                        {
-                            for player_id in current_ranking.team.player_ids.iter() {
-                                self.player_ranking.remove(player_id);
-                            }
-                        }
-
-                        self.team_ranking
-                            .insert(network_team.team.id, ranking.clone());
-
-                        if let Err(err) = save_team_ranking(&self.team_ranking, true) {
-                            println!("Error while saving team ranking: {err}");
-                        }
-
-                        for player in network_team.players.iter() {
-                            let ranking = PlayerRanking::new(timestamp, player.clone());
-                            self.player_ranking.insert(player.id, ranking.clone());
-                        }
-
-                        if let Err(err) = save_player_ranking(&self.player_ranking, true) {
-                            println!("Error while saving player ranking: {err}");
-                        }
-
-                        self.top_team_ranking = self.get_top_team_ranking();
-                        self.top_player_ranking = self.get_top_player_ranking();
-
-                        // Check if there are new messages to send and append them to self.messages.
-                        self.messages.extend(load_relayer_messages()?);
-
-                        // Send messages starting from last sent message.
-                        let last_message_sent = self
-                            .last_message_sent_to_team
-                            .get(&network_team.team.id)
-                            .unwrap_or(&0);
-
-                        for (index, message) in self.messages.iter().enumerate() {
-                            if index < *last_message_sent {
-                                continue;
-                            }
-
-                            self.network_handler.send_relayer_message_to_team(
-                                message.clone(),
-                                network_team.team.id,
-                            )?;
-                        }
-
-                        self.last_message_sent_to_team
-                            .insert(network_team.team.id, self.messages.len());
+                    } else {
+                        self.network_handler.send_seed_info(SeedInfo::new(
+                            self.network_handler.connected_peers_count,
+                            Some(format!(
+                                "A new crew has started roaming the galaxy: {}",
+                                network_team.team.name
+                            )),
+                            self.top_team_ranking.clone(),
+                            self.top_player_ranking.clone(),
+                        )?)?;
                     }
-                    _ => {}
+
+                    let ranking = TeamRanking::from_network_team(timestamp, &network_team);
+
+                    // If the team is already stored, remove players from previous version.
+                    // This is to ensure that fired players are removed.
+                    if let Some(current_ranking) = self.team_ranking.get(&network_team.team.id) {
+                        for player_id in current_ranking.team.player_ids.iter() {
+                            self.player_ranking.remove(player_id);
+                        }
+                    }
+
+                    self.team_ranking
+                        .insert(network_team.team.id, ranking.clone());
+
+                    if let Err(err) = save_team_ranking(&self.team_ranking, true) {
+                        println!("Error while saving team ranking: {err}");
+                    }
+
+                    for player in network_team.players.iter() {
+                        let ranking = PlayerRanking::new(timestamp, player.clone());
+                        self.player_ranking.insert(player.id, ranking.clone());
+                    }
+
+                    if let Err(err) = save_player_ranking(&self.player_ranking, true) {
+                        println!("Error while saving player ranking: {err}");
+                    }
+
+                    self.top_team_ranking = self.get_top_team_ranking();
+                    self.top_player_ranking = self.get_top_player_ranking();
+
+                    // Check if there are new messages to send and append them to self.messages.
+                    self.messages.extend(load_relayer_messages()?);
+
+                    // Send messages starting from last sent message.
+                    let last_message_sent = self
+                        .last_message_sent_to_team
+                        .get(&network_team.team.id)
+                        .unwrap_or(&0);
+
+                    for (index, message) in self.messages.iter().enumerate() {
+                        if index < *last_message_sent {
+                            continue;
+                        }
+
+                        self.network_handler
+                            .send_relayer_message_to_team(message.clone(), network_team.team.id)?;
+                    }
+
+                    self.last_message_sent_to_team
+                        .insert(network_team.team.id, self.messages.len());
                 }
             }
             _ => {}

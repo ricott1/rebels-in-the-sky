@@ -35,8 +35,8 @@ pub static PLAYER_DATA: Lazy<HashMap<Population, PlayerData>> = Lazy::new(|| {
     let data = file
         .contents_utf8()
         .expect("Could not read players_data.json");
-    serde_json::from_str(&data)
-        .unwrap_or_else(|e| panic!("Could not parse players_data.json: {}", e))
+    serde_json::from_str(data)
+        .unwrap_or_else(|e| panic!("Could not parse players_data.json: {e}"))
 });
 
 pub static TEAM_DATA: Lazy<Vec<(String, String)>> = Lazy::new(|| {
@@ -47,7 +47,7 @@ pub static TEAM_DATA: Lazy<Vec<(String, String)>> = Lazy::new(|| {
     let data = file
         .contents_utf8()
         .expect("Could not read teams_data.json");
-    serde_json::from_str(&data).unwrap_or_else(|e| panic!("Could not parse teams_data.json: {}", e))
+    serde_json::from_str(data).unwrap_or_else(|e| panic!("Could not parse teams_data.json: {e}"))
 });
 
 pub static PLANET_DATA: Lazy<Vec<Planet>> = Lazy::new(|| {
@@ -57,8 +57,8 @@ pub static PLANET_DATA: Lazy<Vec<Planet>> = Lazy::new(|| {
     let data = file
         .contents_utf8()
         .expect("Could not read planets_data.json");
-    serde_json::from_str(&data).unwrap_or_else(|e| {
-        panic!("Could not parse planets_data.json: {}", e);
+    serde_json::from_str(data).unwrap_or_else(|e| {
+        panic!("Could not parse planets_data.json: {e}");
     })
 });
 

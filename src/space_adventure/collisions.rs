@@ -24,7 +24,7 @@ pub struct HitBox {
 
 impl From<HashMap<I16Vec2, bool>> for HitBox {
     fn from(value: HashMap<I16Vec2, bool>) -> Self {
-        let min_x = if value.len() > 0 {
+        let min_x = if !value.is_empty() {
             value
                 .keys()
                 .min_by(|a, b| a.x.cmp(&b.x))
@@ -34,7 +34,7 @@ impl From<HashMap<I16Vec2, bool>> for HitBox {
             0
         };
 
-        let max_x = if value.len() > 0 {
+        let max_x = if !value.is_empty() {
             value
                 .keys()
                 .max_by(|a, b| a.x.cmp(&b.x))
@@ -44,7 +44,7 @@ impl From<HashMap<I16Vec2, bool>> for HitBox {
             0
         };
 
-        let min_y = if value.len() > 0 {
+        let min_y = if !value.is_empty() {
             value
                 .keys()
                 .min_by(|a, b| a.y.cmp(&b.y))
@@ -54,7 +54,7 @@ impl From<HashMap<I16Vec2, bool>> for HitBox {
             0
         };
 
-        let max_y = if value.len() > 0 {
+        let max_y = if !value.is_empty() {
             value
                 .keys()
                 .max_by(|a, b| a.y.cmp(&b.y))
@@ -131,25 +131,23 @@ fn check_physical_collision(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -> b
                 }
             }
         }
-    } else {
-        if path.y > 0 {
-            for y in 0..=path.y {
-                let x = path.x;
-                for (&point, &_) in one.hit_box().iter() {
-                    let g_point = one.position() + point + I16Vec2::new(x, y) - other.position();
-                    if other.hit_box().contains_key(&g_point) {
-                        return true;
-                    }
+    } else if path.y > 0 {
+        for y in 0..=path.y {
+            let x = path.x;
+            for (&point, &_) in one.hit_box().iter() {
+                let g_point = one.position() + point + I16Vec2::new(x, y) - other.position();
+                if other.hit_box().contains_key(&g_point) {
+                    return true;
                 }
             }
-        } else {
-            for y in path.y..=0 {
-                let x = path.x;
-                for (&point, &_) in one.hit_box().iter() {
-                    let g_point = one.position() + point + I16Vec2::new(x, y) - other.position();
-                    if other.hit_box().contains_key(&g_point) {
-                        return true;
-                    }
+        }
+    } else {
+        for y in path.y..=0 {
+            let x = path.x;
+            for (&point, &_) in one.hit_box().iter() {
+                let g_point = one.position() + point + I16Vec2::new(x, y) - other.position();
+                if other.hit_box().contains_key(&g_point) {
+                    return true;
                 }
             }
         }
@@ -166,7 +164,7 @@ fn check_granular_phase_collision(one: &Box<dyn Entity>, other: &Box<dyn Entity>
         }
     }
 
-    return false;
+    false
 }
 
 fn check_broad_phase_collision(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -> bool {
@@ -184,7 +182,7 @@ fn check_broad_phase_collision(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -
         return false;
     }
 
-    return true;
+    true
 }
 
 fn are_colliding(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -> bool {
@@ -248,10 +246,10 @@ pub fn resolve_collision_between(
 
     match (one.collider_type(), other.collider_type()) {
         (ColliderType::AsteroidPlanet, ColliderType::Asteroid) => {
-            return vec![SpaceCallback::DamageEntity {
+            vec![SpaceCallback::DamageEntity {
                 id: other.id(),
                 damage: one.collision_damage(),
-            }];
+            }]
         }
         (ColliderType::Asteroid, ColliderType::AsteroidPlanet) => {
             resolve_collision_between(other, one)
@@ -265,41 +263,41 @@ pub fn resolve_collision_between(
                 return vec![SpaceCallback::LandSpaceshipOnAsteroid];
             }
 
-            return vec![];
+            vec![]
         }
         (ColliderType::Spaceship, ColliderType::AsteroidPlanet) => {
             resolve_collision_between(other, one)
         }
         (ColliderType::Projectile, ColliderType::Asteroid) => {
-            return vec![
+            vec![
                 SpaceCallback::DestroyEntity { id: one.id() },
                 SpaceCallback::DamageEntity {
                     id: other.id(),
                     damage: one.collision_damage(),
                 },
-            ];
+            ]
         }
         (ColliderType::Asteroid, ColliderType::Projectile) => resolve_collision_between(other, one),
         (ColliderType::Projectile, ColliderType::Spaceship) => {
-            return vec![
+            vec![
                 SpaceCallback::DestroyEntity { id: one.id() },
                 SpaceCallback::DamageEntity {
                     id: other.id(),
                     damage: one.collision_damage(),
                 },
-            ];
+            ]
         }
         (ColliderType::Spaceship, ColliderType::Projectile) => {
             resolve_collision_between(other, one)
         }
         (ColliderType::Spaceship, ColliderType::Asteroid) => {
-            return vec![
+            vec![
                 SpaceCallback::DamageEntity {
                     id: one.id(),
                     damage: other.collision_damage(),
                 },
                 SpaceCallback::DestroyEntity { id: other.id() },
-            ];
+            ]
         }
         (ColliderType::Asteroid, ColliderType::Spaceship) => resolve_collision_between(other, one),
 
@@ -335,14 +333,14 @@ pub fn resolve_collision_between(
 
         (ColliderType::Collector, ColliderType::Fragment) => {
             // If a fragment touches the collector hit_box, it is accelerated towards it.
-            return vec![SpaceCallback::SetAcceleration {
+            vec![SpaceCallback::SetAcceleration {
                 id: other.id(),
                 acceleration: one.center() - other.center(),
-            }];
+            }]
         }
         (ColliderType::Fragment, ColliderType::Collector) => resolve_collision_between(other, one),
 
-        _ => return vec![],
+        _ => vec![],
     }
 }
 

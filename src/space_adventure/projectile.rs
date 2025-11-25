@@ -42,7 +42,7 @@ impl Body for ProjectileEntity {
 
     fn update_body(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
         self.previous_position = self.position;
-        self.position = self.position + self.velocity * deltatime;
+        self.position += self.velocity * deltatime;
 
         if self.position.x < 0.0 || self.position.x > MAX_ENTITY_POSITION.x as f32 {
             return vec![SpaceCallback::DestroyEntity { id: self.id() }];
@@ -51,18 +51,15 @@ impl Body for ProjectileEntity {
             return vec![SpaceCallback::DestroyEntity { id: self.id() }];
         }
 
-        match self.state {
-            ProjectileState::Decaying { lifetime } => {
-                let new_lifetime = lifetime - deltatime;
-                if new_lifetime > 0.0 {
-                    self.state = ProjectileState::Decaying {
-                        lifetime: new_lifetime,
-                    };
-                } else {
-                    return vec![SpaceCallback::DestroyEntity { id: self.id() }];
-                }
+        if let ProjectileState::Decaying { lifetime } = self.state {
+            let new_lifetime = lifetime - deltatime;
+            if new_lifetime > 0.0 {
+                self.state = ProjectileState::Decaying {
+                    lifetime: new_lifetime,
+                };
+            } else {
+                return vec![SpaceCallback::DestroyEntity { id: self.id() }];
             }
-            _ => {}
         }
 
         vec![]

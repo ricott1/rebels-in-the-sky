@@ -57,10 +57,10 @@ impl Period {
             Self::NotStarted => 0,
             Self::Q1 => 1,
             Self::B1 | Self::B2 | Self::B3 | Self::B4 => {
-                &self.previous().start() + SECONDS_PER_MINUTE * MINUTES_PER_QUARTER
+                self.previous().start() + SECONDS_PER_MINUTE * MINUTES_PER_QUARTER
             }
             Self::Q2 | Self::Q3 | Self::Q4 => {
-                &self.previous().start() + SECONDS_PER_MINUTE * MINUTES_PER_BREAK
+                self.previous().start() + SECONDS_PER_MINUTE * MINUTES_PER_BREAK
             }
         }
     }
@@ -69,10 +69,10 @@ impl Period {
         match self {
             Self::NotStarted => 0,
             Self::Q1 | Self::Q2 | Self::Q3 | Self::Q4 => {
-                &self.previous().end() + SECONDS_PER_MINUTE * MINUTES_PER_QUARTER
+                self.previous().end() + SECONDS_PER_MINUTE * MINUTES_PER_QUARTER
             }
             Self::B1 | Self::B2 | Self::B3 => {
-                &self.previous().end() + SECONDS_PER_MINUTE * MINUTES_PER_BREAK
+                self.previous().end() + SECONDS_PER_MINUTE * MINUTES_PER_BREAK
             }
             Self::B4 => MAX_TIME,
         }
@@ -80,15 +80,11 @@ impl Period {
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Timer {
     pub value: u16,
 }
 
-impl Default for Timer {
-    fn default() -> Self {
-        Self { value: 0 }
-    }
-}
 
 impl From<u16> for Timer {
     fn from(value: u16) -> Self {

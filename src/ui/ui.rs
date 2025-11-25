@@ -95,13 +95,13 @@ impl Ui {
         let new_team_screen = NewTeamScreen::new();
         let galaxy_panel = GalaxyPanel::new();
 
-        let mut ui_tabs = vec![];
-
-        ui_tabs.push(UiTab::MyTeam);
-        ui_tabs.push(UiTab::Crews);
-        ui_tabs.push(UiTab::Pirates);
-        ui_tabs.push(UiTab::Galaxy);
-        ui_tabs.push(UiTab::Games);
+        let mut ui_tabs = vec![
+            UiTab::MyTeam,
+            UiTab::Crews,
+            UiTab::Pirates,
+            UiTab::Galaxy,
+            UiTab::Games,
+        ];
 
         if !disable_network {
             ui_tabs.push(UiTab::Swarm);
@@ -263,39 +263,30 @@ impl Ui {
         world: &World,
     ) -> Option<UiCallback> {
         match key_event.code {
-            UiKey::ESC => {
-                return Some(UiCallback::PromptQuit);
-            }
+            UiKey::ESC => Some(UiCallback::PromptQuit),
 
-            UiKey::UI_DEBUG_MODE => {
-                return Some(UiCallback::ToggleUiDebugMode);
-            }
+            UiKey::UI_DEBUG_MODE => Some(UiCallback::ToggleUiDebugMode),
 
-            UiKey::NEXT_TAB if self.state == UiState::Main && self.popup_messages.len() == 0 => {
+            UiKey::NEXT_TAB if self.state == UiState::Main && self.popup_messages.is_empty() => {
                 self.next_tab();
                 None
             }
 
             UiKey::PREVIOUS_TAB
-                if self.state == UiState::Main && self.popup_messages.len() == 0 =>
+                if self.state == UiState::Main && self.popup_messages.is_empty() =>
             {
                 self.previous_tab();
                 None
             }
             _ => {
                 // Special handling for space screen. It takes precedence over popups.
-                match self.state {
-                    UiState::SpaceAdventure => {
-                        if let Some(callback) =
-                            self.space_screen.handle_key_events(key_event, world)
-                        {
-                            return Some(callback);
-                        }
+                if self.state == UiState::SpaceAdventure {
+                    if let Some(callback) = self.space_screen.handle_key_events(key_event, world) {
+                        return Some(callback);
                     }
-                    _ => {}
                 }
 
-                if self.popup_messages.len() > 0 {
+                if !self.popup_messages.is_empty() {
                     return self.popup_messages[0].consumes_input(&mut self.popup_input, key_event);
                 }
                 self.popup_input.move_cursor(CursorMove::End);
@@ -381,7 +372,7 @@ impl Ui {
     ) {
         let mut ui_frame = UiFrame::new(frame);
         ui_frame.set_hovering(self.inner_registry.hovering());
-        if self.popup_messages.len() > 0 {
+        if !self.popup_messages.is_empty() {
             ui_frame.set_max_layer(1);
         } else {
             ui_frame.set_max_layer(0);
@@ -468,11 +459,7 @@ impl Ui {
         };
 
         if let Err(err) = render_result {
-            self.push_log_event(
-                Tick::now(),
-                None,
-                format!("Render error\n{}", err.to_string()),
-            );
+            self.push_log_event(Tick::now(), None, format!("Render error\n{err}"));
         }
 
         // Render footer
@@ -485,12 +472,8 @@ impl Ui {
         );
 
         if let Err(err) = self.render_popup_messages(&mut ui_frame, screen_area) {
-            self.push_log_event(
-                Tick::now(),
-                None,
-                format!("Popup render error\n{}", err.to_string()),
-            );
-            log::error!("Popup render error\n{}", err.to_string());
+            self.push_log_event(Tick::now(), None, format!("Popup render error\n{err}"));
+            log::error!("Popup render error\n{err}");
         }
         self.last_render = Instant::now();
 
@@ -499,7 +482,7 @@ impl Ui {
 
     fn render_popup_messages(&mut self, frame: &mut UiFrame, area: Rect) -> AppResult<()> {
         // Render popup message
-        if self.popup_messages.len() > 0 {
+        if !self.popup_messages.is_empty() {
             self.popup_messages[0].render(frame, area, &mut self.popup_input)?;
         }
         Ok(())
@@ -583,7 +566,7 @@ impl Ui {
                 Button::no_box(
                     format!(
                         " {}: Turn radio {} ",
-                        UiKey::TOGGLE_AUDIO.to_string(),
+                        UiKey::TOGGLE_AUDIO,
                         if audio_player.is_playing() {
                             "off"
                         } else {
@@ -598,7 +581,7 @@ impl Ui {
 
             frame.render_interactive(
                 Button::no_box(
-                    format!(" {} ", UiKey::PREVIOUS_RADIO.to_string()),
+                    format!(" {} ", UiKey::PREVIOUS_RADIO),
                     UiCallback::PreviousRadio,
                 )
                 .set_hotkey(UiKey::PREVIOUS_RADIO),
@@ -606,11 +589,8 @@ impl Ui {
             );
 
             frame.render_interactive(
-                Button::no_box(
-                    format!(" {} ", UiKey::NEXT_RADIO.to_string()),
-                    UiCallback::NextRadio,
-                )
-                .set_hotkey(UiKey::NEXT_RADIO),
+                Button::no_box(format!(" {} ", UiKey::NEXT_RADIO), UiCallback::NextRadio)
+                    .set_hotkey(UiKey::NEXT_RADIO),
                 split[3],
             );
             if audio_player.is_playing() {

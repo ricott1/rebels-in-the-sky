@@ -92,24 +92,27 @@ impl Action {
         &self,
         input: &ActionOutput,
         game: &Game,
-        rng: &mut ChaCha8Rng,
+        action_rng: &mut ChaCha8Rng,
+        description_rng: &mut ChaCha8Rng,
     ) -> Option<ActionOutput> {
         let mut output = match self {
-            Action::JumpBall => JumpBall::execute(input, game, rng),
-            Action::StartOfQuarter => StartOfQuarter::execute(input, game, rng),
-            Action::EndOfQuarter => EndOfQuarter::execute(input, game, rng),
-            Action::Isolation => Isolation::execute(input, game, rng),
-            Action::PickAndRoll => PickAndRoll::execute(input, game, rng),
-            Action::OffTheScreen => OffTheScreen::execute(input, game, rng),
-            Action::Post => Post::execute(input, game, rng),
-            Action::Rebound => Rebound::execute(input, game, rng),
-            Action::CloseShot => CloseShot::execute(input, game, rng),
-            Action::MediumShot => MediumShot::execute(input, game, rng),
-            Action::LongShot => LongShot::execute(input, game, rng),
-            Action::Substitution => Substitution::execute(input, game, rng),
-            Action::Brawl => Brawl::execute(input, game, rng),
+            Action::JumpBall => JumpBall::execute(input, game, action_rng, description_rng),
+            Action::StartOfQuarter => {
+                StartOfQuarter::execute(input, game, action_rng, description_rng)
+            }
+            Action::EndOfQuarter => EndOfQuarter::execute(input, game, action_rng, description_rng),
+            Action::Isolation => Isolation::execute(input, game, action_rng, description_rng),
+            Action::PickAndRoll => PickAndRoll::execute(input, game, action_rng, description_rng),
+            Action::OffTheScreen => OffTheScreen::execute(input, game, action_rng, description_rng),
+            Action::Post => Post::execute(input, game, action_rng, description_rng),
+            Action::Rebound => Rebound::execute(input, game, action_rng, description_rng),
+            Action::CloseShot => CloseShot::execute(input, game, action_rng, description_rng),
+            Action::MediumShot => MediumShot::execute(input, game, action_rng, description_rng),
+            Action::LongShot => LongShot::execute(input, game, action_rng, description_rng),
+            Action::Substitution => Substitution::execute(input, game, action_rng, description_rng),
+            Action::Brawl => Brawl::execute(input, game, action_rng, description_rng),
         };
-        output.as_mut()?.random_seed = rng.get_seed();
+        output.as_mut()?.random_seed = action_rng.get_seed();
         output
     }
 }
@@ -118,10 +121,15 @@ pub trait EngineAction {
     fn tactic_modifier(game: &Game, action: &Action) -> i16 {
         let attack_tactic = game.home_team_in_game.tactic;
         let defense_tactic = game.home_team_in_game.tactic;
-        attack_tactic.attack_roll_bonus(&action) - defense_tactic.defense_roll_bonus(&action)
+        attack_tactic.attack_roll_bonus(action) - defense_tactic.defense_roll_bonus(action)
     }
-    fn execute(input: &ActionOutput, game: &Game, rng: &mut ChaCha8Rng) -> Option<ActionOutput>;
+    fn execute(
+        input: &ActionOutput,
+        game: &Game,
+        action_rng: &mut ChaCha8Rng,
+        description_rng: &mut ChaCha8Rng, // Use separate rng for description so that we can upgrade them without breaking engine compatibility between versions.
+    ) -> Option<ActionOutput>;
     fn sample(rng: &mut ChaCha8Rng, weights: [u8; 5]) -> Option<usize> {
-        Some(WeightedIndex::new(&weights).ok()?.sample(rng))
+        Some(WeightedIndex::new(weights).ok()?.sample(rng))
     }
 }

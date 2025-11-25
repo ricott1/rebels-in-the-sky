@@ -78,7 +78,7 @@ impl NetworkTeam {
         // This means that the team can be challenged online and it will not be stored.
         team.peer_id = Some(peer_id);
         for player in players.iter_mut() {
-            player.peer_id = Some(peer_id.clone());
+            player.peer_id = Some(peer_id);
         }
 
         Ok(Self::new(team, players, asteroids))
@@ -109,7 +109,7 @@ impl NetworkGame {
             if (idx as Position) < MAX_POSITION {
                 player_stats.position = Some(idx as Position);
             }
-            stats.insert(player_id.clone(), player_stats.clone());
+            stats.insert(*player_id, player_stats.clone());
 
             let player = home_team_in_game.players.get_mut(player_id).ok_or(anyhow!(
                 "Cannot get player for home team in game".to_string()
@@ -130,7 +130,7 @@ impl NetworkGame {
             if (idx as Position) < MAX_POSITION {
                 player_stats.position = Some(idx as Position);
             }
-            stats.insert(player_id.clone(), player_stats.clone());
+            stats.insert(*player_id, player_stats.clone());
 
             let player = away_team_in_game.players.get_mut(player_id).ok_or(anyhow!(
                 "Cannot get player for away team in game".to_string()

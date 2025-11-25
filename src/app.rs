@@ -89,22 +89,19 @@ impl App {
             .world
             .get_own_team_mut()
             .expect("There should be an own team when simulating.");
-        match own_team.current_location {
-            TeamLocation::OnSpaceAdventure { around } => {
-                // The team loses all resources but satoshis, we told you so!
-                let current_treasury = own_team.resources.value(&Resource::SATOSHI);
-                own_team.resources = ResourceMap::default();
-                own_team
-                    .add_resource(Resource::SATOSHI, current_treasury)
-                    .expect("It should always be possible to add satoshis");
-                own_team.spaceship.set_current_durability(0);
-                own_team.current_location = TeamLocation::OnPlanet { planet_id: around };
+        if let TeamLocation::OnSpaceAdventure { around } = own_team.current_location {
+            // The team loses all resources but satoshis, we told you so!
+            let current_treasury = own_team.resources.value(&Resource::SATOSHI);
+            own_team.resources = ResourceMap::default();
+            own_team
+                .add_resource(Resource::SATOSHI, current_treasury)
+                .expect("It should always be possible to add satoshis");
+            own_team.spaceship.set_current_durability(0);
+            own_team.current_location = TeamLocation::OnPlanet { planet_id: around };
 
-                self.ui
-                    .push_popup(PopupMessage::Ok{
-                       message: "The game was closed during a space adventure.\nAll the cargo and fuel have been lost.\nNext time go back to the base first!".to_string(), is_skippable:false,tick: Tick::now()});
-            }
-            _ => {}
+            self.ui
+                .push_popup(PopupMessage::Ok{
+                   message: "The game was closed during a space adventure.\nAll the cargo and fuel have been lost.\nNext time go back to the base first!".to_string(), is_skippable:false,tick: Tick::now()});
         }
 
         const SIMULATION_UPDATE_INTERVAL: Tick = 250 * MILLISECONDS;
@@ -129,7 +126,7 @@ impl App {
                 .handle_slow_tick_events(self.world.last_tick_short_interval + TickInterval::SHORT)
             {
                 Ok(callbacks) => callbacks,
-                Err(e) => panic!("Failed to simulate world: {}", e),
+                Err(e) => panic!("Failed to simulate world: {e}"),
             };
             callbacks.append(&mut cb);
         }
@@ -151,7 +148,7 @@ impl App {
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    panic!("Failed to simulate world: {}", e);
+                    panic!("Failed to simulate world: {e}");
                 }
             }
         }
@@ -169,13 +166,12 @@ impl App {
             None,
         )?;
         app.new_world();
-        let home_planet_id = app
+        let home_planet_id = *app
             .world
             .planets
             .keys()
             .next()
-            .expect("There should be at elast one planet")
-            .clone();
+            .expect("There should be at elast one planet");
         app.world.own_team_id = app.world.generate_random_team(
             &mut ChaCha8Rng::from_os_rng(),
             home_planet_id,
@@ -199,13 +195,12 @@ impl App {
             None,
         )?;
         app.new_world();
-        let home_planet_id = app
+        let home_planet_id = *app
             .world
             .planets
             .keys()
             .next()
-            .expect("There should be at elast one planet")
-            .clone();
+            .expect("There should be at elast one planet");
         app.world.own_team_id = app.world.generate_random_team(
             &mut ChaCha8Rng::from_os_rng(),
             home_planet_id,
@@ -246,14 +241,12 @@ impl App {
             {
                 if disable_audio {
                     None
+                } else if let Ok(player) = MusicPlayer::new(event_sender.clone()) {
+                    info!("Audio player created succesfully");
+                    Some(player)
                 } else {
-                    if let Ok(player) = MusicPlayer::new(event_sender.clone()) {
-                        info!("Audio player created succesfully");
-                        Some(player)
-                    } else {
-                        warn!("Could not create audio player");
-                        None
-                    }
+                    warn!("Could not create audio player");
+                    None
                 }
             }
         };
@@ -324,7 +317,9 @@ impl App {
                         self.draw(&mut tui).await;
                     }
                     AppEvent::FastTick(tick) => {
+                        log::info!("Got fast tick event.");
                         if self.should_draw_fast_tick_events(tick) {
+                            log::info!("Drawing fast tick event.");
                             self.draw(&mut tui).await
                         }
                     }
@@ -375,8 +370,7 @@ impl App {
                     && version_patch > own_version_patch)
             {
                 let message = format!(
-                    "New version {}.{}.{} available. Download at https://rebels.frittura.org",
-                    version_major, version_minor, version_patch,
+                    "New version {version_major}.{version_minor}.{version_patch} available. Download at https://rebels.frittura.org",
                 );
                 self.ui.push_popup(PopupMessage::Ok {
                     message,
@@ -391,7 +385,7 @@ impl App {
 
     pub fn new_world(&mut self) {
         if let Err(e) = self.world.initialize(self.generate_local_world) {
-            panic!("Failed to initialize world: {}", e);
+            panic!("Failed to initialize world: {e}");
         }
     }
 
@@ -399,7 +393,7 @@ impl App {
         // Try to load an existing world.
         match load_world(&self.store_prefix) {
             Ok(w) => self.world = w,
-            Err(e) => panic!("Failed to load world: {}", e),
+            Err(e) => panic!("Failed to load world: {e}"),
         }
 
         let own_team = self
@@ -449,73 +443,67 @@ impl App {
     }
 
     fn should_draw_fast_tick_events(&mut self, current_tick: Tick) -> bool {
-        if self.world.has_own_team() {
-            match self.world.handle_fast_tick_events(current_tick) {
-                Ok(callbacks) => {
-                    for callback in callbacks.iter() {
-                        match callback.call(self) {
-                            Ok(Some(message)) => {
-                                self.ui.push_popup(PopupMessage::Ok {
-                                    message,
-                                    is_skippable: true,
-                                    tick: Tick::now(),
-                                });
-                            }
-                            Ok(None) => {}
-                            Err(e) => {
-                                self.ui.push_popup(PopupMessage::Error {
-                                    message: e.to_string(),
-                                    tick: Tick::now(),
-                                });
-                            }
+        match self.world.handle_fast_tick_events(current_tick) {
+            Ok(callbacks) => {
+                for callback in callbacks.iter() {
+                    match callback.call(self) {
+                        Ok(Some(message)) => {
+                            self.ui.push_popup(PopupMessage::Ok {
+                                message,
+                                is_skippable: true,
+                                tick: Tick::now(),
+                            });
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            self.ui.push_popup(PopupMessage::Error {
+                                message: e.to_string(),
+                                tick: Tick::now(),
+                            });
                         }
                     }
-                    if callbacks.len() > 0 {
-                        return true;
-                    }
                 }
-                Err(e) => {
-                    self.ui.push_popup(PopupMessage::Error {
-                        message: format!("Tick error\n{}", e.to_string()),
-                        tick: Tick::now(),
-                    });
-                }
+            }
+            Err(e) => {
+                self.ui.push_popup(PopupMessage::Error {
+                    message: format!("Tick error\n{e}"),
+                    tick: Tick::now(),
+                });
             }
         }
 
-        false
+        // FIXME: should get this info from the world, not hardcoded
+        self.world.space_adventure.is_some()
     }
 
     fn handle_slow_tick_events(&mut self, current_tick: Tick) {
         // If there was a callback, or ui was updated --> draw.
-        if self.world.has_own_team() {
-            match self.world.handle_slow_tick_events(current_tick) {
-                Ok(callbacks) => {
-                    for callback in callbacks.iter() {
-                        match callback.call(self) {
-                            Ok(Some(message)) => {
-                                self.ui.push_popup(PopupMessage::Ok {
-                                    message,
-                                    is_skippable: true,
-                                    tick: Tick::now(),
-                                });
-                            }
-                            Ok(None) => {}
-                            Err(e) => {
-                                self.ui.push_popup(PopupMessage::Error {
-                                    message: e.to_string(),
-                                    tick: Tick::now(),
-                                });
-                            }
+        match self.world.handle_slow_tick_events(current_tick) {
+            Ok(callbacks) => {
+                for callback in callbacks.iter() {
+                    match callback.call(self) {
+                        Ok(Some(message)) => {
+                            self.ui.push_popup(PopupMessage::Ok {
+                                message,
+                                is_skippable: true,
+                                tick: Tick::now(),
+                            });
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            self.ui.push_popup(PopupMessage::Error {
+                                message: e.to_string(),
+                                tick: Tick::now(),
+                            });
                         }
                     }
                 }
-                Err(e) => {
-                    self.ui.push_popup(PopupMessage::Error {
-                        message: format!("Tick error\n{}", e.to_string()),
-                        tick: Tick::now(),
-                    });
-                }
+            }
+            Err(e) => {
+                self.ui.push_popup(PopupMessage::Error {
+                    message: format!("Tick error\n{e}"),
+                    tick: Tick::now(),
+                });
             }
         }
 
@@ -527,11 +515,8 @@ impl App {
             Ok(_) => {}
             Err(e) => {
                 // We push to Logs rather than Error popup since otherwise it would spam too much
-                self.ui.push_log_event(
-                    Tick::now(),
-                    None,
-                    format!("Ui update error\n{}", e.to_string()),
-                )
+                self.ui
+                    .push_log_event(Tick::now(), None, format!("Ui update error\n{e}"))
             }
         }
         self.world.dirty_ui = false;
@@ -561,12 +546,12 @@ impl App {
                     self.ui.push_log_event(
                         Tick::now(),
                         None,
-                        format!("Failed to send own team to peers: {}", e),
+                        format!("Failed to send own team to peers: {e}"),
                     );
                 }
             } else if let Err(e) = self.network_handler.dial_seed() {
                 self.ui
-                    .push_log_event(Tick::now(), None, format!("Failed to dial seed: {}", e));
+                    .push_log_event(Tick::now(), None, format!("Failed to dial seed: {e}"));
             }
         }
     }

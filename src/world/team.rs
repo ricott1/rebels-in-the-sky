@@ -304,7 +304,7 @@ impl Team {
     pub fn can_consider_hiring_player(&self, player: &Player) -> AppResult<()> {
         let hiring_cost = player.hire_cost(self.reputation);
         if self.balance() < hiring_cost {
-            return Err(anyhow!("Not enough money {}", hiring_cost));
+            return Err(anyhow!("Not enough money {hiring_cost}"));
         }
 
         // Check player age is not above limit
@@ -415,7 +415,7 @@ impl Team {
             return Err(anyhow!("{} is already playing", team.name));
         }
 
-        if self.sent_challenges.get(&team.id).is_some() {
+        if self.sent_challenges.contains_key(&team.id) {
             return Err(anyhow!("Already challenged {}", team.name));
         }
 
@@ -465,7 +465,7 @@ impl Team {
             return Err(anyhow!("Cannot travel to asteroid"));
         }
 
-        if self.player_ids.len() < 1 {
+        if self.player_ids.is_empty() {
             return Err(anyhow!("No pirate to travel"));
         }
 
@@ -490,11 +490,7 @@ impl Team {
             return Err(anyhow!("Planet {} is inhabitable", planet.name));
         }
 
-        let is_teleporting = if duration <= TELEPORT_MAX_DURATION {
-            true
-        } else {
-            false
-        };
+        let is_teleporting = duration <= TELEPORT_MAX_DURATION;
 
         if is_teleporting {
             if !self.can_teleport_to(planet) {
@@ -525,7 +521,7 @@ impl Team {
     }
 
     pub fn can_start_space_adventure(&self) -> AppResult<()> {
-        if self.player_ids.len() < 1 {
+        if self.player_ids.is_empty() {
             return Err(anyhow!("No pirate to explore"));
         }
 
@@ -619,7 +615,7 @@ impl Team {
         } else if amount < 0 {
             // Selling. Check if enough resource
             let current = self.resources.value(&resource);
-            if current < amount.abs() as u32 {
+            if current < amount.unsigned_abs() {
                 return Err(anyhow!("Not enough resource"));
             }
         }
@@ -736,7 +732,7 @@ impl Team {
         let mut bench = players
             .iter()
             .filter(|&p| !new_players.contains(&p.id))
-            .map(|&p| p)
+            .copied()
             .collect::<Vec<&Player>>();
         bench.sort_by(|a, b| {
             b.tiredness_weighted_rating()

@@ -66,7 +66,7 @@ impl PitchImage {
             // Blink the indicator at last shot position by selectively not displaying the shot.
             let pixel = if let Some(shot) = last_shot {
                 if x == shot.0 as u32 && y == shot.1 as u32 {
-                    if (tick / BLINKING_STEP) % 2 == 0 {
+                    if (tick / BLINKING_STEP).is_multiple_of(2) {
                         continue;
                     }
                     // If last shot was made, add green pixel,
@@ -94,7 +94,7 @@ impl PitchImage {
                 ])
             };
 
-            img.put_pixel(x as u32, y as u32, pixel);
+            img.put_pixel(x, y, pixel);
         }
         Ok(img)
     }

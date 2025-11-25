@@ -35,7 +35,7 @@ impl AppClient {
     fn channel_mut(&mut self, id: ChannelId) -> AppResult<&mut AppChannel> {
         self.channels
             .get_mut(&id)
-            .with_context(|| format!("unknown channel: {}", id))
+            .with_context(|| format!("unknown channel: {id}"))
     }
 }
 
@@ -43,8 +43,8 @@ impl server::Handler for AppClient {
     type Error = anyhow::Error;
 
     async fn auth_password(&mut self, user: &str, password: &str) -> Result<Auth, Self::Error> {
-        println!("User {} requested password authentication", user);
-        let username = if !save_game_exists(user) && user.len() == 0 {
+        println!("User {user} requested password authentication");
+        let username = if !save_game_exists(user) && user.is_empty() {
             generate_user_id()
         } else {
             user.to_string()
@@ -62,8 +62,8 @@ impl server::Handler for AppClient {
         user: &str,
         public_key: &russh::keys::PublicKey,
     ) -> Result<Auth, Self::Error> {
-        println!("User {} requested public key authentication", user);
-        let username = if !save_game_exists(user) && user.len() == 0 {
+        println!("User {user} requested public key authentication");
+        let username = if !save_game_exists(user) && user.is_empty() {
             generate_user_id()
         } else {
             user.to_string()
@@ -91,8 +91,8 @@ impl server::Handler for AppClient {
             // If the password exists, we check it
             if let Ok(persisted_password) = load_data(&filename) {
                 let password: Password = persisted_password.try_into().unwrap_or_default();
-                if self.session_auth.check_password(password) == false {
-                    let error_string = format!("\n\rWrong password.\n");
+                if !self.session_auth.check_password(password) {
+                    let error_string = "\n\rWrong password.\n".to_string();
                     session.disconnect(Disconnect::ByApplication, error_string.as_str(), "")?;
                     session.close(channel.id())?;
                     return Ok(false);
@@ -101,7 +101,7 @@ impl server::Handler for AppClient {
                 // Otherwise, we just accept the new password and we persist it.
                 println!("Persisting sshpwd");
                 if let Err(_) = save_data(&filename, &self.session_auth.hashed_password) {
-                    let error_string = format!("\n\rError storing password.\n");
+                    let error_string = "\n\rError storing password.\n".to_string();
                     session.disconnect(Disconnect::ByApplication, error_string.as_str(), "")?;
                     session.close(channel.id())?;
                     return Ok(false);
@@ -114,8 +114,7 @@ impl server::Handler for AppClient {
                 || self.session_auth.username.len() > MAX_USERNAME_LENGTH
             {
                 let error_string = format!(
-                    "\n\rInvalid username. The username must have between {} and {} characters.\n",
-                    MIN_USERNAME_LENGTH, MAX_USERNAME_LENGTH
+                    "\n\rInvalid username. The username must have between {MIN_USERNAME_LENGTH} and {MAX_USERNAME_LENGTH} characters.\n"
                 );
                 session.disconnect(Disconnect::ByApplication, error_string.as_str(), "")?;
                 session.close(channel.id())?;
@@ -124,9 +123,12 @@ impl server::Handler for AppClient {
             println!("No valid save file, starting from scratch.");
 
             println!("Persisting sshpwd");
-            if let Err(_) = save_data(&filename, &self.session_auth.hashed_password) {
-                let error_string = format!("\n\rError storing password.\n");
-                session.disconnect(Disconnect::ByApplication, error_string.as_str(), "")?;
+            if let Err(e) = save_data(&filename, &self.session_auth.hashed_password) {
+                session.disconnect(
+                    Disconnect::ByApplication,
+                    format!("\n\rError storing password {e}.\n").as_str(),
+                    "",
+                )?;
                 session.close(channel.id())?;
                 return Ok(false);
             }
@@ -156,7 +158,7 @@ impl server::Handler for AppClient {
         if self.channels.remove(&channel).is_some() {
             Ok(())
         } else {
-            Err(anyhow!("channel `{}` has been already closed", channel))
+            Err(anyhow!("channel `{channel}` has been already closed"))
         }
     }
 

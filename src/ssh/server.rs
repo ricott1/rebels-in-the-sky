@@ -20,10 +20,10 @@ const SERVER_SSH_PORT: u16 = 3788;
 const MAX_SSH_CLIENT_PORT: u16 = DEFAULT_PORT + 32;
 
 fn save_keys(signing_key: &russh::keys::PrivateKey) -> AppResult<()> {
-    let file = File::create::<&str>("./keys".into())?;
+    let file = File::create::<&str>("./keys")?;
     assert!(file.metadata()?.is_file());
     let mut buffer = std::io::BufWriter::new(file);
-    buffer.write(&signing_key.to_bytes()?)?;
+    let _ = buffer.write(&signing_key.to_bytes()?)?;
     println!("Created new keypair for SSH server.");
     Ok(())
 }
@@ -40,10 +40,7 @@ fn get_available_port() -> Option<u16> {
 }
 
 fn port_is_available(port: u16) -> bool {
-    match TcpListener::bind(("127.0.0.1", port)) {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
 #[derive(Clone, Default)]
@@ -59,10 +56,7 @@ impl AppServer {
     }
 
     pub async fn run(&mut self) -> AppResult<()> {
-        println!(
-            "Starting SSH server on port {}. Press Ctrl-C to exit.",
-            SERVER_SSH_PORT
-        );
+        println!("Starting SSH server on port {SERVER_SSH_PORT}. Press Ctrl-C to exit.");
 
         let private_key = load_keys().unwrap_or_else(|_| {
             let rng = &mut rand::rng();
@@ -114,11 +108,7 @@ impl AppServer {
 impl Server for AppServer {
     type Handler = AppClient;
     fn new_client(&mut self, _: Option<std::net::SocketAddr>) -> AppClient {
-        let network_port = if let Some(available_port) = get_available_port() {
-            Some(available_port)
-        } else {
-            None
-        };
+        let network_port = get_available_port();
         AppClient::new(network_port, self.shutdown.clone())
     }
 }

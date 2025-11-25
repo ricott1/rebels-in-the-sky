@@ -32,10 +32,10 @@ fn get_subs<'a>(players: &Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a
             let stats = team_stats.get(&p.id).unwrap();
             !stats.is_playing() && !p.is_knocked_out()
         })
-        .map(|&p| p)
+        .copied()
         .collect();
 
-    if bench.len() == 0 {
+    if bench.is_empty() {
         return vec![];
     }
 
@@ -44,7 +44,7 @@ fn get_subs<'a>(players: &Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a
         .take(MAX_POSITION as usize)
         .filter(|&p| {
             let stats = team_stats.get(&p.id).unwrap();
-            return stats.is_playing() == true && p.tiredness > MIN_TIREDNESS_FOR_SUB;
+            stats.is_playing() && p.tiredness > MIN_TIREDNESS_FOR_SUB
         })
         //Sort from less to most skilled*tired
         .sorted_by(|&a, &b| {
@@ -65,10 +65,10 @@ fn get_subs<'a>(players: &Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a
 
             v1.cmp(&v2)
         })
-        .map(|&p| p)
+        .copied()
         .collect();
 
-    if playing.len() == 0 {
+    if playing.is_empty() {
         return vec![];
     }
 
@@ -90,7 +90,7 @@ fn get_subs<'a>(players: &Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a
         })
         .expect("There should be a in candidate");
 
-    return vec![in_candidate, out_candidate];
+    vec![in_candidate, out_candidate]
 }
 
 fn make_substitution(
@@ -98,7 +98,7 @@ fn make_substitution(
     stats: &GameStatsMap,
 ) -> Option<(String, GameStatsMap)> {
     let subs = get_subs(&players, stats);
-    if subs.len() == 0 {
+    if subs.is_empty() {
         return None;
     }
     let player_in = subs[0];
@@ -150,19 +150,19 @@ fn make_substitution(
     let mut playing: Vec<&Player> = players
         .iter()
         .filter(|&p| stats.get(&p.id).unwrap().is_playing() && p.id != player_out.id)
-        .map(|&p| p)
+        .copied()
         .collect();
     playing.push(player_in);
     let assignement = Team::best_position_assignment(playing);
     for (idx, &id) in assignement.clone().iter().enumerate() {
-        let mut player_update: GameStats;
-        if stats_update.get(&id).is_none() {
-            player_update = GameStats::default();
+        let mut player_update = if let Some(update) = stats_update.get(&id) {
+            update.clone()
         } else {
-            player_update = stats_update.get(&id).unwrap().clone();
-        }
+            GameStats::default()
+        };
+
         player_update.position = Some(idx as Position);
-        stats_update.insert(id.clone(), player_update.clone());
+        stats_update.insert(id, player_update.clone());
     }
 
     Some((description, stats_update))
@@ -172,7 +172,8 @@ impl Substitution {
     pub fn execute(
         input: &ActionOutput,
         game: &Game,
-        _rng: &mut ChaCha8Rng,
+        _action_rng: &mut ChaCha8Rng,
+        _description_rng: &mut ChaCha8Rng,
     ) -> Option<ActionOutput> {
         let home_players = &game.home_team_in_game.players;
         let away_players = &game.away_team_in_game.players;

@@ -9,7 +9,12 @@ use rand_chacha::ChaCha8Rng;
 pub struct EndOfQuarter;
 
 impl EngineAction for EndOfQuarter {
-    fn execute(input: &ActionOutput, game: &Game, _rng: &mut ChaCha8Rng) -> Option<ActionOutput> {
+    fn execute(
+        input: &ActionOutput,
+        game: &Game,
+        _action_rng: &mut ChaCha8Rng,
+        _description_rng: &mut ChaCha8Rng,
+    ) -> Option<ActionOutput> {
         // This is executed at the beginning of a break
         let mut description = match game.timer.period() {
             Period::B1 => "It's the end of the first quarter.".to_string(),

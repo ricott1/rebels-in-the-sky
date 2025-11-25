@@ -140,7 +140,7 @@ pub fn format_satoshi(amount: u32) -> String {
     if amount >= 1_000_000 {
         let f_amount =
             (amount as f32 / SATOSHI_PER_BITCOIN as f32 * 1_000_000.0).round() / 1_000_000.0;
-        return format!("{:.4} BTC", f_amount);
+        return format!("{f_amount:.4} BTC");
     }
 
     format!("{amount} sat")
@@ -149,8 +149,8 @@ pub fn format_satoshi(amount: u32) -> String {
 pub fn format_au(amount: f32) -> String {
     const AU_PER_LIGHT_YEAR: f32 = LIGHT_YEAR as f32 / AU as f32;
     if amount >= 10_000.0 {
-        let f_amount = (amount as f32 / AU_PER_LIGHT_YEAR as f32 * 10_000.0).round() / 10_000.0;
-        return format!("{:.4} ly", f_amount);
+        let f_amount = (amount / AU_PER_LIGHT_YEAR * 10_000.0).round() / 10_000.0;
+        return format!("{f_amount:.4} ly");
     }
 
     format!("{amount:.4} AU")

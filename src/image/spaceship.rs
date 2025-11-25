@@ -14,6 +14,38 @@ use sha2::{Digest, Sha256};
 pub const SPACESHIP_IMAGE_WIDTH: u32 = 30;
 pub const SPACESHIP_IMAGE_HEIGHT: u32 = 24;
 
+const ENGINE_COLOR_PRESETS: [[ColorPreset; 3]; 9] = [
+    [ColorPreset::Red, ColorPreset::Red, ColorPreset::Orange],
+    [ColorPreset::Red, ColorPreset::Orange, ColorPreset::Yellow],
+    [
+        ColorPreset::Red,
+        ColorPreset::Yellow,
+        ColorPreset::SandyBrown,
+    ],
+    [ColorPreset::Orange, ColorPreset::Yellow, ColorPreset::Red],
+    [
+        ColorPreset::Red,
+        ColorPreset::SandyBrown,
+        ColorPreset::Yellow,
+    ],
+    [
+        ColorPreset::Red,
+        ColorPreset::SandyBrown,
+        ColorPreset::Orange,
+    ],
+    [
+        ColorPreset::SandyBrown,
+        ColorPreset::Orange,
+        ColorPreset::Yellow,
+    ],
+    [
+        ColorPreset::Red,
+        ColorPreset::SandyBrown,
+        ColorPreset::Orange,
+    ],
+    [ColorPreset::Orange, ColorPreset::Red, ColorPreset::Orange],
+];
+
 pub type SpaceshipImageId = Vec<u8>;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Hash, Default)]
@@ -73,37 +105,9 @@ impl SpaceshipImage {
         let hull_x = (SPACESHIP_IMAGE_WIDTH - hull_img.width()) / 2;
         let hull_y = (SPACESHIP_IMAGE_HEIGHT - hull_img.height()) / 2;
 
-        let engine_color_presets: Vec<[ColorPreset; 3]> = vec![
-            [ColorPreset::Red, ColorPreset::Red, ColorPreset::Orange],
-            [ColorPreset::Red, ColorPreset::Orange, ColorPreset::Yellow],
-            [
-                ColorPreset::Red,
-                ColorPreset::Yellow,
-                ColorPreset::SandyBrown,
-            ],
-            [ColorPreset::Orange, ColorPreset::Yellow, ColorPreset::Red],
-            [
-                ColorPreset::Red,
-                ColorPreset::SandyBrown,
-                ColorPreset::Yellow,
-            ],
-            [
-                ColorPreset::Red,
-                ColorPreset::SandyBrown,
-                ColorPreset::Yellow,
-            ],
-            [ColorPreset::Red, ColorPreset::Orange, ColorPreset::Yellow],
-            [
-                ColorPreset::Red,
-                ColorPreset::SandyBrown,
-                ColorPreset::Orange,
-            ],
-            [ColorPreset::Orange, ColorPreset::Red, ColorPreset::Orange],
-        ];
-
         let max_tick = if in_shipyard { 1 } else { 72 };
         for tick in 0..max_tick {
-            let color_presets = &engine_color_presets[(tick / 3) % engine_color_presets.len()];
+            let color_presets = &ENGINE_COLOR_PRESETS[(tick / 3) % ENGINE_COLOR_PRESETS.len()];
             let color_map = ColorMap {
                 red: color_presets[0].to_rgb(),
                 green: color_presets[1].to_rgb(),

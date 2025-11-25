@@ -44,7 +44,7 @@ impl InteractiveWidget for HoverTextSpan<'_> {
     fn before_rendering(&mut self, _area: Rect, _callback_registry: &mut CallbackRegistry) {}
 
     fn hover_text(&self) -> Text<'_> {
-        self.hover_text.clone().into()
+        self.hover_text.clone()
     }
 }
 

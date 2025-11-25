@@ -20,9 +20,9 @@ pub enum Honour {
 impl Honour {
     pub fn conditions_met(self, team: &Team) -> bool {
         match self {
-            Self::Maximalist => team.balance() >= 1 * SATOSHI_PER_BITCOIN,
+            Self::Maximalist => team.balance() >= SATOSHI_PER_BITCOIN,
             Self::MultiKulti => false, // FIXME: pass world to check this
-            Self::Traveller => team.total_travelled >= 1 * LIGHT_YEAR,
+            Self::Traveller => team.total_travelled >= LIGHT_YEAR,
             Self::Veteran => {
                 team.creation_time != Tick::default()
                     && (Tick::now() - team.creation_time) > 52 * WEEKS
