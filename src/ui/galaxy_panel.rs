@@ -9,13 +9,9 @@ use super::{traits::Screen, widgets::default_block};
 use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId};
 use crate::ui::constants::*;
 use crate::ui::utils::format_au;
-use crate::world::skill::Rated;
-use crate::world::types::PlayerLocation;
 use crate::{
     types::{PlanetId, PlanetMap},
-    world::{
-        constants::*, planet::Planet, types::TeamLocation, utils::ellipse_coords, world::World,
-    },
+    world::*,
 };
 use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -515,9 +511,7 @@ impl GalaxyPanel {
                 frame.render_interactive(
                     Button::no_box(
                         Span::styled(text.clone(), *style).into_left_aligned_line(),
-                        UiCallback::GoToTeam {
-                            team_id: *team_id,
-                        },
+                        UiCallback::GoToTeam { team_id: *team_id },
                     )
                     .set_hover_style(UiStyle::HIGHLIGHT),
                     l_split[idx],

@@ -1,3 +1,4 @@
+// mod asteroids_panel;
 mod big_numbers;
 mod button;
 mod clickable_list;
@@ -14,7 +15,6 @@ mod player_panel;
 pub mod popup_message;
 mod space_screen;
 mod splash_screen;
-
 mod swarm_panel;
 mod team_panel;
 pub(crate) mod traits;
@@ -25,5 +25,3 @@ pub mod utils;
 pub mod widgets;
 
 pub use constants::UI_SCREEN_SIZE;
-
-pub use swarm_panel::SwarmPanelEvent;

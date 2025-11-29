@@ -11,37 +11,28 @@ use super::{
     utils::img_to_lines,
     widgets::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
 };
-use crate::game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE;
-use crate::types::{AppResult, SystemTimeTick, Tick};
-use crate::world::constants::{MAX_PLAYERS_PER_GAME, MORALE_THRESHOLD_FOR_LEAVING};
-use crate::world::skill::MAX_SKILL;
 use crate::{
     game_engine::{
         action::{ActionOutput, ActionSituation, Advantage},
+        constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
         game::Game,
         timer::{Period, Timer},
         types::{GameStatsMap, Possession},
     },
     image::game::{PitchImage, PITCH_HEIGHT},
     image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
-    types::GameId,
+    types::{AppResult, GameId, SystemTimeTick, Tick},
     ui::constants::*,
-    world::{
-        planet::PlanetType,
-        player::Player,
-        position::{GamePosition, Position},
-        world::World,
-    },
+    world::*,
 };
 use anyhow::anyhow;
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use itertools::Itertools;
-use ratatui::layout::Margin;
-use ratatui::style::Styled;
 use ratatui::{
-    layout::{Constraint, Layout},
+    layout::{Constraint, Layout, Margin},
     prelude::Rect,
+    style::Styled,
     text::{Line, Span},
     widgets::{Cell, Paragraph, Row, Table, Wrap},
 };

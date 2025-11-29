@@ -192,13 +192,6 @@ where
             return Ok(());
         }
 
-        log::info!(
-            "last draw {:#?} min duration {:#?} => {}",
-            self.last_draw.elapsed(),
-            self.min_duration_between_draws,
-            self.last_draw.elapsed() >= self.min_duration_between_draws
-        );
-
         // Draw at most at MAX_FPS
         if self.last_draw.elapsed() >= self.min_duration_between_draws {
             self.terminal.draw(|frame| {

@@ -300,6 +300,7 @@ impl GifMap {
             for idx in 0..planet.satellites.len() {
                 let satellite = world.get_planet_or_err(&planet.satellites[idx])?;
                 // Satellite img moves along an ellipse
+                // Can divide safely because if we enter the loop => planet.satellites.len() > 0.
                 let theta_0 =
                     idx as f32 * 2.0 * std::f32::consts::PI / planet.satellites.len() as f32;
 

@@ -16,6 +16,7 @@ use std::{fmt::Display, hash::Hash};
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
 
+// FIXME: migrate to repr
 #[derive(Debug, Display, Clone, Copy, PartialEq, EnumIter)]
 pub enum SpaceshipStyle {
     Shuttle,

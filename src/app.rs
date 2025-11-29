@@ -317,9 +317,7 @@ impl App {
                         self.draw(&mut tui).await;
                     }
                     AppEvent::FastTick(tick) => {
-                        log::info!("Got fast tick event.");
                         if self.should_draw_fast_tick_events(tick) {
-                            log::info!("Drawing fast tick event.");
                             self.draw(&mut tui).await
                         }
                     }
@@ -547,6 +545,14 @@ impl App {
                         Tick::now(),
                         None,
                         format!("Failed to send own team to peers: {e}"),
+                    );
+                }
+
+                if let Err(e) = self.network_handler.send_open_trades(&self.world) {
+                    self.ui.push_log_event(
+                        Tick::now(),
+                        None,
+                        format!("Failed to send open trades to peers: {e}"),
                     );
                 }
             } else if let Err(e) = self.network_handler.dial_seed() {

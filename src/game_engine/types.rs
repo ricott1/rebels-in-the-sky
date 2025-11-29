@@ -259,6 +259,7 @@ impl PersistedPlayer {
     }
 }
 
+// FIXME: migrate to repr
 #[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum Possession {
     #[default]

@@ -21,6 +21,11 @@ use std::{
 };
 use strum_macros::{Display, EnumIter};
 
+// Remve this imports once we remove the fallback logic for the asteroid upgrade serialization
+use serde::de::{self, Visitor};
+use serde::{Deserializer, Serializer};
+use std::fmt;
+
 const TRADE_DELTA_SCARCITY: f32 = 3.25;
 const TRADE_DELTA_BUY_SELL: f32 = 0.05;
 const RESOURCE_PRICE_REFRESH_RATE_MILLIS: Tick = 2 * HOURS;
@@ -44,10 +49,63 @@ pub enum PlanetType {
     Asteroid,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Hash, EnumIter)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, EnumIter)]
+#[repr(u8)]
 pub enum AsteroidUpgradeTarget {
     TeleportationPad,
     TortugaSpacePort,
+}
+
+// FIXME: remove in two releases
+impl Serialize for AsteroidUpgradeTarget {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Always serialize as u8 (new format)
+        serializer.serialize_u8(*self as u8)
+    }
+}
+
+impl<'de> Deserialize<'de> for AsteroidUpgradeTarget {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct EnumVisitor;
+
+        impl<'de> Visitor<'de> for EnumVisitor {
+            type Value = AsteroidUpgradeTarget;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a u8 or string enum variant")
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                match v {
+                    0 => Ok(AsteroidUpgradeTarget::TeleportationPad),
+                    1 => Ok(AsteroidUpgradeTarget::TortugaSpacePort),
+                    _ => Err(E::custom(format!("unknown enum value {}", v))),
+                }
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                match v {
+                    "TeleportationPad" => Ok(AsteroidUpgradeTarget::TeleportationPad),
+                    "TortugaSpacePort" => Ok(AsteroidUpgradeTarget::TortugaSpacePort),
+                    _ => Err(E::custom(format!("unknown enum variant {}", v))),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(EnumVisitor)
+    }
 }
 
 impl AsteroidUpgradeTarget {

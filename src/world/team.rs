@@ -105,16 +105,24 @@ impl Team {
         }
     }
 
-    pub fn can_teleport_to(&self, to: &Planet) -> bool {
-        let rum_required = self.player_ids.len() as u32;
-        let has_rum = self.resources.value(&Resource::RUM) >= rum_required;
-
+    pub fn can_teleport_to(&self, to: &Planet) -> AppResult<()> {
         let has_teleportation_pad = self.home_planet_id == to.id
             || to
                 .upgrades
                 .contains(&AsteroidUpgradeTarget::TeleportationPad);
 
-        has_rum && has_teleportation_pad
+        if !has_teleportation_pad {
+            return Err(anyhow!("{} has no teleportation pad", to.name));
+        }
+
+        let rum_required = self.player_ids.len() as u32;
+        let has_rum = self.resources.value(&Resource::RUM) >= rum_required;
+
+        if !has_rum {
+            return Err(anyhow!("Not enough Rum! You need at least {rum_required}"));
+        }
+
+        Ok(())
     }
 
     pub fn add_sent_challenge(&mut self, challenge: Challenge) {
@@ -493,8 +501,8 @@ impl Team {
         let is_teleporting = duration <= TELEPORT_MAX_DURATION;
 
         if is_teleporting {
-            if !self.can_teleport_to(planet) {
-                return Err(anyhow!("Cannot teleport to planet {}", planet.name));
+            if let Err(e) = self.can_teleport_to(planet) {
+                return Err(anyhow!("Cannot teleport to planet {}: {e}", planet.name));
             }
         } else {
             // If we can't get there with full tank, than the planet is too far.

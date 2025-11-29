@@ -10,6 +10,7 @@ const MINUTES_PER_BREAK: u16 = 2;
 const SECONDS_PER_MINUTE: u16 = 60;
 const MAX_TIME: u16 = SECONDS_PER_MINUTE * (MINUTES_PER_QUARTER * 4 + MINUTES_PER_BREAK * 3);
 
+// FIXME: migrate to repr
 #[derive(Debug, Display, Default, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum Period {
     #[default]
@@ -79,12 +80,10 @@ impl Period {
     }
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone, Copy, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, PartialEq, PartialOrd, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct Timer {
     pub value: u16,
 }
-
 
 impl From<u16> for Timer {
     fn from(value: u16) -> Self {

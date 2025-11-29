@@ -85,6 +85,20 @@ pub trait GameSkill: fmt::Display + fmt::Debug {
 
 impl GameSkill for Skill {
     fn bound(&self) -> Skill {
+        if self.is_nan() {
+            log::error!("Bound skill is NaN: {self}.");
+            return MIN_SKILL;
+        }
+
+        if self.is_infinite() {
+            log::error!("Bound skill is Infinite: {self}.");
+            return if self.is_sign_positive() {
+                MAX_SKILL
+            } else {
+                MIN_SKILL
+            };
+        }
+
         self.clamp(MIN_SKILL, MAX_SKILL)
     }
 

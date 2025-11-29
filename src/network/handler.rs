@@ -299,6 +299,24 @@ impl NetworkHandler {
         Ok(())
     }
 
+    pub fn send_open_trades(&mut self, world: &World) -> AppResult<()> {
+        let own_team = world.get_own_team()?;
+        for trade in own_team.sent_trades.values() {
+            //         pub state: NetworkRequestState,
+            // pub proposer_peer_id: PeerId,
+            // pub target_peer_id: PeerId,
+            // pub proposer_player: Player,
+            // pub target_player: Player,
+            // pub extra_satoshis: i64,
+
+            if trade.state == NetworkRequestState::Syn {
+                self.send_trade(trade.clone())?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn send_game(&mut self, world: &World, game_id: &GameId) -> AppResult<()> {
         let network_game = NetworkGame::from_game_id(world, game_id)?;
         self._send(&NetworkData::Game(Tick::now(), network_game))

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use strum::Display;
 use strum_macros::EnumIter;
 
+// FIXME: migrate to repr
 #[derive(
     Debug, Default, Clone, Copy, Display, Serialize, Deserialize, PartialEq, Hash, EnumIter,
 )]

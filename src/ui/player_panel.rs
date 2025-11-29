@@ -16,12 +16,7 @@ use crate::network::trade::Trade;
 use crate::types::AppResult;
 use crate::{
     types::{PlayerId, TeamId},
-    world::{
-        player::Player,
-        skill::Rated,
-        types::{PlayerLocation, TeamLocation},
-        world::World,
-    },
+    world::*,
 };
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
@@ -538,7 +533,7 @@ impl Screen for PlayerListPanel {
                 if a.rating() == b.rating() {
                     b.average_skill()
                         .partial_cmp(&a.average_skill())
-                        .expect("Skill value should exist")
+                        .expect("Skill value should exist.")
                 } else {
                     b.rating().cmp(&a.rating())
                 }

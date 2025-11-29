@@ -10,24 +10,11 @@ use super::{
     utils::format_satoshi,
     widgets::*,
 };
-use crate::world::constants::MAX_PLAYERS_PER_GAME;
-use crate::world::planet::{AsteroidUpgrade, AsteroidUpgradeTarget};
-use crate::world::{Player, MAX_NUM_ASTEROID_PER_TEAM};
 use crate::{
     game_engine::game::Game,
     store::load_game,
-    types::{AppResult, GameId, StorableResourceMap, SystemTimeTick},
-    world::{
-        position::{GamePosition, Position, MAX_POSITION},
-        skill::{Rated, RatedPlayers},
-        spaceship::{SpaceshipComponent, SpaceshipUpgrade, SpaceshipUpgradeTarget},
-        types::{TeamBonus, TeamLocation},
-        world::World,
-    },
-};
-use crate::{
-    types::{PlanetId, TeamId},
-    world::{resources::Resource, role::CrewRole},
+    types::{AppResult, GameId, PlanetId, StorableResourceMap, SystemTimeTick, TeamId},
+    world::*,
 };
 use anyhow::anyhow;
 use core::fmt::Debug;
@@ -1380,47 +1367,105 @@ impl MyTeamPanel {
         if let Some(index) = self.asteroid_index {
             let asteroid_id = own_team.asteroid_ids[index];
             let asteroid = world.get_planet_or_err(&asteroid_id)?;
+            Self::render_available_asteroid_upgrades(asteroid, own_team, frame, world, split[1])?;
+        }
 
-            let upgrade_to_text = if asteroid
-                .upgrades
-                .contains(&AsteroidUpgradeTarget::TeleportationPad)
-            {
-                "Already built"
-            } else if asteroid.pending_upgrade.is_some() {
-                "Under construction"
-            } else {
-                ""
-            };
+        Ok(())
+    }
 
-            let mut lines = vec![
-                Line::from(""),
-                Line::from(Span::styled("Build Teleportation Pad", UiStyle::HEADER)).centered(),
-                Line::from(Span::raw(upgrade_to_text)).centered(),
-                Line::from(""),
-            ];
+    fn render_available_asteroid_upgrades(
+        asteroid: &Planet,
+        own_team: &Team,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
+        if asteroid
+            .upgrades
+            .contains(&AsteroidUpgradeTarget::TeleportationPad)
+        {
+            let split = Layout::vertical([3, 6]).split(area);
 
-            if !asteroid
-                .upgrades
-                .contains(&AsteroidUpgradeTarget::TeleportationPad)
-                && asteroid.pending_upgrade.is_none()
-            {
-                let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
-                let upgrade = AsteroidUpgrade::new(AsteroidUpgradeTarget::TeleportationPad, bonus);
-                for (resource, amount) in upgrade.cost().iter() {
-                    let have = own_team.resources.value(resource);
-                    let style = if *amount > have {
-                        UiStyle::ERROR
-                    } else {
-                        UiStyle::OK
-                    };
+            // Teleport button
+            let mut travel_to_planet_button = Button::new(
+                "Teleport",
+                UiCallback::TravelToPlanet {
+                    planet_id: asteroid.id,
+                },
+            )
+            .set_hotkey(UiKey::TRAVEL)
+            .set_hover_text(format!("Travel instantaneously to {}", asteroid.name));
 
-                    lines.push(Line::from(vec![
-                        Span::styled(format!("  {:<7} ", resource.to_string()), resource.style()),
-                        Span::styled(format!("{amount}/{have}"), style),
-                    ]));
-                }
+            if let Err(e) = own_team.can_teleport_to(asteroid) {
+                travel_to_planet_button.disable(Some(e.to_string()));
             }
 
+            let duration = world.travel_time_to_planet(own_team.id, asteroid.id)?;
+            if let Err(e) = own_team.can_travel_to_planet(asteroid, duration) {
+                travel_to_planet_button.disable(Some(e.to_string()));
+            }
+
+            frame.render_interactive(travel_to_planet_button, split[0]);
+        } else if matches!(
+            asteroid.pending_upgrade,
+            Some(AsteroidUpgrade {
+                target: AsteroidUpgradeTarget::TeleportationPad,
+                ..
+            })
+        ) {
+            let split = Layout::vertical([3, 6]).split(area);
+
+            // Pending upgrsade disabled button
+            let build_teleport_pod_button = Button::new("Building", UiCallback::None)
+                .set_hover_text(format!("Building teleportation pad on {}", asteroid.name))
+                .disabled(Some("Building teleportation pad"));
+
+            frame.render_interactive(build_teleport_pod_button, split[0]);
+        } else if !asteroid
+            .upgrades
+            .contains(&AsteroidUpgradeTarget::TeleportationPad)
+            && asteroid.pending_upgrade.is_none()
+        {
+            let split = Layout::vertical([3, 6]).split(area);
+
+            // Build button
+            let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
+            let upgrade = AsteroidUpgrade::new(AsteroidUpgradeTarget::TeleportationPad, bonus);
+            let mut build_teleport_pod_button = Button::new(
+                "Build teleportation pod",
+                UiCallback::SetAsteroidUpgrade {
+                    asteroid_id: asteroid.id,
+                    upgrade,
+                },
+            )
+            .set_hotkey(UiKey::BUILD_TELEPORTATION_PAD)
+            .set_hover_text(format!(
+                "Build teleportation pad to travel instantaneously to {}",
+                asteroid.name
+            ));
+
+            let can_upgrade_asteroid = own_team.can_upgrade_asteroid(asteroid, &upgrade);
+            if let Err(e) = can_upgrade_asteroid.as_ref() {
+                build_teleport_pod_button.disable(Some(e.to_string()));
+            }
+
+            frame.render_interactive(build_teleport_pod_button, split[0]);
+
+            // Resources required
+            let mut lines = vec![];
+            for (resource, amount) in upgrade.cost().iter() {
+                let have = own_team.resources.value(resource);
+                let style = if *amount > have {
+                    UiStyle::ERROR
+                } else {
+                    UiStyle::OK
+                };
+
+                lines.push(Line::from(vec![
+                    Span::styled(format!("  {:<7} ", resource.to_string()), resource.style()),
+                    Span::styled(format!("{amount}/{have}"), style),
+                ]));
+            }
             frame.render_widget(Paragraph::new(lines), split[1]);
         }
 
@@ -1478,48 +1523,6 @@ impl MyTeamPanel {
             .gif_map
             .planet_zoom_out_frame_lines(asteroid, 0, world)?;
         frame.render_widget(Paragraph::new(img_lines).centered(), split[0]);
-
-        let own_team = world.get_own_team()?;
-
-        if own_team.can_teleport_to(asteroid) {
-            let mut travel_to_planet_button = Button::new(
-                "Teleport",
-                UiCallback::TravelToPlanet {
-                    planet_id: asteroid_id,
-                },
-            )
-            .set_hotkey(UiKey::TRAVEL)
-            .set_hover_text(format!("Travel instantaneously to {}", asteroid.name));
-
-            let duration = world.travel_time_to_planet(own_team.id, asteroid_id)?;
-            if let Err(e) = own_team.can_travel_to_planet(asteroid, duration) {
-                travel_to_planet_button.disable(Some(e.to_string()));
-            }
-
-            frame.render_interactive(travel_to_planet_button, split[1]);
-        } else {
-            let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
-            let upgrade = AsteroidUpgrade::new(AsteroidUpgradeTarget::TeleportationPad, bonus);
-            let mut build_teleport_pod_button = Button::new(
-                "Build teleportation pod",
-                UiCallback::SetAsteroidUpgrade {
-                    asteroid_id,
-                    upgrade,
-                },
-            )
-            .set_hotkey(UiKey::BUILD_TELEPORTATION_POD)
-            .set_hover_text(format!(
-                "Build teleportation pad to travel instantaneously to {}",
-                asteroid.name
-            ));
-
-            let can_upgrade_asteroid = own_team.can_upgrade_asteroid(asteroid, &upgrade);
-            if let Err(e) = can_upgrade_asteroid.as_ref() {
-                build_teleport_pod_button.disable(Some(e.to_string()));
-            }
-
-            frame.render_interactive(build_teleport_pod_button, split[1]);
-        }
 
         let b_split =
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(split[2]);

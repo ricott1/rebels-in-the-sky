@@ -131,6 +131,15 @@ impl Ui {
         }
     }
 
+    pub fn push_chat_event(&mut self, timestamp: Tick, peer_id: Option<PeerId>, text: String) {
+        let event = SwarmPanelEvent {
+            timestamp,
+            peer_id,
+            text,
+        };
+        self.swarm_panel.push_chat_event(event);
+    }
+
     pub fn push_popup(&mut self, popup_message: PopupMessage) {
         // Avoid pushing twice the same popup
         if let Some(last_popup) = self.popup_messages.last().as_ref() {

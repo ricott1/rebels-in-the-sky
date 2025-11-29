@@ -5,7 +5,6 @@ use crate::game_engine::types::TeamInGame;
 use crate::store::deserialize;
 use crate::types::{AppResult, SystemTimeTick, TeamId, Tick};
 use crate::ui::popup_message::PopupMessage;
-use crate::ui::SwarmPanelEvent;
 use crate::world::constants::NETWORK_GAME_START_DELAY;
 use crate::world::MAX_AVG_TIREDNESS_PER_AUTO_GAME;
 use crate::{app::App, types::AppCallback};
@@ -51,12 +50,8 @@ pub enum NetworkCallback {
 impl NetworkCallback {
     fn push_swarm_panel_message(timestamp: Tick, peer_id: PeerId, text: String) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let event = SwarmPanelEvent {
-                timestamp,
-                peer_id: Some(peer_id),
-                text: text.clone(),
-            };
-            app.ui.swarm_panel.push_chat_event(event);
+            app.ui
+                .push_chat_event(timestamp, Some(peer_id), text.clone());
             Ok(None)
         })
     }
@@ -140,12 +135,7 @@ impl NetworkCallback {
 
     fn handle_message_topic(peer_id: Option<PeerId>, timestamp: Tick, text: String) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let event = SwarmPanelEvent {
-                timestamp,
-                peer_id,
-                text: text.clone(),
-            };
-            app.ui.swarm_panel.push_chat_event(event);
+            app.ui.push_chat_event(timestamp, peer_id, text.clone());
             Ok(None)
         })
     }
@@ -683,18 +673,14 @@ impl NetworkCallback {
                 timestamp,
                 peer_id,
                 text,
-            } => Self::push_swarm_panel_message(*timestamp, *peer_id, text.clone())(
-                app,
-            ),
+            } => Self::push_swarm_panel_message(*timestamp, *peer_id, text.clone())(app),
             Self::PushSwarmPanelLog { timestamp, text } => {
                 app.ui.push_log_event(*timestamp, None, text.clone());
                 Ok(None)
             }
             Self::BindAddress { address } => Self::bind_address(address.clone())(app),
             Self::Subscribe { peer_id: _, topic } => Self::subscribe(topic.clone())(app),
-            Self::Unsubscribe { peer_id, topic } => {
-                Self::unsubscribe(*peer_id, topic.clone())(app)
-            }
+            Self::Unsubscribe { peer_id, topic } => Self::unsubscribe(*peer_id, topic.clone())(app),
             Self::CloseConnection { peer_id } => Self::close_connection(*peer_id)(app),
             Self::HandleConnectionEstablished { peer_id } => {
                 app.network_handler.send_own_team(&app.world)?;

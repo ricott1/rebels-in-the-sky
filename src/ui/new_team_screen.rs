@@ -17,12 +17,7 @@ use crate::image::{color_map::ColorPreset, spaceship::SPACESHIP_IMAGE_WIDTH};
 use crate::{
     image::color_map::ColorMap,
     types::{AppResult, PlanetId, PlayerId},
-    world::{
-        constants::*,
-        jersey::{Jersey, JerseyStyle},
-        spaceship::{Spaceship, SpaceshipPrefab},
-        world::World,
-    },
+    world::*,
 };
 use core::fmt::Debug;
 use core::panic;
@@ -201,7 +196,8 @@ impl NewTeamScreen {
         Choose your team name, customize your ship, and select a worthy crew.
         You won't keep any leftover money, so spend wisely!
 
-        [Press enter to confirm selections.]".to_string();
+        [Press enter to confirm selections.]"
+            .to_string();
 
         let paragraph = Paragraph::new(text);
         frame.render_widget(paragraph.wrap(Wrap { trim: true }).centered(), area);
@@ -796,7 +792,8 @@ impl Screen for NewTeamScreen {
                     let planet = world.get_planet(planet_id).unwrap();
                     planet.total_population() > 0
                 })
-                .sorted_by(|a, b| a.cmp(b)).copied()
+                .sorted_by(|a, b| a.cmp(b))
+                .copied()
                 .collect_vec();
             for player in world.players.values() {
                 if player.team.is_none() {

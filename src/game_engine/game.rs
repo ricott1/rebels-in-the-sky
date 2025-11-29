@@ -15,6 +15,7 @@ use crate::{
         position::MAX_POSITION,
         role::CrewRole,
         skill::{GameSkill, MAX_SKILL},
+        utils::is_default,
     },
 };
 use itertools::Itertools;
@@ -41,6 +42,7 @@ pub struct GameSummary {
     pub starting_at: Tick,
     pub ended_at: Option<Tick>,
     pub winner: Option<TeamId>,
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub is_network: bool,
 }

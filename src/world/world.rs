@@ -1149,7 +1149,13 @@ impl World {
     }
 
     pub fn get_team_or_err(&self, id: &TeamId) -> AppResult<&Team> {
-        self.get_team(id).ok_or(anyhow!("Team {id:?} not found"))
+        self.teams.get(id).ok_or(anyhow!("Team {id:?} not found"))
+    }
+
+    pub fn get_team_mut_or_err(&mut self, id: &TeamId) -> AppResult<&mut Team> {
+        self.teams
+            .get_mut(id)
+            .ok_or(anyhow!("Team {id:?} not found"))
     }
 
     pub fn get_own_team(&self) -> AppResult<&Team> {
@@ -1381,7 +1387,7 @@ impl World {
                 continue;
             }
 
-            log::info!(
+            log::debug!(
                 "Game {} vs {}: started at {}, ended at {} and is being removed at {}",
                 game.home_team_in_game.name,
                 game.away_team_in_game.name,
@@ -2068,7 +2074,7 @@ impl World {
                     }
                 })
                 .sum::<f32>()
-                / team.player_ids.len() as f32;
+                / team.player_ids.len().max(1) as f32;
 
             // If team reputation is smaller than players average reputationl, it increases.
             // Otherwise, it decreases.
@@ -2082,9 +2088,8 @@ impl World {
         }
 
         for (team_id, new_reputation) in reputation_update {
-            let mut team = self.get_team_or_err(&team_id)?.clone();
+            let team = self.get_team_mut_or_err(&team_id)?;
             team.reputation = new_reputation;
-            self.teams.insert(team.id, team);
         }
         Ok(())
     }
@@ -2328,7 +2333,7 @@ impl World {
 
         // Travelling back to planet with teleportation pod is istantaneous.
         let to = self.get_planet_or_err(&to_id)?;
-        if team.can_teleport_to(to) {
+        if team.can_teleport_to(to).is_ok() {
             return Ok(0);
         }
 
