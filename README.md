@@ -1,8 +1,6 @@
 # Rebels in the Sky
 
-
-https://github.com/user-attachments/assets/aaa02f04-06db-4da5-8fa4-732b60083e66
-
+https://github.com/user-attachments/assets/fce79b1a-98ee-4c4a-b221-4ea9f53ab14b
 
 It's the year 2101. Corporations have taken over the world.
 The only way to be free is to join a pirate crew and start plundering the galaxy. The only means of survival is to play basketball.
