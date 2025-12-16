@@ -1,5 +1,6 @@
 use super::{action::Action, constants::MIN_TIREDNESS_FOR_ROLL_DECLINE, tactic::Tactic};
 use crate::{
+    backcompat_repr_u8_enum,
     game_engine::constants::NUMBER_OF_ROLLS,
     image::game::PitchImage,
     types::{AppResult, GameId, PlayerId, PlayerMap, TeamId, TeamMap},
@@ -11,8 +12,10 @@ use crate::{
         team::Team,
         types::TrainingFocus,
         utils::is_default,
+        Rated, MIN_PLAYERS_PER_GAME,
     },
 };
+use anyhow::anyhow;
 use itertools::Itertools;
 
 use libp2p::PeerId;
@@ -129,7 +132,6 @@ impl GameStats {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct TeamInGame {
     pub team_id: TeamId,
-
     pub peer_id: Option<PeerId>,
     pub reputation: f32,
     pub version: u64,
@@ -147,8 +149,8 @@ pub struct TeamInGame {
     pub momentum: u8,
 }
 
-impl<'game> TeamInGame {
-    fn new(team: &Team, players: PlayerMap) -> Self {
+impl TeamInGame {
+    pub fn new(team: &Team, players: PlayerMap) -> Self {
         let mut stats = HashMap::new();
 
         for (idx, &player_id) in players.keys().enumerate() {
@@ -169,7 +171,6 @@ impl<'game> TeamInGame {
             .collect();
         Self {
             team_id: team.id,
-
             peer_id: team.peer_id,
             reputation: team.reputation,
             name: team.name.clone(),
@@ -185,15 +186,23 @@ impl<'game> TeamInGame {
         }
     }
 
-    pub fn from_team_id(team_id: &TeamId, teams: &TeamMap, players: &PlayerMap) -> Option<Self> {
-        let team = teams.get(team_id)?;
+    pub fn from_team_id(team_id: &TeamId, teams: &TeamMap, players: &PlayerMap) -> AppResult<Self> {
+        let team = if let Some(team) = teams.get(team_id) {
+            team
+        } else {
+            return Err(anyhow!("Could not find team {team_id}"));
+        };
         let mut team_players = PlayerMap::new();
         for &player_id in team.player_ids.iter().take(MAX_PLAYERS_PER_GAME) {
-            let player = players.get(&player_id)?;
+            let player = if let Some(player) = players.get(&player_id) {
+                player
+            } else {
+                return Err(anyhow!("Could not find player {player_id}"));
+            };
             team_players.insert(player_id, player.clone());
         }
 
-        Some(TeamInGame::new(team, team_players))
+        Ok(TeamInGame::new(team, team_players))
     }
 
     pub fn pick_action(&self, rng: &mut ChaCha8Rng) -> AppResult<Action> {
@@ -201,6 +210,20 @@ impl<'game> TeamInGame {
     }
 }
 
+impl Rated for TeamInGame {
+    fn rating(&self) -> u8 {
+        if self.players.is_empty() {
+            return 0;
+        }
+
+        (self
+            .players
+            .values()
+            .map(|p| p.average_skill())
+            .sum::<f32>()
+            / self.players.len().max(MIN_PLAYERS_PER_GAME) as f32) as u8
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedTeamInGame {
     pub team_id: TeamId,
@@ -260,11 +283,18 @@ impl PersistedPlayer {
 }
 
 // FIXME: migrate to repr
-#[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq)]
-pub enum Possession {
-    #[default]
-    Home,
-    Away,
+backcompat_repr_u8_enum!(
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub enum Possession {
+        Home,
+        Away,
+    }
+);
+
+impl Default for Possession {
+    fn default() -> Self {
+        Self::Home
+    }
 }
 
 impl Not for Possession {
@@ -343,30 +373,31 @@ fn test_gamestats_serde() {
 }
 
 pub trait EnginePlayer {
-    fn min_roll(&self) -> u16;
-    fn max_roll(&self) -> u16;
-    fn roll(&self, rng: &mut ChaCha8Rng) -> u16;
+    fn min_roll(&self) -> i16;
+    fn max_roll(&self) -> i16;
+    fn roll(&self, rng: &mut ChaCha8Rng) -> i16;
 }
 
 impl EnginePlayer for Player {
-    fn min_roll(&self) -> u16 {
-        (self.morale / 2.5) as u16
+    fn min_roll(&self) -> i16 {
+        self.morale as i16
     }
 
-    fn max_roll(&self) -> u16 {
+    fn max_roll(&self) -> i16 {
         if self.tiredness == MAX_SKILL {
             return 0;
         }
 
         if self.tiredness <= MIN_TIREDNESS_FOR_ROLL_DECLINE {
-            return NUMBER_OF_ROLLS * MAX_SKILL as u16;
+            return NUMBER_OF_ROLLS as i16 * MAX_SKILL as i16;
         }
 
-        NUMBER_OF_ROLLS * (MAX_SKILL - (self.tiredness - MIN_TIREDNESS_FOR_ROLL_DECLINE)) as u16
+        NUMBER_OF_ROLLS as i16
+            * (MAX_SKILL - (self.tiredness - MIN_TIREDNESS_FOR_ROLL_DECLINE)) as i16
     }
 
-    fn roll(&self, rng: &mut ChaCha8Rng) -> u16 {
-        rng.random_range(MIN_SKILL as u16..=NUMBER_OF_ROLLS * MAX_SKILL as u16)
+    fn roll(&self, rng: &mut ChaCha8Rng) -> i16 {
+        rng.random_range(MIN_SKILL as i16..=NUMBER_OF_ROLLS as i16 * MAX_SKILL as i16)
             .max(self.min_roll())
             .min(self.max_roll())
     }
@@ -375,9 +406,8 @@ impl EnginePlayer for Player {
 #[cfg(test)]
 #[test]
 fn test_roll() {
+    use crate::world::planet::Planet;
     use rand::SeedableRng;
-
-    use crate::{types::PlanetId, world::types::Population};
 
     fn print_player_rolls(player: &Player, rng: &mut ChaCha8Rng) {
         let roll = player.roll(rng);
@@ -395,15 +425,7 @@ fn test_roll() {
         }
     }
     let rng = &mut ChaCha8Rng::from_os_rng();
-    let population = Population::default();
-    let mut player = Player::random(
-        rng,
-        PlayerId::new_v4(),
-        None,
-        population,
-        &PlanetId::default(),
-        0.0,
-    );
+    let mut player = Player::random(rng, None, &Planet::default(), 0.0);
 
     print_player_rolls(&player, rng);
 

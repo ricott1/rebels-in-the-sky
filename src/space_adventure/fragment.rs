@@ -1,10 +1,10 @@
-use super::{
-    collisions::HitBox, networking::ImageType, space_callback::SpaceCallback, traits::*,
-    utils::EntityState,
+use super::{collisions::HitBox, space_callback::SpaceCallback, traits::*, utils::EntityState};
+use crate::{
+    space_adventure::{constants::*, entity::Entity},
+    world::resources::Resource,
 };
-use crate::{register_impl, space_adventure::constants::*, world::resources::Resource};
 use glam::{I16Vec2, Vec2};
-use image::{Pixel, RgbaImage};
+use image::RgbaImage;
 use std::collections::HashMap;
 
 const MAGNET_ACCELERATION: f32 = 35.0;
@@ -70,12 +70,6 @@ impl Sprite for FragmentEntity {
     fn image(&self) -> &RgbaImage {
         &self.image
     }
-
-    fn network_image_type(&self) -> ImageType {
-        ImageType::Fragment {
-            color: self.resource.color().to_rgb().0,
-        }
-    }
 }
 
 impl Collider for FragmentEntity {
@@ -88,8 +82,6 @@ impl Collider for FragmentEntity {
     }
 }
 
-register_impl!(!ControllableSpaceship for FragmentEntity);
-register_impl!(ResourceFragment for FragmentEntity);
 impl ResourceFragment for FragmentEntity {
     fn resource(&self) -> Resource {
         self.resource
@@ -100,7 +92,7 @@ impl ResourceFragment for FragmentEntity {
     }
 }
 
-impl Entity for FragmentEntity {
+impl GameEntity for FragmentEntity {
     fn set_id(&mut self, id: usize) {
         self.id = id;
     }
@@ -114,29 +106,24 @@ impl Entity for FragmentEntity {
     }
 
     fn handle_space_callback(&mut self, callback: SpaceCallback) -> Vec<SpaceCallback> {
-        match callback {
-            // FIXME: MAGNET_ACCELERATION should come from the collector.
-            SpaceCallback::SetAcceleration { acceleration, .. } => {
-                self.acceleration = MAGNET_ACCELERATION * acceleration.as_vec2()
-            }
-
-            _ => {}
+        // FIXME: MAGNET_ACCELERATION should come from the collector.
+        if let SpaceCallback::SetAcceleration { acceleration, .. } = callback {
+            self.acceleration = MAGNET_ACCELERATION * acceleration
         }
         vec![]
     }
 }
 
 impl FragmentEntity {
-    pub fn new(position: Vec2, velocity: Vec2, resource: Resource, amount: u32) -> Self {
-        let color = resource.color();
-        let image = RgbaImage::from_pixel(1, 1, color);
+    pub fn new_entity(position: Vec2, velocity: Vec2, resource: Resource, amount: u32) -> Entity {
+        let image = RgbaImage::from_pixel(1, 1, resource.color());
 
         // The fragment hitbox is larger than the sprite on purpose
         // so that when hitting a spaceship it is accelerated towards it.
         let mut hit_box = HashMap::new();
         hit_box.insert(I16Vec2::ZERO, true);
 
-        Self {
+        Entity::Fragment(Self {
             id: 0,
             previous_position: position,
             position,
@@ -147,6 +134,6 @@ impl FragmentEntity {
             hit_box: hit_box.into(),
             resource,
             amount,
-        }
+        })
     }
 }

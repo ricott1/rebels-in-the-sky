@@ -1,7 +1,6 @@
+use crate::{backcompat_repr_u8_enum, types::Tick, world::constants::TickInterval};
 use serde::{Deserialize, Serialize};
 use strum::Display;
-
-use crate::{types::Tick, world::constants::TickInterval};
 
 const MINUTES_PER_QUARTER: u16 = 10;
 const MINUTES_PER_BREAK: u16 = 2;
@@ -11,18 +10,39 @@ const SECONDS_PER_MINUTE: u16 = 60;
 const MAX_TIME: u16 = SECONDS_PER_MINUTE * (MINUTES_PER_QUARTER * 4 + MINUTES_PER_BREAK * 3);
 
 // FIXME: migrate to repr
-#[derive(Debug, Display, Default, PartialEq, Clone, Copy, Serialize, Deserialize)]
-pub enum Period {
-    #[default]
-    NotStarted,
-    Q1,
-    B1,
-    Q2,
-    B2,
-    Q3,
-    B3,
-    Q4,
-    B4,
+// #[derive(Debug, Display, Default, PartialEq, Clone, Copy, Serialize, Deserialize)]
+// pub enum Period {
+//     #[default]
+//     NotStarted,
+//     Q1,
+//     B1,
+//     Q2,
+//     B2,
+//     Q3,
+//     B3,
+//     Q4,
+//     B4,
+// }
+
+backcompat_repr_u8_enum! {
+    #[derive(Debug, Display, PartialEq, Clone, Copy)]
+    pub enum Period {
+        NotStarted,
+        Q1,
+        B1,
+        Q2,
+        B2,
+        Q3,
+        B3,
+        Q4,
+        B4,
+    }
+}
+
+impl Default for Period {
+    fn default() -> Self {
+        Self::NotStarted
+    }
 }
 
 impl Period {
@@ -159,36 +179,6 @@ impl Timer {
                 self.seconds(),
             )
         }
-
-        // match self.value {
-        // x if x == Period::Q1.end() => "Q1 00:00".to_string(),
-        // x if x == Period::B1.start() => "B1 02:00".to_string(),
-        // // x if x == Period::B1.end() => "B1 00:00".to_string(),
-        // x if x == Period::Q2.start() => "Q2 10:00".to_string(),
-        // x if x == Period::Q2.end() => "Q2 00:00".to_string(),
-        // x if x == Period::B2.start() => "B2 02:00".to_string(),
-        // // x if x == Period::B2.end() => "B2 00:00".to_string(),
-        // x if x == Period::Q3.start() => "Q3 10:00".to_string(),
-        // x if x == Period::Q3.end() => "Q3 00:00".to_string(),
-        // x if x == Period::B3.start() => "B3 02:00".to_string(),
-        // // x if x == Period::B3.end() => "B3 00:00".to_string(),
-        // x if x == Period::Q4.start() => "Q4 10:00".to_string(),
-        // x if x == Period::Q4.end() => "Q4 00:00".to_string(),
-        // x if x == Period::B4.start() => "B4 02:00".to_string(),
-        // x if x == Period::B4.end() => "B4 00:00".to_string(),
-        // _ => {
-        //     if self.is_break() && self.value == self.period().end() {
-        //         format!("{:2} 10:00", self.period().next(),)
-        //     } else {
-        //         format!(
-        //             "{:2} {:02}:{:02}",
-        //             self.period(),
-        //             self.minutes(),
-        //             self.seconds(),
-        //         )
-        //     }
-        // }
-        // }
     }
 
     pub fn tick(&mut self) {

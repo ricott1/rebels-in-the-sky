@@ -3,6 +3,7 @@ use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::ui_frame::UiFrame;
 use crate::world::resources::Resource;
 use crate::world::world::World;
+use crate::world::{Kartoffel, Trait};
 use crate::{types::AppResult, world::skill::Rated};
 use ratatui::text::Text;
 use ratatui::widgets::{StatefulWidget, Widget};
@@ -12,13 +13,13 @@ use ratatui::{
 };
 
 pub trait Screen {
-    fn update(&mut self, _world: &World) -> AppResult<()>;
+    fn update(&mut self, world: &World) -> AppResult<()>;
     fn render(
         &mut self,
-        _frame: &mut UiFrame,
-        _world: &World,
-        _area: Rect,
-        _debug_view: bool,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+        debug_view: bool,
     ) -> AppResult<()>;
 
     fn handle_key_events(
@@ -35,25 +36,43 @@ pub trait Screen {
 }
 
 pub trait SplitPanel {
-    fn index(&self) -> usize;
-    fn max_index(&self) -> usize;
-    fn set_index(&mut self, index: usize);
+    fn index(&self) -> Option<usize> {
+        None
+    }
+    fn max_index(&self) -> usize {
+        0
+    }
+    fn set_index(&mut self, _index: usize) {}
     fn previous_index(&mut self) {
         if self.max_index() > 0 {
-            let current_index = self.index();
-            self.set_index((current_index + 1) % self.max_index());
+            if let Some(current_index) = self.index() {
+                self.set_index((current_index + 1) % self.max_index());
+            }
         }
     }
     fn next_index(&mut self) {
         if self.max_index() > 0 {
-            let current_index = self.index();
-            self.set_index((current_index + self.max_index() - 1) % self.max_index());
+            if let Some(current_index) = self.index() {
+                self.set_index((current_index + self.max_index() - 1) % self.max_index());
+            }
         }
     }
 }
 
 pub trait UiStyled {
     fn style(&self) -> Style;
+}
+
+impl UiStyled for Trait {
+    fn style(&self) -> Style {
+        match self {
+            Trait::Killer => UiStyle::DEFAULT.fg(Color::Red),
+            Trait::Showpirate => UiStyle::DEFAULT.fg(Color::Magenta),
+            Trait::Relentless => UiStyle::DEFAULT.fg(Color::Blue),
+            Trait::Spugna => UiStyle::DEFAULT.fg(Color::LightRed),
+            Trait::Crumiro => UiStyle::DEFAULT.fg(Color::Rgb(212, 175, 55)),
+        }
+    }
 }
 
 impl UiStyled for f32 {
@@ -95,8 +114,21 @@ impl UiStyled for u8 {
 
 impl UiStyled for Resource {
     fn style(&self) -> Style {
-        let [r, g, b, _] = self.color().0;
+        let [r, g, b] = match self {
+            Resource::GOLD => [240, 230, 140],
+            Resource::SCRAPS => [192, 192, 192],
+            Resource::RUM => [114, 47, 55],
+            Resource::FUEL => [64, 224, 208],
+            Resource::SATOSHI => [255, 255, 255],
+        };
+
         UiStyle::DEFAULT.fg(Color::Rgb(r, g, b))
+    }
+}
+
+impl UiStyled for Kartoffel {
+    fn style(&self) -> Style {
+        UiStyle::DEFAULT.fg(Color::Magenta)
     }
 }
 

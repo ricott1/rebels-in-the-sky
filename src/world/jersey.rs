@@ -1,4 +1,4 @@
-use crate::image::color_map::ColorMap;
+use crate::{backcompat_repr_u8_enum, image::color_map::ColorMap};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -6,17 +6,22 @@ use strum::Display;
 use strum_macros::EnumIter;
 
 // FIXME: migrate to repr
-#[derive(
-    Debug, Default, Clone, Copy, Display, Serialize, Deserialize, PartialEq, Hash, EnumIter,
-)]
-pub enum JerseyStyle {
-    #[default]
-    Classic,
-    Stripe,
-    Fancy,
-    Gilet,
-    Horizontal,
-    Pirate,
+backcompat_repr_u8_enum!(
+    #[derive(Debug, Clone, Copy, Display, PartialEq, Hash, EnumIter)]
+    pub enum JerseyStyle {
+        Classic,
+        Stripe,
+        Fancy,
+        Gilet,
+        Horizontal,
+        Pirate,
+    }
+);
+
+impl Default for JerseyStyle {
+    fn default() -> Self {
+        Self::Classic
+    }
 }
 
 impl JerseyStyle {

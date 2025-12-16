@@ -14,6 +14,7 @@ use super::{
 };
 use crate::image::spaceship::{SPACESHIP_IMAGE_HEIGHT, SPACESHIP_IMAGE_WIDTH};
 use crate::types::AppResult;
+use crate::ui::ui_key;
 use crate::world::constants::MIN_PLAYERS_PER_GAME;
 use crate::world::team::Team;
 use crate::{
@@ -29,7 +30,7 @@ use crate::{
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use ratatui::layout::Margin;
-use ratatui::style::Styled;
+use ratatui::style::{Styled, Stylize};
 use ratatui::{
     layout::{Alignment, Constraint, Layout},
     prelude::Rect,
@@ -80,12 +81,12 @@ impl Display for TeamView {
 
 #[derive(Debug, Default)]
 pub struct TeamListPanel {
-    pub index: usize,
+    pub index: Option<usize>,
     pub player_index: usize,
     pub selected_player_id: PlayerId,
     pub selected_team_id: TeamId,
-    pub teams: Vec<TeamId>,
-    pub all_teams: Vec<TeamId>,
+    pub team_ids: Vec<TeamId>,
+    pub all_team_ids: Vec<TeamId>,
     view: TeamView,
     update_view: bool,
     current_team_players_length: usize,
@@ -130,7 +131,8 @@ impl TeamListPanel {
                 view: TeamView::All,
             },
         )
-        .set_hotkey(UiKey::CYCLE_VIEW)
+        .bold()
+        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View all teams.");
 
         let mut filter_challenge_button = Button::new(
@@ -139,7 +141,8 @@ impl TeamListPanel {
                 view: TeamView::OpenToChallenge,
             },
         )
-        .set_hotkey(UiKey::CYCLE_VIEW)
+        .bold()
+        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View all teams that can be currently challenged to a game.");
 
         let mut filter_peers_button = Button::new(
@@ -147,8 +150,8 @@ impl TeamListPanel {
             UiCallback::SetTeamPanelView {
                 view: TeamView::Peers,
             },
-        )
-        .set_hotkey(UiKey::CYCLE_VIEW)
+        ).bold()
+        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text(
             "View all teams received from the network (i.e. teams controlled by other players online)."
                 ,
@@ -159,13 +162,13 @@ impl TeamListPanel {
             TeamView::Peers => filter_peers_button.select(),
         }
 
-        frame.render_interactive(filter_all_button, split[0]);
-        frame.render_interactive(filter_challenge_button, split[1]);
-        frame.render_interactive(filter_peers_button, split[2]);
+        frame.render_interactive_widget(filter_all_button, split[0]);
+        frame.render_interactive_widget(filter_challenge_button, split[1]);
+        frame.render_interactive_widget(filter_peers_button, split[2]);
 
-        if !self.teams.is_empty() {
+        if !self.team_ids.is_empty() {
             let mut options = vec![];
-            for team_id in self.teams.iter() {
+            for team_id in self.team_ids.iter() {
                 let team = if let Some(team) = world.get_team(team_id) {
                     team
                 } else {
@@ -186,10 +189,10 @@ impl TeamListPanel {
             }
             let list = selectable_list(options);
 
-            frame.render_stateful_interactive(
+            frame.render_stateful_interactive_widget(
                 list.block(default_block().title("Teams ↓/↑")),
                 split[3],
-                &mut ClickableListState::default().with_selected(Some(self.index)),
+                &mut ClickableListState::default().with_selected(self.index),
             );
         } else {
             frame.render_widget(default_block().title("Teams"), split[3]);
@@ -202,10 +205,14 @@ impl TeamListPanel {
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
-        if self.index >= self.teams.len() {
+        let index = if let Some(index) = self.index {
+            index
+        } else {
+            frame.render_widget(default_block(), area);
             return Ok(());
-        }
-        let team = world.get_team_or_err(&self.teams[self.index])?;
+        };
+
+        let team = world.get_team_or_err(&self.team_ids[index])?;
         self.current_team_players_length = team.player_ids.len();
         let vertical_split = Layout::vertical([
             Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2), //players
@@ -270,7 +277,7 @@ impl TeamListPanel {
                 button = button.set_style(UiStyle::SELECTED);
             }
 
-            frame.render_interactive(button, button_area);
+            frame.render_interactive_widget(button, button_area);
 
             let player = world.get_player_or_err(&team.player_ids[i])?;
 
@@ -365,7 +372,7 @@ impl TeamListPanel {
                     let column = i % 2;
                     let area = row_splits[row][column];
 
-                    frame.render_interactive(button, area);
+                    frame.render_interactive_widget(button, area);
                 }
             }
         }
@@ -384,7 +391,7 @@ impl TeamListPanel {
 
         match go_to_team_current_planet_button(world, &team.id) {
             Ok(go_to_team_current_planet_button) => {
-                frame.render_interactive(go_to_team_current_planet_button, button_split[0])
+                frame.render_interactive_widget(go_to_team_current_planet_button, button_split[0])
             }
             Err(e) => log::error!("go_to_team_current_planet_button error: {e} "),
         }
@@ -434,9 +441,9 @@ impl TeamListPanel {
 impl Screen for TeamListPanel {
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
-        if world.dirty_ui || self.all_teams.len() != world.teams.len() {
-            self.all_teams = world.teams.keys().cloned().collect();
-            self.all_teams.sort_by(|a, b| {
+        if world.dirty_ui || self.all_team_ids.len() != world.teams.len() {
+            self.all_team_ids = world.teams.keys().copied().collect();
+            self.all_team_ids.sort_by(|a, b| {
                 let a = world.get_team_or_err(a).unwrap();
                 let b = world.get_team_or_err(b).unwrap();
                 world
@@ -449,8 +456,8 @@ impl Screen for TeamListPanel {
         }
 
         if self.update_view {
-            self.teams = self
-                .all_teams
+            self.team_ids = self
+                .all_team_ids
                 .iter()
                 .filter(|&team_id| {
                     let team = world.get_team_or_err(team_id).unwrap();
@@ -461,19 +468,27 @@ impl Screen for TeamListPanel {
             self.update_view = false;
         }
 
-        if self.index >= self.teams.len() && !self.teams.is_empty() {
-            self.set_index(self.teams.len() - 1);
-        }
-        if self.index < self.teams.len() {
-            self.selected_team_id = self.teams[self.index];
-            let players = world
-                .get_team_or_err(&self.selected_team_id)?
-                .player_ids
-                .clone();
-            if self.player_index < players.len() {
-                self.selected_player_id = players[self.player_index];
+        if let Some(index) = self.index {
+            if self.team_ids.is_empty() {
+                self.index = None;
+            } else if index >= self.team_ids.len() && !self.team_ids.is_empty() {
+                self.set_index(self.team_ids.len() - 1);
             }
+
+            if index < self.team_ids.len() {
+                self.selected_team_id = self.team_ids[index];
+                let players = world
+                    .get_team_or_err(&self.selected_team_id)?
+                    .player_ids
+                    .clone();
+                if self.player_index < players.len() {
+                    self.selected_player_id = players[self.player_index];
+                }
+            }
+        } else if !self.team_ids.is_empty() {
+            self.set_index(0);
         }
+
         Ok(())
     }
     fn render(
@@ -484,7 +499,7 @@ impl Screen for TeamListPanel {
 
         _debug_view: bool,
     ) -> AppResult<()> {
-        if self.all_teams.is_empty() {
+        if self.all_team_ids.is_empty() {
             frame.render_widget(
                 Paragraph::new(" No team yet!"),
                 area.inner(Margin {
@@ -514,9 +529,9 @@ impl Screen for TeamListPanel {
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
-            UiKey::NEXT_SELECTION => self.next_player_index(),
-            UiKey::PREVIOUS_SELECTION => self.previous_player_index(),
-            UiKey::CYCLE_VIEW => {
+            ui_key::NEXT_SELECTION => self.next_player_index(),
+            ui_key::PREVIOUS_SELECTION => self.previous_player_index(),
+            ui_key::CYCLE_VIEW => {
                 return Some(UiCallback::SetTeamPanelView {
                     view: self.view.next(),
                 });
@@ -532,12 +547,12 @@ impl Screen for TeamListPanel {
 
     fn footer_spans(&self) -> Vec<String> {
         vec![
-            format!(" {} ", UiKey::CYCLE_VIEW.to_string()),
+            format!(" {} ", ui_key::CYCLE_VIEW.to_string()),
             " Next tab ".to_string(),
             format!(
                 " {}/{} ",
-                UiKey::PREVIOUS_SELECTION.to_string(),
-                UiKey::NEXT_SELECTION.to_string()
+                ui_key::PREVIOUS_SELECTION.to_string(),
+                ui_key::NEXT_SELECTION.to_string()
             ),
             " Select player ".to_string(),
         ]
@@ -545,15 +560,15 @@ impl Screen for TeamListPanel {
 }
 
 impl SplitPanel for TeamListPanel {
-    fn index(&self) -> usize {
+    fn index(&self) -> Option<usize> {
         self.index
     }
 
     fn max_index(&self) -> usize {
-        self.teams.len()
+        self.team_ids.len()
     }
 
     fn set_index(&mut self, index: usize) {
-        self.index = index;
+        self.index = Some(index);
     }
 }

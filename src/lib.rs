@@ -1,5 +1,6 @@
 pub mod app;
 pub mod audio;
+pub mod backcompat_repr;
 pub mod crossterm_event_handler;
 pub mod game_engine;
 pub mod image;
@@ -16,3 +17,11 @@ pub mod tui;
 pub mod types;
 pub mod ui;
 pub mod world;
+
+pub fn app_version() -> [usize; 3] {
+    [
+        env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or_default(),
+        env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or_default(),
+        env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or_default(),
+    ]
+}

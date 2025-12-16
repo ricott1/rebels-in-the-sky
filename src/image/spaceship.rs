@@ -5,7 +5,8 @@ use super::components::*;
 use super::types::Gif;
 use super::utils::{open_image, ExtraImageUtils};
 use crate::types::AppResult;
-use crate::world::spaceship::{Engine, Hull, Shooter, SpaceshipComponent, Storage};
+use crate::world::spaceship::{Engine, Hull, Shooter, Storage};
+use crate::world::Shield;
 use image::{Rgba, RgbaImage};
 use serde;
 use serde::{Deserialize, Serialize};
@@ -93,6 +94,7 @@ impl SpaceshipImage {
         engine: Engine,
         storage: Storage,
         shooter: Shooter,
+        shield: Shield,
         in_shipyard: bool,
         shooting: bool,
     ) -> AppResult<Gif> {
@@ -107,20 +109,35 @@ impl SpaceshipImage {
 
         let max_tick = if in_shipyard { 1 } else { 72 };
         for tick in 0..max_tick {
-            let color_presets = &ENGINE_COLOR_PRESETS[(tick / 3) % ENGINE_COLOR_PRESETS.len()];
-            let color_map = ColorMap {
-                red: color_presets[0].to_rgb(),
-                green: color_presets[1].to_rgb(),
-                blue: color_presets[2].to_rgb(),
-            };
-
-            let mut engine = engine.image()?;
-            let eng_x = (SPACESHIP_IMAGE_WIDTH - engine.width()) / 2;
-            let eng_y = 0;
-            engine.apply_color_map(color_map);
-
             let mut base = RgbaImage::new(SPACESHIP_IMAGE_WIDTH, SPACESHIP_IMAGE_HEIGHT);
-            base.copy_non_trasparent_from(&engine, eng_x, eng_y)?;
+
+            let shield_img = shield.image()?;
+            let x = (SPACESHIP_IMAGE_WIDTH - shield_img.width()) / 2;
+            let y = (SPACESHIP_IMAGE_HEIGHT - shield_img.height()) / 2 + 2;
+            base.copy_non_trasparent_from(&shield_img, x, y)?;
+
+            let mut engine_img = engine.image()?;
+            let eng_x = (SPACESHIP_IMAGE_WIDTH - engine_img.width()) / 2;
+            let eng_y = 0;
+
+            if in_shipyard {
+                let color_map = ColorMap {
+                    red: ColorPreset::Black.to_rgb(),
+                    green: ColorPreset::Black.to_rgb(),
+                    blue: ColorPreset::DarkGray.to_rgb(),
+                };
+                engine_img.apply_color_map(color_map);
+            } else {
+                let color_presets = &ENGINE_COLOR_PRESETS[(tick / 3) % ENGINE_COLOR_PRESETS.len()];
+                let color_map = ColorMap {
+                    red: color_presets[0].to_rgb(),
+                    green: color_presets[1].to_rgb(),
+                    blue: color_presets[2].to_rgb(),
+                };
+                engine_img.apply_color_map(color_map);
+            }
+
+            base.copy_non_trasparent_from(&engine_img, eng_x, eng_y)?;
 
             let mut storage_img = storage.image(size)?;
             let mask = storage.mask(size)?;
@@ -135,7 +152,7 @@ impl SpaceshipImage {
                 let shipyard_img = open_image(
                     format!(
                         "hull/shipyard_{}.png",
-                        hull.style().to_string().to_lowercase()
+                        hull.spaceship_style().to_string().to_lowercase()
                     )
                     .as_str(),
                 )?;
@@ -161,7 +178,11 @@ impl SpaceshipImage {
                 }
 
                 let x_offset = (base.width() - shooter_img.width()) / 2;
-                let y_offset = (tick as u32 / 2) % (36 / shooter.fire_rate() as u32) + 1;
+                let y_offset = if shooter.fire_rate() > 0.0 {
+                    (tick as u32 / 2) % (36 / shooter.fire_rate() as u32) + 1
+                } else {
+                    0
+                };
                 // Projectiles last for 4 ticks and are generated depending on the shooter firerate.
                 for (x, y) in shooter_positions.iter() {
                     if *y >= y_offset {
@@ -192,9 +213,7 @@ mod tests {
         let rng = &mut ChaCha8Rng::seed_from_u64(0);
         let n = 3;
         for prefab in SpaceshipPrefab::iter() {
-            let spaceship = prefab
-                .spaceship("name")
-                .with_color_map(ColorMap::random(rng));
+            let spaceship = prefab.spaceship().with_color_map(ColorMap::random(rng));
             let mut base = RgbaImage::new(SPACESHIP_IMAGE_WIDTH * n, SPACESHIP_IMAGE_HEIGHT);
             base.copy_from(&spaceship.compose_image()?[0], 0, 0)?;
             base.copy_from(

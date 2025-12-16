@@ -10,6 +10,8 @@
             "Carmelo",
             "Manolo",
             "Gianni",
+            "Sempronio",
+            "Robert",
             "Filippo",
             "Tancredi",
             "Goffredo",
@@ -24,12 +26,17 @@
             "Franco",
             "Francesco",
             "Dante",
+            "Rinaldo",
+            "Eusebio",
+            "Elio",
+            "Eliogabalo",
             "Fabio",
             "Melchiorre",
             "Vitaliano",
             "Gelsomino",
             "Manfredi",
-            "Alberobello"
+            "Alberobello",
+            "Mussa"
         ],
         "first_names_she": [
             "Costantina",
@@ -60,17 +67,23 @@
             "Beatrice",
             "Vittoria",
             "Caterina",
+            "Zhaneta",
             "Stella",
+            "Rina",
             "Lucia"
         ],
         "last_names": [
             "Frittura",
             "Cipolla",
             "Cavour",
+            "Guasti",
             "Rana",
             "Indovina",
             "Gattolo",
             "Pappagallo",
+            "Popa",
+            "Piacere",
+            "Baron",
             "Tomino",
             "Pappalardo",
             "Pizzaiolo",
@@ -82,6 +95,7 @@
             "Basile",
             "Poretto",
             "Oltraggio",
+            "Tirreno",
             "Sacco",
             "Pistacchio",
             "Vanzetti",
@@ -126,7 +140,10 @@
             "Jorge",
             "Luis",
             "Jorge Luis",
-            "Juan"
+            "Juan",
+            "Kike",
+            "Quique",
+            "Macho"
         ],
         "first_names_she": [
             "Lucía",
@@ -188,7 +205,8 @@
             "Salazar",
             "Santos",
             "Soto",
-            "Torres"
+            "Torres",
+            "Curri"
         ]
     },
     "102": {
@@ -205,6 +223,8 @@
             "Andreas",
             "Markus",
             "Jens",
+            "Andreas",
+            "Jan",
             "Frido",
             "Otto",
             "Hans",
@@ -272,6 +292,11 @@
             "Roller",
             "Krecik",
             "Finow",
+            "Eckener",
+            "Ecke",
+            "Schwein",
+            "Schnee",
+            "Strunz",
             "Kreuzberg",
             "Grundig",
             "Kreuzer"
@@ -285,6 +310,12 @@
             "Kostas",
             "Nikos",
             "Pericles",
+            "Agathon",
+            "Manolis",
+            "Manos",
+            "Sicinnos",
+            "Trypho",
+            "Kerkyon",
             "Lambros",
             "Dimitris",
             "Panagiotis",
@@ -321,7 +352,11 @@
             "Daphne",
             "Cassandra",
             "Persephon",
+            "Antigone",
+            "Amalthea",
+            "Thea",
             "Aphrodite",
+            "Aphroditis",
             "Hera",
             "Artemis"
         ],
@@ -542,7 +577,6 @@
             "Ane",
             "Iñigo"
         ],
-
         "first_names_she": [
             "Ane",
             "Miren",
@@ -773,7 +807,6 @@
             "Takumi",
             "Hanamichi"
         ],
-
         "first_names_she": [
             "Yukino",
             "Kano",
@@ -942,6 +975,9 @@
             "Frittete",
             "Carpac-io",
             "Sfornat",
+            "Za Baio",
+            "Dolc-ett",
+            "Cremin",
             "Pol",
             "Ma Pol",
             "Polipot",
@@ -966,6 +1002,10 @@
             "Pol",
             "Ce Hc-In",
             "Marella",
+            "Zupp Ett",
+            "Zucch In",
+            "Capo Nata",
+            "May O'nes",
             "Ma Pol",
             "Biscotin",
             "Polpettin",
@@ -974,9 +1014,9 @@
             "PoPo",
             "Pan In",
             "Piz Zett",
-            "Pro Sciutt"
+            "Pro Sciutt",
+            "Von Gol"
         ],
-
         "last_names": [
             "In-Umid",
             "Saltat",
@@ -998,7 +1038,10 @@
             "Crud",
             "Pizzat",
             "Be'n'Cott",
-            "Su-Shi"
+            "Su-Shi",
+            "Skadutt",
+            "Muf-Fitt",
+            "Brisat"
         ]
     },
     "3": {
@@ -1148,7 +1191,6 @@
             "Sinivuori"
         ]
     },
-
     "4": {
         "first_names_he": [
             "Zarif",
@@ -1342,7 +1384,7 @@
             "Yoris",
             "Hoshin"
         ],
-        "first_names_she":[
+        "first_names_she": [
             "Amirak",
             "Kairon",
             "Mizrak",
@@ -1408,7 +1450,7 @@
             "Rami Zak",
             "Farid Am Zek",
             "Mi Noor Az",
-            "Jam Ak Zin"          
+            "Jam Ak Zin"
         ]
     }
 }

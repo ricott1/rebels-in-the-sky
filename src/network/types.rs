@@ -180,12 +180,17 @@ impl TeamRanking {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlayerRanking {
     pub player: Player,
+    pub team_name: String,
     pub timestamp: Tick,
 }
 
 impl PlayerRanking {
-    pub fn new(timestamp: Tick, player: Player) -> Self {
-        Self { player, timestamp }
+    pub fn new(timestamp: Tick, player: Player, team_name: String) -> Self {
+        Self {
+            player,
+            team_name,
+            timestamp,
+        }
     }
 }
 

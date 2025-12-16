@@ -230,7 +230,7 @@ impl InteractiveWidget for Button<'_> {
             area
         };
         self.is_hovered = callback_registry.is_hovering(inner)
-            && callback_registry.get_max_layer() == self.layer();
+            && callback_registry.get_active_layer() == self.layer();
 
         if !self.disabled {
             if self.is_hovered {

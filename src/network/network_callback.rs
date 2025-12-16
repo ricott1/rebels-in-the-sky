@@ -1,6 +1,7 @@
 use super::challenge::Challenge;
 use super::trade::Trade;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
+use crate::app_version;
 use crate::game_engine::types::TeamInGame;
 use crate::store::deserialize;
 use crate::types::{AppResult, SystemTimeTick, TeamId, Tick};
@@ -443,8 +444,7 @@ impl NetworkCallback {
                         return Err(anyhow!("Team is not challenge receiver"));
                     }
 
-                    let [own_major_version, own_minor_version, own_patch_version] =
-                        app.app_version();
+                    let [own_major_version, own_minor_version, own_patch_version] = app_version();
                     let [challenge_major_version, challenge_minor_version, challenge_patch_version] =
                         challenge.app_version;
                     if challenge_major_version != own_major_version
@@ -489,8 +489,7 @@ impl NetworkCallback {
                         return Err(anyhow!("Invalid challenge: team is not challenge sender"));
                     }
 
-                    let [own_major_version, own_minor_version, own_patch_version] =
-                        app.app_version();
+                    let [own_major_version, own_minor_version, own_patch_version] = app_version();
                     let [challenge_major_version, challenge_minor_version, challenge_patch_version] =
                         challenge.app_version;
                     if challenge_major_version != own_major_version
@@ -506,8 +505,7 @@ impl NetworkCallback {
                             &app.world.own_team_id,
                             &app.world.teams,
                             &app.world.players,
-                        )
-                        .ok_or(anyhow!("Cannot generate team in game"))?;
+                        )?;
 
                         home_team_in_game.peer_id = Some(*app.network_handler.own_peer_id());
 

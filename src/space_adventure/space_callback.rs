@@ -1,13 +1,24 @@
-use crate::world::resources::Resource;
+use crate::{
+    space_adventure::{
+        constants::SCREEN_SIZE, Body, ControllableSpaceship, Direction, GameEntity, Sprite,
+    },
+    world::resources::Resource,
+};
 
 use super::{
     asteroid::AsteroidSize, space::SpaceAdventure, utils::EntityState, visual_effects::VisualEffect,
 };
 use glam::{I16Vec2, Vec2};
 use image::Rgba;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 
 #[derive(Debug, Clone, Copy)]
 pub enum SpaceCallback {
+    ActivateEntity {
+        id: usize,
+    },
+
     AddVisualEffect {
         id: usize,
         effect: VisualEffect,
@@ -23,6 +34,10 @@ pub enum SpaceCallback {
     DamageEntity {
         id: usize,
         damage: f32,
+    },
+
+    DeactivateEntity {
+        id: usize,
     },
 
     DestroyEntity {
@@ -60,14 +75,45 @@ pub enum SpaceCallback {
 
     LandSpaceshipOnAsteroid,
 
+    ReleaseScraps {
+        id: usize,
+    },
+
     SetAcceleration {
         id: usize,
-        acceleration: I16Vec2,
+        acceleration: Vec2,
     },
 
     SetPosition {
         id: usize,
         position: I16Vec2,
+    },
+
+    // Same as SetPosition but passes the entity center. Useful if we want to align entities on the center.
+    SetCenterPosition {
+        id: usize,
+        center: I16Vec2,
+    },
+
+    Shoot {
+        id: usize,
+    },
+
+    ToggleAutofire {
+        id: usize,
+    },
+
+    ToggleShield {
+        id: usize,
+    },
+
+    TrackPlayer {
+        id: usize,
+    },
+
+    UseCharge {
+        id: usize,
+        amount: f32,
     },
 }
 
@@ -82,18 +128,6 @@ impl SpaceCallback {
             } => {
                 if let Some(entity) = space.get_entity_mut(&id) {
                     entity.add_visual_effect(duration, effect);
-                }
-            }
-
-            Self::CollectFragment { id, .. } => {
-                if let Some(entity) = space.get_entity_mut(&id) {
-                    callbacks.append(&mut entity.handle_space_callback(*self));
-                }
-            }
-
-            Self::DamageEntity { id, .. } => {
-                if let Some(entity) = space.get_entity_mut(&id) {
-                    callbacks.append(&mut entity.handle_space_callback(*self));
                 }
             }
 
@@ -138,22 +172,98 @@ impl SpaceCallback {
                 color,
                 damage,
             } => {
-                space.generate_projectile(shot_by_id, position, velocity, color, damage);
+                let shooter_shield_id = if let Some(entity) = space.get_entity(&shot_by_id) {
+                    if let Ok(spaceship) = entity.as_spaceship() {
+                        spaceship.shield_id()
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                space.generate_projectile(
+                    shot_by_id,
+                    shooter_shield_id,
+                    position,
+                    velocity,
+                    color,
+                    damage,
+                );
             }
 
             Self::LandSpaceshipOnAsteroid => {
                 space.land_on_asteroid();
             }
 
-            Self::SetAcceleration { id, .. } => {
+            Self::ActivateEntity { id }
+            | Self::CollectFragment { id, .. }
+            | Self::DamageEntity { id, .. }
+            | Self::DeactivateEntity { id }
+            | Self::SetAcceleration { id, .. }
+            | Self::SetPosition { id, .. }
+            | Self::SetCenterPosition { id, .. }
+            | Self::ReleaseScraps { id }
+            | Self::Shoot { id }
+            | Self::ToggleAutofire { id }
+            | Self::ToggleShield { id }
+            | Self::UseCharge { id, .. } => {
                 if let Some(entity) = space.get_entity_mut(&id) {
                     callbacks.append(&mut entity.handle_space_callback(*self));
                 }
             }
 
-            Self::SetPosition { id, .. } => {
+            Self::TrackPlayer { id } => {
+                let target_position = if let Some(player) = space.get_player() {
+                    player.center()
+                } else {
+                    SCREEN_SIZE.as_i16vec2()
+                };
                 if let Some(entity) = space.get_entity_mut(&id) {
-                    callbacks.append(&mut entity.handle_space_callback(*self));
+                    let entity_position = entity.center();
+
+                    if entity_position.x > SCREEN_SIZE.x as i16 - 12 {
+                        callbacks.append(&mut entity.handle_space_callback(
+                            SpaceCallback::SetAcceleration {
+                                id,
+                                acceleration: Direction::Left.as_vec2(),
+                            },
+                        ))
+                    } else if entity_position.x <= 70 || entity_position.x <= target_position.x {
+                        callbacks.append(&mut entity.handle_space_callback(
+                            SpaceCallback::SetAcceleration {
+                                id,
+                                acceleration: Direction::Right.as_vec2(),
+                            },
+                        ))
+                    }
+
+                    let y_distance = (target_position.y - entity_position.y).abs();
+                    let rng = &mut ChaCha8Rng::from_os_rng();
+
+                    if let Ok(spaceship) = entity.as_spaceship_mut() {
+                        if y_distance > 4 {
+                            if entity_position.y > target_position.y {
+                                spaceship.thrust_towards(Direction::Up.as_vec2());
+                            } else if entity_position.y < target_position.y {
+                                spaceship.thrust_towards(Direction::Down.as_vec2());
+                            }
+                        }
+
+                        if y_distance > 14
+                            || spaceship.current_charge() < spaceship.max_charge() / 5
+                        {
+                            spaceship.set_autofire(false);
+                        } else if spaceship.current_charge() as f32
+                            > rng.random_range(0.25..=0.5) * spaceship.max_charge() as f32
+                        {
+                            spaceship.set_autofire(true);
+                        }
+
+                        if entity_position.x >= SCREEN_SIZE.x as i16 - 8 {
+                            spaceship.thrust_towards(Direction::Left.as_vec2());
+                        }
+                    }
                 }
             }
         }

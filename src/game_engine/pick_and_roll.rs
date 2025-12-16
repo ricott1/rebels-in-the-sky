@@ -1,9 +1,4 @@
-use super::{
-    action::{Action, ActionOutput, ActionSituation, Advantage, EngineAction},
-    constants::*,
-    game::Game,
-    types::*,
-};
+use super::{action::*, constants::*, game::Game, types::*};
 use crate::world::{
     constants::{MoraleModifier, TirednessCost},
     skill::GameSkill,
@@ -12,60 +7,63 @@ use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
-#[derive(Debug, Default)]
-pub struct PickAndRoll;
+pub(crate) fn execute(
+    input: &ActionOutput,
+    game: &Game,
+    action_rng: &mut ChaCha8Rng,
+    description_rng: &mut ChaCha8Rng,
+) -> Option<ActionOutput> {
+    let attacking_players = game.attacking_players();
+    let defending_players = game.defending_players();
 
-impl EngineAction for PickAndRoll {
-    fn execute(
-        input: &ActionOutput,
-        game: &Game,
-        action_rng: &mut ChaCha8Rng,
-        description_rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
-        let attacking_players = game.attacking_players();
-        let defending_players = game.defending_players();
+    let play_idx = match input.attackers.len() {
+        0 => sample_player_index(action_rng, [6, 1, 2, 0, 0])?,
+        _ => input.attackers[0],
+    };
 
-        let play_idx = match input.attackers.len() {
-            0 => Self::sample(action_rng, [6, 1, 2, 0, 0])?,
-            _ => input.attackers[0],
-        };
+    let target_idx = match input.attackers.len() {
+        0 | 1 => sample_player_index(action_rng, [1, 2, 3, 3, 2])?,
+        _ => input.attackers[1],
+    };
 
-        let target_idx = match input.attackers.len() {
-            0 | 1 => Self::sample(action_rng, [1, 2, 3, 3, 2])?,
-            _ => input.attackers[1],
-        };
+    let playmaker = attacking_players[play_idx];
+    let playmaker_defender = defending_players[play_idx];
 
-        let playmaker = attacking_players[play_idx];
-        let playmaker_defender = defending_players[play_idx];
+    let target = attacking_players[target_idx];
+    let target_defender = defending_players[target_idx];
 
-        let target = attacking_players[target_idx];
-        let target_defender = defending_players[target_idx];
+    let mut attack_stats_update: GameStatsMap = HashMap::new();
+    let mut playmaker_update = GameStats {
+        extra_tiredness: TirednessCost::MEDIUM,
+        ..Default::default()
+    };
 
-        let mut attack_stats_update: GameStatsMap = HashMap::new();
-        let mut playmaker_update = GameStats::default();
-        playmaker_update.extra_tiredness = TirednessCost::MEDIUM;
+    let mut defense_stats_update: GameStatsMap = HashMap::new();
+    let mut playmaker_defender_update = GameStats {
+        extra_tiredness: TirednessCost::MEDIUM,
+        ..Default::default()
+    };
 
-        let mut defense_stats_update: GameStatsMap = HashMap::new();
-        let mut playmaker_defender_update = GameStats::default();
-        playmaker_defender_update.extra_tiredness = TirednessCost::MEDIUM;
+    let mut target_defender_update = GameStats {
+        extra_tiredness: TirednessCost::MEDIUM,
+        ..Default::default()
+    };
 
-        let mut target_defender_update = GameStats::default();
-        target_defender_update.extra_tiredness = TirednessCost::MEDIUM;
+    let timer_increase = 3 + action_rng.random_range(0..=3);
+    let mut result: ActionOutput;
 
-        let timer_increase = 3 + action_rng.random_range(0..=3);
-        let mut result: ActionOutput;
+    if play_idx == target_idx {
+        let atk_result = playmaker.roll(action_rng)
+            + playmaker.technical.ball_handling.game_value()
+            + playmaker.athletics.quickness.game_value()
+            + target.mental.vision.game_value();
 
-        if play_idx == target_idx {
-            let atk_result = playmaker.roll(action_rng)
-                + playmaker.technical.ball_handling.game_value()
-                + playmaker.athletics.quickness.game_value()
-                + target.mental.vision.game_value();
+        let def_result = playmaker_defender.roll(action_rng)
+            + playmaker_defender.defense.perimeter_defense.game_value()
+            + playmaker_defender.mental.vision.game_value();
 
-            let def_result = playmaker_defender.roll(action_rng)
-                + playmaker_defender.defense.perimeter_defense.game_value()
-                + playmaker_defender.mental.vision.game_value();
-
-            result = match atk_result as i16 - def_result as i16 + Self::tactic_modifier(game, &Action::PickAndRoll) {
+        result = match atk_result - def_result + Action::PickAndRoll.tactic_modifier(game.attacking_team().tactic,
+                game.defending_team().tactic) {
                 x if x >= ADV_ATTACK_LIMIT => ActionOutput {
                     possession: input.possession,
                     advantage: Advantage::Attack,
@@ -233,17 +231,18 @@ impl EngineAction for PickAndRoll {
                     }
                 }
             };
-        } else {
-            let atk_result = playmaker.roll(action_rng)
-                + playmaker.technical.ball_handling.game_value()
-                + playmaker.technical.passing.game_value()
-                + target.mental.intuition.game_value();
+    } else {
+        let atk_result = playmaker.roll(action_rng)
+            + playmaker.technical.ball_handling.game_value()
+            + playmaker.technical.passing.game_value()
+            + target.mental.intuition.game_value();
 
-            let def_result = playmaker_defender.roll(action_rng)
-                + playmaker_defender.defense.perimeter_defense.game_value()
-                + target_defender.athletics.quickness.game_value();
+        let def_result = playmaker_defender.roll(action_rng)
+            + playmaker_defender.defense.perimeter_defense.game_value()
+            + target_defender.athletics.quickness.game_value();
 
-            result = match atk_result as i16 - def_result as i16 + Self::tactic_modifier(game, &Action::PickAndRoll){
+        result = match atk_result  - def_result  + Action::PickAndRoll.tactic_modifier(game.attacking_team().tactic,
+                game.defending_team().tactic){
             x if x >= ADV_ATTACK_LIMIT => ActionOutput {
                 possession: input.possession,
                 advantage: Advantage::Attack,
@@ -389,12 +388,11 @@ impl EngineAction for PickAndRoll {
                 }
             }
         };
-        }
-        attack_stats_update.insert(playmaker.id, playmaker_update);
-        defense_stats_update.insert(playmaker_defender.id, playmaker_defender_update);
-        defense_stats_update.insert(target_defender.id, target_defender_update);
-        result.attack_stats_update = Some(attack_stats_update);
-        result.defense_stats_update = Some(defense_stats_update);
-        Some(result)
     }
+    attack_stats_update.insert(playmaker.id, playmaker_update);
+    defense_stats_update.insert(playmaker_defender.id, playmaker_defender_update);
+    defense_stats_update.insert(target_defender.id, target_defender_update);
+    result.attack_stats_update = Some(attack_stats_update);
+    result.defense_stats_update = Some(defense_stats_update);
+    Some(result)
 }

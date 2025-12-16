@@ -1,7 +1,7 @@
-use super::{collisions::HitBox, networking::ImageType, space_callback::SpaceCallback, traits::*};
-use crate::{register_impl, space_adventure::constants::*};
+use super::{collisions::HitBox, space_callback::SpaceCallback, traits::*};
+use crate::space_adventure::{constants::*, entity::Entity};
 use glam::{I16Vec2, Vec2};
-use image::{Pixel, Rgba, RgbaImage};
+use image::{Rgba, RgbaImage};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy)]
@@ -16,6 +16,7 @@ pub enum ProjectileState {
 pub struct ProjectileEntity {
     id: usize,
     shot_by_id: usize,
+    own_shield_id: Option<usize>,
     color: Rgba<u8>,
     previous_position: Vec2,
     position: Vec2,
@@ -70,12 +71,6 @@ impl Sprite for ProjectileEntity {
     fn image(&self) -> &RgbaImage {
         &self.image
     }
-
-    fn network_image_type(&self) -> ImageType {
-        ImageType::Projectile {
-            color: self.color.to_rgb().0,
-        }
-    }
 }
 
 impl Collider for ProjectileEntity {
@@ -84,7 +79,10 @@ impl Collider for ProjectileEntity {
     }
 
     fn collider_type(&self) -> ColliderType {
-        ColliderType::Projectile
+        ColliderType::Projectile {
+            shot_by: self.shot_by_id,
+            filter_shield_id: self.own_shield_id,
+        }
     }
 
     fn hit_box(&self) -> &HitBox {
@@ -92,7 +90,7 @@ impl Collider for ProjectileEntity {
     }
 }
 
-impl Entity for ProjectileEntity {
+impl GameEntity for ProjectileEntity {
     fn set_id(&mut self, id: usize) {
         self.id = id;
     }
@@ -101,32 +99,27 @@ impl Entity for ProjectileEntity {
         self.id
     }
 
-    fn parent_id(&self) -> Option<usize> {
-        Some(self.shot_by_id)
-    }
-
     fn layer(&self) -> usize {
         self.layer
     }
 }
 
-register_impl!(!ControllableSpaceship for ProjectileEntity);
-register_impl!(!ResourceFragment for ProjectileEntity);
-
 impl ProjectileEntity {
-    pub fn new(
+    pub fn new_entity(
         shot_by_id: usize,
+        own_shield_id: Option<usize>,
         position: Vec2,
         velocity: Vec2,
         color: Rgba<u8>,
         damage: f32,
-    ) -> Self {
+    ) -> Entity {
         let image = RgbaImage::from_pixel(1, 1, color);
         let mut hit_box = HashMap::new();
         hit_box.insert(I16Vec2::ZERO, true);
-        Self {
+        Entity::Projectile(Self {
             id: 0,
             shot_by_id,
+            own_shield_id,
             color,
             previous_position: position,
             position,
@@ -136,6 +129,6 @@ impl ProjectileEntity {
             image,
             layer: 1,
             hit_box: hit_box.into(),
-        }
+        })
     }
 }

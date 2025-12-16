@@ -16,6 +16,16 @@ pub static TRAVELLING_BACKGROUND: Lazy<RgbaImage> = Lazy::new(|| {
 
 pub trait ExtraImageUtils {
     fn copy_non_trasparent_from(&mut self, other: &RgbaImage, x: u32, y: u32) -> ImageResult<()>;
+    fn copy_non_transparent_from_clipped(
+        &mut self,
+        src: &RgbaImage,
+        src_x: u32,
+        src_y: u32,
+        width: u32,
+        height: u32,
+        dst_x: u32,
+        dst_y: u32,
+    );
     fn apply_color_map(&mut self, color_map: ColorMap) -> &RgbaImage;
     fn apply_color_map_with_shadow_mask(
         &mut self,
@@ -51,14 +61,61 @@ impl ExtraImageUtils for RgbaImage {
 
         for k in 0..other.height() {
             for i in 0..other.width() {
-                let p = other.get_pixel(i, k);
-                if p[3] > 0 {
-                    self.put_pixel(i + x, k + y, *p);
+                let src_px = other.get_pixel(i, k);
+                let a = src_px[3] as f32 / 255.0;
+
+                if a == 0.0 {
+                    continue;
                 }
+
+                let dst_px = self.get_pixel(i + x, k + y);
+
+                let blended = Rgba([
+                    (src_px[0] as f32 * a + dst_px[0] as f32 * (1.0 - a)) as u8,
+                    (src_px[1] as f32 * a + dst_px[1] as f32 * (1.0 - a)) as u8,
+                    (src_px[2] as f32 * a + dst_px[2] as f32 * (1.0 - a)) as u8,
+                    255,
+                ]);
+
+                self.put_pixel(i + x, k + y, blended);
             }
         }
         Ok(())
     }
+
+    fn copy_non_transparent_from_clipped(
+        &mut self,
+        src: &RgbaImage,
+        src_x: u32,
+        src_y: u32,
+        width: u32,
+        height: u32,
+        dst_x: u32,
+        dst_y: u32,
+    ) {
+        for y in 0..height {
+            for x in 0..width {
+                let src_px = src.get_pixel(src_x + x, src_y + y);
+                let a = src_px[3] as f32 / 255.0;
+
+                if a == 0.0 {
+                    continue;
+                }
+
+                let dst_px = self.get_pixel(dst_x + x, dst_y + y);
+
+                let blended = Rgba([
+                    (src_px[0] as f32 * a + dst_px[0] as f32 * (1.0 - a)) as u8,
+                    (src_px[1] as f32 * a + dst_px[1] as f32 * (1.0 - a)) as u8,
+                    (src_px[2] as f32 * a + dst_px[2] as f32 * (1.0 - a)) as u8,
+                    255,
+                ]);
+
+                self.put_pixel(dst_x + x, dst_y + y, blended);
+            }
+        }
+    }
+
     fn apply_color_map(&mut self, color_map: ColorMap) -> &RgbaImage {
         for k in 0..self.height() {
             for i in 0..self.width() {

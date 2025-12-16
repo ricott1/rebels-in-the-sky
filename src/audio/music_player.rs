@@ -60,8 +60,7 @@ impl Debug for MusicPlayer {
 
 impl MusicPlayer {
     fn current_url(&self) -> AppResult<Url> {
-        self
-            .streams
+        self.streams
             .get(self.index)
             .ok_or(anyhow!("No streams available"))?
             .url()
@@ -90,13 +89,14 @@ impl MusicPlayer {
                     .await
                     {
                         Ok(data) => {
-                            if let Err(_) = task.event_sender.send(AppEvent::AudioEvent(data)).await
+                            if let Err(err) =
+                                task.event_sender.send(AppEvent::AudioEvent(data)).await
                             {
-                                log::error!("Audio event receiver dropped");
+                                log::error!("Audio event receiver dropped: {err}");
                             }
                         }
-                        Err(e) => {
-                            log::error!("Unable to start audio stream: {e}");
+                        Err(err) => {
+                            log::error!("Unable to start audio stream: {err}");
                         }
                     }
                 })

@@ -1,46 +1,10 @@
+use super::{collisions::HitBox, space_callback::SpaceCallback, visual_effects::VisualEffect};
 use crate::{types::ResourceMap, world::resources::Resource};
-
-use super::{
-    collisions::HitBox, networking::ImageType, space_callback::SpaceCallback,
-    spaceship::ShooterState, visual_effects::VisualEffect,
-};
 use glam::I16Vec2;
-use image::RgbaImage;
+use image::{Rgba, RgbaImage};
 use std::{collections::HashMap, fmt::Debug};
 
 pub type VisualEffectMap = HashMap<VisualEffect, f32>;
-
-pub trait MaybeImplements<Trait: ?Sized> {
-    fn as_trait_ref(&self) -> Option<&Trait>;
-    fn as_trait_mut(&mut self) -> Option<&mut Trait>;
-}
-
-#[macro_export]
-macro_rules! register_impl {
-    ($trait_:ident for $ty:ty) => {
-        impl MaybeImplements<dyn $trait_> for $ty {
-            fn as_trait_ref(&self) -> Option<&(dyn $trait_ + 'static)> {
-                Some(self)
-            }
-
-            fn as_trait_mut(&mut self) -> Option<&mut (dyn $trait_ + 'static)> {
-                Some(self)
-            }
-        }
-    };
-
-    (!$trait_:ident for $ty:ty) => {
-        impl MaybeImplements<dyn $trait_> for $ty {
-            fn as_trait_ref(&self) -> Option<&(dyn $trait_ + 'static)> {
-                None
-            }
-
-            fn as_trait_mut(&mut self) -> Option<&mut (dyn $trait_ + 'static)> {
-                None
-            }
-        }
-    };
-}
 
 pub trait Body: Collider {
     fn previous_rect(&self) -> (I16Vec2, I16Vec2) {
@@ -57,6 +21,11 @@ pub trait Body: Collider {
         )
     }
 
+    // Converts the coordinate of the center point to those of the top left corner
+    fn center_to_top_left(&self, center: I16Vec2) -> I16Vec2 {
+        center - (self.hit_box().top_left() + self.hit_box().bottom_right()) / 2
+    }
+
     fn center(&self) -> I16Vec2 {
         self.position() + (self.hit_box().top_left() + self.hit_box().bottom_right()) / 2
     }
@@ -70,15 +39,13 @@ pub trait Body: Collider {
         I16Vec2::ZERO
     }
 
-    fn update_body(&mut self, _: f32) -> Vec<SpaceCallback> {
+    fn update_body(&mut self, _deltatime: f32) -> Vec<SpaceCallback> {
         vec![]
     }
 }
 
 pub trait Sprite {
     fn image(&self) -> &RgbaImage;
-
-    fn network_image_type(&self) -> ImageType;
 
     fn should_apply_visual_effects(&self) -> bool {
         false
@@ -104,7 +71,11 @@ pub enum ColliderType {
     AsteroidPlanet,
     Collector,
     Fragment,
-    Projectile,
+    Projectile {
+        shot_by: usize,
+        filter_shield_id: Option<usize>,
+    },
+    Shield,
     Spaceship,
 }
 pub trait Collider {
@@ -123,22 +94,9 @@ pub trait Collider {
     }
 }
 
-pub trait Entity:
-    Sprite
-    + Body
-    + Collider
-    + MaybeImplements<dyn ControllableSpaceship>
-    + MaybeImplements<dyn ResourceFragment>
-    + Debug
-    + Send
-    + Sync
-{
+pub trait GameEntity: Sprite + Body + Collider {
     fn set_id(&mut self, id: usize);
     fn id(&self) -> usize;
-    fn set_parent_id(&mut self, _parent_id: usize) {}
-    fn parent_id(&self) -> Option<usize> {
-        None
-    }
     fn layer(&self) -> usize {
         0
     }
@@ -155,7 +113,7 @@ pub trait Entity:
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlayerInput {
     MoveLeft,
     MoveRight,
@@ -164,6 +122,7 @@ pub enum PlayerInput {
     ToggleAutofire,
     Shoot,
     ReleaseScraps,
+    ToggleShield,
 }
 
 pub trait ControllableSpaceship {
@@ -171,19 +130,37 @@ pub trait ControllableSpaceship {
     fn fuel(&self) -> u32;
     fn fuel_capacity(&self) -> u32;
     fn resources(&self) -> &ResourceMap;
+    fn resources_mut(&mut self) -> &mut ResourceMap;
     fn storage_capacity(&self) -> u32;
     fn max_speed(&self) -> u32;
-    fn charge(&self) -> u32;
+    fn current_charge(&self) -> u32;
     fn max_charge(&self) -> u32;
-    fn shooter_state(&self) -> ShooterState;
+    fn is_recharging(&self) -> bool;
     fn thrust(&self) -> u32;
     fn maneuverability(&self) -> u32;
     fn current_durability(&self) -> u32;
-    fn durability(&self) -> u32;
+    fn max_durability(&self) -> u32;
     fn handle_player_input(&mut self, input: PlayerInput);
 }
 
 pub trait ResourceFragment {
     fn resource(&self) -> Resource;
     fn amount(&self) -> u32;
+}
+
+pub trait ColoredResource {
+    fn color(&self) -> Rgba<u8>;
+}
+
+impl ColoredResource for Resource {
+    fn color(&self) -> Rgba<u8> {
+        match self {
+            Resource::GOLD => [240, 230, 140, 255],
+            Resource::SCRAPS => [192, 192, 192, 255],
+            Resource::RUM => [114, 47, 55, 255],
+            Resource::FUEL => [64, 224, 208, 255],
+            Resource::SATOSHI => [255, 255, 255, 255],
+        }
+        .into()
+    }
 }

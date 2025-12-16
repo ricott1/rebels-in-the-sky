@@ -17,9 +17,6 @@ use itertools::Itertools;
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
-#[derive(Debug, Default)]
-pub struct Substitution;
-
 fn get_subs<'a>(players: &Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a Player> {
     if players.len() <= 5 {
         return vec![];
@@ -140,10 +137,14 @@ fn make_substitution(
     }
 
     let mut stats_update: GameStatsMap = HashMap::new();
-    let mut player_in_update = GameStats::default();
-    player_in_update.position = Some(position);
-    let mut player_out_update = GameStats::default();
-    player_out_update.position = None;
+    let player_in_update = GameStats {
+        position: Some(position),
+        ..Default::default()
+    };
+    let player_out_update = GameStats {
+        position: None,
+        ..Default::default()
+    };
     stats_update.insert(player_in.id, player_in_update);
     stats_update.insert(player_out.id, player_out_update);
 
@@ -168,83 +169,81 @@ fn make_substitution(
     Some((description, stats_update))
 }
 
-impl Substitution {
-    pub fn execute(
-        input: &ActionOutput,
-        game: &Game,
-        _action_rng: &mut ChaCha8Rng,
-        _description_rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
-        let home_players = &game.home_team_in_game.players;
-        let away_players = &game.away_team_in_game.players;
-        let mut result = ActionOutput {
-            advantage: input.advantage,
-            possession: input.possession,
-            attackers: input.attackers.clone(),
-            defenders: input.defenders.clone(),
-            situation: ActionSituation::AfterSubstitution,
-            assist_from: input.assist_from,
-            start_at: input.start_at,
-            end_at: input.end_at,
-            home_score: input.home_score,
-            away_score: input.away_score,
-            ..Default::default()
-        };
+pub(crate) fn execute(
+    input: &ActionOutput,
+    game: &Game,
+    _action_rng: &mut ChaCha8Rng,
+    _description_rng: &mut ChaCha8Rng,
+) -> Option<ActionOutput> {
+    let home_players = &game.home_team_in_game.players;
+    let away_players = &game.away_team_in_game.players;
+    let mut result = ActionOutput {
+        advantage: input.advantage,
+        possession: input.possession,
+        attackers: input.attackers.clone(),
+        defenders: input.defenders.clone(),
+        situation: ActionSituation::AfterSubstitution,
+        assist_from: input.assist_from,
+        start_at: input.start_at,
+        end_at: input.end_at,
+        home_score: input.home_score,
+        away_score: input.away_score,
+        ..Default::default()
+    };
 
-        let mut home_sub = false;
-        let mut away_sub = false;
-        if let Some((description, stats_update)) = make_substitution(
-            home_players.by_position(&game.home_team_in_game.stats),
-            &game.home_team_in_game.stats,
-        ) {
+    let mut home_sub = false;
+    let mut away_sub = false;
+    if let Some((description, stats_update)) = make_substitution(
+        home_players.by_position(&game.home_team_in_game.stats),
+        &game.home_team_in_game.stats,
+    ) {
+        result
+            .description
+            .push_str(format!("Substitution for {}. ", game.home_team_in_game.name).as_str());
+        result.description.push_str(description.as_str());
+
+        match game.possession {
+            Possession::Home => {
+                result.attack_stats_update = Some(stats_update);
+            }
+            Possession::Away => {
+                result.defense_stats_update = Some(stats_update);
+            }
+        }
+        home_sub = true;
+    }
+
+    if let Some((description, stats_update)) = make_substitution(
+        away_players.by_position(&game.away_team_in_game.stats),
+        &game.away_team_in_game.stats,
+    ) {
+        if home_sub {
+            result.description.push_str(
+                format!(
+                    "Also {} will make a substitution. ",
+                    game.away_team_in_game.name
+                )
+                .as_str(),
+            );
+        } else {
             result
                 .description
-                .push_str(format!("Substitution for {}. ", game.home_team_in_game.name).as_str());
-            result.description.push_str(description.as_str());
-
-            match game.possession {
-                Possession::Home => {
-                    result.attack_stats_update = Some(stats_update);
-                }
-                Possession::Away => {
-                    result.defense_stats_update = Some(stats_update);
-                }
-            }
-            home_sub = true;
+                .push_str(format!("Substitution for {}. ", game.away_team_in_game.name).as_str());
         }
+        result.description.push_str(description.as_str());
 
-        if let Some((description, stats_update)) = make_substitution(
-            away_players.by_position(&game.away_team_in_game.stats),
-            &game.away_team_in_game.stats,
-        ) {
-            if home_sub {
-                result.description.push_str(
-                    format!(
-                        "Also {} will make a substitution. ",
-                        game.away_team_in_game.name
-                    )
-                    .as_str(),
-                );
-            } else {
-                result.description.push_str(
-                    format!("Substitution for {}. ", game.away_team_in_game.name).as_str(),
-                );
+        match game.possession {
+            Possession::Home => {
+                result.defense_stats_update = Some(stats_update);
             }
-            result.description.push_str(description.as_str());
-
-            match game.possession {
-                Possession::Home => {
-                    result.defense_stats_update = Some(stats_update);
-                }
-                Possession::Away => {
-                    result.attack_stats_update = Some(stats_update);
-                }
+            Possession::Away => {
+                result.attack_stats_update = Some(stats_update);
             }
-            away_sub = true;
         }
-        if home_sub || away_sub {
-            return Some(result);
-        }
-        None
+        away_sub = true;
     }
+    if home_sub || away_sub {
+        return Some(result);
+    }
+    None
 }

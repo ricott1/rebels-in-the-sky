@@ -1,12 +1,12 @@
-use super::{constants::*, resources::Resource};
+use super::constants::*;
 use crate::{
     image::{
         color_map::ColorMap,
         spaceship::{SpaceshipImage, SpaceshipImageId},
         types::Gif,
     },
-    types::{AppResult, SystemTimeTick, Tick},
-    world::utils::is_default,
+    types::{AppResult, Tick},
+    world::{utils::is_default, SpaceshipUpgradeTarget, Upgrade, UpgradeableElement},
 };
 use rand::seq::IteratorRandom;
 use rand_chacha::ChaCha8Rng;
@@ -16,7 +16,6 @@ use std::{fmt::Display, hash::Hash};
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
 
-// FIXME: migrate to repr
 #[derive(Debug, Display, Clone, Copy, PartialEq, EnumIter)]
 pub enum SpaceshipStyle {
     Shuttle,
@@ -24,29 +23,92 @@ pub enum SpaceshipStyle {
     Jester,
 }
 
-pub trait SpaceshipComponent: Sized + Clone + Copy + PartialEq {
-    fn next(&self) -> Self;
-    fn previous(&self) -> Self;
-    fn style(&self) -> SpaceshipStyle;
+pub trait SpaceshipComponent: Sized + Clone + Copy + PartialEq + UpgradeableElement {
+    fn random_for(rng: &mut ChaCha8Rng, style: SpaceshipStyle) -> Self;
     fn crew_capacity(&self) -> u8;
     fn storage_capacity(&self) -> u32;
     fn fuel_capacity(&self) -> u32;
     fn fuel_consumption_per_tick(&self) -> f32;
     fn speed(&self) -> f32;
     fn durability(&self) -> u32;
-    fn cost(&self) -> u32;
-    fn upgrade_cost(&self) -> Vec<(Resource, u32)>;
-    fn can_be_upgraded(&self) -> bool {
-        // FIXME: not very stable method to check upgrades. Should be rather explicitly set.
-        let next_component = self.next();
-        if next_component.cost() < self.cost() {
-            return false;
-        }
-        if next_component == *self {
-            return false;
-        }
+    fn value(&self) -> u32;
+}
 
-        true
+#[derive(
+    Debug,
+    Display,
+    Clone,
+    Copy,
+    Serialize_repr,
+    Deserialize_repr,
+    PartialEq,
+    Hash,
+    Default,
+    EnumIter,
+)]
+#[repr(u8)]
+pub enum ChargeUnit {
+    #[default]
+    Small,
+    Medium,
+    Large,
+}
+
+impl ChargeUnit {
+    pub fn max_charge(&self) -> f32 {
+        match self {
+            Self::Small => 80.0,
+            Self::Medium => 100.0,
+            Self::Large => 120.0,
+        }
+    }
+}
+
+impl SpaceshipComponent for ChargeUnit {
+    fn random_for(rng: &mut ChaCha8Rng, _style: SpaceshipStyle) -> Self {
+        Self::iter()
+            .choose(rng)
+            .expect("There should be one possible selection")
+    }
+
+    fn crew_capacity(&self) -> u8 {
+        0
+    }
+
+    fn storage_capacity(&self) -> u32 {
+        0
+    }
+
+    fn fuel_capacity(&self) -> u32 {
+        0
+    }
+
+    fn fuel_consumption_per_tick(&self) -> f32 {
+        match self {
+            Self::Small => 1.025,
+            Self::Medium => 1.125,
+            Self::Large => 1.25,
+        }
+    }
+
+    fn speed(&self) -> f32 {
+        1.0
+    }
+
+    fn durability(&self) -> u32 {
+        match self {
+            Self::Small => 0,
+            Self::Medium => 1,
+            Self::Large => 2,
+        }
+    }
+
+    fn value(&self) -> u32 {
+        match self {
+            Self::Small => 1_000,
+            Self::Medium => 7_000,
+            Self::Large => 21_000,
+        }
     }
 }
 
@@ -77,38 +139,35 @@ impl Display for Hull {
     }
 }
 
-impl SpaceshipComponent for Hull {
-    fn next(&self) -> Self {
+impl Hull {
+    pub fn spaceship_style(&self) -> SpaceshipStyle {
         match self {
-            Self::ShuttleSmall => Self::ShuttleStandard,
-            Self::ShuttleStandard => Self::ShuttleLarge,
-            Self::ShuttleLarge => Self::ShuttleSmall,
-            Self::PincherStandard => Self::PincherLarge,
-            Self::PincherLarge => Self::PincherStandard,
-            Self::JesterStandard => Self::JesterStandard,
-        }
-    }
-    fn previous(&self) -> Self {
-        match self {
-            Self::ShuttleSmall => Self::ShuttleLarge,
-            Self::ShuttleStandard => Self::ShuttleSmall,
-            Self::ShuttleLarge => Self::ShuttleStandard,
-            Self::PincherStandard => Self::PincherLarge,
-            Self::PincherLarge => Self::PincherStandard,
-            Self::JesterStandard => Self::JesterStandard,
-        }
-    }
-
-    fn style(&self) -> SpaceshipStyle {
-        match self {
-            Self::ShuttleSmall => SpaceshipStyle::Shuttle,
-            Self::ShuttleStandard => SpaceshipStyle::Shuttle,
-            Self::ShuttleLarge => SpaceshipStyle::Shuttle,
-            Self::PincherStandard => SpaceshipStyle::Pincher,
-            Self::PincherLarge => SpaceshipStyle::Pincher,
+            Self::ShuttleSmall | Self::ShuttleStandard | Self::ShuttleLarge => {
+                SpaceshipStyle::Shuttle
+            }
+            Self::PincherStandard | Self::PincherLarge => SpaceshipStyle::Pincher,
             Self::JesterStandard => SpaceshipStyle::Jester,
         }
     }
+}
+
+impl SpaceshipComponent for Hull {
+    fn random_for(rng: &mut ChaCha8Rng, style: SpaceshipStyle) -> Self {
+        match style {
+            SpaceshipStyle::Jester => vec![Self::JesterStandard],
+            SpaceshipStyle::Pincher => vec![Self::PincherStandard, Self::PincherLarge],
+            SpaceshipStyle::Shuttle => vec![
+                Self::ShuttleSmall,
+                Self::ShuttleStandard,
+                Self::ShuttleLarge,
+            ],
+        }
+        .iter()
+        .choose(rng)
+        .copied()
+        .expect("There should be one possible selection")
+    }
+
     fn crew_capacity(&self) -> u8 {
         match self {
             Self::ShuttleSmall => MIN_PLAYERS_PER_GAME as u8 + 2,
@@ -173,43 +232,16 @@ impl SpaceshipComponent for Hull {
             Self::JesterStandard => 16,
         }
     }
-    fn cost(&self) -> u32 {
+
+    fn value(&self) -> u32 {
         match self {
-            Self::ShuttleSmall => 15000,
-            Self::ShuttleStandard => 25000,
-            Self::ShuttleLarge => 32000,
-            Self::PincherStandard => 27000,
-            Self::PincherLarge => 45000,
-            Self::JesterStandard => 35000,
+            Self::ShuttleSmall => 15_000,
+            Self::ShuttleStandard => 25_000,
+            Self::ShuttleLarge => 45_000,
+            Self::PincherStandard => 22_150,
+            Self::PincherLarge => 42_000,
+            Self::JesterStandard => 30_000,
         }
-    }
-
-    fn upgrade_cost(&self) -> Vec<(Resource, u32)> {
-        if self.next().cost() < self.cost() {
-            return vec![];
-        }
-
-        let scraps_cost = match self.style() {
-            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 36,
-            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 40,
-            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 44,
-        };
-
-        let mut cost = vec![
-            (Resource::SATOSHI, self.next().cost() - self.cost()),
-            (Resource::SCRAPS, scraps_cost),
-        ];
-        // Final upgrade has a cost in gold
-        if self.next().cost() > self.next().next().cost() {
-            let gold_cost = match self.style() {
-                SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 4000,
-                SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 3000,
-                SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 2750,
-            };
-            cost.push((Resource::GOLD, gold_cost))
-        }
-
-        cost
     }
 }
 
@@ -245,43 +277,26 @@ impl Display for Engine {
 }
 
 impl SpaceshipComponent for Engine {
-    fn next(&self) -> Self {
-        match self {
-            Self::ShuttleSingle => Self::ShuttleDouble,
-            Self::ShuttleDouble => Self::ShuttleTriple,
-            Self::ShuttleTriple => Self::ShuttleSingle,
-            Self::PincherSingle => Self::PincherDouble,
-            Self::PincherDouble => Self::PincherTriple,
-            Self::PincherTriple => Self::PincherSingle,
-            Self::JesterDouble => Self::JesterQuadruple,
-            Self::JesterQuadruple => Self::JesterDouble,
+    fn random_for(rng: &mut ChaCha8Rng, style: SpaceshipStyle) -> Self {
+        match style {
+            SpaceshipStyle::Jester => vec![Self::JesterDouble, Self::JesterQuadruple],
+            SpaceshipStyle::Pincher => vec![
+                Self::PincherSingle,
+                Self::PincherDouble,
+                Self::PincherTriple,
+            ],
+            SpaceshipStyle::Shuttle => vec![
+                Self::ShuttleSingle,
+                Self::ShuttleDouble,
+                Self::ShuttleTriple,
+            ],
         }
-    }
-    fn previous(&self) -> Self {
-        match self {
-            Self::ShuttleSingle => Self::ShuttleTriple,
-            Self::ShuttleDouble => Self::ShuttleSingle,
-            Self::ShuttleTriple => Self::ShuttleDouble,
-            Self::PincherSingle => Self::PincherTriple,
-            Self::PincherDouble => Self::PincherSingle,
-            Self::PincherTriple => Self::PincherDouble,
-            Self::JesterDouble => Self::JesterQuadruple,
-            Self::JesterQuadruple => Self::JesterDouble,
-        }
+        .iter()
+        .choose(rng)
+        .copied()
+        .expect("There should be one possible selection")
     }
 
-    fn style(&self) -> SpaceshipStyle {
-        match self {
-            Self::ShuttleSingle => SpaceshipStyle::Shuttle,
-            Self::ShuttleDouble => SpaceshipStyle::Shuttle,
-            Self::ShuttleTriple => SpaceshipStyle::Shuttle,
-            Self::PincherSingle => SpaceshipStyle::Pincher,
-            Self::PincherDouble => SpaceshipStyle::Pincher,
-            Self::PincherTriple => SpaceshipStyle::Pincher,
-            Self::JesterDouble => SpaceshipStyle::Jester,
-            Self::JesterQuadruple => SpaceshipStyle::Jester,
-        }
-    }
     fn crew_capacity(&self) -> u8 {
         0
     }
@@ -332,40 +347,96 @@ impl SpaceshipComponent for Engine {
             Self::JesterQuadruple => 5,
         }
     }
-    fn cost(&self) -> u32 {
+
+    fn value(&self) -> u32 {
         match self {
-            Self::ShuttleSingle => 5000,
-            Self::ShuttleDouble => 8000,
-            Self::ShuttleTriple => 15000,
-            Self::PincherSingle => 5000,
-            Self::PincherDouble => 11000,
-            Self::PincherTriple => 18000,
-            Self::JesterDouble => 10000,
-            Self::JesterQuadruple => 25000,
+            Self::ShuttleSingle => 4_500,
+            Self::ShuttleDouble => 9_500,
+            Self::ShuttleTriple => 15_300,
+            Self::PincherSingle => 6_250,
+            Self::PincherDouble => 13_500,
+            Self::PincherTriple => 19_750,
+            Self::JesterDouble => 10_500,
+            Self::JesterQuadruple => 23_000,
+        }
+    }
+}
+
+#[derive(
+    Debug,
+    Display,
+    Clone,
+    Copy,
+    Serialize_repr,
+    Deserialize_repr,
+    PartialEq,
+    Hash,
+    Default,
+    EnumIter,
+)]
+#[repr(u8)]
+pub enum Shield {
+    #[default]
+    None,
+    Small,
+    Medium,
+}
+
+impl Shield {
+    fn max_durability(&self) -> f32 {
+        match self {
+            Self::None => 0.0,
+            Self::Small => 8.0,
+            Self::Medium => 14.0,
         }
     }
 
-    fn upgrade_cost(&self) -> Vec<(Resource, u32)> {
-        if self.next().cost() < self.cost() {
-            return vec![];
+    fn damage_reduction(&self) -> f32 {
+        match self {
+            Self::None => 1.0,
+            Self::Small => 0.7,
+            Self::Medium => 0.4,
         }
+    }
+}
 
-        let scraps_cost = match self.style() {
-            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 75,
-            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 70,
-            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 100,
-        };
+impl SpaceshipComponent for Shield {
+    fn random_for(rng: &mut ChaCha8Rng, _style: SpaceshipStyle) -> Self {
+        Self::iter()
+            .choose(rng)
+            .expect("There should be one possible selection")
+    }
 
-        let mut cost = vec![
-            (Resource::SATOSHI, self.next().cost() - self.cost()),
-            (Resource::SCRAPS, scraps_cost),
-        ];
-        // Final upgrade has a cost in rum
-        if self.next().cost() > self.next().next().cost() {
-            cost.push((Resource::RUM, 10))
+    fn crew_capacity(&self) -> u8 {
+        0
+    }
+
+    fn storage_capacity(&self) -> u32 {
+        0
+    }
+
+    fn fuel_capacity(&self) -> u32 {
+        0
+    }
+
+    fn fuel_consumption_per_tick(&self) -> f32 {
+        1.0
+    }
+
+    fn speed(&self) -> f32 {
+        1.0
+    }
+
+    fn durability(&self) -> u32 {
+        0
+    }
+
+    fn value(&self) -> u32 {
+        match self {
+            Self::None => 0,
+            Self::Small => 4_500,
+            Self::Medium => 11_250,
         }
-
-        cost
     }
 }
 
@@ -401,44 +472,26 @@ impl Display for Shooter {
 }
 
 impl SpaceshipComponent for Shooter {
-    fn next(&self) -> Self {
-        match self {
-            Self::ShuttleNone => Self::ShuttleSingle,
-            Self::ShuttleSingle => Self::ShuttleTriple,
-            Self::ShuttleTriple => Self::ShuttleNone,
-            Self::PincherNone => Self::PincherDouble,
-            Self::PincherDouble => Self::PincherQuadruple,
-            Self::PincherQuadruple => Self::PincherNone,
-            Self::JesterNone => Self::JesterDouble,
-            Self::JesterDouble => Self::JesterQuadruple,
-            Self::JesterQuadruple => Self::JesterNone,
+    fn random_for(rng: &mut ChaCha8Rng, style: SpaceshipStyle) -> Self {
+        match style {
+            SpaceshipStyle::Jester => {
+                vec![Self::JesterNone, Self::JesterDouble, Self::JesterQuadruple]
+            }
+            SpaceshipStyle::Pincher => vec![
+                Self::PincherNone,
+                Self::PincherDouble,
+                Self::PincherQuadruple,
+            ],
+            SpaceshipStyle::Shuttle => {
+                vec![Self::ShuttleNone, Self::ShuttleSingle, Self::ShuttleTriple]
+            }
         }
-    }
-    fn previous(&self) -> Self {
-        match self {
-            Self::ShuttleNone => Self::ShuttleTriple,
-            Self::ShuttleSingle => Self::ShuttleNone,
-            Self::ShuttleTriple => Self::ShuttleSingle,
-            Self::PincherNone => Self::PincherQuadruple,
-            Self::PincherDouble => Self::PincherNone,
-            Self::PincherQuadruple => Self::PincherDouble,
-            Self::JesterNone => Self::JesterQuadruple,
-            Self::JesterDouble => Self::JesterNone,
-            Self::JesterQuadruple => Self::JesterDouble,
-        }
+        .iter()
+        .choose(rng)
+        .copied()
+        .expect("There should be one possible selection")
     }
 
-    fn style(&self) -> SpaceshipStyle {
-        match self {
-            Self::ShuttleNone | Self::ShuttleSingle | Self::ShuttleTriple => {
-                SpaceshipStyle::Shuttle
-            }
-            Self::PincherNone | Self::PincherDouble | Self::PincherQuadruple => {
-                SpaceshipStyle::Pincher
-            }
-            Self::JesterNone | Self::JesterDouble | Self::JesterQuadruple => SpaceshipStyle::Jester,
-        }
-    }
     fn crew_capacity(&self) -> u8 {
         0
     }
@@ -470,39 +523,17 @@ impl SpaceshipComponent for Shooter {
             _ => 0,
         }
     }
-    fn cost(&self) -> u32 {
+
+    fn value(&self) -> u32 {
         match self {
-            Self::ShuttleSingle => 5000,
-            Self::ShuttleTriple => 15000,
-            Self::PincherDouble => 11000,
-            Self::PincherQuadruple => 24000,
-            Self::JesterDouble => 10000,
-            Self::JesterQuadruple => 25000,
+            Self::ShuttleSingle => 4_500,
+            Self::ShuttleTriple => 15_000,
+            Self::PincherDouble => 8_000,
+            Self::PincherQuadruple => 16_500,
+            Self::JesterDouble => 10_500,
+            Self::JesterQuadruple => 22_000,
             _ => 0,
         }
-    }
-
-    fn upgrade_cost(&self) -> Vec<(Resource, u32)> {
-        if self.next().cost() < self.cost() {
-            return vec![];
-        }
-
-        let scraps_cost = match self.style() {
-            SpaceshipStyle::Shuttle => (self.next().cost() - self.cost()) / 75,
-            SpaceshipStyle::Pincher => (self.next().cost() - self.cost()) / 70,
-            SpaceshipStyle::Jester => (self.next().cost() - self.cost()) / 100,
-        };
-
-        let mut cost = vec![
-            (Resource::SATOSHI, self.next().cost() - self.cost()),
-            (Resource::SCRAPS, scraps_cost),
-        ];
-        // Final upgrade has a cost in rum
-        if self.next().cost() > self.next().next().cost() {
-            cost.push((Resource::RUM, 5))
-        }
-
-        cost
     }
 }
 
@@ -569,41 +600,20 @@ impl Display for Storage {
 }
 
 impl SpaceshipComponent for Storage {
-    fn next(&self) -> Self {
-        match self {
-            Self::ShuttleNone => Self::ShuttleSingle,
-            Self::ShuttleSingle => Self::ShuttleDouble,
-            Self::ShuttleDouble => Self::ShuttleNone,
-            Self::PincherNone => Self::PincherSingle,
-            Self::PincherSingle => Self::PincherNone,
-            Self::JesterNone => Self::JesterSingle,
-            Self::JesterSingle => Self::JesterNone,
+    fn random_for(rng: &mut ChaCha8Rng, style: SpaceshipStyle) -> Self {
+        match style {
+            SpaceshipStyle::Jester => vec![Self::JesterNone, Self::JesterSingle],
+            SpaceshipStyle::Pincher => vec![Self::PincherNone, Self::PincherSingle],
+            SpaceshipStyle::Shuttle => {
+                vec![Self::ShuttleNone, Self::ShuttleSingle, Self::ShuttleDouble]
+            }
         }
+        .iter()
+        .choose(rng)
+        .copied()
+        .expect("There should be one possible selection")
     }
 
-    fn previous(&self) -> Self {
-        match self {
-            Self::ShuttleNone => Self::ShuttleDouble,
-            Self::ShuttleSingle => Self::ShuttleNone,
-            Self::ShuttleDouble => Self::ShuttleSingle,
-            Self::PincherNone => Self::PincherSingle,
-            Self::PincherSingle => Self::PincherNone,
-            Self::JesterNone => Self::JesterSingle,
-            Self::JesterSingle => Self::JesterNone,
-        }
-    }
-
-    fn style(&self) -> SpaceshipStyle {
-        match self {
-            Self::ShuttleNone => SpaceshipStyle::Shuttle,
-            Self::ShuttleSingle => SpaceshipStyle::Shuttle,
-            Self::ShuttleDouble => SpaceshipStyle::Shuttle,
-            Self::PincherNone => SpaceshipStyle::Pincher,
-            Self::PincherSingle => SpaceshipStyle::Pincher,
-            Self::JesterNone => SpaceshipStyle::Jester,
-            Self::JesterSingle => SpaceshipStyle::Jester,
-        }
-    }
     fn crew_capacity(&self) -> u8 {
         match self {
             Self::ShuttleDouble => 1,
@@ -659,115 +669,14 @@ impl SpaceshipComponent for Storage {
             _ => 0,
         }
     }
-    fn cost(&self) -> u32 {
+
+    fn value(&self) -> u32 {
         match self {
-            Self::ShuttleSingle => 5000,
-            Self::ShuttleDouble => 6000,
-            Self::PincherSingle => 6000,
-            Self::JesterSingle => 18000,
+            Self::ShuttleSingle => 7_000,
+            Self::ShuttleDouble => 14_500,
+            Self::PincherSingle => 6_000,
+            Self::JesterSingle => 5_500,
             _ => 0,
-        }
-    }
-
-    fn upgrade_cost(&self) -> Vec<(Resource, u32)> {
-        if self.next().cost() < self.cost() {
-            return vec![];
-        }
-        if self == &Storage::JesterNone {
-            return vec![(Resource::SATOSHI, 30_000), (Resource::RUM, 50)];
-        }
-
-        let scraps_cost = (self.next().cost() - self.cost()) / 30;
-
-        let cost = vec![
-            (Resource::SATOSHI, self.next().cost() - self.cost()),
-            (Resource::SCRAPS, scraps_cost),
-        ];
-
-        cost
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Hash, EnumIter)]
-pub enum SpaceshipUpgradeTarget {
-    Hull { component: Hull },
-    Engine { component: Engine },
-    Storage { component: Storage },
-    Shooter { component: Shooter },
-    Repairs { amount: u32 },
-}
-
-impl SpaceshipUpgradeTarget {
-    pub const MAX_INDEX: usize = 5; // = SpaceshipUpgradeTarget::iter().count();
-}
-
-impl Default for SpaceshipUpgradeTarget {
-    fn default() -> Self {
-        Self::Repairs { amount: 0 }
-    }
-}
-
-impl Display for SpaceshipUpgradeTarget {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Hull { .. } => write!(f, "Hull"),
-            Self::Engine { .. } => write!(f, "Engine"),
-            Self::Storage { .. } => write!(f, "Storage"),
-            Self::Shooter { .. } => write!(f, "Shooter"),
-            Self::Repairs { .. } => write!(f, "Repairs"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default, Hash)]
-pub struct SpaceshipUpgrade {
-    pub target: SpaceshipUpgradeTarget,
-    pub started: Tick,
-    pub duration: Tick,
-}
-
-impl SpaceshipUpgrade {
-    pub const REPAIR_BASE_COST: u32 = 120;
-    pub const REPAIR_BASE_DURATION: Tick = 2 * MINUTES;
-    pub const BASE_DURATION: Tick = 8 * HOURS;
-
-    pub fn new(target: SpaceshipUpgradeTarget, bonus: f32) -> Self {
-        let duration = (match target {
-            SpaceshipUpgradeTarget::Repairs { amount } => {
-                amount as Tick * SpaceshipUpgrade::REPAIR_BASE_DURATION
-            }
-            _ => SpaceshipUpgrade::BASE_DURATION,
-        } as f32
-            / bonus) as Tick;
-        SpaceshipUpgrade {
-            started: Tick::now(),
-            duration,
-            target,
-        }
-    }
-
-    pub fn description(&self) -> String {
-        match self.target {
-            SpaceshipUpgradeTarget::Repairs { .. } => "Repairing spaceship".to_string(),
-            _ => format!("Upgrading {}", self.target),
-        }
-    }
-
-    pub fn cost(&self) -> Vec<(Resource, u32)> {
-        match self.target {
-            SpaceshipUpgradeTarget::Hull { component } => component.previous().upgrade_cost(),
-            SpaceshipUpgradeTarget::Engine { component } => component.previous().upgrade_cost(),
-            SpaceshipUpgradeTarget::Storage { component } => component.previous().upgrade_cost(),
-            SpaceshipUpgradeTarget::Shooter { component } => component.previous().upgrade_cost(),
-            SpaceshipUpgradeTarget::Repairs { amount } => {
-                vec![
-                    (
-                        Resource::SATOSHI,
-                        amount * SpaceshipUpgrade::REPAIR_BASE_COST,
-                    ),
-                    (Resource::SCRAPS, amount),
-                ]
-            }
         }
     }
 }
@@ -775,8 +684,14 @@ impl SpaceshipUpgrade {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, Hash)]
 pub struct Spaceship {
     pub name: String,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub charge_unit: ChargeUnit,
     pub hull: Hull,
     pub engine: Engine,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub shield: Shield,
     pub storage: Storage,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
@@ -787,22 +702,25 @@ pub struct Spaceship {
     pub image: SpaceshipImage,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub pending_upgrade: Option<SpaceshipUpgrade>,
+    pub pending_upgrade: Option<Upgrade<SpaceshipUpgradeTarget>>,
 }
 
 impl Spaceship {
     pub fn new(
-        name: String,
+        charge_unit: ChargeUnit,
         hull: Hull,
         engine: Engine,
         storage: Storage,
+        shield: Shield,
         shooter: Shooter,
         color_map: ColorMap,
     ) -> Self {
         let mut spaceship = Self {
-            name,
+            name: "".into(),
+            charge_unit,
             hull,
             engine,
+            shield,
             storage,
             shooter,
             current_durability: 0,
@@ -814,49 +732,52 @@ impl Spaceship {
         spaceship
     }
 
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
+        self
+    }
+
     pub fn reset_durability(&mut self) {
-        self.current_durability = self.durability()
+        self.current_durability = self.max_durability()
     }
 
     pub fn can_be_repaired(&self) -> bool {
-        self.current_durability() < self.durability()
+        self.current_durability() < self.max_durability()
     }
 
     pub fn can_be_upgraded(&self, target: SpaceshipUpgradeTarget) -> bool {
         match target {
+            SpaceshipUpgradeTarget::ChargeUnit { .. } => self.charge_unit.can_be_upgraded(),
             SpaceshipUpgradeTarget::Hull { .. } => self.hull.can_be_upgraded(),
             SpaceshipUpgradeTarget::Engine { .. } => self.engine.can_be_upgraded(),
-            SpaceshipUpgradeTarget::Storage { .. } => self.storage.can_be_upgraded(),
+            SpaceshipUpgradeTarget::Shield { .. } => self.shield.can_be_upgraded(),
             SpaceshipUpgradeTarget::Shooter { .. } => self.shooter.can_be_upgraded(),
+            SpaceshipUpgradeTarget::Storage { .. } => self.storage.can_be_upgraded(),
             SpaceshipUpgradeTarget::Repairs { .. } => self.can_be_repaired(),
         }
     }
 
-    pub fn random(name: String, rng: &mut ChaCha8Rng) -> Self {
-        let style = SpaceshipStyle::iter().choose(rng).unwrap();
-        let hull = Hull::iter()
-            .filter(|h| h.style() == style)
+    pub fn random(rng: &mut ChaCha8Rng) -> Self {
+        let style = SpaceshipStyle::iter()
             .choose(rng)
-            .expect("Should choose a valid component");
-        let engine = Engine::iter()
-            .filter(|e| e.style() == style)
-            .choose(rng)
-            .expect("Should choose a valid component");
-        let storage = Storage::iter()
-            .filter(|s| s.style() == style)
-            .choose(rng)
-            .expect("Should choose a valid component");
+            .expect("There should be one available style.");
 
-        let shooter = Shooter::iter()
-            .filter(|s| s.style() == style)
-            .choose(rng)
-            .expect("Should choose a valid component");
+        let charge_unit = ChargeUnit::random_for(rng, style);
+        let hull = Hull::random_for(rng, style);
+        let engine = Engine::random_for(rng, style);
+        let shield = Shield::random_for(rng, style);
+        let storage = Storage::random_for(rng, style);
+        let shooter = Shooter::random_for(rng, style);
 
-        Self::new(name, hull, engine, storage, shooter, ColorMap::random(rng))
-    }
-
-    pub fn style(&self) -> SpaceshipStyle {
-        self.hull.style()
+        Self::new(
+            charge_unit,
+            hull,
+            engine,
+            storage,
+            shield,
+            shooter,
+            ColorMap::random(rng),
+        )
     }
 
     pub fn with_color_map(mut self, color_map: ColorMap) -> Self {
@@ -874,6 +795,7 @@ impl Spaceship {
             self.engine,
             self.storage,
             self.shooter,
+            Shield::None,
             false,
             false,
         )
@@ -885,8 +807,21 @@ impl Spaceship {
             self.engine,
             self.storage,
             self.shooter,
+            Shield::None,
             false,
             true,
+        )
+    }
+
+    pub fn compose_image_with_shield(&self) -> AppResult<Gif> {
+        self.image.compose(
+            self.hull,
+            self.engine,
+            self.storage,
+            self.shooter,
+            self.shield,
+            false,
+            false,
         )
     }
 
@@ -896,6 +831,7 @@ impl Spaceship {
             self.engine,
             self.storage,
             self.shooter,
+            Shield::None,
             true,
             false,
         )
@@ -905,10 +841,6 @@ impl Spaceship {
         // Returns the speed in Km/ms (Kilometers per Tick)
         BASE_SPEED * self.hull.speed() * self.engine.speed() * self.storage.speed()
             / (1.0 + SPEED_PENALTY_PER_UNIT_STORAGE * storage_units as f32)
-    }
-
-    pub fn durability(&self) -> u32 {
-        self.hull.durability() + self.engine.durability() + self.storage.durability()
     }
 
     pub fn damage(&self) -> f32 {
@@ -948,11 +880,27 @@ impl Spaceship {
     }
 
     pub fn set_current_durability(&mut self, value: u32) {
-        self.current_durability = value.min(self.durability());
+        self.current_durability = value.min(self.max_durability());
     }
 
     pub fn current_durability(&self) -> u32 {
         self.current_durability
+    }
+
+    pub fn max_durability(&self) -> u32 {
+        self.hull.durability() + self.engine.durability() + self.storage.durability()
+    }
+
+    pub fn max_charge(&self) -> u32 {
+        self.charge_unit.max_charge() as u32
+    }
+
+    pub fn shield_max_durability(&self) -> f32 {
+        self.shield.max_durability()
+    }
+
+    pub fn shield_damage_reduction(&self) -> f32 {
+        self.shield.damage_reduction()
     }
 
     pub fn crew_capacity(&self) -> u8 {
@@ -963,9 +911,9 @@ impl Spaceship {
         capacity
     }
 
-    pub fn cost(&self) -> u32 {
-        let base_cost = self.hull.cost() + self.engine.cost() + self.storage.cost();
-        (base_cost as f32 * SPACESHIP_BASE_COST_MULTIPLIER) as u32
+    pub fn value(&self) -> u32 {
+        let base_value = self.hull.value() + self.engine.value() + self.storage.value();
+        (base_value as f32 * SPACESHIP_BASE_COST_MULTIPLIER) as u32
     }
 
     pub fn max_distance(&self, current_fuel: u32) -> f32 {
@@ -996,85 +944,94 @@ pub enum SpaceshipPrefab {
 }
 
 impl SpaceshipPrefab {
-    pub fn spaceship(&self, name: impl Into<String>) -> Spaceship {
+    pub fn spaceship(&self) -> Spaceship {
         match self {
             Self::Yukawa => Spaceship::new(
-                name.into(),
+                ChargeUnit::Small,
                 Hull::ShuttleSmall,
                 Engine::ShuttleTriple,
                 Storage::ShuttleNone,
-                Shooter::ShuttleSingle,
+                Shield::Small,
+                Shooter::ShuttleNone,
                 ColorMap::default(),
             ),
             Self::Milwaukee => Spaceship::new(
-                name.into(),
+                ChargeUnit::Medium,
                 Hull::ShuttleLarge,
                 Engine::ShuttleTriple,
                 Storage::ShuttleNone,
+                Shield::Small,
                 Shooter::ShuttleTriple,
                 ColorMap::default(),
             ),
             Self::Cafiero => Spaceship::new(
-                name.into(),
+                ChargeUnit::Medium,
                 Hull::ShuttleStandard,
                 Engine::ShuttleSingle,
                 Storage::ShuttleSingle,
+                Shield::Medium,
                 Shooter::ShuttleTriple,
                 ColorMap::default(),
             ),
             Self::Bresci => Spaceship::new(
-                name.into(),
+                ChargeUnit::Small,
                 Hull::ShuttleSmall,
                 Engine::ShuttleSingle,
                 Storage::ShuttleNone,
-                Shooter::ShuttleSingle,
+                Shield::None,
+                Shooter::ShuttleNone,
                 ColorMap::default(),
             ),
             Self::Pincher => Spaceship::new(
-                name.into(),
+                ChargeUnit::Large,
                 Hull::PincherStandard,
                 Engine::PincherTriple,
                 Storage::PincherSingle,
+                Shield::Small,
                 Shooter::PincherDouble,
                 ColorMap::default(),
             ),
             Self::Orwell => Spaceship::new(
-                name.into(),
+                ChargeUnit::Small,
                 Hull::PincherStandard,
                 Engine::PincherSingle,
                 Storage::PincherNone,
-                Shooter::PincherDouble,
+                Shield::None,
+                Shooter::PincherNone,
                 ColorMap::default(),
             ),
             Self::Ragnarok => Spaceship::new(
-                name.into(),
+                ChargeUnit::Large,
                 Hull::PincherLarge,
                 Engine::PincherDouble,
                 Storage::PincherNone,
+                Shield::Medium,
                 Shooter::PincherQuadruple,
                 ColorMap::default(),
             ),
             Self::Ibarruri => Spaceship::new(
-                name.into(),
+                ChargeUnit::Small,
                 Hull::JesterStandard,
                 Engine::JesterDouble,
                 Storage::JesterNone,
-                Shooter::JesterDouble,
+                Shield::None,
+                Shooter::JesterNone,
                 ColorMap::default(),
             ),
             Self::Rivolta => Spaceship::new(
-                name.into(),
+                ChargeUnit::Large,
                 Hull::JesterStandard,
                 Engine::JesterQuadruple,
                 Storage::JesterNone,
+                Shield::Medium,
                 Shooter::JesterQuadruple,
                 ColorMap::default(),
             ),
         }
     }
 
-    pub fn cost(&self) -> u32 {
-        self.spaceship("".to_string()).cost()
+    pub fn value(&self) -> u32 {
+        self.spaceship().value()
     }
 }
 
@@ -1083,7 +1040,7 @@ impl SpaceshipPrefab {
 mod tests {
     use super::*;
     use crate::{
-        types::{SystemTimeTick, TeamId},
+        types::SystemTimeTick,
         world::{team::Team, types::TeamLocation, world::World},
     };
     use itertools::Itertools;
@@ -1091,14 +1048,13 @@ mod tests {
 
     #[test]
     fn test_spaceship_prefab_data() {
-        let name = "test".to_string();
-        let spaceship = SpaceshipPrefab::Yukawa.spaceship(name);
+        let spaceship = SpaceshipPrefab::Yukawa.spaceship();
         let speed = spaceship.speed(0);
         let crew_capacity = spaceship.crew_capacity();
         let storage_capacity = spaceship.storage_capacity();
         let fuel_capacity = spaceship.fuel_capacity();
         let fuel_consumption = spaceship.fuel_consumption_per_tick(0);
-        let cost = spaceship.cost();
+        let value = spaceship.value();
         let max_distance = spaceship.max_distance(fuel_capacity);
         let max_travel_time = spaceship.max_travel_time(fuel_capacity);
 
@@ -1117,7 +1073,7 @@ mod tests {
             fuel_consumption,
             fuel_consumption * HOURS as f32
         );
-        println!("Cost: {}", cost);
+        println!("Value: {}", value);
         println!(
             "Max Distance: {} Km = {:.2} AU",
             max_distance,
@@ -1132,8 +1088,7 @@ mod tests {
 
     #[test]
     fn test_total_travelled_au() -> AppResult<()> {
-        let name = "test".to_string();
-        let spaceship = SpaceshipPrefab::Yukawa.spaceship(name);
+        let spaceship = SpaceshipPrefab::Yukawa.spaceship();
 
         let mut world = World::new(None);
 
@@ -1143,7 +1098,7 @@ mod tests {
         let from = planet_ids[0].clone();
         let to = planet_ids[1].clone();
         let rng = &mut ChaCha8Rng::from_os_rng();
-        let mut team = Team::random(TeamId::new_v4(), from.clone(), "test", "test", rng);
+        let mut team = Team::random(rng).with_home_planet(from);
         team.spaceship = spaceship;
         team.current_location = TeamLocation::Travelling {
             from,

@@ -1,12 +1,12 @@
 use super::{
-    action::{Action, ActionOutput, ActionSituation, EngineAction},
+    action::{Action, ActionOutput, ActionSituation},
     constants::*,
-    end_of_quarter::EndOfQuarter,
-    substitution::Substitution,
     timer::{Period, Timer},
     types::{GameStatsMap, Possession, TeamInGame},
 };
 use crate::{
+    app_version,
+    game_engine::{end_of_quarter, substitution},
     types::{GameId, PlanetId, PlayerId, SortablePlayerMap, TeamId, Tick},
     world::{
         constants::{MoraleModifier, TirednessCost},
@@ -45,6 +45,9 @@ pub struct GameSummary {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub is_network: bool,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    app_version: [usize; 3],
 }
 
 impl GameSummary {
@@ -98,8 +101,8 @@ impl GameSummary {
             starting_at: game.starting_at,
             ended_at: game.ended_at,
             winner: game.winner,
-            is_network: game.home_team_in_game.peer_id.is_some()
-                || game.away_team_in_game.peer_id.is_some(),
+            is_network: game.is_network(),
+            app_version: game.app_version,
         }
     }
 }
@@ -129,9 +132,12 @@ pub struct Game {
     pub winner: Option<TeamId>,
     pub home_team_mvps: Option<Vec<GameMVPSummary>>,
     pub away_team_mvps: Option<Vec<GameMVPSummary>>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    app_version: [usize; 3],
 }
 
-impl<'game> Game {
+impl Game {
     pub fn is_network(&self) -> bool {
         self.home_team_in_game.peer_id.is_some() && self.away_team_in_game.peer_id.is_some()
     }
@@ -189,99 +195,100 @@ impl<'game> Game {
             winner: None,
             home_team_mvps: None,
             away_team_mvps: None,
+            app_version: app_version(),
         };
         let seed = game.get_rng_seed();
         let mut action_rng = ChaCha8Rng::from_seed(seed);
 
         let attendance = (BASE_ATTENDANCE as f32
             + (total_reputation.value() as f32).powf(2.0) * planet.total_population() as f32)
-            * action_rng.random_range(0.75..1.25)
+            * action_rng.random_range(0.75..=1.25)
             * (1.0 + bonus_attendance);
         game.attendance = attendance as u32;
         let mut default_output = ActionOutput::default();
 
         let opening_text = [
-    format!(
-        "{} vs {}. The intergalactic showdown is kicking off on {}! {} fans have packed the arena{}.",
-        home_name,
-        away_name,
-        planet.name,
-        game.attendance,
-        if game.attendance == 69 { " (nice)" } else { "" }
-    ),
-    format!(
-        "It's {} against {}! We're live here on {} where {} spectators{} are buzzing with excitement.",
-        home_name,
-        away_name,
-        planet.name,
-        game.attendance,
-        if game.attendance == 69 { " (nice)" } else { "" }
-    ),
-    format!(
-        "The stage is set on {} for {} vs {}. A crowd of {}{} fans is ready for the action to unfold!",
-        planet.name,
-        home_name,
-        away_name,
-        game.attendance,
-        if game.attendance == 69 { " (nice)" } else { "" }
-    ),
-    format!(
-        "{} and {} clash today on {}! An electric atmosphere fills the stadium with {} fans{} watching closely.",
-        home_name,
-        away_name,
-        planet.name,
-        game.attendance,
-        if game.attendance == 69 { " (nice)" } else { "" }
-    ),
-    format!(
-        "Welcome to {} for an epic battle: {} vs {}. The crowd of {} fans{} is ready to witness greatness!",
-        planet.name,
-        home_name,
-        away_name,
-        game.attendance,
-        if game.attendance == 69 { " (nice)" } else { "" }
-    ),
-    format!(
-        "Tonight on {}, it's {} taking on {}. With {} passionate fans{} in attendance, the game is about to ignite!",
-        planet.name,
-        home_name,
-        away_name,
-        game.attendance,
-        if game.attendance == 69 { " (nice)" } else { "" }
-    ),
-    format!(
-        "Game night on {}! {} faces off against {} before {} eager fans{} under the starry skies.",
-        planet.name,
-        home_name,
-        away_name,
-        game.attendance,
-        if game.attendance == 69 { " (nice)" } else { "" }
-    ),
-    format!(
-        "The rivalry continues on {}: {} vs {}. The crowd of {} fans{} is fired up for this clash!",
-        planet.name,
-        home_name,
-        away_name,
-        game.attendance,
-        if game.attendance == 69 { " (nice)" } else { "" }
-    ),
-    format!(
-        "All eyes are on {} as {} battles {}. An audience of {}{} is here to cheer for their team!",
-        planet.name,
-        home_name,
-        away_name,
-        game.attendance,
-        if game.attendance == 69 { " (nice)" } else { "" }
-    ),
-    format!(
-        "Here on {}, it's {} vs {}. A roaring crowd of {} fans{} awaits the start of the showdown!",
-        planet.name,
-        home_name,
-        away_name,
-        game.attendance,
-        if game.attendance == 69 { " (nice)" } else { "" }
-    ),
-].choose(&mut action_rng).expect("There should be one option").clone();
+            format!(
+                "{} vs {}. The intergalactic showdown is kicking off on {}! {} fans have packed the arena{}.",
+                home_name,
+                away_name,
+                planet.name,
+                game.attendance,
+                if game.attendance == 69 { " (nice)" } else { "" }
+            ),
+            format!(
+                "It's {} against {}! We're live here on {} where {} spectators{} are buzzing with excitement.",
+                home_name,
+                away_name,
+                planet.name,
+                game.attendance,
+                if game.attendance == 69 { " (nice)" } else { "" }
+            ),
+            format!(
+                "The stage is set on {} for {} vs {}. A crowd of {}{} fans is ready for the action to unfold!",
+                planet.name,
+                home_name,
+                away_name,
+                game.attendance,
+                if game.attendance == 69 { " (nice)" } else { "" }
+            ),
+            format!(
+                "{} and {} clash today on {}! An electric atmosphere fills the stadium with {} fans{} watching closely.",
+                home_name,
+                away_name,
+                planet.name,
+                game.attendance,
+                if game.attendance == 69 { " (nice)" } else { "" }
+            ),
+            format!(
+                "Welcome to {} for an epic battle: {} vs {}. The crowd of {} fans{} is ready to witness greatness!",
+                planet.name,
+                home_name,
+                away_name,
+                game.attendance,
+                if game.attendance == 69 { " (nice)" } else { "" }
+            ),
+            format!(
+                "Tonight on {}, it's {} taking on {}. With {} passionate fans{} in attendance, the game is about to ignite!",
+                planet.name,
+                home_name,
+                away_name,
+                game.attendance,
+                if game.attendance == 69 { " (nice)" } else { "" }
+            ),
+            format!(
+                "Game night on {}! {} faces off against {} before {} eager fans{} under the starry skies.",
+                planet.name,
+                home_name,
+                away_name,
+                game.attendance,
+                if game.attendance == 69 { " (nice)" } else { "" }
+            ),
+            format!(
+                "The rivalry continues on {}: {} vs {}. The crowd of {} fans{} is fired up for this clash!",
+                planet.name,
+                home_name,
+                away_name,
+                game.attendance,
+                if game.attendance == 69 { " (nice)" } else { "" }
+            ),
+            format!(
+                "All eyes are on {} as {} battles {}. An audience of {}{} is here to cheer for their team!",
+                planet.name,
+                home_name,
+                away_name,
+                game.attendance,
+                if game.attendance == 69 { " (nice)" } else { "" }
+            ),
+            format!(
+                "Here on {}, it's {} vs {}. A roaring crowd of {} fans{} awaits the start of the showdown!",
+                planet.name,
+                home_name,
+                away_name,
+                game.attendance,
+                if game.attendance == 69 { " (nice)" } else { "" }
+            ),
+        ].choose(&mut action_rng).expect("There should be one option").clone();
 
         default_output.description = opening_text;
         default_output.random_seed = seed;
@@ -518,11 +525,10 @@ impl<'game> Game {
                 }
             }
         }
-
-        assert!(self.home_team_in_game.stats.len() == self.home_team_in_game.players.len());
     }
 
     fn apply_tiredness_update(&mut self) {
+        // Apply low generic tiredness to all playing players and recovery for bench players.
         for team in [&mut self.home_team_in_game, &mut self.away_team_in_game] {
             for (id, player) in team.players.iter_mut() {
                 let stats = team.stats.get_mut(id).expect("Player should have stats");
@@ -533,71 +539,14 @@ impl<'game> Game {
                             .position
                             .expect("Playing player should have a position")
                             as usize] += 1;
-                        player.add_tiredness(TirednessCost::LOW);
+                        player.add_tiredness(TirednessCost::LOW * team.tactic.tiredness_modifier());
                     }
-                } else if player.tiredness > RECOVERING_TIREDNESS_PER_SHORT_TICK
-                    && !player.is_knocked_out()
-                {
+                } else if !player.is_knocked_out() {
                     // We don't use add_tiredness here because otherwise the stamina would have an effect.
-                    player.tiredness -= RECOVERING_TIREDNESS_PER_SHORT_TICK;
+                    player.tiredness =
+                        (player.tiredness - RECOVERING_TIREDNESS_PER_SHORT_TICK).bound();
                 }
             }
-        }
-    }
-
-    pub fn attacking_players(&self) -> Vec<&Player> {
-        match self.possession {
-            Possession::Home => self
-                .home_team_in_game
-                .players
-                .by_position(&self.home_team_in_game.stats)
-                .iter()
-                .take(MAX_POSITION as usize)
-                .copied()
-                .collect::<Vec<&Player>>(),
-            Possession::Away => self
-                .away_team_in_game
-                .players
-                .by_position(&self.away_team_in_game.stats)
-                .iter()
-                .take(MAX_POSITION as usize)
-                .copied()
-                .collect::<Vec<&Player>>(),
-        }
-    }
-
-    pub fn defending_players(&self) -> Vec<&Player> {
-        match self.possession {
-            Possession::Home => self
-                .away_team_in_game
-                .players
-                .by_position(&self.away_team_in_game.stats)
-                .iter()
-                .take(5)
-                .copied()
-                .collect::<Vec<&Player>>(),
-            Possession::Away => self
-                .home_team_in_game
-                .players
-                .by_position(&self.home_team_in_game.stats)
-                .iter()
-                .take(5)
-                .copied()
-                .collect::<Vec<&Player>>(),
-        }
-    }
-
-    pub fn attacking_stats(&self) -> &GameStatsMap {
-        match self.possession {
-            Possession::Home => &self.home_team_in_game.stats,
-            Possession::Away => &self.away_team_in_game.stats,
-        }
-    }
-
-    pub fn defending_stats(&self) -> &GameStatsMap {
-        match self.possession {
-            Possession::Home => &self.away_team_in_game.stats,
-            Possession::Away => &self.home_team_in_game.stats,
         }
     }
 
@@ -613,6 +562,34 @@ impl<'game> Game {
             Possession::Home => &self.away_team_in_game,
             Possession::Away => &self.home_team_in_game,
         }
+    }
+
+    fn attacking_stats(&self) -> &GameStatsMap {
+        &self.attacking_team().stats
+    }
+
+    fn defending_stats(&self) -> &GameStatsMap {
+        &self.defending_team().stats
+    }
+
+    pub fn attacking_players(&self) -> Vec<&Player> {
+        self.attacking_team()
+            .players
+            .by_position(self.attacking_stats())
+            .iter()
+            .take(MAX_POSITION as usize)
+            .copied()
+            .collect::<Vec<&Player>>()
+    }
+
+    pub fn defending_players(&self) -> Vec<&Player> {
+        self.defending_team()
+            .players
+            .by_position(self.defending_stats())
+            .iter()
+            .take(MAX_POSITION as usize)
+            .copied()
+            .collect::<Vec<&Player>>()
     }
 
     fn get_rng_seed(&self) -> [u8; 32] {
@@ -647,28 +624,37 @@ impl<'game> Game {
         }
     }
 
-    fn game_end_description(&self, winner: Option<&str>) -> String {
-        let (home, away) = self.get_score();
-        if let Some(winner_name) = winner {
-            let loser_name = if winner_name == self.home_team_in_game.name {
-                self.away_team_in_game.name.clone()
-            } else {
-                self.home_team_in_game.name.clone()
-            };
-            format!(
-                "{} won this nice game over {}. The final score is {} {}-{} {}.",
-                winner_name,
-                loser_name,
-                self.home_team_in_game.name,
-                home,
-                away,
-                self.away_team_in_game.name,
-            )
-        } else {
-            format!(
+    fn game_end_description(&self, winner: Option<Possession>) -> String {
+        let (home_score, away_score) = self.get_score();
+        match winner {
+            Some(Possession::Home) => {
+                format!(
+                    "{} won this nice game over {}. The final score is {} {}-{} {}.",
+                    self.home_team_in_game.name,
+                    self.away_team_in_game.name,
+                    self.home_team_in_game.name,
+                    home_score,
+                    away_score,
+                    self.away_team_in_game.name,
+                )
+            }
+
+            Some(Possession::Away) => {
+                format!(
+                    "{} won this nice game over {}. The final score is {} {}-{} {}.",
+                    self.away_team_in_game.name,
+                    self.home_team_in_game.name,
+                    self.home_team_in_game.name,
+                    home_score,
+                    away_score,
+                    self.away_team_in_game.name,
+                )
+            }
+
+            None => format!(
                 "It's a tie! The final score is {} {}-{} {}.",
-                self.home_team_in_game.name, home, away, self.away_team_in_game.name
-            )
+                self.home_team_in_game.name, home_score, away_score, self.away_team_in_game.name
+            ),
         }
     }
 
@@ -695,11 +681,11 @@ impl<'game> Game {
             let description = match self.get_score() {
                 (home, away) if home > away => {
                     self.winner = Some(self.home_team_in_game.team_id);
-                    self.game_end_description(Some(&self.home_team_in_game.name))
+                    self.game_end_description(Some(Possession::Home))
                 }
                 (home, away) if home < away => {
                     self.winner = Some(self.away_team_in_game.team_id);
-                    self.game_end_description(Some(&self.away_team_in_game.name))
+                    self.game_end_description(Some(Possession::Away))
                 }
                 _ => {
                     self.winner = None;
@@ -736,7 +722,7 @@ impl<'game> Game {
         // If next tick is at a break, we are at the end of the quarter and should stop.
         if self.timer.is_break() {
             if let Some(eoq) =
-                EndOfQuarter::execute(action_input, self, action_rng, description_rng)
+                end_of_quarter::execute(action_input, self, action_rng, description_rng)
             {
                 self.next_step = self.timer.period().next().start();
                 self.action_results.push(eoq);
@@ -803,21 +789,9 @@ impl<'game> Game {
                         self.ended_at = Some(current_tick);
                         self.home_team_mvps = Some(self.team_mvps(Possession::Home));
                         self.away_team_mvps = Some(self.team_mvps(Possession::Away));
+                        self.winner = None;
 
-                        let description = match self.get_score() {
-                            (home, away) if home > away => {
-                                self.winner = Some(self.home_team_in_game.team_id);
-                                self.game_end_description(Some(&self.home_team_in_game.name))
-                            }
-                            (home, away) if home < away => {
-                                self.winner = Some(self.away_team_in_game.team_id);
-                                self.game_end_description(Some(&self.away_team_in_game.name))
-                            }
-                            _ => {
-                                self.winner = None;
-                                self.game_end_description(None)
-                            }
-                        };
+                        let description = self.game_end_description(None);
 
                         self.action_results.push(ActionOutput {
                             description: format!(
@@ -838,7 +812,7 @@ impl<'game> Game {
                         self.winner = Some(self.away_team_in_game.team_id);
                         let description = format!(
                             "The home team is completely wasted and lost! {}",
-                            self.game_end_description(Some(&self.away_team_in_game.name))
+                            self.game_end_description(Some(Possession::Away))
                         );
 
                         self.action_results.push(ActionOutput {
@@ -858,7 +832,7 @@ impl<'game> Game {
                         self.winner = Some(self.home_team_in_game.team_id);
                         let description = format!(
                             "The away team is completely wasted and lost! {}",
-                            self.game_end_description(Some(&self.away_team_in_game.name))
+                            self.game_end_description(Some(Possession::Home))
                         );
 
                         self.action_results.push(ActionOutput {
@@ -874,7 +848,7 @@ impl<'game> Game {
                     // Check if teams make substitutions. Only if ball is out
                     {
                         if let Some(sub) =
-                            Substitution::execute(action_input, self, action_rng, description_rng)
+                            substitution::execute(action_input, self, action_rng, description_rng)
                         {
                             self.apply_sub_update(
                                 sub.attack_stats_update.clone(),
@@ -893,17 +867,14 @@ impl<'game> Game {
 mod tests {
     use super::Game;
     use crate::game_engine::action::Advantage;
-    use crate::game_engine::constants::NUMBER_OF_ROLLS;
     use crate::game_engine::game::GameSummary;
-    use crate::game_engine::types::{GameStats, GameStatsMap, TeamInGame};
+    use crate::game_engine::types::{GameStatsMap, TeamInGame};
     use crate::types::{AppResult, GameId};
     use crate::types::{SystemTimeTick, Tick};
     use crate::world::constants::DEFAULT_PLANET_ID;
     use crate::world::world::World;
-    use itertools::Itertools;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
-    use std::collections::{BTreeMap, HashMap};
 
     #[test]
     fn test_game() -> AppResult<()> {
@@ -924,16 +895,16 @@ mod tests {
             Some(0.0),
         )?;
 
-        let home_team_in_game = TeamInGame::from_team_id(&id0, &world.teams, &world.players);
-        let away_team_in_game = TeamInGame::from_team_id(&id1, &world.teams, &world.players);
+        let home_team_in_game = TeamInGame::from_team_id(&id0, &world.teams, &world.players)?;
+        let away_team_in_game = TeamInGame::from_team_id(&id1, &world.teams, &world.players)?;
 
         let home_rating = world.team_rating(&id0).unwrap_or_default();
         let away_rating = world.team_rating(&id1).unwrap_or_default();
 
         let game = Game::new(
             GameId::new_v4(),
-            home_team_in_game.unwrap(),
-            away_team_in_game.unwrap(),
+            home_team_in_game,
+            away_team_in_game,
             Tick::now(),
             &world.get_planet(&DEFAULT_PLANET_ID).unwrap(),
         );
@@ -1018,308 +989,6 @@ mod tests {
             "Shots: 2pt:{}/{} 3pt:{}/{}",
             made_2pt, attempted_2pt, made_3pt, attempted_3pt
         );
-
-        Ok(())
-    }
-
-    /// Sum the provided selector over a team's GameStatsMap.
-    /// `stats` is a GameStatsMap (player_id -> GameStats).
-    fn team_stat_sum<F>(stats: &GameStatsMap, selector: F) -> f32
-    where
-        F: Fn(&GameStats) -> f32,
-    {
-        stats.values().map(|stat| selector(stat)).sum()
-    }
-
-    fn get_simulated_game_stats(
-        world: &mut World,
-        action_rng: &mut ChaCha8Rng,
-        n_games: usize,
-    ) -> AppResult<Vec<(f32, GameStatsMap, GameStatsMap)>> {
-        let mut samples = Vec::with_capacity(n_games);
-        const DELTA: f32 = 6.0;
-        for i in 0..n_games {
-            let id0 = world.generate_random_team(
-                action_rng,
-                DEFAULT_PLANET_ID.clone(),
-                "Testen".to_string(),
-                "Tosten".to_string(),
-                Some(DELTA * i as f32 / n_games as f32),
-            )?;
-            let id1 = world.generate_random_team(
-                action_rng,
-                DEFAULT_PLANET_ID.clone(),
-                "Holalo".to_string(),
-                "Halley".to_string(),
-                Some(-DELTA * i as f32 / n_games as f32),
-            )?;
-
-            let home_team_in_game = TeamInGame::from_team_id(&id0, &world.teams, &world.players);
-            let away_team_in_game = TeamInGame::from_team_id(&id1, &world.teams, &world.players);
-
-            let home_rating = world.team_rating(&id0).unwrap_or_default();
-            let away_rating = world.team_rating(&id1).unwrap_or_default();
-
-            let mut game = Game::new(
-                GameId::new_v4(),
-                home_team_in_game.unwrap(),
-                away_team_in_game.unwrap(),
-                Tick::now(),
-                &world.get_planet(&DEFAULT_PLANET_ID).unwrap(),
-            );
-
-            // Simulate until finished
-            while !game.has_ended() {
-                let current_tick = Tick::now();
-                if game.has_started(current_tick) {
-                    game.tick(current_tick);
-                }
-            }
-
-            // Reorder so home team is always higher rated one.
-            if home_rating >= away_rating {
-                samples.push((
-                    home_rating - away_rating,
-                    game.home_team_in_game.stats.clone(),
-                    game.away_team_in_game.stats.clone(),
-                ));
-            } else {
-                samples.push((
-                    away_rating - home_rating,
-                    game.away_team_in_game.stats.clone(),
-                    game.home_team_in_game.stats.clone(),
-                ));
-            }
-        }
-
-        Ok(samples)
-    }
-
-    /// Returns (mean, stddev, count) per bin_center (int)
-    fn compute_binned_stats<F>(
-        samples: &Vec<(f32, GameStatsMap, GameStatsMap)>, // (rating_diff, home_stas, away_stats)
-        bin_size: f32,
-        selectors: Vec<F>,
-    ) -> BTreeMap<i32, ((Vec<f32>, Vec<f32>), (Vec<f32>, Vec<f32>), usize)>
-    where
-        F: Fn(&GameStats) -> f32,
-    {
-        // First pass: sum and count for each selector
-        let default_entry = (
-            vec![0.0f32].repeat(selectors.len()), // away avg/stddev for each selector
-            vec![0.0f32].repeat(selectors.len()), // home avg/stddev for each selector
-            0usize,
-        );
-        let mut sums: BTreeMap<i32, (Vec<f32>, Vec<f32>, usize)> = BTreeMap::new();
-        for (rating_diff, home_stats, away_stats) in samples {
-            let bin = ((*rating_diff) / bin_size).round() as i32;
-            let entry = sums.entry(bin).or_insert(default_entry.clone());
-            for (idx, selector) in selectors.iter().enumerate() {
-                entry.0[idx] += team_stat_sum(home_stats, selector);
-                entry.1[idx] += team_stat_sum(away_stats, selector);
-            }
-            entry.2 += 1;
-        }
-
-        // Means
-        let mut means: BTreeMap<i32, (Vec<f32>, Vec<f32>)> = BTreeMap::new();
-        for (bin, (home_sums, away_sums, count)) in &sums {
-            let home_means = (0..selectors.len())
-                .map(|idx| home_sums[idx] / *count as f32)
-                .collect();
-
-            let away_means = (0..selectors.len())
-                .map(|idx| away_sums[idx] / *count as f32)
-                .collect();
-
-            means.insert(*bin, (home_means, away_means));
-        }
-
-        // Second pass: sum squared deviations
-        let default_entry = (
-            vec![0.0f32].repeat(selectors.len()), // away avg/stddev for each selector
-            vec![0.0f32].repeat(selectors.len()), // home avg/stddev for each selector
-        );
-        let mut sqdevs: BTreeMap<i32, (Vec<f32>, Vec<f32>)> = BTreeMap::new();
-        for (rating_diff, home_stats, away_stats) in samples {
-            let bin = ((*rating_diff) / bin_size).round() as i32;
-            let (home_means, away_means) = means[&bin].clone();
-            let entry = sqdevs.entry(bin).or_insert(default_entry.clone());
-            for (idx, selector) in selectors.iter().enumerate() {
-                entry.0[idx] += (team_stat_sum(home_stats, selector) - home_means[idx]).powi(2);
-                entry.1[idx] += (team_stat_sum(away_stats, selector) - away_means[idx]).powi(2);
-            }
-        }
-
-        // Final assembly: compute sample variance (N-1), stddev, and count
-        let mut out = BTreeMap::new();
-        for (bin, (_, _, count)) in sums {
-            let (home_means, away_means) = means[&bin].clone();
-            let (home_ss, away_ss) = sqdevs.get(&bin).unwrap();
-            let home_variances = home_ss
-                .iter()
-                .map(|s| {
-                    if count > 1 {
-                        (s / (count as f32 - 1.0)).sqrt()
-                    } else {
-                        0.0
-                    }
-                })
-                .collect_vec();
-            let away_variances = away_ss
-                .iter()
-                .map(|s| {
-                    if count > 1 {
-                        (s / (count as f32 - 1.0)).sqrt()
-                    } else {
-                        0.0
-                    }
-                })
-                .collect_vec();
-
-            let bin_center = (bin as f32 * bin_size) as i32;
-            out.insert(
-                bin_center,
-                (
-                    (home_means, home_variances),
-                    (away_means, away_variances),
-                    count,
-                ),
-            );
-        }
-        out
-    }
-
-    #[ignore]
-    #[test]
-    fn test_multiple_games() -> AppResult<()> {
-        // Example usage: compute stat for made_2pt (you can change to any selector)
-        let mut world = World::new(None);
-        let mut action_rng = ChaCha8Rng::seed_from_u64(world.seed);
-
-        const N: usize = 10_000;
-        let samples = get_simulated_game_stats(&mut world, &mut action_rng, N)?;
-        let bin_size = 1.0;
-
-        let point_selector = |s: &GameStats| 2.0 * s.made_2pt as f32 + 3.0 * s.made_3pt as f32;
-        let win_samples = samples
-            .iter()
-            .filter(|(_, home_stats, away_stats)| {
-                team_stat_sum(home_stats, point_selector)
-                    > team_stat_sum(away_stats, point_selector)
-            })
-            .map(|(rating_diff, _, _)| ((*rating_diff) / bin_size).round() as i32)
-            .collect_vec();
-
-        let mut win_counts = HashMap::new();
-        for bin in win_samples {
-            *win_counts.entry(bin).or_insert(0) += 1;
-        }
-
-        println!("N={}", NUMBER_OF_ROLLS);
-
-        let selectors = vec![
-            |s: &GameStats| 2.0 * s.made_2pt as f32 + 3.0 * s.made_3pt as f32, // points
-            |s: &GameStats| s.made_2pt as f32,
-            |s: &GameStats| s.attempted_2pt as f32,
-            |s: &GameStats| s.made_3pt as f32,
-            |s: &GameStats| s.attempted_3pt as f32,
-            |s: &GameStats| s.defensive_rebounds as f32,
-            |s: &GameStats| s.offensive_rebounds as f32,
-            |s: &GameStats| s.assists as f32,
-            |s: &GameStats| s.turnovers as f32,
-            |s: &GameStats| s.steals as f32,
-            |s: &GameStats| s.blocks as f32,
-            |s: &GameStats| s.brawls[0] as f32 + 0.5 * s.brawls[1] as f32,
-        ];
-        let bin_stats = compute_binned_stats(&samples, bin_size, selectors);
-
-        for (bin_center, ((home_avg, home_stddev), (away_avg, away_stddev), count)) in bin_stats {
-            println!("Δrating={:+2} ({} samples)", bin_center, count);
-
-            let bin_win_counts = win_counts.get(&bin_center).copied().unwrap_or_default();
-
-            // The following formulas are not exact cause we consider draws a loss.
-            println!(
-                "  Win% = {:3.1} ± {:3.1} ({}/{})",
-                100.0 * (bin_win_counts + 1) as f32 / (count + 2) as f32,
-                100.0
-                    * (((bin_win_counts + 1) * (count - bin_win_counts + 1)) as f32
-                        / ((count + 2).pow(2) * (count + 3)) as f32)
-                        .sqrt(),
-                bin_win_counts,
-                count
-            );
-            println!(
-                "  points = {:3.1} ± {:3.1} vs {:3.1} ± {:3.1}",
-                home_avg[0], home_stddev[0], away_avg[0], away_stddev[0],
-            );
-            println!(
-                "  2pt = {:3.1}/{:3.1} ± {:3.1}/{:3.1} vs {:3.1}/{:3.1} ± {:3.1}/{:3.1}",
-                home_avg[1],
-                home_avg[2],
-                home_stddev[1],
-                home_stddev[2],
-                away_avg[1],
-                away_avg[2],
-                away_stddev[1],
-                away_stddev[2],
-            );
-            println!(
-                "  3pt = {:3.1}/{:3.1} ± {:3.1}/{:3.1} vs {:3.1}/{:3.1} ± {:3.1}/{:3.1}",
-                home_avg[3],
-                home_avg[4],
-                home_stddev[3],
-                home_stddev[4],
-                away_avg[3],
-                away_avg[4],
-                away_stddev[3],
-                away_stddev[4],
-            );
-
-            println!(
-                "  Def/Off Rebounds = {:3.1}/{:3.1} ± {:3.1}/{:3.1} vs {:3.1}/{:3.1} ± {:3.1}/{:3.1}",
-                home_avg[5],
-                home_avg[6],
-                home_stddev[5],
-                home_stddev[6],
-                away_avg[5],
-                away_avg[6],
-                away_stddev[5],
-                away_stddev[6],
-            );
-
-            println!(
-                "  Assists/Turnovers = {:3.1}/{:3.1} ± {:3.1}/{:3.1} vs {:3.1}/{:3.1} ± {:3.1}/{:3.1}",
-                home_avg[7],
-                home_avg[8],
-                home_stddev[7],
-                home_stddev[8],
-                away_avg[7],
-                away_avg[8],
-                away_stddev[7],
-                away_stddev[8],
-            );
-
-            println!(
-                "  Steals/Blocks = {:3.1}/{:3.1} ± {:3.1}/{:3.1} vs {:3.1}/{:3.1} ± {:3.1}/{:3.1}",
-                home_avg[9],
-                home_avg[10],
-                home_stddev[9],
-                home_stddev[10],
-                away_avg[9],
-                away_avg[10],
-                away_stddev[9],
-                away_stddev[10],
-            );
-
-            println!(
-                "  Brawls = {:3.1} ± {:3.1} vs {:3.1} ± {:3.1}",
-                home_avg[11], home_stddev[11], away_avg[11], away_stddev[11],
-            );
-
-            println!("");
-        }
 
         Ok(())
     }

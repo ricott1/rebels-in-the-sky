@@ -155,7 +155,7 @@ impl NewTeamScreen {
         let prefab = SPACESHIP_MODELS[self.spaceship_model_index];
         let name = self.ship_name_textarea.lines()[0].clone();
         let color_map = self.get_team_colors();
-        prefab.spaceship(name).with_color_map(color_map)
+        prefab.spaceship().with_name(name).with_color_map(color_map)
     }
 
     fn get_team_colors(&self) -> ColorMap {
@@ -246,7 +246,7 @@ impl NewTeamScreen {
                 "Max distance: {:.2} AU",
                 spaceship.max_distance(spaceship.fuel_capacity()) / AU as f32
             )),
-            Line::from(format!("Cost: {}", format_satoshi(spaceship.cost()))),
+            Line::from(format!("Cost: {}", format_satoshi(spaceship.value()))),
         ]);
 
         frame.render_widget(
@@ -280,7 +280,7 @@ impl NewTeamScreen {
                         format!(
                             "{:MAX_NAME_LENGTH$} {:>6}",
                             ship,
-                            format_satoshi(ship.cost())
+                            format_satoshi(ship.value())
                         ),
                         UiStyle::DEFAULT,
                     )
@@ -288,7 +288,7 @@ impl NewTeamScreen {
                 .collect_vec();
 
             let list = selectable_list(options);
-            frame.render_stateful_interactive(
+            frame.render_stateful_interactive_widget(
                 list.block(
                     default_block()
                         .border_style(UiStyle::DEFAULT)
@@ -326,7 +326,7 @@ impl NewTeamScreen {
                 .collect_vec();
 
             let list = selectable_list(options);
-            frame.render_stateful_interactive(
+            frame.render_stateful_interactive_widget(
                 list.block(
                     default_block()
                         .border_style(UiStyle::DEFAULT)
@@ -453,21 +453,21 @@ impl NewTeamScreen {
                 },
             );
 
-            frame.render_interactive(
+            frame.render_interactive_widget(
                 red,
                 color_split[0].inner(Margin {
                     horizontal: 1,
                     vertical: 1,
                 }),
             );
-            frame.render_interactive(
+            frame.render_interactive_widget(
                 green,
                 color_split[1].inner(Margin {
                     horizontal: 1,
                     vertical: 1,
                 }),
             );
-            frame.render_interactive(
+            frame.render_interactive_widget(
                 blue,
                 color_split[2].inner(Margin {
                     horizontal: 1,
@@ -508,7 +508,7 @@ impl NewTeamScreen {
                 .collect_vec();
 
             let list = selectable_list(options);
-            frame.render_stateful_interactive(
+            frame.render_stateful_interactive_widget(
                 list.block(
                     default_block()
                         .border_style(UiStyle::DEFAULT)
@@ -589,7 +589,7 @@ impl NewTeamScreen {
         };
 
         let ship_cost = if self.state >= CreationState::ShipModel {
-            self.selected_ship().cost()
+            self.selected_ship().value()
         } else {
             0
         };
@@ -678,7 +678,7 @@ impl NewTeamScreen {
             ClickableListState::default().with_selected(Some(self.player_index))
         };
 
-        frame.render_stateful_interactive(
+        frame.render_stateful_interactive_widget(
             list.block(block.title(format!(
                 "Select {} players",
                 self.max_players_selected() - self.selected_players.len(),
@@ -758,12 +758,12 @@ impl NewTeamScreen {
             },
         )
         .set_style(UiStyle::OK);
-        frame.render_interactive(yes_button, button_split[1]);
+        frame.render_interactive_widget(yes_button, button_split[1]);
 
         let no_button =
             Button::new(UiText::NO, UiCallback::CancelGeneratePlayerTeam).set_style(UiStyle::ERROR);
 
-        frame.render_interactive(no_button, button_split[2]);
+        frame.render_interactive_widget(no_button, button_split[2]);
         frame.render_widget(thick_block().border_style(UiStyle::HIGHLIGHT), area);
         Ok(())
     }
@@ -1160,13 +1160,13 @@ impl Screen for NewTeamScreen {
 }
 
 impl SplitPanel for NewTeamScreen {
-    fn index(&self) -> usize {
+    fn index(&self) -> Option<usize> {
         match self.state {
-            CreationState::Planet => self.planet_index,
-            CreationState::Jersey => self.jersey_style_index,
-            CreationState::ShipModel => self.spaceship_model_index,
-            CreationState::Players => self.player_index,
-            _ => 0,
+            CreationState::Planet => Some(self.planet_index),
+            CreationState::Jersey => Some(self.jersey_style_index),
+            CreationState::ShipModel => Some(self.spaceship_model_index),
+            CreationState::Players => Some(self.player_index),
+            _ => None,
         }
     }
 

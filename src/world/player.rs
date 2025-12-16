@@ -19,6 +19,7 @@ use crate::{
         skill::{Athletics, Defense, Mental, Offense, Rated, Technical},
         types::Population,
         utils::skill_linear_interpolation,
+        Planet,
     },
 };
 use anyhow::anyhow;
@@ -59,6 +60,33 @@ pub struct Player {
     pub tiredness: f32,
     pub morale: f32,
     pub historical_stats: GameStats,
+}
+
+impl Default for Player {
+    fn default() -> Self {
+        Player {
+            id: PlayerId::new_v4(),
+            peer_id: None,
+            version: 0,
+            info: InfoStats::default(),
+            team: None,
+            special_trait: None,
+            reputation: Skill::default(),
+            potential: Skill::default(),
+            athletics: Athletics::default(),
+            offense: Offense::default(),
+            defense: Defense::default(),
+            technical: Technical::default(),
+            mental: Mental::default(),
+            image: PlayerImage::default(),
+            current_location: PlayerLocation::default(),
+            skills_training: [Skill::default(); 20],
+            previous_skills: [Skill::default(); 20],
+            tiredness: Skill::default(),
+            morale: Skill::default(),
+            historical_stats: GameStats::default(),
+        }
+    }
 }
 
 impl Serialize for Player {
@@ -501,6 +529,34 @@ impl<'de> Deserialize<'de> for Player {
 }
 
 impl Player {
+    pub fn with_name(
+        mut self,
+        first_name: impl Into<String>,
+        last_name: impl Into<String>,
+    ) -> Self {
+        self.info.first_name = first_name.into();
+        self.info.last_name = last_name.into();
+        self
+    }
+
+    pub fn with_home_planet(mut self, home_planet_id: PlanetId) -> Self {
+        self.info.home_planet_id = home_planet_id;
+        self.current_location = if self.team.is_some() {
+            PlayerLocation::WithTeam
+        } else {
+            PlayerLocation::OnPlanet {
+                planet_id: home_planet_id,
+            }
+        };
+
+        self
+    }
+
+    pub fn with_population(mut self, population: Population) -> Self {
+        self.info.population = population;
+        self
+    }
+
     pub fn current_skill_array(&self) -> [Skill; 20] {
         (0..20)
             .map(|idx| self.skill_at_index(idx))
@@ -586,10 +642,10 @@ impl Player {
         // Age modifier decrease linearly from (0,1.5) to (PEAK_PERFORMANCE_RELATIVE_AGE, 1.0),
         // then decreases linearly from (PEAK_PERFORMANCE_RELATIVE_AGE, 1.0) to (1.0, 0.5).
         let age_modifier = if PEAK_PERFORMANCE_RELATIVE_AGE >= self.info.relative_age() {
-            -self.info.relative_age() / (2.0 * PEAK_PERFORMANCE_RELATIVE_AGE) + 1.5
+            1.5 - self.info.relative_age() / (2.0 * PEAK_PERFORMANCE_RELATIVE_AGE)
         } else {
-            (self.info.relative_age() + PEAK_PERFORMANCE_RELATIVE_AGE - 2.0)
-                / (2.0 * PEAK_PERFORMANCE_RELATIVE_AGE - 2.0)
+            (1.0 - 0.5 * (self.info.relative_age() + PEAK_PERFORMANCE_RELATIVE_AGE))
+                / (1.0 - PEAK_PERFORMANCE_RELATIVE_AGE)
         };
 
         let special_trait_extra = if self.special_trait.is_some() {
@@ -612,26 +668,20 @@ impl Player {
 
     pub fn random(
         rng: &mut ChaCha8Rng,
-        id: PlayerId,
         position: Option<Position>,
-        population: Population,
-        home_planet_id: &PlanetId,
+        home_planet: &Planet,
         mut base_level: f32,
     ) -> Self {
-        if position.is_none() {
+        let position = if let Some(position) = position {
+            position
+        } else {
             let position = rng.random_range(0..MAX_POSITION);
-            return Self::random(
-                rng,
-                id,
-                Some(position),
-                population,
-                home_planet_id,
-                base_level,
-            );
-        }
+            return Self::random(rng, Some(position), home_planet, base_level);
+        };
 
-        let info = InfoStats::for_position(position, population, rng, home_planet_id);
-        let population = info.population;
+        let population = home_planet.random_population(rng).unwrap_or_default();
+
+        let info = InfoStats::random(position, population, &home_planet.id, rng);
 
         // Base level modifier increases linearly from (0,0) to (PEAK_PERFORMANCE_RELATIVE_AGE, 1.0),
         // then decreases linearly from (PEAK_PERFORMANCE_RELATIVE_AGE, 1.0) to (1.0, 0.0).
@@ -642,38 +692,28 @@ impl Player {
         };
         base_level *= base_level_modifier;
 
-        let athletics = Athletics::for_position(position.unwrap(), rng, base_level);
-        let offense = Offense::for_position(position.unwrap(), rng, base_level);
-        let technical = Technical::for_position(position.unwrap(), rng, base_level);
-        let defense = Defense::for_position(position.unwrap(), rng, base_level);
-        let mental = Mental::for_position(position.unwrap(), rng, base_level);
+        let athletics = Athletics::for_position(position, rng, base_level);
+        let offense = Offense::for_position(position, rng, base_level);
+        let technical = Technical::for_position(position, rng, base_level);
+        let defense = Defense::for_position(position, rng, base_level);
+        let mental = Mental::for_position(position, rng, base_level);
 
         let image = PlayerImage::from_info(&info, rng);
 
         let mut player = Self {
-            id,
-
-            peer_id: None,
-            version: 0,
+            id: PlayerId::new_v4(),
             info,
-            team: None,
-            special_trait: None,
-            reputation: 0.0,
-            potential: 0.0,
             athletics,
             offense,
             technical,
             defense,
             mental,
             current_location: PlayerLocation::OnPlanet {
-                planet_id: *home_planet_id,
+                planet_id: home_planet.id,
             },
             image,
-            skills_training: [Skill::default(); 20],
-            previous_skills: [Skill::default(); 20],
-            tiredness: 0.0,
             morale: MAX_SKILL,
-            historical_stats: GameStats::default(),
+            ..Default::default()
         };
 
         player.apply_population_skill_modifiers();
@@ -772,13 +812,6 @@ impl Player {
         }
     }
 
-    pub fn is_on_planet(&self) -> Option<PlanetId> {
-        match self.current_location {
-            PlayerLocation::OnPlanet { planet_id } => Some(planet_id),
-            _ => None,
-        }
-    }
-
     fn apply_info_skill_modifiers(&mut self) {
         self.athletics.quickness = skill_linear_interpolation(
             self.athletics.quickness,
@@ -829,15 +862,6 @@ impl Player {
         );
     }
 
-    pub fn set_jersey(&mut self, jersey: &Jersey) {
-        self.image.set_jersey(jersey, &self.info);
-        self.version += 1;
-    }
-
-    pub fn compose_image(&self) -> AppResult<Gif> {
-        self.image.compose(&self.info)
-    }
-
     fn skill_at_index(&self, idx: usize) -> Skill {
         match idx {
             0 => self.athletics.quickness,
@@ -861,6 +885,22 @@ impl Player {
             18 => self.mental.intuition,
             19 => self.mental.charisma,
             _ => panic!("Invalid skill index"),
+        }
+    }
+
+    pub fn set_jersey(&mut self, jersey: &Jersey) {
+        self.image.set_jersey(jersey, &self.info);
+        self.version += 1;
+    }
+
+    pub fn compose_image(&self) -> AppResult<Gif> {
+        self.image.compose(&self.info)
+    }
+
+    pub fn is_on_planet(&self) -> Option<PlanetId> {
+        match self.current_location {
+            PlayerLocation::OnPlanet { planet_id } => Some(planet_id),
+            _ => None,
         }
     }
 
@@ -961,7 +1001,7 @@ impl Player {
             17 => self.mental.aggression = new_value,
             18 => self.mental.intuition = new_value,
             19 => self.mental.charisma = new_value,
-            _ => panic!("Invalid skill index {idx}"),
+            _ => unreachable!("Invalid skill index {idx}"),
         }
     }
 
@@ -1076,13 +1116,15 @@ impl InfoStats {
     pub fn relative_age(&self) -> f32 {
         self.population.relative_age(self.age)
     }
-    pub fn for_position(
-        position: Option<Position>,
+    pub fn random(
+        position: Position,
         population: Population,
-        rng: &mut ChaCha8Rng,
         home_planet_id: &PlanetId,
+        rng: &mut ChaCha8Rng,
     ) -> Self {
-        let p_data = PLAYER_DATA.get(&population).unwrap();
+        let p_data = PLAYER_DATA
+            .get(&population)
+            .unwrap_or_else(|| panic!("Player data should exist for {population}"));
         let pronouns = if population == Population::Polpett || population == Population::Octopulp {
             Pronoun::They
         } else {
@@ -1099,13 +1141,13 @@ impl InfoStats {
                 .choose(rng)
                 .expect("No available name")
                 .to_string(),
-            Pronoun::They => match rng.random_range(0..2) {
-                0 => p_data
+            Pronoun::They => match rng.random_bool(0.5) {
+                true => p_data
                     .first_names_he
                     .choose(rng)
                     .expect("No available name")
                     .to_string(),
-                _ => p_data
+                false => p_data
                     .first_names_she
                     .choose(rng)
                     .expect("No available name")
@@ -1119,12 +1161,9 @@ impl InfoStats {
             .to_string();
         let age = population.min_age()
             + rng.random_range(0.0..0.55) * (population.max_age() - population.min_age());
-        let height = match position {
-            Some(x) => Normal::new(192.0 + 3.5 * x as f32, 5.0)
-                .unwrap()
-                .sample(rng),
-            None => rng.random_range(180..=220) as f32,
-        };
+        let height = Normal::new(192.0 + 3.5 * position as f32, 5.0)
+            .unwrap()
+            .sample(rng);
         let bmi = rng.random_range(12..22) as f32 + height / 20.0;
         let weight = bmi * height * height / 10000.0;
 

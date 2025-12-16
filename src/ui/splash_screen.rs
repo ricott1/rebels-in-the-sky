@@ -88,9 +88,11 @@ impl SplashScreen {
         if save_game_exists(store_prefix) {
             if let Ok(continue_data) = world_file_data(store_prefix) {
                 if let Ok(last_modified) = continue_data.modified() {
+                    let tick = Tick::from_system_time(last_modified);
                     continue_text = format!(
-                        "Continue: {}",
-                        Tick::from_system_time(last_modified).formatted_as_date()
+                        "Continue: {} {}",
+                        tick.formatted_as_date(),
+                        tick.formatted_as_time()
                     );
                 }
             }
@@ -276,7 +278,7 @@ impl Screen for SplashScreen {
                 button = button.no_hover_block();
             }
 
-            frame.render_interactive(button, selection_split[i]);
+            frame.render_interactive_widget(button, selection_split[i]);
         }
 
         frame.render_widget(
@@ -342,8 +344,8 @@ impl Screen for SplashScreen {
 }
 
 impl SplitPanel for SplashScreen {
-    fn index(&self) -> usize {
-        self.index
+    fn index(&self) -> Option<usize> {
+        Some(self.index)
     }
 
     fn previous_index(&mut self) {

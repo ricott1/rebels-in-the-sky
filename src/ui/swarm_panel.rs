@@ -15,7 +15,9 @@ use super::{
 
 use crate::network::types::{PlayerRanking, TeamRanking};
 use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId, Tick};
-use crate::ui::constants::UiKey;
+use crate::ui::clickable_list::{ClickableList, ClickableListItem};
+use crate::ui::ui_key;
+use crate::ui::utils::wrap_text;
 use crate::world::constants::{MINUTES, MIN_PLAYERS_PER_GAME, SECONDS};
 use crate::world::{skill::Rated, world::World};
 use core::fmt::Debug;
@@ -23,11 +25,12 @@ use crossterm::event::{KeyCode, KeyEvent};
 use itertools::Itertools;
 use libp2p::PeerId;
 use ratatui::layout::Margin;
+use ratatui::style::Stylize;
 use ratatui::{
     layout::{Constraint, Layout},
     prelude::Rect,
     text::{Line, Span},
-    widgets::{List, ListItem, Paragraph, Wrap},
+    widgets::{List, ListItem},
 };
 use std::collections::HashMap;
 use strum_macros::Display;
@@ -85,9 +88,16 @@ pub struct SwarmPanel {
     player_ranking_index: Option<usize>,
     gif_map: GifMap,
     active_list: PanelList,
+    unread_chat_messages: usize,
+    chat_message_index: Option<usize>,
+    log_message_index: Option<usize>,
 }
 
 impl SwarmPanel {
+    pub fn unread_chat_messages(&self) -> usize {
+        self.unread_chat_messages
+    }
+
     pub fn remove_player_from_ranking(&mut self, player_id: PlayerId) {
         self.player_ranking.retain(|&(id, _)| id != player_id);
         if self.player_ranking.is_empty() {
@@ -139,6 +149,11 @@ impl SwarmPanel {
             .get_mut(&SwarmView::Log)
             .expect("Should have Log events")
             .push(event);
+
+        self.log_message_index = match self.log_message_index {
+            Some(index) => Some(index + 1),
+            None => Some(0),
+        }
     }
 
     pub fn push_chat_event(&mut self, event: SwarmPanelEvent) {
@@ -146,6 +161,11 @@ impl SwarmPanel {
             .get_mut(&SwarmView::Chat)
             .expect("Should have Chat events")
             .push(event);
+        self.unread_chat_messages += 1;
+        self.chat_message_index = match self.chat_message_index {
+            Some(index) => Some(index + 1),
+            None => Some(0),
+        }
     }
 
     pub fn add_peer_id(&mut self, peer_id: PeerId, team_id: TeamId) {
@@ -185,7 +205,8 @@ impl SwarmPanel {
                 topic: SwarmView::Chat,
             },
         )
-        .set_hotkey(UiKey::CYCLE_VIEW)
+        .bold()
+        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View the chat. Just type and press Enter to message the network.");
 
         let mut requests_button = Button::new(
@@ -194,7 +215,8 @@ impl SwarmPanel {
                 topic: SwarmView::Requests,
             },
         )
-        .set_hotkey(UiKey::CYCLE_VIEW)
+        .bold()
+        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View challenges received from the network.");
 
         let mut log_button = Button::new(
@@ -203,7 +225,8 @@ impl SwarmPanel {
                 topic: SwarmView::Log,
             },
         )
-        .set_hotkey(UiKey::CYCLE_VIEW)
+        .bold()
+        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View log and system info from the network.");
 
         let mut ranking_button = Button::new(
@@ -212,7 +235,8 @@ impl SwarmPanel {
                 topic: SwarmView::Ranking,
             },
         )
-        .set_hotkey(UiKey::CYCLE_VIEW)
+        .bold()
+        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View ranking of best pirates and crews in the network.");
 
         match self.view {
@@ -222,10 +246,10 @@ impl SwarmPanel {
             SwarmView::Ranking => ranking_button.select(),
         }
 
-        frame.render_interactive(chat_button, split[0]);
-        frame.render_interactive(requests_button, split[1]);
-        frame.render_interactive(log_button, split[2]);
-        frame.render_interactive(ranking_button, split[3]);
+        frame.render_interactive_widget(chat_button, split[0]);
+        frame.render_interactive_widget(requests_button, split[1]);
+        frame.render_interactive_widget(log_button, split[2]);
+        frame.render_interactive_widget(ranking_button, split[3]);
 
         let mut items: Vec<ListItem> = vec![];
 
@@ -265,7 +289,7 @@ impl SwarmPanel {
 
         let dial_button = Button::new("Ping", UiCallback::Ping);
 
-        frame.render_interactive(dial_button, split[5]);
+        frame.render_interactive_widget(dial_button, split[5]);
     }
 
     fn build_challenge_list(
@@ -317,7 +341,7 @@ impl SwarmPanel {
             } else {
                 &challenge.home_team_in_game
             };
-            frame.render_interactive(
+            frame.render_interactive_widget(
                 Button::new(
                     format!(
                         "{} {} ({})",
@@ -350,9 +374,9 @@ impl SwarmPanel {
                     team.name
                 ));
                 if idx == 0 {
-                    accept_button = accept_button.set_hotkey(UiKey::YES_TO_DIALOG);
+                    accept_button = accept_button.set_hotkey(ui_key::YES_TO_DIALOG);
                 }
-                frame.render_interactive(accept_button, line_split[1]);
+                frame.render_interactive_widget(accept_button, line_split[1]);
                 let mut decline_button = Button::new(
                     format!("{:6^}", UiText::NO),
                     UiCallback::DeclineChallenge {
@@ -362,9 +386,9 @@ impl SwarmPanel {
                 .block(default_block().border_style(UiStyle::ERROR))
                 .set_hover_text(format!("Decline the challenge from {}.", team.name));
                 if idx == 0 {
-                    decline_button = decline_button.set_hotkey(UiKey::NO_TO_DIALOG);
+                    decline_button = decline_button.set_hotkey(ui_key::NO_TO_DIALOG);
                 }
-                frame.render_interactive(decline_button, line_split[2]);
+                frame.render_interactive_widget(decline_button, line_split[2]);
             }
         }
         Ok(())
@@ -409,7 +433,7 @@ impl SwarmPanel {
 
             let proposer_player = &trade.proposer_player;
             let target_player = &trade.target_player;
-            frame.render_interactive(
+            frame.render_interactive_widget(
                 Button::new(
                     format!(
                         "{} {} ⇄ {} {}",
@@ -438,9 +462,9 @@ impl SwarmPanel {
                     proposer_player.info.short_name()
                 ));
                 if idx == 0 {
-                    accept_button = accept_button.set_hotkey(UiKey::YES_TO_DIALOG);
+                    accept_button = accept_button.set_hotkey(ui_key::YES_TO_DIALOG);
                 }
-                frame.render_interactive(accept_button, line_split[1]);
+                frame.render_interactive_widget(accept_button, line_split[1]);
                 let mut decline_button = Button::new(
                     format!("{:6^}", UiText::NO),
                     UiCallback::DeclineTrade {
@@ -454,16 +478,16 @@ impl SwarmPanel {
                     proposer_player.info.short_name()
                 ));
                 if idx == 0 {
-                    decline_button = decline_button.set_hotkey(UiKey::NO_TO_DIALOG);
+                    decline_button = decline_button.set_hotkey(ui_key::NO_TO_DIALOG);
                 }
-                frame.render_interactive(decline_button, line_split[2]);
+                frame.render_interactive_widget(decline_button, line_split[2]);
             }
         }
         Ok(())
     }
 
     fn render_team_ranking(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
-        let h_split = Layout::horizontal([Constraint::Min(1), Constraint::Length(60)]).split(area);
+        let h_split = Layout::horizontal([Constraint::Min(1), Constraint::Length(80)]).split(area);
         let team_ranking_index = if let Some(index) = self.team_ranking_index {
             index % self.team_ranking.len()
         } else {
@@ -471,6 +495,7 @@ impl SwarmPanel {
                 default_block().title("Top 10 Crews by Reputation"),
                 h_split[0],
             );
+            frame.render_widget(default_block(), h_split[1]);
             return;
         };
 
@@ -522,7 +547,7 @@ impl SwarmPanel {
 
         let list = selectable_list(options);
 
-        frame.render_stateful_interactive(
+        frame.render_stateful_interactive_widget(
             list.block(default_block().title("Top 10 Crews by Reputation")),
             h_split[0],
             &mut ClickableListState::default().with_selected(Some(team_ranking_index)),
@@ -538,6 +563,7 @@ impl SwarmPanel {
                 default_block().title("Top 20 Pirates by Reputation"),
                 h_split[0],
             );
+            frame.render_widget(default_block(), h_split[1]);
             return;
         };
 
@@ -565,10 +591,11 @@ impl SwarmPanel {
                 };
 
                 let text = format!(
-                    "{:>2}. {:<name_length$} {}",
+                    "{:>2}. {:<name_length$} {} {}",
                     idx + 1,
                     player.info.full_name(),
-                    player.reputation.stars()
+                    player.reputation.stars(),
+                    ranking.team_name
                 );
 
                 let mut style = UiStyle::DISCONNECTED;
@@ -588,7 +615,7 @@ impl SwarmPanel {
 
         let list = selectable_list(options);
 
-        frame.render_stateful_interactive(
+        frame.render_stateful_interactive_widget(
             list.block(default_block().title("Top 20 Pirates by Reputation")),
             h_split[0],
             &mut ClickableListState::default().with_selected(Some(player_ranking_index)),
@@ -606,89 +633,124 @@ impl SwarmPanel {
         self.textarea.set_block(default_block());
         frame.render_widget(&self.textarea, split[1]);
 
-        if self.view == SwarmView::Requests {
-            let h_split = Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-                .split(split[0]);
-            let challenge_split =
-                Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-                    .split(h_split[0]);
-            self.build_challenge_list(false, frame, world, challenge_split[0])?;
-            self.build_challenge_list(true, frame, world, challenge_split[1])?;
-            let trade_split = Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-                .split(h_split[1]);
-            self.build_trade_list(false, frame, world, trade_split[0])?;
-            self.build_trade_list(true, frame, world, trade_split[1])?;
-            return Ok(());
-        }
+        match self.view {
+            SwarmView::Requests => {
+                let h_split =
+                    Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                        .split(split[0]);
+                let challenge_split =
+                    Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                        .split(h_split[0]);
+                self.build_challenge_list(false, frame, world, challenge_split[0])?;
+                self.build_challenge_list(true, frame, world, challenge_split[1])?;
+                let trade_split =
+                    Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                        .split(h_split[1]);
+                self.build_trade_list(false, frame, world, trade_split[0])?;
+                self.build_trade_list(true, frame, world, trade_split[1])?;
+            }
+            SwarmView::Ranking => {
+                let ranking_split =
+                    Layout::vertical([Constraint::Length(24), Constraint::Min(1)]).split(split[0]);
+                if frame.is_hovering(ranking_split[0]) {
+                    self.active_list = PanelList::Players;
+                } else {
+                    self.active_list = PanelList::Teams;
+                }
 
-        if self.view == SwarmView::Ranking {
-            let ranking_split =
-                Layout::vertical([Constraint::Length(24), Constraint::Min(1)]).split(split[0]);
-            if frame.is_hovering(ranking_split[0]) {
-                self.active_list = PanelList::Players;
-            } else {
-                self.active_list = PanelList::Teams;
+                self.render_player_ranking(frame, world, ranking_split[0]);
+                self.render_team_ranking(frame, world, ranking_split[1]);
             }
 
-            self.render_player_ranking(frame, world, ranking_split[0]);
-            self.render_team_ranking(frame, world, ranking_split[1]);
-            return Ok(());
+            SwarmView::Chat => self.render_event_messages(frame, world, SwarmView::Chat, split[0]),
+            SwarmView::Log => self.render_event_messages(frame, world, SwarmView::Log, split[0]),
         }
 
-        let mut items = vec![];
-        for event in self
-            .events
-            .get(&self.view)
-            .expect("Should have current topic events")
-            .iter()
-            .rev()
+        // Reset only if current index is equal to max index - 1
+        if self.view == SwarmView::Chat
+            && matches!(self.chat_message_index, Some(index) if index == self.max_index() - 1)
         {
-            match event.peer_id {
-                Some(peer_id) => {
-                    let from = if let Some(team_id) = self.peer_id_to_team_id.get(&peer_id) {
-                        if let Ok(team) = world.get_team_or_err(team_id) {
-                            team.name.clone()
-                        } else {
-                            "Unknown".to_string()
-                        }
-                    } else {
-                        "SEED".to_string()
-                    };
-
-                    items.push(Line::from(vec![
-                        Span::styled(
-                            format!("[{}] ", event.timestamp.formatted_as_time()),
-                            UiStyle::HIGHLIGHT,
-                        ),
-                        Span::styled(format!("{from}: "), UiStyle::NETWORK),
-                        Span::raw(event.text.clone()),
-                    ]));
-                }
-                None => {
-                    let own_message = if self.view == SwarmView::Log {
-                        "System"
-                    } else {
-                        "You"
-                    };
-                    items.push(Line::from(vec![
-                        Span::styled(
-                            format!("[{}] ", event.timestamp.formatted_as_time()),
-                            UiStyle::HIGHLIGHT,
-                        ),
-                        Span::styled(format!("{own_message}: "), UiStyle::OWN_TEAM),
-                        Span::raw(event.text.clone()),
-                    ]));
-                }
-            }
+            self.unread_chat_messages = 0;
         }
 
-        frame.render_widget(
-            Paragraph::new(items)
-                .wrap(Wrap { trim: true })
-                .block(default_block().title(self.view.to_string())),
-            split[0],
-        );
         Ok(())
+    }
+
+    fn render_event_messages(
+        &self,
+        frame: &mut UiFrame,
+        world: &World,
+        swarm_view: SwarmView,
+        area: Rect,
+    ) {
+        let items = if let Some(events) = self.events.get(&swarm_view) {
+            let mut items = vec![];
+            for event in events.iter() {
+                let timestamp_span = Span::styled(
+                    format!("[{}] ", event.timestamp.formatted_as_time()),
+                    UiStyle::HIGHLIGHT,
+                );
+                let author_span = match event.peer_id {
+                    Some(peer_id) => {
+                        let from = if let Some(team_id) = self.peer_id_to_team_id.get(&peer_id) {
+                            if let Ok(team) = world.get_team_or_err(team_id) {
+                                team.name.clone()
+                            } else {
+                                "Unknown".to_string()
+                            }
+                        } else {
+                            "SEED".to_string()
+                        };
+                        Span::styled(format!("{from}: "), UiStyle::NETWORK)
+                    }
+                    None => {
+                        let own_message = if swarm_view == SwarmView::Log {
+                            "System"
+                        } else {
+                            "You"
+                        };
+                        Span::styled(format!("{own_message}: "), UiStyle::OWN_TEAM)
+                    }
+                };
+
+                let timestamp_length = timestamp_span.content.len();
+                let incipit_length = timestamp_length + author_span.content.len();
+                let message_max_length = (area.width as usize).saturating_sub(2 + incipit_length); // Extra 2 is because of Block outside.
+
+                let text_lines = wrap_text(event.text.as_str(), message_max_length);
+                let mut lines = vec![Line::from(vec![
+                    timestamp_span,
+                    author_span,
+                    Span::raw(text_lines[0].clone()),
+                ])];
+
+                for text in text_lines.iter().skip(1) {
+                    lines.push(Line::from(format!(
+                        "{}{}",
+                        " ".repeat(incipit_length),
+                        text
+                    )));
+                }
+
+                items.push(ClickableListItem::new(lines));
+            }
+
+            items
+        } else {
+            vec![]
+        };
+
+        let list = ClickableList::new(items);
+        let index = if swarm_view == SwarmView::Chat {
+            self.chat_message_index
+        } else {
+            self.log_message_index
+        };
+        frame.render_stateful_interactive_widget(
+            list.block(default_block().title(swarm_view.to_string())),
+            area,
+            &mut ClickableListState::default().with_selected(index),
+        );
     }
 
     pub fn set_view(&mut self, topic: SwarmView) {
@@ -721,12 +783,17 @@ impl Screen for SwarmPanel {
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
-            UiKey::CYCLE_VIEW => {
+            ui_key::CYCLE_VIEW => {
                 return Some(UiCallback::SetSwarmPanelView {
                     topic: self.view.next(),
                 });
             }
             KeyCode::Enter => {
+                // FIXME: if a message is selected, render this as a reply to that message.
+                if self.max_index() > 0 {
+                    self.set_index(self.max_index() - 1);
+                }
+
                 let lines: Vec<String> = self
                     .textarea
                     .lines()
@@ -734,9 +801,15 @@ impl Screen for SwarmPanel {
                     .map(|x| x.to_string())
                     .collect();
 
+                let message = lines.iter().join("/n");
+
+                if message.is_empty() {
+                    return None;
+                }
+
                 self.textarea.move_cursor(CursorMove::End);
                 self.textarea.delete_line_by_head();
-                let split_input = lines[0].split_whitespace();
+                let split_input = message.split_whitespace();
                 let command = split_input.clone().next()?;
 
                 match command {
@@ -762,11 +835,9 @@ impl Screen for SwarmPanel {
                         self.push_chat_event(SwarmPanelEvent {
                             timestamp: Tick::now(),
                             peer_id: None,
-                            text: lines[0].clone(),
+                            text: message.clone(),
                         });
-                        return Some(UiCallback::SendMessage {
-                            message: lines[0].clone(),
-                        });
+                        return Some(UiCallback::SendMessage { message });
                     }
                 }
             }
@@ -779,40 +850,52 @@ impl Screen for SwarmPanel {
 
     fn footer_spans(&self) -> Vec<String> {
         vec![
-            format!(" {} ", UiKey::CYCLE_VIEW.to_string()),
+            format!(" {} ", ui_key::CYCLE_VIEW.to_string()),
             " Next tab ".to_string(),
         ]
     }
 }
 
 impl SplitPanel for SwarmPanel {
-    fn index(&self) -> usize {
-        if self.active_list == PanelList::Players && self.view == SwarmView::Ranking {
-            return self.player_ranking_index.unwrap_or_default();
+    fn index(&self) -> Option<usize> {
+        match self.view {
+            SwarmView::Chat => self.chat_message_index,
+            SwarmView::Log => self.log_message_index,
+            SwarmView::Ranking => match self.active_list {
+                PanelList::Players => self.player_ranking_index,
+                PanelList::Teams => self.team_ranking_index,
+            },
+            SwarmView::Requests => None,
         }
-
-        self.team_ranking_index.unwrap_or_default()
     }
 
     fn max_index(&self) -> usize {
-        if self.active_list == PanelList::Players && self.view == SwarmView::Ranking {
-            return self.player_ranking.len();
+        match self.view {
+            SwarmView::Chat => self.events.get(&SwarmView::Chat).map_or(0, Vec::len),
+            SwarmView::Log => self.events.get(&SwarmView::Log).map_or(0, Vec::len),
+            SwarmView::Ranking => match self.active_list {
+                PanelList::Players => self.player_ranking.len(),
+                PanelList::Teams => self.team_ranking.len(),
+            },
+            SwarmView::Requests => 0,
         }
-
-        self.team_ranking.len()
     }
 
     fn set_index(&mut self, index: usize) {
-        if self.max_index() == 0 {
-            if self.active_list == PanelList::Players && self.view == SwarmView::Ranking {
-                self.player_ranking_index = None
-            } else {
-                self.team_ranking_index = None;
-            }
-        } else if self.active_list == PanelList::Players && self.view == SwarmView::Ranking {
-            self.player_ranking_index = Some(index % self.max_index())
+        let index = if self.max_index() == 0 {
+            None
         } else {
-            self.team_ranking_index = Some(index % self.max_index());
+            Some(index % self.max_index())
+        };
+
+        match self.view {
+            SwarmView::Chat => self.chat_message_index = index,
+            SwarmView::Log => self.log_message_index = index,
+            SwarmView::Ranking => match self.active_list {
+                PanelList::Players => self.player_ranking_index = index,
+                PanelList::Teams => self.team_ranking_index = index,
+            },
+            SwarmView::Requests => {}
         }
     }
 }

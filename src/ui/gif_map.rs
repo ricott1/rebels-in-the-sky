@@ -116,6 +116,7 @@ pub struct GifMap {
     on_planet_spaceship_lines: HashMap<SpaceshipImageId, GifLines>,
     in_shipyard_spaceship_lines: HashMap<SpaceshipImageId, GifLines>,
     shooting_spaceship_lines: HashMap<SpaceshipImageId, GifLines>,
+    with_shield_spaceship_lines: HashMap<SpaceshipImageId, GifLines>,
     travelling_spaceship_lines: HashMap<SpaceshipImageId, GifLines>,
     exploring_spaceship_lines: HashMap<SpaceshipImageId, GifLines>,
     planets_zoom_in_lines: HashMap<PlanetId, GifLines>,
@@ -297,8 +298,8 @@ impl GifMap {
             base.copy_non_trasparent_from(center_img, x, y)?;
 
             // Blit satellite images on base
-            for idx in 0..planet.satellites.len() {
-                let satellite = world.get_planet_or_err(&planet.satellites[idx])?;
+            for (idx, satellite_id) in planet.satellites.iter().enumerate() {
+                let satellite = world.get_planet_or_err(satellite_id)?;
                 // Satellite img moves along an ellipse
                 // Can divide safely because if we enter the loop => planet.satellites.len() > 0.
                 let theta_0 =
@@ -410,6 +411,25 @@ impl GifMap {
         let lines = gif.to_lines();
         let frame = lines[tick % lines.len()].clone();
         self.shooting_spaceship_lines
+            .insert(spacehip_image_id, lines);
+        Ok(frame)
+    }
+
+    pub fn with_shield_spaceship_lines(
+        &mut self,
+        spaceship: &Spaceship,
+        tick: usize,
+    ) -> AppResult<ImageLines> {
+        let spacehip_image_id = spaceship.image_id();
+
+        if let Some(lines) = self.with_shield_spaceship_lines.get(&spacehip_image_id) {
+            return Ok(lines[tick % lines.len()].clone());
+        }
+
+        let gif = spaceship.compose_image_with_shield()?;
+        let lines = gif.to_lines();
+        let frame = lines[tick % lines.len()].clone();
+        self.with_shield_spaceship_lines
             .insert(spacehip_image_id, lines);
         Ok(frame)
     }

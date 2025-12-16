@@ -1,16 +1,13 @@
-use super::{
-    collisions::HitBox, networking::ImageType, space_callback::SpaceCallback, traits::*,
-    utils::EntityState,
-};
-use crate::{register_impl, space_adventure::constants::*};
+use super::{collisions::HitBox, space_callback::SpaceCallback, traits::*, utils::EntityState};
+use crate::space_adventure::{constants::*, entity::Entity};
 use glam::{I16Vec2, Vec2};
-use image::{Pixel, Rgba, RgbaImage};
+use image::{Rgba, RgbaImage};
 use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct ParticleEntity {
     id: usize,
-    color: Rgba<u8>,
+    _color: Rgba<u8>,
     previous_position: Vec2,
     position: Vec2,
     velocity: Vec2,
@@ -63,12 +60,6 @@ impl Sprite for ParticleEntity {
     fn image(&self) -> &RgbaImage {
         &self.image
     }
-
-    fn network_image_type(&self) -> ImageType {
-        ImageType::Particle {
-            color: self.color.to_rgb().0,
-        }
-    }
 }
 
 impl Collider for ParticleEntity {
@@ -77,10 +68,7 @@ impl Collider for ParticleEntity {
     }
 }
 
-register_impl!(!ControllableSpaceship for ParticleEntity);
-register_impl!(!ResourceFragment for ParticleEntity);
-
-impl Entity for ParticleEntity {
+impl GameEntity for ParticleEntity {
     fn set_id(&mut self, id: usize) {
         self.id = id;
     }
@@ -95,19 +83,19 @@ impl Entity for ParticleEntity {
 }
 
 impl ParticleEntity {
-    pub fn new(
+    pub fn new_entity(
         position: Vec2,
         velocity: Vec2,
         color: Rgba<u8>,
         state: EntityState,
         layer: usize,
-    ) -> Self {
+    ) -> Entity {
         let image = RgbaImage::from_pixel(1, 1, color);
         let mut hit_box = HashMap::new();
         hit_box.insert(I16Vec2::ZERO, true);
-        Self {
+        Entity::Particle(Self {
             id: 0,
-            color,
+            _color: color,
             previous_position: position,
             position,
             velocity,
@@ -115,6 +103,6 @@ impl ParticleEntity {
             image,
             layer,
             hit_box: hit_box.into(),
-        }
+        })
     }
 }

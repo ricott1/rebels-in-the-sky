@@ -1,14 +1,13 @@
 use super::button::Button;
-use super::constants::UiKey;
 use super::galaxy_panel::GalaxyPanel;
 use super::popup_message::PopupMessage;
 use super::space_screen::SpaceScreen;
 use super::splash_screen::SplashScreen;
-
 use super::swarm_panel::{SwarmPanel, SwarmPanelEvent};
 use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::ui_frame::UiFrame;
+use super::ui_key;
 use super::widgets::default_block;
 use super::{
     game_panel::GamePanel, my_team_panel::MyTeamPanel, new_team_screen::NewTeamScreen,
@@ -16,13 +15,13 @@ use super::{
 };
 #[cfg(feature = "audio")]
 use crate::audio::{music_player::MusicPlayer, AudioPlayerState};
-
 use crate::types::Tick;
 use crate::types::{AppResult, SystemTimeTick};
+use crate::ui::space_cove_panel::SpaceCovePanel;
 use crate::world::world::World;
+use crate::world::SpaceCoveState;
 use core::fmt::Debug;
 use itertools::Itertools;
-
 use libp2p::PeerId;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
@@ -57,7 +56,7 @@ pub enum UiTab {
     Pirates,
     Galaxy,
     Games,
-
+    SpaceCove,
     Swarm,
 }
 
@@ -74,7 +73,7 @@ pub struct Ui {
     pub player_panel: PlayerListPanel,
     pub team_panel: TeamListPanel,
     pub game_panel: GamePanel,
-
+    pub space_cove_panel: SpaceCovePanel,
     pub swarm_panel: SwarmPanel,
     pub my_team_panel: MyTeamPanel,
     pub galaxy_panel: GalaxyPanel,
@@ -89,7 +88,7 @@ impl Ui {
         let player_panel = PlayerListPanel::new();
         let team_panel = TeamListPanel::new();
         let game_panel = GamePanel::new();
-
+        let space_cove_panel = SpaceCovePanel::new();
         let swarm_panel = SwarmPanel::new();
         let my_team_panel = MyTeamPanel::new();
         let new_team_screen = NewTeamScreen::new();
@@ -121,7 +120,7 @@ impl Ui {
             player_panel,
             team_panel,
             game_panel,
-
+            space_cove_panel,
             swarm_panel,
             my_team_panel,
             galaxy_panel,
@@ -226,7 +225,7 @@ impl Ui {
                 UiTab::Pirates => &self.player_panel,
                 UiTab::Galaxy => &self.galaxy_panel,
                 UiTab::Games => &self.game_panel,
-
+                UiTab::SpaceCove => &self.space_cove_panel,
                 UiTab::Swarm => &self.swarm_panel,
             },
             UiState::SpaceAdventure => &self.space_screen,
@@ -243,7 +242,7 @@ impl Ui {
                 UiTab::Pirates => Some(&mut self.player_panel),
                 UiTab::Galaxy => Some(&mut self.galaxy_panel),
                 UiTab::Games => Some(&mut self.game_panel),
-
+                UiTab::SpaceCove => Some(&mut self.space_cove_panel),
                 UiTab::Swarm => Some(&mut self.swarm_panel),
             },
         }
@@ -259,7 +258,7 @@ impl Ui {
                 UiTab::Pirates => &mut self.player_panel,
                 UiTab::Galaxy => &mut self.galaxy_panel,
                 UiTab::Games => &mut self.game_panel,
-
+                UiTab::SpaceCove => &mut self.space_cove_panel,
                 UiTab::Swarm => &mut self.swarm_panel,
             },
             UiState::SpaceAdventure => &mut self.space_screen,
@@ -272,16 +271,39 @@ impl Ui {
         world: &World,
     ) -> Option<UiCallback> {
         match key_event.code {
-            UiKey::ESC => Some(UiCallback::PromptQuit),
+            ui_key::ESC => {
+                if self.state == UiState::Splash {
+                    return Some(UiCallback::QuitGame);
+                }
 
-            UiKey::UI_DEBUG_MODE => Some(UiCallback::ToggleUiDebugMode),
+                let during_space_adventure = world.space_adventure.is_some();
+                let own_team = world.get_own_team().ok()?;
+                let mut on_peer_asteroid = false;
+                if let Some(planet_id) = own_team.is_on_planet().as_ref() {
+                    if let Ok(planet) = world.get_planet_or_err(planet_id) {
+                        if planet.peer_id.is_some() {
+                            on_peer_asteroid = true;
+                        }
+                    }
+                }
 
-            UiKey::NEXT_TAB if self.state == UiState::Main && self.popup_messages.is_empty() => {
+                Some(UiCallback::PushUiPopup {
+                    popup_message: PopupMessage::PromptQuit {
+                        during_space_adventure,
+                        on_peer_asteroid,
+                        tick: Tick::now(),
+                    },
+                })
+            }
+
+            ui_key::UI_DEBUG_MODE => Some(UiCallback::ToggleUiDebugMode),
+
+            ui_key::NEXT_TAB if self.state == UiState::Main && self.popup_messages.is_empty() => {
                 self.next_tab();
                 None
             }
 
-            UiKey::PREVIOUS_TAB
+            ui_key::PREVIOUS_TAB
                 if self.state == UiState::Main && self.popup_messages.is_empty() =>
             {
                 self.previous_tab();
@@ -356,14 +378,25 @@ impl Ui {
             }
             UiState::NewTeam => self.new_team_screen.update(world)?,
             UiState::Main => {
+                if world.dirty_ui && !self.ui_tabs.contains(&UiTab::SpaceCove) {
+                    let own_team = world.get_own_team()?;
+                    if matches!(own_team.space_cove, SpaceCoveState::Ready { .. }) {
+                        self.ui_tabs.insert(1, UiTab::SpaceCove);
+                    }
+                }
+
                 // Update panels. Can we get away updating only the active one?
+                // Links between panels means they need to be updated.
+                // Example: going to a game from the crews panel.
+                // We call update explicitly whenever one of these links is clicked.
                 // self.get_active_screen_mut().update(world)?;
+                // FIXME: further check this.
                 self.my_team_panel.update(world)?;
                 self.team_panel.update(world)?;
                 self.player_panel.update(world)?;
                 self.game_panel.update(world)?;
                 self.galaxy_panel.update(world)?;
-
+                self.space_cove_panel.update(world)?;
                 self.swarm_panel.update(world)?;
             }
             UiState::SpaceAdventure => self.space_screen.update(world)?,
@@ -382,9 +415,9 @@ impl Ui {
         let mut ui_frame = UiFrame::new(frame);
         ui_frame.set_hovering(self.inner_registry.hovering());
         if !self.popup_messages.is_empty() {
-            ui_frame.set_max_layer(1);
+            ui_frame.set_active_layer(1);
         } else {
-            ui_frame.set_max_layer(0);
+            ui_frame.set_active_layer(0);
         }
 
         let screen_area = ui_frame.screen_area();
@@ -422,6 +455,7 @@ impl Ui {
                     debug_view,
                 );
 
+                // render tab header
                 let mut constraints = [Constraint::Length(16)].repeat(self.ui_tabs.len());
                 constraints.push(Constraint::Min(0));
 
@@ -436,9 +470,20 @@ impl Ui {
                             .expect("Own team should be set if rendering main page")
                             .name
                             .clone()
+                    } else if tab == UiTab::Swarm {
+                        format!(
+                            "{}{}",
+                            tab,
+                            if self.swarm_panel.unread_chat_messages() > 0 {
+                                format!(" ({})", self.swarm_panel.unread_chat_messages())
+                            } else {
+                                "".to_string()
+                            }
+                        )
                     } else {
                         tab.to_string()
                     };
+
                     let button = if idx == self.tab_index {
                         Button::new(
                             tab_name,
@@ -456,7 +501,7 @@ impl Ui {
                         )
                     };
 
-                    ui_frame.render_interactive(button, tab_split[idx]);
+                    ui_frame.render_interactive_widget(button, tab_split[idx]);
                 }
 
                 active_render
@@ -518,9 +563,9 @@ impl Ui {
 
         if !self.debug_view && self.state == UiState::Main {
             spans.extend(vec![
-                format!(" {} ", UiKey::PREVIOUS_TAB.to_string()),
+                format!(" {} ", ui_key::PREVIOUS_TAB.to_string()),
                 " Previous panel ".to_string(),
-                format!(" {} ", UiKey::NEXT_TAB.to_string()),
+                format!(" {} ", ui_key::NEXT_TAB.to_string()),
                 " Next panel ".to_string(),
             ]);
         }
@@ -571,11 +616,11 @@ impl Ui {
 
         #[cfg(feature = "audio")]
         if let Some(audio_player) = &audio_player {
-            frame.render_interactive(
+            frame.render_interactive_widget(
                 Button::no_box(
                     format!(
                         " {}: Turn radio {} ",
-                        UiKey::TOGGLE_AUDIO,
+                        ui_key::radio::TOGGLE_AUDIO,
                         if audio_player.is_playing() {
                             "off"
                         } else {
@@ -584,22 +629,25 @@ impl Ui {
                     ),
                     UiCallback::ToggleAudio,
                 )
-                .set_hotkey(UiKey::TOGGLE_AUDIO),
+                .set_hotkey(ui_key::radio::TOGGLE_AUDIO),
                 split[1],
             );
 
-            frame.render_interactive(
+            frame.render_interactive_widget(
                 Button::no_box(
-                    format!(" {} ", UiKey::PREVIOUS_RADIO),
+                    format!(" {} ", ui_key::radio::PREVIOUS_RADIO),
                     UiCallback::PreviousRadio,
                 )
-                .set_hotkey(UiKey::PREVIOUS_RADIO),
+                .set_hotkey(ui_key::radio::PREVIOUS_RADIO),
                 split[2],
             );
 
-            frame.render_interactive(
-                Button::no_box(format!(" {} ", UiKey::NEXT_RADIO), UiCallback::NextRadio)
-                    .set_hotkey(UiKey::NEXT_RADIO),
+            frame.render_interactive_widget(
+                Button::no_box(
+                    format!(" {} ", ui_key::radio::NEXT_RADIO),
+                    UiCallback::NextRadio,
+                )
+                .set_hotkey(ui_key::radio::NEXT_RADIO),
                 split[3],
             );
             if audio_player.is_playing() {

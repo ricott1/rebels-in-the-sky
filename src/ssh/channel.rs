@@ -6,9 +6,12 @@ use anyhow::{anyhow, Result};
 use russh::server::{Handle, Session};
 use russh::{ChannelId, CryptoVec};
 use std::fmt::Debug;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task;
 use tokio_util::sync::CancellationToken;
+
+const CHANNEL_DISCONNECTION_INTERVAL: Duration = Duration::from_secs(120); // Auto-disconnect after 2 minutes with no input.
 
 #[derive(Clone)]
 pub struct SSHWriterProxy {
@@ -81,7 +84,7 @@ pub struct AppChannel {
 #[derive(Debug)]
 enum AppChannelState {
     AwaitingPty {
-        _shutdown: CancellationToken,
+        _server_shutdown: CancellationToken,
     },
     // Ready { stdin: mpsc::Sender<Vec<u8>> },
     Ready {
@@ -90,8 +93,12 @@ enum AppChannelState {
 }
 
 impl AppChannel {
-    pub fn new(_shutdown: CancellationToken, network_port: Option<u16>, username: String) -> Self {
-        let state = AppChannelState::AwaitingPty { _shutdown };
+    pub fn new(
+        _server_shutdown: CancellationToken,
+        network_port: Option<u16>,
+        username: String,
+    ) -> Self {
+        let state = AppChannelState::AwaitingPty { _server_shutdown };
 
         println!("New AppChannel created for {username}");
 
@@ -144,6 +151,7 @@ impl AppChannel {
             false,
             None,
             store_prefix,
+            false,
         )?;
 
         let tui = Tui::new_ssh(writer)?;
@@ -154,7 +162,10 @@ impl AppChannel {
 
         // Main loop to run the update, including updating and drawing.
         task::spawn(async move {
-            if let Err(e) = app.run(tui, network_port).await {
+            if let Err(e) = app
+                .run(tui, network_port, Some(CHANNEL_DISCONNECTION_INTERVAL))
+                .await
+            {
                 log::error!("Error running app: {e}")
             };
         });

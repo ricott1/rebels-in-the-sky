@@ -10,7 +10,10 @@ use itertools::Itertools;
 use libp2p::PeerId;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
-use std::{cmp::min, collections::HashMap};
+use std::{
+    cmp::min,
+    collections::{HashMap, HashSet},
+};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
 pub struct CrewRoles {
@@ -75,54 +78,47 @@ pub struct Team {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub autonomous_strategy: AutonomousStrategy,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub honours: HashSet<Honour>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub space_cove: SpaceCoveState,
 }
 
 impl Team {
-    pub fn random(
-        id: TeamId,
-        home_planet_id: PlanetId,
-        name: impl Into<String>,
-        ship_name: impl Into<String>,
-        rng: &mut ChaCha8Rng,
-    ) -> Self {
+    pub fn random(rng: &mut ChaCha8Rng) -> Self {
         let jersey = Jersey::random(rng);
         let ship_color = jersey.color;
         let mut resources = HashMap::new();
         resources.insert(Resource::SATOSHI, INITIAL_TEAM_BALANCE);
         Self {
-            id,
-            name: name.into(),
+            id: TeamId::new_v4(),
             creation_time: Tick::now(),
             jersey,
-            home_planet_id,
-            current_location: TeamLocation::OnPlanet {
-                planet_id: home_planet_id,
-            },
-            spaceship: Spaceship::random(ship_name.into(), rng).with_color_map(ship_color),
+            spaceship: Spaceship::random(rng).with_color_map(ship_color),
             game_tactic: Tactic::random(rng),
             resources,
             ..Default::default()
         }
     }
 
-    pub fn can_teleport_to(&self, to: &Planet) -> AppResult<()> {
-        let has_teleportation_pad = self.home_planet_id == to.id
-            || to
-                .upgrades
-                .contains(&AsteroidUpgradeTarget::TeleportationPad);
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
+        self
+    }
 
-        if !has_teleportation_pad {
-            return Err(anyhow!("{} has no teleportation pad", to.name));
-        }
+    pub fn with_spaceship_name(mut self, name: impl Into<String>) -> Self {
+        self.spaceship.name = name.into();
+        self
+    }
 
-        let rum_required = self.player_ids.len() as u32;
-        let has_rum = self.resources.value(&Resource::RUM) >= rum_required;
-
-        if !has_rum {
-            return Err(anyhow!("Not enough Rum! You need at least {rum_required}"));
-        }
-
-        Ok(())
+    pub fn with_home_planet(mut self, home_planet_id: PlanetId) -> Self {
+        self.home_planet_id = home_planet_id;
+        self.current_location = TeamLocation::OnPlanet {
+            planet_id: home_planet_id,
+        };
+        self
     }
 
     pub fn add_sent_challenge(&mut self, challenge: Challenge) {
@@ -273,6 +269,40 @@ impl Team {
     pub fn is_on_player_planet(&self, player: &Player) -> bool {
         // Player must be on same planet as team current_location
         self.is_on_planet() == player.is_on_planet()
+    }
+
+    pub fn has_space_cove_on(&self) -> Option<PlanetId> {
+        match self.space_cove {
+            SpaceCoveState::None => None,
+            SpaceCoveState::Pending { planet_id } | SpaceCoveState::Ready { planet_id } => {
+                Some(planet_id)
+            }
+        }
+    }
+
+    pub fn can_teleport_to(&self, to: &Planet) -> AppResult<()> {
+        let has_teleportation_pad = self.home_planet_id == to.id
+            || to
+                .upgrades
+                .contains(&AsteroidUpgradeTarget::TeleportationPad);
+
+        if !has_teleportation_pad {
+            return Err(anyhow!("{} has no teleportation pad", to.name));
+        }
+
+        // If it has a pad but it's not your own asteroid, cannot teleport
+        if self.home_planet_id != to.id && !self.asteroid_ids.contains(&to.id) {
+            return Err(anyhow!("Cannot use teleportation pad on {}", to.name));
+        }
+
+        let rum_required = self.player_ids.len() as u32;
+        let has_rum = self.resources.value(&Resource::RUM) >= rum_required;
+
+        if !has_rum {
+            return Err(anyhow!("Not enough Rum! You need at least {rum_required}"));
+        }
+
+        Ok(())
     }
 
     pub fn can_add_player(&self, player: &Player) -> AppResult<()> {
@@ -469,9 +499,7 @@ impl Team {
     }
 
     pub fn can_travel_to_planet(&self, planet: &Planet, duration: Tick) -> AppResult<()> {
-        if planet.peer_id.is_some() {
-            return Err(anyhow!("Cannot travel to asteroid"));
-        }
+        planet.can_be_travelled_to()?;
 
         if self.player_ids.is_empty() {
             return Err(anyhow!("No pirate to travel"));
@@ -493,13 +521,7 @@ impl Team {
             return Err(anyhow!("{} is playing", self.name));
         }
 
-        // Cannot travel to planet with no population unless its our asteroid.
-        if planet.total_population() == 0 && !self.asteroid_ids.contains(&planet.id) {
-            return Err(anyhow!("Planet {} is inhabitable", planet.name));
-        }
-
-        let is_teleporting = duration <= TELEPORT_MAX_DURATION;
-
+        let is_teleporting = duration == TELEPORT_TRAVEL_DURATION;
         if is_teleporting {
             if let Err(e) = self.can_teleport_to(planet) {
                 return Err(anyhow!("Cannot teleport to planet {}: {e}", planet.name));
@@ -630,12 +652,15 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_upgrade_spaceship(&self, upgrade: &SpaceshipUpgrade) -> AppResult<()> {
+    pub fn can_upgrade_spaceship(
+        &self,
+        upgrade: &Upgrade<SpaceshipUpgradeTarget>,
+    ) -> AppResult<()> {
         if self.is_on_planet().is_none() {
             return Err(anyhow!("Can only upgrade on a planet"));
         }
 
-        for (resource, amount) in upgrade.cost().iter() {
+        for (resource, amount) in upgrade.upgrade_cost().iter() {
             if self.resources.value(resource) < *amount {
                 return Err(anyhow!("Insufficient resources"));
             }
@@ -647,10 +672,35 @@ impl Team {
     pub fn can_upgrade_asteroid(
         &self,
         asteroid: &Planet,
-        upgrade: &AsteroidUpgrade,
+        upgrade: &Upgrade<AsteroidUpgradeTarget>,
     ) -> AppResult<()> {
         if asteroid.upgrades.contains(&upgrade.target) {
             return Err(anyhow!("Asteroid already has this upgrade"));
+        }
+
+        // Special rules for space cove: it has to be unique across all asteroids.
+        if upgrade.target == AsteroidUpgradeTarget::SpaceCove && self.has_space_cove_on().is_some()
+        {
+            return Err(anyhow!("You already have a space cove"));
+        }
+
+        let mut missing_requirements = vec![];
+        if let Some(required_upgrade) = upgrade.target.previous() {
+            if !asteroid.upgrades.contains(&required_upgrade) {
+                missing_requirements.push(required_upgrade);
+            }
+        }
+
+        if !missing_requirements.is_empty() {
+            return Err(anyhow!(
+                "Missing requirement{}: {:#?}",
+                if missing_requirements.len() > 1 {
+                    "s"
+                } else {
+                    ""
+                },
+                missing_requirements
+            ));
         }
 
         if let Some(pending_upgrade) = &asteroid.pending_upgrade {
@@ -661,10 +711,10 @@ impl Team {
         }
 
         if self.is_on_planet() != Some(asteroid.id) {
-            return Err(anyhow!("Can only upgrade on the asteroid"));
+            return Err(anyhow!("Can only upgrade when the team is on the asteroid"));
         }
 
-        for (resource, amount) in upgrade.cost().iter() {
+        for (resource, amount) in upgrade.target.upgrade_cost().iter() {
             if self.resources.value(resource) < *amount {
                 return Err(anyhow!("Insufficient resources"));
             }
@@ -680,12 +730,14 @@ impl Team {
 
         let max_satoshi_amount = self.balance() / unit_cost;
         let max_storage_amount = if resource == Resource::FUEL {
-            self.spaceship.fuel_capacity() - self.fuel()
+            self.spaceship.fuel_capacity().saturating_sub(self.fuel())
         } else if resource.to_storing_space() == 0 {
             u32::MAX
         } else {
-            let free_storage_capacity =
-                self.spaceship.storage_capacity() - self.resources.used_storage_capacity();
+            let free_storage_capacity = self
+                .spaceship
+                .storage_capacity()
+                .saturating_sub(self.resources.used_storage_capacity());
             free_storage_capacity / resource.to_storing_space()
         };
 

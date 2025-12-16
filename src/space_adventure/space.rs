@@ -13,23 +13,31 @@ use super::{
     ControllableSpaceship, PlayerInput,
 };
 use crate::{
-    image::utils::{ExtraImageUtils, TRAVELLING_BACKGROUND},
+    image::{
+        color_map::ColorMap,
+        utils::{ExtraImageUtils, TRAVELLING_BACKGROUND},
+    },
+    space_adventure::{
+        entity::Entity,
+        shield::ShieldEntity,
+        utils::{draw_hitbox, EntityMap},
+    },
     types::{AppResult, ResourceMap, SystemTimeTick, Tick},
     ui::{popup_message::PopupMessage, ui_callback::UiCallback},
-    world::{resources::Resource, spaceship::Spaceship},
+    world::{resources::Resource, spaceship::Spaceship, Shield, SpaceshipPrefab},
 };
 use anyhow::anyhow;
 use glam::Vec2;
-use image::imageops::crop_imm;
+use image::{imageops::crop_imm, Rgb};
 use image::{Rgba, RgbaImage};
 use itertools::Itertools;
-use rand::{Rng, SeedableRng};
+use rand::{seq::IteratorRandom, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::{
     collections::HashMap,
     time::{Duration, Instant},
 };
-use strum::Display;
+use strum::{Display, IntoEnumIterator};
 
 #[derive(Debug, Display, Clone, Copy, PartialEq)]
 enum SpaceAdventureState {
@@ -58,7 +66,7 @@ pub struct SpaceAdventure {
     tick: usize,
     background: RgbaImage,
     // Layered entities, to allow to draw/interact on separate layers.
-    entities: Vec<HashMap<usize, Box<dyn Entity>>>,
+    entities: Vec<EntityMap>,
     id_to_layer: HashMap<usize, usize>,
     player_id: Option<usize>,
     asteroid_planet_state: AsteroidPlanetState,
@@ -67,71 +75,60 @@ pub struct SpaceAdventure {
 }
 
 impl SpaceAdventure {
-    fn draw_entity(
-        base: &mut RgbaImage,
-        entity: &Box<dyn Entity>,
-        debug_view: bool,
-    ) -> AppResult<()> {
-        let [x, y] = entity.position().to_array();
+    fn get_difficulty_level(time: Instant) -> usize {
+        5 + time.elapsed().as_secs() as usize
+    }
+
+    fn draw_entity(base: &mut RgbaImage, entity: &Entity, debug_view: bool) {
+        let pos = entity.position();
+        let x = pos.x as i32;
+        let y = pos.y as i32;
+
         let image = if entity.should_apply_visual_effects() {
             &entity.apply_visual_effects(entity.image())
         } else {
             entity.image()
         };
 
-        let cropped_image = if x as u32 + image.width() > base.width()
-            && y as u32 + image.height() > base.height()
-        {
-            &crop_imm(
-                image,
-                0,
-                0,
-                base.width().saturating_sub(x as u32),
-                base.height().saturating_sub(y as u32),
-            )
-            .to_image()
-        } else if x as u32 + image.width() > base.width() {
-            &crop_imm(
-                image,
-                0,
-                0,
-                base.width().saturating_sub(x as u32),
-                image.height(),
-            )
-            .to_image()
-        } else if y as u32 + image.height() > base.height() {
-            &crop_imm(
-                image,
-                0,
-                0,
-                image.width(),
-                base.height().saturating_sub(y as u32),
-            )
-            .to_image()
-        } else {
-            image
-        };
-        base.copy_non_trasparent_from(cropped_image, x as u32, y as u32)?;
+        let img_w = image.width() as i32;
+        let img_h = image.height() as i32;
+        let base_w = base.width() as i32;
+        let base_h = base.height() as i32;
 
-        if debug_view {
-            let gray = Rgba([105, 105, 105, 255]);
+        // Compute clipping
+        let src_x = 0.max(-x);
+        let src_y = 0.max(-y);
+        let dst_x = 0.max(x);
+        let dst_y = 0.max(y);
 
-            for (point, &is_border) in entity.hit_box().iter() {
-                let g_point = entity.position() + point;
-                if is_border {
-                    base.put_pixel(
-                        g_point.x.max(0).min(MAX_ENTITY_POSITION.x as i16) as u32,
-                        g_point.y.max(0).min(MAX_ENTITY_POSITION.y as i16) as u32,
-                        gray,
-                    );
-                }
+        let draw_w = (img_w - src_x).min(base_w - dst_x);
+        let draw_h = (img_h - src_y).min(base_h - dst_y);
+
+        // Nothing visible
+        if draw_w <= 0 || draw_h <= 0 {
+            // still draw hitbox if desired
+            if debug_view {
+                draw_hitbox(base, entity);
             }
+            return;
         }
 
-        Ok(())
+        base.copy_non_transparent_from_clipped(
+            image,
+            src_x as u32,
+            src_y as u32,
+            draw_w as u32,
+            draw_h as u32,
+            dst_x as u32,
+            dst_y as u32,
+        );
+
+        if debug_view {
+            draw_hitbox(base, entity);
+        }
     }
 
-    fn insert_entity(&mut self, mut entity: Box<dyn Entity>) -> usize {
+    fn insert_entity(&mut self, mut entity: Entity) -> usize {
         let id = self.id;
         let layer = entity.layer();
         entity.set_id(id);
@@ -157,17 +154,23 @@ impl SpaceAdventure {
             + if self.player_id.is_some() { 1 } else { 0 }
     }
 
-    pub fn get_player(&self) -> Option<&Box<dyn Entity>> {
+    pub fn get_player(&self) -> Option<&SpaceshipEntity> {
         if let Some(player_id) = self.player_id {
-            self.get_entity(&player_id)
+            match self.get_entity(&player_id) {
+                Some(Entity::Spaceship(entity)) => Some(entity),
+                _ => None,
+            }
         } else {
             None
         }
     }
 
-    pub fn get_player_mut(&mut self) -> Option<&mut Box<dyn Entity>> {
+    pub fn get_player_mut(&mut self) -> Option<&mut SpaceshipEntity> {
         if let Some(player_id) = self.player_id {
-            self.get_entity_mut(&player_id)
+            match self.get_entity_mut(&player_id) {
+                Some(Entity::Spaceship(entity)) => Some(entity),
+                _ => None,
+            }
         } else {
             None
         }
@@ -179,7 +182,7 @@ impl SpaceAdventure {
         }
     }
 
-    pub fn get_entity(&self, id: &usize) -> Option<&Box<dyn Entity>> {
+    pub fn get_entity(&self, id: &usize) -> Option<&Entity> {
         if let Some(&layer) = self.id_to_layer.get(id) {
             return self.entities[layer].get(id);
         }
@@ -187,7 +190,7 @@ impl SpaceAdventure {
         None
     }
 
-    pub fn get_entity_mut(&mut self, id: &usize) -> Option<&mut Box<dyn Entity>> {
+    pub fn get_entity_mut(&mut self, id: &usize) -> Option<&mut Entity> {
         if let Some(&layer) = self.id_to_layer.get(id) {
             return self.entities[layer].get_mut(id);
         }
@@ -195,9 +198,33 @@ impl SpaceAdventure {
         None
     }
 
-    pub fn generate_enemy_spaceship(&mut self) -> AppResult<usize> {
-        let collector_id = self.insert_entity(Box::new(CollectorEntity::new()));
-        let enemy_id = self.insert_entity(Box::new(SpaceshipEntity::random_enemy(collector_id)?));
+    fn generate_enemy_spaceship(&mut self) -> AppResult<usize> {
+        let rng = &mut ChaCha8Rng::from_os_rng();
+
+        let mut color_map = ColorMap::random(rng);
+        color_map.blue = Rgb([
+            color_map.blue.0[0] / 6,
+            color_map.blue.0[1] / 6,
+            color_map.blue.0[2] / 6,
+        ]);
+        let spaceship = SpaceshipPrefab::iter()
+            .choose(&mut rand::rng())
+            .ok_or(anyhow!("There should be one spaceship available"))?
+            .spaceship()
+            .with_name("Baddy")
+            .with_color_map(color_map);
+
+        let shield_id = if spaceship.shield == Shield::None {
+            None
+        } else {
+            Some(self.insert_entity(ShieldEntity::new_entity(
+                spaceship.shield_max_durability(),
+                spaceship.shield_damage_reduction(),
+            )))
+        };
+        let enemy_id = self.insert_entity(SpaceshipEntity::random_enemy_spaceship_entity(
+            &spaceship, shield_id,
+        )?);
         self.enemy_ship_spawned = true;
         Ok(enemy_id)
     }
@@ -208,12 +235,12 @@ impl SpaceAdventure {
         velocity: Vec2,
         size: AsteroidSize,
     ) -> usize {
-        self.insert_entity(Box::new(AsteroidEntity::new(
+        self.insert_entity(AsteroidEntity::new_entity(
             position,
             velocity,
             size,
             self.gold_fragment_probability,
-        )))
+        ))
     }
 
     pub fn generate_particle(
@@ -224,13 +251,13 @@ impl SpaceAdventure {
         particle_state: EntityState,
         layer: usize,
     ) -> usize {
-        self.insert_entity(Box::new(ParticleEntity::new(
+        self.insert_entity(ParticleEntity::new_entity(
             position,
             velocity,
             color,
             particle_state,
             layer,
-        )))
+        ))
     }
 
     pub fn generate_fragment(
@@ -240,22 +267,28 @@ impl SpaceAdventure {
         resource: Resource,
         amount: u32,
     ) -> usize {
-        self.insert_entity(Box::new(FragmentEntity::new(
+        self.insert_entity(FragmentEntity::new_entity(
             position, velocity, resource, amount,
-        )))
+        ))
     }
 
     pub fn generate_projectile(
         &mut self,
         shot_by_id: usize,
+        shooter_shield_id: Option<usize>,
         position: Vec2,
         velocity: Vec2,
         color: Rgba<u8>,
         damage: f32,
     ) -> usize {
-        self.insert_entity(Box::new(ProjectileEntity::new(
-            shot_by_id, position, velocity, color, damage,
-        )))
+        self.insert_entity(ProjectileEntity::new_entity(
+            shot_by_id,
+            shooter_shield_id,
+            position,
+            velocity,
+            color,
+            damage,
+        ))
     }
 
     pub fn asteroid_planet_found(&self) -> Option<usize> {
@@ -316,20 +349,29 @@ impl SpaceAdventure {
         weapons_bonus: f32,
         fuel: u32,
     ) -> AppResult<Self> {
-        let collector_id = self.insert_entity(Box::new(CollectorEntity::new()));
-        let id = self.insert_entity(Box::new(SpaceshipEntity::from_spaceship(
+        let collector_id = Some(self.insert_entity(CollectorEntity::new_entity()));
+        let shield_id = if spaceship.shield == Shield::None {
+            None
+        } else {
+            Some(self.insert_entity(ShieldEntity::new_entity(
+                spaceship.shield_max_durability(),
+                spaceship.shield_damage_reduction(),
+            )))
+        };
+        let id = self.insert_entity(SpaceshipEntity::player_spaceship_entity(
             spaceship,
             resources,
             speed_bonus,
             weapons_bonus,
             fuel,
             collector_id,
-        )?));
+            shield_id,
+        )?);
         self.player_id = Some(id);
 
         for _ in 0..10 {
             let asteroid = AsteroidEntity::new_at_screen_edge(self.gold_fragment_probability);
-            self.insert_entity(Box::new(asteroid));
+            self.insert_entity(asteroid);
         }
 
         Ok(self)
@@ -342,10 +384,7 @@ impl SpaceAdventure {
         }
 
         let player = self.get_player_mut().ok_or(anyhow!("No player set"))?;
-        let player_control: &mut dyn ControllableSpaceship = player
-            .as_trait_mut()
-            .expect("Player should implement ControllableSpaceship.");
-        player_control.handle_player_input(input);
+        player.handle_player_input(input);
 
         Ok(())
     }
@@ -395,12 +434,11 @@ impl SpaceAdventure {
             }
 
             SpaceAdventureState::Running { time } => {
-                if let Some(player) = self.get_player() {
-                    let player_control: &dyn ControllableSpaceship = player
-                        .as_trait_ref()
-                        .expect("Player should implement ControllableSpaceship.");
-
-                    if player_control.current_durability() == 0 {
+                if let Some(player) = self.get_player_mut() {
+                    if player.current_durability() == 0 {
+                        player.resources_mut().insert(Resource::GOLD, 0);
+                        player.resources_mut().insert(Resource::RUM, 0);
+                        player.resources_mut().insert(Resource::SCRAPS, 0);
                         self.stop_space_adventure();
 
                         return Ok(vec![
@@ -428,8 +466,8 @@ impl SpaceAdventure {
         let mut callbacks = vec![];
 
         // Update from lowest layer
-        for layer in 0..MAX_LAYER {
-            for (_, entity) in self.entities[layer].iter_mut() {
+        for layer_entities in self.entities.iter_mut() {
+            for (_, entity) in layer_entities.iter_mut() {
                 callbacks.append(&mut entity.update(deltatime));
             }
         }
@@ -446,11 +484,11 @@ impl SpaceAdventure {
                     let entity = self.entities[layer]
                         .get(layer_entities[idx])
                         .expect("Entity should exist.");
-                    for other_idx in idx + 1..layer_entities.len() {
+                    for other_id in layer_entities.iter().skip(idx + 1) {
                         let other = self.entities[layer]
-                            .get(layer_entities[other_idx])
+                            .get(other_id)
                             .expect("Entity should exist.");
-                        callbacks.append(&mut resolve_collision_between(entity, other));
+                        callbacks.append(&mut resolve_collision_between(entity, other, deltatime)?);
                     }
                 }
             }
@@ -462,24 +500,28 @@ impl SpaceAdventure {
         }
 
         // Generate asteroids
-        let difficulty_level = time.elapsed().as_secs() as usize;
-        if self.entity_count() < difficulty_level.min(250)
+        let difficulty_level = Self::get_difficulty_level(time);
+        if self.entity_count() < difficulty_level.min(MAX_ENTITY_COUNT_FOR_GENERATION)
             && self.rng.random_bool(ASTEROID_GENERATION_PROBABILITY)
         {
             let asteroid = AsteroidEntity::new_at_screen_edge(self.gold_fragment_probability);
-            self.insert_entity(Box::new(asteroid));
+            self.insert_entity(asteroid);
         }
 
         let mut ui_callbacks = vec![];
 
-        if difficulty_level > DIFFICULTY_FOR_ASTEROID_PLANET_GENERATION {
+        if difficulty_level >= DIFFICULTY_FOR_ENEMY_SHIP_GENERATION && !self.enemy_ship_spawned {
+            self.generate_enemy_spaceship()?;
+        }
+
+        if difficulty_level >= DIFFICULTY_FOR_ASTEROID_PLANET_GENERATION {
             if let AsteroidPlanetState::NotSpawned {
                 should_spawn_asteroid,
             } = self.asteroid_planet_state
             {
                 if should_spawn_asteroid {
                     let asteroid = AsteroidEntity::planet();
-                    let id = self.insert_entity(Box::new(asteroid));
+                    let id = self.insert_entity(asteroid);
                     self.asteroid_planet_state = AsteroidPlanetState::Spawned {
                         image_number: id % MAX_ASTEROID_PLANET_IMAGE_NUMBER,
                     };
@@ -502,9 +544,7 @@ impl SpaceAdventure {
         // Draw starting from lowest layer
         for layer in 0..MAX_LAYER {
             for (_, entity) in self.entities[layer].iter() {
-                if let Err(e) = Self::draw_entity(&mut base, entity, debug_view) {
-                    log::error!("Error in draw_entity {}: {}", entity.id(), e);
-                }
+                Self::draw_entity(&mut base, entity, debug_view);
             }
         }
 

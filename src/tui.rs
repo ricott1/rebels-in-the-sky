@@ -104,7 +104,7 @@ impl Tui<SSHWriterProxy> {
             tui_type: TuiType::SSH,
             terminal,
             last_draw: Instant::now(),
-            min_duration_between_draws: Duration::from_secs_f32(2.0 * 1.0 / MAX_DRAW_FPS as f32), // Draw with half the FPS of the local TUI.
+            min_duration_between_draws: Duration::from_secs_f32(1.0 / MAX_DRAW_FPS as f32),
         };
 
         tui.init()?;

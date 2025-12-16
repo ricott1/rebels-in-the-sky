@@ -1,9 +1,4 @@
-use super::{
-    action::{Action, ActionOutput, ActionSituation, Advantage, EngineAction},
-    constants::*,
-    game::Game,
-    types::*,
-};
+use super::{action::*, constants::*, game::Game, types::*};
 use crate::world::{
     constants::{MoraleModifier, TirednessCost},
     skill::GameSkill,
@@ -12,70 +7,71 @@ use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
-#[derive(Debug, Default)]
-pub struct Isolation;
+pub(crate) fn execute(
+    input: &ActionOutput,
+    game: &Game,
+    action_rng: &mut ChaCha8Rng,
+    description_rng: &mut ChaCha8Rng,
+) -> Option<ActionOutput> {
+    let attacking_players = game.attacking_players();
+    let defending_players = game.defending_players();
 
-impl EngineAction for Isolation {
-    fn execute(
-        input: &ActionOutput,
-        game: &Game,
-        action_rng: &mut ChaCha8Rng,
-        description_rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
-        let attacking_players = game.attacking_players();
-        let defending_players = game.defending_players();
-
-        let mut weights = [4, 5, 4, 3, 1];
-        for (idx, player) in attacking_players.iter().enumerate() {
-            if player.is_knocked_out() {
-                weights[idx] = 0
-            }
+    let mut weights = [4, 5, 4, 3, 1];
+    for (idx, player) in attacking_players.iter().enumerate() {
+        if player.is_knocked_out() {
+            weights[idx] = 0
         }
+    }
 
-        if weights.iter().sum::<u8>() == 0 {
-            let name = if game.possession == Possession::Home {
-                game.home_team_in_game.name.clone()
-            } else {
-                game.away_team_in_game.name.clone()
-            };
-            return Some(ActionOutput {
-                situation: ActionSituation::Turnover,
-                possession: !input.possession,
-                description: format!(
-                    "Oh no! The whole team is wasted! {name} just turned the ball over like that.",
-                ),
-                start_at: input.end_at,
-                end_at: input.end_at.plus(4 + action_rng.random_range(0..=3)),
-                home_score: input.home_score,
-                away_score: input.away_score,
-                ..Default::default()
-            });
-        }
+    if weights.iter().sum::<u8>() == 0 {
+        let name = if game.possession == Possession::Home {
+            game.home_team_in_game.name.clone()
+        } else {
+            game.away_team_in_game.name.clone()
+        };
+        return Some(ActionOutput {
+            situation: ActionSituation::Turnover,
+            possession: !input.possession,
+            description: format!(
+                "Oh no! The whole team is wasted! {name} just turned the ball over like that.",
+            ),
+            start_at: input.end_at,
+            end_at: input.end_at.plus(4 + action_rng.random_range(0..=3)),
+            home_score: input.home_score,
+            away_score: input.away_score,
+            ..Default::default()
+        });
+    }
 
-        let iso_idx = Self::sample(action_rng, weights)?;
+    let iso_idx = sample_player_index(action_rng, weights)?;
 
-        let iso = attacking_players[iso_idx];
-        let defender = defending_players[iso_idx];
+    let iso = attacking_players[iso_idx];
+    let defender = defending_players[iso_idx];
 
-        let timer_increase = 2 + action_rng.random_range(0..=3);
+    let timer_increase = 2 + action_rng.random_range(0..=3);
 
-        let mut attack_stats_update = HashMap::new();
-        let mut iso_update = GameStats::default();
-        iso_update.extra_tiredness = TirednessCost::MEDIUM;
+    let mut attack_stats_update = HashMap::new();
+    let mut iso_update = GameStats {
+        extra_tiredness: TirednessCost::HIGH,
+        ..Default::default()
+    };
 
-        let mut defense_stats_update = HashMap::new();
-        let mut defender_update = GameStats::default();
-        defender_update.extra_tiredness = TirednessCost::MEDIUM;
+    let mut defense_stats_update = HashMap::new();
+    let mut defender_update = GameStats {
+        extra_tiredness: TirednessCost::MEDIUM,
+        ..Default::default()
+    };
 
-        let atk_result = iso.roll(action_rng)
-            + iso.technical.ball_handling.game_value()
-            + iso.athletics.quickness.game_value();
+    let atk_result = iso.roll(action_rng)
+        + iso.technical.ball_handling.game_value()
+        + iso.athletics.quickness.game_value();
 
-        let def_result = defender.roll(action_rng)
-            + defender.defense.perimeter_defense.game_value()
-            + defender.athletics.quickness.game_value();
+    let def_result = defender.roll(action_rng)
+        + defender.defense.perimeter_defense.game_value()
+        + defender.athletics.quickness.game_value();
 
-        let mut result = match atk_result as i16 - def_result as i16 + Self::tactic_modifier(game, &Action::Isolation) {
+    let mut result = match atk_result  - def_result  + Action::Isolation.tactic_modifier(game.attacking_team().tactic,
+                game.defending_team().tactic) {
             x if x >= ADV_ATTACK_LIMIT => ActionOutput {
                 possession: input.possession,
                 advantage: Advantage::Attack,
@@ -326,10 +322,9 @@ impl EngineAction for Isolation {
                 }
             }
         };
-        attack_stats_update.insert(iso.id, iso_update);
-        defense_stats_update.insert(defender.id, defender_update);
-        result.attack_stats_update = Some(attack_stats_update);
-        result.defense_stats_update = Some(defense_stats_update);
-        Some(result)
-    }
+    attack_stats_update.insert(iso.id, iso_update);
+    defense_stats_update.insert(defender.id, defender_update);
+    result.attack_stats_update = Some(attack_stats_update);
+    result.defense_stats_update = Some(defense_stats_update);
+    Some(result)
 }

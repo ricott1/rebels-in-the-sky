@@ -44,12 +44,10 @@ You need to have the [rust toolchain](https://www.rust-lang.org/tools/install). 
 
 ### Distro Packages
 
-<details>
   <summary>Packaging status</summary>
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/rebels-in-the-sky.svg)](https://repology.org/project/rebels-in-the-sky/versions)
 
-</details>
 
 <details>
   <summary>Arch Linux</summary>
@@ -92,9 +90,7 @@ Suggested minimal terminal size: 160x48. Not all terminals support the game colo
 
 ## Music
 
-Previous versions had the option to play music directly in the game, but this was removed to reduce the binary size and now music is streamed from internet radios. Nevertheless, you can still listen to the game soundtrack directly by connecting to `https://radio.frittura.org/rebels.ogg`!
-
-You can add more radio stations by including them in `assets/data/stream_data.json`. 
+Music is streamed from internet radios. You can add more radio stations by including them in `assets/data/stream_data.json`. 
 
 
 ## Credits
@@ -112,13 +108,17 @@ It is almost guaranteed that you will encounter bugs along your journey. If you 
 
 Running a relayer node helps keep the game decentralized. You can do so by running `rebels -n`. Other players can connect with your relayer at startup using `rebels -i <RELAYER-NODE-IP4-OR-IP6>`. If you do so, please consider opening a PR to add your address to the following list of known relayers.
 
-To run a relayer, you must build with the "relayer" feature enabled.
+To run a relayer, you must build with the "relayer" feature enabled
+
+`cargo build --release --features "relayer"`
 
 ## Running a SSH server
 
 You can also run a SSH server with `rebels -j`.  Other players can connect with your server using `ssh <USERNAME>@<SERVER-IP4-OR-IP6> -p 3788`.
 
-To run a SSH server, you must build with the "ssh" feature enabled.
+To run a SSH server, you must build with the "ssh" feature enabled
+
+`cargo build --release --features "ssh"`
 
 ## License
 

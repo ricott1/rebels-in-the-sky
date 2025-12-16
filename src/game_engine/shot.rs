@@ -1,5 +1,5 @@
 use super::{
-    action::{ActionOutput, ActionSituation, Advantage, EngineAction},
+    action::{ActionOutput, ActionSituation, Advantage},
     constants::ShotDifficulty,
     game::Game,
     types::GameStats,
@@ -16,70 +16,56 @@ use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
-#[derive(Debug, Default)]
-pub struct CloseShot;
-
-#[derive(Debug, Default)]
-pub struct MediumShot;
-
-#[derive(Debug, Default)]
-pub struct LongShot;
-
-impl EngineAction for CloseShot {
-    fn execute(
-        input: &ActionOutput,
-        game: &Game,
-        action_rng: &mut ChaCha8Rng,
-        description_rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
-        execute_shot(
-            input,
-            game,
-            action_rng,
-            description_rng,
-            ShotDifficulty::Close,
-        )
-    }
+pub(crate) fn execute_close_shot(
+    input: &ActionOutput,
+    game: &Game,
+    action_rng: &mut ChaCha8Rng,
+    description_rng: &mut ChaCha8Rng,
+) -> Option<ActionOutput> {
+    execute_shot(
+        input,
+        game,
+        action_rng,
+        description_rng,
+        ShotDifficulty::Close,
+    )
 }
 
-impl EngineAction for MediumShot {
-    fn execute(
-        input: &ActionOutput,
-        game: &Game,
-        action_rng: &mut ChaCha8Rng,
-        description_rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
-        execute_shot(
-            input,
-            game,
-            action_rng,
-            description_rng,
-            ShotDifficulty::Medium,
-        )
-    }
+pub(crate) fn execute_medium_shot(
+    input: &ActionOutput,
+    game: &Game,
+    action_rng: &mut ChaCha8Rng,
+    description_rng: &mut ChaCha8Rng,
+) -> Option<ActionOutput> {
+    execute_shot(
+        input,
+        game,
+        action_rng,
+        description_rng,
+        ShotDifficulty::Medium,
+    )
 }
 
-impl EngineAction for LongShot {
-    fn execute(
-        input: &ActionOutput,
-        game: &Game,
-        action_rng: &mut ChaCha8Rng,
-        description_rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
-        execute_shot(
-            input,
-            game,
-            action_rng,
-            description_rng,
-            ShotDifficulty::Long,
-        )
-    }
+pub(crate) fn execute_long_shot(
+    input: &ActionOutput,
+    game: &Game,
+    action_rng: &mut ChaCha8Rng,
+    description_rng: &mut ChaCha8Rng,
+) -> Option<ActionOutput> {
+    execute_shot(
+        input,
+        game,
+        action_rng,
+        description_rng,
+        ShotDifficulty::Long,
+    )
 }
 
 fn description(
     description_rng: &mut ChaCha8Rng,
     shooter: &Player,
-    assist: Option<&Player>,
+    assist_by: Option<&Player>,
+    blocked_by: Option<&Player>,
     defenders: Vec<&Player>,
     shot: ShotDifficulty,
     advantage: Advantage,
@@ -160,29 +146,47 @@ fn description(
                 format!("{} tries but misses at the rim.", shooter.info.short_name()),
             ]
         }
-        (ShotDifficulty::Close, Advantage::Defense, false) => vec![
-            format!(
-                "{} misses the layup, blocked by {}.",
-                shooter.info.short_name(),
-                defenders[0].info.short_name()
-            ),
-            format!(
-                "{} misses the layup, {} got a piece of it.",
-                shooter.info.short_name(),
-                defenders[0].info.short_name()
-            ),
-            format!(
-                "{} has {} layup denied by {} at the rim.",
-                shooter.info.short_name(),
-                shooter.info.pronouns.as_possessive(),
-                defenders[0].info.short_name()
-            ),
-            format!(
-                "{} misses as {} swats the ball away.",
-                shooter.info.short_name(),
-                defenders[0].info.short_name()
-            ),
-        ],
+        (ShotDifficulty::Close, Advantage::Defense, false) => {
+            if let Some(p) = blocked_by {
+                vec![
+                    format!(
+                        "{} misses the layup, blocked by {}.",
+                        shooter.info.short_name(),
+                        p.info.short_name()
+                    ),
+                    format!(
+                        "{} misses the layup, {} got a piece of it.",
+                        shooter.info.short_name(),
+                        p.info.short_name()
+                    ),
+                    format!(
+                        "{} has {} layup denied by {} at the rim.",
+                        shooter.info.short_name(),
+                        shooter.info.pronouns.as_possessive(),
+                        p.info.short_name()
+                    ),
+                    format!(
+                        "{} misses as {} swats the ball away.",
+                        shooter.info.short_name(),
+                        p.info.short_name()
+                    ),
+                ]
+            } else {
+                vec![
+                    format!("{} misses the contested layup.", shooter.info.short_name(),),
+                    format!(
+                        "{} misses the layup, {} did a good job contesting it.",
+                        shooter.info.short_name(),
+                        defenders[0].info.short_name()
+                    ),
+                    format!(
+                        "{} misses as {} keeps good watch.",
+                        shooter.info.short_name(),
+                        defenders[0].info.short_name()
+                    ),
+                ]
+            }
+        }
 
         (ShotDifficulty::Medium, Advantage::Attack, true) => vec![
             format!(
@@ -248,18 +252,31 @@ fn description(
                 ),
             ]
         }
-        (ShotDifficulty::Medium, Advantage::Defense, false) => vec![
-            format!(
-                "{} misses the jumper, blocked by {}.",
-                shooter.info.short_name(),
-                defenders[0].info.short_name()
-            ),
-            format!(
-                "{} is denied by {} on the mid-range attempt.",
-                shooter.info.short_name(),
-                defenders[0].info.short_name()
-            ),
-        ],
+        (ShotDifficulty::Medium, Advantage::Defense, false) => {
+            if let Some(p) = blocked_by {
+                vec![
+                    format!(
+                        "{} misses the jumper, blocked by {}.",
+                        shooter.info.short_name(),
+                        p.info.short_name()
+                    ),
+                    format!(
+                        "{} is denied by {} on the mid-range attempt.",
+                        shooter.info.short_name(),
+                        p.info.short_name()
+                    ),
+                ]
+            } else {
+                vec![
+                    format!("{} misses a tough jumper.", shooter.info.short_name(),),
+                    format!(
+                        "{} misses, good defense by {} to contest the mid-range attempt.",
+                        shooter.info.short_name(),
+                        defenders[0].info.short_name()
+                    ),
+                ]
+            }
+        }
 
         (ShotDifficulty::Long, Advantage::Attack, true) => {
             vec![
@@ -319,23 +336,70 @@ fn description(
                 shooter.info.short_name()
             ),
         ],
-        (ShotDifficulty::Long, Advantage::Defense, false) => vec![
-            format!(
-                "{} misses the three, blocked by {}.",
-                shooter.info.short_name(),
-                defenders[0].info.short_name()
-            ),
-            format!(
-                "{} is rejected by {} on the long-range attempt.",
-                shooter.info.short_name(),
-                defenders[0].info.short_name()
-            ),
-        ],
+        (ShotDifficulty::Long, Advantage::Defense, false) => {
+            if let Some(p) = blocked_by {
+                vec![
+                    format!(
+                        "{} misses the three, blocked by {}.",
+                        shooter.info.short_name(),
+                        p.info.short_name()
+                    ),
+                    format!(
+                        "{} is rejected by {} on the long-range attempt.",
+                        shooter.info.short_name(),
+                        p.info.short_name()
+                    ),
+                ]
+            } else {
+                vec![
+                    format!(
+                        "{} misses the three, {} was all over {}.",
+                        shooter.info.short_name(),
+                        defenders[0].info.short_name(),
+                        shooter.info.pronouns.as_object()
+                    ),
+                    format!(
+                        "{} misses the long-range attempt, good defense by {}",
+                        shooter.info.short_name(),
+                        defenders[0].info.short_name()
+                    ),
+                ]
+            }
+        }
     };
 
     let mut description = text.choose(description_rng)?.to_string();
-    if let Some(passer) = assist {
-        description.push_str(format!(" Assist from {}.", passer.info.short_name()).as_str());
+    if let Some(passer) = assist_by {
+        let options = match advantage {
+            Advantage::Attack => [
+                format!(" Nice assist from {}.", passer.info.short_name()),
+                format!(" Good pass from {}.", passer.info.short_name()),
+                format!(
+                    " {} deserves at least half the praise.",
+                    passer.info.short_name()
+                ),
+            ],
+            Advantage::Neutral => [
+                format!(" Assist from {}.", passer.info.short_name()),
+                format!(" Nice assist from {}.", passer.info.short_name()),
+                format!(" Good pass from {}.", passer.info.short_name()),
+            ],
+            Advantage::Defense => [
+                format!(" Assist from {}.", passer.info.short_name()),
+                format!(
+                    " The pass from {} was not perfect, but {} managed to convert it.",
+                    passer.info.short_name(),
+                    shooter.info.pronouns.as_subject()
+                ),
+                format!(
+                    " {} managed to covert {}'s pass.",
+                    shooter.info.pronouns.as_subject(),
+                    passer.info.short_name()
+                ),
+            ],
+        };
+        let assist_description = options.choose(description_rng)?;
+        description.push_str(assist_description);
     };
     Some(description)
 }
@@ -371,30 +435,51 @@ fn execute_shot(
     let def_skill = defenders
         .iter()
         .map(|&p| {
-            p.roll(action_rng) / defenders.len() as u16
+            p.roll(action_rng) / defenders.len() as i16
                 + if p.is_knocked_out() {
                     0
                 } else {
                     p.defense.block.game_value()
                 }
         })
-        .sum::<u16>();
+        .sum::<i16>();
 
     let roll = match input.advantage {
-        Advantage::Attack => (shooter.roll(action_rng) + atk_skill) as i16 - (shot as u8) as i16,
+        Advantage::Attack => (shooter.roll(action_rng) + atk_skill) - (shot as i16),
         Advantage::Neutral => {
-            (shooter.roll(action_rng) + atk_skill) as i16 - (shot as u16 + def_skill / 2) as i16
+            (shooter.roll(action_rng) + atk_skill) - (shot as i16 + def_skill / 2)
         }
-        Advantage::Defense => {
-            (shooter.roll(action_rng) + atk_skill) as i16 - (shot as u16 + def_skill) as i16
-        }
+        Advantage::Defense => (shooter.roll(action_rng) + atk_skill) - (shot as i16 + def_skill),
     };
 
     let success = roll > 0;
+    let blocked_by =
+        if !success && input.advantage == Advantage::Defense && roll <= ADV_DEFENSE_LIMIT {
+            Some(defenders[0])
+        } else {
+            None
+        };
+
+    let assist_by = if success && input.assist_from.is_some() {
+        Some(attacking_players[input.assist_from?])
+    } else {
+        None
+    };
+
+    let description = description(
+        description_rng,
+        shooter,
+        assist_by,
+        blocked_by,
+        defenders.clone(),
+        shot,
+        input.advantage,
+        success,
+    )?;
 
     let mut result = match success {
         false => {
-            // Attackers and defenders will get a malus in the rebound action.
+            // Attackers will get a malus in the rebound action.
             let advantage = match input.advantage {
                 Advantage::Attack => Advantage::Neutral,
                 Advantage::Neutral | Advantage::Defense => Advantage::Defense,
@@ -405,15 +490,7 @@ fn execute_shot(
                 attackers: vec![shooter_idx],
                 defenders: input.defenders.clone(),
                 situation: ActionSituation::MissedShot,
-                description: description(
-                    description_rng,
-                    shooter,
-                    None,
-                    defenders.clone(),
-                    shot,
-                    input.advantage,
-                    success,
-                )?,
+                description,
                 start_at: input.end_at,
                 end_at: input.end_at.plus(1 + action_rng.random_range(0..=2)),
                 home_score: input.home_score,
@@ -422,11 +499,6 @@ fn execute_shot(
             }
         }
         true => {
-            let assist = if input.assist_from.is_some() {
-                Some(attacking_players[input.assist_from?])
-            } else {
-                None
-            };
             let score_change = match shot {
                 ShotDifficulty::Close => 2,
                 ShotDifficulty::Medium => 2,
@@ -444,15 +516,7 @@ fn execute_shot(
                 },
                 possession: !input.possession,
                 situation: ActionSituation::BallInBackcourt,
-                description: description(
-                    description_rng,
-                    shooter,
-                    assist,
-                    defenders.clone(),
-                    shot,
-                    input.advantage,
-                    success,
-                )?,
+                description,
                 start_at: input.end_at,
                 end_at: input.end_at.plus(12 + action_rng.random_range(0..=6)),
                 ..Default::default()
@@ -522,43 +586,45 @@ fn execute_shot(
         }
     };
 
-    if result.score_change > 0 {
+    if success {
         shooter_update.points = result.score_change;
         shooter_update.extra_morale += MoraleModifier::HIGH_BONUS;
 
         match shot {
             ShotDifficulty::Close => shooter_update.made_2pt = 1,
-
             ShotDifficulty::Medium => shooter_update.made_2pt = 1,
-
             ShotDifficulty::Long => shooter_update.made_3pt = 1,
         };
-        if input.assist_from.is_some() {
-            let mut passer_update = GameStats::default();
-            passer_update.assists = 1;
-            let passer_id = attacking_players[input.assist_from?].id;
+        if let Some(passer_index) = input.assist_from {
+            let passer_update = GameStats {
+                assists: 1,
+                extra_morale: MoraleModifier::SMALL_BONUS,
+                ..Default::default()
+            };
+            let passer_id = attacking_players[passer_index].id;
             attack_stats_update.insert(passer_id, passer_update);
         }
+    } else if blocked_by.is_some() {
+        shooter_update.extra_morale += MoraleModifier::HIGH_MALUS;
     } else {
         shooter_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
     }
 
     attack_stats_update.insert(shooter.id, shooter_update);
 
-    for (idx, defender) in defenders.iter().enumerate() {
-        let mut defender_update = GameStats::default();
-        match input.advantage {
-            Advantage::Defense => {
-                defender_update.extra_tiredness = TirednessCost::MEDIUM;
-                // Only the first defender gets the block
-                if !success && idx == 0 && roll <= ADV_DEFENSE_LIMIT {
-                    defender_update.blocks = 1;
-                }
+    for defender in defenders.iter() {
+        let mut defender_update = GameStats {
+            extra_tiredness: TirednessCost::MEDIUM,
+            ..Default::default()
+        };
+        if input.advantage == Advantage::Defense {
+            if matches!(blocked_by, Some(player) if player.id == defender.id) {
+                defender_update.blocks = 1;
+                defender_update.extra_morale += MoraleModifier::MEDIUM_BONUS;
+            } else {
+                // Help consumes less energy
+                defender_update.extra_tiredness = TirednessCost::LOW;
             }
-            Advantage::Neutral => {
-                defender_update.extra_tiredness = TirednessCost::MEDIUM;
-            }
-            _ => {}
         }
         defense_stats_update.insert(defender.id, defender_update);
     }

@@ -1,8 +1,9 @@
 use crate::{
     game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
-    types::{PlanetId, Tick},
+    types::{PlanetId, TeamId, Tick},
 };
 use once_cell::sync::Lazy;
+use uuid::uuid;
 
 // DEBUG_TIME_MULTIPLIER should be between 1 and 1000;
 pub const DEBUG_TIME_MULTIPLIER: Tick = 1;
@@ -79,7 +80,7 @@ pub const ASTEROID_DISCOVERY_PROBABILITY: f64 = 0.15;
 pub const PORTAL_DISCOVERY_PROBABILITY: f64 = 0.05;
 pub const PORTAL_TRAVEL_DURATION: Tick = 10 * SECONDS;
 // This is used to check if a travel was done using a portal or teleporting.
-pub const TELEPORT_MAX_DURATION: Tick = PORTAL_TRAVEL_DURATION;
+pub const TELEPORT_TRAVEL_DURATION: Tick = 0;
 
 pub const MAX_NUM_ASTEROID_PER_TEAM: usize = 7;
 
@@ -156,3 +157,5 @@ pub const TRAIT_PROBABILITY: f64 = 0.25;
 
 pub const MIN_RELATIVE_RETIREMENT_AGE: f32 = 0.96;
 pub const PEAK_PERFORMANCE_RELATIVE_AGE: f32 = 0.7;
+
+pub const POLOSIUS_TEAM_ID: TeamId = uuid!("7eb1bb55-3bac-49ea-a480-44b581680167");

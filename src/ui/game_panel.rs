@@ -11,6 +11,7 @@ use super::{
     utils::img_to_lines,
     widgets::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
 };
+use crate::ui::ui_key;
 use crate::{
     game_engine::{
         action::{ActionOutput, ActionSituation, Advantage},
@@ -29,6 +30,7 @@ use anyhow::anyhow;
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use itertools::Itertools;
+use ratatui::style::Stylize;
 use ratatui::{
     layout::{Constraint, Layout, Margin},
     prelude::Rect,
@@ -40,7 +42,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Default)]
 pub struct GamePanel {
-    pub index: usize,
+    pub index: Option<usize>,
     game_ids: Vec<GameId>,
     pitch_view: bool,
     pitch_view_filter: Option<Period>,
@@ -77,11 +79,12 @@ impl GamePanel {
     }
 
     fn selected_game<'a>(&self, world: &'a World) -> Option<&'a Game> {
-        if self.index >= self.game_ids.len() {
+        let index = self.index?;
+        if index >= self.game_ids.len() {
             return None;
         }
 
-        world.get_game(&self.game_ids[self.index])
+        world.get_game(&self.game_ids[index])
     }
 
     fn build_top_panel(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
@@ -141,10 +144,10 @@ impl GamePanel {
 
         let list = selectable_list(options);
 
-        frame.render_stateful_interactive(
+        frame.render_stateful_interactive_widget(
             list.block(default_block().title("Games ↓/↑")),
             area,
-            &mut ClickableListState::default().with_selected(Some(self.index)),
+            &mut ClickableListState::default().with_selected(self.index),
         );
     }
 
@@ -165,9 +168,9 @@ impl GamePanel {
                     "pitch"
                 }
             ))
-            .set_hotkey(UiKey::PITCH_VIEW);
+            .set_hotkey(ui_key::game::PITCH_VIEW);
 
-        frame.render_interactive(pitch_button, b_split[0]);
+        frame.render_interactive_widget(pitch_button, b_split[0]);
 
         let text = if self.player_status_view {
             "Game stats"
@@ -183,9 +186,9 @@ impl GamePanel {
                     "player status"
                 }
             ))
-            .set_hotkey(UiKey::PLAYER_STATUS_VIEW);
+            .set_hotkey(ui_key::game::PLAYER_STATUS_VIEW);
 
-        frame.render_interactive(player_status_button, b_split[1]);
+        frame.render_interactive_widget(player_status_button, b_split[1]);
     }
 
     fn build_score_panel(
@@ -383,8 +386,8 @@ impl GamePanel {
         let planet = world.get_planet_or_err(&game.location)?;
         let pitch_style = match planet.planet_type {
             PlanetType::Earth => PitchImage::PitchFancy,
-            PlanetType::Ring | PlanetType::Gas => PitchImage::PitchPlanet,
-            PlanetType::Rocky => PitchImage::PitchBall,
+            PlanetType::Ring | PlanetType::Rocky => PitchImage::PitchBall,
+            PlanetType::Asteroid => PitchImage::PitchPlanet,
             _ => PitchImage::PitchClassic,
         };
 
@@ -832,7 +835,7 @@ impl GamePanel {
                         "Morale",
                         "Tiredness",
                     ])
-                    .style(UiStyle::HEADER)
+                    .style(UiStyle::HEADER.bold())
                     .height(1),
                 )
                 .widths(constraint);
@@ -846,7 +849,7 @@ impl GamePanel {
                         "Morale",
                         "Tiredness",
                     ])
-                    .style(UiStyle::HEADER)
+                    .style(UiStyle::HEADER.bold())
                     .height(1),
                 )
                 .widths(constraint);
@@ -947,11 +950,19 @@ impl GamePanel {
         ];
 
         let home_table = Self::build_stats_table(&game.home_team_in_game.stats, home_players)
-            .header(Row::new(header_cells_home).style(UiStyle::HEADER).height(1))
+            .header(
+                Row::new(header_cells_home)
+                    .style(UiStyle::HEADER.bold())
+                    .height(1),
+            )
             .widths(constraint);
 
         let away_table = Self::build_stats_table(&game.away_team_in_game.stats, away_players)
-            .header(Row::new(header_cells_away).style(UiStyle::HEADER).height(1))
+            .header(
+                Row::new(header_cells_away)
+                    .style(UiStyle::HEADER.bold())
+                    .height(1),
+            )
             .widths(constraint);
 
         let box_area = Layout::vertical([
@@ -980,6 +991,10 @@ impl Screen for GamePanel {
             .map(|(k, _)| *k)
             .collect_vec();
 
+        if self.game_ids.is_empty() {
+            self.index = None;
+        }
+
         if world.dirty_ui {
             // Try to keep track of current game when other games finish
             if let Some(game) = self.selected_game(world) {
@@ -1000,6 +1015,13 @@ impl Screen for GamePanel {
         } else {
             self.set_index(0);
         }
+
+        if let Some(index) = self.index {
+            if index >= self.game_ids.len() && !self.game_ids.is_empty() {
+                self.set_index(self.game_ids.len() - 1);
+            }
+        }
+
         Ok(())
     }
 
@@ -1039,12 +1061,12 @@ impl Screen for GamePanel {
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
-            UiKey::PREVIOUS_SELECTION => {
+            ui_key::PREVIOUS_SELECTION => {
                 if self.commentary_index > 0 {
                     self.commentary_index -= 1;
                 }
             }
-            UiKey::NEXT_SELECTION => {
+            ui_key::NEXT_SELECTION => {
                 if self.commentary_index < self.action_results.len() - 1 {
                     self.commentary_index += 1;
                 }
@@ -1090,8 +1112,8 @@ impl Screen for GamePanel {
             v.append(&mut vec![
                 format!(
                     " {}/{} ",
-                    UiKey::PREVIOUS_SELECTION.to_string(),
-                    UiKey::NEXT_SELECTION.to_string()
+                    ui_key::PREVIOUS_SELECTION.to_string(),
+                    ui_key::NEXT_SELECTION.to_string()
                 ),
                 " Scroll commentary ".to_string(),
                 " Enter ".to_string(),
@@ -1103,7 +1125,7 @@ impl Screen for GamePanel {
 }
 
 impl SplitPanel for GamePanel {
-    fn index(&self) -> usize {
+    fn index(&self) -> Option<usize> {
         self.index
     }
 
@@ -1112,7 +1134,7 @@ impl SplitPanel for GamePanel {
     }
 
     fn set_index(&mut self, index: usize) {
-        self.index = index;
+        self.index = Some(index);
         self.commentary_index = 0;
     }
 }

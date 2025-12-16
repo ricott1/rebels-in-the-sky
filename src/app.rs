@@ -1,5 +1,8 @@
+use std::time::{Duration, Instant};
+
 use crossterm::event::{KeyCode, KeyModifiers};
 
+use libp2p::identity::Keypair;
 use libp2p::{gossipsub, swarm::SwarmEvent};
 #[cfg(feature = "audio")]
 use log::warn;
@@ -12,6 +15,7 @@ use tokio_util::sync::CancellationToken;
 #[cfg(feature = "audio")]
 use stream_download::{storage::temp::TempStorageProvider, StreamDownload};
 
+use crate::app_version;
 #[cfg(feature = "audio")]
 use crate::audio::music_player::MusicPlayer;
 
@@ -55,23 +59,21 @@ pub struct App {
     pub ui: Ui,
     #[cfg(feature = "audio")]
     pub audio_player: Option<MusicPlayer>,
-    generate_local_world: bool,
-
     pub network_handler: NetworkHandler,
-    store_prefix: String,
     new_version_notified: bool,
-
     cancellation_token: CancellationToken,
-
-    app_version: [usize; 3],
+    generate_local_world: bool,
+    store_prefix: String,
+    store_uncompressed: bool,
 }
 
 impl App {
-    pub fn app_version(&self) -> [usize; 3] {
-        self.app_version
-    }
     pub fn get_event_sender(&self) -> mpsc::Sender<AppEvent> {
         self.event_sender.clone()
+    }
+
+    pub fn get_cancellation_token(&self) -> CancellationToken {
+        self.cancellation_token.clone()
     }
 
     pub async fn simulate_loaded_world<W: WriterProxy>(&mut self, tui: &mut Tui<W>) {
@@ -82,26 +84,55 @@ impl App {
             (Tick::now() - self.world.last_tick_short_interval).formatted()
         );
 
-        // If team is on a space adventure, bring it back to base planet.
-        // This is an ad-hoc fix to avoid problems when the game is closed during a space adventure,
-        // since the space property of the world is not serialized and stored.
         let own_team = self
             .world
-            .get_own_team_mut()
+            .get_own_team()
             .expect("There should be an own team when simulating.");
-        if let TeamLocation::OnSpaceAdventure { around } = own_team.current_location {
-            // The team loses all resources but satoshis, we told you so!
-            let current_treasury = own_team.resources.value(&Resource::SATOSHI);
-            own_team.resources = ResourceMap::default();
-            own_team
-                .add_resource(Resource::SATOSHI, current_treasury)
-                .expect("It should always be possible to add satoshis");
-            own_team.spaceship.set_current_durability(0);
-            own_team.current_location = TeamLocation::OnPlanet { planet_id: around };
 
-            self.ui
+        match own_team.current_location {
+            TeamLocation::OnSpaceAdventure { around } => {
+                // If team is on a space adventure, bring it back to base planet.
+                // This is an ad-hoc fix to avoid problems when the game is closed during a space adventure,
+                // since the space property of the world is not serialized and stored.
+                let own_team = self
+                    .world
+                    .get_own_team_mut()
+                    .expect("There should be an own team when simulating.");
+                // The team loses all resources but satoshis, we told you so!
+                let current_treasury = own_team.resources.value(&Resource::SATOSHI);
+                own_team.resources = ResourceMap::default();
+                own_team
+                    .add_resource(Resource::SATOSHI, current_treasury)
+                    .expect("It should always be possible to add satoshis");
+                own_team.spaceship.set_current_durability(0);
+                own_team.current_location = TeamLocation::OnPlanet { planet_id: around };
+
+                self.ui
                 .push_popup(PopupMessage::Ok{
                    message: "The game was closed during a space adventure.\nAll the cargo and fuel have been lost.\nNext time go back to the base first!".to_string(), is_skippable:false,tick: Tick::now()});
+            }
+            TeamLocation::OnPlanet { planet_id } => {
+                if !self.world.planets.contains_key(&planet_id) {
+                    let own_team = self
+                        .world
+                        .get_own_team_mut()
+                        .expect("There should be an own team when simulating.");
+                    // If on a peer asteroid, the planet is not part of the world.
+                    // In this case, return the team to home planet (lose all Rum).
+                    own_team
+                        .resources
+                        .saturating_sub(Resource::RUM, own_team.storage_capacity());
+
+                    own_team.current_location = TeamLocation::OnPlanet {
+                        planet_id: own_team.home_planet_id,
+                    };
+
+                    self.ui
+                .push_popup(PopupMessage::Ok{
+                   message: "The game was closed while the team was on a peer asteroid.\nAll the rum has been lost.\nNext time go back to the base first!".to_string(), is_skippable:false,tick: Tick::now()});
+                }
+            }
+            _ => {}
         }
 
         const SIMULATION_UPDATE_INTERVAL: Tick = 250 * MILLISECONDS;
@@ -164,6 +195,7 @@ impl App {
             false,
             None,
             None,
+            false,
         )?;
         app.new_world();
         let home_planet_id = *app
@@ -193,6 +225,7 @@ impl App {
             false,
             None,
             None,
+            false,
         )?;
         app.new_world();
         let home_planet_id = *app
@@ -224,6 +257,7 @@ impl App {
         reset_world: bool,
         seed_ip: Option<String>,
         store_prefix: Option<String>,
+        store_uncompressed: bool,
     ) -> AppResult<Self> {
         // If the reset_world flag is set, reset the world.
         if reset_world {
@@ -261,17 +295,12 @@ impl App {
             ui,
             #[cfg(feature = "audio")]
             audio_player,
-            generate_local_world,
-
             network_handler,
-            store_prefix: store_prefix.to_string(),
             new_version_notified: false,
             cancellation_token: CancellationToken::new(),
-            app_version: [
-                env!("CARGO_PKG_VERSION_MAJOR").parse()?,
-                env!("CARGO_PKG_VERSION_MINOR").parse()?,
-                env!("CARGO_PKG_VERSION_PATCH").parse()?,
-            ],
+            generate_local_world,
+            store_prefix,
+            store_uncompressed,
         })
     }
 
@@ -279,18 +308,21 @@ impl App {
         &mut self,
         mut tui: Tui<W>,
         network_port: Option<u16>,
+        auto_quit_after: Option<Duration>, // Used to cleanly break hanging SSH connection.
     ) -> AppResult<()> {
         crossterm_event_handler::start_event_handler(
             self.get_event_sender(),
-            self.cancellation_token.clone(),
+            self.get_cancellation_token(),
         );
 
         let mut network_started = false;
 
         tick_event_handler::start_tick_event_loop(
             self.get_event_sender(),
-            self.cancellation_token.clone(),
+            self.get_cancellation_token(),
         );
+
+        let mut last_user_input = Instant::now();
 
         while self.state != AppState::Quitting {
             if self.state == AppState::Simulating {
@@ -301,13 +333,33 @@ impl App {
 
             if !network_started && self.world.has_own_team() {
                 if let Some(tcp_port) = network_port {
+                    // If world keypair bytes are set --> restore the network handler keypair
+                    if let Some(bytes) = self.world.network_keypair.as_ref() {
+                        if let Ok(keypair) = Keypair::from_protobuf_encoding(bytes) {
+                            self.network_handler.set_keypair(keypair);
+                            log::info!("Network keypair restored.")
+                        } else {
+                            log::error!("Could not restore network keypair.")
+                        }
+                    }
+                    // Else do the opposite: store the new random keypair in the world
+                    else {
+                        self.world.network_keypair = Some(self.network_handler.keypair_bytes()?);
+                        log::info!("Network keypair persisted.")
+                    }
                     self.network_handler.start_polling_events(
                         self.get_event_sender(),
-                        self.cancellation_token.clone(),
+                        self.get_cancellation_token(),
                         tcp_port,
                     );
                 }
                 network_started = true;
+            }
+
+            if let Some(duration) = auto_quit_after {
+                if last_user_input.elapsed() >= duration {
+                    self.quit()?;
+                }
             }
 
             if let Some(app_event) = self.event_receiver.recv().await {
@@ -322,23 +374,26 @@ impl App {
                         }
                     }
 
-                    AppEvent::TerminalEvent(terminal_event) => match terminal_event {
-                        TerminalEvent::Key(key_event) => {
-                            if self.should_draw_key_events(key_event)? {
+                    AppEvent::TerminalEvent(terminal_event) => {
+                        match terminal_event {
+                            TerminalEvent::Key(key_event) => {
+                                if self.should_draw_key_events(key_event)? {
+                                    self.draw(&mut tui).await;
+                                }
+                            }
+                            TerminalEvent::Mouse(mouse_event) => {
+                                if self.should_draw_mouse_events(mouse_event)? {
+                                    self.draw(&mut tui).await;
+                                }
+                            }
+                            TerminalEvent::Resize(w, h) => {
+                                tui.resize((w, h))?;
                                 self.draw(&mut tui).await;
                             }
-                        }
-                        TerminalEvent::Mouse(mouse_event) => {
-                            if self.should_draw_mouse_events(mouse_event)? {
-                                self.draw(&mut tui).await;
-                            }
-                        }
-                        TerminalEvent::Resize(w, h) => {
-                            tui.resize((w, h))?;
-                            self.draw(&mut tui).await;
-                        }
-                        TerminalEvent::Quit => self.quit()?,
-                    },
+                            TerminalEvent::Quit => self.quit()?,
+                        };
+                        last_user_input = Instant::now()
+                    }
 
                     AppEvent::NetworkEvent(swarm_event) => {
                         self.handle_network_events(swarm_event)?;
@@ -359,7 +414,7 @@ impl App {
 
     pub fn notify_seed_version(&mut self, seed_version: [usize; 3]) -> AppResult<()> {
         if !self.new_version_notified {
-            let [own_version_major, own_version_minor, own_version_patch] = self.app_version;
+            let [own_version_major, own_version_minor, own_version_patch] = app_version();
             let [version_major, version_minor, version_patch] = seed_version;
             if version_major > own_version_major
                 || (version_major == own_version_major && version_minor > own_version_minor)
@@ -417,7 +472,12 @@ impl App {
 
         // save world and backup
         if self.world.has_own_team() {
-            save_world(&self.world, true, &self.store_prefix)?;
+            save_world(
+                &self.world,
+                &self.store_prefix,
+                true,
+                self.store_uncompressed,
+            )?;
         }
 
         Ok(())
@@ -525,7 +585,9 @@ impl App {
 
         if self.world.dirty {
             self.world.dirty = false;
-            save_world(&self.world, false, &self.store_prefix).expect("Failed to save world");
+            if let Err(e) = save_world(&self.world, &self.store_prefix, false, false) {
+                log::error!("Failed to save world: {e}");
+            }
             self.world.serialized_size =
                 get_world_size(&self.store_prefix).expect("Failed to get world size");
 
@@ -548,11 +610,19 @@ impl App {
                     );
                 }
 
-                if let Err(e) = self.network_handler.send_open_trades(&self.world) {
+                if let Err(e) = self.network_handler.resend_open_trades(&self.world) {
                     self.ui.push_log_event(
                         Tick::now(),
                         None,
                         format!("Failed to send open trades to peers: {e}"),
+                    );
+                }
+
+                if let Err(e) = self.network_handler.resend_open_challenges(&self.world) {
+                    self.ui.push_log_event(
+                        Tick::now(),
+                        None,
+                        format!("Failed to send open challenges to peers: {e}"),
                     );
                 }
             } else if let Err(e) = self.network_handler.dial_seed() {

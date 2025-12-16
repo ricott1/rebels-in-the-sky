@@ -4,23 +4,15 @@ use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
 use super::utils::{big_text, img_to_lines};
 use super::widgets::{get_charge_spans, get_durability_spans, get_fuel_spans, get_storage_spans};
-use crate::space_adventure::{ControllableSpaceship, ShooterState};
+use crate::space_adventure::ControllableSpaceship;
 use crate::types::AppResult;
-use crate::ui::constants::UiKey;
+use crate::ui::ui_key;
 use crate::world::world::World;
 use core::fmt::Debug;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::text::Line;
 use ratatui::widgets::Clear;
 use ratatui::{prelude::Rect, widgets::Paragraph};
-
-const CONTROLS: [&str; 5] = [
-    "      ╔═════╗         ╔═════╗            ╔═════╗                     ",
-    "      ║  ↑  ║         ║  a  ║ autofire   ║  s  ║ release scraps      ",
-    "╔═════╬═════╬═════╗   ╚═════╝╔═════╗     ╚═════╝╔═════╗              ",
-    "║  ←  ║  ↓  ║  →  ║          ║  z  ║ shoot      ║  x  ║ return home  ",
-    "╚═════╩═════╩═════╝          ╚═════╝            ╚═════╝              ",
-];
 
 #[derive(Debug, Default)]
 pub struct SpaceScreen {
@@ -31,8 +23,29 @@ pub struct SpaceScreen {
 
 impl SpaceScreen {
     pub fn new() -> Self {
+        //       ╔═════╗         ╔═════╗            ╔═════╗                  ╔═════╗
+        //       ║  ↑  ║         ║  x  ║ autofire   ║  x  ║ toggle shield    ║  x  ║ release scraps
+        // ╔═════╬═════╬═════╗   ╚═════╝╔═════╗     ╚═════╝╔═════╗           ╚═════╝
+        // ║  ←  ║  ↓  ║  →  ║          ║  x  ║ shoot      ║  x  ║ return home
+        // ╚═════╩═════╩═════╝          ╚═════╝            ╚═════╝
+        let controls = [
+            "      ╔═════╗         ╔═════╗            ╔═════╗                  ╔═════╗".to_string(),
+            format!(
+                "      ║  ↑  ║         ║  {}  ║ autofire   ║  {}  ║ toggle shield    ║  {}  ║ release scraps",
+                ui_key::space::AUTOFIRE,
+                ui_key::space::TOGGLE_SHIELD,
+                ui_key::space::RELEASE_SCRAPS
+            ),
+            "╔═════╬═════╬═════╗   ╚═════╝╔═════╗     ╚═════╝╔═════╗           ╚═════╝".to_string(),
+            format!(
+                "║  ←  ║  ↓  ║  →  ║          ║  {}  ║ shoot      ║  {}  ║ return home  ",
+                ui_key::space::SHOOT,
+                ui_key::space::BACK_TO_BASE
+            ),
+            "╚═════╩═════╩═════╝          ╚═════╝            ╚═════╝              ".to_string(),
+        ];
         Self {
-            controls: big_text(&CONTROLS).left_aligned(),
+            controls: big_text(&controls).left_aligned(),
             ..Default::default()
         }
     }
@@ -90,26 +103,33 @@ impl Screen for SpaceScreen {
         if let Some(player) = space_adventure.get_player() {
             let bars_length = (area.width as usize / 4 - 20).min(BARS_LENGTH);
 
-            let description: &dyn ControllableSpaceship = player
-                .as_trait_ref()
-                .expect("Player should implement ControllableSpaceship.");
+            let mut shield_current_durability = 0;
+            let mut shield_max_durability = 0;
+            if let Some(id) = player.shield_id() {
+                if let Some(entity) = space_adventure.get_entity(&id) {
+                    let shield = entity.as_shield()?;
+                    shield_current_durability = shield.current_durability();
+                    shield_max_durability = shield.max_durability();
+                }
+            }
 
             frame.render_widget(
                 Line::from(get_durability_spans(
-                    description.current_durability(),
-                    description.durability(),
+                    player.current_durability(),
+                    player.max_durability(),
+                    shield_current_durability,
+                    shield_max_durability,
                     bars_length,
                 )),
                 info_split[0],
             );
 
-            let is_recharging =
-                matches!(description.shooter_state(), ShooterState::Recharging { .. });
+            let is_recharging = player.is_recharging();
 
             frame.render_widget(
                 Line::from(get_charge_spans(
-                    description.charge(),
-                    description.max_charge(),
+                    player.current_charge(),
+                    player.max_charge(),
                     is_recharging,
                     bars_length,
                 )),
@@ -118,8 +138,8 @@ impl Screen for SpaceScreen {
 
             frame.render_widget(
                 Line::from(get_fuel_spans(
-                    description.fuel(),
-                    description.fuel_capacity(),
+                    player.fuel(),
+                    player.fuel_capacity(),
                     bars_length,
                 )),
                 info_split[2],
@@ -127,8 +147,8 @@ impl Screen for SpaceScreen {
 
             frame.render_widget(
                 Line::from(get_storage_spans(
-                    description.resources(),
-                    description.storage_capacity(),
+                    player.resources(),
+                    player.storage_capacity(),
                     bars_length,
                 )),
                 info_split[3],
@@ -149,17 +169,13 @@ impl Screen for SpaceScreen {
         key_event: crossterm::event::KeyEvent,
         _world: &World,
     ) -> Option<super::ui_callback::UiCallback> {
-        match key_event.code {
-            UiKey::SPACE_MOVE_LEFT => Some(UiCallback::SpaceMovePlayerLeft),
-            UiKey::SPACE_MOVE_RIGHT => Some(UiCallback::SpaceMovePlayerRight),
-            UiKey::SPACE_MOVE_DOWN => Some(UiCallback::SpaceMovePlayerDown),
-            UiKey::SPACE_MOVE_UP => Some(UiCallback::SpaceMovePlayerUp),
-            UiKey::SPACE_AUTOFIRE => Some(UiCallback::SpaceToggleAutofire),
-            UiKey::SPACE_SHOOT => Some(UiCallback::SpaceShoot),
-            UiKey::SPACE_BACK_TO_BASE => Some(UiCallback::StopSpaceAdventure),
-            UiKey::SPACE_RELEASE_SCRAPS => Some(UiCallback::SpaceReleaseScraps),
-            _ => None,
+        if ui_key::space::ALL.contains(&key_event.code) {
+            return Some(UiCallback::SpaceAdventurePlayerInput {
+                key_code: key_event.code,
+            });
         }
+
+        None
     }
 
     fn footer_spans(&self) -> Vec<String> {

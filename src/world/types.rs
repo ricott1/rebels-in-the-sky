@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use super::{
     constants::{DEFAULT_PLANET_ID, KILOMETER},
     player::Player,
@@ -8,12 +6,16 @@ use super::{
 };
 use crate::{
     image::color_map::SkinColorMap,
-    types::{AppResult, PlanetId, TeamId, Tick},
+    types::{AppResult, PlanetId, SystemTimeTick, TeamId, Tick},
+    world::Resource,
 };
+use rand::{seq::IteratorRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{weighted::WeightedIndex, Distribution};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::fmt::Display;
+use strum::IntoEnumIterator;
 use strum::{Display, FromRepr};
 use strum_macros::EnumIter;
 
@@ -124,6 +126,13 @@ impl Display for Population {
 }
 
 impl Population {
+    pub fn random() -> Self {
+        let rng = &mut ChaCha8Rng::from_os_rng();
+        Self::iter()
+            .choose(rng)
+            .expect("There should be at lease one Population to choose from.")
+    }
+
     pub fn relative_age(&self, age: f32) -> f32 {
         (age - self.min_age()) / (self.max_age() - self.min_age())
     }
@@ -333,7 +342,7 @@ pub enum Pronoun {
 
 impl Pronoun {
     pub fn random(rng: &mut ChaCha8Rng) -> Self {
-        if let Ok(dist) = WeightedIndex::new([8, 8, 1]) {
+        if let Ok(dist) = WeightedIndex::new([10, 10, 1]) {
             return Self::from_repr(dist.sample(rng) as u8).unwrap_or_default();
         }
 
@@ -523,6 +532,50 @@ impl TeamBonus {
                 + 0.25 * player.mental.charisma
                 + 0.5 * player.mental.intuition),
         }
+    }
+}
+
+pub trait UpgradeableElement: Sized {
+    fn next(&self) -> Option<Self>;
+    fn previous(&self) -> Option<Self>;
+    fn upgrade_cost(&self) -> Vec<(Resource, u32)>;
+    fn upgrade_duration(&self) -> Tick;
+    fn can_be_upgraded(&self) -> bool {
+        self.next().is_some()
+    }
+    fn description(&self) -> &str;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Hash)]
+pub struct Upgrade<U>
+where
+    U: UpgradeableElement,
+{
+    pub target: U,
+    pub started: Tick,
+    pub duration: Tick,
+}
+
+impl<U> Upgrade<U>
+where
+    U: UpgradeableElement,
+{
+    pub fn new(target: U, bonus: f32) -> Self {
+        let duration = (target.upgrade_duration() as f32 / bonus) as Tick;
+        Self {
+            started: Tick::now(),
+            duration,
+            target,
+        }
+    }
+
+    pub fn with_duration(mut self, duration: Tick) -> Self {
+        self.duration = duration;
+        self
+    }
+
+    pub fn upgrade_cost(&self) -> Vec<(Resource, u32)> {
+        self.target.upgrade_cost()
     }
 }
 

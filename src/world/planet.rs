@@ -3,10 +3,12 @@ use super::{resources::Resource, skill::MAX_SKILL, types::Population};
 use crate::types::{SystemTimeTick, Tick};
 use crate::world::skill::GameSkill;
 use crate::world::utils::is_default;
+use crate::world::{AsteroidUpgradeTarget, Upgrade, MIN_SKILL};
 use crate::{
     types::*,
     types::{PlanetId, TeamId},
 };
+use anyhow::anyhow;
 use libp2p::PeerId;
 use rand::prelude::Distribution;
 use rand::seq::IndexedRandom;
@@ -15,16 +17,12 @@ use rand_chacha::ChaCha8Rng;
 use rand_distr::weighted::WeightedIndex;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::collections::HashSet;
 use std::{
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
 };
 use strum_macros::{Display, EnumIter};
-
-// Remve this imports once we remove the fallback logic for the asteroid upgrade serialization
-use serde::de::{self, Visitor};
-use serde::{Deserializer, Serializer};
-use std::fmt;
 
 const TRADE_DELTA_SCARCITY: f32 = 3.25;
 const TRADE_DELTA_BUY_SELL: f32 = 0.05;
@@ -47,113 +45,6 @@ pub enum PlanetType {
     Rocky,
     Wet,
     Asteroid,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Hash, EnumIter)]
-#[repr(u8)]
-pub enum AsteroidUpgradeTarget {
-    TeleportationPad,
-    TortugaSpacePort,
-}
-
-// FIXME: remove in two releases
-impl Serialize for AsteroidUpgradeTarget {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // Always serialize as u8 (new format)
-        serializer.serialize_u8(*self as u8)
-    }
-}
-
-impl<'de> Deserialize<'de> for AsteroidUpgradeTarget {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct EnumVisitor;
-
-        impl<'de> Visitor<'de> for EnumVisitor {
-            type Value = AsteroidUpgradeTarget;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a u8 or string enum variant")
-            }
-
-            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                match v {
-                    0 => Ok(AsteroidUpgradeTarget::TeleportationPad),
-                    1 => Ok(AsteroidUpgradeTarget::TortugaSpacePort),
-                    _ => Err(E::custom(format!("unknown enum value {}", v))),
-                }
-            }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                match v {
-                    "TeleportationPad" => Ok(AsteroidUpgradeTarget::TeleportationPad),
-                    "TortugaSpacePort" => Ok(AsteroidUpgradeTarget::TortugaSpacePort),
-                    _ => Err(E::custom(format!("unknown enum variant {}", v))),
-                }
-            }
-        }
-
-        deserializer.deserialize_any(EnumVisitor)
-    }
-}
-
-impl AsteroidUpgradeTarget {
-    pub fn name(&self) -> &str {
-        match self {
-            Self::TeleportationPad => "Teleportation pad",
-            Self::TortugaSpacePort => "Tortuga space port",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Hash)]
-pub struct AsteroidUpgrade {
-    pub target: AsteroidUpgradeTarget,
-    pub started: Tick,
-    pub duration: Tick,
-}
-
-impl AsteroidUpgrade {
-    pub const BASE_DURATION: Tick = 8 * HOURS;
-
-    pub fn new(target: AsteroidUpgradeTarget, bonus: f32) -> Self {
-        let duration = (Self::BASE_DURATION as f32 / bonus) as Tick;
-        Self {
-            started: Tick::now(),
-            duration,
-            target,
-        }
-    }
-
-    pub fn description(&self) -> String {
-        match self.target {
-            AsteroidUpgradeTarget::TeleportationPad => "Building teleportation pad".to_string(),
-            AsteroidUpgradeTarget::TortugaSpacePort => {
-                "Building the Tortuga space port".to_string()
-            }
-        }
-    }
-    pub fn cost(&self) -> Vec<(Resource, u32)> {
-        match self.target {
-            AsteroidUpgradeTarget::TeleportationPad => {
-                vec![(Resource::SCRAPS, 125), (Resource::GOLD, 25)]
-            }
-            AsteroidUpgradeTarget::TortugaSpacePort => {
-                vec![(Resource::SCRAPS, 250), (Resource::GOLD, 1000)]
-            }
-        }
-    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
@@ -181,10 +72,10 @@ pub struct Planet {
     pub custom_radio_stream: Option<String>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub pending_upgrade: Option<AsteroidUpgrade>,
+    pub pending_upgrade: Option<Upgrade<AsteroidUpgradeTarget>>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub upgrades: Vec<AsteroidUpgradeTarget>,
+    pub upgrades: HashSet<AsteroidUpgradeTarget>,
 }
 
 impl Planet {
@@ -262,6 +153,22 @@ impl Planet {
         Some(weights[dist.sample(rng)].0)
     }
 
+    pub fn can_be_travelled_to(&self) -> AppResult<()> {
+        // Cannot travel to network asteroid unless it has a space cove.
+        if self.peer_id.is_some() && !self.upgrades.contains(&AsteroidUpgradeTarget::SpaceCove) {
+            return Err(anyhow!(
+                "Cannot travel to network asteroid without a space cove."
+            ));
+        }
+
+        // Cannot travel to planet with no population unless its an asteroid.
+        if self.total_population() == 0 && self.planet_type != PlanetType::Asteroid {
+            return Err(anyhow!("Planet {} is inhabitable", self.name));
+        }
+
+        Ok(())
+    }
+
     pub fn asteroid(name: String, filename: String, satellite_of: PlanetId) -> Self {
         let rng = &mut ChaCha8Rng::from_os_rng();
         let revolution_period: usize = [120, 180, 360]
@@ -269,27 +176,38 @@ impl Planet {
             .copied()
             .expect("Should select a random value");
 
+        let mut resources = ResourceMap::new();
+
+        resources.insert(
+            Resource::SCRAPS,
+            rng.random_range(MIN_SKILL + 2.5..=MAX_SKILL) as u32,
+        );
+        resources.insert(
+            Resource::GOLD,
+            rng.random_range(MIN_SKILL..=MAX_SKILL - 8.0) as u32,
+        );
+
         Self {
             id: PlanetId::new_v4(),
             peer_id: None,
             version: 0,
             name,
             populations: HashMap::new(),
-            resources: HashMap::new(),
+            resources,
             filename,
             rotation_period: rng.random_range(1..24),
             revolution_period,
             gravity: rng.random_range(1..4),
             asteroid_probability: 0.0,
             planet_type: PlanetType::Asteroid,
-            satellites: vec![],
+            satellites: Vec::new(),
             satellite_of: Some(satellite_of),
             axis: (rng.random_range(10.0..60.0), rng.random_range(10.0..60.0)),
-            team_ids: vec![],
+            team_ids: Vec::new(),
             //TODO: add option to customize asteroid radio stream
             custom_radio_stream: None,
             pending_upgrade: None,
-            upgrades: vec![],
+            upgrades: HashSet::new(),
         }
     }
 }

@@ -1,18 +1,15 @@
 use super::{
-    brawl::Brawl,
-    end_of_quarter::EndOfQuarter,
     game::Game,
-    isolation::Isolation,
-    jump_ball::JumpBall,
-    off_the_screen::OffTheScreen,
-    pick_and_roll::PickAndRoll,
-    post::Post,
-    rebound::Rebound,
-    shot::{CloseShot, LongShot, MediumShot},
-    start_of_quarter::StartOfQuarter,
-    substitution::Substitution,
     timer::Timer,
     types::{GameStatsMap, Possession},
+};
+use crate::{
+    backcompat_repr_u8_enum,
+    game_engine::{
+        brawl, constants::TACTIC_MODIFIER_MULTIPLIER, end_of_quarter, isolation, jump_ball,
+        off_the_screen, pick_and_roll, post, rebound, shot, start_of_quarter, substitution,
+        tactic::Tactic,
+    },
 };
 use core::fmt::Debug;
 use rand_chacha::ChaCha8Rng;
@@ -20,12 +17,28 @@ use rand_distr::{weighted::WeightedIndex, Distribution};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-#[derive(Debug, Default, PartialEq, Clone, Copy, Serialize, Deserialize)]
-pub enum Advantage {
-    Attack,
-    #[default]
-    Neutral,
-    Defense,
+// FIXME: migrate to repr
+// #[derive(Debug, Default, PartialEq, Clone, Copy, Serialize, Deserialize)]
+// pub enum Advantage {
+//     Attack,
+//     #[default]
+//     Neutral,
+//     Defense,
+// }
+
+backcompat_repr_u8_enum! {
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    pub enum Advantage {
+        Attack,
+        Neutral,
+        Defense,
+    }
+}
+
+impl Default for Advantage {
+    fn default() -> Self {
+        Self::Neutral
+    }
 }
 
 #[derive(Debug, Default, Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq)]
@@ -88,7 +101,12 @@ pub enum Action {
 }
 
 impl Action {
-    pub fn execute(
+    pub(crate) fn tactic_modifier(&self, attack_tactic: Tactic, defense_tactic: Tactic) -> i16 {
+        (attack_tactic.attack_roll_bonus(self) - defense_tactic.defense_roll_bonus(self))
+            * TACTIC_MODIFIER_MULTIPLIER
+    }
+
+    pub(crate) fn execute(
         &self,
         input: &ActionOutput,
         game: &Game,
@@ -96,40 +114,33 @@ impl Action {
         description_rng: &mut ChaCha8Rng,
     ) -> Option<ActionOutput> {
         let mut output = match self {
-            Action::JumpBall => JumpBall::execute(input, game, action_rng, description_rng),
+            Action::JumpBall => jump_ball::execute(input, game, action_rng, description_rng),
             Action::StartOfQuarter => {
-                StartOfQuarter::execute(input, game, action_rng, description_rng)
+                start_of_quarter::execute(input, game, action_rng, description_rng)
             }
-            Action::EndOfQuarter => EndOfQuarter::execute(input, game, action_rng, description_rng),
-            Action::Isolation => Isolation::execute(input, game, action_rng, description_rng),
-            Action::PickAndRoll => PickAndRoll::execute(input, game, action_rng, description_rng),
-            Action::OffTheScreen => OffTheScreen::execute(input, game, action_rng, description_rng),
-            Action::Post => Post::execute(input, game, action_rng, description_rng),
-            Action::Rebound => Rebound::execute(input, game, action_rng, description_rng),
-            Action::CloseShot => CloseShot::execute(input, game, action_rng, description_rng),
-            Action::MediumShot => MediumShot::execute(input, game, action_rng, description_rng),
-            Action::LongShot => LongShot::execute(input, game, action_rng, description_rng),
-            Action::Substitution => Substitution::execute(input, game, action_rng, description_rng),
-            Action::Brawl => Brawl::execute(input, game, action_rng, description_rng),
+            Action::EndOfQuarter => {
+                end_of_quarter::execute(input, game, action_rng, description_rng)
+            }
+            Action::Isolation => isolation::execute(input, game, action_rng, description_rng),
+            Action::PickAndRoll => pick_and_roll::execute(input, game, action_rng, description_rng),
+            Action::OffTheScreen => {
+                off_the_screen::execute(input, game, action_rng, description_rng)
+            }
+            Action::Post => post::execute(input, game, action_rng, description_rng),
+            Action::Rebound => rebound::execute(input, game, action_rng, description_rng),
+            Action::CloseShot => shot::execute_close_shot(input, game, action_rng, description_rng),
+            Action::MediumShot => {
+                shot::execute_medium_shot(input, game, action_rng, description_rng)
+            }
+            Action::LongShot => shot::execute_long_shot(input, game, action_rng, description_rng),
+            Action::Substitution => substitution::execute(input, game, action_rng, description_rng),
+            Action::Brawl => brawl::execute(input, game, action_rng, description_rng),
         };
         output.as_mut()?.random_seed = action_rng.get_seed();
         output
     }
 }
 
-pub trait EngineAction {
-    fn tactic_modifier(game: &Game, action: &Action) -> i16 {
-        let attack_tactic = game.home_team_in_game.tactic;
-        let defense_tactic = game.home_team_in_game.tactic;
-        attack_tactic.attack_roll_bonus(action) - defense_tactic.defense_roll_bonus(action)
-    }
-    fn execute(
-        input: &ActionOutput,
-        game: &Game,
-        action_rng: &mut ChaCha8Rng,
-        description_rng: &mut ChaCha8Rng, // Use separate rng for description so that we can upgrade them without breaking engine compatibility between versions.
-    ) -> Option<ActionOutput>;
-    fn sample(rng: &mut ChaCha8Rng, weights: [u8; 5]) -> Option<usize> {
-        Some(WeightedIndex::new(weights).ok()?.sample(rng))
-    }
+pub fn sample_player_index(rng: &mut ChaCha8Rng, weights: [u8; 5]) -> Option<usize> {
+    Some(WeightedIndex::new(weights).ok()?.sample(rng))
 }

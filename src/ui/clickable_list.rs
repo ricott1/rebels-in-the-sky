@@ -191,7 +191,9 @@ impl<'a> ClickableList<'a> {
             end += 1;
         }
 
-        let selected = selected.unwrap_or(0).min(self.items.len() - 1);
+        let selected = selected
+            .unwrap_or(0)
+            .min(self.items.len().saturating_sub(1));
         while selected >= end {
             height = height.saturating_add(self.items[end].height());
             end += 1;
@@ -359,8 +361,13 @@ impl InteractiveStatefulWidget for ClickableList<'_> {
             return;
         }
 
+        if self.items.is_empty() {
+            state.select(None);
+            return;
+        }
+
         let is_hovered = callback_registry.is_hovering(area)
-            && callback_registry.get_max_layer() == self.layer();
+            && callback_registry.get_active_layer() == self.layer();
 
         if !is_hovered {
             return;

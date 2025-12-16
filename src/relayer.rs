@@ -198,7 +198,17 @@ impl Relayer {
                     }
 
                     for player in network_team.players.iter() {
-                        let ranking = PlayerRanking::new(timestamp, player.clone());
+                        let team_name = if let Some(team_id) = player.team.as_ref() {
+                            if let Some(team_ranking) = self.team_ranking.get(team_id) {
+                                team_ranking.team.name.clone()
+                            } else {
+                                "Unknown".to_string()
+                            }
+                        } else {
+                            "Free pirate".to_string()
+                        };
+
+                        let ranking = PlayerRanking::new(timestamp, player.clone(), team_name);
                         self.player_ranking.insert(player.id, ranking.clone());
                     }
 

@@ -7,8 +7,8 @@ use super::ui_frame::UiFrame;
 use super::widgets::{space_adventure_button, thick_block};
 use super::{traits::Screen, widgets::default_block};
 use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId};
-use crate::ui::constants::*;
 use crate::ui::utils::format_au;
+use crate::ui::{constants::*, ui_key};
 use crate::{
     types::{PlanetId, PlanetMap},
     world::*,
@@ -17,6 +17,7 @@ use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
 use itertools::Itertools;
 use ratatui::layout::{Constraint, Margin};
+use ratatui::style::Stylize;
 use ratatui::widgets::{block, Borders, List, ListItem};
 use ratatui::{
     layout::Layout,
@@ -216,7 +217,7 @@ impl GalaxyPanel {
                 .set_hover_style(UiStyle::DEFAULT)
             };
 
-            frame.render_interactive(button, rect);
+            frame.render_interactive_widget(button, rect);
         }
 
         Ok(())
@@ -245,7 +246,8 @@ impl GalaxyPanel {
                 UiCallback::GoToPlanetZoomOut {
                     planet_id: parent_id,
                 },
-            );
+            )
+            .bold();
             buttons.push(button);
             current_id = parent_id;
         }
@@ -260,6 +262,7 @@ impl GalaxyPanel {
                     planet_id: target.id,
                 },
             )
+            .bold()
         } else if let Some(parent_id) = target.satellite_of {
             Button::new(
                 target.name.clone(),
@@ -267,6 +270,7 @@ impl GalaxyPanel {
                     planet_id: parent_id,
                 },
             )
+            .bold()
         } else {
             unreachable!("There should be no planet with no satellites and no parent");
         };
@@ -287,7 +291,7 @@ impl GalaxyPanel {
                 }
 
                 TeamLocation::OnPlanet { planet_id } => {
-                    let duration = world.travel_time_to_planet(own_team.id, planet.id)?;
+                    let duration = world.travel_duration_to_planet(own_team.id, planet.id)?;
                     let hover_text = format!(
                         "Travel to {}: Distance {} - Duration {} - Fuel {}",
                         planet.name,
@@ -305,7 +309,7 @@ impl GalaxyPanel {
                             planet_id: planet.id,
                         },
                     )
-                    .set_hotkey(UiKey::TRAVEL)
+                    .set_hotkey(ui_key::TRAVEL)
                     .set_hover_text(hover_text);
 
                     if let Err(e) = own_team.can_travel_to_planet(planet, duration) {
@@ -381,7 +385,7 @@ impl GalaxyPanel {
         let split = Layout::vertical(constraints).split(area);
         for (idx, button) in buttons.iter().enumerate() {
             frame.render_widget(Clear, split[idx]);
-            frame.render_interactive(button.clone(), split[idx]);
+            frame.render_interactive_widget(button.clone(), split[idx]);
         }
 
         Ok(())
@@ -508,7 +512,7 @@ impl GalaxyPanel {
                 }));
 
             for (idx, (team_id, text, style)) in team_options.iter().enumerate() {
-                frame.render_interactive(
+                frame.render_interactive_widget(
                     Button::no_box(
                         Span::styled(text.clone(), *style).into_left_aligned_line(),
                         UiCallback::GoToTeam { team_id: *team_id },
@@ -529,7 +533,7 @@ impl GalaxyPanel {
                 }));
 
             for (idx, (player_id, text, style)) in player_options.iter().enumerate() {
-                frame.render_interactive(
+                frame.render_interactive_widget(
                     Button::no_box(
                         Span::styled(text.clone(), *style).into_left_aligned_line(),
                         UiCallback::GoToPlayer {
@@ -645,17 +649,9 @@ impl Screen for GalaxyPanel {
         _debug_view: bool,
     ) -> AppResult<()> {
         let planet = world.get_planet_or_err(&self.planet_id)?;
-        // Ensure that rendering area has even width and height for correct rect centering
-        let render_area = area; //Rect::new(
-                                //     area.x,
-                                //     area.y,
-                                //     area.width - area.width % 2,
-                                //     area.height - area.height % 2,
-                                // );
-
-        self.render_planet_gif(frame, planet, world, render_area)?;
+        self.render_planet_gif(frame, planet, world, area)?;
         if self.zoom_level == ZoomLevel::Out {
-            self.render_gif_rects(frame, planet, world, render_area)?;
+            self.render_gif_rects(frame, planet, world, area)?;
         }
 
         let split =
@@ -726,12 +722,4 @@ impl Screen for GalaxyPanel {
     }
 }
 
-impl SplitPanel for GalaxyPanel {
-    fn index(&self) -> usize {
-        0
-    }
-    fn max_index(&self) -> usize {
-        0
-    }
-    fn set_index(&mut self, _index: usize) {}
-}
+impl SplitPanel for GalaxyPanel {}

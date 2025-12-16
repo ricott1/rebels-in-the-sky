@@ -7,7 +7,8 @@ pub(crate) const MIN_TIREDNESS_FOR_SUB: f32 = MIN_TIREDNESS_FOR_ROLL_DECLINE;
 pub const BASE_ATTENDANCE: u32 = 60;
 pub(crate) const BRAWL_ACTION_PROBABILITY: f32 = 0.06;
 
-pub(crate) const NUMBER_OF_ROLLS: u16 = 9;
+pub(crate) const NUMBER_OF_ROLLS: usize = 9;
+pub(crate) const TACTIC_MODIFIER_MULTIPLIER: i16 = 7;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ShotDifficulty {

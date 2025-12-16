@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 pub const PLAYER_IMAGE_WIDTH: u32 = 18;
 pub const PLAYER_IMAGE_HEIGHT: u32 = 40;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct PlayerImage {
     head: HeadImage,
     body: BodyImage,
@@ -598,9 +598,10 @@ mod tests {
     use super::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH};
     use crate::{
         image::player::PlayerImage,
-        types::{AppResult, PlanetId, PlayerId},
+        types::AppResult,
         world::{
             jersey::Jersey,
+            planet::Planet,
             player::{InfoStats, Player},
             role::CrewRole,
             types::Population,
@@ -659,14 +660,7 @@ mod tests {
         for population in Population::iter() {
             let mut base = RgbaImage::new(PLAYER_IMAGE_WIDTH * n, PLAYER_IMAGE_HEIGHT);
             for i in 0..n {
-                let mut player = Player::random(
-                    rng,
-                    PlayerId::new_v4(),
-                    None,
-                    population,
-                    &PlanetId::default(),
-                    0.0,
-                );
+                let mut player = Player::random(rng, None, &Planet::default(), 0.0);
 
                 let crew_role = match i {
                     0 => CrewRole::Captain,

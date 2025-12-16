@@ -1,11 +1,18 @@
-use crate::space_adventure::ResourceFragment;
-
 use super::{
-    space_callback::SpaceCallback, visual_effects::VisualEffect, ColliderType,
-    ControllableSpaceship, Entity,
+    space_callback::SpaceCallback, traits::*, visual_effects::VisualEffect, ColliderType,
+    ControllableSpaceship,
 };
-use glam::I16Vec2;
-use image::Pixel;
+use crate::{
+    space_adventure::{
+        constants::PROJECTILE_SPACESHIP_DAMAGE_MULTIPLIER, entity::Entity, utils::EntityState,
+        Body, Collider, ResourceFragment,
+    },
+    types::AppResult,
+};
+use glam::{I16Vec2, Vec2};
+use image::{Pixel, Rgba};
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use std::{
     collections::{
         hash_map::{Iter, Keys, Values},
@@ -13,6 +20,8 @@ use std::{
     },
     fmt::Debug,
 };
+
+const SPACESHIP_COLLISION_DAMAGE: f32 = 5.0;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HitBox {
@@ -101,10 +110,11 @@ impl HitBox {
     }
 }
 
-fn check_physical_collision(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -> bool {
+fn check_physical_collision(one: &Entity, other: &Entity) -> Option<I16Vec2> {
     if one.previous_position() == one.position() {
-        return false;
+        return None;
     }
+
     // Find all integer points in vector connecting self entity current and previous positions
     // and check if they are in other entity hitbox.
     let path = one.previous_position() - one.position();
@@ -116,7 +126,7 @@ fn check_physical_collision(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -> b
                 for (&point, &_) in one.hit_box().iter() {
                     let g_point = one.position() + point + I16Vec2::new(x, y) - other.position();
                     if other.hit_box().contains_key(&g_point) {
-                        return true;
+                        return Some(one.position() + point + I16Vec2::new(x, y));
                     }
                 }
             }
@@ -126,7 +136,7 @@ fn check_physical_collision(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -> b
                 for (&point, &_) in one.hit_box().iter() {
                     let g_point = one.position() + point + I16Vec2::new(x, y) - other.position();
                     if other.hit_box().contains_key(&g_point) {
-                        return true;
+                        return Some(one.position() + point + I16Vec2::new(x, y));
                     }
                 }
             }
@@ -137,7 +147,7 @@ fn check_physical_collision(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -> b
             for (&point, &_) in one.hit_box().iter() {
                 let g_point = one.position() + point + I16Vec2::new(x, y) - other.position();
                 if other.hit_box().contains_key(&g_point) {
-                    return true;
+                    return Some(one.position() + point + I16Vec2::new(x, y));
                 }
             }
         }
@@ -147,27 +157,28 @@ fn check_physical_collision(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -> b
             for (&point, &_) in one.hit_box().iter() {
                 let g_point = one.position() + point + I16Vec2::new(x, y) - other.position();
                 if other.hit_box().contains_key(&g_point) {
-                    return true;
+                    return Some(one.position() + point + I16Vec2::new(x, y));
                 }
             }
         }
     }
 
-    false
+    None
 }
 
-fn check_granular_phase_collision(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -> bool {
+fn check_granular_phase_collision(one: &Entity, other: &Entity) -> Option<I16Vec2> {
     for &point in one.hit_box().keys() {
         let g_point = one.position() + point - other.position();
         if other.hit_box().contains_key(&g_point) {
-            return true;
+            // FIXME: check if this is correct
+            return Some(one.position() + point);
         }
     }
 
-    false
+    None
 }
 
-fn check_broad_phase_collision(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -> bool {
+fn check_broad_phase_collision(one: &Entity, other: &Entity) -> bool {
     let (s1_min, s1_max) = one.previous_rect();
     let (o1_min, o1_max) = other.previous_rect();
 
@@ -185,66 +196,60 @@ fn check_broad_phase_collision(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -
     true
 }
 
-fn are_colliding(one: &Box<dyn Entity>, other: &Box<dyn Entity>) -> bool {
+fn are_colliding(one: &Entity, other: &Entity) -> Option<I16Vec2> {
     if one.collider_type() == ColliderType::None || other.collider_type() == ColliderType::None {
-        return false;
+        return None;
     }
 
     if one.layer() != other.layer() {
-        return false;
-    }
-
-    if one.parent_id() == Some(other.id()) || other.parent_id() == Some(one.id()) {
-        return false;
+        return None;
     }
 
     // Broad phase detection, shortcut if rects cannot intersect
     if !check_broad_phase_collision(one, other) {
-        return false;
+        return None;
     }
 
     // Granular phase detection
-    if check_granular_phase_collision(one, other) {
-        return true;
+    if let Some(point) = check_granular_phase_collision(one, other) {
+        return Some(point);
     }
 
     // Physical path phase detection
     // This is not perfect, since we don't check if the entities crossed paths while moving,
     // but only one against the other final position. We also don't check if the entity didn't move
     // but rotated somehow. Good enough for us.
-    if check_physical_collision(one, other) {
+    if let Some(point) = check_physical_collision(one, other) {
         log::debug!(
             "Found physical collision! {}->{} hit {:#?}",
             one.previous_position(),
             one.position(),
             other.rect()
         );
-        return true;
+        return Some(point);
     }
 
     // Do the same swapping entities.
-    if check_physical_collision(other, one) {
+    if let Some(point) = check_physical_collision(other, one) {
         log::debug!(
             "Found physical collision! {}->{} hit {:#?}",
             other.previous_position(),
             other.position(),
             one.rect()
         );
-        return true;
+        return Some(point);
     }
 
-    false
+    None
 }
 
-pub fn resolve_collision_between(
-    one: &Box<dyn Entity>,
-    other: &Box<dyn Entity>,
-) -> Vec<SpaceCallback> {
-    if !are_colliding(one, other) {
-        return vec![];
-    }
-
-    match (one.collider_type(), other.collider_type()) {
+fn get_collision_callbacks(
+    one: &Entity,
+    other: &Entity,
+    collision_point: I16Vec2,
+    deltatime: f32,
+) -> AppResult<Vec<SpaceCallback>> {
+    let callbacks = match (one.collider_type(), other.collider_type()) {
         (ColliderType::AsteroidPlanet, ColliderType::Asteroid) => {
             vec![SpaceCallback::DamageEntity {
                 id: other.id(),
@@ -252,23 +257,20 @@ pub fn resolve_collision_between(
             }]
         }
         (ColliderType::Asteroid, ColliderType::AsteroidPlanet) => {
-            resolve_collision_between(other, one)
+            get_collision_callbacks(other, one, collision_point, deltatime)?
         }
         (ColliderType::AsteroidPlanet, ColliderType::Spaceship) => {
-            let ship_control: &dyn ControllableSpaceship = other
-                .as_trait_ref()
-                .expect("Spaceship should implement ControllableSpaceship");
-
-            if ship_control.is_player() {
-                return vec![SpaceCallback::LandSpaceshipOnAsteroid];
+            let spaceship_entity = other.as_spaceship()?;
+            if spaceship_entity.is_player() {
+                vec![SpaceCallback::LandSpaceshipOnAsteroid]
+            } else {
+                vec![]
             }
-
-            vec![]
         }
         (ColliderType::Spaceship, ColliderType::AsteroidPlanet) => {
-            resolve_collision_between(other, one)
+            get_collision_callbacks(other, one, collision_point, deltatime)?
         }
-        (ColliderType::Projectile, ColliderType::Asteroid) => {
+        (ColliderType::Projectile { .. }, ColliderType::Asteroid) => {
             vec![
                 SpaceCallback::DestroyEntity { id: one.id() },
                 SpaceCallback::DamageEntity {
@@ -277,19 +279,91 @@ pub fn resolve_collision_between(
                 },
             ]
         }
-        (ColliderType::Asteroid, ColliderType::Projectile) => resolve_collision_between(other, one),
-        (ColliderType::Projectile, ColliderType::Spaceship) => {
-            vec![
-                SpaceCallback::DestroyEntity { id: one.id() },
-                SpaceCallback::DamageEntity {
-                    id: other.id(),
-                    damage: one.collision_damage(),
-                },
-            ]
+        (ColliderType::Asteroid, ColliderType::Projectile { .. }) => {
+            get_collision_callbacks(other, one, collision_point, deltatime)?
         }
-        (ColliderType::Spaceship, ColliderType::Projectile) => {
-            resolve_collision_between(other, one)
+        (ColliderType::Projectile { shot_by, .. }, ColliderType::Spaceship) => {
+            if shot_by != other.id() {
+                let rng = &mut ChaCha8Rng::from_os_rng();
+                vec![
+                    SpaceCallback::DestroyEntity { id: one.id() },
+                    SpaceCallback::GenerateParticle {
+                        position: collision_point.as_vec2(),
+                        velocity: one.velocity().as_vec2() * rng.random_range(0.75..=1.25)
+                            + Vec2::Y * rng.random_range(-0.5..=0.5),
+                        color: Rgba([235, 55, 85, 255]),
+                        particle_state: EntityState::Decaying {
+                            lifetime: 1.0 + rng.random_range(0.0..1.5),
+                        },
+                        layer: 2,
+                    },
+                    SpaceCallback::DamageEntity {
+                        id: other.id(),
+                        damage: one.collision_damage() * PROJECTILE_SPACESHIP_DAMAGE_MULTIPLIER,
+                    },
+                ]
+            } else {
+                vec![]
+            }
         }
+        (ColliderType::Spaceship, ColliderType::Projectile { .. }) => {
+            get_collision_callbacks(other, one, collision_point, deltatime)?
+        }
+
+        (
+            ColliderType::Projectile {
+                filter_shield_id, ..
+            },
+            ColliderType::Shield,
+        ) => {
+            let shield = other.as_shield()?;
+            if matches!(filter_shield_id, Some(id) if id == other.id()) || !shield.is_active() {
+                vec![]
+            } else {
+                let rng = &mut ChaCha8Rng::from_os_rng();
+                vec![
+                    SpaceCallback::DestroyEntity { id: one.id() },
+                    SpaceCallback::GenerateParticle {
+                        position: collision_point.as_vec2(),
+                        velocity: one.velocity().as_vec2() * rng.random_range(0.75..=1.25)
+                            + Vec2::Y * rng.random_range(-0.5..=0.5),
+                        color: Rgba([185, 155, 85, 255]),
+                        particle_state: EntityState::Decaying {
+                            lifetime: 1.0 + rng.random_range(0.0..1.5),
+                        },
+                        layer: 2,
+                    },
+                    SpaceCallback::DamageEntity {
+                        id: other.id(),
+                        damage: one.collision_damage(),
+                    },
+                ]
+            }
+        }
+        (ColliderType::Shield, ColliderType::Projectile { .. }) => {
+            get_collision_callbacks(other, one, collision_point, deltatime)?
+        }
+        (ColliderType::Asteroid, ColliderType::Shield) => {
+            let shield = other.as_shield()?;
+            if shield.is_active() {
+                vec![
+                    SpaceCallback::DamageEntity {
+                        id: one.id(),
+                        damage: other.collision_damage(),
+                    },
+                    SpaceCallback::DamageEntity {
+                        id: other.id(),
+                        damage: one.collision_damage(),
+                    },
+                ]
+            } else {
+                vec![]
+            }
+        }
+        (ColliderType::Shield, ColliderType::Asteroid) => {
+            get_collision_callbacks(other, one, collision_point, deltatime)?
+        }
+
         (ColliderType::Spaceship, ColliderType::Asteroid) => {
             vec![
                 SpaceCallback::DamageEntity {
@@ -299,18 +373,17 @@ pub fn resolve_collision_between(
                 SpaceCallback::DestroyEntity { id: other.id() },
             ]
         }
-        (ColliderType::Asteroid, ColliderType::Spaceship) => resolve_collision_between(other, one),
-
+        (ColliderType::Asteroid, ColliderType::Spaceship) => {
+            get_collision_callbacks(other, one, collision_point, deltatime)?
+        }
         (ColliderType::Spaceship, ColliderType::Fragment) => {
             let g_point = other.position() - one.position();
             if one.hit_box().contains_key(&g_point) {
-                let resource_fragment: &dyn ResourceFragment = other
-                    .as_trait_ref()
-                    .expect("Fragment should implement ResourceFragment.");
+                let resource_fragment = other.as_fragment()?;
                 let resource = resource_fragment.resource();
                 let amount = resource_fragment.amount();
 
-                return vec![
+                vec![
                     SpaceCallback::AddVisualEffect {
                         id: one.id(),
                         effect: VisualEffect::ColorMask {
@@ -324,24 +397,87 @@ pub fn resolve_collision_between(
                         amount,
                     },
                     SpaceCallback::DestroyEntity { id: other.id() },
-                ];
+                ]
+            } else {
+                vec![]
             }
-            vec![]
         }
 
-        (ColliderType::Fragment, ColliderType::Spaceship) => resolve_collision_between(other, one),
+        (ColliderType::Spaceship, ColliderType::Shield) => {
+            let spaceship = one.as_spaceship()?;
+            let shield = other.as_shield()?;
 
+            if matches!(spaceship.shield_id(), Some(id) if id == shield.id()) && shield.is_active()
+            {
+                vec![SpaceCallback::UseCharge {
+                    id: spaceship.id(),
+                    amount: shield.charge_cost_per_second() * deltatime,
+                }]
+            } else {
+                vec![]
+            }
+        }
+        (ColliderType::Shield, ColliderType::Spaceship) => {
+            get_collision_callbacks(other, one, collision_point, deltatime)?
+        }
+        (ColliderType::Fragment, ColliderType::Spaceship) => {
+            get_collision_callbacks(other, one, collision_point, deltatime)?
+        }
         (ColliderType::Collector, ColliderType::Fragment) => {
-            // If a fragment touches the collector hit_box, it is accelerated towards it.
-            vec![SpaceCallback::SetAcceleration {
-                id: other.id(),
-                acceleration: one.center() - other.center(),
-            }]
-        }
-        (ColliderType::Fragment, ColliderType::Collector) => resolve_collision_between(other, one),
+            let collector = one.as_collector()?;
 
+            if collector.is_active() {
+                // If a fragment touches the collector hit_box, it is accelerated towards it.
+                vec![SpaceCallback::SetAcceleration {
+                    id: other.id(),
+                    acceleration: (one.center() - other.center()).as_vec2(),
+                }]
+            } else {
+                vec![]
+            }
+        }
+        (ColliderType::Fragment, ColliderType::Collector) => {
+            get_collision_callbacks(other, one, collision_point, deltatime)?
+        }
+
+        (ColliderType::Spaceship, ColliderType::Spaceship) => {
+            vec![
+                SpaceCallback::DamageEntity {
+                    id: one.id(),
+                    damage: SPACESHIP_COLLISION_DAMAGE,
+                },
+                SpaceCallback::SetAcceleration {
+                    id: one.id(),
+                    acceleration: -one.velocity().as_vec2(),
+                },
+                SpaceCallback::DamageEntity {
+                    id: other.id(),
+                    damage: SPACESHIP_COLLISION_DAMAGE,
+                },
+                SpaceCallback::SetAcceleration {
+                    id: other.id(),
+                    acceleration: -one.velocity().as_vec2(),
+                },
+            ]
+        }
+
+        // FIXME: Missing shield on shield --> bounce back.
+        //        This is tricky because the acceleration needs to be set on the parent spaceship, not on the shield.
         _ => vec![],
+    };
+
+    Ok(callbacks)
+}
+
+pub fn resolve_collision_between(
+    one: &Entity,
+    other: &Entity,
+    deltatime: f32,
+) -> AppResult<Vec<SpaceCallback>> {
+    if let Some(collision_point) = are_colliding(one, other) {
+        return get_collision_callbacks(one, other, collision_point, deltatime);
     }
+    Ok(vec![])
 }
 
 #[cfg(test)]
@@ -359,8 +495,8 @@ mod test {
 
     #[test]
     fn test_spaceship_fragment_collisions() -> AppResult<()> {
-        let collector = CollectorEntity::new();
-        let fragment = FragmentEntity::new(
+        let collector = CollectorEntity::new_entity();
+        let fragment = FragmentEntity::new_entity(
             Vec2::new(
                 collector.position().x as f32 + 60.0,
                 collector.position().y as f32,
@@ -384,12 +520,10 @@ mod test {
             min_distance,
         );
 
-        let trait_collector: Box<dyn Entity> = Box::new(collector) as Box<dyn Entity>;
-        let trait_fragment: Box<dyn Entity> = Box::new(fragment) as Box<dyn Entity>;
-        assert!(are_colliding(&trait_collector, &trait_fragment) == false);
+        assert!(are_colliding(&collector, &fragment).is_none());
 
-        let collector = CollectorEntity::new();
-        let fragment = FragmentEntity::new(
+        let collector = CollectorEntity::new_entity();
+        let fragment = FragmentEntity::new_entity(
             Vec2::new(
                 collector.position().x as f32 + 29.0,
                 collector.position().y as f32,
@@ -412,9 +546,7 @@ mod test {
             fragment.center(),
             min_distance,
         );
-        let trait_collector: Box<dyn Entity> = Box::new(collector) as Box<dyn Entity>;
-        let trait_fragment: Box<dyn Entity> = Box::new(fragment) as Box<dyn Entity>;
-        assert!(are_colliding(&trait_collector, &trait_fragment) == true);
+        assert!(are_colliding(&collector, &fragment).is_some());
 
         Ok(())
     }

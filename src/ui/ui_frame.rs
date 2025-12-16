@@ -19,15 +19,15 @@ pub struct UiFrame<'a, 'b> {
 
 impl<'a, 'b> UiFrame<'a, 'b> {
     fn is_hovered(&self, rect: Rect, layer: usize) -> bool {
-        self.callback_registry.is_hovering(rect) && layer == self.get_max_layer()
+        self.callback_registry.is_hovering(rect) && layer == self.get_active_layer()
     }
 
-    pub fn set_max_layer(&mut self, layer: usize) {
-        self.callback_registry.set_max_layer(layer);
+    pub fn set_active_layer(&mut self, layer: usize) {
+        self.callback_registry.set_active_layer(layer);
     }
 
-    pub fn get_max_layer(&self) -> usize {
-        self.callback_registry.get_max_layer()
+    pub fn get_active_layer(&self) -> usize {
+        self.callback_registry.get_active_layer()
     }
 
     pub fn register_mouse_callback(
@@ -118,7 +118,7 @@ impl<'a, 'b> UiFrame<'a, 'b> {
         self.inner.render_stateful_widget(widget, area, state);
     }
 
-    pub fn render_interactive<W>(&mut self, mut widget: W, area: Rect)
+    pub fn render_interactive_widget<W>(&mut self, mut widget: W, area: Rect)
     where
         W: InteractiveWidget,
     {
@@ -133,7 +133,7 @@ impl<'a, 'b> UiFrame<'a, 'b> {
         self.render_widget(widget, area);
     }
 
-    pub fn render_stateful_interactive<W>(
+    pub fn render_stateful_interactive_widget<W>(
         &mut self,
         mut widget: W,
         area: Rect,

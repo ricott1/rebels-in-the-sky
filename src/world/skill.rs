@@ -76,8 +76,8 @@ pub trait GameSkill: fmt::Display + fmt::Debug {
     fn raw_value(&self) -> f32 {
         self.bound()
     }
-    fn game_value(&self) -> u16 {
-        self.bound() as u16
+    fn game_value(&self) -> i16 {
+        self.bound() as i16
     }
     fn bound(&self) -> f32;
     fn normal_sample(&self, rng: &mut ChaCha8Rng) -> f32;

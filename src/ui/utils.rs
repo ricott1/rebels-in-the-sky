@@ -98,12 +98,16 @@ pub fn img_to_lines<'a>(img: &RgbaImage) -> Vec<Line<'a>> {
     lines
 }
 
-pub fn big_text<'a>(text: &'a [&str]) -> Paragraph<'a> {
+pub fn big_text<'a, T>(text: T) -> Paragraph<'a>
+where
+    T: IntoIterator,
+    T::Item: AsRef<str>,
+{
     let lines = text
-        .iter()
+        .into_iter()
         .map(|line| {
-            let mut spans = vec![];
-            for c in line.chars() {
+            let mut spans = Vec::new();
+            for c in line.as_ref().chars() {
                 if c == '█' {
                     spans.push(Span::styled("█", UiStyle::SHADOW));
                 } else {
@@ -113,6 +117,7 @@ pub fn big_text<'a>(text: &'a [&str]) -> Paragraph<'a> {
             Line::from(spans)
         })
         .collect::<Vec<Line>>();
+
     Paragraph::new(lines).centered()
 }
 
@@ -150,15 +155,41 @@ pub fn format_au(amount: f32) -> String {
     const AU_PER_LIGHT_YEAR: f32 = LIGHT_YEAR as f32 / AU as f32;
     if amount >= 10_000.0 {
         let f_amount = (amount / AU_PER_LIGHT_YEAR * 10_000.0).round() / 10_000.0;
-        return format!("{f_amount:.4} ly");
+        return format!("{f_amount:.3} ly");
     }
 
-    format!("{amount:.4} AU")
+    format!("{amount:.3} AU")
+}
+
+pub fn wrap_text<T: AsRef<str>>(text: T, line_width: usize) -> Vec<String> {
+    let text = text.as_ref();
+
+    if line_width == 0 {
+        return Vec::new();
+    }
+
+    let mut lines = Vec::new();
+    let mut current = String::new();
+
+    for ch in text.chars() {
+        current.push(ch);
+        if current.chars().count() == line_width {
+            lines.push(current);
+            current = String::new();
+        }
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+
+    lines
 }
 
 #[cfg(test)]
 mod test {
     use super::format_satoshi;
+    use crate::ui::utils::wrap_text;
 
     #[test]
     fn test_format_satoshi() {
@@ -171,5 +202,17 @@ mod test {
         assert_eq!(format_satoshi(2_345_678), "0.0235 BTC");
         assert_eq!(format_satoshi(100_000_000), "1.0000 BTC");
         assert_eq!(format_satoshi(1_234_567_890), "12.3457 BTC");
+    }
+
+    #[test]
+    fn wraps_ascii_text() {
+        let result = wrap_text("HelloWorld", 5);
+        assert_eq!(result, vec!["Hello", "World"]);
+    }
+
+    #[test]
+    fn short_text_is_unchanged() {
+        let result = wrap_text("Hi", 10);
+        assert_eq!(result, vec!["Hi"]);
     }
 }

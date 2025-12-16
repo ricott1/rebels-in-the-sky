@@ -1,12 +1,11 @@
 use super::collisions::HitBox;
-use super::networking::ImageType;
 use super::space_callback::SpaceCallback;
 use super::visual_effects::VisualEffect;
 use super::{constants::*, traits::*};
 use crate::image::color_map::AsteroidColorMap;
 use crate::image::types::Gif;
 use crate::image::utils::{open_image, ExtraImageUtils};
-use crate::register_impl;
+use crate::space_adventure::entity::Entity;
 use crate::space_adventure::utils::{body_data_from_image, EntityState};
 use crate::world::resources::Resource;
 use glam::{I16Vec2, Vec2};
@@ -170,23 +169,14 @@ impl Sprite for AsteroidEntity {
         &gif[self.frame()]
     }
 
-    fn network_image_type(&self) -> ImageType {
-        ImageType::Asteroid {
-            size: self.size,
-            image_type: self.image_type(),
-        }
-    }
-
     fn should_apply_visual_effects<'a>(&self) -> bool {
         !self.visual_effects.is_empty()
     }
 
     fn apply_visual_effects<'a>(&'a self, image: &'a RgbaImage) -> RgbaImage {
         let mut image = image.clone();
-        if !self.visual_effects.is_empty() {
-            for (effect, time) in self.visual_effects.iter() {
-                effect.apply(self, &mut image, *time);
-            }
+        for (effect, time) in self.visual_effects.iter() {
+            effect.apply(self, &mut image, *time);
         }
         image
     }
@@ -213,9 +203,6 @@ impl Sprite for AsteroidEntity {
     }
 }
 
-register_impl!(!ControllableSpaceship for AsteroidEntity);
-register_impl!(!ResourceFragment for AsteroidEntity);
-
 impl Collider for AsteroidEntity {
     fn collision_damage(&self) -> f32 {
         self.size.collision_damage()
@@ -238,7 +225,7 @@ impl Collider for AsteroidEntity {
     }
 }
 
-impl Entity for AsteroidEntity {
+impl GameEntity for AsteroidEntity {
     fn set_id(&mut self, id: usize) {
         self.id = id;
     }
@@ -270,7 +257,8 @@ impl Entity for AsteroidEntity {
                 // If the asteroid got destroyed by going out-of-screen, don't spawn smaller ones.
                 let should_emit_fragments = !(self.position.x < 0.0
                     || self.position.x > MAX_ENTITY_POSITION.x as f32
-                    || self.position.y < 0.0 || self.position.y > MAX_ENTITY_POSITION.y as f32);
+                    || self.position.y < 0.0
+                    || self.position.y > MAX_ENTITY_POSITION.y as f32);
 
                 let rng = &mut ChaCha8Rng::from_os_rng();
                 let mut callbacks = vec![];
@@ -450,12 +438,12 @@ impl AsteroidEntity {
         self.orientation as usize % MAX_ROTATION
     }
 
-    pub fn new(
+    pub fn new_entity(
         position: Vec2,
         velocity: Vec2,
         size: AsteroidSize,
         gold_fragment_probability: f64,
-    ) -> Self {
+    ) -> Entity {
         let rng = &mut ChaCha8Rng::from_os_rng();
 
         let rotation_speed = if size == AsteroidSize::Planet {
@@ -464,7 +452,7 @@ impl AsteroidEntity {
             rng.random_range(-0.75..0.75) / (1 + size as usize) as f32
         };
 
-        Self {
+        Entity::Asteroid(Self {
             id: 0,
             orientation: rng.random_range(0.0..MAX_ROTATION as f32),
             rotation_speed,
@@ -474,10 +462,10 @@ impl AsteroidEntity {
             velocity,
             gold_fragment_probability,
             ..Default::default()
-        }
+        })
     }
 
-    pub fn new_at_screen_edge(gold_fragment_probability: f64) -> Self {
+    pub fn new_at_screen_edge(gold_fragment_probability: f64) -> Entity {
         let rng = &mut ChaCha8Rng::from_os_rng();
 
         let &size = [AsteroidSize::Small, AsteroidSize::Big, AsteroidSize::Huge]
@@ -519,10 +507,10 @@ impl AsteroidEntity {
             _ => unreachable!(),
         };
 
-        Self::new(position, velocity, size, gold_fragment_probability)
+        Self::new_entity(position, velocity, size, gold_fragment_probability)
     }
 
-    pub fn planet() -> Self {
+    pub fn planet() -> Entity {
         let rng = &mut ChaCha8Rng::from_os_rng();
 
         let x = MAX_ENTITY_POSITION.x as f32;
@@ -530,7 +518,7 @@ impl AsteroidEntity {
         let vx = rng.random_range(-4.0..-3.0);
         let vy = rng.random_range(-0.25..0.25);
 
-        Self::new(
+        Self::new_entity(
             Vec2::new(x, y),
             Vec2::new(vx, vy),
             AsteroidSize::Planet,

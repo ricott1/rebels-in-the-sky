@@ -6,9 +6,12 @@ pub(crate) const FRICTION_COEFF: f32 = 0.1;
 pub(crate) const THRUST_MOD: f32 = 1.35;
 pub(crate) const FUEL_CONSUMPTION_MOD: f32 = 215_000.0;
 pub(crate) const MAX_SPACESHIP_SPEED_MOD: f32 = 0.1;
+pub(crate) const PROJECTILE_SPACESHIP_DAMAGE_MULTIPLIER: f32 = 0.5;
 
 pub(crate) const ASTEROID_GENERATION_PROBABILITY: f64 = 0.05;
+pub(crate) const MAX_ENTITY_COUNT_FOR_GENERATION: usize = 400;
 pub(crate) const DIFFICULTY_FOR_ASTEROID_PLANET_GENERATION: usize = 90;
+pub(crate) const DIFFICULTY_FOR_ENEMY_SHIP_GENERATION: usize = 120;
 
 // There are 3 relevant lengths for the space image:
 //   1. the "screen size", which is the size of the cropped space image before rendering on the screen;

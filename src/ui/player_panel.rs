@@ -7,13 +7,14 @@ use super::ui_frame::UiFrame;
 use super::utils::format_satoshi;
 use super::widgets::PlayerWidgetView;
 use super::{
-    constants::{UiKey, IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
+    constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
     traits::{Screen, SplitPanel},
     widgets::{default_block, render_player_description, selectable_list},
 };
 
 use crate::network::trade::Trade;
 use crate::types::AppResult;
+use crate::ui::ui_key;
 use crate::{
     types::{PlayerId, TeamId},
     world::*,
@@ -21,11 +22,13 @@ use crate::{
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use ratatui::layout::Margin;
+use ratatui::style::Stylize;
 use ratatui::{
     layout::{Constraint, Layout},
     prelude::Rect,
     widgets::Paragraph,
 };
+use std::fmt::Display;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Hash)]
 pub enum PlayerView {
@@ -104,20 +107,22 @@ impl PlayerView {
             PlayerView::OwnTeam => player.team.is_some() && player.team.unwrap() == own_team.id,
         }
     }
+}
 
-    fn to_string(&self) -> String {
+impl Display for PlayerView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PlayerView::All => "All".to_string(),
-            PlayerView::FreePirates => "Free pirates".to_string(),
-            PlayerView::Tradable => "Open for trade".to_string(),
-            PlayerView::OwnTeam => "Own team".to_string(),
+            Self::All => write!(f, "All"),
+            Self::FreePirates => write!(f, "Free pirates"),
+            Self::Tradable => write!(f, "Open for trade"),
+            Self::OwnTeam => write!(f, "Own team"),
         }
     }
 }
 
 #[derive(Debug, Default)]
 pub struct PlayerListPanel {
-    pub index: usize,
+    pub index: Option<usize>,
     pub locked_player_id: Option<PlayerId>,
     pub selected_player_id: PlayerId,
     player_widget_view: PlayerWidgetView,
@@ -151,7 +156,8 @@ impl PlayerListPanel {
                 view: PlayerView::All,
             },
         )
-        .set_hotkey(UiKey::CYCLE_VIEW)
+        .bold()
+        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View all players.");
 
         let mut filter_free_pirates_button = Button::new(
@@ -160,7 +166,8 @@ impl PlayerListPanel {
                 view: PlayerView::FreePirates,
             },
         )
-        .set_hotkey(UiKey::CYCLE_VIEW)
+        .bold()
+        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View free pirates.");
 
         let mut filter_tradable_button = Button::new(
@@ -169,7 +176,8 @@ impl PlayerListPanel {
                 view: PlayerView::Tradable,
             },
         )
-        .set_hotkey(UiKey::CYCLE_VIEW)
+        .bold()
+        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View pirates open for trade.");
 
         let mut filter_own_team_button = Button::new(
@@ -178,7 +186,8 @@ impl PlayerListPanel {
                 view: PlayerView::OwnTeam,
             },
         )
-        .set_hotkey(UiKey::CYCLE_VIEW)
+        .bold()
+        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View your own team players.");
         match self.view {
             PlayerView::All => filter_all_button.select(),
@@ -187,10 +196,10 @@ impl PlayerListPanel {
             PlayerView::OwnTeam => filter_own_team_button.select(),
         }
 
-        frame.render_interactive(filter_all_button, split[0]);
-        frame.render_interactive(filter_free_pirates_button, split[1]);
-        frame.render_interactive(filter_tradable_button, split[2]);
-        frame.render_interactive(filter_own_team_button, split[3]);
+        frame.render_interactive_widget(filter_all_button, split[0]);
+        frame.render_interactive_widget(filter_free_pirates_button, split[1]);
+        frame.render_interactive_widget(filter_tradable_button, split[2]);
+        frame.render_interactive_widget(filter_own_team_button, split[3]);
 
         if !self.players.is_empty() {
             let mut options = vec![];
@@ -203,8 +212,8 @@ impl PlayerListPanel {
                     continue;
                 };
                 let mut style = UiStyle::DEFAULT;
-                if player.team.is_some() && player.team.unwrap() == world.own_team_id {
-                    style = UiStyle::OK;
+                if matches!(player.team, Some(id) if id== world.own_team_id) {
+                    style = UiStyle::OWN_TEAM;
                 } else if player.peer_id.is_some() {
                     style = UiStyle::NETWORK;
                 }
@@ -219,10 +228,10 @@ impl PlayerListPanel {
                 options.push((text, style));
             }
             let list = selectable_list(options);
-            frame.render_stateful_interactive(
+            frame.render_stateful_interactive_widget(
                 list.block(default_block().title("Players ↓/↑")),
                 split[4],
-                &mut ClickableListState::default().with_selected(Some(self.index)),
+                &mut ClickableListState::default().with_selected(self.index),
             );
         } else {
             frame.render_widget(default_block().title("Players"), split[4]);
@@ -335,8 +344,8 @@ impl PlayerListPanel {
                     "Go to {}, this free pirate's current location",
                     planet.name
                 ))
-                .set_hotkey(UiKey::ON_PLANET);
-                frame.render_interactive(button, buttons_split[0]);
+                .set_hotkey(ui_key::ON_PLANET);
+                frame.render_interactive_widget(button, buttons_split[0]);
             }
             PlayerLocation::WithTeam => {
                 let team = world.get_team_or_err(&player.team.unwrap())?;
@@ -347,8 +356,8 @@ impl PlayerListPanel {
                     },
                 )
                 .set_hover_text(format!("Go to team {}", team.name))
-                .set_hotkey(UiKey::GO_TO_TEAM_ALTERNATIVE);
-                frame.render_interactive(button, buttons_split[0]);
+                .set_hotkey(ui_key::GO_TO_TEAM_ALT);
+                frame.render_interactive_widget(button, buttons_split[0]);
             }
         }
 
@@ -367,8 +376,8 @@ impl PlayerListPanel {
             "View player's {}",
             self.player_widget_view.to_string().to_lowercase()
         ))
-        .set_hotkey(UiKey::PLAYER_STATUS_VIEW);
-        frame.render_interactive(player_widget_view_button, buttons_split[1]);
+        .set_hotkey(ui_key::player::PLAYER_STATUS_VIEW);
+        frame.render_interactive_widget(player_widget_view_button, buttons_split[1]);
 
         let lock_button = if self.locked_player_id.is_some()
             && self.locked_player_id.unwrap() == player.id
@@ -380,7 +389,7 @@ impl PlayerListPanel {
                 },
             )
             .set_hover_text("Unlock the player panel to allow browsing other players".to_string())
-            .set_hotkey(UiKey::UNLOCK_PLAYER)
+            .set_hotkey(ui_key::player::UNLOCK_PLAYER)
             .selected()
         } else {
             Button::new(
@@ -390,9 +399,9 @@ impl PlayerListPanel {
                 },
             )
             .set_hover_text("Lock the player panel to keep the info while browsing".to_string())
-            .set_hotkey(UiKey::LOCK_PLAYER)
+            .set_hotkey(ui_key::player::LOCK_PLAYER)
         };
-        frame.render_interactive(lock_button, buttons_split[2]);
+        frame.render_interactive_widget(lock_button, buttons_split[2]);
 
         // Add hire button for free pirates
         if player.team.is_none() {
@@ -409,12 +418,12 @@ impl PlayerListPanel {
                 "Hire this free pirate for {}",
                 format_satoshi(hire_cost)
             ))
-            .set_hotkey(UiKey::HIRE);
+            .set_hotkey(ui_key::player::HIRE);
             if can_hire.is_err() {
                 button.disable(Some(format!("{}", can_hire.unwrap_err())));
             }
 
-            frame.render_interactive(button, buttons_split[3]);
+            frame.render_interactive_widget(button, buttons_split[3]);
         }
         // or if a trade exists and player is part of it, add trade buttons
         else if let Some(trade) = open_trade {
@@ -435,7 +444,7 @@ impl PlayerListPanel {
                     proposer_player.info.short_name(),
                 ))
                 .block(default_block().border_style(UiStyle::OK))
-                .set_hotkey(UiKey::ACCEPT_TRADE);
+                .set_hotkey(ui_key::ACCEPT_TRADE);
 
                 let can_trade =
                     proposer_team.can_trade_players(proposer_player, target_player, own_team);
@@ -443,7 +452,7 @@ impl PlayerListPanel {
                 if can_trade.is_err() {
                     button.disable(Some(format!("{}", can_trade.unwrap_err())));
                 }
-                frame.render_interactive(button, buttons_split[3]);
+                frame.render_interactive_widget(button, buttons_split[3]);
             } else if player.id == self.locked_player_id.expect("One player should be locked") {
                 let button = Button::new(
                     "Decline trade",
@@ -457,9 +466,9 @@ impl PlayerListPanel {
                     proposer_player.info.short_name(),
                 ))
                 .block(default_block().border_style(UiStyle::ERROR))
-                .set_hotkey(UiKey::DECLINE_TRADE);
+                .set_hotkey(ui_key::DECLINE_TRADE);
 
-                frame.render_interactive(button, buttons_split[3]);
+                frame.render_interactive_widget(button, buttons_split[3]);
             };
         }
         // or finally if either the selected or locked player are part of own_team (but not both)
@@ -487,7 +496,7 @@ impl PlayerListPanel {
                             proposer_player.info.short_name(),
                             target_player.info.short_name(),
                         ))
-                        .set_hotkey(UiKey::CREATE_TRADE);
+                        .set_hotkey(ui_key::CREATE_TRADE);
 
                         if own_team
                             .sent_trades
@@ -496,7 +505,7 @@ impl PlayerListPanel {
                             trade_button.disable(Some("Trade already proposed"));
                         }
 
-                        frame.render_interactive(trade_button, buttons_split[3]);
+                        frame.render_interactive_widget(trade_button, buttons_split[3]);
                     }
                 }
             }
@@ -526,7 +535,7 @@ impl Screen for PlayerListPanel {
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
         if world.dirty_ui || self.all_players.len() != world.players.len() {
-            self.all_players = world.players.keys().cloned().collect();
+            self.all_players = world.players.keys().copied().collect();
             self.all_players.sort_by(|a, b| {
                 let a = world.get_player(a).unwrap();
                 let b = world.get_player(b).unwrap();
@@ -553,16 +562,24 @@ impl Screen for PlayerListPanel {
             self.update_view = false;
         }
 
-        if self.index >= self.players.len() && !self.players.is_empty() {
-            self.set_index(self.players.len() - 1);
+        if let Some(index) = self.index {
+            if self.players.is_empty() {
+                self.index = None;
+            } else if index >= self.players.len() && !self.players.is_empty() {
+                self.set_index(self.players.len() - 1);
+            }
+
+            if index < self.players.len() && !self.players.is_empty() {
+                self.selected_player_id = self.players[index];
+                self.selected_team_id = world.get_player_or_err(&self.selected_player_id)?.team;
+            }
+        } else if !self.players.is_empty() {
+            self.set_index(0);
         }
 
-        if self.index < self.players.len() && !self.players.is_empty() {
-            self.selected_player_id = self.players[self.index];
-            self.selected_team_id = world.get_player_or_err(&self.selected_player_id)?.team;
-        }
         Ok(())
     }
+
     fn render(
         &mut self,
         frame: &mut UiFrame,
@@ -612,14 +629,14 @@ impl Screen for PlayerListPanel {
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
-            UiKey::GO_TO_TEAM => {
+            ui_key::GO_TO_TEAM => {
                 if self.selected_team_id.is_some() {
                     return Some(UiCallback::GoToPlayerTeam {
                         player_id: self.selected_player_id,
                     });
                 }
             }
-            UiKey::CYCLE_VIEW => {
+            ui_key::CYCLE_VIEW => {
                 return Some(UiCallback::SetPlayerPanelView {
                     view: self.view.next(),
                 });
@@ -632,14 +649,14 @@ impl Screen for PlayerListPanel {
 
     fn footer_spans(&self) -> Vec<String> {
         vec![
-            format!(" {} ", UiKey::CYCLE_VIEW.to_string()),
+            format!(" {} ", ui_key::CYCLE_VIEW.to_string()),
             " Next tab ".to_string(),
         ]
     }
 }
 
 impl SplitPanel for PlayerListPanel {
-    fn index(&self) -> usize {
+    fn index(&self) -> Option<usize> {
         self.index
     }
 
@@ -648,6 +665,6 @@ impl SplitPanel for PlayerListPanel {
     }
 
     fn set_index(&mut self, index: usize) {
-        self.index = index;
+        self.index = Some(index);
     }
 }

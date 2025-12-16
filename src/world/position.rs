@@ -9,9 +9,9 @@ pub trait GamePosition {
     fn player_rating(&self, skills: [Skill; 20]) -> f32 {
         let mut rating = 0.0;
         let mut total_weight = 0.0;
-        for i in 0..skills.len() {
+        for (i, skill) in skills.iter().enumerate() {
             let w = self.weights()[i];
-            rating += w * w * skills[i];
+            rating += w * w * skill;
             total_weight += w * w;
         }
         (rating / total_weight).round()

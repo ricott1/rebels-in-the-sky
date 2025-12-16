@@ -47,7 +47,7 @@ enum SwarmCommand {
 #[derive(Debug)]
 pub struct NetworkHandler {
     local_keypair: Keypair,
-    pub connected_peers_count: usize, //FIXME: this should be updated somewhere
+    pub connected_peers_count: usize,
     own_peer_id: PeerId,
     pub seed_addresses: Vec<Multiaddr>,
     swarm_status: SwarmStatus,
@@ -147,7 +147,7 @@ impl NetworkHandler {
             seed_addresses.len()
         );
 
-        let own_peer_id = PeerId::from_public_key(&local_keypair.public());
+        let own_peer_id = local_keypair.public().to_peer_id();
 
         Ok(Self {
             local_keypair,
@@ -156,6 +156,23 @@ impl NetworkHandler {
             seed_addresses,
             swarm_status: SwarmStatus::Uninitialized,
         })
+    }
+
+    pub fn with_keypair(mut self, keypair: Keypair) -> Self {
+        self.local_keypair = keypair;
+        self.own_peer_id = self.local_keypair.public().to_peer_id();
+
+        self
+    }
+
+    pub fn set_keypair(&mut self, keypair: Keypair) {
+        self.local_keypair = keypair;
+        self.own_peer_id = self.local_keypair.public().to_peer_id();
+    }
+
+    pub fn keypair_bytes(&self) -> AppResult<Vec<u8>> {
+        let bytes = self.local_keypair.to_protobuf_encoding()?;
+        Ok(bytes)
     }
 
     pub fn own_peer_id(&self) -> &PeerId {
@@ -299,18 +316,23 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub fn send_open_trades(&mut self, world: &World) -> AppResult<()> {
+    // FIXME: good idea, now failing because the peer_id changes
+    pub fn resend_open_trades(&mut self, world: &World) -> AppResult<()> {
         let own_team = world.get_own_team()?;
         for trade in own_team.sent_trades.values() {
-            //         pub state: NetworkRequestState,
-            // pub proposer_peer_id: PeerId,
-            // pub target_peer_id: PeerId,
-            // pub proposer_player: Player,
-            // pub target_player: Player,
-            // pub extra_satoshis: i64,
-
             if trade.state == NetworkRequestState::Syn {
                 self.send_trade(trade.clone())?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn resend_open_challenges(&mut self, world: &World) -> AppResult<()> {
+        let own_team = world.get_own_team()?;
+        for challenge in own_team.sent_challenges.values() {
+            if challenge.state == NetworkRequestState::Syn {
+                self.send_challenge(challenge.clone())?;
             }
         }
 
@@ -345,12 +367,10 @@ impl NetworkHandler {
     ) -> AppResult<Challenge> {
         self.send_own_team(world)?;
         let mut home_team_in_game =
-            TeamInGame::from_team_id(&world.own_team_id, &world.teams, &world.players)
-                .ok_or(anyhow!("Cannot generate home team in game"))?;
+            TeamInGame::from_team_id(&world.own_team_id, &world.teams, &world.players)?;
         home_team_in_game.peer_id = Some(*self.own_peer_id());
 
-        let away_team_in_game = TeamInGame::from_team_id(&team_id, &world.teams, &world.players)
-            .ok_or(anyhow!("Cannot generate away team in game"))?;
+        let away_team_in_game = TeamInGame::from_team_id(&team_id, &world.teams, &world.players)?;
 
         let challenge = Challenge::new(
             *self.own_peer_id(),
@@ -402,8 +422,7 @@ impl NetworkHandler {
             away_team.can_accept_network_challenge(home_team)?;
 
             let mut away_team_in_game =
-                TeamInGame::from_team_id(&world.own_team_id, &world.teams, &world.players)
-                    .ok_or(anyhow!("Cannot generate team in game"))?;
+                TeamInGame::from_team_id(&world.own_team_id, &world.teams, &world.players)?;
 
             away_team_in_game.peer_id = Some(*self.own_peer_id());
 

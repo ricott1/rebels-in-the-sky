@@ -1,11 +1,15 @@
-use image::RgbaImage;
+use glam::I16Vec2;
+use image::{Rgba, RgbaImage};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::EnumIter;
 use strum_macros::Display;
 
 use crate::{
     types::AppResult,
-    world::spaceship::{Engine, Hull, Shooter, Storage},
+    world::{
+        spaceship::{Engine, Hull, Shooter, Storage},
+        Shield,
+    },
 };
 
 use super::utils::open_image;
@@ -77,13 +81,14 @@ impl ImageComponent for HairImage {
     }
 }
 
-#[derive(Debug, Clone, Copy, Display, Serialize_repr, Deserialize_repr, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, Display, Serialize_repr, Deserialize_repr, PartialEq)]
 #[repr(u8)]
 pub enum HeadImage {
     Polpett1,
     Polpett2,
     Juppa1,
     Juppa2,
+    #[default]
     Human1,
     Human2,
     Yardalaim1,
@@ -106,13 +111,14 @@ impl ImageComponent for HeadImage {
     }
 }
 
-#[derive(Debug, Clone, Copy, Display, Serialize_repr, Deserialize_repr, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, Display, Serialize_repr, Deserialize_repr, PartialEq)]
 #[repr(u8)]
 pub enum BodyImage {
     Polpett,
     Pupparoll,
     Yardalaim,
     Octopulp,
+    #[default]
     Normal,
 }
 
@@ -156,12 +162,13 @@ impl SizedImageComponent for BodyImage {
     }
 }
 
-#[derive(Debug, Clone, Copy, Display, Serialize_repr, Deserialize_repr, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, Display, Serialize_repr, Deserialize_repr, PartialEq)]
 #[repr(u8)]
 pub enum LegsImage {
     Polpett,
     Pupparoll,
     Octopulp,
+    #[default]
     Normal,
 }
 
@@ -427,6 +434,42 @@ impl ImageComponent for Engine {
             Engine::JesterDouble => "engine/jester_double.png".into(),
             Engine::JesterQuadruple => "engine/jester_quadruple.png".into(),
         }
+    }
+}
+
+impl ImageComponent for Shield {
+    fn select_file(&self) -> String {
+        "".to_string()
+    }
+
+    fn image(&self) -> AppResult<RgbaImage> {
+        if *self == Shield::None {
+            return Ok(RgbaImage::from_pixel(1, 1, Rgba([0; 4])));
+        }
+
+        const RADIUS: i16 = 10;
+        let mut image = RgbaImage::new(2 * RADIUS as u32 + 1, 2 * RADIUS as u32 + 1);
+        const MAX_DISTANCE: i16 = RADIUS.pow(2);
+        for x in -RADIUS..=RADIUS {
+            for y in -RADIUS..=RADIUS {
+                let point = I16Vec2::new(x, y);
+                let distance_squared = point.distance_squared(I16Vec2::ZERO);
+                if distance_squared > MAX_DISTANCE {
+                    continue;
+                }
+
+                let pixel = Rgba([
+                    165,
+                    85,
+                    85,
+                    (255.0 * distance_squared as f32 / MAX_DISTANCE as f32) as u8,
+                ]);
+
+                image.put_pixel((x + RADIUS) as u32, (y + RADIUS) as u32, pixel);
+            }
+        }
+
+        Ok(image)
     }
 }
 

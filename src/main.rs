@@ -17,7 +17,7 @@ use rebels::ssh::AppServer;
 
 #[derive(Parser, Debug)]
 #[clap(name="Rebels in the sky", about = "P(lanet)2P(lanet) basketball", author, version, long_about = None)]
-struct Args {
+pub struct Args {
     #[clap(long,  action=ArgAction::Set, help = "Set random seed for team generation")]
     seed: Option<u64>,
     #[clap(long, short='l', action=ArgAction::SetTrue, help = "Disable networking")]
@@ -42,6 +42,8 @@ struct Args {
     network_port: Option<u16>,
     #[clap(long, action=ArgAction::Set, help = "Set store prefix")]
     store_prefix: Option<String>,
+    #[clap(long, action=ArgAction::SetTrue, help = "Save game to uncompressed json")]
+    store_uncompressed: bool,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -87,16 +89,17 @@ async fn main() -> AppResult<()> {
         args.reset_world,
         args.seed_ip,
         args.store_prefix,
+        args.store_uncompressed,
     )?;
 
     if args.disable_ui {
         // With no UI, world must be loaded from file.
         app.load_world();
         let tui = Tui::new_dummy()?;
-        app.run(tui, network_port).await?;
+        app.run(tui, network_port, None).await?;
     } else {
         let tui = Tui::new_local()?;
-        app.run(tui, network_port).await?;
+        app.run(tui, network_port, None).await?;
     };
 
     Ok(())

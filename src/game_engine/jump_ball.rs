@@ -1,5 +1,5 @@
 use super::{
-    action::{ActionOutput, ActionSituation, EngineAction},
+    action::{ActionOutput, ActionSituation},
     game::Game,
     types::*,
 };
@@ -7,36 +7,30 @@ use crate::world::{player::Player, skill::GameSkill};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 
-#[derive(Debug, Default)]
-pub struct JumpBall;
+pub(crate) fn execute(
+    input: &ActionOutput,
+    game: &Game,
+    action_rng: &mut ChaCha8Rng,
+    _description_rng: &mut ChaCha8Rng,
+) -> Option<ActionOutput> {
+    let attacking_players = game.attacking_players();
+    let defending_players = game.defending_players();
 
-impl EngineAction for JumpBall {
-    fn execute(
-        input: &ActionOutput,
-        game: &Game,
-        action_rng: &mut ChaCha8Rng,
-        _description_rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
-        let attacking_players = game.attacking_players();
-        let defending_players = game.defending_players();
+    let jump_ball = |player: &Player| {
+        player.athletics.vertical.game_value() + (player.info.height as i16).saturating_sub(150) / 4
+    };
+    let home_jumper = attacking_players.iter().max_by_key(|&p| jump_ball(p));
+    let away_jumper = defending_players.iter().max_by_key(|&p| jump_ball(p));
 
-        let jump_ball = |player: &Player| {
-            player.athletics.vertical.game_value()
-                + ((player.info.height as u16).max(150) - 150) / 4
-        };
-        let home_jumper = attacking_players.iter().max_by_key(|&p| jump_ball(p));
-        let away_jumper = defending_players.iter().max_by_key(|&p| jump_ball(p));
+    let home_result = home_jumper?.roll(action_rng) + jump_ball(home_jumper?);
+    let away_result = away_jumper?.roll(action_rng) + jump_ball(away_jumper?);
 
-        let home_result = home_jumper?.roll(action_rng) + jump_ball(home_jumper?);
-        let away_result = away_jumper?.roll(action_rng) + jump_ball(away_jumper?);
+    let timer_increase = 6 + action_rng.random_range(0..=7);
 
-        let timer_increase = 6 + action_rng.random_range(0..=7);
-
-        let result = match home_result as i16 - away_result as i16 {
+    let result = match home_result  - away_result  {
             x if x > 0 => {
                 ActionOutput {
-                    //default possession is home team
-                    possession: input.possession,
+                    possession: Possession::Home,
                     situation: ActionSituation::AfterDefensiveRebound,
                     description: format!(
                         "{} and {} prepare for the jump ball. {} wins the jump ball. {} will have the first possession.",
@@ -51,7 +45,7 @@ impl EngineAction for JumpBall {
                 }
             }
             x if x < 0 => ActionOutput {
-                possession: !input.possession,
+                possession: Possession::Away,
                 situation: ActionSituation::AfterDefensiveRebound,
                 description: format!(
                     "{} and {} prepare for the jump ball. {} wins the jump ball. {} will have the first possession.",
@@ -65,15 +59,17 @@ impl EngineAction for JumpBall {
                 ..Default::default()
             },
             _ => {
-                let r = action_rng.random_range(0..=1);
-                let ball_team = match r {
-                    0 => game.home_team_in_game.name.clone(),
-                    _ => game.away_team_in_game.name.clone(),
+                let r = action_rng.random_bool(0.5);
+                let ball_team = if r {
+                    &game.home_team_in_game.name
+                } else {
+                    &game.away_team_in_game.name
                 };
                 ActionOutput {
-                    possession: match r {
-                        0=>Possession::Home,
-                        _=>Possession::Away
+                    possession: if r {
+                        Possession::Home
+                    } else {
+                        Possession::Away
                     },
                     situation: ActionSituation::AfterDefensiveRebound,
                     description: format!(
@@ -89,6 +85,5 @@ impl EngineAction for JumpBall {
                 }
             }
         };
-        Some(result)
-    }
+    Some(result)
 }

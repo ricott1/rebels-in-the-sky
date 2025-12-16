@@ -1,9 +1,14 @@
 use super::collisions::HitBox;
+use crate::space_adventure::entity::Entity;
+use crate::space_adventure::traits::*;
 use glam::{I16Vec2, Vec2};
 use image::imageops::crop_imm;
+use image::Rgba;
 use image::{buffer::ConvertBuffer, GrayImage, RgbaImage};
 use imageproc::contours::{find_contours, BorderType};
 use std::collections::{HashMap, HashSet};
+
+pub type EntityMap = HashMap<usize, Entity>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum EntityState {
@@ -11,13 +16,31 @@ pub enum EntityState {
     Decaying { lifetime: f32 },
 }
 
-pub enum Direction {}
+pub enum Direction {
+    Left,
+    Right,
+    Up,
+    Down,
+}
 
 impl Direction {
-    pub const LEFT: Vec2 = Vec2::NEG_X;
-    pub const RIGHT: Vec2 = Vec2::X;
-    pub const UP: Vec2 = Vec2::NEG_Y;
-    pub const DOWN: Vec2 = Vec2::Y;
+    pub fn as_vec2(&self) -> Vec2 {
+        match self {
+            Self::Left => Vec2::NEG_X,
+            Self::Right => Vec2::X,
+            Self::Up => Vec2::NEG_Y,
+            Self::Down => Vec2::Y,
+        }
+    }
+
+    pub fn as_i16vec2(&self) -> I16Vec2 {
+        match self {
+            Self::Left => I16Vec2::NEG_X,
+            Self::Right => I16Vec2::X,
+            Self::Up => I16Vec2::NEG_Y,
+            Self::Down => I16Vec2::Y,
+        }
+    }
 }
 
 pub fn body_data_from_image(image: &RgbaImage, should_crop: bool) -> (RgbaImage, HitBox) {
@@ -96,6 +119,26 @@ pub fn body_data_from_image(image: &RgbaImage, should_crop: bool) -> (RgbaImage,
     (final_image, hit_box)
 }
 
+pub fn draw_hitbox(base: &mut RgbaImage, entity: &Entity) {
+    let gray = Rgba([105, 105, 105, 255]);
+
+    let bw = base.width() as i32;
+    let bh = base.height() as i32;
+
+    for (point, &is_border) in entity.hit_box().iter() {
+        if !is_border {
+            continue;
+        }
+        let g = entity.position() + point;
+        let x = g.x as i32;
+        let y = g.y as i32;
+
+        if (0..bw).contains(&x) && (0..bh).contains(&y) {
+            base.put_pixel(x as u32, y as u32, gray);
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
 
@@ -107,7 +150,7 @@ mod test {
 
     #[test]
     fn test_hitbox_size() -> AppResult<()> {
-        let spaceship = SpaceshipPrefab::Ibarruri.spaceship("name".to_string());
+        let spaceship = SpaceshipPrefab::Ibarruri.spaceship();
         let base_gif = spaceship.compose_image()?;
         let base_image = rotate90(&base_gif[0]);
         let (_, hit_box) = body_data_from_image(&base_image, false);

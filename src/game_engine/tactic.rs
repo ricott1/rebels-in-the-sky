@@ -47,12 +47,12 @@ impl Tactic {
 
     pub fn description(&self) -> &str {
         match self {
-            Self::Balanced => "A balanced tactic, trying to alternate several possible actions.",
-            Self::BigPirates => "Focus on big pirates posting, slightly higher chance of brawls.",
+            Self::Balanced => "A balanced tactic, trying to alternate several possible actions. Ideal for crews with low stamina.",
+            Self::BigPirates => "Focus on big pirates posting, slightly higher chance of brawls, slightly more tiring.",
             Self::Arrembaggio => {
-                "Aggressive tactic focusing on sharing the ball, very high chance of brawl."
+                "Aggressive tactic focusing on giving it all, very high chance of brawl, extremely tiring."
             }
-            Self::Shooters => "Focus on shooting from a distance, smaller chance of brawl.",
+            Self::Shooters => "Focus on shooting from a distance, smaller chance of brawl,  more tiring.",
         }
     }
 
@@ -75,74 +75,86 @@ impl Tactic {
 
     pub fn brawl_probability_modifier(&self) -> f32 {
         match self {
-            Self::Balanced => 1.0,
-            Self::BigPirates => 1.25,
+            Self::Balanced => 0.55,
+            Self::BigPirates => 1.15,
             Self::Arrembaggio => 2.0,
-            Self::Shooters => 0.75,
+            Self::Shooters => 0.8,
+        }
+    }
+
+    pub fn tiredness_modifier(&self) -> f32 {
+        match self {
+            Self::Balanced => 0.5,
+            Self::BigPirates => 1.0,
+            Self::Arrembaggio => 1.2,
+            Self::Shooters => 1.15,
         }
     }
 
     pub fn attack_roll_bonus(&self, action: &Action) -> i16 {
+        // How does the tactic affect the outcome of the action from the attackers perspective?
         match self {
             Self::Balanced => 0,
             Self::BigPirates => match action {
-                Action::Isolation => -2,
-                Action::PickAndRoll => -2,
-                Action::OffTheScreen => -2,
-                Action::Post => 4,
+                Action::Isolation => -1,
+                Action::PickAndRoll => -1,
+                Action::OffTheScreen => -1,
+                Action::Post => 2,
                 Action::Brawl => 0,
-                Action::Rebound => 2,
+                Action::Rebound => 1,
                 _ => 0,
             },
             Self::Arrembaggio => match action {
                 Action::Isolation => 2,
-                Action::PickAndRoll => -2,
+                Action::PickAndRoll => 1,
                 Action::OffTheScreen => 0,
                 Action::Post => -2,
-                Action::Brawl => 4,
-                Action::Rebound => -2,
+                Action::Brawl => 2,
+                Action::Rebound => 0,
                 _ => 0,
             },
             Self::Shooters => match action {
                 Action::Isolation => 0,
-                Action::PickAndRoll => 2,
-                Action::OffTheScreen => 4,
-                Action::Post => -2,
+                Action::PickAndRoll => 1,
+                Action::OffTheScreen => 2,
+                Action::Post => -1,
                 Action::Brawl => 0,
-                Action::Rebound => -4,
+                Action::Rebound => -2,
                 _ => 0,
             },
         }
     }
 
     pub fn defense_roll_bonus(&self, action: &Action) -> i16 {
+        // How does the tactic affect the outcome of the action from the defenders perspective?
+
         match self {
             Self::Balanced => 0,
             Self::BigPirates => match action {
                 Action::Isolation => -2,
-                Action::PickAndRoll => -2,
-                Action::OffTheScreen => -2,
-                Action::Post => 4,
+                Action::PickAndRoll => -1,
+                Action::OffTheScreen => -1,
+                Action::Post => 2,
                 Action::Brawl => 0,
-                Action::Rebound => 2,
+                Action::Rebound => 1,
                 _ => 0,
             },
             Self::Arrembaggio => match action {
-                Action::Isolation => 0,
-                Action::PickAndRoll => -2,
-                Action::OffTheScreen => 2,
-                Action::Post => -2,
-                Action::Brawl => 2,
-                Action::Rebound => -2,
+                Action::Isolation => 2,
+                Action::PickAndRoll => 0,
+                Action::OffTheScreen => -1,
+                Action::Post => 0,
+                Action::Brawl => 1,
+                Action::Rebound => 0,
                 _ => 0,
             },
             Self::Shooters => match action {
-                Action::Isolation => 2,
-                Action::PickAndRoll => 0,
-                Action::OffTheScreen => 2,
+                Action::Isolation => 0,
+                Action::PickAndRoll => 1,
+                Action::OffTheScreen => 1,
                 Action::Post => -2,
-                Action::Brawl => -2,
-                Action::Rebound => 0,
+                Action::Brawl => -1,
+                Action::Rebound => -1,
                 _ => 0,
             },
         }

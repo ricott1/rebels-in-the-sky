@@ -102,7 +102,12 @@ pub fn save_world_uncompressed(world: &World, store_prefix: &str) -> AppResult<(
     Ok(())
 }
 
-pub fn save_world(world: &World, with_backup: bool, store_prefix: &str) -> AppResult<()> {
+pub fn save_world(
+    world: &World,
+    store_prefix: &str,
+    with_backup: bool,
+    with_uncompressed: bool,
+) -> AppResult<()> {
     let data = world.to_store()?;
     let filename = prefixed_world_filename(store_prefix);
     save_to_json(&filename, &data)?;
@@ -110,6 +115,14 @@ pub fn save_world(world: &World, with_backup: bool, store_prefix: &str) -> AppRe
         let backup_filename = format!("{filename}.back");
         save_to_json(&backup_filename, &data)?;
     }
+
+    if with_uncompressed {
+        std::fs::write(
+            store_path(&format!("{filename}.json"))?,
+            &serde_json::to_string_pretty(&data)?,
+        )?;
+    }
+
     Ok(())
 }
 
@@ -241,7 +254,7 @@ pub fn world_file_data(store_prefix: &str) -> AppResult<std::fs::Metadata> {
 mod tests {
     use crate::{
         types::AppResult,
-        world::{player::Player, team::Team, types::Population, world::World},
+        world::{player::Player, team::Team, world::World, Planet},
     };
     use directories;
     use itertools::Itertools;
@@ -276,7 +289,7 @@ mod tests {
         let mut world = World::new(None);
         world.initialize(true)?;
         world.own_team_id = world.teams.keys().collect_vec()[0].clone();
-        super::save_world(&world, false, store_prefix)?;
+        super::save_world(&world, store_prefix, false, false)?;
         let _ = super::load_world(store_prefix)?;
         Ok(())
     }
@@ -285,7 +298,6 @@ mod tests {
     fn test_serialize_network_data() -> AppResult<()> {
         use super::{deserialize, serialize};
         use crate::network::types::{NetworkData, NetworkTeam};
-        use crate::types::{PlanetId, PlayerId, TeamId};
         let value = NetworkData::Message(0, "Hello".to_string());
         let serialized_data = serialize(&value)?;
         let deserialized_data = deserialize(&serialized_data)?;
@@ -293,26 +305,12 @@ mod tests {
 
         let rng = &mut ChaCha8Rng::from_os_rng();
 
-        let mut team = Team::random(
-            TeamId::new_v4(),
-            PlanetId::new_v4(),
-            "name".to_string(),
-            "ship_name".to_string(),
-            rng,
-        );
+        let mut team = Team::random(rng);
 
         let mut players = vec![];
         let rng = &mut ChaCha8Rng::from_os_rng();
         for _ in 0..5 {
-            let population = Population::default();
-            let player = Player::random(
-                rng,
-                PlayerId::new_v4(),
-                None,
-                population,
-                &PlanetId::default(),
-                0.0,
-            );
+            let player = Player::random(rng, None, &Planet::default(), 0.0);
             team.player_ids.push(player.id);
             players.push(player);
         }

@@ -1,4 +1,4 @@
-use super::Entity;
+use crate::space_adventure::GameEntity;
 use image::RgbaImage;
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +15,7 @@ impl VisualEffect {
     pub const FADE_OUT_LIFETIME: f32 = 2.0;
     pub fn apply<T>(&self, entity: &T, img: &mut RgbaImage, time: f32)
     where
-        T: Entity,
+        T: GameEntity,
     {
         match &self {
             VisualEffect::FadeIn => {
@@ -31,8 +31,8 @@ impl VisualEffect {
                     if is_border {
                         let mut pixel = *img.get_pixel(point.x as u32, point.y as u32);
 
-                        for idx in 0..color.len() {
-                            if color[idx] > 0 {
+                        for (idx, &v) in color.iter().enumerate() {
+                            if v > 0 {
                                 pixel.0[idx] = ((1.0 - time / Self::COLOR_MASK_LIFETIME)
                                     * pixel.0[idx] as f32
                                     + time / Self::COLOR_MASK_LIFETIME * color[idx] as f32)

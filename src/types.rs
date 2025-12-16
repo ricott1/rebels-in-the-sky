@@ -78,7 +78,8 @@ impl StorableResourceMap for ResourceMap {
                 );
                 return Err(anyhow!("Not enough space in the tank to add fuel"));
             }
-        } else if self.used_storage_capacity() + resource.to_storing_space() * amount > max_capacity {
+        } else if self.used_storage_capacity() + resource.to_storing_space() * amount > max_capacity
+        {
             log::debug!(
                 "Adding {} {}, used is {}, max is {}",
                 amount,
@@ -221,13 +222,10 @@ impl SystemTimeTick for Tick {
     fn formatted_as_date(&self) -> String {
         let dt: DateTime<Local> = self.as_system_time().into();
         format!(
-            "{}/{}/{} {:02}:{:02}:{:02}",
+            "{}/{}/{}",
             dt.day(),
             dt.month(),
             dt.year() + CALENDAR_OFFSET,
-            dt.hour(),
-            dt.minute(),
-            dt.second()
         )
     }
 
@@ -240,13 +238,11 @@ impl SystemTimeTick for Tick {
         let seconds = self.as_secs() % 60;
         let minutes = (self.as_minutes() as f32) as Tick % 60;
         let hours = (self.as_hours() as f32) as Tick % 24;
-        let days = (self.as_secs() as f32 / 60.0 / 60.0 / 24.0) as Tick % 365;
-        let years = (self.as_secs() as f32 / 60.0 / 60.0 / 24.0 / 365.2425) as Tick;
+        let days = (self.as_days() as f32) as Tick % 365;
+        let years = (self.as_days() as f32 / 365.0) as Tick;
 
         if years > 0 {
-            format!(
-                "{years}y {days}d {hours:02}:{minutes:02}:{seconds:02}"
-            )
+            format!("{years}y {days}d {hours:02}:{minutes:02}:{seconds:02}")
         } else if days > 0 {
             format!("{days}d {hours:02}:{minutes:02}:{seconds:02}")
         } else {
@@ -260,7 +256,7 @@ mod tests {
     use super::{AppResult, ResourceMap, StorableResourceMap};
     use crate::{
         types::{SystemTimeTick, Tick, SECONDS},
-        world::resources::Resource,
+        world::{resources::Resource, DAYS},
     };
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -279,6 +275,10 @@ mod tests {
         let time = 10 * SECONDS;
         let formatted = time.formatted();
         assert_eq!(formatted, "00:00:10");
+
+        let time = 2 * DAYS;
+        let formatted = time.formatted();
+        assert_eq!(formatted, "2d 00:00:00");
     }
 
     #[test]

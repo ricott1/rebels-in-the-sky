@@ -1,0 +1,157 @@
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 57 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test tests::test_multiple_games has been running for over 60 seconds
+Result for Balanced vs Balanced
+Δrating=+0 (100000 samples)
+  Win% = 48.3 ± 0.2 (48300/100000)
+  Loss% = 48.9 ± 0.2 (48896/100000)
+  Draw% = 2.8 ± 0.1 (2804/100000)
+  points = 67.8 ± 9.0 vs 67.9 ± 9.0
+  2pt = 24.9/50.4 ± 3.9/4.6 vs 24.9/50.4 ± 3.9/4.5
+  3pt = 6.0/13.3 ± 2.3/3.4 vs 6.0/13.3 ± 2.3/3.4
+  Def/Off Rebounds = 24.5/7.9 ± 4.2/2.8 vs 24.5/7.9 ± 4.2/2.8
+  Assists/Turnovers = 13.0/21.1 ± 3.2/4.6 vs 13.0/21.1 ± 3.2/4.5
+  Steals/Blocks = 21.1/10.7 ± 4.5/3.1 vs 21.1/10.8 ± 4.6/3.1
+  Brawls = 3.3 ± 1.7 vs 3.3 ± 1.7
+  Tiredness = 9.3 ± 0.8 vs 9.3 ± 0.8
+
+Result for Balanced vs Big Pirates
+Δrating=+0 (100000 samples)
+  Win% = 45.9 ± 0.2 (45942/100000)
+  Loss% = 51.2 ± 0.2 (51168/100000)
+  Draw% = 2.9 ± 0.1 (2890/100000)
+  points = 65.2 ± 8.9 vs 66.0 ± 8.3
+  2pt = 23.4/47.0 ± 3.8/4.4 vs 28.5/55.0 ± 3.8/4.3
+  3pt = 6.1/13.3 ± 2.4/3.3 vs 3.0/7.0 ± 1.7/2.5
+  Def/Off Rebounds = 21.4/6.3 ± 4.0/2.5 vs 24.1/8.7 ± 4.2/3.0
+  Assists/Turnovers = 13.0/18.6 ± 3.2/4.3 vs 8.9/19.3 ± 2.8/4.4
+  Steals/Blocks = 19.3/10.0 ± 4.4/3.0 vs 18.6/9.7 ± 4.3/3.0
+  Brawls = 5.3 ± 2.2 vs 5.3 ± 2.2
+  Tiredness = 9.4 ± 0.9 vs 12.5 ± 1.1
+
+Result for Balanced vs Arrembaggio
+Δrating=+0 (100000 samples)
+  Win% = 47.0 ± 0.2 (46957/100000)
+  Loss% = 50.1 ± 0.2 (50143/100000)
+  Draw% = 2.9 ± 0.1 (2900/100000)
+  points = 67.2 ± 8.9 vs 67.7 ± 8.6
+  2pt = 23.9/48.8 ± 3.8/4.6 vs 28.2/55.1 ± 4.0/4.4
+  3pt = 6.4/14.0 ± 2.4/3.4 vs 3.8/8.7 ± 1.9/2.8
+  Def/Off Rebounds = 24.2/8.6 ± 4.3/3.0 vs 23.6/7.2 ± 4.2/2.7
+  Assists/Turnovers = 13.4/20.9 ± 3.3/4.6 vs 13.5/18.7 ± 3.3/4.4
+  Steals/Blocks = 18.7/10.4 ± 4.4/3.1 vs 20.9/10.6 ± 4.6/3.1
+  Brawls = 8.2 ± 2.7 vs 8.9 ± 2.9
+  Tiredness = 10.7 ± 1.2 vs 14.3 ± 1.4
+
+Result for Balanced vs Shooters
+Δrating=+0 (100000 samples)
+  Win% = 45.7 ± 0.2 (45709/100000)
+  Loss% = 51.6 ± 0.2 (51577/100000)
+  Draw% = 2.7 ± 0.1 (2714/100000)
+  points = 69.7 ± 8.8 vs 70.9 ± 10.0
+  2pt = 26.5/52.6 ± 3.9/4.6 vs 16.9/37.2 ± 3.5/4.5
+  3pt = 5.6/12.5 ± 2.3/3.3 vs 12.4/26.5 ± 3.2/4.3
+  Def/Off Rebounds = 28.8/10.2 ± 4.4/3.2 vs 22.5/5.2 ± 4.1/2.3
+  Assists/Turnovers = 12.3/21.1 ± 3.2/4.6 vs 20.2/17.6 ± 3.7/4.2
+  Steals/Blocks = 17.6/9.9 ± 4.2/3.0 vs 21.1/10.8 ± 4.6/3.1
+  Brawls = 4.2 ± 1.9 vs 4.0 ± 1.9
+  Tiredness = 9.4 ± 0.9 vs 12.5 ± 1.1
+
+Result for Big Pirates vs Big Pirates
+Δrating=+0 (100000 samples)
+  Win% = 48.3 ± 0.2 (48334/100000)
+  Loss% = 48.5 ± 0.2 (48455/100000)
+  Draw% = 3.2 ± 0.1 (3211/100000)
+  points = 61.5 ± 8.3 vs 61.5 ± 8.2
+  2pt = 26.0/51.2 ± 3.8/4.2 vs 26.0/51.2 ± 3.8/4.2
+  3pt = 3.1/7.2 ± 1.7/2.6 vs 3.1/7.2 ± 1.7/2.6
+  Def/Off Rebounds = 21.9/7.0 ± 4.0/2.7 vs 21.9/7.0 ± 4.0/2.7
+  Assists/Turnovers = 9.1/19.0 ± 2.8/4.3 vs 9.1/18.9 ± 2.8/4.3
+  Steals/Blocks = 18.9/9.7 ± 4.3/3.0 vs 19.0/9.7 ± 4.3/3.0
+  Brawls = 7.1 ± 2.6 vs 7.1 ± 2.6
+  Tiredness = 12.7 ± 1.2 vs 12.7 ± 1.2
+
+Result for Big Pirates vs Arrembaggio
+Δrating=+0 (100000 samples)
+  Win% = 41.4 ± 0.2 (41394/100000)
+  Loss% = 55.5 ± 0.2 (55507/100000)
+  Draw% = 3.1 ± 0.1 (3099/100000)
+  points = 64.3 ± 8.3 vs 66.7 ± 8.5
+  2pt = 27.4/53.3 ± 3.8/4.4 vs 27.7/52.3 ± 3.9/4.3
+  3pt = 3.1/7.2 ± 1.7/2.6 vs 3.8/8.6 ± 1.9/2.8
+  Def/Off Rebounds = 23.2/9.1 ± 4.2/3.1 vs 20.5/5.9 ± 4.0/2.5
+  Assists/Turnovers = 8.8/18.7 ± 2.8/4.3 vs 13.4/15.2 ± 3.2/3.9
+  Steals/Blocks = 15.2/9.0 ± 3.9/2.9 vs 18.7/9.8 ± 4.3/3.0
+  Brawls = 10.5 ± 3.1 vs 11.4 ± 3.4
+  Tiredness = 14.3 ± 1.5 vs 14.4 ± 1.4
+
+Result for Big Pirates vs Shooters
+Δrating=+0 (100000 samples)
+  Win% = 53.0 ± 0.2 (53040/100000)
+  Loss% = 44.1 ± 0.2 (44072/100000)
+  Draw% = 2.9 ± 0.1 (2888/100000)
+  points = 69.9 ± 8.1 vs 68.4 ± 9.8
+  2pt = 30.8/57.6 ± 3.8/4.4 vs 15.7/34.0 ± 3.4/4.4
+  3pt = 2.8/6.5 ± 1.6/2.5 vs 12.3/26.0 ± 3.1/4.2
+  Def/Off Rebounds = 27.7/11.2 ± 4.3/3.4 vs 18.9/4.0 ± 3.9/2.0
+  Assists/Turnovers = 8.3/17.9 ± 2.7/4.2 vs 19.8/14.8 ± 3.7/3.8
+  Steals/Blocks = 14.8/8.8 ± 3.8/2.8 vs 17.9/9.7 ± 4.2/3.0
+  Brawls = 6.3 ± 2.4 vs 6.1 ± 2.4
+  Tiredness = 12.7 ± 1.2 vs 12.7 ± 1.2
+
+Result for Arrembaggio vs Arrembaggio
+Δrating=+0 (100000 samples)
+  Win% = 48.6 ± 0.2 (48587/100000)
+  Loss% = 48.5 ± 0.2 (48542/100000)
+  Draw% = 2.9 ± 0.1 (2871/100000)
+  points = 65.4 ± 8.9 vs 65.4 ± 8.9
+  2pt = 26.8/53.5 ± 4.0/4.6 vs 26.8/53.5 ± 4.0/4.6
+  3pt = 3.9/9.2 ± 1.9/2.9 vs 3.9/9.1 ± 1.9/2.9
+  Def/Off Rebounds = 23.6/8.0 ± 4.3/2.9 vs 23.6/8.0 ± 4.3/2.9
+  Assists/Turnovers = 13.6/19.1 ± 3.3/4.5 vs 13.6/19.1 ± 3.3/4.5
+  Steals/Blocks = 19.1/10.7 ± 4.5/3.2 vs 19.1/10.7 ± 4.5/3.2
+  Brawls = 14.6 ± 3.8 vs 14.6 ± 3.8
+  Tiredness = 16.1 ± 1.6 vs 16.1 ± 1.6
+
+Result for Arrembaggio vs Shooters
+Δrating=+0 (100000 samples)
+  Win% = 43.2 ± 0.2 (43151/100000)
+  Loss% = 54.2 ± 0.2 (54153/100000)
+  Draw% = 2.7 ± 0.1 (2696/100000)
+  points = 69.0 ± 8.5 vs 71.0 ± 10.0
+  2pt = 29.2/56.6 ± 3.9/4.5 vs 16.1/35.7 ± 3.4/4.5
+  3pt = 3.5/8.4 ± 1.8/2.8 vs 13.0/27.5 ± 3.2/4.3
+  Def/Off Rebounds = 28.3/9.8 ± 4.4/3.2 vs 22.1/5.6 ± 4.1/2.4
+  Assists/Turnovers = 12.8/18.8 ± 3.2/4.4 vs 20.6/16.4 ± 3.7/4.1
+  Steals/Blocks = 16.4/9.6 ± 4.1/3.0 vs 18.8/10.6 ± 4.4/3.1
+  Brawls = 10.0 ± 3.1 vs 9.0 ± 2.8
+  Tiredness = 14.4 ± 1.4 vs 14.3 ± 1.5
+
+Result for Shooters vs Shooters
+Δrating=+0 (100000 samples)
+  Win% = 48.6 ± 0.2 (48643/100000)
+  Loss% = 48.8 ± 0.2 (48757/100000)
+  Draw% = 2.6 ± 0.1 (2600/100000)
+  points = 71.3 ± 9.8 vs 71.3 ± 9.9
+  2pt = 17.9/39.1 ± 3.6/4.6 vs 17.9/39.1 ± 3.6/4.6
+  3pt = 11.8/25.7 ± 3.1/4.2 vs 11.8/25.7 ± 3.1/4.2
+  Def/Off Rebounds = 27.7/7.0 ± 4.4/2.7 vs 27.7/7.0 ± 4.3/2.7
+  Assists/Turnovers = 19.6/18.7 ± 3.7/4.4 vs 19.6/18.7 ± 3.7/4.4
+  Steals/Blocks = 18.7/10.4 ± 4.4/3.1 vs 18.7/10.4 ± 4.4/3.1
+  Brawls = 4.8 ± 2.1 vs 4.8 ± 2.1
+  Tiredness = 12.7 ± 1.1 vs 12.7 ± 1.1
+
+test tests::test_multiple_games ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 829.56s
+

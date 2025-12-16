@@ -1,4 +1,3 @@
-use image::Rgba;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{fmt::Display, hash::Hash};
 use strum::EnumIter;
@@ -26,15 +25,6 @@ impl Display for Resource {
 }
 
 impl Resource {
-    pub fn color(&self) -> Rgba<u8> {
-        match self {
-            Self::GOLD => Rgba([240, 230, 140, 255]),
-            Self::SCRAPS => Rgba([192, 192, 192, 255]),
-            Self::RUM => Rgba([114, 47, 55, 255]),
-            Self::FUEL => Rgba([64, 224, 208, 255]),
-            Self::SATOSHI => Rgba([255, 255, 255, 255]),
-        }
-    }
     pub fn base_price(&self) -> f32 {
         match self {
             Resource::SATOSHI => 1.0,
