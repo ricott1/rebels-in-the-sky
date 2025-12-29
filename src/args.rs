@@ -45,6 +45,7 @@ pub struct AppArgs {
 }
 
 impl AppArgs {
+    #[cfg(feature = "ssh")]
     pub fn ssh_client(
         store_prefix: Option<String>,
         network_port: Option<u16>,
@@ -52,7 +53,7 @@ impl AppArgs {
     ) -> Self {
         Self {
             random_seed: None,
-            disable_network: true,
+            disable_network: false,
             #[cfg(feature = "audio")]
             disable_audio: true,
             reset_world: false,
@@ -60,7 +61,6 @@ impl AppArgs {
             disable_ui: false,
             #[cfg(feature = "relayer")]
             relayer_mode: false,
-            #[cfg(feature = "ssh")]
             ssh_server: false,
             seed_node_ip: None,
             network_port,
@@ -70,14 +70,6 @@ impl AppArgs {
         }
     }
     pub fn test() -> Self {
-        // seed: Option<u64>,
-        // disable_network: bool,
-        // #[cfg(feature = "audio")] disable_audio: bool,
-        // generate_local_world: bool,
-        // reset_world: bool,
-        // seed_node_ip: Option<String>,
-        // store_prefix: Option<String>,
-        // store_uncompressed: bool,
         Self {
             random_seed: Some(0),
             disable_network: true,

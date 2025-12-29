@@ -396,7 +396,9 @@ impl UiScreen {
                 self.player_panel.update(world)?;
                 self.game_panel.update(world)?;
                 self.galaxy_panel.update(world)?;
-                self.space_cove_panel.update(world)?;
+                if self.ui_tabs.contains(&UiTab::SpaceCove) {
+                    self.space_cove_panel.update(world)?;
+                }
                 self.swarm_panel.update(world)?;
             }
             UiState::SpaceAdventure => self.space_screen.update(world)?,

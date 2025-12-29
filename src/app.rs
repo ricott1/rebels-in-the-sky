@@ -523,7 +523,7 @@ impl App {
                 self.ui.push_log_event(
                     Tick::now(),
                     None,
-                    format!("UiScreen update error\n{e}"),
+                    format!("UiScreen update error: {e}"),
                     log::Level::Error,
                 )
             }

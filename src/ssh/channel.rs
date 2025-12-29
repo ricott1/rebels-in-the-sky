@@ -86,7 +86,6 @@ enum AppChannelState {
     AwaitingPty {
         _server_shutdown: CancellationToken,
     },
-    // Ready { stdin: mpsc::Sender<Vec<u8>> },
     Ready {
         app_event_sender: mpsc::Sender<AppEvent>,
     },
@@ -142,22 +141,11 @@ impl AppChannel {
         let network_port = self.network_port;
 
         let store_prefix = Some(username);
-        let mut app = App::new(
-            // None,
-            // false,
-            // #[cfg(feature = "audio")]
-            // true,
-            // true,
-            // false,
-            // None,
-            // store_prefix,
-            // false,
-            AppArgs::ssh_client(
-                store_prefix,
-                network_port,
-                Some(CHANNEL_DISCONNECTION_TIME_IN_SECONDS),
-            ),
-        )?;
+        let mut app = App::new(AppArgs::ssh_client(
+            store_prefix,
+            network_port,
+            Some(CHANNEL_DISCONNECTION_TIME_IN_SECONDS),
+        ))?;
 
         let tui = Tui::new_ssh(writer)?;
 

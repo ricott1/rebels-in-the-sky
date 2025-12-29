@@ -1,6 +1,6 @@
 [package]
 name = "rebels"
-version = "1.5.0"
+version = "1.5.1"
 edition = "2021"
 authors = ["Alessandro Ricottone <ricott2@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -76,7 +76,7 @@ stream-download = { version = "0.22.9", features = ["reqwest-rustls"], optional 
 url = { version = "2.5.7", optional = true }
 
 [features]
-default = ["audio"]
+default = ["audio", "ssh", "relayer"]
 audio = ["rodio", "stream-download", "url"]
 relayer = []
 ssh = ["russh"]
