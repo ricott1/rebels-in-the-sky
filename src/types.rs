@@ -1,12 +1,12 @@
 use crate::{
     app::App,
+    core::{
+        constants::*, kartoffel::Kartoffel, planet::Planet, player::Player, resources::Resource,
+        team::Team,
+    },
     game_engine::{
         game::{Game, GameSummary},
         types::GameStatsMap,
-    },
-    world::{
-        constants::*, kartoffel::Kartoffel, planet::Planet, player::Player, resources::Resource,
-        team::Team,
     },
 };
 use anyhow::anyhow;
@@ -255,8 +255,8 @@ impl SystemTimeTick for Tick {
 mod tests {
     use super::{AppResult, ResourceMap, StorableResourceMap};
     use crate::{
+        core::{resources::Resource, DAYS},
         types::{SystemTimeTick, Tick, SECONDS},
-        world::{resources::Resource, DAYS},
     };
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;

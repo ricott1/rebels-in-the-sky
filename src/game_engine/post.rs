@@ -1,12 +1,11 @@
 use super::{action::*, constants::*, game::Game, types::*};
-use crate::world::{
+use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     player::Player,
     skill::GameSkill,
 };
 use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
-use rand_distr::{weighted::WeightedIndex, Distribution};
 use std::collections::HashMap;
 
 pub(crate) fn execute(
@@ -14,23 +13,42 @@ pub(crate) fn execute(
     game: &Game,
     action_rng: &mut ChaCha8Rng,
     description_rng: &mut ChaCha8Rng,
-) -> Option<ActionOutput> {
-    let attacking_players = game.attacking_players();
-    let defending_players = game.defending_players();
+) -> ActionOutput {
+    let attacking_players_array = game.attacking_players_array();
+    let defending_players_array = game.defending_players_array();
 
     let post_idx = match input.attackers.len() {
-        0 => sample_player_index(action_rng, [0, 0, 1, 2, 3])?,
+        0 => {
+            let weights = [1, 2, 15, 30, 40];
+            if let Some(idx) = sample_player_index(action_rng, weights, attacking_players_array) {
+                idx
+            } else {
+                return ActionOutput {
+                    situation: ActionSituation::Turnover,
+                    possession: !input.possession,
+                    description: format!(
+                        "Oh no! No player of {} is left standing, they just turned the ball over like that!",
+                        game.attacking_team().name,
+                    ),
+                    start_at: input.end_at,
+                    end_at: input.end_at.plus(4 + action_rng.random_range(0..=3)),
+                    home_score: input.home_score,
+                    away_score: input.away_score,
+                    ..Default::default()
+                };
+            }
+        }
         _ => input.attackers[0],
     };
 
-    let poster = attacking_players[post_idx];
-    let defender = defending_players[post_idx];
+    let poster = attacking_players_array[post_idx];
+    let defender = defending_players_array[post_idx];
 
     let timer_increase = 5 + action_rng.random_range(0..=5);
 
     let mut attack_stats_update = HashMap::new();
     let mut post_update = GameStats {
-        extra_tiredness: TirednessCost::HIGH,
+        extra_tiredness: TirednessCost::MEDIUM,
         ..Default::default()
     };
 
@@ -42,15 +60,21 @@ pub(crate) fn execute(
 
     let atk_result = poster.roll(action_rng)
         + poster.technical.post_moves.game_value()
-        + poster.athletics.strength.game_value();
+        + poster.athletics.strength.game_value()
+        + game
+            .attacking_team()
+            .tactic
+            .attack_roll_bonus(&Action::Post);
 
     let def_result = defender.roll(action_rng)
         + defender.defense.interior_defense.game_value()
-        + defender.athletics.strength.game_value();
+        + (0.75 * defender.athletics.strength + 0.25 * defender.defense.steal).game_value()
+        + game
+            .defending_team()
+            .tactic
+            .defense_roll_bonus(&Action::Post);
 
-    let mut result = match atk_result - def_result
-        + Action::Post.tactic_modifier(game.attacking_team().tactic, game.defending_team().tactic)
-    {
+    let mut result = match atk_result - def_result {
         x if x >= ADV_ATTACK_LIMIT => ActionOutput {
             possession: input.possession,
             advantage: Advantage::Attack,
@@ -136,11 +160,20 @@ pub(crate) fn execute(
             ..Default::default()
         },
         x if x > ADV_DEFENSE_LIMIT => {
-            if poster.mental.vision.game_value() + x > ADV_NEUTRAL_LIMIT {
+            let num_ok_players = game
+                .attacking_players_array()
+                .iter()
+                .filter(|p| !p.is_knocked_out())
+                .count();
+            if num_ok_players > 1
+                && (0.75 * poster.mental.vision + 0.25 * poster.technical.passing).game_value() + x
+                    > ADV_NEUTRAL_LIMIT
+            {
                 let mut weights = [3, 3, 2, 2, 1];
                 weights[post_idx] = 0;
-                let target_idx = WeightedIndex::new(weights).ok()?.sample(action_rng);
-                let target: &Player = attacking_players[target_idx];
+                let target_idx = sample_player_index(action_rng, weights, attacking_players_array)
+                    .expect("There should be another ok player");
+                let target: &Player = attacking_players_array[target_idx];
                 ActionOutput {
                         possession: input.possession,
                         advantage: Advantage::Neutral,
@@ -218,14 +251,38 @@ pub(crate) fn execute(
         }
         _ => {
             post_update.turnovers = 1;
-            post_update.extra_morale += MoraleModifier::SMALL_MALUS;
-            defender_update.extra_morale += MoraleModifier::MEDIUM_BONUS;
+            post_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
+            defender_update.extra_morale += MoraleModifier::SMALL_BONUS;
 
-            let with_steal = def_result >= 3 * NUMBER_OF_ROLLS as i16;
+            // Equivalent to `- def_result - target_defender.defense.steal.game_value() <= STEAL_LIMIT`
+            let with_steal = def_result + defender.defense.steal.game_value() >= -STEAL_LIMIT;
 
             if with_steal {
                 defender_update.steals = 1;
+                defender_update.extra_morale += MoraleModifier::MEDIUM_BONUS;
+                post_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
             }
+
+            let situation = if with_steal
+                && action_rng.random_bool(
+                    FASTBREAK_ACTION_PROBABILITY
+                        * game
+                            .defending_team()
+                            .tactic
+                            .fastbreak_probability_modifier(),
+                ) {
+                ActionSituation::Fastbreak
+            } else {
+                ActionSituation::Turnover
+            };
+
+            let attackers = if with_steal { vec![post_idx] } else { vec![] };
+
+            let end_at = if with_steal {
+                input.end_at.plus(3 + action_rng.random_range(0..=3))
+            } else {
+                input.end_at.plus(5 + action_rng.random_range(0..=4))
+            };
 
             let description = if with_steal {
                 [
@@ -253,13 +310,14 @@ pub(crate) fn execute(
             };
 
             ActionOutput {
-                situation: ActionSituation::Turnover,
+                situation,
                 possession: !input.possession,
                 description,
                 start_at: input.end_at,
-                end_at: input.end_at.plus(5 + action_rng.random_range(0..=6)),
+                end_at,
                 home_score: input.home_score,
                 away_score: input.away_score,
+                attackers,
                 ..Default::default()
             }
         }
@@ -268,5 +326,5 @@ pub(crate) fn execute(
     defense_stats_update.insert(defender.id, defender_update);
     result.attack_stats_update = Some(attack_stats_update);
     result.defense_stats_update = Some(defense_stats_update);
-    Some(result)
+    result
 }

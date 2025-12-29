@@ -1,26 +1,21 @@
 #[cfg(feature = "audio")]
 use crate::audio;
+use crate::core::world::World;
 #[cfg(feature = "ssh")]
 use crate::ssh::SSHWriterProxy;
 use crate::types::AppResult;
-use crate::ui::ui::Ui;
-use crate::ui::UI_SCREEN_SIZE;
-use crate::world::world::World;
+use crate::ui::*;
 use crossterm::cursor::{Hide, Show};
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, KeyEvent, MouseEvent};
-use crossterm::terminal::Clear;
-use crossterm::terminal::SetTitle;
-use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{self, Clear, EnterAlternateScreen, LeaveAlternateScreen, SetTitle};
 use ratatui::layout::Rect;
 use ratatui::prelude::CrosstermBackend;
-use ratatui::Terminal;
-use ratatui::TerminalOptions;
-use ratatui::Viewport;
+use ratatui::{Terminal, TerminalOptions, Viewport};
 use std::io::{self};
 use std::panic;
 use std::time::{Duration, Instant};
 
-const MAX_DRAW_FPS: u8 = 30;
+const MAX_DRAW_FPS: u8 = 40;
 
 pub trait WriterProxy: io::Write + std::fmt::Debug {
     fn send(&mut self) -> impl std::future::Future<Output = std::io::Result<usize>> + Send {
@@ -56,7 +51,7 @@ pub enum TerminalEvent {
 enum TuiType {
     Local,
     #[cfg(feature = "ssh")]
-    SSH,
+    Ssh,
     Dummy,
 }
 
@@ -101,7 +96,7 @@ impl Tui<SSHWriterProxy> {
 
         let terminal = Terminal::with_options(backend, opts)?;
         let mut tui = Self {
-            tui_type: TuiType::SSH,
+            tui_type: TuiType::Ssh,
             terminal,
             last_draw: Instant::now(),
             min_duration_between_draws: Duration::from_secs_f32(1.0 / MAX_DRAW_FPS as f32),
@@ -184,7 +179,7 @@ where
 
     pub async fn draw(
         &mut self,
-        ui: &mut Ui,
+        ui: &mut UiScreen,
         world: &World,
         #[cfg(feature = "audio")] audio_player: Option<&audio::music_player::MusicPlayer>,
     ) -> AppResult<()> {
@@ -204,7 +199,7 @@ where
             })?;
 
             #[cfg(feature = "ssh")]
-            if self.tui_type == TuiType::SSH {
+            if self.tui_type == TuiType::Ssh {
                 self.terminal.backend_mut().writer_mut().send().await?;
             }
 
@@ -238,7 +233,7 @@ where
         }
 
         #[cfg(feature = "ssh")]
-        if self.tui_type == TuiType::SSH {
+        if self.tui_type == TuiType::Ssh {
             self.terminal.backend_mut().writer_mut().send().await?;
         }
 

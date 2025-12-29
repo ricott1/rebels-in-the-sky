@@ -1,13 +1,13 @@
 use super::collisions::HitBox;
+use super::entity::Entity;
+use super::resources::Resource;
 use super::space_callback::SpaceCallback;
+use super::utils::{body_data_from_image, EntityState};
 use super::visual_effects::VisualEffect;
 use super::{constants::*, traits::*};
 use crate::image::color_map::AsteroidColorMap;
 use crate::image::types::Gif;
 use crate::image::utils::{open_image, ExtraImageUtils};
-use crate::space_adventure::entity::Entity;
-use crate::space_adventure::utils::{body_data_from_image, EntityState};
-use crate::world::resources::Resource;
 use glam::{I16Vec2, Vec2};
 use image::imageops::{rotate180, rotate270, rotate90};
 use image::{Pixel, Rgba, RgbaImage};
@@ -22,48 +22,48 @@ use strum::{Display, EnumIter, IntoEnumIterator};
 const MAX_ROTATION: usize = 4;
 
 // Calculate astroid gifs, hit boxes, and contours once to be more efficient.
-static ASTEROID_IMAGE_DATA: Lazy<HashMap<(AsteroidSize, usize), (Gif, Vec<HitBox>)>> =
-    Lazy::new(|| {
-        let mut data = HashMap::new();
+type AsteroidData = (AsteroidSize, usize); // (asteroid size, image type)
+type ZippedImageHitbox = (Gif, Vec<HitBox>);
+static ASTEROID_IMAGE_DATA: Lazy<HashMap<AsteroidData, ZippedImageHitbox>> = Lazy::new(|| {
+    let mut data = HashMap::new();
 
-        for size in AsteroidSize::iter() {
-            for n_idx in 0..size.max_image_type() {
-                let mut gif = vec![];
-                let mut hit_boxes = vec![];
+    for size in AsteroidSize::iter() {
+        for n_idx in 0..size.max_image_type() {
+            let mut gif = vec![];
+            let mut hit_boxes = vec![];
 
-                let path = if size == AsteroidSize::Planet {
-                    format!("asteroids/asteroid{}.png", rand::rng().random_range(0..30))
-                } else {
-                    format!(
-                        "space_adventure/asteroid_{}{}.png",
-                        size.to_string().to_ascii_lowercase(),
-                        n_idx
-                    )
-                };
-                let mut base_img = open_image(&path).expect("Should open asteroid image");
-                if size == AsteroidSize::Planet {
-                    base_img.apply_color_map(AsteroidColorMap::Base.color_map());
-                }
-
-                for rotation_idx in 0..MAX_ROTATION {
-                    let image = match rotation_idx {
-                        0 => base_img.clone(),
-                        1 => rotate90(&base_img),
-                        2 => rotate180(&base_img),
-                        3 => rotate270(&base_img),
-                        _ => unreachable!(),
-                    };
-                    let (image, hit_box) =
-                        body_data_from_image(&image, size == AsteroidSize::Planet);
-                    gif.push(image);
-                    hit_boxes.push(hit_box);
-                }
-                data.insert((size, n_idx), (gif, hit_boxes));
+            let path = if size == AsteroidSize::Planet {
+                format!("asteroids/asteroid{}.png", rand::rng().random_range(0..30))
+            } else {
+                format!(
+                    "space_adventure/asteroid_{}{}.png",
+                    size.to_string().to_ascii_lowercase(),
+                    n_idx
+                )
+            };
+            let mut base_img = open_image(&path).expect("Should open asteroid image");
+            if size == AsteroidSize::Planet {
+                base_img.apply_color_map(AsteroidColorMap::Base.color_map());
             }
-        }
 
-        data
-    });
+            for rotation_idx in 0..MAX_ROTATION {
+                let image = match rotation_idx {
+                    0 => base_img.clone(),
+                    1 => rotate90(&base_img),
+                    2 => rotate180(&base_img),
+                    3 => rotate270(&base_img),
+                    _ => unreachable!(),
+                };
+                let (image, hit_box) = body_data_from_image(&image, size == AsteroidSize::Planet);
+                gif.push(image);
+                hit_boxes.push(hit_box);
+            }
+            data.insert((size, n_idx), (gif, hit_boxes));
+        }
+    }
+
+    data
+});
 
 #[derive(
     Default,
@@ -540,8 +540,8 @@ mod tests {
     use std::path::Path;
 
     use super::{AsteroidSize, ASTEROID_IMAGE_DATA};
-    use crate::types::AppResult;
-    use image::{self, GenericImage, RgbaImage};
+    use crate::{image::utils::ExtraImageUtils, types::AppResult};
+    use image::{self, RgbaImage};
 
     #[ignore]
     #[test]
@@ -553,7 +553,7 @@ mod tests {
             }
 
             for (idx, oriented_image) in gif.iter().enumerate() {
-                base.copy_from(
+                base.copy_non_trasparent_from(
                     oriented_image,
                     image_type as u32 * 88 + idx as u32 * 20,
                     size as u32 * 20,

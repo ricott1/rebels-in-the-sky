@@ -13,11 +13,12 @@ use super::{
     utils::{img_to_lines, input_from_key_event},
     widgets::{default_block, render_player_description, selectable_list},
 };
+use crate::image::utils::LightMaskStyle;
 use crate::image::{color_map::ColorPreset, spaceship::SPACESHIP_IMAGE_WIDTH};
 use crate::{
+    core::*,
     image::color_map::ColorMap,
     types::{AppResult, PlanetId, PlayerId},
-    world::*,
 };
 use core::fmt::Debug;
 use core::panic;
@@ -216,7 +217,10 @@ impl NewTeamScreen {
             vertical: 1,
         }));
 
-        if let Ok(gif) = self.selected_ship().compose_image() {
+        if let Ok(gif) = self
+            .selected_ship()
+            .compose_image(Some(LightMaskStyle::radial()))
+        {
             let img = gif[(self.tick) % gif.len()].clone();
             let paragraph = Paragraph::new(img_to_lines(&img));
             frame.render_widget(
@@ -453,27 +457,9 @@ impl NewTeamScreen {
                 },
             );
 
-            frame.render_interactive_widget(
-                red,
-                color_split[0].inner(Margin {
-                    horizontal: 1,
-                    vertical: 1,
-                }),
-            );
-            frame.render_interactive_widget(
-                green,
-                color_split[1].inner(Margin {
-                    horizontal: 1,
-                    vertical: 1,
-                }),
-            );
-            frame.render_interactive_widget(
-                blue,
-                color_split[2].inner(Margin {
-                    horizontal: 1,
-                    vertical: 1,
-                }),
-            );
+            frame.render_interactive_widget(red, color_split[0].inner(Margin::new(1, 1)));
+            frame.render_interactive_widget(green, color_split[1].inner(Margin::new(1, 1)));
+            frame.render_interactive_widget(blue, color_split[2].inner(Margin::new(1, 1)));
         }
 
         frame.render_widget(block.clone().title("Choose 'r'"), color_split[0]);

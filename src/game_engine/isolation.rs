@@ -1,5 +1,5 @@
 use super::{action::*, constants::*, game::Game, types::*};
-use crate::world::{
+use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     skill::GameSkill,
 };
@@ -12,41 +12,33 @@ pub(crate) fn execute(
     game: &Game,
     action_rng: &mut ChaCha8Rng,
     description_rng: &mut ChaCha8Rng,
-) -> Option<ActionOutput> {
-    let attacking_players = game.attacking_players();
-    let defending_players = game.defending_players();
+) -> ActionOutput {
+    let attacking_players_array = game.attacking_players_array();
+    let defending_players_array = game.defending_players_array();
 
-    let mut weights = [4, 5, 4, 3, 1];
-    for (idx, player) in attacking_players.iter().enumerate() {
-        if player.is_knocked_out() {
-            weights[idx] = 0
-        }
-    }
+    let weights = [4, 5, 4, 3, 1];
+    let iso_idx = if let Some(idx) =
+        sample_player_index(action_rng, weights, attacking_players_array)
+    {
+        idx
+    } else {
+        return ActionOutput {
+                situation: ActionSituation::Turnover,
+                possession: !input.possession,
+                description: format!(
+                    "Oh no! No player of {} is left standing, they just turned the ball over like that!",
+                    game.attacking_team().name,
+                ),
+                start_at: input.end_at,
+                end_at: input.end_at.plus(4 + action_rng.random_range(0..=3)),
+                home_score: input.home_score,
+                away_score: input.away_score,
+                ..Default::default()
+            };
+    };
 
-    if weights.iter().sum::<u8>() == 0 {
-        let name = if game.possession == Possession::Home {
-            game.home_team_in_game.name.clone()
-        } else {
-            game.away_team_in_game.name.clone()
-        };
-        return Some(ActionOutput {
-            situation: ActionSituation::Turnover,
-            possession: !input.possession,
-            description: format!(
-                "Oh no! The whole team is wasted! {name} just turned the ball over like that.",
-            ),
-            start_at: input.end_at,
-            end_at: input.end_at.plus(4 + action_rng.random_range(0..=3)),
-            home_score: input.home_score,
-            away_score: input.away_score,
-            ..Default::default()
-        });
-    }
-
-    let iso_idx = sample_player_index(action_rng, weights)?;
-
-    let iso = attacking_players[iso_idx];
-    let defender = defending_players[iso_idx];
+    let iso = attacking_players_array[iso_idx];
+    let defender = defending_players_array[iso_idx];
 
     let timer_increase = 2 + action_rng.random_range(0..=3);
 
@@ -64,14 +56,21 @@ pub(crate) fn execute(
 
     let atk_result = iso.roll(action_rng)
         + iso.technical.ball_handling.game_value()
-        + iso.athletics.quickness.game_value();
+        + (0.75 * iso.athletics.quickness + 0.25 * iso.mental.aggression).game_value()
+        + game
+            .attacking_team()
+            .tactic
+            .attack_roll_bonus(&Action::Isolation);
 
     let def_result = defender.roll(action_rng)
         + defender.defense.perimeter_defense.game_value()
-        + defender.athletics.quickness.game_value();
+        + (0.75 * defender.athletics.quickness + 0.25 * defender.defense.steal).game_value()
+        + game
+            .defending_team()
+            .tactic
+            .defense_roll_bonus(&Action::Isolation);
 
-    let mut result = match atk_result  - def_result  + Action::Isolation.tactic_modifier(game.attacking_team().tactic,
-                game.defending_team().tactic) {
+    let mut result = match atk_result  - def_result  {
             x if x >= ADV_ATTACK_LIMIT => ActionOutput {
                 possession: input.possession,
                 advantage: Advantage::Attack,
@@ -253,21 +252,38 @@ pub(crate) fn execute(
             _ => {
                 iso_update.turnovers = 1;
                 iso_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
+                defender_update.extra_morale += MoraleModifier::SMALL_BONUS;
+
+                // Equivalent to `- def_result - target_defender.defense.steal.game_value() <= STEAL_LIMIT`
+                let with_steal = def_result + defender.defense.steal.game_value() >= -STEAL_LIMIT;
+
+
+            if with_steal {
                 defender_update.steals = 1;
                 defender_update.extra_morale += MoraleModifier::MEDIUM_BONUS;
+                iso_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
+            }
 
-                ActionOutput {
-                    situation: ActionSituation::Turnover,
-                    possession: !input.possession,
-                    description: [
+            let situation = if with_steal && action_rng.random_bool(FASTBREAK_ACTION_PROBABILITY * game.defending_team().tactic.fastbreak_probability_modifier()){
+                ActionSituation::Fastbreak
+            } else {
+                ActionSituation::Turnover
+            };
+
+            let attackers = if with_steal {
+                vec![iso_idx]
+            } else {vec![]};
+
+            let end_at = if with_steal {
+                input.end_at.plus(1 +  action_rng.random_range(0..=2))
+            } else {
+                input.end_at.plus(4 + action_rng.random_range(0..=2))
+            };
+
+            let description = if with_steal {
+                        [
                         format!(
                             "{} tries to dribble past {} but {} steals the ball. Terrible choice.",
-                            iso.info.short_name(),
-                            defender.info.short_name(),
-                            defender.info.short_name()
-                        ),
-                        format!(
-                            "{} pulls up for a three-pointer over {}, but {} blocks the shot cleanly. What a play!",
                             iso.info.short_name(),
                             defender.info.short_name(),
                             defender.info.short_name()
@@ -290,7 +306,7 @@ pub(crate) fn execute(
                             defender.info.short_name()
                         ),
                         format!(
-                            "{} charges down the lane, hoping to outmuscle {}, but {} blocks the dunk attempt. Denied!",
+                            "{} charges down the lane, hoping to outmuscle {}, but {} blocks the attempt. Denied!",
                             iso.info.short_name(),
                             defender.info.short_name(),
                             defender.info.short_name()
@@ -302,22 +318,50 @@ pub(crate) fn execute(
                             defender.info.short_name(),
                             iso.info.pronouns.as_possessive()
                         ),
+                    ]}else{[
                         format!(
-                            "{} goes for an ill-advised lob pass, but {} jumps the passing lane. What a read!",
+                            "{} tries to dribble past {} but {}'s pressure makes {} fumble the ball.",
+                            iso.info.short_name(),
+                            defender.info.short_name(),
+                            defender.info.short_name(), iso.info.pronouns.as_object(),
+                        ),
+                        format!(
+                            "{} loses the ball while trying a flashy behind-the-back pass to get off of {}'s defense. Risky decision!",
                             iso.info.short_name(),
                             defender.info.short_name(),
                         ),
                         format!(
-                            "{} tries to force a layup against {}, but {} stuffs it at the rim. No chance!",
+                            "{} attempts a spin move to beat {}, but {} forces the turnover.",
                             iso.info.short_name(),
                             defender.info.short_name(),
                             defender.info.short_name()
                         ),
-                    ].choose(description_rng).expect("There should be one option").clone(),
+                        format!(
+                            "{} attempts a fancy between-the-legs move to get past {}, but {} forces the turnover.",
+                            iso.info.short_name(),
+                            defender.info.short_name(),
+                            defender.info.short_name()
+                        ),
+                        format!(
+                            "{} attempts a quick crossover to get past {}, but trips on the floor!",
+                            iso.info.short_name(),
+                            defender.info.short_name(),
+                        ),
+                        format!(
+                            "{} goes for an ill-advised lob pass, the ball is lost on the backboard...",
+                            iso.info.short_name(),
+                        ),
+                    ]}.choose(description_rng).expect("There should be one option").clone();
+
+                ActionOutput {
+                    situation,
+                    possession: !input.possession,
+                    description,
                     start_at: input.end_at,
-                    end_at: input.end_at.plus(3),
+                    end_at,
                     home_score: input.home_score,
                     away_score: input.away_score,
+                    attackers,
                     ..Default::default()
                 }
             }
@@ -326,5 +370,5 @@ pub(crate) fn execute(
     defense_stats_update.insert(defender.id, defender_update);
     result.attack_stats_update = Some(attack_stats_update);
     result.defense_stats_update = Some(defense_stats_update);
-    Some(result)
+    result
 }

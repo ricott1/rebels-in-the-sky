@@ -13,19 +13,16 @@ use super::{
     ui_callback::UiCallback,
     utils::format_satoshi,
 };
+use crate::core::skill::{Skill, MAX_SKILL, MIN_SKILL};
+use crate::core::types::TeamBonus;
+use crate::core::{ChargeUnit, Honour, Shield, Shooter, SpaceshipComponent, UpgradeableElement};
 use crate::ui::ui_key;
 use crate::ui::utils::format_au;
-use crate::world::skill::{Skill, MAX_SKILL, MIN_SKILL};
-use crate::world::types::TeamBonus;
-use crate::world::{Honour, UpgradeableElement};
 use crate::{
-    game_engine::constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
-    image::{player::PLAYER_IMAGE_WIDTH, spaceship::SPACESHIP_IMAGE_WIDTH},
-    types::*,
-    world::{
+    core::{
         constants::*,
         player::Player,
-        position::{GamePosition, Position, MAX_POSITION},
+        position::{GamePosition, GamePositionUtils, MAX_GAME_POSITION},
         resources::Resource,
         skill::{GameSkill, Rated, SKILL_NAMES},
         spaceship_upgrades::SpaceshipUpgradeTarget,
@@ -33,6 +30,8 @@ use crate::{
         types::TeamLocation,
         world::World,
     },
+    image::{player::PLAYER_IMAGE_WIDTH, spaceship::SPACESHIP_IMAGE_WIDTH},
+    types::*,
 };
 use anyhow::anyhow;
 use crossterm::event::KeyCode;
@@ -43,6 +42,9 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, List, Paragraph},
 };
 use strum::Display;
+
+// This is used as a convenience value so that the bars are colored green if at max value.
+pub const GREEN_STYLE_SKILL: f32 = 16.0;
 
 pub static UP_ARROW_SPAN: Lazy<Span<'static>> = Lazy::new(|| Span::styled("↑", UiStyle::HEADER));
 pub static UP_RIGHT_ARROW_SPAN: Lazy<Span<'static>> = Lazy::new(|| Span::styled("↗", UiStyle::OK));
@@ -105,17 +107,20 @@ pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Butt
     let own_team = world.get_own_team()?;
     let planet = world.get_planet_or_err(&planet_id)?;
 
-    let mut teleport_button = Button::new("Teleport", UiCallback::TravelToPlanet { planet_id })
-        .set_hover_text(format!(
-            "Travel instantaneously to {}{}",
-            planet.name,
-            if planet_id == own_team.home_planet_id {
-                "".to_string()
-            } else {
-                format!(" for {} Rum", own_team.player_ids.len()) // FIXME: don't hardcode this, but get it somehow from the teleport action.)
-            }
-        ))
-        .set_hotkey(ui_key::TRAVEL);
+    let mut teleport_button = Button::new(
+        format!("Teleport (-{} Rum)", own_team.player_ids.len()),
+        UiCallback::TravelToPlanet { planet_id },
+    )
+    .set_hover_text(format!(
+        "Travel instantaneously to {}{}",
+        planet.name,
+        if planet_id == own_team.home_planet_id {
+            "".to_string()
+        } else {
+            format!(" for {} Rum", own_team.player_ids.len()) // FIXME: don't hardcode this, but get it somehow from the teleport action.)
+        }
+    ))
+    .set_hotkey(ui_key::TRAVEL);
 
     if let Err(e) = own_team.can_travel_to_planet(planet, 0) {
         teleport_button.disable(Some(e.to_string()));
@@ -199,7 +204,7 @@ pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button
     let can_drink = player.can_drink(world);
 
     let mut button = Button::new(
-        "Drink!",
+        "Drink! (-1 Rum)",
         UiCallback::Drink {
             player_id: *player_id,
         },
@@ -207,10 +212,8 @@ pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button
     .set_hotkey(ui_key::player::DRINK)
     .set_hover_text("Drink a liter of rum, increasing morale and decreasing energy.");
 
-    if can_drink.is_err() {
-        button.disable(Some(format!("{}", can_drink.unwrap_err())));
-    } else {
-        button = button.block(default_block().border_style(Resource::RUM.style()));
+    if let Err(err) = can_drink {
+        button.disable(Some(format!("{err}")));
     }
 
     Ok(button)
@@ -323,8 +326,8 @@ pub fn render_challenge_button(
             button = button.set_hotkey(ui_key::game::CHALLENGE_TEAM)
         }
 
-        if can_challenge.is_err() {
-            button.disable(Some(format!("{}", can_challenge.unwrap_err())));
+        if let Err(err) = can_challenge {
+            button.disable(Some(format!("{err}")));
         } else {
             button = if team.peer_id.is_some() {
                 button.block(default_block().border_style(UiStyle::NETWORK))
@@ -595,12 +598,7 @@ pub fn get_energy_spans<'a>(average_tiredness: f32) -> Vec<Span<'a>> {
         "▰".repeat(BARS_LENGTH.saturating_sub(tiredness_length)),
         "▱".repeat(tiredness_length),
     );
-    let energy_style = match average_tiredness {
-        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::OK,
-        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
-        x if x < MAX_SKILL => UiStyle::ERROR,
-        _ => UiStyle::UNSELECTABLE,
-    };
+    let energy_style = ((MAX_SKILL - average_tiredness) / MAX_SKILL * GREEN_STYLE_SKILL).style();
 
     vec![
         Span::raw("Energy ".to_string()),
@@ -643,7 +641,7 @@ pub fn get_durability_spans<'a>(
         .repeat(shield_bars_length.saturating_sub(shield_value_length))
         .to_string();
 
-    let value_style = (MAX_SKILL * (value as f32 / max_value as f32))
+    let value_style = (GREEN_STYLE_SKILL * (value as f32 / max_value as f32))
         .bound()
         .style();
 
@@ -676,7 +674,7 @@ pub fn get_charge_spans<'a>(
     let style = if is_recharging {
         MIN_SKILL.style()
     } else {
-        (MAX_SKILL * (value as f32 / max_value as f32))
+        (GREEN_STYLE_SKILL * (value as f32 / max_value as f32))
             .bound()
             .style()
     };
@@ -701,7 +699,7 @@ pub fn get_fuel_spans<'a>(fuel: u32, fuel_capacity: u32, bars_length: usize) -> 
         "▱".repeat(bars_length.saturating_sub(fuel_length)),
     );
 
-    let fuel_style = (MAX_SKILL * (fuel as f32 / fuel_capacity as f32))
+    let fuel_style = (GREEN_STYLE_SKILL * (fuel as f32 / fuel_capacity as f32))
         .bound()
         .style();
 
@@ -895,7 +893,7 @@ pub fn render_spaceship_description(
 
 fn honour_lines<'a>(team_honours: &HashSet<Honour>) -> Vec<HoverTextLine<'a>> {
     let honour_color = |honour| match honour {
-        Honour::Defiant => (Color::Green, Color::Cyan),
+        Honour::Defiant => (Color::Blue, Color::Yellow),
         Honour::Maximalist => (Color::Yellow, Color::DarkGray),
         Honour::MultiKulti => (Color::Red, Color::LightCyan),
         Honour::Pirate => (Color::Black, Color::Red),
@@ -971,10 +969,7 @@ pub fn render_spaceship_upgrade(
             let paragraph = Paragraph::new(lines);
             frame.render_widget(
                 paragraph.centered(),
-                spaceship_split[0].inner(Margin {
-                    horizontal: 1,
-                    vertical: 1,
-                }),
+                spaceship_split[0].inner(Margin::new(1, 1)),
             );
         }
     } else if matches!(upgrade_target, SpaceshipUpgradeTarget::Shooter { .. })
@@ -984,10 +979,7 @@ pub fn render_spaceship_upgrade(
             let paragraph = Paragraph::new(lines);
             frame.render_widget(
                 paragraph.centered(),
-                spaceship_split[0].inner(Margin {
-                    horizontal: 1,
-                    vertical: 1,
-                }),
+                spaceship_split[0].inner(Margin::new(1, 1)),
             );
         }
     } else if matches!(upgrade_target, SpaceshipUpgradeTarget::Shield { .. }) {
@@ -995,10 +987,7 @@ pub fn render_spaceship_upgrade(
             let paragraph = Paragraph::new(lines);
             frame.render_widget(
                 paragraph.centered(),
-                spaceship_split[0].inner(Margin {
-                    horizontal: 1,
-                    vertical: 1,
-                }),
+                spaceship_split[0].inner(Margin::new(1, 1)),
             );
         }
     } else if let Ok(lines) = gif_map.on_planet_spaceship_lines(&upgraded_ship, tick) {
@@ -1057,7 +1046,7 @@ pub fn render_spaceship_upgrade(
         Line::from(vec![
             Span::raw(format!(
                 "{:<12} {:<5}",
-                "Max tank",
+                "Tank",
                 team.spaceship.fuel_capacity()
             )),
             Span::raw(" --> "),
@@ -1095,7 +1084,7 @@ pub fn render_spaceship_upgrade(
         Line::from(vec![
             Span::raw(format!(
                 "{:<12} {:<5}",
-                "Max storage",
+                "Stiva",
                 team.spaceship.storage_capacity(),
             )),
             Span::raw(" --> "),
@@ -1139,13 +1128,21 @@ pub fn render_spaceship_upgrade(
         ]),
         Line::from(vec![
             Span::raw(format!(
-                "{:<12} {:<5}",
+                "{:<12} {:5}",
                 "Shield",
-                team.spaceship.shield_max_durability(),
+                format!(
+                    "{}/{:.0}%",
+                    team.spaceship.shield_max_durability(),
+                    (1.0 - team.spaceship.shield_damage_reduction()) * 100.0
+                )
             )),
             Span::raw(" --> "),
             Span::styled(
-                format!("{:<5}", upgraded_ship.shield_max_durability(),),
+                format!(
+                    "{}/{:.0}%",
+                    upgraded_ship.shield_max_durability(),
+                    (1.0 - upgraded_ship.shield_damage_reduction()) * 100.0
+                ),
                 if upgraded_ship.shield_max_durability() > team.spaceship.shield_max_durability() {
                     UiStyle::OK
                 } else if upgraded_ship.shield_max_durability()
@@ -1328,12 +1325,7 @@ pub fn render_player_description(
         "▰".repeat(morale_length),
         "▱".repeat(BARS_LENGTH.saturating_sub(morale_length)),
     );
-    let morale_style = match morale {
-        x if x > 5.0 * MORALE_THRESHOLD_FOR_LEAVING => UiStyle::OK,
-        x if x > MORALE_THRESHOLD_FOR_LEAVING => UiStyle::WARNING,
-        x if x > MIN_SKILL => UiStyle::ERROR,
-        _ => UiStyle::UNSELECTABLE,
-    };
+    let morale_style = (morale / MAX_SKILL * GREEN_STYLE_SKILL).style();
 
     frame.render_interactive_widget(
         HoverTextLine::from(vec![
@@ -1358,12 +1350,7 @@ pub fn render_player_description(
         "▰".repeat(BARS_LENGTH.saturating_sub(tiredness_length)),
         "▱".repeat(tiredness_length),
     );
-    let energy_style = match tiredness {
-        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::OK,
-        x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
-        x if x < MAX_SKILL => UiStyle::ERROR,
-        _ => UiStyle::UNSELECTABLE,
-    };
+    let energy_style = ((MAX_SKILL - tiredness) / MAX_SKILL * GREEN_STYLE_SKILL).style();
 
     frame.render_interactive_widget(
         HoverTextLine::from(vec![
@@ -1450,8 +1437,8 @@ fn improvement_indicator<'a>(skill: f32, previous: f32) -> Span<'a> {
 fn format_player_skills(player: &'_ Player) -> Vec<Line<'_>> {
     let skills = player.current_skill_array();
     let mut text = vec![];
-    let mut roles = (0..MAX_POSITION)
-        .map(|i: Position| {
+    let mut roles = (0..MAX_GAME_POSITION)
+        .map(|i: GamePosition| {
             (
                 i.as_str().to_string(),
                 i.player_rating(player.current_skill_array()),
@@ -1673,12 +1660,282 @@ fn format_player_stats(player: &'_ Player) -> Vec<Line<'_>> {
     text
 }
 
+pub fn spaceship_upgrade_target_description_lines<'a>(
+    upgrade_target: SpaceshipUpgradeTarget,
+) -> Vec<Line<'a>> {
+    match upgrade_target {
+        SpaceshipUpgradeTarget::ChargeUnit { component } => {
+            let mut lines = spaceship_component_description_lines(component);
+            lines.append(&mut charge_unit_extra_description_lines(component));
+            lines
+        }
+        SpaceshipUpgradeTarget::Hull { component } => {
+            spaceship_component_description_lines(component)
+        }
+        SpaceshipUpgradeTarget::Engine { component } => {
+            spaceship_component_description_lines(component)
+        }
+        SpaceshipUpgradeTarget::Shield { component } => {
+            let mut lines = spaceship_component_description_lines(component);
+            lines.append(&mut shield_extra_description_lines(component));
+            lines
+        }
+        SpaceshipUpgradeTarget::Shooter { component } => {
+            let mut lines = spaceship_component_description_lines(component);
+            lines.append(&mut shooter_extra_description_lines(component));
+            lines
+        }
+        SpaceshipUpgradeTarget::Storage { component } => {
+            spaceship_component_description_lines(component)
+        }
+        SpaceshipUpgradeTarget::Repairs { .. } => vec![],
+    }
+}
+
+fn charge_unit_extra_description_lines<'a>(component: ChargeUnit) -> Vec<Line<'a>> {
+    let previous_component = component.previous();
+    let mut lines = Vec::new();
+
+    let max_charge = component.max_charge()
+        - previous_component
+            .map(|c| c.max_charge())
+            .unwrap_or_default();
+    if max_charge != 0.0 {
+        lines.push(Line::from(vec![
+            Span::raw("Max charge "),
+            Span::styled(
+                format!("{:<+.0}", max_charge),
+                if max_charge > 0.0 {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]));
+    }
+
+    lines
+}
+
+fn shield_extra_description_lines<'a>(component: Shield) -> Vec<Line<'a>> {
+    let previous_component = component.previous();
+    let mut lines = Vec::new();
+
+    let absorbtion = previous_component
+        .map(|c| c.damage_reduction())
+        .unwrap_or_default()
+        - component.damage_reduction();
+    if absorbtion != 0.0 {
+        lines.push(Line::from(vec![
+            Span::raw("Damage absorbtion "),
+            Span::styled(
+                format!("{:<+.0}%", (absorbtion * 100.0).round()),
+                if absorbtion > 0.0 {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]));
+    }
+
+    let shield_durability = component.max_durability()
+        - previous_component
+            .map(|c| c.max_durability())
+            .unwrap_or_default();
+    if shield_durability != 0.0 {
+        lines.push(Line::from(vec![
+            Span::raw("Shield durability "),
+            Span::styled(
+                format!("{:<+.0}", shield_durability),
+                if shield_durability > 0.0 {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]));
+    }
+
+    lines
+}
+
+fn shooter_extra_description_lines<'a>(component: Shooter) -> Vec<Line<'a>> {
+    let previous_component = component.previous();
+    let mut lines = Vec::new();
+
+    let damage = component.damage() - previous_component.map(|c| c.damage()).unwrap_or_default();
+    if damage != 0.0 {
+        lines.push(Line::from(vec![
+            Span::raw("Damage "),
+            Span::styled(
+                format!("{damage:+.0}"),
+                if damage > 0.0 {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]));
+    }
+
+    let fire_rate = component.fire_rate()
+        - previous_component
+            .map(|c| c.fire_rate())
+            .unwrap_or_default();
+    if fire_rate != 0.0 {
+        lines.push(Line::from(vec![
+            Span::raw("Fire rate "),
+            Span::styled(
+                format!("{fire_rate:<+.0}"),
+                if fire_rate > 0.0 {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]));
+    }
+
+    let shooting_points = component.shooting_points() as i8
+        - previous_component
+            .map(|c| c.shooting_points() as i8)
+            .unwrap_or_default();
+    if shooting_points != 0 {
+        lines.push(Line::from(vec![
+            Span::raw("Bullets "),
+            Span::styled(
+                format!("{shooting_points:+}"),
+                if shooting_points > 0 {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]));
+    }
+
+    lines
+}
+
+fn spaceship_component_description_lines<'a, C: SpaceshipComponent>(component: C) -> Vec<Line<'a>> {
+    let previous_component = component.previous();
+    let mut lines = Vec::new();
+
+    let crew = component.crew_capacity() as i8
+        - previous_component
+            .map(|c| c.crew_capacity() as i8)
+            .unwrap_or_default();
+    if crew != 0 {
+        lines.push(Line::from(vec![
+            Span::raw("Crew "),
+            Span::styled(
+                format!("{crew:+}"),
+                if crew > 0 {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]));
+    }
+
+    let storage = component.storage_capacity() as i32
+        - previous_component
+            .map(|c| c.storage_capacity() as i32)
+            .unwrap_or_default();
+    if storage != 0 {
+        lines.push(Line::from(vec![
+            Span::raw("Stiva "),
+            Span::styled(
+                format!("{storage:+}"),
+                if storage > 0 {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]));
+    }
+
+    let tank = component.fuel_capacity() as i32
+        - previous_component
+            .map(|c| c.fuel_capacity() as i32)
+            .unwrap_or_default();
+    if tank != 0 {
+        lines.push(Line::from(vec![
+            Span::raw("Tank "),
+            Span::styled(
+                format!("{tank:+}"),
+                if tank > 0 {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]));
+    }
+
+    let consumption = component.fuel_consumption_per_tick()
+        - previous_component
+            .map(|c| c.fuel_consumption_per_tick())
+            .unwrap_or_default();
+    if consumption != 0.0 {
+        lines.push(Line::from(vec![
+            Span::raw("Consumption "),
+            Span::styled(
+                format!("{:<+.0}%", (consumption * 100.0).round()),
+                if consumption < 0.0 {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]));
+    }
+
+    let speed = component.speed() - previous_component.map(|c| c.speed()).unwrap_or_default();
+    if speed != 0.0 {
+        lines.push(Line::from(vec![
+            Span::raw("Speed "),
+            Span::styled(
+                format!("{:<+.0}%", (speed * 100.0).round()),
+                if speed > 0.0 {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]));
+    }
+
+    let durability = component.durability() as i32
+        - previous_component
+            .map(|c| c.durability() as i32)
+            .unwrap_or_default();
+    if durability != 0 {
+        lines.push(Line::from(vec![
+            Span::raw("Durability "),
+            Span::styled(
+                format!("{durability:+}"),
+                if durability > 0 {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                },
+            ),
+        ]));
+    }
+
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::{AppResult, BARS_LENGTH};
     use crate::{
+        core::{resources::Resource, spaceship::SpaceshipPrefab, team::Team},
         ui::widgets::get_storage_lengths,
-        world::{resources::Resource, spaceship::SpaceshipPrefab, team::Team},
     };
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;

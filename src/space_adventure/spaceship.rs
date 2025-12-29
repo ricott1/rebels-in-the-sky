@@ -1,17 +1,17 @@
 use super::collisions::HitBox;
+use super::core_constants::{FUEL_CONSUMPTION_PER_UNIT_STORAGE, SPEED_PENALTY_PER_UNIT_STORAGE};
+use super::entity::Entity;
+use super::resources::Resource;
 use super::space_callback::SpaceCallback;
 use super::utils::{body_data_from_image, EntityState};
+use super::visual_effects::VisualEffect;
+use super::Direction;
 use super::{constants::*, traits::*};
 use crate::image::components::{ImageComponent, SizedImageComponent};
 use crate::image::spaceship::SpaceshipImage;
-use crate::image::utils::open_image;
-use crate::space_adventure::entity::Entity;
-use crate::space_adventure::visual_effects::VisualEffect;
-use crate::space_adventure::Direction;
+use crate::image::utils::{open_image, LightMaskStyle};
 use crate::types::*;
-use crate::world::constants::{FUEL_CONSUMPTION_PER_UNIT_STORAGE, SPEED_PENALTY_PER_UNIT_STORAGE};
-use crate::world::resources::Resource;
-use crate::{image::types::Gif, types::AppResult, world::spaceship::Spaceship};
+use crate::{core::spaceship::Spaceship, image::types::Gif, types::AppResult};
 use glam::{I16Vec2, Vec2};
 use image::imageops::{rotate270, rotate90};
 use image::{Pixel, Rgba, RgbaImage};
@@ -133,7 +133,7 @@ pub struct SpaceshipEntity {
     friction_coeff: f32,
     tick: usize,
     gif: Gif,
-    engine_exhaust: Vec<I16Vec2>, // Position of exhaust in relative coords
+    engine_exhaust: Vec<I16Vec2>, // GamePosition of exhaust in relative coords
     shooter: Option<ShooterInSpaceAdventure>, // FIXME: it should be its own entity (as the engine and storage) so they can be damaged separately.
     charge_unit: ChargeUnitInSpaceAdventure,
     collector_id: Option<usize>,
@@ -722,7 +722,7 @@ impl SpaceshipEntity {
     ) -> AppResult<Entity> {
         let mut gif = vec![];
         let mut hit_boxes = vec![];
-        let base_gif = spaceship.compose_image()?;
+        let base_gif = spaceship.compose_image(Some(LightMaskStyle::radial()))?;
         for gif_frame in base_gif.iter() {
             let base_image = if is_player {
                 rotate90(gif_frame)
@@ -787,7 +787,7 @@ impl SpaceshipEntity {
 
         let used_storage_capacity = resources.used_storage_capacity();
 
-        let shooter = if spaceship.shooter.fire_rate() == 0.0 {
+        let shooter = if spaceship.fire_rate() == 0.0 {
             None
         } else {
             Some(ShooterInSpaceAdventure::new(

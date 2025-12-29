@@ -1,37 +1,30 @@
-use std::time::{Duration, Instant};
-
-use crossterm::event::{KeyCode, KeyModifiers};
-
-use libp2p::identity::Keypair;
-use libp2p::{gossipsub, swarm::SwarmEvent};
-#[cfg(feature = "audio")]
-use log::warn;
-use log::{error, info};
-use rand::SeedableRng;
-use rand_chacha::ChaCha8Rng;
-use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
-
-#[cfg(feature = "audio")]
-use stream_download::{storage::temp::TempStorageProvider, StreamDownload};
-
 use crate::app_version;
+use crate::args::AppArgs;
 #[cfg(feature = "audio")]
 use crate::audio::music_player::MusicPlayer;
-
 use crate::network::handler::NetworkHandler;
 use crate::{
+    core::*,
     crossterm_event_handler,
-    store::{get_world_size, load_world, reset, save_world, world_file_data},
+    store::{get_world_size, load_world, reset_store, save_world, world_file_data},
     tick_event_handler,
     tui::{TerminalEvent, Tui, WriterProxy},
     types::{AppResult, ResourceMap, StorableResourceMap, SystemTimeTick, Tick},
     ui::{
         popup_message::PopupMessage,
-        ui::{Ui, UiState},
+        ui_screen::{UiScreen, UiState},
     },
-    world::*,
 };
+use crossterm::event::{KeyCode, KeyModifiers};
+use libp2p::identity::Keypair;
+use libp2p::{gossipsub, swarm::SwarmEvent};
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
+use std::time::{Duration, Instant};
+#[cfg(feature = "audio")]
+use stream_download::{storage::temp::TempStorageProvider, StreamDownload};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, PartialEq)]
 pub enum AppState {
@@ -52,19 +45,17 @@ pub enum AppEvent {
 
 #[derive(Debug)]
 pub struct App {
+    args: AppArgs,
     event_sender: mpsc::Sender<AppEvent>,
     event_receiver: mpsc::Receiver<AppEvent>,
     pub world: World,
     pub state: AppState,
-    pub ui: Ui,
+    pub ui: UiScreen,
     #[cfg(feature = "audio")]
     pub audio_player: Option<MusicPlayer>,
     pub network_handler: NetworkHandler,
     new_version_notified: bool,
     cancellation_token: CancellationToken,
-    generate_local_world: bool,
-    store_prefix: String,
-    store_uncompressed: bool,
 }
 
 impl App {
@@ -79,7 +70,7 @@ impl App {
     pub async fn simulate_loaded_world<W: WriterProxy>(&mut self, tui: &mut Tui<W>) {
         let mut callbacks = vec![];
         let mut last_tui_update = Tick::now();
-        info!(
+        log::info!(
             "Simulation started, must simulate {}",
             (Tick::now() - self.world.last_tick_short_interval).formatted()
         );
@@ -147,7 +138,7 @@ impl App {
                     #[cfg(feature = "audio")]
                     self.audio_player.as_ref(),
                 ) {
-                    error!("Error updating TUI during simulation: {e}")
+                    log::error!("Error updating TUI during simulation: {e}")
                 };
                 self.draw(tui).await;
             }
@@ -163,7 +154,7 @@ impl App {
         }
 
         self.world.serialized_size =
-            get_world_size(&self.store_prefix).expect("Failed to get world size");
+            get_world_size(self.args.store_prefix()).expect("Failed to get world size");
 
         self.state = AppState::Running;
         self.ui.set_state(UiState::Main);
@@ -186,17 +177,7 @@ impl App {
     }
 
     pub fn test_default() -> AppResult<Self> {
-        let mut app = App::new(
-            Some(0),
-            true,
-            #[cfg(feature = "audio")]
-            true,
-            true,
-            false,
-            None,
-            None,
-            false,
-        )?;
+        let mut app = App::new(AppArgs::test())?;
         app.new_world();
         let home_planet_id = *app
             .world
@@ -216,81 +197,49 @@ impl App {
     }
 
     pub fn test_with_network_handler() -> AppResult<Self> {
-        let mut app = App::new(
-            Some(0),
-            true,
-            #[cfg(feature = "audio")]
-            true,
-            true,
-            false,
-            None,
-            None,
-            false,
-        )?;
-        app.new_world();
-        let home_planet_id = *app
-            .world
-            .planets
-            .keys()
-            .next()
-            .expect("There should be at elast one planet");
-        app.world.own_team_id = app.world.generate_random_team(
-            &mut ChaCha8Rng::from_os_rng(),
-            home_planet_id,
-            "own team".into(),
-            "ship_name".into(),
-            None,
-        )?;
-
-        {
-            app.network_handler = NetworkHandler::test_default();
-        }
+        let mut app = App::test_default()?;
+        app.network_handler = NetworkHandler::test_default();
 
         Ok(app)
     }
 
-    pub fn new(
-        seed: Option<u64>,
-        disable_network: bool,
-        #[cfg(feature = "audio")] disable_audio: bool,
-        generate_local_world: bool,
-        reset_world: bool,
-        seed_ip: Option<String>,
-        store_prefix: Option<String>,
-        store_uncompressed: bool,
-    ) -> AppResult<Self> {
+    pub fn new(args: AppArgs) -> AppResult<Self> {
         // If the reset_world flag is set, reset the world.
-        if reset_world {
-            reset().expect("Failed to reset world");
+        if args.reset_world {
+            reset_store().expect("Failed to reset world");
         }
 
-        let store_prefix = store_prefix.unwrap_or("local".to_string());
-
-        let ui = Ui::new(store_prefix.as_str(), disable_network);
-
+        let ui = UiScreen::new(args.store_prefix(), args.is_network_disabled());
         let (event_sender, event_receiver) = mpsc::channel(64);
 
         #[cfg(feature = "audio")]
         let audio_player = {
-            {
-                if disable_audio {
-                    None
-                } else if let Ok(player) = MusicPlayer::new(event_sender.clone()) {
-                    info!("Audio player created succesfully");
-                    Some(player)
-                } else {
-                    warn!("Could not create audio player");
-                    None
+            if args.is_audio_disabled() {
+                log::info!("Audio disabled, skipping audio player creation.");
+                None
+            } else {
+                match MusicPlayer::new(event_sender.clone()) {
+                    Ok(player) => {
+                        log::info!("Audio player created succesfully.");
+                        Some(player)
+                    }
+
+                    Err(err) => {
+                        log::warn!("Could not create audio player: {err}.");
+                        None
+                    }
                 }
             }
         };
 
-        let network_handler = NetworkHandler::new(seed_ip)?;
+        let network_handler = NetworkHandler::new(args.seed_node_ip.as_ref())?;
+        let random_seed = args.random_seed;
 
         Ok(Self {
+            args,
             event_sender,
             event_receiver,
-            world: World::new(seed),
+            world: World::new(random_seed),
             state: AppState::Running,
             ui,
             #[cfg(feature = "audio")]
@@ -298,18 +247,15 @@ impl App {
             network_handler,
             new_version_notified: false,
             cancellation_token: CancellationToken::new(),
-            generate_local_world,
-            store_prefix,
-            store_uncompressed,
         })
     }
 
-    pub async fn run<W: WriterProxy>(
-        &mut self,
-        mut tui: Tui<W>,
-        network_port: Option<u16>,
-        auto_quit_after: Option<Duration>, // Used to cleanly break hanging SSH connection.
-    ) -> AppResult<()> {
+    pub async fn run<W: WriterProxy>(&mut self, mut tui: Tui<W>) -> AppResult<()> {
+        if self.args.is_ui_disabled() {
+            // With no UI, world must be loaded from file.
+            self.load_world();
+        }
+
         crossterm_event_handler::start_event_handler(
             self.get_event_sender(),
             self.get_cancellation_token(),
@@ -326,13 +272,13 @@ impl App {
 
         while self.state != AppState::Quitting {
             if self.state == AppState::Simulating {
-                info!("Starting world simulation...");
+                log::info!("Starting world simulation...");
                 self.simulate_loaded_world(&mut tui).await;
-                info!("...Done");
+                log::info!("...Done");
             }
 
             if !network_started && self.world.has_own_team() {
-                if let Some(tcp_port) = network_port {
+                if let Some(tcp_port) = self.args.network_port() {
                     // If world keypair bytes are set --> restore the network handler keypair
                     if let Some(bytes) = self.world.network_keypair.as_ref() {
                         if let Ok(keypair) = Keypair::from_protobuf_encoding(bytes) {
@@ -356,7 +302,8 @@ impl App {
                 network_started = true;
             }
 
-            if let Some(duration) = auto_quit_after {
+            if let Some(duration_in_seconds) = self.args.auto_quit_after {
+                let duration = Duration::from_secs(duration_in_seconds);
                 if last_user_input.elapsed() >= duration {
                     self.quit()?;
                 }
@@ -407,7 +354,7 @@ impl App {
             }
         }
         self.cancellation_token.cancel();
-        info!("Game loop closed");
+        log::info!("Game loop closed");
         tui.exit().await?;
         Ok(())
     }
@@ -437,14 +384,14 @@ impl App {
     }
 
     pub fn new_world(&mut self) {
-        if let Err(e) = self.world.initialize(self.generate_local_world) {
+        if let Err(e) = self.world.initialize(self.args.generate_local_world) {
             panic!("Failed to initialize world: {e}");
         }
     }
 
     pub fn load_world(&mut self) {
         // Try to load an existing world.
-        match load_world(&self.store_prefix) {
+        match load_world(self.args.store_prefix()) {
             Ok(w) => self.world = w,
             Err(e) => panic!("Failed to load world: {e}"),
         }
@@ -456,7 +403,7 @@ impl App {
 
         if own_team.creation_time == Tick::default() {
             let mut creation_time = Tick::now();
-            if let Ok(data) = world_file_data(&self.store_prefix) {
+            if let Ok(data) = world_file_data(self.args.store_prefix()) {
                 if let Ok(time) = data.created() {
                     creation_time = Tick::from_system_time(time);
                 }
@@ -474,9 +421,9 @@ impl App {
         if self.world.has_own_team() {
             save_world(
                 &self.world,
-                &self.store_prefix,
+                self.args.store_prefix(),
                 true,
-                self.store_uncompressed,
+                self.args.store_uncompressed,
             )?;
         }
 
@@ -496,7 +443,7 @@ impl App {
             )
             .await
         {
-            error!("Error drawing TUI: {e}")
+            log::error!("Error drawing TUI: {e}")
         };
     }
 
@@ -573,8 +520,12 @@ impl App {
             Ok(_) => {}
             Err(e) => {
                 // We push to Logs rather than Error popup since otherwise it would spam too much
-                self.ui
-                    .push_log_event(Tick::now(), None, format!("Ui update error\n{e}"))
+                self.ui.push_log_event(
+                    Tick::now(),
+                    None,
+                    format!("UiScreen update error\n{e}"),
+                    log::Level::Error,
+                )
             }
         }
         self.world.dirty_ui = false;
@@ -585,16 +536,17 @@ impl App {
 
         if self.world.dirty {
             self.world.dirty = false;
-            if let Err(e) = save_world(&self.world, &self.store_prefix, false, false) {
+            if let Err(e) = save_world(&self.world, self.args.store_prefix(), false, false) {
                 log::error!("Failed to save world: {e}");
             }
             self.world.serialized_size =
-                get_world_size(&self.store_prefix).expect("Failed to get world size");
+                get_world_size(self.args.store_prefix()).expect("Failed to get world size");
 
             self.ui.push_log_event(
                 Tick::now(),
                 None,
-                format!("World saved, size: {} bytes", self.world.serialized_size),
+                format!("World saved ({} KB)", self.world.serialized_size / 1024),
+                log::Level::Info,
             );
         }
 
@@ -607,6 +559,7 @@ impl App {
                         Tick::now(),
                         None,
                         format!("Failed to send own team to peers: {e}"),
+                        log::Level::Error,
                     );
                 }
 
@@ -615,6 +568,7 @@ impl App {
                         Tick::now(),
                         None,
                         format!("Failed to send open trades to peers: {e}"),
+                        log::Level::Error,
                     );
                 }
 
@@ -623,11 +577,16 @@ impl App {
                         Tick::now(),
                         None,
                         format!("Failed to send open challenges to peers: {e}"),
+                        log::Level::Error,
                     );
                 }
             } else if let Err(e) = self.network_handler.dial_seed() {
-                self.ui
-                    .push_log_event(Tick::now(), None, format!("Failed to dial seed: {e}"));
+                self.ui.push_log_event(
+                    Tick::now(),
+                    None,
+                    format!("Failed to dial seed: {e}"),
+                    log::Level::Error,
+                );
             }
         }
     }
@@ -712,7 +671,8 @@ impl App {
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    self.ui.push_log_event(Tick::now(), None, e.to_string());
+                    self.ui
+                        .push_log_event(Tick::now(), None, e.to_string(), log::Level::Error);
                 }
             }
         }

@@ -100,9 +100,9 @@ impl server::Handler for AppClient {
             } else {
                 // Otherwise, we just accept the new password and we persist it.
                 println!("Persisting sshpwd");
-                if let Err(_) = save_data(&filename, &self.session_auth.hashed_password) {
-                    let error_string = "\n\rError storing password.\n".to_string();
-                    session.disconnect(Disconnect::ByApplication, error_string.as_str(), "")?;
+                if let Err(err) = save_data(&filename, &self.session_auth.hashed_password) {
+                    let description = format!("\n\rError storing password: {err}\n");
+                    session.disconnect(Disconnect::ByApplication, description.as_str(), "")?;
                     session.close(channel.id())?;
                     return Ok(false);
                 }

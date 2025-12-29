@@ -12,20 +12,20 @@ use super::{
     utils::img_to_lines,
     widgets::{default_block, selectable_list},
 };
+use crate::core::constants::MIN_PLAYERS_PER_GAME;
+use crate::core::team::Team;
 use crate::image::spaceship::{SPACESHIP_IMAGE_HEIGHT, SPACESHIP_IMAGE_WIDTH};
 use crate::types::AppResult;
 use crate::ui::ui_key;
-use crate::world::constants::MIN_PLAYERS_PER_GAME;
-use crate::world::team::Team;
 use crate::{
-    image::game::floor_from_size,
-    image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
-    types::{PlayerId, TeamId},
-    world::{
-        position::{GamePosition, Position},
+    core::{
+        position::{GamePosition, GamePositionUtils},
         skill::Rated,
         world::World,
     },
+    image::game::floor_from_size,
+    image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
+    types::{PlayerId, TeamId},
 };
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
@@ -293,8 +293,8 @@ impl TeamListPanel {
             frame.render_widget(
                 Paragraph::new(format!(
                     "{} {}",
-                    (i as Position).as_str(),
-                    (i as Position)
+                    (i as GamePosition).as_str(),
+                    (i as GamePosition)
                         .player_rating(player.current_skill_array())
                         .stars()
                 ))
@@ -348,7 +348,7 @@ impl TeamListPanel {
                 if let Some(player) = world.get_player(player_id) {
                     let info = format!("{}\n", player.info.short_name());
                     let skills = player.current_skill_array();
-                    let best_role = Position::best(skills);
+                    let best_role = GamePosition::best(skills);
 
                     let role_info = format!(
                         "{:<2} {:<5}",
@@ -420,7 +420,12 @@ impl TeamListPanel {
 
         frame.render_widget(
             default_block()
-                .title(format!(" {} ", team.name))
+                .title(format!(
+                    "{} {}/{}",
+                    team.name,
+                    ui_key::NEXT_SELECTION,
+                    ui_key::PREVIOUS_SELECTION
+                ))
                 .title_alignment(Alignment::Left),
             box_split[0],
         );

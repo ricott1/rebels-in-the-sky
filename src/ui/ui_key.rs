@@ -88,7 +88,7 @@ pub mod player {
 }
 
 pub mod team {
-    use crate::world::Position;
+    use crate::core::GamePosition;
 
     use super::KeyCode;
     pub const TRAINING_FOCUS: KeyCode = KeyCode::Char('T');
@@ -103,7 +103,7 @@ pub mod team {
     pub const SET_ENGINEER: KeyCode = KeyCode::Char('e');
     pub const SET_PILOT: KeyCode = KeyCode::Char('p');
 
-    pub const fn set_player_position(position: Position) -> KeyCode {
+    pub const fn set_player_position(position: GamePosition) -> KeyCode {
         match position {
             0 => KeyCode::Char('1'),
             1 => KeyCode::Char('2'),

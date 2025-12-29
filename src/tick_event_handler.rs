@@ -5,7 +5,7 @@ use tokio::{select, sync::mpsc, task::JoinHandle, time};
 use tokio_util::sync::CancellationToken;
 
 const SLOW_TICK_FPS: u8 = 10;
-const FAST_TICK_FPS: u8 = 30;
+const FAST_TICK_FPS: u8 = 40;
 
 pub fn start_tick_event_loop(
     event_sender: mpsc::Sender<AppEvent>,

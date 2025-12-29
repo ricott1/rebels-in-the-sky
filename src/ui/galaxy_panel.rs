@@ -7,11 +7,12 @@ use super::ui_frame::UiFrame;
 use super::widgets::{space_adventure_button, thick_block};
 use super::{traits::Screen, widgets::default_block};
 use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId};
+use crate::ui::traits::UiStyled;
 use crate::ui::utils::format_au;
 use crate::ui::{constants::*, ui_key};
 use crate::{
+    core::*,
     types::{PlanetId, PlanetMap},
-    world::*,
 };
 use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -472,7 +473,7 @@ impl GalaxyPanel {
             .sorted_by(|a, b| b.1.cmp(a.1))
             .map(|(resource, &amount)| {
                 let text = format!("{:<7} {}", resource.to_string(), (amount as f32).stars(),);
-                (text, UiStyle::DEFAULT)
+                (text, resource.style())
             })
             .collect::<Vec<(String, Style)>>();
 
@@ -495,7 +496,7 @@ impl GalaxyPanel {
         };
 
         let split = Layout::vertical([
-            Constraint::Length(15),
+            Constraint::Length(18), // = Max depth = 5 + Teleport/travel/adventure button
             Constraint::Length(team_list_height),
             Constraint::Length(player_list_height),
             Constraint::Length(resource_list_height),

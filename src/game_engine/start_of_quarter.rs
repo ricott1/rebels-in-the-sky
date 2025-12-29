@@ -13,7 +13,7 @@ pub(crate) fn execute(
     game: &Game,
     action_rng: &mut ChaCha8Rng,
     _description_rng: &mut ChaCha8Rng,
-) -> Option<ActionOutput> {
+) -> ActionOutput {
     let timer_increase = 6 + action_rng.random_range(0..=6);
 
     let possession = match input.end_at.period() {
@@ -65,5 +65,5 @@ pub(crate) fn execute(
         away_score: input.away_score,
         ..Default::default()
     };
-    Some(result)
+    result
 }

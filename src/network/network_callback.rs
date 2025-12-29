@@ -2,12 +2,12 @@ use super::challenge::Challenge;
 use super::trade::Trade;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::app_version;
+use crate::core::constants::NETWORK_GAME_START_DELAY;
+use crate::core::MAX_AVG_TIREDNESS_PER_AUTO_GAME;
 use crate::game_engine::types::TeamInGame;
 use crate::store::deserialize;
 use crate::types::{AppResult, SystemTimeTick, TeamId, Tick};
 use crate::ui::popup_message::PopupMessage;
-use crate::world::constants::NETWORK_GAME_START_DELAY;
-use crate::world::MAX_AVG_TIREDNESS_PER_AUTO_GAME;
 use crate::{app::App, types::AppCallback};
 use anyhow::anyhow;
 use libp2p::gossipsub::TopicHash;
@@ -25,8 +25,11 @@ pub enum NetworkCallback {
     },
     PushSwarmPanelLog {
         timestamp: Tick,
+        peer_id: Option<PeerId>,
         text: String,
+        level: log::Level,
     },
+
     BindAddress {
         address: Multiaddr,
     },
@@ -59,8 +62,12 @@ impl NetworkCallback {
 
     fn bind_address(address: Multiaddr) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui
-                .push_log_event(Tick::now(), None, format!("Bound to {address}"));
+            app.ui.push_log_event(
+                Tick::now(),
+                None,
+                format!("Bound to {address}"),
+                log::Level::Debug,
+            );
 
             app.network_handler.dial_seed()?;
 
@@ -70,8 +77,12 @@ impl NetworkCallback {
 
     fn subscribe(topic: TopicHash) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui
-                .push_log_event(Tick::now(), None, format!("Subscribed to topic: {topic}"));
+            app.ui.push_log_event(
+                Tick::now(),
+                None,
+                format!("Subscribed to topic: {topic}"),
+                log::Level::Debug,
+            );
             app.world.dirty_network = true;
             Ok(None)
         })
@@ -83,6 +94,7 @@ impl NetworkCallback {
                 Tick::now(),
                 Some(peer_id),
                 format!("Peer {peer_id} unsubscribed from topic: {topic}"),
+                log::Level::Debug,
             );
             app.world.filter_peer_data(Some(peer_id))?;
             app.ui.swarm_panel.remove_peer_id(&peer_id);
@@ -92,15 +104,15 @@ impl NetworkCallback {
 
     fn close_connection(peer_id: PeerId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            // if !app.network_handler.swarm.is_connected(&peer_id) {
             app.ui.push_log_event(
                 Tick::now(),
                 Some(peer_id),
                 format!("Closing connection: {peer_id}"),
+                log::Level::Debug,
             );
             // FIXME: read connection protocol and understand when this is called.
             //        For example, we could check that num_established >0 or that cause = None
-            // }
+
             Ok(None)
         })
     }
@@ -111,25 +123,21 @@ impl NetworkCallback {
         network_team: NetworkTeam,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.push_log_event(
-                Tick::now(),
-                peer_id,
-                format!("Got a team from peer: {peer_id:?}"),
-            );
+            app.world.add_network_team(network_team.clone())?;
 
             if let Some(id) = peer_id {
                 app.ui.swarm_panel.add_peer_id(id, network_team.team.id);
             }
-            app.world.add_network_team(network_team.clone())?;
-
             app.ui.push_log_event(
                 timestamp,
                 peer_id,
                 format!(
-                    "Deserialized team: {} {}",
+                    "Received team {} (version {})",
                     network_team.team.name, network_team.team.version
                 ),
+                log::Level::Info,
             );
+
             Ok(None)
         })
     }
@@ -168,7 +176,11 @@ impl NetworkCallback {
             app.ui.push_log_event(
                 timestamp,
                 peer_id,
-                format!("Deserialized game {} from peer {:?}", game.id, peer_id),
+                format!(
+                    "Deserialized game {}:  {} vs {}",
+                    game.id, game.home_team_in_game.name, game.away_team_in_game.name
+                ),
+                log::Level::Info,
             );
             app.world.add_network_game(game.clone())?;
             Ok(None)
@@ -186,6 +198,7 @@ impl NetworkCallback {
                 timestamp,
                 peer_id,
                 format!("Total peers: {}", seed_info.connected_peers_count),
+                log::Level::Info,
             );
 
             if let Some(message) = seed_info.message.clone() {
@@ -217,11 +230,8 @@ impl NetworkCallback {
             app.ui.push_log_event(
                 timestamp,
                 peer_id,
-                format!(
-                    "Deserialized trade from peer {:?}: {}",
-                    peer_id,
-                    trade.format()
-                ),
+                format!("Deserialized trade: {}", trade.format()),
+                log::Level::Info,
             );
 
             let self_peer_id = app.network_handler.own_peer_id();
@@ -293,6 +303,7 @@ impl NetworkCallback {
                             timestamp,
                             peer_id,
                             "Trade accepted, players swapped".to_string(),
+                            log::Level::Info,
                         );
 
                         app.ui.push_popup(PopupMessage::Ok {
@@ -326,6 +337,7 @@ impl NetworkCallback {
                             timestamp,
                             peer_id,
                             "A trade is happening in the network".to_string(),
+                            log::Level::Info,
                         );
 
                         return Ok(None);
@@ -378,6 +390,7 @@ impl NetworkCallback {
                             timestamp,
                             peer_id,
                             "Trade accepted, players swapped".to_string(),
+                            log::Level::Info,
                         );
 
                         app.ui.push_popup(PopupMessage::Ok {
@@ -430,7 +443,8 @@ impl NetworkCallback {
             app.ui.push_log_event(
                 timestamp,
                 peer_id,
-                format!("\nChallenge: {}", challenge.format()),
+                format!("Challenge: {}", challenge.format()),
+                log::Level::Info,
             );
 
             let self_peer_id = app.network_handler.own_peer_id();
@@ -519,6 +533,7 @@ impl NetworkCallback {
                             timestamp,
                             peer_id,
                             "Challenge accepted, generating game".to_string(),
+                            log::Level::Info,
                         );
 
                         let own_team = app.world.get_own_team_mut()?;
@@ -570,6 +585,7 @@ impl NetworkCallback {
                             timestamp,
                             peer_id,
                             "Adding challenge from network".to_string(),
+                            log::Level::Info,
                         );
 
                         if let Some(starting_at) = challenge.starting_at {
@@ -598,6 +614,7 @@ impl NetworkCallback {
                             timestamp,
                             peer_id,
                             "Challenge accepted, generating game".to_string(),
+                            log::Level::Info,
                         );
 
                         if let Some(starting_at) = challenge.starting_at {
@@ -672,8 +689,14 @@ impl NetworkCallback {
                 peer_id,
                 text,
             } => Self::push_swarm_panel_message(*timestamp, *peer_id, text.clone())(app),
-            Self::PushSwarmPanelLog { timestamp, text } => {
-                app.ui.push_log_event(*timestamp, None, text.clone());
+            Self::PushSwarmPanelLog {
+                timestamp,
+                peer_id,
+                text,
+                level,
+            } => {
+                app.ui
+                    .push_log_event(*timestamp, *peer_id, text.clone(), *level);
                 Ok(None)
             }
             Self::BindAddress { address } => Self::bind_address(address.clone())(app),
@@ -687,6 +710,7 @@ impl NetworkCallback {
                     Tick::now(),
                     Some(*peer_id),
                     format!("Connected to peer: {peer_id}"),
+                    log::Level::Debug,
                 );
                 Ok(None)
             }

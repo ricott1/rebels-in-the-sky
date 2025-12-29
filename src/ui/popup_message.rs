@@ -5,12 +5,13 @@ use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
 use super::utils::{img_to_lines, input_from_key_event, validate_textarea_input};
 use super::widgets::{default_block, thick_block};
+use crate::core::planet::PlanetType;
+use crate::core::{player::Player, resources::Resource, skill::Rated};
 use crate::image::types::{Gif, PrintableGif};
 use crate::types::*;
+use crate::ui::constants::MAX_NAME_LENGTH;
 use crate::ui::gif_map::PORTAL_GIFS;
 use crate::ui::ui_key;
-use crate::world::planet::PlanetType;
-use crate::world::{player::Player, resources::Resource, skill::Rated};
 use anyhow::anyhow;
 use core::fmt::Debug;
 use ratatui::layout::{Constraint, Layout};
@@ -84,7 +85,7 @@ pub enum PopupMessage {
 }
 
 impl PopupMessage {
-    const MAX_TUTORIAL_PAGE: usize = 3;
+    const MAX_TUTORIAL_PAGE: usize = 4;
     fn rect(&self, area: Rect) -> Rect {
         let (width, height) = match self {
             PopupMessage::AsteroidNameDialog { .. } => (54, 28),
@@ -150,6 +151,7 @@ impl PopupMessage {
                         .chars()
                         .enumerate()
                         .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
+                        .take(MAX_NAME_LENGTH)
                         .collect();
                     if validate_textarea_input(popup_input, "Asteroid name") {
                         let filename = format!("asteroid{}", tick % 30);
@@ -879,10 +881,11 @@ impl PopupMessage {
                 );
 
                 let message = match index {
-                    0 => "Hello pirate! This is your team page.\nHere you can check your pirates and ship and interact with the market.",
-                    1 => "You can navigate around by clicking on the tabs\nor using the arrow keys.",
+                    0 => "Hello pirate! This is your team page.\nHere you can check your pirates, upgrade your spaceship and trade resources on the market.",
+                    1 => "You can navigate around by clicking on the tabs at the top\nor using the arrow keys.",
                     2 => "To start, you can try to challenge another team to a game,\nor maybe explore around your planet to gather resources.",
-                    _ => "Ultimately, the key is to gather together a great crew.\nHave fun!"
+                    3 => "Ultimately, the key is to gather together a great crew and mess around.\n",
+                    _ => "Be sure to check out the Chat in the Swarm panel from time to time.\nHave fun!"
                 };
 
                 frame.render_widget(

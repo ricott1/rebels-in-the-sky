@@ -10,7 +10,7 @@ pub(crate) fn execute(
     game: &Game,
     _action_rng: &mut ChaCha8Rng,
     _description_rng: &mut ChaCha8Rng,
-) -> Option<ActionOutput> {
+) -> ActionOutput {
     // This is executed at the beginning of a break
     let mut description = match game.timer.period() {
         Period::B1 => "It's the end of the first quarter.".to_string(),
@@ -22,7 +22,7 @@ pub(crate) fn execute(
 
     match input.situation {
         ActionSituation::CloseShot | ActionSituation::MediumShot | ActionSituation::LongShot => {
-            let shooter = game.attacking_players()[input.attackers[0]];
+            let shooter = game.attacking_players_array()[input.attackers[0]];
             description.push_str(
                 format!(
                     " {} didn't get to shoot in time.",
@@ -44,5 +44,5 @@ pub(crate) fn execute(
         away_score: input.away_score,
         ..Default::default()
     };
-    Some(result)
+    result
 }

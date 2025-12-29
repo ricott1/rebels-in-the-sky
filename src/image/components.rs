@@ -5,11 +5,8 @@ use strum::EnumIter;
 use strum_macros::Display;
 
 use crate::{
+    core::spaceship_components::{Engine, Hull, Shield, Shooter, Storage},
     types::AppResult,
-    world::{
-        spaceship::{Engine, Hull, Shooter, Storage},
-        Shield,
-    },
 };
 
 use super::utils::open_image;
@@ -459,8 +456,8 @@ impl ImageComponent for Shield {
                 }
 
                 let pixel = Rgba([
-                    165,
                     85,
+                    165,
                     85,
                     (255.0 * distance_squared as f32 / MAX_DISTANCE as f32) as u8,
                 ]);

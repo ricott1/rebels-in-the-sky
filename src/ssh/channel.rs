@@ -1,4 +1,5 @@
 use crate::app::{App, AppEvent};
+use crate::args::AppArgs;
 use crate::ssh::utils::{convert_data_to_app_event, CMD_RESIZE};
 use crate::tui::{Tui, WriterProxy};
 use crate::types::AppResult;
@@ -6,12 +7,11 @@ use anyhow::{anyhow, Result};
 use russh::server::{Handle, Session};
 use russh::{ChannelId, CryptoVec};
 use std::fmt::Debug;
-use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task;
 use tokio_util::sync::CancellationToken;
 
-const CHANNEL_DISCONNECTION_INTERVAL: Duration = Duration::from_secs(120); // Auto-disconnect after 2 minutes with no input.
+const CHANNEL_DISCONNECTION_TIME_IN_SECONDS: u64 = 120; // Auto-disconnect after 2 minutes with no input.
 
 #[derive(Clone)]
 pub struct SSHWriterProxy {
@@ -143,15 +143,20 @@ impl AppChannel {
 
         let store_prefix = Some(username);
         let mut app = App::new(
-            None,
-            false,
-            #[cfg(feature = "audio")]
-            true,
-            true,
-            false,
-            None,
-            store_prefix,
-            false,
+            // None,
+            // false,
+            // #[cfg(feature = "audio")]
+            // true,
+            // true,
+            // false,
+            // None,
+            // store_prefix,
+            // false,
+            AppArgs::ssh_client(
+                store_prefix,
+                network_port,
+                Some(CHANNEL_DISCONNECTION_TIME_IN_SECONDS),
+            ),
         )?;
 
         let tui = Tui::new_ssh(writer)?;
@@ -162,10 +167,7 @@ impl AppChannel {
 
         // Main loop to run the update, including updating and drawing.
         task::spawn(async move {
-            if let Err(e) = app
-                .run(tui, network_port, Some(CHANNEL_DISCONNECTION_INTERVAL))
-                .await
-            {
+            if let Err(e) = app.run(tui).await {
                 log::error!("Error running app: {e}")
             };
         });

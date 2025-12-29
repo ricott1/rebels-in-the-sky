@@ -15,6 +15,7 @@ mod traits;
 mod utils;
 mod visual_effects;
 
+pub(crate) use crate::core::{constants as core_constants, resources};
 pub use space::SpaceAdventure;
 pub use space_callback::SpaceCallback;
 pub use spaceship::{ShooterState, SpaceshipEntity};

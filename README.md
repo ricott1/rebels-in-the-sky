@@ -44,7 +44,6 @@ You need to have the [rust toolchain](https://www.rust-lang.org/tools/install). 
 
 ### Distro Packages
 
-  <summary>Packaging status</summary>
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/rebels-in-the-sky.svg)](https://repology.org/project/rebels-in-the-sky/versions)
 

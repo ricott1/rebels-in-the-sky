@@ -2,11 +2,12 @@ use super::color_map::{ColorMap, HairColorMap};
 use super::components::*;
 use super::types::Gif;
 use super::utils::{open_image, ExtraImageUtils};
+use crate::core::jersey::{Jersey, JerseyStyle};
+use crate::core::player::InfoStats;
+use crate::core::role::CrewRole;
+use crate::core::types::{Population, Pronoun};
+use crate::image::utils::LightMaskStyle;
 use crate::types::AppResult;
-use crate::world::jersey::{Jersey, JerseyStyle};
-use crate::world::player::InfoStats;
-use crate::world::role::CrewRole;
-use crate::world::types::{Population, Pronoun};
 use image::RgbaImage;
 use rand::seq::IteratorRandom;
 use rand::{Rng, SeedableRng};
@@ -193,6 +194,7 @@ impl PlayerImage {
     }
 
     pub fn set_jersey(&mut self, jersey: &Jersey, info: &InfoStats) {
+        // This abomination is to guarantee that pirates always have the same Pirate Jersey style.
         let mut seed = [0; 8];
         for (i, c) in info.first_name.as_bytes().iter().take(4).enumerate() {
             seed[i % 8] ^= c;
@@ -201,7 +203,7 @@ impl PlayerImage {
             seed[(4 + i) % 8] ^= c;
         }
         let mut rng = ChaCha8Rng::seed_from_u64(u64::from_le_bytes(seed));
-        let r = rng.random_range(0..=1);
+        let r = rng.random_bool(0.5);
 
         self.shirt = match jersey.style {
             JerseyStyle::Classic => Some(ShirtImage::Classic),
@@ -212,7 +214,7 @@ impl PlayerImage {
             JerseyStyle::Pirate => {
                 if info.population == Population::Galdari {
                     Some(ShirtImage::PirateGald)
-                } else if r == 0 {
+                } else if r {
                     Some(ShirtImage::PirateAlt)
                 } else {
                     Some(ShirtImage::Pirate)
@@ -232,7 +234,7 @@ impl PlayerImage {
                 JerseyStyle::Pirate => {
                     if info.population == Population::Galdari {
                         Some(ShortsImage::PirateGald)
-                    } else if r == 0 {
+                    } else if r {
                         Some(ShortsImage::PirateAlt)
                     } else {
                         Some(ShortsImage::Pirate)
@@ -247,7 +249,7 @@ impl PlayerImage {
 
         match info.crew_role {
             CrewRole::Captain => {
-                if r == 0 {
+                if r {
                     self.set_hat(Some(HatImage::Classic));
                 } else {
                     self.set_hat(Some(HatImage::Infernal));
@@ -538,17 +540,14 @@ impl PlayerImage {
             } else {
                 img_height - offset_y
             };
-            if let Some(hat) = self.hat.as_ref() {
+            if let Some(HatImage::Classic | HatImage::Infernal | HatImage::Hipster) =
+                self.hat.as_ref()
+            {
                 // Clear extra hair from upper half of hat if hat is Classic, Infernal or Hipster and population is not Polpett
-                match hat {
-                    HatImage::Classic | HatImage::Infernal | HatImage::Hipster => {
-                        for cx in 0..other.width() {
-                            for cy in 0..5 {
-                                other.put_pixel(cx, cy, image::Rgba([0, 0, 0, 0]));
-                            }
-                        }
+                for cx in 0..other.width() {
+                    for cy in 0..5 {
+                        other.put_pixel(cx, cy, image::Rgba([0, 0, 0, 0]));
                     }
-                    _ => {}
                 }
             }
 
@@ -581,6 +580,10 @@ impl PlayerImage {
             blinking_base.copy_non_trasparent_from(&other, x, y)?;
         }
 
+        // Apply light masks
+        base.apply_light_mask(&LightMaskStyle::player());
+        blinking_base.apply_light_mask(&LightMaskStyle::player());
+
         let mut gif = Gif::new();
         for tick in 0..16 {
             if (self.blinking_bitmap >> tick) & 1 == 1 {
@@ -597,17 +600,16 @@ impl PlayerImage {
 mod tests {
     use super::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH};
     use crate::{
-        image::player::PlayerImage,
-        types::AppResult,
-        world::{
+        core::{
             jersey::Jersey,
-            planet::Planet,
             player::{InfoStats, Player},
             role::CrewRole,
             types::Population,
         },
+        image::{player::PlayerImage, utils::ExtraImageUtils},
+        types::AppResult,
     };
-    use image::{self, GenericImage, RgbaImage};
+    use image::{self, RgbaImage};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
     use std::path::Path;
@@ -629,7 +631,7 @@ mod tests {
                 };
 
                 let player_image = PlayerImage::from_info(&info, rng);
-                base.copy_from(
+                base.copy_non_trasparent_from(
                     &player_image.compose(&info)?[0],
                     (PLAYER_IMAGE_WIDTH * i) as u32,
                     0,
@@ -638,7 +640,7 @@ mod tests {
             image::save_buffer(
                 &Path::new(
                     format!(
-                        "tests/player_image_{}.png",
+                        "tests/images/player_image_{}.png",
                         population.to_string().to_lowercase()
                     )
                     .as_str(),
@@ -660,7 +662,9 @@ mod tests {
         for population in Population::iter() {
             let mut base = RgbaImage::new(PLAYER_IMAGE_WIDTH * n, PLAYER_IMAGE_HEIGHT);
             for i in 0..n {
-                let mut player = Player::random(rng, None, &Planet::default(), 0.0);
+                let mut player = Player::default()
+                    .with_population(population)
+                    .randomize(None);
 
                 let crew_role = match i {
                     0 => CrewRole::Captain,
@@ -673,12 +677,16 @@ mod tests {
                 player.set_jersey(&Jersey::random(rng));
 
                 let player_image = player.compose_image()?;
-                base.copy_from(&player_image[0], (PLAYER_IMAGE_WIDTH * i) as u32, 0)?;
+                base.copy_non_trasparent_from(
+                    &player_image[0],
+                    (PLAYER_IMAGE_WIDTH * i) as u32,
+                    0,
+                )?;
             }
             image::save_buffer(
                 &Path::new(
                     format!(
-                        "tests/player_image_{}_with_jersey.png",
+                        "tests/images/player_image_{}_with_jersey.png",
                         population.to_string().to_lowercase()
                     )
                     .as_str(),

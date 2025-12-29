@@ -1,16 +1,14 @@
 use super::{
     action::{ActionOutput, ActionSituation, Advantage},
-    constants::ShotDifficulty,
+    constants::*,
     game::Game,
-    types::GameStats,
+    types::*,
 };
-use crate::{
-    game_engine::{constants::*, types::*},
-    world::{
-        constants::{MoraleModifier, TirednessCost},
-        player::Player,
-        skill::GameSkill,
-    },
+use crate::core::{
+    constants::{MoraleModifier, TirednessCost},
+    player::Player,
+    skill::GameSkill,
+    CrewRole, TeamBonus, Trait, MAX_SKILL,
 };
 use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
@@ -21,7 +19,7 @@ pub(crate) fn execute_close_shot(
     game: &Game,
     action_rng: &mut ChaCha8Rng,
     description_rng: &mut ChaCha8Rng,
-) -> Option<ActionOutput> {
+) -> ActionOutput {
     execute_shot(
         input,
         game,
@@ -36,7 +34,7 @@ pub(crate) fn execute_medium_shot(
     game: &Game,
     action_rng: &mut ChaCha8Rng,
     description_rng: &mut ChaCha8Rng,
-) -> Option<ActionOutput> {
+) -> ActionOutput {
     execute_shot(
         input,
         game,
@@ -51,7 +49,7 @@ pub(crate) fn execute_long_shot(
     game: &Game,
     action_rng: &mut ChaCha8Rng,
     description_rng: &mut ChaCha8Rng,
-) -> Option<ActionOutput> {
+) -> ActionOutput {
     execute_shot(
         input,
         game,
@@ -66,25 +64,50 @@ fn description(
     shooter: &Player,
     assist_by: Option<&Player>,
     blocked_by: Option<&Player>,
+    with_dunk: bool,
     defenders: Vec<&Player>,
-    shot: ShotDifficulty,
+    shot_difficulty: ShotDifficulty,
     advantage: Advantage,
     success: bool,
-) -> Option<String> {
-    let text = match (shot, advantage, success) {
-        (ShotDifficulty::Close, Advantage::Attack, true) => vec![
-            format!("{} scores an easy layup.", shooter.info.short_name()),
-            format!(
-                "{} would never miss in this situation.",
-                shooter.info.short_name()
-            ),
-            format!("{} scores with ease.", shooter.info.short_name()),
-            format!("{} scores the easy layup.", shooter.info.short_name()),
-            format!(
-                "{} glides to the rim for an effortless finish.",
-                shooter.info.short_name()
-            ),
-        ],
+) -> String {
+    let text = match (shot_difficulty, advantage, success) {
+        (ShotDifficulty::Close, Advantage::Attack, true) => {
+            if with_dunk {
+                vec![
+                    format!(
+                        "{} slams the ball in the basket! What a move!",
+                        shooter.info.short_name()
+                    ),
+                    format!("{} dunks it with two hands", shooter.info.short_name()),
+                    format!(
+                        "{} slams the ball with a spectacular jump.",
+                        shooter.info.short_name()
+                    ),
+                    format!(
+                        "Reverse dunk from {}! Everyone is on their feet!",
+                        shooter.info.short_name()
+                    ),
+                    format!(
+                        "{} glides through the air and slams it with one hand!",
+                        shooter.info.short_name()
+                    ),
+                ]
+            } else {
+                vec![
+                    format!("{} scores an easy layup.", shooter.info.short_name()),
+                    format!(
+                        "{} would never miss in this situation.",
+                        shooter.info.short_name()
+                    ),
+                    format!("{} scores with ease.", shooter.info.short_name()),
+                    format!("{} scores the easy layup.", shooter.info.short_name()),
+                    format!(
+                        "{} glides to the rim for an effortless finish.",
+                        shooter.info.short_name()
+                    ),
+                ]
+            }
+        }
 
         (ShotDifficulty::Close, Advantage::Neutral, true) => vec![
             format!("{} scores.", shooter.info.short_name()),
@@ -131,7 +154,7 @@ fn description(
             format!(
                 "{} can't believe {} missed that! Wide open!",
                 shooter.info.short_name(),
-                shooter.info.pronouns.as_possessive()
+                shooter.info.pronouns.as_subject()
             ),
             format!(
                 "{} fumbles the layup despite having no one near {}.",
@@ -160,11 +183,11 @@ fn description(
                         p.info.short_name()
                     ),
                     format!(
-                        "{} has {} layup denied by {} at the rim.",
-                        shooter.info.short_name(),
-                        shooter.info.pronouns.as_possessive(),
-                        p.info.short_name()
-                    ),
+                            "{} tries to force a layup against {}, but {} stuffs it at the rim. No chance!",
+                            shooter.info.short_name(),
+                            p.info.short_name(),
+                            p.info.short_name()
+                        ),
                     format!(
                         "{} misses as {} swats the ball away.",
                         shooter.info.short_name(),
@@ -256,15 +279,16 @@ fn description(
             if let Some(p) = blocked_by {
                 vec![
                     format!(
-                        "{} misses the jumper, blocked by {}.",
-                        shooter.info.short_name(),
-                        p.info.short_name()
-                    ),
-                    format!(
                         "{} is denied by {} on the mid-range attempt.",
                         shooter.info.short_name(),
                         p.info.short_name()
                     ),
+                    format!(
+                            "{} tries a fadeaway jumper over {}, but {} contests it perfectly. Poor shot selection!",
+                            shooter.info.short_name(),
+                            p.info.short_name(),
+                            p.info.short_name()
+                        ),
                 ]
             } else {
                 vec![
@@ -368,7 +392,10 @@ fn description(
         }
     };
 
-    let mut description = text.choose(description_rng)?.to_string();
+    let mut description = text
+        .choose(description_rng)
+        .expect("There should be a description")
+        .to_string();
     if let Some(passer) = assist_by {
         let options = match advantage {
             Advantage::Attack => [
@@ -398,10 +425,12 @@ fn description(
                 ),
             ],
         };
-        let assist_description = options.choose(description_rng)?;
+        let assist_description = options
+            .choose(description_rng)
+            .expect("There should be a description");
         description.push_str(assist_description);
     };
-    Some(description)
+    description
 }
 
 fn execute_shot(
@@ -409,25 +438,27 @@ fn execute_shot(
     game: &Game,
     action_rng: &mut ChaCha8Rng,
     description_rng: &mut ChaCha8Rng,
-    shot: ShotDifficulty,
-) -> Option<ActionOutput> {
-    let attacking_players = game.attacking_players();
-    let defending_players = game.defending_players();
+    shot_difficulty: ShotDifficulty,
+) -> ActionOutput {
+    let attacking_players_array = game.attacking_players_array();
+    let defending_players_array = game.defending_players_array();
 
     assert!(input.attackers.len() == 1);
     let shooter_idx = input.attackers[0];
-    let shooter = attacking_players[shooter_idx];
+    let shooter = attacking_players_array[shooter_idx];
 
     if input.advantage == Advantage::Defense {
         assert!(!input.defenders.is_empty());
     }
+
+    assert!(input.defenders.len() < 2); // FIXME: in the future we should allow this
     let defenders = input
         .defenders
         .iter()
-        .map(|&idx| defending_players[idx])
+        .map(|&idx| defending_players_array[idx])
         .collect::<Vec<&Player>>();
 
-    let atk_skill = match shot {
+    let atk_skill = match shot_difficulty {
         ShotDifficulty::Close => shooter.offense.close_range.game_value(),
         ShotDifficulty::Medium => shooter.offense.medium_range.game_value(),
         ShotDifficulty::Long => shooter.offense.long_range.game_value(),
@@ -445,11 +476,17 @@ fn execute_shot(
         .sum::<i16>();
 
     let roll = match input.advantage {
-        Advantage::Attack => (shooter.roll(action_rng) + atk_skill) - (shot as i16),
-        Advantage::Neutral => {
-            (shooter.roll(action_rng) + atk_skill) - (shot as i16 + def_skill / 2)
+        Advantage::Attack => {
+            (shooter.roll(action_rng).max(shooter.roll(action_rng)) + atk_skill)
+                - (shot_difficulty as i16 + def_skill)
         }
-        Advantage::Defense => (shooter.roll(action_rng) + atk_skill) - (shot as i16 + def_skill),
+        Advantage::Neutral => {
+            (shooter.roll(action_rng) + atk_skill) - (shot_difficulty as i16 + def_skill)
+        }
+        Advantage::Defense => {
+            (shooter.roll(action_rng).min(shooter.roll(action_rng)) + atk_skill)
+                - (shot_difficulty as i16 + def_skill)
+        }
     };
 
     let success = roll > 0;
@@ -460,8 +497,23 @@ fn execute_shot(
             None
         };
 
-    let assist_by = if success && input.assist_from.is_some() {
-        Some(attacking_players[input.assist_from?])
+    let with_dunk = success
+        && input.advantage == Advantage::Attack
+        && shot_difficulty == ShotDifficulty::Close
+        && action_rng.random_bool(
+            (DUNK_PROBABILITY
+                * if matches!(shooter.special_trait, Some(Trait::Showpirate)) {
+                    2.0
+                } else {
+                    1.0
+                }
+                * ((0.25 * (shooter.info.height - 150.0)).bound() / MAX_SKILL) as f64
+                * (shooter.athletics.vertical / MAX_SKILL) as f64)
+                .clamp(0.0, 1.0),
+        );
+
+    let assist_by = if success {
+        input.assist_from.map(|idx| attacking_players_array[idx])
     } else {
         None
     };
@@ -471,11 +523,12 @@ fn execute_shot(
         shooter,
         assist_by,
         blocked_by,
+        with_dunk,
         defenders.clone(),
-        shot,
+        shot_difficulty,
         input.advantage,
         success,
-    )?;
+    );
 
     let mut result = match success {
         false => {
@@ -499,9 +552,8 @@ fn execute_shot(
             }
         }
         true => {
-            let score_change = match shot {
-                ShotDifficulty::Close => 2,
-                ShotDifficulty::Medium => 2,
+            let score_change = match shot_difficulty {
+                ShotDifficulty::Close | ShotDifficulty::Medium => 2,
                 ShotDifficulty::Long => 3,
             };
             ActionOutput {
@@ -529,56 +581,74 @@ fn execute_shot(
     let mut shooter_update = GameStats::default();
     let mut defense_stats_update = HashMap::new();
 
-    match shot {
+    shooter_update.extra_tiredness = match input.advantage {
+        Advantage::Attack => TirednessCost::LOW,
+        _ => TirednessCost::MEDIUM,
+    };
+
+    match shot_difficulty {
         ShotDifficulty::Close => {
             shooter_update.attempted_2pt = 1;
-            shooter_update.extra_tiredness = TirednessCost::MEDIUM;
             shooter_update.last_action_shot = match game.possession {
                 Possession::Home => {
-                    let (x, y) = *HOME_CLOSE_SHOT_POSITIONS.choose(action_rng)?;
+                    let (x, y) = *HOME_CLOSE_SHOT_POSITIONS
+                        .choose(action_rng)
+                        .expect("There should be a shooting position");
                     Some((x, y, result.score_change > 0))
                 }
                 Possession::Away => {
-                    let (x, y) = *AWAY_CLOSE_SHOT_POSITIONS.choose(action_rng)?;
+                    let (x, y) = *AWAY_CLOSE_SHOT_POSITIONS
+                        .choose(action_rng)
+                        .expect("There should be a shooting position");
                     Some((x, y, result.score_change > 0))
                 }
             }
         }
         ShotDifficulty::Medium => {
             shooter_update.attempted_2pt = 1;
-            shooter_update.extra_tiredness = TirednessCost::MEDIUM;
             shooter_update.last_action_shot = match game.possession {
                 Possession::Home => {
-                    let (x, y) = *HOME_MEDIUM_SHOT_POSITIONS.choose(action_rng)?;
+                    let (x, y) = *HOME_MEDIUM_SHOT_POSITIONS
+                        .choose(action_rng)
+                        .expect("There should be a shooting position");
                     Some((x, y, result.score_change > 0))
                 }
                 Possession::Away => {
-                    let (x, y) = *AWAY_MEDIUM_SHOT_POSITIONS.choose(action_rng)?;
+                    let (x, y) = *AWAY_MEDIUM_SHOT_POSITIONS
+                        .choose(action_rng)
+                        .expect("There should be a shooting position");
                     Some((x, y, result.score_change > 0))
                 }
             }
         }
         ShotDifficulty::Long => {
             shooter_update.attempted_3pt = 1;
-            shooter_update.extra_tiredness = TirednessCost::MEDIUM;
             shooter_update.last_action_shot = match input.advantage {
                 Advantage::Defense => match game.possession {
                     Possession::Home => {
-                        let (x, y) = *HOME_IMPOSSIBLE_SHOT_POSITIONS.choose(action_rng)?;
+                        let (x, y) = *HOME_IMPOSSIBLE_SHOT_POSITIONS
+                            .choose(action_rng)
+                            .expect("There should be a shooting position");
                         Some((x, y, result.score_change > 0))
                     }
                     Possession::Away => {
-                        let (x, y) = *AWAY_IMPOSSIBLE_SHOT_POSITIONS.choose(action_rng)?;
+                        let (x, y) = *AWAY_IMPOSSIBLE_SHOT_POSITIONS
+                            .choose(action_rng)
+                            .expect("There should be a shooting position");
                         Some((x, y, result.score_change > 0))
                     }
                 },
                 _ => match game.possession {
                     Possession::Home => {
-                        let (x, y) = *HOME_LONG_SHOT_POSITIONS.choose(action_rng)?;
+                        let (x, y) = *HOME_LONG_SHOT_POSITIONS
+                            .choose(action_rng)
+                            .expect("There should be a shooting position");
                         Some((x, y, result.score_change > 0))
                     }
                     Possession::Away => {
-                        let (x, y) = *AWAY_LONG_SHOT_POSITIONS.choose(action_rng)?;
+                        let (x, y) = *AWAY_LONG_SHOT_POSITIONS
+                            .choose(action_rng)
+                            .expect("There should be a shooting position");
                         Some((x, y, result.score_change > 0))
                     }
                 },
@@ -588,11 +658,14 @@ fn execute_shot(
 
     if success {
         shooter_update.points = result.score_change;
-        shooter_update.extra_morale += MoraleModifier::HIGH_BONUS;
+        shooter_update.extra_morale += match input.advantage {
+            Advantage::Defense => MoraleModifier::HIGH_BONUS,
+            Advantage::Neutral => MoraleModifier::MEDIUM_BONUS,
+            Advantage::Attack => MoraleModifier::SMALL_BONUS,
+        };
 
-        match shot {
-            ShotDifficulty::Close => shooter_update.made_2pt = 1,
-            ShotDifficulty::Medium => shooter_update.made_2pt = 1,
+        match shot_difficulty {
+            ShotDifficulty::Close | ShotDifficulty::Medium => shooter_update.made_2pt = 1,
             ShotDifficulty::Long => shooter_update.made_3pt = 1,
         };
         if let Some(passer_index) = input.assist_from {
@@ -601,26 +674,30 @@ fn execute_shot(
                 extra_morale: MoraleModifier::SMALL_BONUS,
                 ..Default::default()
             };
-            let passer_id = attacking_players[passer_index].id;
+            let passer_id = attacking_players_array[passer_index].id;
             attack_stats_update.insert(passer_id, passer_update);
         }
-    } else if blocked_by.is_some() {
-        shooter_update.extra_morale += MoraleModifier::HIGH_MALUS;
     } else {
-        shooter_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
+        shooter_update.extra_morale += match input.advantage {
+            Advantage::Defense => MoraleModifier::SMALL_MALUS,
+            Advantage::Neutral => MoraleModifier::MEDIUM_MALUS,
+            Advantage::Attack => MoraleModifier::HIGH_MALUS,
+        };
+
+        if blocked_by.is_some() {
+            shooter_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
+        }
     }
 
     attack_stats_update.insert(shooter.id, shooter_update);
 
     for defender in defenders.iter() {
-        let mut defender_update = GameStats {
-            extra_tiredness: TirednessCost::MEDIUM,
-            ..Default::default()
-        };
+        let mut defender_update = GameStats::default();
         if input.advantage == Advantage::Defense {
             if matches!(blocked_by, Some(player) if player.id == defender.id) {
                 defender_update.blocks = 1;
-                defender_update.extra_morale += MoraleModifier::MEDIUM_BONUS;
+                defender_update.extra_morale += MoraleModifier::HIGH_BONUS;
+                defender_update.extra_tiredness = TirednessCost::MEDIUM;
             } else {
                 // Help consumes less energy
                 defender_update.extra_tiredness = TirednessCost::LOW;
@@ -628,7 +705,167 @@ fn execute_shot(
         }
         defense_stats_update.insert(defender.id, defender_update);
     }
+
+    // Add morale modifiers if team scored.
+    // These modifiers are applied to the whole team, not only playing players.
+    if success {
+        // Conditions for extra morale boost:
+        // shot success, team is losing at most by a certain margin.
+        let team_captain = game
+            .all_attacking_players()
+            .values()
+            .find(|&p| p.info.crew_role == CrewRole::Captain);
+        let losing_margin = 5 * team_captain
+            .map(|p| TeamBonus::Reputation.current_player_bonus(p))
+            .unwrap_or(1.0) as u16;
+        // // Note: this is the score BEFORE the result is applied to the score.
+        let score = game.get_score();
+        let attacking_team_was_losing_by_margin = if input.possession == Possession::Home {
+            score.0 < score.1 && score.1 - score.0 <= losing_margin
+        } else {
+            score.1 < score.0 && score.0 - score.1 <= losing_margin
+        };
+
+        let extra_morale = if attacking_team_was_losing_by_margin {
+            MoraleModifier::MEDIUM_BONUS
+        } else {
+            MoraleModifier::SMALL_BONUS
+        };
+
+        for player in game.all_attacking_players().values() {
+            attack_stats_update
+                .entry(player.id)
+                .and_modify(|stats| stats.extra_morale += extra_morale)
+                .or_insert(GameStats {
+                    extra_morale,
+                    ..Default::default()
+                });
+        }
+
+        for player in game.all_defending_players().values() {
+            let extra_morale = if with_dunk {
+                MoraleModifier::HIGH_MALUS
+            } else {
+                MoraleModifier::SMALL_MALUS
+            };
+
+            defense_stats_update
+                .entry(player.id)
+                .and_modify(|stats| stats.extra_morale += extra_morale)
+                .or_insert(GameStats {
+                    extra_morale,
+                    ..Default::default()
+                });
+        }
+    }
+
     result.attack_stats_update = Some(attack_stats_update);
     result.defense_stats_update = Some(defense_stats_update);
-    Some(result)
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use itertools::Itertools;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+    use strum::IntoEnumIterator;
+
+    use crate::{
+        core::{Player, Team, MAX_PLAYERS_PER_GAME},
+        game_engine::{
+            action::{ActionOutput, ActionSituation, Advantage},
+            game::Game,
+            shot::{execute_close_shot, execute_long_shot, execute_medium_shot},
+            types::TeamInGame,
+        },
+        types::{AppResult, PlayerMap, TeamId},
+    };
+
+    fn generate_team_in_game(shoot_skill: f32, block_skill: f32) -> TeamInGame {
+        let team = Team {
+            id: TeamId::new_v4(),
+            ..Default::default()
+        };
+
+        let mut players = PlayerMap::new();
+        for _ in 0..MAX_PLAYERS_PER_GAME {
+            let mut player = Player::default().randomize(None);
+            player.offense.close_range = shoot_skill;
+            player.offense.medium_range = shoot_skill;
+            player.offense.long_range = shoot_skill;
+            player.defense.block = block_skill;
+            players.insert(player.id, player);
+        }
+
+        TeamInGame::new(&team, players)
+    }
+
+    #[test]
+    fn test_shooting() -> AppResult<()> {
+        const N: usize = 40_000;
+
+        let shoot_skill = 20.0;
+        let block_skill = 20.0;
+
+        let home_team_in_game = generate_team_in_game(shoot_skill, block_skill);
+        let away_team_in_game = generate_team_in_game(shoot_skill, block_skill);
+        let game = &Game::test(home_team_in_game, away_team_in_game);
+
+        let action_rng = &mut ChaCha8Rng::from_os_rng();
+        let description_rng = &mut ChaCha8Rng::from_os_rng();
+
+        for situation in [
+            ActionSituation::CloseShot,
+            ActionSituation::MediumShot,
+            ActionSituation::LongShot,
+        ] {
+            println!("{:#?}", situation);
+
+            for advantage in Advantage::iter() {
+                println!("....{:<7} ", format!("{:#?}", advantage));
+                for num_defenders in 0..=1 {
+                    if advantage == Advantage::Defense && num_defenders == 0 {
+                        continue;
+                    }
+                    let defenders = (0..num_defenders).collect_vec();
+                    let input = ActionOutput {
+                        advantage,
+                        attackers: vec![0],
+                        defenders,
+                        situation,
+                        ..Default::default()
+                    };
+
+                    let mut made = 0;
+                    let mut attempted = 0;
+                    for _ in 0..N {
+                        let result = match situation {
+                            ActionSituation::CloseShot => {
+                                execute_close_shot(&input, game, action_rng, description_rng)
+                            }
+                            ActionSituation::MediumShot => {
+                                execute_medium_shot(&input, game, action_rng, description_rng)
+                            }
+                            ActionSituation::LongShot => {
+                                execute_long_shot(&input, game, action_rng, description_rng)
+                            }
+                            _ => unreachable!(),
+                        };
+                        attempted += 1;
+                        if result.score_change > 0 {
+                            made += 1;
+                        }
+                    }
+                    println!(
+                        ".....Def {} => {:.2}%",
+                        num_defenders,
+                        (made as f32 / attempted as f32) * 100.0
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
 }

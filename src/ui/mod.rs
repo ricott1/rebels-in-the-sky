@@ -18,12 +18,13 @@ mod splash_screen;
 mod swarm_panel;
 mod team_panel;
 pub(crate) mod traits;
-pub mod ui;
 pub mod ui_callback;
 mod ui_frame;
 pub mod ui_key;
+pub mod ui_screen;
 pub mod utils;
 pub mod widgets;
 
 pub use constants::UI_SCREEN_SIZE;
 pub use ui_key::*;
+pub use ui_screen::UiScreen;

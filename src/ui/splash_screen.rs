@@ -8,10 +8,10 @@ use super::{
     widgets::default_block,
 };
 use crate::audio::AudioPlayerState;
+use crate::core::constants::{DEBUG_TIME_MULTIPLIER, SOL_ID};
 use crate::store::world_file_data;
 use crate::types::{AppResult, SystemTimeTick, Tick};
-use crate::world::constants::{DEBUG_TIME_MULTIPLIER, SOL_ID};
-use crate::{store::save_game_exists, world::world::World};
+use crate::{core::world::World, store::save_game_exists};
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use rand::seq::IndexedRandom;

@@ -1,8 +1,8 @@
 use super::{asteroid::AsteroidSize, constants::MAX_LAYER, visual_effects::VisualEffect};
 use crate::{
+    core::{Engine, Hull, Storage},
     image::color_map::ColorMap,
     space_adventure::{utils::EntityMap, Body, Sprite},
-    world::spaceship::{Engine, Hull, Storage},
 };
 use image::Rgba;
 

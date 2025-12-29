@@ -1,5 +1,5 @@
 use super::types::NetworkRequestState;
-use crate::world::{player::Player, skill::Rated};
+use crate::core::{player::Player, skill::Rated};
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 
@@ -47,7 +47,7 @@ impl Trade {
 #[cfg(test)]
 mod tests {
     use super::Trade;
-    use crate::{app::App, types::AppResult, ui::ui_callback::UiCallback, world::skill::MAX_SKILL};
+    use crate::{app::App, core::skill::MAX_SKILL, types::AppResult, ui::ui_callback::UiCallback};
     use libp2p::PeerId;
     use rand::{seq::IteratorRandom, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -63,7 +63,7 @@ mod tests {
 
         // Increase player stats to increase bare value and make the trade accepted
         proposer_player.info.age = proposer_player.info.population.min_age();
-        proposer_player.special_trait = Some(crate::world::player::Trait::Killer);
+        proposer_player.special_trait = Some(crate::core::player::Trait::Killer);
         proposer_player.athletics.quickness = MAX_SKILL;
         proposer_player.athletics.strength = MAX_SKILL;
         proposer_player.athletics.vertical = MAX_SKILL;

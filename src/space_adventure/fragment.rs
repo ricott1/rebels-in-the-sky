@@ -1,7 +1,7 @@
 use super::{collisions::HitBox, space_callback::SpaceCallback, traits::*, utils::EntityState};
 use crate::{
+    core::resources::Resource,
     space_adventure::{constants::*, entity::Entity},
-    world::resources::Resource,
 };
 use glam::{I16Vec2, Vec2};
 use image::RgbaImage;

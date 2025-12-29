@@ -252,12 +252,12 @@ impl SkinColorMap {
             Self::LightBlue => ColorMap {
                 red: Rgb([90, 136, 186]),
                 green: Rgb([78, 228, 251]),
-                blue: Rgb([10, 10, 205]),
+                blue: Rgb([70, 70, 205]),
             },
             Self::Blue => ColorMap {
                 red: Rgb([40, 36, 86]),
                 green: Rgb([59, 48, 135]),
-                blue: Rgb([10, 10, 205]),
+                blue: Rgb([60, 60, 205]),
             },
             Self::LightPurple => ColorMap {
                 red: Rgb([205, 167, 203]),

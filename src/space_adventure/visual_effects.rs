@@ -1,4 +1,4 @@
-use crate::space_adventure::GameEntity;
+use super::GameEntity;
 use image::RgbaImage;
 use serde::{Deserialize, Serialize};
 

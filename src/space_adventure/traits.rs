@@ -1,5 +1,5 @@
 use super::{collisions::HitBox, space_callback::SpaceCallback, visual_effects::VisualEffect};
-use crate::{types::ResourceMap, world::resources::Resource};
+use crate::{core::resources::Resource, types::ResourceMap};
 use glam::I16Vec2;
 use image::{Rgba, RgbaImage};
 use std::{collections::HashMap, fmt::Debug};

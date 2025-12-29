@@ -4,24 +4,21 @@ use super::{
     types::*,
 };
 use crate::{
+    core::{constants::TirednessCost, GamePosition, GameSkill},
     game_engine::{
         action::{Action, Advantage},
         constants::*,
         types::GameStatsMap,
     },
-    world::{constants::TirednessCost, GameSkill},
 };
 use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
-use std::{
-    cmp::{max, min},
-    collections::HashMap,
-};
+use std::collections::HashMap;
 
 const MIN_REBOUND_VALUE: i16 = 40;
 const REBOUND_POSITION_SCALING: f32 = 12.0;
 
-fn position_rebound_bonus(idx: usize) -> f32 {
+fn position_rebound_bonus(idx: GamePosition) -> f32 {
     1.0 + idx as f32 / REBOUND_POSITION_SCALING
 }
 
@@ -30,57 +27,70 @@ pub(crate) fn execute(
     game: &Game,
     action_rng: &mut ChaCha8Rng,
     description_rng: &mut ChaCha8Rng,
-) -> Option<ActionOutput> {
-    let attacking_players = game.attacking_players();
-    let defending_players = game.defending_players();
+) -> ActionOutput {
+    let attacking_players_array = game.attacking_players_array();
+    let defending_players_array = game.defending_players_array();
 
-    let mut attack_rebounds: Vec<i16> = attacking_players
+    let mut attack_rebounds: Vec<i16> = attacking_players_array
         .iter()
-        .map(|&p| p.technical.rebounds.game_value())
+        .map(|&p| {
+            (0.5 * p.athletics.vertical + 0.5 * (0.25 * (p.info.height - 150.0))).game_value()
+                + p.technical.rebounds.game_value()
+                + game
+                    .attacking_team()
+                    .tactic
+                    .attack_roll_bonus(&Action::Rebound)
+        })
         .collect();
-    let mut defense_rebounds: Vec<i16> = defending_players
+    let mut defense_rebounds: Vec<i16> = defending_players_array
         .iter()
-        .map(|&p| p.technical.rebounds.game_value())
+        .map(|&p| {
+            (0.5 * p.athletics.vertical + 0.5 * (0.25 * (p.info.height - 150.0))).game_value()
+                + p.technical.rebounds.game_value()
+                + game
+                    .defending_team()
+                    .tactic
+                    .defense_roll_bonus(&Action::Rebound)
+        })
         .collect();
 
     // apply reduction for shooter rebounds
     assert!(input.attackers.len() == 1);
-    attack_rebounds[input.attackers[0]] =
-        (attack_rebounds[input.attackers[0]] as f32 * 2.0 / 3.0).game_value();
+    attack_rebounds[input.attackers[0]] = (attack_rebounds[input.attackers[0]] as f32 * 0.7) as i16;
 
-    for idx in 0..attacking_players.len() {
+    for idx in 0..attacking_players_array.len() {
         // apply bonus based on position
         attack_rebounds[idx] =
-            (attack_rebounds[idx] as f32 * position_rebound_bonus(idx)).game_value();
+            (attack_rebounds[idx] as f32 * position_rebound_bonus(idx as GamePosition)) as i16;
+
         //add random roll
         match input.advantage {
             Advantage::Attack => {
-                attack_rebounds[idx] += max(
-                    attacking_players[idx].roll(action_rng),
-                    attacking_players[idx].roll(action_rng),
-                );
+                attack_rebounds[idx] += attacking_players_array[idx]
+                    .roll(action_rng)
+                    .max(attacking_players_array[idx].roll(action_rng));
             }
             Advantage::Neutral => {
-                attack_rebounds[idx] += attacking_players[idx].roll(action_rng);
+                attack_rebounds[idx] += attacking_players_array[idx].roll(action_rng);
             }
             Advantage::Defense => {
-                attack_rebounds[idx] += min(
-                    attacking_players[idx].roll(action_rng),
-                    attacking_players[idx].roll(action_rng),
-                );
+                attack_rebounds[idx] += attacking_players_array[idx]
+                    .roll(action_rng)
+                    .min(attacking_players_array[idx].roll(action_rng));
             }
         }
     }
-    for idx in 0..defending_players.len() {
+
+    for idx in 0..defending_players_array.len() {
         // apply reduction for defender rebounds.
         if input.defenders.contains(&idx) {
-            defense_rebounds[idx] = (defense_rebounds[idx] as f32 * 3.0 / 4.0).game_value();
+            defense_rebounds[idx] = (defense_rebounds[idx] as f32 * 0.8) as i16;
         }
         // apply bonus based on position
         defense_rebounds[idx] =
-            (defense_rebounds[idx] as f32 * position_rebound_bonus(idx)).game_value();
+            (defense_rebounds[idx] as f32 * position_rebound_bonus(idx as GamePosition)) as i16;
         //add random roll
-        defense_rebounds[idx] += defending_players[idx].roll(action_rng);
+        defense_rebounds[idx] += defending_players_array[idx].roll(action_rng);
     }
 
     let attack_result = *attack_rebounds
@@ -92,16 +102,19 @@ pub(crate) fn execute(
         .max()
         .expect("Defense rebounds should be non-empty");
 
-    let attack_rebounder_idx = attack_rebounds.iter().position(|&r| r == attack_result)?;
-    let defence_rebounder_idx = defense_rebounds.iter().position(|&r| r == defence_result)?;
+    let attack_rebounder_idx = attack_rebounds
+        .iter()
+        .position(|&r| r == attack_result)
+        .expect("There should be an index");
+    let defence_rebounder_idx = defense_rebounds
+        .iter()
+        .position(|&r| r == defence_result)
+        .expect("There should be an index");
 
-    let attack_rebounder = attacking_players[attack_rebounder_idx];
-    let defence_rebounder = defending_players[defence_rebounder_idx];
+    let attack_rebounder = attacking_players_array[attack_rebounder_idx];
+    let defence_rebounder = defending_players_array[defence_rebounder_idx];
 
-    let result = match attack_result - defence_result
-        + Action::Rebound
-            .tactic_modifier(game.attacking_team().tactic, game.defending_team().tactic)
-    {
+    let result = match attack_result - defence_result {
         // Here we use ADV_ATTACK_LIMIT not to give an advantage, but to get the offensive rebound.
         x if x >= ADV_ATTACK_LIMIT
             || (x > 0
@@ -185,7 +198,7 @@ pub(crate) fn execute(
             }
         }
 
-        x if x > 0 && attack_result >= MIN_REBOUND_VALUE => {
+        x if x > ADV_NEUTRAL_LIMIT && attack_result >= MIN_REBOUND_VALUE => {
             let mut attack_stats_update: GameStatsMap = HashMap::new();
             let rebounder_update = GameStats {
                 offensive_rebounds: 1,
@@ -228,7 +241,7 @@ pub(crate) fn execute(
                 ..Default::default()
             }
         }
-        x if x < 0 && defence_result >= MIN_REBOUND_VALUE => {
+        x if x < ADV_NEUTRAL_LIMIT && defence_result >= MIN_REBOUND_VALUE => {
             let mut defence_stats_update: GameStatsMap = HashMap::new();
             let rebounder_update = GameStats {
                 defensive_rebounds: 1,
@@ -292,5 +305,5 @@ pub(crate) fn execute(
             ..Default::default()
         },
     };
-    Some(result)
+    result
 }

@@ -1,18 +1,18 @@
 use crate::{
-    image::{
-        color_map::AsteroidColorMap,
-        spaceship::SpaceshipImageId,
-        types::*,
-        utils::{open_image, ExtraImageUtils, TRAVELLING_BACKGROUND, UNIVERSE_BACKGROUND},
-    },
-    types::{AppResult, PlanetId, PlayerId},
-    world::{
+    core::{
         planet::{Planet, PlanetType},
         player::Player,
         spaceship::Spaceship,
         utils::ellipse_coords,
         world::World,
     },
+    image::{
+        color_map::AsteroidColorMap,
+        spaceship::SpaceshipImageId,
+        types::*,
+        utils::{open_image, ExtraImageUtils, LightMaskStyle, STAR_LAYERS, UNIVERSE_BACKGROUND},
+    },
+    types::{AppResult, PlanetId, PlayerId},
 };
 use anyhow::anyhow;
 use image::{imageops::resize, GenericImageView, Rgba, RgbaImage};
@@ -169,13 +169,16 @@ impl GifMap {
                     base.copy_non_trasparent_from(img, x_blit, y_blit).unwrap();
 
                     let center = (x_blit + img.width() / 2, y_blit + img.height() / 2);
-                    base.view(
-                        center.0 - MAX_GIF_WIDTH / 2,
-                        center.1 - MAX_GIF_HEIGHT / 2,
-                        MAX_GIF_WIDTH,
-                        MAX_GIF_HEIGHT,
-                    )
-                    .to_image()
+                    let img = base
+                        .view(
+                            center.0 - MAX_GIF_WIDTH / 2,
+                            center.1 - MAX_GIF_HEIGHT / 2,
+                            MAX_GIF_WIDTH,
+                            MAX_GIF_HEIGHT,
+                        )
+                        .to_image();
+
+                    img
                 })
                 .collect::<Gif>()
         };
@@ -327,7 +330,13 @@ impl GifMap {
             // take subimage around center of base
             let x = base.width().saturating_sub(MAX_GIF_WIDTH) / 2;
             let y = base.height().saturating_sub(MAX_GIF_HEIGHT) / 2;
-            let img = base.view(x, y, MAX_GIF_WIDTH, MAX_GIF_HEIGHT).to_image();
+            let mut img = base.view(x, y, MAX_GIF_WIDTH, MAX_GIF_HEIGHT).to_image();
+
+            // Stars emit light!
+            if planet.planet_type == PlanetType::Sol {
+                img.apply_light_mask(&LightMaskStyle::star_zoom_out());
+            }
+
             frames.push(img);
         }
 
@@ -369,7 +378,7 @@ impl GifMap {
             return Ok(lines[tick % lines.len()].clone());
         }
 
-        let gif = spaceship.compose_image()?;
+        let gif = spaceship.compose_image(Some(LightMaskStyle::radial()))?;
         let lines = gif.to_lines();
         let frame = lines[tick % lines.len()].clone();
         self.on_planet_spaceship_lines
@@ -445,35 +454,45 @@ impl GifMap {
             return Ok(lines[tick % lines.len()].clone());
         }
 
-        let ship_gif = spaceship.compose_image()?;
-        let base = TRAVELLING_BACKGROUND.clone();
+        let ship_gif = spaceship
+            .compose_image(Some(LightMaskStyle::vertical()))?
+            .iter()
+            .map(|img| {
+                rotate_about_center(
+                    img,
+                    std::f32::consts::PI / 2.0,
+                    Interpolation::Nearest,
+                    Rgba([255, 0, 0, 0]),
+                )
+            })
+            .collect::<Gif>();
+
+        let star_layer_width = STAR_LAYERS[0].width();
+        let star_layer_height = STAR_LAYERS[0].height();
         let mut gif: Vec<RgbaImage> = vec![];
         // 160 frames
         let mut idx = 0;
         loop {
-            let img = ship_gif[idx % ship_gif.len()].clone();
-            let bg_left = base.clone();
-            let bg_right = base.clone();
-            let mut base = RgbaImage::new(bg_left.width() * 2, bg_left.height());
+            let img = &ship_gif[idx % ship_gif.len()];
+
+            let mut base = RgbaImage::new(star_layer_width * 2, star_layer_height * 2);
 
             if idx >= base.width() as usize / 2 {
                 break;
             }
 
-            base.copy_non_trasparent_from(&bg_left, 0, 0)?;
-            base.copy_non_trasparent_from(&bg_right, base.width() / 2, 0)?;
+            base.copy_non_trasparent_from(&STAR_LAYERS[1], 0, 0)?;
+            base.copy_non_trasparent_from(&STAR_LAYERS[1], star_layer_width, 0)?;
 
-            let rotated_img = rotate_about_center(
-                &img,
-                std::f32::consts::PI / 2.0,
-                Interpolation::Nearest,
-                Rgba([255, 0, 0, 0]),
-            );
-            let y = ((base.height() - rotated_img.height()) as f32 / 2.0
+            // STAR_LAYERS[0] do not move with respect to spaceship (far field stars)
+            base.copy_non_trasparent_from(&STAR_LAYERS[0], idx as u32, 20)?;
+
+            let y = ((star_layer_height - img.height()) as f32 / 2.0
                 + (std::f32::consts::PI * idx as f32 / 17.0).cos()
                 + (std::f32::consts::PI * idx as f32 / 333.0).sin()) as u32;
-            base.copy_non_trasparent_from(&rotated_img, idx as u32, y)?;
-            let view = base.view(idx as u32, 0, base.width() - idx as u32, base.height());
+            base.copy_non_trasparent_from(img, idx as u32, y)?;
+
+            let view = base.view(idx as u32, 0, base.width() - idx as u32, star_layer_height);
             gif.push(view.to_image());
             idx += 1;
         }
@@ -496,33 +515,36 @@ impl GifMap {
             return Ok(lines[tick % lines.len()].clone());
         }
 
-        let ship_gif = spaceship.compose_image()?;
-        let base = TRAVELLING_BACKGROUND.clone();
+        let ship_gif = spaceship
+            .compose_image(Some(LightMaskStyle::vertical()))?
+            .iter()
+            .map(|img| {
+                rotate_about_center(
+                    img,
+                    std::f32::consts::PI / 2.0,
+                    Interpolation::Nearest,
+                    Rgba([255, 0, 0, 0]),
+                )
+            })
+            .collect::<Gif>();
+
+        let mut base = RgbaImage::new(STAR_LAYERS[1].width(), STAR_LAYERS[1].height());
+        base.copy_non_trasparent_from(&STAR_LAYERS[0], 0, 0)?;
+        base.copy_non_trasparent_from(&STAR_LAYERS[1], 0, 0)?;
         let mut gif: Vec<RgbaImage> = vec![];
         // 160 frames
         let mut idx = 0;
         loop {
-            let img = ship_gif[idx % ship_gif.len()].clone();
+            let img = &ship_gif[idx % ship_gif.len()];
             let mut base = base.clone();
-            let rotated_img = rotate_about_center(
-                &img,
-                std::f32::consts::PI / 2.0,
-                Interpolation::Nearest,
-                Rgba([255, 0, 0, 0]),
-            );
 
-            if idx >= (base.width() - rotated_img.width()) as usize {
+            if idx >= (base.width() - img.width()) as usize {
                 break;
             }
 
-            let y = (base.height() - rotated_img.height()) / 2;
-            base.copy_non_trasparent_from(&rotated_img, idx as u32, y)?;
-            let view = base.view(
-                rotated_img.width(),
-                0,
-                base.width() - rotated_img.width(),
-                base.height(),
-            );
+            let y = (base.height() - img.height()) / 2;
+            base.copy_non_trasparent_from(img, idx as u32, y)?;
+            let view = base.view(img.width(), 0, base.width() - img.width(), base.height());
             gif.push(view.to_image());
             idx += 1;
         }

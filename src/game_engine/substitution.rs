@@ -5,26 +5,29 @@ use super::{
     types::{GameStats, GameStatsMap, Possession},
 };
 use crate::{
-    types::SortablePlayerMap,
-    world::{
+    core::{
         player::Player,
-        position::{Position, MAX_POSITION},
+        position::{GamePosition, MAX_GAME_POSITION},
         skill::MAX_SKILL,
         team::Team,
+        GameSkill,
     },
+    game_engine::{constants::SUBSTITUTION_ACTION_PROBABILITY, types::EnginePlayer},
+    types::SortablePlayerMap,
 };
 use itertools::Itertools;
+use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
-fn get_subs<'a>(players: &Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a Player> {
-    if players.len() <= 5 {
-        return vec![];
-    }
-
+fn get_subs<'a>(
+    players: &[&'a Player],
+    team_stats: &GameStatsMap,
+    action_rng: &mut ChaCha8Rng,
+) -> Vec<&'a Player> {
     let bench: Vec<&Player> = players
         .iter()
-        .skip(MAX_POSITION as usize)
+        .skip(MAX_GAME_POSITION as usize)
         .filter(|&p| {
             let stats = team_stats.get(&p.id).unwrap();
             !stats.is_playing() && !p.is_knocked_out()
@@ -38,7 +41,7 @@ fn get_subs<'a>(players: &Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a
 
     let playing: Vec<&Player> = players
         .iter()
-        .take(MAX_POSITION as usize)
+        .take(MAX_GAME_POSITION as usize)
         .filter(|&p| {
             let stats = team_stats.get(&p.id).unwrap();
             stats.is_playing() && p.tiredness > MIN_TIREDNESS_FOR_SUB
@@ -51,14 +54,14 @@ fn get_subs<'a>(players: &Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a
             let a_position = a_stats
                 .position
                 .expect("Playing player should have a position");
-            let v1 = a.tiredness_weighted_rating_at_position(a_position) as u16;
+            let v1 = a.in_game_rating_at_position(a_position) as u16;
             let b_stats = team_stats
                 .get(&b.id)
                 .expect("Playing player should have stats");
             let b_position = b_stats
                 .position
                 .expect("Playing player should have a position");
-            let v2 = b.tiredness_weighted_rating_at_position(b_position) as u16;
+            let v2 = b.in_game_rating_at_position(b_position) as u16;
 
             v1.cmp(&v2)
         })
@@ -81,20 +84,37 @@ fn get_subs<'a>(players: &Vec<&'a Player>, team_stats: &GameStatsMap) -> Vec<&'a
         .iter()
         //Sort from most to less skilled*tired
         .max_by(|&a, &b| {
-            let v1 = a.tiredness_weighted_rating_at_position(out_position) as u16;
-            let v2 = b.tiredness_weighted_rating_at_position(out_position) as u16;
+            let v1 = a.in_game_rating_at_position(out_position) as u16;
+            let v2 = b.in_game_rating_at_position(out_position) as u16;
             v1.cmp(&v2)
         })
         .expect("There should be a in candidate");
 
-    vec![in_candidate, out_candidate]
+    // If in candidate is worse than out candidate, there is still a 25% chance of subbing.
+    // This probability increases linearly up to 100% when the in candidate skills
+    // are 15 points moreis than the out candidate's.
+    let sub_probability_modifier = (0.25
+        + (in_candidate.in_game_rating_at_position(out_position)
+            - out_candidate.in_game_rating_at_position(out_position))
+        .bound()
+            / MAX_SKILL) as f64;
+
+    let sub_probability = SUBSTITUTION_ACTION_PROBABILITY * sub_probability_modifier;
+
+    if action_rng.random_bool(sub_probability.clamp(0.0, 1.0)) {
+        vec![in_candidate, out_candidate]
+    } else {
+        vec![]
+    }
 }
 
 fn make_substitution(
     players: Vec<&Player>,
     stats: &GameStatsMap,
+    action_rng: &mut ChaCha8Rng,
+    description_rng: &mut ChaCha8Rng,
 ) -> Option<(String, GameStatsMap)> {
-    let subs = get_subs(&players, stats);
+    let subs = get_subs(&players, stats, action_rng);
     if subs.is_empty() {
         return None;
     }
@@ -103,13 +123,40 @@ fn make_substitution(
     let tiredness = player_out.tiredness;
     let position = stats.get(&player_out.id)?.position?;
 
-    let mut description = format!(
-        "{} is substituted by {}. ",
-        player_out.info.short_name(),
-        player_in.info.short_name()
-    );
+    let mut description = [
+        format!(
+            "{} is substituted by {}. ",
+            player_out.info.short_name(),
+            player_in.info.short_name()
+        ),
+        format!(
+            "{} gets in for {}. ",
+            player_in.info.short_name(),
+            player_out.info.short_name()
+        ),
+    ]
+    .choose(description_rng)
+    .cloned()
+    .expect("There should be one option");
 
-    if tiredness > MIN_TIREDNESS_FOR_SUB {
+    if tiredness == MAX_SKILL {
+        description.push_str(
+            format!(
+                "{} {} completely done. ",
+                player_out.info.pronouns.as_subject(),
+                player_out.info.pronouns.to_be(),
+            )
+            .as_str(),
+        );
+    } else if tiredness > MIN_TIREDNESS_FOR_SUB + 5.0 {
+        description.push_str(
+            format!(
+                "{} looked exhausted. ",
+                player_out.info.pronouns.as_subject()
+            )
+            .as_str(),
+        );
+    } else if tiredness > MIN_TIREDNESS_FOR_SUB + 2.5 {
         description.push_str(
             format!(
                 "{} looked very tired. ",
@@ -117,7 +164,7 @@ fn make_substitution(
             )
             .as_str(),
         );
-    } else if tiredness > MAX_SKILL / 4.0 {
+    } else if tiredness > MIN_TIREDNESS_FOR_SUB {
         description.push_str(
             format!(
                 "{} {} a bit tired. ",
@@ -162,18 +209,18 @@ fn make_substitution(
             GameStats::default()
         };
 
-        player_update.position = Some(idx as Position);
+        player_update.position = Some(idx as GamePosition);
         stats_update.insert(id, player_update.clone());
     }
 
     Some((description, stats_update))
 }
 
-pub(crate) fn execute(
+pub(crate) fn should_execute(
     input: &ActionOutput,
     game: &Game,
-    _action_rng: &mut ChaCha8Rng,
-    _description_rng: &mut ChaCha8Rng,
+    action_rng: &mut ChaCha8Rng,
+    description_rng: &mut ChaCha8Rng,
 ) -> Option<ActionOutput> {
     let home_players = &game.home_team_in_game.players;
     let away_players = &game.away_team_in_game.players;
@@ -196,6 +243,8 @@ pub(crate) fn execute(
     if let Some((description, stats_update)) = make_substitution(
         home_players.by_position(&game.home_team_in_game.stats),
         &game.home_team_in_game.stats,
+        action_rng,
+        description_rng,
     ) {
         result
             .description
@@ -216,6 +265,8 @@ pub(crate) fn execute(
     if let Some((description, stats_update)) = make_substitution(
         away_players.by_position(&game.away_team_in_game.stats),
         &game.away_team_in_game.stats,
+        action_rng,
+        description_rng,
     ) {
         if home_sub {
             result.description.push_str(

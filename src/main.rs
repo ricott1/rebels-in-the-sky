@@ -1,50 +1,19 @@
-use clap::{ArgAction, Parser};
+use clap::Parser;
 use log::LevelFilter;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use rebels::app::App;
-use rebels::network::constants::DEFAULT_PORT;
+use rebels::args::AppArgs;
+#[cfg(any(feature = "relayer", feature = "ssh"))]
+use rebels::args::AppMode;
+#[cfg(feature = "relayer")]
+use rebels::relayer::Relayer;
+#[cfg(feature = "ssh")]
+use rebels::ssh::AppServer;
 use rebels::store::store_path;
 use rebels::tui::Tui;
 use rebels::types::AppResult;
-
-#[cfg(feature = "relayer")]
-use rebels::relayer::Relayer;
-
-#[cfg(feature = "ssh")]
-use rebels::ssh::AppServer;
-
-#[derive(Parser, Debug)]
-#[clap(name="Rebels in the sky", about = "P(lanet)2P(lanet) basketball", author, version, long_about = None)]
-pub struct Args {
-    #[clap(long,  action=ArgAction::Set, help = "Set random seed for team generation")]
-    seed: Option<u64>,
-    #[clap(long, short='l', action=ArgAction::SetTrue, help = "Disable networking")]
-    disable_network: bool,
-    #[clap(long, short='a', action=ArgAction::SetTrue, help = "Disable audio")]
-    disable_audio: bool,
-    #[clap(long, short='r', action=ArgAction::SetTrue, help = "Reset all save files")]
-    reset_world: bool,
-    #[clap(long="disable_local_world", short='f', action=ArgAction::SetFalse, help = "Disable generating local teams")]
-    generate_local_world: bool,
-    #[clap(long, short='u', action=ArgAction::SetTrue, help = "Disable UI and input reader")]
-    disable_ui: bool,
-    #[cfg(feature = "relayer")]
-    #[clap(long, short='n', action=ArgAction::SetTrue, help = "Run a network relayer")]
-    relayer_mode: bool,
-    #[cfg(feature = "ssh")]
-    #[clap(long, short='j', action=ArgAction::SetTrue, help = "Run SSH server")]
-    ssh_server: bool,
-    #[clap(long, short = 'i', action=ArgAction::Set, help = "Set ip of seed node")]
-    seed_ip: Option<String>,
-    #[clap(long, short = 'p', action=ArgAction::Set, help = "Set network port")]
-    network_port: Option<u16>,
-    #[clap(long, action=ArgAction::Set, help = "Set store prefix")]
-    store_prefix: Option<String>,
-    #[clap(long, action=ArgAction::SetTrue, help = "Save game to uncompressed json")]
-    store_uncompressed: bool,
-}
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> AppResult<()> {
@@ -57,49 +26,32 @@ async fn main() -> AppResult<()> {
     let config = Config::builder()
         .appender(Appender::builder().build("logfile", Box::new(logfile)))
         .build(Root::builder().appender("logfile").build(LevelFilter::Info))?;
-
     log4rs::init_config(config)?;
-    let args = Args::parse();
+
+    let args = AppArgs::parse();
+
+    #[cfg(any(feature = "relayer", feature = "ssh"))]
+    let mode = args.app_mode();
 
     #[cfg(feature = "ssh")]
-    if args.ssh_server {
+    if mode == AppMode::SSHServer {
         return AppServer::new().run().await;
     }
 
     #[cfg(feature = "relayer")]
-    if args.relayer_mode {
+    if mode == AppMode::Relayer {
         return Relayer::new().run().await;
     }
 
-    let network_port = if args.disable_network {
-        None
-    } else {
-        Some(args.network_port.unwrap_or(DEFAULT_PORT))
-    };
+    let ui_disabled = args.is_ui_disabled();
+    let mut app = App::new(args)?;
 
-    #[cfg(feature = "audio")]
-    let disable_audio = args.disable_audio || args.disable_ui;
-
-    let mut app = App::new(
-        args.seed,
-        args.disable_network,
-        #[cfg(feature = "audio")]
-        disable_audio,
-        args.generate_local_world,
-        args.reset_world,
-        args.seed_ip,
-        args.store_prefix,
-        args.store_uncompressed,
-    )?;
-
-    if args.disable_ui {
-        // With no UI, world must be loaded from file.
-        app.load_world();
+    if ui_disabled {
         let tui = Tui::new_dummy()?;
-        app.run(tui, network_port, None).await?;
+        app.run(tui).await?;
     } else {
         let tui = Tui::new_local()?;
-        app.run(tui, network_port, None).await?;
+        app.run(tui).await?;
     };
 
     Ok(())

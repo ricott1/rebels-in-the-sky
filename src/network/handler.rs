@@ -6,19 +6,19 @@ use super::trade::Trade;
 use super::types::SeedInfo;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam};
 use crate::app::AppEvent;
+use crate::core::world::World;
 use crate::game_engine::types::TeamInGame;
 use crate::store::serialize;
 use crate::types::{AppResult, GameId};
 use crate::types::{PlayerId, TeamId};
 use crate::types::{SystemTimeTick, Tick};
-use crate::world::world::World;
 use anyhow::anyhow;
 use futures::StreamExt;
 use itertools::Itertools;
 use libp2p::gossipsub::{self, IdentTopic};
 use libp2p::identity::Keypair;
-use libp2p::swarm::SwarmEvent;
-use libp2p::{identity, noise, tcp, yamux, PeerId};
+use libp2p::swarm::{DialError, SwarmEvent};
+use libp2p::{identity, noise, tcp, yamux, PeerId, TransportError};
 use libp2p::{Multiaddr, Swarm};
 use log::{error, info};
 use std::collections::hash_map::DefaultHasher;
@@ -123,7 +123,7 @@ impl NetworkHandler {
         }
     }
 
-    pub fn new(seed_ip: Option<String>) -> AppResult<Self> {
+    pub fn new(seed_node_ip: Option<&String>) -> AppResult<Self> {
         let local_keypair = identity::Keypair::generate_ed25519();
         let mut seed_addresses = vec![
             format!("/dns4/{DEFAULT_SEED_URL}/tcp/{DEFAULT_SEED_PORT}")
@@ -134,7 +134,7 @@ impl NetworkHandler {
                 .expect("Invalid provided seed ip."),
         ];
 
-        if let Some(ip) = seed_ip {
+        if let Some(ip) = seed_node_ip {
             if let Ok(address) = format!("/ip4/{ip}/tcp/{DEFAULT_SEED_PORT}").parse() {
                 seed_addresses.push(address);
             } else if let Ok(address) = format!("/ip6/{ip}/tcp/{DEFAULT_SEED_PORT}").parse() {
@@ -346,7 +346,6 @@ impl NetworkHandler {
 
     fn send_team(&mut self, world: &World, team_id: TeamId) -> AppResult<()> {
         let network_team = NetworkTeam::from_team_id(world, &team_id, *self.own_peer_id())?;
-
         self._send(&NetworkData::Team(Tick::now(), network_team))
     }
 
@@ -533,7 +532,9 @@ impl NetworkHandler {
                 address,
             } => Some(NetworkCallback::PushSwarmPanelLog {
                 timestamp: Tick::now(),
+                peer_id: None,
                 text: format!("Expired listen address: {address}"),
+                level: log::Level::Warn,
             }),
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                 self.connected_peers_count += 1;
@@ -543,9 +544,34 @@ impl NetworkHandler {
                 self.connected_peers_count -= 1;
                 Some(NetworkCallback::CloseConnection { peer_id })
             }
+            SwarmEvent::OutgoingConnectionError { error, .. } => {
+                let text = match error {
+                    // Special handling for DialError::Transport -> TransportError::Other as it is not displayed nicely :(
+                    DialError::Transport(errors) => {
+                        let error_text = errors
+                            .iter()
+                            .map(|(_, error)| match error {
+                                TransportError::Other(err) => err.to_string(),
+                                _ => error.to_string(),
+                            })
+                            .unique()
+                            .join(" + ");
+                        format!("Outgoing connection error: {error_text}")
+                    }
+                    _ => format!("Outgoing connection error: {error}"),
+                };
+                Some(NetworkCallback::PushSwarmPanelLog {
+                    timestamp: Tick::now(),
+                    peer_id: None,
+                    text,
+                    level: log::Level::Error,
+                })
+            }
             _ => Some(NetworkCallback::PushSwarmPanelLog {
                 timestamp: Tick::now(),
-                text: format!("Event: {event:?}"),
+                peer_id: None,
+                text: format!("Unhandled event: {event:?}"),
+                level: log::Level::Warn,
             }),
         }
     }
@@ -556,6 +582,7 @@ mod tests {
     use super::TOPIC;
     use crate::{
         app::App,
+        core::{constants::NETWORK_GAME_START_DELAY, types::TeamLocation, world::World},
         network::{
             network_callback::NetworkCallback,
             types::{NetworkData, NetworkRequestState, NetworkTeam},
@@ -563,7 +590,6 @@ mod tests {
         store::{deserialize, serialize},
         types::{AppResult, SystemTimeTick, Tick},
         ui::ui_callback::UiCallback,
-        world::{constants::NETWORK_GAME_START_DELAY, types::TeamLocation, world::World},
     };
     use anyhow::anyhow;
     use libp2p::{

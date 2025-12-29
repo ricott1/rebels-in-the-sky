@@ -1,5 +1,5 @@
 use super::{collisions::HitBox, space_callback::SpaceCallback, traits::*};
-use crate::space_adventure::{entity::Entity, visual_effects::VisualEffect};
+use super::{entity::Entity, visual_effects::VisualEffect};
 use glam::{I16Vec2, Vec2};
 use image::{Rgba, RgbaImage};
 use std::collections::HashMap;

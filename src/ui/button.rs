@@ -39,7 +39,7 @@ impl<'a> From<Button<'a>> for Text<'a> {
 
 impl<'a> Button<'a> {
     pub fn new(text: impl Into<Text<'a>>, on_click: UiCallback) -> Self {
-        Self::no_box(text.into(), on_click)
+        Self::no_box(text, on_click)
             .hover_block(default_block())
             .block(default_block())
     }
@@ -124,6 +124,10 @@ impl<'a> Button<'a> {
         self.layer = layer;
         self
     }
+
+    pub fn text_width(&self) -> usize {
+        self.text.width()
+    }
 }
 
 impl<'a> Styled for Button<'a> {
@@ -172,18 +176,14 @@ impl<'a> Widget for Button<'a> {
             Paragraph::new(self.text.clone()).alignment(self.text_alignemnt)
         };
 
-        let render_style = if self.is_hovered {
-            self.hover_style
-        } else {
-            self.style
-        };
-
         let paragraph_style = if self.selected {
             UiStyle::SELECTED_BUTTON
         } else if self.disabled {
             UiStyle::UNSELECTABLE
+        } else if self.is_hovered {
+            self.hover_style
         } else {
-            render_style
+            self.style
         };
 
         let maybe_block = if self.is_hovered {

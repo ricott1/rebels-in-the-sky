@@ -1,4 +1,4 @@
-use crate::{backcompat_repr_u8_enum, types::Tick, world::constants::TickInterval};
+use crate::{backcompat_repr_u8_enum, core::constants::TickInterval, types::Tick};
 use serde::{Deserialize, Serialize};
 use strum::Display;
 
@@ -148,10 +148,10 @@ impl Timer {
     }
 
     pub fn is_break(&self) -> bool {
-        match self.period() {
-            Period::NotStarted | Period::B1 | Period::B2 | Period::B3 | Period::B4 => true,
-            _ => false,
-        }
+        matches!(
+            self.period(),
+            Period::NotStarted | Period::B1 | Period::B2 | Period::B3 | Period::B4
+        )
     }
 
     pub fn plus(&self, seconds: u16) -> Self {

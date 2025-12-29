@@ -1,7 +1,7 @@
 use super::{collisions::HitBox, space_callback::SpaceCallback, visual_effects::VisualEffect};
-use crate::space_adventure::collector::CollectorEntity;
-use crate::space_adventure::shield::ShieldEntity;
-use crate::space_adventure::{
+use super::collector::CollectorEntity;
+use super::shield::ShieldEntity;
+use super::{
     asteroid::AsteroidEntity, fragment::FragmentEntity, particle::ParticleEntity,
     projectile::ProjectileEntity, traits::*, SpaceshipEntity,
 };
@@ -13,6 +13,7 @@ use std::fmt::Debug;
 use strum::Display;
 
 #[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
 pub enum Entity {
     Asteroid(AsteroidEntity),
     Collector(CollectorEntity),

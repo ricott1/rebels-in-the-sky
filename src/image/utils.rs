@@ -4,15 +4,216 @@ use crate::types::AppResult;
 use anyhow::anyhow;
 use image::error::{ParameterError, ParameterErrorKind};
 use image::ImageReader;
-use image::{ImageError, ImageResult, Rgba, RgbaImage};
+use image::{ImageError, ImageResult, Rgb, Rgba, RgbaImage};
 use once_cell::sync::Lazy;
 use std::io::Cursor;
 
 pub static UNIVERSE_BACKGROUND: Lazy<RgbaImage> =
-    Lazy::new(|| open_image("planets/background.png").expect("Cannot open background.png."));
-pub static TRAVELLING_BACKGROUND: Lazy<RgbaImage> = Lazy::new(|| {
-    open_image("planets/travelling_background.png").expect("Cannot open travelling_background.png.")
+    Lazy::new(|| open_image("universe/background.png").expect("Cannot open background.png."));
+
+pub static STAR_LAYERS: Lazy<[RgbaImage; 3]> = Lazy::new(|| {
+    [
+        open_image("universe/star_layer_1.png").expect("Cannot open star_layer_1.png."),
+        open_image("universe/star_layer_2.png").expect("Cannot open star_layer_2.png."),
+        open_image("universe/star_layer_3.png").expect("Cannot open star_layer_3.png."),
+    ]
 });
+
+#[derive(Debug)]
+pub enum LightMaskStyle {
+    Horizontal {
+        from_background: Rgb<u8>,
+        to_background: Option<Rgb<u8>>,
+        from_alpha: u8,
+        to_alpha: u8,
+    },
+    Vertical {
+        from_background: Rgb<u8>,
+        to_background: Option<Rgb<u8>>,
+        from_alpha: u8,
+        to_alpha: u8,
+    },
+    Radial {
+        from_background: Rgb<u8>,
+        to_background: Option<Rgb<u8>>,
+        from_alpha: u8,
+        to_alpha: u8,
+        center: Option<(u32, u32)>,
+    },
+    Exponential {
+        from_background: Rgb<u8>,
+        to_background: Option<Rgb<u8>>,
+        from_alpha: u8,
+        to_alpha: u8,
+        center: Option<(u32, u32)>,
+    },
+}
+
+impl LightMaskStyle {
+    pub fn horizontal() -> Self {
+        Self::Horizontal {
+            from_background: Rgb([0; 3]),
+            to_background: None,
+            from_alpha: 165,
+            to_alpha: 255,
+        }
+    }
+
+    pub fn vertical() -> Self {
+        Self::Vertical {
+            from_background: Rgb([0; 3]),
+            to_background: None,
+            from_alpha: 255,
+            to_alpha: 155,
+        }
+    }
+
+    pub fn radial() -> Self {
+        Self::Radial {
+            from_background: Rgb([0; 3]),
+            to_background: None,
+            from_alpha: 255,
+            to_alpha: 155,
+            center: None,
+        }
+    }
+
+    pub fn pointer(center: (u32, u32)) -> Self {
+        Self::Exponential {
+            from_background: Rgb([0, 255, 0]),
+            to_background: None,
+            from_alpha: 255,
+            to_alpha: 5,
+            center: Some(center),
+        }
+    }
+
+    pub fn star_zoom_out() -> Self {
+        Self::Radial {
+            from_background: Rgb([0; 3]),
+            to_background: None,
+            from_alpha: 255,
+            to_alpha: 125,
+            center: None,
+        }
+    }
+
+    pub fn black_hole() -> Self {
+        Self::Radial {
+            from_background: Rgb([0; 3]),
+            to_background: None,
+            from_alpha: 215,
+            to_alpha: 255,
+            center: None,
+        }
+    }
+
+    pub fn player() -> Self {
+        Self::Horizontal {
+            from_background: Rgb([25, 25, 25]),
+            to_background: None,
+            from_alpha: 175,
+            to_alpha: 255,
+        }
+    }
+
+    pub fn space_cove() -> Self {
+        Self::Horizontal {
+            from_background: Rgb([0, 45, 235]),
+            to_background: None,
+            from_alpha: 255,
+            to_alpha: 125,
+        }
+    }
+
+    pub fn skull_eye(center: (u32, u32)) -> Self {
+        Self::Radial {
+            from_background: Rgb([235, 45, 0]),
+            to_background: None,
+            from_alpha: 215,
+            to_alpha: 255,
+            center: Some(center),
+        }
+    }
+
+    pub fn mask(&self, width: u32, height: u32) -> RgbaImage {
+        fn interpolate_pixel(
+            v: f32,
+            from_background: Rgb<u8>,
+            to_background: Option<Rgb<u8>>,
+            from_alpha: u8,
+            to_alpha: u8,
+        ) -> Rgba<u8> {
+            let [mut r, mut g, mut b] = from_background.0;
+            let a = (from_alpha as f32 * (1.0 - v) + to_alpha as f32 * v).clamp(0.0, 255.0) as u8;
+
+            if let Some(to) = to_background {
+                let [to_r, to_g, to_b] = to.0;
+                r = (r as f32 * (1.0 - v) + to_r as f32 * v).clamp(0.0, 255.0) as u8;
+                g = (g as f32 * (1.0 - v) + to_g as f32 * v).clamp(0.0, 255.0) as u8;
+                b = (b as f32 * (1.0 - v) + to_b as f32 * v).clamp(0.0, 255.0) as u8;
+            }
+
+            return Rgba::from([r, g, b, a]);
+        }
+        RgbaImage::from_fn(width, height, |x, y| match *self {
+            Self::Horizontal {
+                from_alpha,
+                to_alpha,
+                from_background,
+                to_background,
+            } => {
+                let v = x as f32 / width as f32;
+                return interpolate_pixel(v, from_background, to_background, from_alpha, to_alpha);
+            }
+            Self::Vertical {
+                from_alpha,
+                to_alpha,
+                from_background,
+                to_background,
+            } => {
+                let v = y as f32 / height as f32;
+                return interpolate_pixel(v, from_background, to_background, from_alpha, to_alpha);
+            }
+            Self::Radial {
+                from_alpha,
+                to_alpha,
+                from_background,
+                to_background,
+                center,
+            } => {
+                let center = if let Some(pos) = center {
+                    pos
+                } else {
+                    (width / 2, height / 2)
+                };
+
+                let v = 4.0
+                    * ((x as i32 - center.0 as i32).pow(2) + (y as i32 - center.1 as i32).pow(2))
+                        as f32
+                    / (width.pow(2) + height.pow(2)) as f32;
+                return interpolate_pixel(v, from_background, to_background, from_alpha, to_alpha);
+            }
+
+            Self::Exponential {
+                from_alpha,
+                to_alpha,
+                from_background,
+                to_background,
+                center,
+            } => {
+                let center = if let Some(pos) = center {
+                    pos
+                } else {
+                    (width / 2, height / 2)
+                };
+                let d = (x as i32 - center.0 as i32).pow(2) + (y as i32 - center.1 as i32).pow(2);
+                let v = (-d as f32 / 8.0).exp();
+                return interpolate_pixel(v, from_background, to_background, from_alpha, to_alpha);
+            }
+        })
+    }
+}
 
 pub trait ExtraImageUtils {
     fn copy_non_trasparent_from(&mut self, other: &RgbaImage, x: u32, y: u32) -> ImageResult<()>;
@@ -27,11 +228,16 @@ pub trait ExtraImageUtils {
         dst_y: u32,
     );
     fn apply_color_map(&mut self, color_map: ColorMap) -> &RgbaImage;
+
+    // Applies a specified shadow mask by reading pixels from mask image
     fn apply_color_map_with_shadow_mask(
         &mut self,
         color_map: ColorMap,
         mask: &RgbaImage,
     ) -> &RgbaImage;
+
+    // Applies global light mask created programmatically
+    fn apply_light_mask(&mut self, light_style: &LightMaskStyle) -> &RgbaImage;
 }
 
 impl ExtraImageUtils for RgbaImage {
@@ -199,14 +405,39 @@ impl ExtraImageUtils for RgbaImage {
         }
         self
     }
+
+    fn apply_light_mask(&mut self, light_style: &LightMaskStyle) -> &RgbaImage {
+        let mask = light_style.mask(self.width(), self.height());
+        for y in 0..mask.height() {
+            for x in 0..mask.width() {
+                let dst_px = self.get_pixel(x, y);
+                // Apply light mask only if dst pixel is non-transparent
+                if dst_px[3] > 0 {
+                    let src_px = mask.get_pixel(x, y);
+                    // if src_px[3] = alpha is large, paste more of the dst pixel.
+                    let a = 1.0 - src_px[3] as f32 / 255.0;
+                    let blended = Rgba([
+                        (src_px[0] as f32 * a + dst_px[0] as f32 * (1.0 - a)) as u8,
+                        (src_px[1] as f32 * a + dst_px[1] as f32 * (1.0 - a)) as u8,
+                        (src_px[2] as f32 * a + dst_px[2] as f32 * (1.0 - a)) as u8,
+                        255,
+                    ]);
+
+                    self.put_pixel(x, y, blended);
+                }
+            }
+        }
+
+        self
+    }
 }
 
 pub fn open_image(path: &str) -> AppResult<RgbaImage> {
-    let file = ASSETS_DIR.get_file(path);
-    if file.is_none() {
-        return Err(anyhow!("File {path} not found"));
-    }
-    let img = ImageReader::new(Cursor::new(file.unwrap().contents()))
+    let file = ASSETS_DIR
+        .get_file(path)
+        .ok_or(anyhow!("File {path} not found"))?;
+
+    let img = ImageReader::new(Cursor::new(file.contents()))
         .with_guessed_format()?
         .decode()?
         .into_rgba8();

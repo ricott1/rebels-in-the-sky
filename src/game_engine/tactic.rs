@@ -1,5 +1,4 @@
 use super::action::Action;
-use crate::types::AppResult;
 use rand::seq::IteratorRandom;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{weighted::WeightedIndex, Distribution};
@@ -56,106 +55,148 @@ impl Tactic {
         }
     }
 
-    pub fn pick_action(&self, rng: &mut ChaCha8Rng) -> AppResult<Action> {
-        let weights = match self {
+    pub fn pick_action(&self, rng: &mut ChaCha8Rng, num_active_players: usize) -> Option<Action> {
+        if num_active_players < 1 {
+            return None;
+        }
+
+        let mut weights = match self {
             Self::Balanced => [2, 2, 2, 2],
             Self::BigPirates => [1, 1, 2, 4],
             Self::Arrembaggio => [3, 1, 3, 1],
             Self::Shooters => [1, 4, 2, 1],
         };
-        let action = match WeightedIndex::new(weights)?.sample(rng) {
+
+        if num_active_players < 2 {
+            weights[1] = 0;
+            weights[2] = 0;
+        }
+
+        let action = match WeightedIndex::new(weights).ok()?.sample(rng) {
             0 => Action::Isolation,
             1 => Action::OffTheScreen,
             2 => Action::PickAndRoll,
             3 => Action::Post,
             _ => unreachable!(),
         };
-        Ok(action)
+        Some(action)
     }
 
-    pub fn brawl_probability_modifier(&self) -> f32 {
+    pub fn brawl_probability_modifier(&self) -> f64 {
         match self {
-            Self::Balanced => 0.55,
+            Self::Balanced => 0.75,
             Self::BigPirates => 1.15,
             Self::Arrembaggio => 2.0,
             Self::Shooters => 0.8,
         }
     }
 
-    pub fn tiredness_modifier(&self) -> f32 {
+    pub fn playing_tiredness_modifier(&self) -> f32 {
         match self {
-            Self::Balanced => 0.5,
+            Self::Balanced => 0.85,
             Self::BigPirates => 1.0,
-            Self::Arrembaggio => 1.2,
-            Self::Shooters => 1.15,
+            Self::Arrembaggio => 1.15,
+            Self::Shooters => 1.1,
+        }
+    }
+
+    pub fn fastbreak_probability_modifier(&self) -> f64 {
+        match self {
+            Self::Balanced => 1.0,
+            Self::BigPirates => 0.7,
+            Self::Arrembaggio => 2.1,
+            Self::Shooters => 1.0,
         }
     }
 
     pub fn attack_roll_bonus(&self, action: &Action) -> i16 {
         // How does the tactic affect the outcome of the action from the attackers perspective?
         match self {
-            Self::Balanced => 0,
+            Self::Balanced => match action {
+                Action::Isolation => 10,
+                Action::PickAndRoll => 10,
+                Action::OffTheScreen => 10,
+                Action::Post => 10,
+                Action::Brawl => 10,
+                Action::Rebound => 10,
+                Action::Fastbreak => 16,
+                _ => unreachable!(),
+            },
             Self::BigPirates => match action {
-                Action::Isolation => -1,
-                Action::PickAndRoll => -1,
-                Action::OffTheScreen => -1,
-                Action::Post => 2,
-                Action::Brawl => 0,
-                Action::Rebound => 1,
-                _ => 0,
+                Action::Isolation => 5,
+                Action::PickAndRoll => 8,
+                Action::OffTheScreen => 8,
+                Action::Post => 18,
+                Action::Brawl => 10,
+                Action::Rebound => 14,
+                Action::Fastbreak => 14,
+                _ => unreachable!(),
             },
             Self::Arrembaggio => match action {
-                Action::Isolation => 2,
-                Action::PickAndRoll => 1,
-                Action::OffTheScreen => 0,
-                Action::Post => -2,
-                Action::Brawl => 2,
-                Action::Rebound => 0,
-                _ => 0,
+                Action::Isolation => 18,
+                Action::PickAndRoll => 12,
+                Action::OffTheScreen => 10,
+                Action::Post => 6,
+                Action::Brawl => 18,
+                Action::Rebound => 10,
+                Action::Fastbreak => 20,
+                _ => unreachable!(),
             },
             Self::Shooters => match action {
-                Action::Isolation => 0,
-                Action::PickAndRoll => 1,
-                Action::OffTheScreen => 2,
-                Action::Post => -1,
-                Action::Brawl => 0,
-                Action::Rebound => -2,
-                _ => 0,
+                Action::Isolation => 9,
+                Action::PickAndRoll => 16,
+                Action::OffTheScreen => 20,
+                Action::Post => 6,
+                Action::Brawl => 9,
+                Action::Rebound => 5,
+                Action::Fastbreak => 16,
+                _ => unreachable!(),
             },
         }
     }
 
     pub fn defense_roll_bonus(&self, action: &Action) -> i16 {
         // How does the tactic affect the outcome of the action from the defenders perspective?
-
         match self {
-            Self::Balanced => 0,
+            Self::Balanced => match action {
+                Action::Isolation => 10,
+                Action::PickAndRoll => 10,
+                Action::OffTheScreen => 10,
+                Action::Post => 10,
+                Action::Brawl => 10,
+                Action::Rebound => 10,
+                Action::Fastbreak => 2,
+                _ => unreachable!(),
+            },
             Self::BigPirates => match action {
-                Action::Isolation => -2,
-                Action::PickAndRoll => -1,
-                Action::OffTheScreen => -1,
-                Action::Post => 2,
-                Action::Brawl => 0,
-                Action::Rebound => 1,
-                _ => 0,
+                Action::Isolation => 3,
+                Action::PickAndRoll => 8,
+                Action::OffTheScreen => 6,
+                Action::Post => 16,
+                Action::Brawl => 13,
+                Action::Rebound => 14,
+                Action::Fastbreak => 0,
+                _ => unreachable!(),
             },
             Self::Arrembaggio => match action {
-                Action::Isolation => 2,
-                Action::PickAndRoll => 0,
-                Action::OffTheScreen => -1,
-                Action::Post => 0,
-                Action::Brawl => 1,
-                Action::Rebound => 0,
-                _ => 0,
+                Action::Isolation => 17,
+                Action::PickAndRoll => 8,
+                Action::OffTheScreen => 6,
+                Action::Post => 10,
+                Action::Brawl => 15,
+                Action::Rebound => 10,
+                Action::Fastbreak => 4,
+                _ => unreachable!(),
             },
             Self::Shooters => match action {
-                Action::Isolation => 0,
-                Action::PickAndRoll => 1,
-                Action::OffTheScreen => 1,
-                Action::Post => -2,
-                Action::Brawl => -1,
-                Action::Rebound => -1,
-                _ => 0,
+                Action::Isolation => 10,
+                Action::PickAndRoll => 12,
+                Action::OffTheScreen => 14,
+                Action::Post => 4,
+                Action::Brawl => 8,
+                Action::Rebound => 6,
+                Action::Fastbreak => 2,
+                _ => unreachable!(),
             },
         }
     }

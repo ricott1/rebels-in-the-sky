@@ -16,8 +16,8 @@ use crate::network::trade::Trade;
 use crate::types::AppResult;
 use crate::ui::ui_key;
 use crate::{
+    core::*,
     types::{PlayerId, TeamId},
-    world::*,
 };
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
@@ -409,7 +409,7 @@ impl PlayerListPanel {
             let hire_cost = player.hire_cost(own_team.reputation);
 
             let mut button = Button::new(
-                format!("Hire -{}", format_satoshi(hire_cost)),
+                format!("Hire (-{})", format_satoshi(hire_cost)),
                 UiCallback::HirePlayer {
                     player_id: player.id,
                 },
@@ -419,8 +419,8 @@ impl PlayerListPanel {
                 format_satoshi(hire_cost)
             ))
             .set_hotkey(ui_key::player::HIRE);
-            if can_hire.is_err() {
-                button.disable(Some(format!("{}", can_hire.unwrap_err())));
+            if let Err(err) = can_hire {
+                button.disable(Some(format!("{err}")));
             }
 
             frame.render_interactive_widget(button, buttons_split[3]);
@@ -449,8 +449,8 @@ impl PlayerListPanel {
                 let can_trade =
                     proposer_team.can_trade_players(proposer_player, target_player, own_team);
 
-                if can_trade.is_err() {
-                    button.disable(Some(format!("{}", can_trade.unwrap_err())));
+                if let Err(err) = can_trade {
+                    button.disable(Some(format!("{err}")));
                 }
                 frame.render_interactive_widget(button, buttons_split[3]);
             } else if player.id == self.locked_player_id.expect("One player should be locked") {

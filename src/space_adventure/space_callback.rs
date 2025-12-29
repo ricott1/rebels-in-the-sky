@@ -1,8 +1,8 @@
 use crate::{
+    core::resources::Resource,
     space_adventure::{
         constants::SCREEN_SIZE, Body, ControllableSpaceship, Direction, GameEntity, Sprite,
     },
-    world::resources::Resource,
 };
 
 use super::{

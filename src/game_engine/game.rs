@@ -6,17 +6,16 @@ use super::{
 };
 use crate::{
     app_version,
-    game_engine::{end_of_quarter, substitution},
-    types::{GameId, PlanetId, PlayerId, SortablePlayerMap, TeamId, Tick},
-    world::{
-        constants::{MoraleModifier, TirednessCost},
-        planet::Planet,
+    core::{
+        constants::TirednessCost,
         player::{Player, Trait},
-        position::MAX_POSITION,
-        role::CrewRole,
-        skill::{GameSkill, MAX_SKILL},
+        position::MAX_GAME_POSITION,
+        skill::GameSkill,
         utils::is_default,
+        DEFAULT_PLANET_ID,
     },
+    game_engine::{end_of_quarter, substitution},
+    types::*,
 };
 use itertools::Itertools;
 use rand::{seq::IndexedRandom, Rng, SeedableRng};
@@ -128,7 +127,6 @@ pub struct Game {
     pub possession: Possession,
     pub timer: Timer,
     next_step: u16,
-    pub current_action: Action,
     pub winner: Option<TeamId>,
     pub home_team_mvps: Option<Vec<GameMVPSummary>>,
     pub away_team_mvps: Option<Vec<GameMVPSummary>>,
@@ -142,12 +140,26 @@ impl Game {
         self.home_team_in_game.peer_id.is_some() && self.away_team_in_game.peer_id.is_some()
     }
 
+    pub fn test(home_team_in_game: TeamInGame, away_team_in_game: TeamInGame) -> Self {
+        Game::new(
+            GameId::new_v4(),
+            home_team_in_game,
+            away_team_in_game,
+            Tick::now(),
+            DEFAULT_PLANET_ID.clone(),
+            0,
+            "Test arena",
+        )
+    }
+
     pub fn new(
         id: GameId,
         home_team_in_game: TeamInGame,
         away_team_in_game: TeamInGame,
         starting_at: Tick,
-        planet: &Planet,
+        planet_id: PlanetId,
+        planet_total_population: u32,
+        planet_name: &str,
     ) -> Self {
         let total_reputation = home_team_in_game.reputation + away_team_in_game.reputation;
         let home_name = home_team_in_game.name.clone();
@@ -182,7 +194,7 @@ impl Game {
             id,
             home_team_in_game,
             away_team_in_game,
-            location: planet.id,
+            location: planet_id,
             attendance: 0,
             starting_at,
             ended_at: None,
@@ -191,18 +203,18 @@ impl Game {
             possession: Possession::default(),
             timer: Timer::default(),
             next_step: 0,
-            current_action: Action::JumpBall,
             winner: None,
             home_team_mvps: None,
             away_team_mvps: None,
             app_version: app_version(),
         };
         let seed = game.get_rng_seed();
-        let mut action_rng = ChaCha8Rng::from_seed(seed);
+        let mut rng = ChaCha8Rng::from_seed(seed);
 
-        let attendance = (BASE_ATTENDANCE as f32
-            + (total_reputation.value() as f32).powf(2.0) * planet.total_population() as f32)
-            * action_rng.random_range(0.75..=1.25)
+        let attendance = (BASE_ATTENDANCE
+            + (total_reputation.value() as u32).pow(2) * planet_total_population)
+            as f32
+            * rng.random_range(0.75..=1.25)
             * (1.0 + bonus_attendance);
         game.attendance = attendance as u32;
         let mut default_output = ActionOutput::default();
@@ -212,7 +224,7 @@ impl Game {
                 "{} vs {}. The intergalactic showdown is kicking off on {}! {} fans have packed the arena{}.",
                 home_name,
                 away_name,
-                planet.name,
+                planet_name,
                 game.attendance,
                 if game.attendance == 69 { " (nice)" } else { "" }
             ),
@@ -220,13 +232,13 @@ impl Game {
                 "It's {} against {}! We're live here on {} where {} spectators{} are buzzing with excitement.",
                 home_name,
                 away_name,
-                planet.name,
+                planet_name,
                 game.attendance,
                 if game.attendance == 69 { " (nice)" } else { "" }
             ),
             format!(
                 "The stage is set on {} for {} vs {}. A crowd of {}{} fans is ready for the action to unfold!",
-                planet.name,
+                planet_name,
                 home_name,
                 away_name,
                 game.attendance,
@@ -236,13 +248,13 @@ impl Game {
                 "{} and {} clash today on {}! An electric atmosphere fills the stadium with {} fans{} watching closely.",
                 home_name,
                 away_name,
-                planet.name,
+                planet_name,
                 game.attendance,
                 if game.attendance == 69 { " (nice)" } else { "" }
             ),
             format!(
                 "Welcome to {} for an epic battle: {} vs {}. The crowd of {} fans{} is ready to witness greatness!",
-                planet.name,
+                planet_name,
                 home_name,
                 away_name,
                 game.attendance,
@@ -250,7 +262,7 @@ impl Game {
             ),
             format!(
                 "Tonight on {}, it's {} taking on {}. With {} passionate fans{} in attendance, the game is about to ignite!",
-                planet.name,
+                planet_name,
                 home_name,
                 away_name,
                 game.attendance,
@@ -258,7 +270,7 @@ impl Game {
             ),
             format!(
                 "Game night on {}! {} faces off against {} before {} eager fans{} under the starry skies.",
-                planet.name,
+                planet_name,
                 home_name,
                 away_name,
                 game.attendance,
@@ -266,7 +278,7 @@ impl Game {
             ),
             format!(
                 "The rivalry continues on {}: {} vs {}. The crowd of {} fans{} is fired up for this clash!",
-                planet.name,
+                planet_name,
                 home_name,
                 away_name,
                 game.attendance,
@@ -274,7 +286,7 @@ impl Game {
             ),
             format!(
                 "All eyes are on {} as {} battles {}. An audience of {}{} is here to cheer for their team!",
-                planet.name,
+                planet_name,
                 home_name,
                 away_name,
                 game.attendance,
@@ -282,13 +294,13 @@ impl Game {
             ),
             format!(
                 "Here on {}, it's {} vs {}. A roaring crowd of {} fans{} awaits the start of the showdown!",
-                planet.name,
+                planet_name,
                 home_name,
                 away_name,
                 game.attendance,
                 if game.attendance == 69 { " (nice)" } else { "" }
             ),
-        ].choose(&mut action_rng).expect("There should be one option").clone();
+        ].choose(&mut rng).expect("There should be one option").clone();
 
         default_output.description = opening_text;
         default_output.random_seed = seed;
@@ -369,33 +381,28 @@ impl Game {
             .collect()
     }
 
-    fn pick_action(&self, action_rng: &mut ChaCha8Rng) -> Action {
+    fn pick_action(&self, action_rng: &mut ChaCha8Rng) -> Option<Action> {
         let situation = self.action_results[self.action_results.len() - 1].situation;
-
-        match situation {
+        let action = match situation {
             ActionSituation::JumpBall => Action::JumpBall,
             ActionSituation::AfterOffensiveRebound => Action::CloseShot,
             ActionSituation::CloseShot => Action::CloseShot,
             ActionSituation::MediumShot => Action::MediumShot,
             ActionSituation::LongShot => Action::LongShot,
+            ActionSituation::ForcedOffTheScreenAction => Action::OffTheScreen,
+            ActionSituation::Fastbreak => Action::Fastbreak,
             ActionSituation::MissedShot => Action::Rebound,
             ActionSituation::EndOfQuarter => Action::StartOfQuarter,
             ActionSituation::AfterSubstitution | ActionSituation::BallInBackcourt => {
                 let brawl_probability = BRAWL_ACTION_PROBABILITY
                     * (self.home_team_in_game.tactic.brawl_probability_modifier()
                         + self.away_team_in_game.tactic.brawl_probability_modifier());
-                if action_rng.random_bool(brawl_probability as f64) {
+                if action_rng.random_bool(brawl_probability) {
                     Action::Brawl
                 } else {
                     match self.possession {
-                        Possession::Home => self
-                            .home_team_in_game
-                            .pick_action(action_rng)
-                            .unwrap_or(Action::Isolation),
-                        Possession::Away => self
-                            .away_team_in_game
-                            .pick_action(action_rng)
-                            .unwrap_or(Action::Isolation),
+                        Possession::Home => self.home_team_in_game.pick_action(action_rng)?,
+                        Possession::Away => self.away_team_in_game.pick_action(action_rng)?,
                     }
                 }
             }
@@ -403,122 +410,80 @@ impl Game {
             | ActionSituation::AfterDefensiveRebound
             | ActionSituation::AfterLongOffensiveRebound
             | ActionSituation::Turnover => match self.possession {
-                Possession::Home => self
-                    .home_team_in_game
-                    .pick_action(action_rng)
-                    .unwrap_or(Action::Isolation),
-                Possession::Away => self
-                    .away_team_in_game
-                    .pick_action(action_rng)
-                    .unwrap_or(Action::Isolation),
+                Possession::Home => self.home_team_in_game.pick_action(action_rng)?,
+                Possession::Away => self.away_team_in_game.pick_action(action_rng)?,
             },
-        }
+        };
+
+        Some(action)
     }
 
     fn apply_game_stats_update(
         &mut self,
-        attack_stats: Option<GameStatsMap>,
-        defense_stats: Option<GameStatsMap>,
+        attack_stats_update: Option<&GameStatsMap>,
+        defense_stats_update: Option<&GameStatsMap>,
         score_change: u16,
     ) {
-        let (mut home_stats, mut away_stats) = match self.possession {
-            Possession::Home => (attack_stats, defense_stats),
-            Possession::Away => (defense_stats, attack_stats),
+        let (attacking_team, defending_team) = match self.possession {
+            Possession::Home => (&mut self.home_team_in_game, &mut self.away_team_in_game),
+            Possession::Away => (&mut self.away_team_in_game, &mut self.home_team_in_game),
         };
 
-        // Conditions for morale boost:
-        // shot success, team is losing at most by a margin equal to the captain charisma.
-        let attacking_player = self.attacking_players();
-        let team_captain = attacking_player
-            .iter()
-            .find(|&p| p.info.crew_role == CrewRole::Captain);
+        let attacking_stats = &mut attacking_team.stats;
+        let attacking_players = &mut attacking_team.players;
+        let defending_stats = &mut defending_team.stats;
+        let defending_players = &mut defending_team.players;
 
-        let mut losing_margin = 4;
+        for (stats_update, stats, players) in [
+            (attack_stats_update, attacking_stats, attacking_players),
+            (defense_stats_update, defending_stats, defending_players),
+        ] {
+            let updates = if let Some(updates) = stats_update {
+                updates
+            } else {
+                continue;
+            };
 
-        if let Some(captain) = team_captain {
-            losing_margin += (captain.mental.charisma / 4.0) as u16
-        };
-
-        let score = self.get_score();
-
-        let is_losing_by_margin = match self.possession {
-            Possession::Home => score.0 < score.1 && score.1 - score.0 <= losing_margin,
-            Possession::Away => score.1 < score.0 && score.0 - score.1 <= losing_margin,
-        };
-
-        if let Some(updates) = &mut home_stats {
-            for (id, player_stats) in self.home_team_in_game.stats.iter_mut() {
-                let player = self.home_team_in_game.players.get_mut(id).unwrap();
-                if let Some(stats) = updates.get_mut(id) {
+            for (id, player_stats) in stats.iter_mut() {
+                let player = players.get_mut(id).expect("Player should exist.");
+                if let Some(stats) = updates.get(id) {
                     player_stats.update(stats);
                     player.add_tiredness(stats.extra_tiredness);
                     player.add_morale(stats.extra_morale);
-                }
-                // Add morale if team scored
-                if score_change > 0 {
-                    if self.possession == Possession::Home {
-                        player.add_morale(MoraleModifier::SMALL_BONUS);
-                    } else {
-                        player.add_morale(
-                            MoraleModifier::SMALL_MALUS
-                                / (1.0 + player.mental.charisma / MAX_SKILL),
-                        );
-                    }
-
-                    if is_losing_by_margin {
-                        player
-                            .add_morale(MoraleModifier::SMALL_BONUS + player.mental.charisma / 8.0);
-                    }
                 }
             }
         }
-        if let Some(updates) = &mut away_stats {
-            for (id, player_stats) in self.away_team_in_game.stats.iter_mut() {
-                let player = self.away_team_in_game.players.get_mut(id).unwrap();
 
-                if let Some(stats) = updates.get_mut(id) {
-                    player_stats.update(stats);
-                    player.add_tiredness(stats.extra_tiredness);
-                    player.add_morale(stats.extra_morale);
-                }
-                // Add morale if team scored
-                if score_change > 0 {
-                    if self.possession == Possession::Away {
-                        player.add_morale(MoraleModifier::SMALL_BONUS);
-                    } else {
-                        player.add_morale(
-                            MoraleModifier::SMALL_MALUS
-                                / (1.0 + player.mental.charisma / MAX_SKILL),
-                        );
-                    }
-
-                    if is_losing_by_margin {
-                        player
-                            .add_morale(MoraleModifier::SMALL_BONUS + player.mental.charisma / 8.0);
-                    }
-                }
+        for stats in defending_stats.values_mut() {
+            if stats.is_playing() {
+                stats.plus_minus += score_change as i32;
+            }
+        }
+        for stats in defending_stats.values_mut() {
+            if stats.is_playing() {
+                stats.plus_minus -= score_change as i32;
             }
         }
     }
 
     fn apply_sub_update(
         &mut self,
-        attack_stats: Option<GameStatsMap>,
-        defense_stats: Option<GameStatsMap>,
+        attack_stats_update: Option<&GameStatsMap>,
+        defense_stats_update: Option<&GameStatsMap>,
     ) {
-        let (home_stats, away_stats) = match self.possession {
-            Possession::Home => (attack_stats, defense_stats),
-            Possession::Away => (defense_stats, attack_stats),
+        let (home_stats_update, away_stats_update) = match self.possession {
+            Possession::Home => (attack_stats_update, defense_stats_update),
+            Possession::Away => (defense_stats_update, attack_stats_update),
         };
 
-        if let Some(updates) = home_stats {
+        if let Some(updates) = home_stats_update {
             for (id, player_stats) in self.home_team_in_game.stats.iter_mut() {
                 if let Some(update) = updates.get(id) {
                     player_stats.position = update.position;
                 }
             }
         }
-        if let Some(updates) = away_stats {
+        if let Some(updates) = away_stats_update {
             for (id, player_stats) in self.away_team_in_game.stats.iter_mut() {
                 if let Some(update) = updates.get(id) {
                     player_stats.position = update.position;
@@ -539,7 +504,9 @@ impl Game {
                             .position
                             .expect("Playing player should have a position")
                             as usize] += 1;
-                        player.add_tiredness(TirednessCost::LOW * team.tactic.tiredness_modifier());
+                        player.add_tiredness(
+                            TirednessCost::LOW * team.tactic.playing_tiredness_modifier(),
+                        );
                     }
                 } else if !player.is_knocked_out() {
                     // We don't use add_tiredness here because otherwise the stamina would have an effect.
@@ -572,24 +539,34 @@ impl Game {
         &self.defending_team().stats
     }
 
-    pub fn attacking_players(&self) -> Vec<&Player> {
-        self.attacking_team()
-            .players
-            .by_position(self.attacking_stats())
-            .iter()
-            .take(MAX_POSITION as usize)
-            .copied()
-            .collect::<Vec<&Player>>()
+    pub fn all_attacking_players(&self) -> &PlayerMap {
+        &self.attacking_team().players
     }
 
-    pub fn defending_players(&self) -> Vec<&Player> {
-        self.defending_team()
-            .players
+    pub fn all_defending_players(&self) -> &PlayerMap {
+        &self.defending_team().players
+    }
+
+    pub fn attacking_players_array(&self) -> [&Player; MAX_GAME_POSITION as usize] {
+        self.all_attacking_players()
+            .by_position(self.attacking_stats())
+            .iter()
+            .take(MAX_GAME_POSITION as usize)
+            .copied()
+            .collect_vec()
+            .try_into()
+            .expect(format!("There should be exactly {} players", MAX_GAME_POSITION).as_str())
+    }
+
+    pub fn defending_players_array(&self) -> [&Player; MAX_GAME_POSITION as usize] {
+        self.all_defending_players()
             .by_position(self.defending_stats())
             .iter()
-            .take(MAX_POSITION as usize)
+            .take(MAX_GAME_POSITION as usize)
             .copied()
-            .collect::<Vec<&Player>>()
+            .collect_vec()
+            .try_into()
+            .expect(format!("There should be exactly {} players", MAX_GAME_POSITION).as_str())
     }
 
     fn get_rng_seed(&self) -> [u8; 32] {
@@ -707,155 +684,152 @@ impl Game {
 
         self.apply_tiredness_update();
 
+        if !self.timer.reached(self.next_step) {
+            return;
+        }
+
         let mut seed = self.get_rng_seed();
         let action_rng = &mut ChaCha8Rng::from_seed(seed);
 
         // Reverse seed just to get a different rng generator.
         seed.reverse();
         let description_rng = &mut ChaCha8Rng::from_seed(seed);
-        let action_input = &self.action_results[self.action_results.len() - 1];
-
-        if !self.timer.reached(self.next_step) {
-            return;
-        }
+        let action_input = self.action_results[self.action_results.len() - 1].clone();
 
         // If next tick is at a break, we are at the end of the quarter and should stop.
         if self.timer.is_break() {
-            if let Some(eoq) =
-                end_of_quarter::execute(action_input, self, action_rng, description_rng)
-            {
-                self.next_step = self.timer.period().next().start();
-                self.action_results.push(eoq);
-                return;
-            }
+            let eoq = end_of_quarter::execute(&action_input, self, action_rng, description_rng);
+            self.next_step = self.timer.period().next().start();
+            self.action_results.push(eoq);
+            return;
         }
 
-        self.current_action = self.pick_action(action_rng);
+        let mut result = if let Some(action) = self.pick_action(action_rng) {
+            action.execute(&action_input, self, action_rng, description_rng)
+        }
+        // If no action can be selected, switch possession and see what happens
+        else {
+            ActionOutput {
+                situation: ActionSituation::Turnover,
+                possession: !self.possession,
+                description: format!(
+                    "Oh no! {}'s players can't decide what to do and turned the ball over like that!",
+                    self.attacking_team().name,
+                ),
+                start_at: action_input.end_at,
+                end_at: action_input.end_at.plus(4 + action_rng.random_range(0..=3)),
+                home_score: action_input.home_score,
+                away_score: action_input.away_score,
+                ..Default::default()
+            }
+        };
 
-        if let Some(mut result) =
-            self.current_action
-                .execute(action_input, self, action_rng, description_rng)
-        {
-            self.apply_game_stats_update(
-                result.attack_stats_update.clone(),
-                result.defense_stats_update.clone(),
-                result.score_change,
+        self.apply_game_stats_update(
+            result.attack_stats_update.as_ref(),
+            result.defense_stats_update.as_ref(),
+            result.score_change,
+        );
+
+        if result.score_change > 0 {
+            result.description = format!(
+                "{} [{}-{}]",
+                result.description, result.home_score, result.away_score,
             );
+        }
 
-            if result.score_change > 0 {
-                let home_plus_minus = if self.possession == Possession::Home {
-                    result.score_change as i32
-                } else {
-                    -(result.score_change as i32)
-                };
-                for (_, stats) in self.home_team_in_game.stats.iter_mut() {
-                    if stats.is_playing() {
-                        stats.plus_minus += home_plus_minus;
-                    }
-                }
-                for (_, stats) in self.away_team_in_game.stats.iter_mut() {
-                    if stats.is_playing() {
-                        stats.plus_minus -= home_plus_minus;
-                    }
-                }
-                result.description = format!(
-                    "{} [{}-{}]",
-                    result.description.clone(),
-                    result.home_score,
-                    result.away_score,
-                );
-            }
+        self.possession = result.possession;
 
-            self.possession = result.possession;
+        // If this was the first action (JumpBall),
+        // assigns the value of won_jump_ball to possession
+        if self.next_step == 0 {
+            self.won_jump_ball = self.possession;
+        }
+        self.next_step = result.end_at.value.min(self.timer.period().next().start());
 
-            // If this was the first action (JumpBall),
-            // assigns the value of won_jump_ball to possession
-            if self.next_step == 0 {
-                self.won_jump_ball = self.possession;
-            }
-            self.next_step = result.end_at.value.min(self.timer.period().next().start());
+        let situation = result.situation;
+        self.action_results.push(result);
 
-            self.action_results.push(result);
+        // If home team is completely knocked out, end the game.
+        // Check that each player is knocked out
+        let home_knocked_out = self.is_team_knocked_out(Possession::Home);
+        let away_knocked_out = self.is_team_knocked_out(Possession::Away);
 
-            let action_input = &self.action_results[self.action_results.len() - 1];
-            if action_input.situation == ActionSituation::BallInBackcourt {
-                // If home team is completely knocked out, end the game.
-                // Check that each player is knocked out
-                let home_knocked_out = self.is_team_knocked_out(Possession::Home);
-                let away_knocked_out = self.is_team_knocked_out(Possession::Away);
+        match (home_knocked_out, away_knocked_out) {
+            (true, true) => {
+                self.ended_at = Some(current_tick);
+                self.home_team_mvps = Some(self.team_mvps(Possession::Home));
+                self.away_team_mvps = Some(self.team_mvps(Possession::Away));
+                self.winner = None;
 
-                match (home_knocked_out, away_knocked_out) {
-                    (true, true) => {
-                        self.ended_at = Some(current_tick);
-                        self.home_team_mvps = Some(self.team_mvps(Possession::Home));
-                        self.away_team_mvps = Some(self.team_mvps(Possession::Away));
-                        self.winner = None;
+                let description = self.game_end_description(None);
 
-                        let description = self.game_end_description(None);
-
-                        self.action_results.push(ActionOutput {
-                            description: format!(
+                self.action_results.push(ActionOutput {
+                    description: format!(
                     "Both team are completely done! {description} They should get some rest now..."
                 ),
-                            start_at: self.timer,
-                            end_at: self.timer,
-                            home_score: self.get_score().0,
-                            away_score: self.get_score().1,
-                            ..Default::default()
-                        });
-                    }
-                    (true, false) => {
-                        self.ended_at = Some(current_tick);
-                        self.home_team_mvps = Some(self.team_mvps(Possession::Home));
-                        self.away_team_mvps = Some(self.team_mvps(Possession::Away));
+                    start_at: self.timer,
+                    end_at: self.timer,
+                    home_score: self.get_score().0,
+                    away_score: self.get_score().1,
+                    ..Default::default()
+                });
+            }
+            (true, false) => {
+                self.ended_at = Some(current_tick);
+                self.home_team_mvps = Some(self.team_mvps(Possession::Home));
+                self.away_team_mvps = Some(self.team_mvps(Possession::Away));
 
-                        self.winner = Some(self.away_team_in_game.team_id);
-                        let description = format!(
-                            "The home team is completely wasted and lost! {}",
-                            self.game_end_description(Some(Possession::Away))
+                self.winner = Some(self.away_team_in_game.team_id);
+                let description = format!(
+                    "The home team is completely wasted and lost! {}",
+                    self.game_end_description(Some(Possession::Away))
+                );
+
+                self.action_results.push(ActionOutput {
+                    description,
+                    start_at: self.timer,
+                    end_at: self.timer,
+                    home_score: self.get_score().0,
+                    away_score: self.get_score().1,
+                    ..Default::default()
+                });
+            }
+            (false, true) => {
+                self.ended_at = Some(current_tick);
+                self.home_team_mvps = Some(self.team_mvps(Possession::Home));
+                self.away_team_mvps = Some(self.team_mvps(Possession::Away));
+
+                self.winner = Some(self.home_team_in_game.team_id);
+                let description = format!(
+                    "The away team is completely wasted and lost! {}",
+                    self.game_end_description(Some(Possession::Home))
+                );
+
+                self.action_results.push(ActionOutput {
+                    description,
+                    start_at: self.timer,
+                    end_at: self.timer,
+                    home_score: self.get_score().0,
+                    away_score: self.get_score().1,
+                    ..Default::default()
+                });
+            }
+            (false, false) =>
+            // Check if teams make substitutions. Only if ball is out
+            {
+                if situation == ActionSituation::BallInBackcourt {
+                    let action_input = self.action_results[self.action_results.len() - 1].clone();
+                    if let Some(sub) = substitution::should_execute(
+                        &action_input,
+                        self,
+                        action_rng,
+                        description_rng,
+                    ) {
+                        self.apply_sub_update(
+                            sub.attack_stats_update.as_ref(),
+                            sub.defense_stats_update.as_ref(),
                         );
-
-                        self.action_results.push(ActionOutput {
-                            description,
-                            start_at: self.timer,
-                            end_at: self.timer,
-                            home_score: self.get_score().0,
-                            away_score: self.get_score().1,
-                            ..Default::default()
-                        });
-                    }
-                    (false, true) => {
-                        self.ended_at = Some(current_tick);
-                        self.home_team_mvps = Some(self.team_mvps(Possession::Home));
-                        self.away_team_mvps = Some(self.team_mvps(Possession::Away));
-
-                        self.winner = Some(self.home_team_in_game.team_id);
-                        let description = format!(
-                            "The away team is completely wasted and lost! {}",
-                            self.game_end_description(Some(Possession::Home))
-                        );
-
-                        self.action_results.push(ActionOutput {
-                            description,
-                            start_at: self.timer,
-                            end_at: self.timer,
-                            home_score: self.get_score().0,
-                            away_score: self.get_score().1,
-                            ..Default::default()
-                        });
-                    }
-                    (false, false) =>
-                    // Check if teams make substitutions. Only if ball is out
-                    {
-                        if let Some(sub) =
-                            substitution::execute(action_input, self, action_rng, description_rng)
-                        {
-                            self.apply_sub_update(
-                                sub.attack_stats_update.clone(),
-                                sub.defense_stats_update.clone(),
-                            );
-                            self.action_results.push(sub);
-                        }
+                        self.action_results.push(sub);
                     }
                 }
             }
@@ -866,18 +840,68 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use super::Game;
-    use crate::game_engine::action::Advantage;
+    use crate::core::constants::DEFAULT_PLANET_ID;
+    use crate::core::world::World;
+    use crate::core::{Player, Team, TickInterval, MAX_PLAYERS_PER_GAME};
+    use crate::game_engine::action::{ActionSituation, Advantage};
     use crate::game_engine::game::GameSummary;
-    use crate::game_engine::types::{GameStatsMap, TeamInGame};
-    use crate::types::{AppResult, GameId};
+    use crate::game_engine::types::{GameStatsMap, Possession, TeamInGame};
+    use crate::types::{AppResult, PlayerMap, TeamId};
     use crate::types::{SystemTimeTick, Tick};
-    use crate::world::constants::DEFAULT_PLANET_ID;
-    use crate::world::world::World;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
+    fn generate_team_in_game() -> TeamInGame {
+        let team = Team {
+            id: TeamId::new_v4(),
+            ..Default::default()
+        };
+
+        let mut players = PlayerMap::new();
+        for _ in 0..MAX_PLAYERS_PER_GAME {
+            let player = Player::default().randomize(None);
+            players.insert(player.id, player);
+        }
+
+        TeamInGame::new(&team, players)
+    }
+
     #[test]
-    fn test_game() -> AppResult<()> {
+    fn test_game_consistency() -> AppResult<()> {
+        let home_team_in_game = generate_team_in_game();
+        let away_team_in_game = generate_team_in_game();
+        let mut game = Game::test(home_team_in_game, away_team_in_game);
+
+        let mut current_tick = game.starting_at;
+        while !game.has_ended() {
+            game.tick(current_tick);
+            current_tick += TickInterval::SHORT;
+        }
+
+        let mut home_score = 0;
+        let mut away_score = 0;
+        for action in game.action_results.iter() {
+            if action.possession == Possession::Away {
+                assert!(home_score + action.score_change == action.home_score);
+                assert!(away_score == action.away_score);
+            } else {
+                assert!(home_score == action.home_score);
+                assert!(away_score + action.score_change == action.away_score);
+            }
+            println!(
+                "+ {} -> {} - {} ",
+                action.score_change, home_score, away_score
+            );
+
+            home_score = action.home_score;
+            away_score = action.away_score;
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_game_in_world() -> AppResult<()> {
         let mut world = World::new(None);
         let action_rng = &mut ChaCha8Rng::seed_from_u64(world.seed);
         let id0 = world.generate_random_team(
@@ -901,13 +925,7 @@ mod tests {
         let home_rating = world.team_rating(&id0).unwrap_or_default();
         let away_rating = world.team_rating(&id1).unwrap_or_default();
 
-        let game = Game::new(
-            GameId::new_v4(),
-            home_team_in_game,
-            away_team_in_game,
-            Tick::now(),
-            &world.get_planet(&DEFAULT_PLANET_ID).unwrap(),
-        );
+        let game = Game::test(home_team_in_game, away_team_in_game);
 
         let game_id = game.id;
         let home_tactic = game.home_team_in_game.tactic;
@@ -937,9 +955,9 @@ mod tests {
             world.games.retain(|_, g| !g.has_ended());
         }
 
-        let result = world.past_games.get(&game_id).unwrap();
-        let home_score: u16 = result.home_quarters_score.iter().sum();
-        let away_score: u16 = result.away_quarters_score.iter().sum();
+        let gamer_summary = world.past_games.get(&game_id).unwrap();
+        let home_score: u16 = gamer_summary.home_quarters_score.iter().sum();
+        let away_score: u16 = gamer_summary.away_quarters_score.iter().sum();
 
         println!(
             "{:.2} vs {:.2} --> {}:{}\n{} -- {}",
@@ -962,9 +980,37 @@ mod tests {
             .count();
 
         println!(
-            "Advantages: {} {} {}",
+            "Advantages: ATK={} NTR={} DEF={}",
             num_attack_advantages, num_no_advantages, num_defense_advantages
         );
+
+        for advantage in [Advantage::Attack, Advantage::Neutral, Advantage::Defense] {
+            for situation in [
+                ActionSituation::CloseShot,
+                ActionSituation::MediumShot,
+                ActionSituation::LongShot,
+            ] {
+                let attempted = game_action_results
+                    .iter()
+                    .filter(|a| a.advantage == advantage && a.situation == situation)
+                    .count();
+
+                let made = game_action_results
+                    .iter()
+                    .enumerate()
+                    .filter(|&(idx, _)| {
+                        game_action_results[idx].score_change > 0
+                            && game_action_results[idx - 1].advantage == advantage
+                            && game_action_results[idx - 1].situation == situation
+                    })
+                    .count();
+
+                println!(
+                    "Advantage {:#?} {:#?} {}/{}",
+                    advantage, situation, made, attempted
+                );
+            }
+        }
 
         let num_offensive_rebounds: u16 = game_stats
             .iter()

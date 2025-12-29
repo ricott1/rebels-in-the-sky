@@ -12,14 +12,13 @@ use super::{
     utils::input_from_key_event,
     widgets::default_block,
 };
-
+use crate::core::constants::{MINUTES, MIN_PLAYERS_PER_GAME};
+use crate::core::{skill::Rated, world::World};
 use crate::network::types::{PlayerRanking, TeamRanking};
 use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId, Tick};
 use crate::ui::clickable_list::{ClickableList, ClickableListItem};
 use crate::ui::ui_key;
 use crate::ui::utils::wrap_text;
-use crate::world::constants::{MINUTES, MIN_PLAYERS_PER_GAME, SECONDS};
-use crate::world::{skill::Rated, world::World};
 use core::fmt::Debug;
 use crossterm::event::{KeyCode, KeyEvent};
 use itertools::Itertools;
@@ -36,7 +35,7 @@ use std::collections::HashMap;
 use strum_macros::Display;
 use tui_textarea::{CursorMove, TextArea};
 
-const EVENT_DUPLICATE_DELAY: Tick = 10 * SECONDS;
+const EVENT_DUPLICATE_DELAY: Tick = 2 * MINUTES;
 const PEER_DISCONNECTION_INTERVAL: Tick = 5 * MINUTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display, Hash, Default)]
@@ -61,9 +60,21 @@ impl SwarmView {
 
 #[derive(Debug)]
 pub struct SwarmPanelEvent {
-    pub timestamp: Tick,
-    pub peer_id: Option<PeerId>,
-    pub text: String,
+    timestamp: Tick,
+    peer_id: Option<PeerId>,
+    text: String,
+    level: log::Level,
+}
+
+impl SwarmPanelEvent {
+    pub fn new(timestamp: Tick, peer_id: Option<PeerId>, text: String, level: log::Level) -> Self {
+        Self {
+            timestamp,
+            peer_id,
+            text,
+            level,
+        }
+    }
 }
 
 #[derive(Debug, Display, Default, PartialEq)]
@@ -132,15 +143,17 @@ impl SwarmPanel {
     pub fn push_log_event(&mut self, event: SwarmPanelEvent) {
         if let Some(last_event) = self
             .events
-            .get(&SwarmView::Log)
+            .get_mut(&SwarmView::Log)
             .expect("Should have Log events")
-            .last()
+            .last_mut()
         {
-            // If we recently pushed the same event, don't push it again.
+            // If we recently pushed the same event, don't push it again,
+            // but update the timestamp
             if last_event.peer_id == event.peer_id
                 && last_event.text == event.text
                 && event.timestamp - last_event.timestamp <= EVENT_DUPLICATE_DELAY
             {
+                last_event.timestamp = event.timestamp;
                 return;
             }
         }
@@ -690,26 +703,43 @@ impl SwarmPanel {
                     format!("[{}] ", event.timestamp.formatted_as_time()),
                     UiStyle::HIGHLIGHT,
                 );
+
+                let style = match event.level {
+                    log::Level::Debug => UiStyle::NETWORK,
+                    log::Level::Info => UiStyle::OK,
+                    log::Level::Warn => UiStyle::WARNING,
+                    log::Level::Error => UiStyle::ERROR,
+                    log::Level::Trace => UiStyle::HEADER,
+                };
+
                 let author_span = match event.peer_id {
                     Some(peer_id) => {
                         let from = if let Some(team_id) = self.peer_id_to_team_id.get(&peer_id) {
                             if let Ok(team) = world.get_team_or_err(team_id) {
-                                team.name.clone()
+                                team.name.as_str()
                             } else {
-                                "Unknown".to_string()
+                                "Unknown"
                             }
                         } else {
-                            "SEED".to_string()
+                            "SEED "
                         };
-                        Span::styled(format!("{from}: "), UiStyle::NETWORK)
+
+                        Span::styled(format!("{from}: "), style)
                     }
                     None => {
                         let own_message = if swarm_view == SwarmView::Log {
-                            "System"
+                            format!("{:<5}", event.level)
                         } else {
-                            "You"
+                            "You".to_string()
                         };
-                        Span::styled(format!("{own_message}: "), UiStyle::OWN_TEAM)
+
+                        let style = if swarm_view == SwarmView::Log {
+                            style
+                        } else {
+                            UiStyle::OWN_TEAM
+                        };
+
+                        Span::styled(format!("{own_message}: "), style)
                     }
                 };
 
@@ -809,37 +839,14 @@ impl Screen for SwarmPanel {
 
                 self.textarea.move_cursor(CursorMove::End);
                 self.textarea.delete_line_by_head();
-                let split_input = message.split_whitespace();
-                let command = split_input.clone().next()?;
 
-                match command {
-                    "/ping" => {
-                        return Some(UiCallback::Ping);
-                    }
-                    "/sync" => {
-                        return Some(UiCallback::Sync);
-                    }
-                    "/clear" => {
-                        self.events.clear();
-                    }
-
-                    "/help" => {
-                        self.push_log_event(SwarmPanelEvent {
-                            timestamp: Tick::now(),
-                            peer_id: None,
-                            text: "/Commands:\n/dial <Option<ip_address>>\n/sync\n/clear"
-                                .to_string(),
-                        });
-                    }
-                    _ => {
-                        self.push_chat_event(SwarmPanelEvent {
-                            timestamp: Tick::now(),
-                            peer_id: None,
-                            text: message.clone(),
-                        });
-                        return Some(UiCallback::SendMessage { message });
-                    }
-                }
+                self.push_chat_event(SwarmPanelEvent::new(
+                    Tick::now(),
+                    None,
+                    message.clone(),
+                    log::Level::Info,
+                ));
+                return Some(UiCallback::SendMessage { message });
             }
             _ => {
                 self.textarea.input(input_from_key_event(key_event));
@@ -896,6 +903,22 @@ impl SplitPanel for SwarmPanel {
                 PanelList::Teams => self.team_ranking_index = index,
             },
             SwarmView::Requests => {}
+        }
+    }
+
+    fn previous_index(&mut self) {
+        if self.max_index() > 0 {
+            if let Some(current_index) = self.index() {
+                self.set_index((current_index + 1).min(self.max_index() - 1));
+            }
+        }
+    }
+
+    fn next_index(&mut self) {
+        if self.max_index() > 0 {
+            if let Some(current_index) = self.index() {
+                self.set_index(current_index.saturating_sub(1));
+            }
         }
     }
 }

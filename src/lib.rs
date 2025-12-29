@@ -1,10 +1,11 @@
 pub mod app;
+pub mod args;
 pub mod audio;
 pub mod backcompat_repr;
+pub mod core;
 pub mod crossterm_event_handler;
 pub mod game_engine;
 pub mod image;
-
 pub mod network;
 #[cfg(feature = "relayer")]
 pub mod relayer;
@@ -16,7 +17,6 @@ pub mod tick_event_handler;
 pub mod tui;
 pub mod types;
 pub mod ui;
-pub mod world;
 
 pub fn app_version() -> [usize; 3] {
     [

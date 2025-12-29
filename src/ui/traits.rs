@@ -1,10 +1,10 @@
 use super::constants::UiStyle;
 use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::ui_frame::UiFrame;
-use crate::world::resources::Resource;
-use crate::world::world::World;
-use crate::world::{Kartoffel, Trait};
-use crate::{types::AppResult, world::skill::Rated};
+use crate::core::resources::Resource;
+use crate::core::world::World;
+use crate::core::{Kartoffel, Trait};
+use crate::{core::skill::Rated, types::AppResult};
 use ratatui::text::Text;
 use ratatui::widgets::{StatefulWidget, Widget};
 use ratatui::{
@@ -77,20 +77,7 @@ impl UiStyled for Trait {
 
 impl UiStyled for f32 {
     fn style(&self) -> Style {
-        match self.rating() {
-            0 => Style::default().fg(Color::DarkGray),
-            1..=2 => Style::default().fg(Color::Red),
-            3..=4 => Style::default().fg(Color::LightRed),
-            5..=6 => Style::default().fg(Color::Yellow),
-            7..=8 => Style::default().fg(Color::LightYellow),
-            9..=10 => Style::default().fg(Color::White),
-            11..=12 => Style::default().fg(Color::White),
-            13..=14 => Style::default().fg(Color::LightGreen),
-            15..=16 => Style::default().fg(Color::Green),
-            17..=18 => Style::default().fg(Color::Cyan),
-            19..=20 => Style::default().fg(Color::LightBlue),
-            _ => panic!("Invalid rating"),
-        }
+        self.rating().style()
     }
 }
 impl UiStyled for u8 {
@@ -106,8 +93,8 @@ impl UiStyled for u8 {
             13..=14 => Style::default().fg(Color::LightGreen),
             15..=16 => Style::default().fg(Color::Green),
             17..=18 => Style::default().fg(Color::Cyan),
-            19..=20 => Style::default().fg(Color::LightBlue),
-            _ => panic!("Invalid rating"),
+            19..=20 => Style::default().fg(Color::Rgb(155, 95, 205)),
+            _ => Style::default().fg(Color::Rgb(155, 95, 205)), // To support TeamBonus large than MaxSkill
         }
     }
 }

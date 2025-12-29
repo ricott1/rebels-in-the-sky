@@ -1,16 +1,18 @@
 use super::ui_frame::UiFrame;
 use super::{traits::Screen, ui_callback::UiCallback};
-use crate::image::utils::open_image;
 use crate::image::utils::ExtraImageUtils;
+use crate::image::utils::{open_image, LightMaskStyle};
 use crate::types::TeamId;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::constants::*;
 use crate::ui::traits::SplitPanel;
 use crate::ui::utils::img_to_lines;
 use crate::ui::widgets::{default_block, selectable_list, teleport_button};
-use crate::{types::AppResult, world::*};
+use crate::{core::*, types::AppResult};
 use anyhow::anyhow;
 use core::fmt::Debug;
+use image::RgbaImage;
+use itertools::Itertools;
 use ratatui::layout::{Constraint, Layout, Margin};
 use ratatui::prelude::Rect;
 use ratatui::style::Stylize;
@@ -21,19 +23,27 @@ pub struct SpaceCovePanel {
     tick: usize,
     teams_index: Option<usize>,
     team_ids: Vec<TeamId>,
-    cove_image_widget: Paragraph<'static>,
-    cove_image_widget_size: u16,
+    cove_image_widgets: [Paragraph<'static>; 4], // no blinking, left, right, both
 }
 
 impl SpaceCovePanel {
     pub fn new() -> Self {
-        let image = open_image("cove/base.png").expect("Cove image base.png should exist");
-        let cove_image_widget_size = image.width() as u16 + 2;
-        let cove_image_lines = img_to_lines(&image);
-        let cove_image_widget = Paragraph::new(cove_image_lines);
+        let cove_image_widget = Self::get_cove_image_widgets(&vec![], false, false)
+            .expect("Should be able to create cove image");
+        let cove_image_widget_blinking_left = Self::get_cove_image_widgets(&vec![], true, false)
+            .expect("Should be able to create cove image");
+        let cove_image_widget_blinking_right = Self::get_cove_image_widgets(&vec![], false, true)
+            .expect("Should be able to create cove image");
+        let cove_image_widget_blinking_both = Self::get_cove_image_widgets(&vec![], true, true)
+            .expect("Should be able to create cove image");
+
         Self {
-            cove_image_widget,
-            cove_image_widget_size,
+            cove_image_widgets: [
+                cove_image_widget,
+                cove_image_widget_blinking_left,
+                cove_image_widget_blinking_right,
+                cove_image_widget_blinking_both,
+            ],
             ..Default::default()
         }
     }
@@ -51,27 +61,67 @@ impl SpaceCovePanel {
         world.get_planet_or_err(&asteroid_id)
     }
 
-    fn get_cove_image_widget<'a>(&self, world: &World) -> AppResult<Paragraph<'a>> {
+    fn get_cove_images(
+        teams: &Vec<&Team>,
+        is_blinking_left: bool,
+        is_blinking_right: bool,
+    ) -> AppResult<RgbaImage> {
         let mut base = open_image("cove/base.png").expect("Cove image base.png should exist");
 
-        let mut x = 7;
-        for team_id in self.team_ids.iter().take(4) {
-            let team = if let Some(team) = world.get_team(team_id) {
-                team
-            } else {
-                continue;
-            };
+        const SKULL_POSITION: (u32, u32) = (98, 1);
+        const LEFT_EYE_POSITION: (u32, u32) = (SKULL_POSITION.0 + 4, SKULL_POSITION.1 + 11);
+        const RIGHT_EYE_POSITION: (u32, u32) = (SKULL_POSITION.0 + 13, SKULL_POSITION.1 + 11);
 
+        let skull = open_image("cove/skull.png").expect("Cove image skull.png should exist");
+        base.copy_non_trasparent_from(&skull, SKULL_POSITION.0, SKULL_POSITION.1)?;
+
+        if is_blinking_left {
+            let left_eye = open_image("cove/left_eye_mask.png")
+                .expect("Cove image left_eye_mask.png should exist");
+            base.copy_non_trasparent_from(&left_eye, LEFT_EYE_POSITION.0, LEFT_EYE_POSITION.1)?;
+        }
+
+        if is_blinking_right {
+            let right_eye = open_image("cove/right_eye_mask.png")
+                .expect("Cove image right_eye_mask.png should exist");
+            base.copy_non_trasparent_from(&right_eye, RIGHT_EYE_POSITION.0, RIGHT_EYE_POSITION.1)?;
+        }
+
+        let mut x = 7;
+        for team in teams.iter().take(4) {
             let ship_img = &team.spaceship.compose_image_in_shipyard()?[0];
             let y = 40;
             base.copy_non_trasparent_from(ship_img, x, y)?;
             x += ship_img.width() + 2;
         }
 
+        if !is_blinking_left {
+            base.apply_light_mask(&LightMaskStyle::skull_eye((
+                LEFT_EYE_POSITION.0 + 2,
+                LEFT_EYE_POSITION.1 + 2,
+            )));
+        }
+
+        if !is_blinking_right {
+            base.apply_light_mask(&LightMaskStyle::skull_eye((
+                RIGHT_EYE_POSITION.0 + 2,
+                RIGHT_EYE_POSITION.1 + 2,
+            )));
+        }
+
         let outer =
             open_image("cove/base_outer.png").expect("Cove image base_outer.png should exist");
         base.copy_non_trasparent_from(&outer, 0, 0)?;
-        let cove_image_lines = img_to_lines(&base);
+        Ok(base)
+    }
+
+    fn get_cove_image_widgets<'a>(
+        teams: &Vec<&Team>,
+        is_blinking_left: bool,
+        is_blinking_right: bool,
+    ) -> AppResult<Paragraph<'a>> {
+        let img = Self::get_cove_images(teams, is_blinking_left, is_blinking_right)?;
+        let cove_image_lines = img_to_lines(&img);
         Ok(Paragraph::new(cove_image_lines))
     }
 
@@ -125,7 +175,30 @@ impl Screen for SpaceCovePanel {
         let asteroid = Self::get_asteroid(world)?;
         if world.dirty_ui || self.team_ids.len() != asteroid.team_ids.len() {
             self.team_ids = asteroid.team_ids.clone();
-            self.cove_image_widget = self.get_cove_image_widget(world)?;
+
+            let teams = self
+                .team_ids
+                .iter()
+                .take(4)
+                .filter(|id| world.teams.contains_key(id))
+                .map(|id| world.get_team(id).unwrap())
+                .collect_vec();
+
+            let cove_image_widget = Self::get_cove_image_widgets(&teams, false, false)
+                .expect("Should be able to create cove image");
+            let cove_image_widget_blinking_left = Self::get_cove_image_widgets(&teams, true, false)
+                .expect("Should be able to create cove image");
+            let cove_image_widget_blinking_right =
+                Self::get_cove_image_widgets(&teams, false, true)
+                    .expect("Should be able to create cove image");
+            let cove_image_widget_blinking_both = Self::get_cove_image_widgets(&teams, true, true)
+                .expect("Should be able to create cove image");
+            self.cove_image_widgets = [
+                cove_image_widget,
+                cove_image_widget_blinking_left,
+                cove_image_widget_blinking_right,
+                cove_image_widget_blinking_both,
+            ];
         }
 
         Ok(())
@@ -140,38 +213,52 @@ impl Screen for SpaceCovePanel {
     ) -> AppResult<()> {
         let asteroid = Self::get_asteroid(world)?;
 
-        let split = Layout::horizontal([
-            Constraint::Length(self.cove_image_widget_size),
-            Constraint::Fill(1),
-        ])
-        .split(area);
+        let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Fill(1)])
+            .split(area);
 
-        frame.render_widget(default_block(), split[0]);
+        frame.render_widget(default_block(), split[1]);
 
-        frame.render_widget(&self.cove_image_widget, split[0].inner(Margin::new(1, 1)));
+        let t = self.tick % 60;
+        let left_eye_blinking = [2, 3, 5, 13, 33].contains(&t);
+        let right_eye_blinking = [2, 3, 6, 7, 41].contains(&t);
 
-        let right_split = Layout::vertical([
+        let widget = if !left_eye_blinking && !right_eye_blinking {
+            &self.cove_image_widgets[0]
+        } else if left_eye_blinking && !right_eye_blinking {
+            &self.cove_image_widgets[1]
+        } else if !left_eye_blinking && right_eye_blinking {
+            &self.cove_image_widgets[2]
+        } else {
+            //if left_eye_blinking && right_eye_blinking
+            &self.cove_image_widgets[3]
+        };
+
+        let area_image = split[1].inner(Margin::new(1, 1));
+
+        frame.render_widget(widget, area_image);
+
+        let side_split = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(8),
             Constraint::Fill(1),
         ])
-        .split(split[1]);
+        .split(split[0]);
         frame.render_widget(
             Paragraph::new(format!("Space Cove on {}", asteroid.name))
                 .centered()
                 .bold()
                 .block(default_block()),
-            right_split[0],
+            side_split[0],
         );
 
-        frame.render_interactive_widget(teleport_button(world, asteroid.id)?, right_split[1]);
+        frame.render_interactive_widget(teleport_button(world, asteroid.id)?, side_split[1]);
 
-        self.render_visiting_teams(frame, asteroid, world, right_split[2])?;
+        self.render_visiting_teams(frame, asteroid, world, side_split[2])?;
 
         frame.render_widget(
             default_block().title("No available upgrades"),
-            right_split[3],
+            side_split[3],
         );
 
         Ok(())

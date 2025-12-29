@@ -1,8 +1,11 @@
 use super::{action::*, game::Game, types::*};
-use crate::world::{
-    constants::{MoraleModifier, TirednessCost},
-    player::Trait,
-    skill::GameSkill,
+use crate::{
+    core::{
+        constants::{MoraleModifier, TirednessCost},
+        player::Trait,
+        skill::GameSkill,
+    },
+    game_engine::constants::ADV_NEUTRAL_LIMIT,
 };
 use rand::{seq::IndexedRandom, Rng};
 use rand_chacha::ChaCha8Rng;
@@ -13,15 +16,13 @@ pub(crate) fn execute(
     game: &Game,
     action_rng: &mut ChaCha8Rng,
     description_rng: &mut ChaCha8Rng,
-) -> Option<ActionOutput> {
-    let (attacking_players, defending_players) =
-        (game.attacking_players(), game.defending_players());
-    let weights = attacking_players
+) -> ActionOutput {
+    let attacking_players_array = game.attacking_players_array();
+    let defending_players_array = game.defending_players_array();
+    let weights = attacking_players_array
         .iter()
         .map(|p| {
-            if p.is_knocked_out() {
-                0
-            } else if p.special_trait == Some(Trait::Killer) {
+            if p.special_trait == Some(Trait::Killer) {
                 p.mental.aggression.value() * 2
             } else {
                 p.mental.aggression.value()
@@ -29,17 +30,31 @@ pub(crate) fn execute(
         })
         .collect::<Vec<u8>>()
         .try_into()
-        .ok()?;
+        .expect("There should be players");
 
-    // This will return None if all players are knocked out
-    let attacker_idx = sample_player_index(action_rng, weights)?;
+    let attacker_idx =
+        if let Some(idx) = sample_player_index(action_rng, weights, attacking_players_array) {
+            idx
+        } else {
+            return ActionOutput {
+                situation: ActionSituation::Turnover,
+                possession: !input.possession,
+                description: format!(
+                    "Oh no! {} tried to start a fight but the whole team collapsed to the floor!",
+                    game.attacking_team().name,
+                ),
+                start_at: input.end_at,
+                end_at: input.end_at.plus(4 + action_rng.random_range(0..=3)),
+                home_score: input.home_score,
+                away_score: input.away_score,
+                ..Default::default()
+            };
+        };
 
-    let weights = defending_players
+    let weights = defending_players_array
         .iter()
         .map(|p| {
-            if p.is_knocked_out() {
-                0
-            } else if p.special_trait == Some(Trait::Killer) {
+            if p.special_trait == Some(Trait::Killer) {
                 p.mental.aggression.value() * 2
             } else {
                 p.mental.aggression.value()
@@ -47,13 +62,29 @@ pub(crate) fn execute(
         })
         .collect::<Vec<u8>>()
         .try_into()
-        .ok()?;
+        .expect("There should be players");
 
-    // This will return None if all players are knocked out
-    let defender_idx = sample_player_index(action_rng, weights)?;
+    let defender_idx =
+        if let Some(idx) = sample_player_index(action_rng, weights, defending_players_array) {
+            idx
+        } else {
+            return ActionOutput {
+                situation: ActionSituation::Turnover,
+                possession: input.possession,
+                description: format!(
+                    "Oh no! {} tried to start a fight but the whole team collapsed to the floor!",
+                    game.attacking_team().name,
+                ),
+                start_at: input.end_at,
+                end_at: input.end_at.plus(4 + action_rng.random_range(0..=3)),
+                home_score: input.home_score,
+                away_score: input.away_score,
+                ..Default::default()
+            };
+        };
 
-    let attacker = attacking_players[attacker_idx];
-    let defender = defending_players[defender_idx];
+    let attacker = attacking_players_array[attacker_idx];
+    let defender = defending_players_array[defender_idx];
 
     let mut attack_stats_update = HashMap::new();
     let mut attacker_update = GameStats {
@@ -68,27 +99,31 @@ pub(crate) fn execute(
     };
 
     let mut atk_result = attacker.roll(action_rng)
-        + attacker.athletics.strength.game_value() / 2
-        + attacker.mental.aggression.game_value() / 2
-        + attacker.offense.brawl.game_value();
+        + (0.5 * attacker.athletics.strength + 0.5 * attacker.mental.aggression).game_value()
+        + attacker.offense.brawl.game_value()
+        + game
+            .attacking_team()
+            .tactic
+            .attack_roll_bonus(&Action::Brawl);
 
     if attacker.special_trait == Some(Trait::Killer) {
         atk_result += attacker.reputation.game_value();
     }
 
     let mut def_result = defender.roll(action_rng)
-        + defender.athletics.strength.game_value() / 2
-        + defender.mental.aggression.game_value() / 2
-        + defender.offense.brawl.game_value();
+        + (0.5 * defender.athletics.strength + 0.5 * defender.mental.aggression).game_value()
+        + defender.offense.brawl.game_value()
+        + game
+            .defending_team()
+            .tactic
+            .defense_roll_bonus(&Action::Brawl);
 
     if defender.special_trait == Some(Trait::Killer) {
         def_result += defender.reputation.game_value();
     }
 
-    let description = match atk_result - def_result
-        + Action::Brawl.tactic_modifier(game.attacking_team().tactic, game.defending_team().tactic)
-    {
-        x if x > 0 => {
+    let description = match atk_result - def_result {
+        x if x > ADV_NEUTRAL_LIMIT => {
             defender_update.extra_morale += MoraleModifier::SEVERE_MALUS;
             attacker_update.extra_morale += MoraleModifier::SEVERE_BONUS;
             attacker_update.brawls = [1, 0, 0];
@@ -285,5 +320,5 @@ pub(crate) fn execute(
     result.attack_stats_update = Some(attack_stats_update);
     result.defense_stats_update = Some(defense_stats_update);
 
-    Some(result)
+    result
 }

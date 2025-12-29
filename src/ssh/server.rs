@@ -1,5 +1,5 @@
 use super::client::AppClient;
-use crate::network::constants::DEFAULT_PORT;
+use crate::network::constants::DEFAULT_NETWORK_PORT;
 use crate::types::AppResult;
 use itertools::Either;
 use rand::Rng;
@@ -17,7 +17,7 @@ use tokio::{select, time};
 use tokio_util::sync::CancellationToken;
 
 const SERVER_SSH_PORT: u16 = 3788;
-const MAX_SSH_CLIENT_PORT: u16 = DEFAULT_PORT + 32;
+const MAX_SSH_CLIENT_PORT: u16 = DEFAULT_NETWORK_PORT + 32;
 
 fn save_keys(signing_key: &russh::keys::PrivateKey) -> AppResult<()> {
     let file = File::create::<&str>("./keys")?;
@@ -36,7 +36,7 @@ fn load_keys() -> AppResult<russh::keys::PrivateKey> {
 }
 
 fn get_available_port() -> Option<u16> {
-    (DEFAULT_PORT..MAX_SSH_CLIENT_PORT).find(|port| port_is_available(*port))
+    (DEFAULT_NETWORK_PORT..MAX_SSH_CLIENT_PORT).find(|port| port_is_available(*port))
 }
 
 fn port_is_available(port: u16) -> bool {

@@ -1,36 +1,42 @@
+#[cfg(feature = "relayer")]
 use crate::network::types::{PlayerRanking, TeamRanking};
-use crate::{
-    game_engine::game::Game,
-    types::{AppResult, GameId, PlayerId, TeamId},
-    world::world::World,
-};
+use crate::{core::world::World, game_engine::game::Game, types::*};
 use anyhow::anyhow;
 use directories;
 use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "relayer")]
+use std::collections::HashMap;
 use std::{
-    collections::HashMap,
     io::{Read, Write},
     path::PathBuf,
 };
 
 pub static ASSETS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/assets/");
 static PERSISTED_WORLD_FILENAME: &str = "world";
-static PERSISTED_GAMES_PREFIX: &str = "game_";
-static PERSISTED_TEAM_RANKING_FILENAME: &str = "team_ranking";
-static PERSISTED_PLAYER_RANKING_FILENAME: &str = "player_ranking";
-const COMPRESSION_LEVEL: u32 = 3;
+static PERSISTED_GAMES_PREFIX: &str = "games/game_";
+static LEGACY_PERSISTED_GAMES_PREFIX: &str = "game_";
+#[cfg(feature = "relayer")]
+static PERSISTED_TEAM_RANKING_FILENAME: &str = "relayer/team_ranking";
+#[cfg(feature = "relayer")]
+static PERSISTED_PLAYER_RANKING_FILENAME: &str = "relayer/player_ranking";
+const COMPRESSION_LEVEL: u32 = 4;
 
 fn prefixed_world_filename(store_prefix: &str) -> String {
     format!("{store_prefix}_{PERSISTED_WORLD_FILENAME}")
 }
 
 fn save_to_json<T: Serialize>(filename: &str, data: &T) -> AppResult<()> {
-    std::fs::write(
-        store_path(&format!("{filename}.json.compressed"))?,
-        &serialize(data)?,
-    )?;
+    let path = store_path(&format!("{filename}.json.compressed"))?;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    std::fs::write(path, serialize(data)?)?;
+
     Ok(())
 }
 
@@ -136,14 +142,21 @@ pub fn save_game(game: &Game) -> AppResult<()> {
 }
 
 pub fn load_game(game_id: GameId) -> AppResult<Game> {
-    load_from_json::<Game>(&format!("{PERSISTED_GAMES_PREFIX}{game_id}"))
+    // FIXME: remove this code, currently needed for migrating to new folder
+    if let Ok(game) = load_from_json::<Game>(&format!("{PERSISTED_GAMES_PREFIX}{game_id}")) {
+        Ok(game)
+    } else {
+        let game = load_from_json::<Game>(&format!("{LEGACY_PERSISTED_GAMES_PREFIX}{game_id}"))?;
+        save_game(&game)?;
+        Ok(game)
+    }
 }
 
 #[cfg(feature = "relayer")]
 pub fn load_relayer_messages() -> AppResult<Vec<String>> {
-    // Load every message in the 'relayer_messages' directory.
+    // Load every message in the 'relayer/messages' directory.
     let config_dirs = config_dirs()?;
-    let relayer_messages_directory = config_dirs.join("relayer_messages");
+    let relayer_messages_directory = config_dirs.join("relayer/messages");
     if !relayer_messages_directory.exists() {
         std::fs::create_dir_all(&relayer_messages_directory)?;
         return Ok(vec![]);
@@ -162,6 +175,7 @@ pub fn load_relayer_messages() -> AppResult<Vec<String>> {
     Ok(messages)
 }
 
+#[cfg(feature = "relayer")]
 pub fn save_team_ranking(
     team_ranking: &HashMap<TeamId, TeamRanking>,
     with_backup: bool,
@@ -174,10 +188,12 @@ pub fn save_team_ranking(
     Ok(())
 }
 
+#[cfg(feature = "relayer")]
 pub fn load_team_ranking() -> AppResult<HashMap<TeamId, TeamRanking>> {
     load_from_json::<HashMap<TeamId, TeamRanking>>(PERSISTED_TEAM_RANKING_FILENAME)
 }
 
+#[cfg(feature = "relayer")]
 pub fn save_player_ranking(
     player_ranking: &HashMap<PlayerId, PlayerRanking>,
     with_backup: bool,
@@ -190,6 +206,7 @@ pub fn save_player_ranking(
     Ok(())
 }
 
+#[cfg(feature = "relayer")]
 pub fn load_player_ranking() -> AppResult<HashMap<PlayerId, PlayerRanking>> {
     load_from_json::<HashMap<PlayerId, PlayerRanking>>(PERSISTED_PLAYER_RANKING_FILENAME)
 }
@@ -199,7 +216,7 @@ pub fn get_world_size(store_prefix: &str) -> AppResult<u64> {
     Ok(size)
 }
 
-pub fn reset() -> AppResult<()> {
+pub fn reset_store() -> AppResult<()> {
     let dirs = directories::ProjectDirs::from("org", "frittura", "rebels")
         .ok_or(anyhow!("Failed to get directories"))?;
     let config_dirs = dirs.config_dir();
@@ -253,14 +270,12 @@ pub fn world_file_data(store_prefix: &str) -> AppResult<std::fs::Metadata> {
 #[cfg(test)]
 mod tests {
     use crate::{
+        core::{player::Player, team::Team, world::World},
         types::AppResult,
-        world::{player::Player, team::Team, world::World, Planet},
     };
     use directories;
     use itertools::Itertools;
-
     use rand::SeedableRng;
-
     use rand_chacha::ChaCha8Rng;
     use std::fs::File;
 
@@ -308,9 +323,8 @@ mod tests {
         let mut team = Team::random(rng);
 
         let mut players = vec![];
-        let rng = &mut ChaCha8Rng::from_os_rng();
         for _ in 0..5 {
-            let player = Player::random(rng, None, &Planet::default(), 0.0);
+            let player = Player::default().randomize(None);
             team.player_ids.push(player.id);
             players.push(player);
         }
@@ -330,7 +344,7 @@ mod tests {
     fn test_load_relayer_message() -> AppResult<()> {
         let message = "Hello, world!";
         let config_dirs = super::config_dirs()?;
-        let relayer_messages_directory = config_dirs.join("relayer_messages");
+        let relayer_messages_directory = config_dirs.join("relayer/messages");
         if !relayer_messages_directory.exists() {
             std::fs::create_dir_all(&relayer_messages_directory)?;
         }

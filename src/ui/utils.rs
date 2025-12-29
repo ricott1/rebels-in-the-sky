@@ -2,7 +2,7 @@ use super::{
     constants::{UiStyle, MAX_NAME_LENGTH, MIN_NAME_LENGTH},
     widgets::default_block,
 };
-use crate::world::{AU, LIGHT_YEAR, SATOSHI_PER_BITCOIN};
+use crate::core::{AU, LIGHT_YEAR, SATOSHI_PER_BITCOIN};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use image::RgbaImage;
 use ratatui::{
@@ -47,7 +47,7 @@ pub fn img_to_lines<'a>(img: &RgbaImage) -> Vec<Line<'a>> {
     let width = img.width();
     let height = img.height();
 
-    for y in (0..height - 1).step_by(2) {
+    for y in (0..height.saturating_sub(1)).step_by(2) {
         let mut line: Vec<Span> = vec![];
 
         for x in 0..width {

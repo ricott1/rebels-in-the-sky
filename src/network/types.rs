@@ -1,15 +1,15 @@
 use super::challenge::Challenge;
 use super::trade::Trade;
+use crate::core::planet::Planet;
+use crate::core::position::{GamePosition, MAX_GAME_POSITION};
+use crate::core::skill::Skill;
 use crate::game_engine::timer::Timer;
 use crate::game_engine::types::GameStats;
 use crate::types::{PlanetId, PlayerId, Tick};
-use crate::world::planet::Planet;
-use crate::world::position::{Position, MAX_POSITION};
-use crate::world::skill::Skill;
 use crate::{
+    core::{player::Player, team::Team, world::World},
     game_engine::types::TeamInGame,
     types::{AppResult, GameId, TeamId},
-    world::{player::Player, team::Team, world::World},
 };
 use anyhow::anyhow;
 use itertools::Itertools;
@@ -21,6 +21,7 @@ use strum_macros::Display;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[repr(u8)]
+#[allow(clippy::large_enum_variant)]
 pub enum NetworkData {
     Team(Tick, NetworkTeam),
     Challenge(Tick, Challenge),
@@ -106,8 +107,8 @@ impl NetworkGame {
         for (idx, player_id) in home_team_in_game.initial_positions.iter().enumerate() {
             // Set position in stats to initial one
             let mut player_stats = GameStats::default();
-            if (idx as Position) < MAX_POSITION {
-                player_stats.position = Some(idx as Position);
+            if (idx as GamePosition) < MAX_GAME_POSITION {
+                player_stats.position = Some(idx as GamePosition);
             }
             stats.insert(*player_id, player_stats.clone());
 
@@ -127,8 +128,8 @@ impl NetworkGame {
         let mut stats = HashMap::new();
         for (idx, player_id) in away_team_in_game.initial_positions.iter().enumerate() {
             let mut player_stats = GameStats::default();
-            if (idx as Position) < MAX_POSITION {
-                player_stats.position = Some(idx as Position);
+            if (idx as GamePosition) < MAX_GAME_POSITION {
+                player_stats.position = Some(idx as GamePosition);
             }
             stats.insert(*player_id, player_stats.clone());
 

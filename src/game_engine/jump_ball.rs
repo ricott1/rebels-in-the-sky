@@ -3,7 +3,10 @@ use super::{
     game::Game,
     types::*,
 };
-use crate::world::{player::Player, skill::GameSkill};
+use crate::{
+    core::{player::Player, skill::GameSkill},
+    game_engine::constants::ADV_NEUTRAL_LIMIT,
+};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 
@@ -12,30 +15,36 @@ pub(crate) fn execute(
     game: &Game,
     action_rng: &mut ChaCha8Rng,
     _description_rng: &mut ChaCha8Rng,
-) -> Option<ActionOutput> {
-    let attacking_players = game.attacking_players();
-    let defending_players = game.defending_players();
+) -> ActionOutput {
+    let attacking_players_array = game.attacking_players_array();
+    let defending_players_array = game.defending_players_array();
 
     let jump_ball = |player: &Player| {
-        player.athletics.vertical.game_value() + (player.info.height as i16).saturating_sub(150) / 4
+        player.athletics.vertical.game_value() + (0.25 * (player.info.height - 150.0)).game_value()
     };
-    let home_jumper = attacking_players.iter().max_by_key(|&p| jump_ball(p));
-    let away_jumper = defending_players.iter().max_by_key(|&p| jump_ball(p));
+    let home_jumper = attacking_players_array
+        .iter()
+        .max_by_key(|&p| jump_ball(p))
+        .expect("There should be a max");
+    let away_jumper = defending_players_array
+        .iter()
+        .max_by_key(|&p| jump_ball(p))
+        .expect("There should be a max");
 
-    let home_result = home_jumper?.roll(action_rng) + jump_ball(home_jumper?);
-    let away_result = away_jumper?.roll(action_rng) + jump_ball(away_jumper?);
+    let home_result = home_jumper.roll(action_rng) + jump_ball(home_jumper);
+    let away_result = away_jumper.roll(action_rng) + jump_ball(away_jumper);
 
     let timer_increase = 6 + action_rng.random_range(0..=7);
 
     let result = match home_result  - away_result  {
-            x if x > 0 => {
+            x if x > ADV_NEUTRAL_LIMIT => {
                 ActionOutput {
                     possession: Possession::Home,
                     situation: ActionSituation::AfterDefensiveRebound,
                     description: format!(
                         "{} and {} prepare for the jump ball. {} wins the jump ball. {} will have the first possession.",
-                        home_jumper?.info.short_name(),
-                        away_jumper?.info.short_name(), home_jumper?.info.short_name(), game.home_team_in_game.name
+                        home_jumper.info.short_name(),
+                        away_jumper.info.short_name(), home_jumper.info.short_name(), game.home_team_in_game.name
                     ),
                     start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),
@@ -44,13 +53,13 @@ pub(crate) fn execute(
                     ..Default::default()
                 }
             }
-            x if x < 0 => ActionOutput {
+            x if x < ADV_NEUTRAL_LIMIT => ActionOutput {
                 possession: Possession::Away,
                 situation: ActionSituation::AfterDefensiveRebound,
                 description: format!(
                     "{} and {} prepare for the jump ball. {} wins the jump ball. {} will have the first possession.",
-                    home_jumper?.info.short_name(),
-                    away_jumper?.info.short_name(),away_jumper?.info.short_name(), game.away_team_in_game.name
+                    home_jumper.info.short_name(),
+                    away_jumper.info.short_name(),away_jumper.info.short_name(), game.away_team_in_game.name
                 ),
                 start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),
@@ -74,8 +83,8 @@ pub(crate) fn execute(
                     situation: ActionSituation::AfterDefensiveRebound,
                     description: format!(
                         "{} and {} prepare for the jump ball.\nNobody wins the jump ball, but {} hustles for it.",
-                        home_jumper?.info.short_name(),
-                        away_jumper?.info.short_name(), ball_team
+                        home_jumper.info.short_name(),
+                        away_jumper.info.short_name(), ball_team
                     ),
                     start_at: input.end_at,
                 end_at: input.end_at.plus(timer_increase),
@@ -85,5 +94,5 @@ pub(crate) fn execute(
                 }
             }
         };
-    Some(result)
+    result
 }

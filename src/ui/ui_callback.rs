@@ -7,14 +7,15 @@ use super::{
     popup_message::PopupMessage,
     team_panel::TeamView,
     traits::{Screen, SplitPanel},
-    ui::{UiState, UiTab},
+    ui_screen::{UiState, UiTab},
 };
 use crate::app_version;
+use crate::core::{AsteroidUpgradeTarget, UpgradeableElement};
 use crate::network::{challenge::Challenge, trade::Trade};
 use crate::ui::ui_key;
-use crate::world::{AsteroidUpgradeTarget, UpgradeableElement};
 use crate::{
     app::App,
+    core::*,
     game_engine::{tactic::Tactic, types::TeamInGame},
     image::color_map::{ColorMap, ColorPreset},
     space_adventure::{ControllableSpaceship, PlayerInput, SpaceAdventure},
@@ -22,7 +23,6 @@ use crate::{
         AppCallback, AppResult, GameId, PlanetId, PlayerId, StorableResourceMap, SystemTimeTick,
         TeamId, Tick,
     },
-    world::*,
 };
 use anyhow::anyhow;
 use crossterm::event::{KeyCode, MouseEvent, MouseEventKind};
@@ -245,7 +245,7 @@ impl UiCallback {
             {
                 app.ui.team_panel.set_index(index);
                 app.ui.team_panel.player_index = 0;
-                app.ui.switch_to(super::ui::UiTab::Crews);
+                app.ui.switch_to(super::ui_screen::UiTab::Crews);
             }
             Ok(None)
         })
@@ -253,7 +253,6 @@ impl UiCallback {
 
     fn go_to_player(player_id: PlayerId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.player_panel.update(&app.world)?;
             app.ui.player_panel.reset_view();
             if let Some(index) = app
                 .ui
@@ -263,7 +262,9 @@ impl UiCallback {
                 .position(|&x| x == player_id)
             {
                 app.ui.player_panel.set_index(index);
-                app.ui.switch_to(super::ui::UiTab::Pirates);
+                // Update here to update the selected_player_id
+                app.ui.player_panel.update(&app.world)?;
+                app.ui.switch_to(super::ui_screen::UiTab::Pirates);
             }
 
             Ok(None)
@@ -295,7 +296,7 @@ impl UiCallback {
 
                 app.ui.player_panel.locked_player_id = Some(locked_player_id);
                 app.ui.player_panel.selected_player_id = selected_player_id;
-                app.ui.switch_to(super::ui::UiTab::Pirates);
+                app.ui.switch_to(super::ui_screen::UiTab::Pirates);
             }
 
             Ok(None)
@@ -329,7 +330,7 @@ impl UiCallback {
                     .position(|&x| x == player_id)
                     .unwrap_or_default();
                 app.ui.team_panel.player_index = player_index;
-                app.ui.switch_to(super::ui::UiTab::Crews);
+                app.ui.switch_to(super::ui_screen::UiTab::Crews);
             }
 
             Ok(None)
@@ -340,7 +341,7 @@ impl UiCallback {
         Box::new(move |app: &mut App| {
             app.ui.game_panel.update(&app.world)?;
             app.ui.game_panel.set_active_game(game_id)?;
-            app.ui.switch_to(super::ui::UiTab::Games);
+            app.ui.switch_to(super::ui_screen::UiTab::Games);
             Ok(None)
         })
     }
@@ -349,7 +350,7 @@ impl UiCallback {
         Box::new(move |app: &mut App| {
             app.ui.galaxy_panel.update(&app.world)?;
             app.ui.galaxy_panel.go_to_planet(planet_id, ZoomLevel::In);
-            app.ui.switch_to(super::ui::UiTab::Galaxy);
+            app.ui.switch_to(super::ui_screen::UiTab::Galaxy);
 
             Ok(None)
         })
@@ -358,7 +359,7 @@ impl UiCallback {
     fn go_to_space_cove() -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.space_cove_panel.update(&app.world)?;
-            app.ui.switch_to(super::ui::UiTab::SpaceCove);
+            app.ui.switch_to(super::ui_screen::UiTab::SpaceCove);
 
             Ok(None)
         })
@@ -370,7 +371,7 @@ impl UiCallback {
             app.ui
                 .galaxy_panel
                 .go_to_planet(team.home_planet_id, ZoomLevel::In);
-            app.ui.switch_to(super::ui::UiTab::Galaxy);
+            app.ui.switch_to(super::ui_screen::UiTab::Galaxy);
 
             Ok(None)
         })
@@ -395,7 +396,7 @@ impl UiCallback {
             };
 
             app.ui.galaxy_panel.go_to_planet(target.id, ZoomLevel::In);
-            app.ui.switch_to(super::ui::UiTab::Galaxy);
+            app.ui.switch_to(super::ui_screen::UiTab::Galaxy);
 
             Ok(None)
         })
@@ -411,7 +412,7 @@ impl UiCallback {
                 } => {
                     let target = app.world.get_planet_or_err(&current_planet_id)?;
                     app.ui.galaxy_panel.go_to_planet(target.id, ZoomLevel::In);
-                    app.ui.switch_to(super::ui::UiTab::Galaxy);
+                    app.ui.switch_to(super::ui_screen::UiTab::Galaxy);
                 }
                 PlayerLocation::WithTeam => {
                     return Self::go_to_current_team_planet(player.team.unwrap())(app);
@@ -425,7 +426,7 @@ impl UiCallback {
     fn go_to_planet_zoom_in(planet_id: PlanetId) -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.galaxy_panel.go_to_planet(planet_id, ZoomLevel::In);
-            app.ui.switch_to(super::ui::UiTab::Galaxy);
+            app.ui.switch_to(super::ui_screen::UiTab::Galaxy);
             Ok(None)
         })
     }
@@ -433,7 +434,7 @@ impl UiCallback {
     fn go_to_planet_zoom_out(planet_id: PlanetId) -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.galaxy_panel.go_to_planet(planet_id, ZoomLevel::Out);
-            app.ui.switch_to(super::ui::UiTab::Galaxy);
+            app.ui.switch_to(super::ui_screen::UiTab::Galaxy);
             Ok(None)
         })
     }
@@ -516,7 +517,7 @@ impl UiCallback {
 
             app.ui.game_panel.update(&app.world)?;
             app.ui.game_panel.set_active_game(game_id)?;
-            app.ui.switch_to(super::ui::UiTab::Games);
+            app.ui.switch_to(super::ui_screen::UiTab::Games);
             Ok(Some("Challenge accepted".to_string()))
         })
     }
@@ -549,7 +550,7 @@ impl UiCallback {
             }
 
             // Local trade
-            if proposer_player.bare_value() >= target_player.bare_value() {
+            if proposer_player.bare_hiring_value() >= target_player.bare_hiring_value() {
                 app.world
                     .swap_players_team(proposer_player_id, target_player_id)?;
 
@@ -1326,7 +1327,7 @@ impl UiCallback {
                 let rng = &mut ChaCha8Rng::from_os_rng();
 
                 let discovery_probability = (PORTAL_DISCOVERY_PROBABILITY
-                    * TeamBonus::Exploration.current_player_bonus(&player)? as f64)
+                    * TeamBonus::Exploration.current_player_bonus(&player) as f64)
                     .min(1.0);
                 if matches!(player.special_trait, Some(Trait::Spugna))
                     && player.info.crew_role == CrewRole::Pilot
@@ -1719,10 +1720,10 @@ mod test {
     use super::UiCallback;
     use crate::{
         app::App,
+        core::resources::Resource,
         space_adventure::{ControllableSpaceship, GameEntity, SpaceCallback},
         types::{AppResult, ResourceMap, StorableResourceMap},
         ui::ui_callback::INITIAL_TEAM_BALANCE,
-        world::resources::Resource,
     };
 
     #[test]

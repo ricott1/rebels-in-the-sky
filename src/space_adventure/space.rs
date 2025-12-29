@@ -13,9 +13,10 @@ use super::{
     ControllableSpaceship, PlayerInput,
 };
 use crate::{
+    core::{resources::Resource, spaceship::Spaceship, Shield, SpaceshipPrefab},
     image::{
         color_map::ColorMap,
-        utils::{ExtraImageUtils, TRAVELLING_BACKGROUND},
+        utils::{ExtraImageUtils, STAR_LAYERS},
     },
     space_adventure::{
         entity::Entity,
@@ -24,7 +25,6 @@ use crate::{
     },
     types::{AppResult, ResourceMap, SystemTimeTick, Tick},
     ui::{popup_message::PopupMessage, ui_callback::UiCallback},
-    world::{resources::Resource, spaceship::Spaceship, Shield, SpaceshipPrefab},
 };
 use anyhow::anyhow;
 use glam::Vec2;
@@ -299,14 +299,26 @@ impl SpaceAdventure {
     }
 
     pub fn new(should_spawn_asteroid: bool, gold_fragment_probability: f64) -> AppResult<Self> {
-        let bg = TRAVELLING_BACKGROUND.clone();
-        let mut background = RgbaImage::new(bg.width() * 2, bg.height() * 3);
-        background.copy_non_trasparent_from(&bg, 0, 0)?;
-        background.copy_non_trasparent_from(&bg, bg.width(), 0)?;
-        background.copy_non_trasparent_from(&bg, 0, bg.height())?;
-        background.copy_non_trasparent_from(&bg, bg.width(), bg.height())?;
-        background.copy_non_trasparent_from(&bg, 0, 2 * bg.height())?;
-        background.copy_non_trasparent_from(&bg, bg.width(), 2 * bg.height())?;
+        let mut background =
+            RgbaImage::new(STAR_LAYERS[0].width() * 2, STAR_LAYERS[0].height() * 3);
+
+        for star_layer in STAR_LAYERS.iter().take(2) {
+            background.copy_non_trasparent_from(star_layer, 0, 0)?;
+            background.copy_non_trasparent_from(star_layer, star_layer.width(), 0)?;
+            background.copy_non_trasparent_from(star_layer, 0, star_layer.height())?;
+            background.copy_non_trasparent_from(
+                star_layer,
+                star_layer.width(),
+                star_layer.height(),
+            )?;
+            background.copy_non_trasparent_from(star_layer, 0, 2 * star_layer.height())?;
+            background.copy_non_trasparent_from(
+                star_layer,
+                star_layer.width(),
+                2 * star_layer.height(),
+            )?;
+        }
+
         // Crop background
         let background = crop_imm(
             &background,

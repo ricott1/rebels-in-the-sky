@@ -11,11 +11,14 @@ use super::{
     utils::img_to_lines,
     widgets::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
 };
+use crate::store::load_game;
+use crate::ui::traits::UiStyled;
 use crate::ui::ui_key;
+use crate::ui::widgets::GREEN_STYLE_SKILL;
 use crate::{
+    core::*,
     game_engine::{
         action::{ActionOutput, ActionSituation, Advantage},
-        constants::MIN_TIREDNESS_FOR_ROLL_DECLINE,
         game::Game,
         timer::{Period, Timer},
         types::{GameStatsMap, Possession},
@@ -24,13 +27,11 @@ use crate::{
     image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
     types::{AppResult, GameId, SystemTimeTick, Tick},
     ui::constants::*,
-    world::*,
 };
-use anyhow::anyhow;
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
 use itertools::Itertools;
-use ratatui::style::Stylize;
+use ratatui::style::{Style, Stylize};
 use ratatui::{
     layout::{Constraint, Layout, Margin},
     prelude::Rect,
@@ -42,8 +43,10 @@ use std::collections::HashMap;
 
 #[derive(Debug, Default)]
 pub struct GamePanel {
-    pub index: Option<usize>,
+    index: Option<usize>,
     game_ids: Vec<GameId>,
+    loaded_game_ids: Vec<GameId>, // Used to keep a strict order on the keys of loaded_games
+    loaded_games: HashMap<GameId, Game>, // We store them possibly with error to avoid loading everytime from disk
     pitch_view: bool,
     pitch_view_filter: Option<Period>,
     player_status_view: bool,
@@ -67,24 +70,37 @@ impl GamePanel {
     }
 
     pub fn set_active_game(&mut self, game_id: GameId) -> AppResult<()> {
-        let index = self
-            .game_ids
-            .iter()
-            .position(|&x| x == game_id)
-            .ok_or(anyhow!("Game {game_id:?} not found"))?;
-
-        self.set_index(index);
+        if let Some(index) = self.game_ids.iter().position(|&x| x == game_id) {
+            self.set_index(index);
+        } else if let Some(index) = self.loaded_game_ids.iter().position(|&x| x == game_id) {
+            self.set_index(index + self.game_ids.len());
+        } else {
+            // Try to load from disk
+            let game = load_game(game_id)?;
+            self.loaded_games.insert(game_id, game);
+            self.loaded_game_ids.push(game_id);
+            self.set_index(self.loaded_game_ids.len() + self.game_ids.len() - 1);
+        }
 
         Ok(())
     }
 
-    fn selected_game<'a>(&self, world: &'a World) -> Option<&'a Game> {
-        let index = self.index?;
-        if index >= self.game_ids.len() {
-            return None;
+    fn selected_game<'a>(
+        world: &'a World,
+        index: Option<usize>,
+        game_ids: &Vec<GameId>,
+        loaded_game_ids: &Vec<GameId>,
+        loaded_games: &'a HashMap<GameId, Game>,
+    ) -> Option<&'a Game> {
+        if let Some(game_id) = game_ids.get(index?) {
+            return world.get_game(game_id);
         }
 
-        world.get_game(&self.game_ids[index])
+        if let Some(game_id) = loaded_game_ids.get(index?.checked_sub(game_ids.len())?) {
+            return loaded_games.get(game_id);
+        }
+
+        None
     }
 
     fn build_top_panel(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
@@ -95,24 +111,27 @@ impl GamePanel {
         ])
         .split(area);
 
-        let game_button_split =
-            Layout::vertical([Constraint::Min(3), Constraint::Length(3)]).split(split[0]);
+        let game_button_split = Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Fill(1),
+            Constraint::Length(3),
+        ])
+        .split(split[0]);
         self.build_game_list(frame, world, game_button_split[0]);
-        self.build_game_buttons(frame, game_button_split[1]);
+        self.build_recent_games_list(frame, world, game_button_split[1]);
+        self.build_game_buttons(frame, game_button_split[2]);
 
-        if let Some(game) = self.selected_game(world) {
-            self.build_score_panel(frame, world, game, split[1])?;
-        }
+        self.build_score_panel(frame, world, split[1])?;
 
         Ok(())
     }
 
     fn build_game_list(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
-        let options = self
+        let maybe_options = self
             .game_ids
             .iter()
             .map(|id| {
-                let game = world.get_game(id).expect("Game should be stored in games.");
+                let game = world.get_game(id)?;
                 let mut style = UiStyle::DEFAULT;
 
                 if game.home_team_in_game.team_id == world.own_team_id
@@ -129,26 +148,80 @@ impl GamePanel {
                     }
                 }
 
-                (
+                Some((
                     format!(
                         "{:>12} {:>3}-{:<3} {:<12}",
                         game.home_team_in_game.name,
-                        game.action_results.last().unwrap().home_score,
-                        game.action_results.last().unwrap().away_score,
+                        game.action_results.last()?.home_score,
+                        game.action_results.last()?.away_score,
                         game.away_team_in_game.name
                     ),
                     style,
-                )
+                ))
             })
-            .collect_vec();
+            .collect::<Option<Vec<(String, Style)>>>();
+        if let Some(options) = maybe_options {
+            let list = selectable_list(options);
 
-        let list = selectable_list(options);
+            let list_index = self.index.filter(|&index| index < self.game_ids.len());
 
-        frame.render_stateful_interactive_widget(
-            list.block(default_block().title("Games ↓/↑")),
-            area,
-            &mut ClickableListState::default().with_selected(self.index),
-        );
+            frame.render_stateful_interactive_widget(
+                list.block(default_block().title("Games ↓/↑")),
+                area,
+                &mut ClickableListState::default().with_selected(list_index),
+            );
+        }
+    }
+
+    fn build_recent_games_list(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
+        let maybe_options = self
+            .loaded_game_ids
+            .iter()
+            .map(|game_id| {
+                let game = self.loaded_games.get(game_id)?;
+                let mut style = UiStyle::DEFAULT;
+
+                if game.home_team_in_game.team_id == world.own_team_id
+                    || game.away_team_in_game.team_id == world.own_team_id
+                {
+                    style = UiStyle::OWN_TEAM
+                } else {
+                    {
+                        if game.home_team_in_game.peer_id.is_some()
+                            || game.away_team_in_game.peer_id.is_some()
+                        {
+                            style = UiStyle::NETWORK;
+                        }
+                    }
+                }
+
+                Some((
+                    format!(
+                        "{:>12} {:>3}-{:<3} {:<12}",
+                        game.home_team_in_game.name,
+                        game.action_results.last()?.home_score,
+                        game.action_results.last()?.away_score,
+                        game.away_team_in_game.name
+                    ),
+                    style,
+                ))
+            })
+            .collect::<Option<Vec<(String, Style)>>>();
+
+        if let Some(options) = maybe_options {
+            let list = selectable_list(options);
+
+            let list_index = self
+                .index
+                .filter(|&index| index >= self.game_ids.len())
+                .map(|index| index - self.game_ids.len());
+
+            frame.render_stateful_interactive_widget(
+                list.block(default_block().title("Past games ↓/↑")),
+                area,
+                &mut ClickableListState::default().with_selected(list_index),
+            );
+        }
     }
 
     fn build_game_buttons(&mut self, frame: &mut UiFrame, area: Rect) {
@@ -195,42 +268,38 @@ impl GamePanel {
         &mut self,
         frame: &mut UiFrame,
         world: &World,
-        game: &Game,
         area: Rect,
     ) -> AppResult<()> {
-        let split = Layout::vertical([
-            Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2), // Score Plus images
-                                                                // Constraint::Length(2),                              //floor
-        ])
-        .split(area);
+        let game = if let Some(game) = Self::selected_game(
+            world,
+            self.index,
+            &self.game_ids,
+            &self.loaded_game_ids,
+            &self.loaded_games,
+        ) {
+            game
+        } else {
+            return Ok(());
+        };
 
         const SCORE_PANEL_WIDTH: u16 = 59;
-        let side_length = if area.width > 2 * PLAYER_IMAGE_WIDTH as u16 + SCORE_PANEL_WIDTH {
-            (area.width - 2 * PLAYER_IMAGE_WIDTH as u16 - SCORE_PANEL_WIDTH) / 2
-        } else {
-            0
-        };
+
         let top_split = Layout::horizontal([
-            Constraint::Length(side_length),
+            Constraint::Fill(1),
             Constraint::Length(PLAYER_IMAGE_WIDTH as u16),
             Constraint::Length(SCORE_PANEL_WIDTH),
             Constraint::Length(PLAYER_IMAGE_WIDTH as u16),
-            Constraint::Length(side_length),
+            Constraint::Fill(1),
         ])
-        .split(split[0]);
+        .split(area); //FIXME: check if split[0] is needed
 
-        let margin_height = if top_split[2].height > 12 {
-            (top_split[2].height - 12) / 2
-        } else {
-            0
-        };
         let central_split = Layout::vertical([
-            Constraint::Length(margin_height),
+            Constraint::Fill(1),
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(2),
             Constraint::Length(8),
-            Constraint::Length(margin_height),
+            Constraint::Fill(1),
         ])
         .split(top_split[2]);
 
@@ -243,28 +312,16 @@ impl GamePanel {
             central_split[3],
         );
 
-        let digit_split = Layout::horizontal([
-            Constraint::Length(8),
-            Constraint::Length(1),
-            Constraint::Length(8),
-            Constraint::Length(1),
-            Constraint::Length(8),
-            Constraint::Length(1),
-            Constraint::Length(5),
-            Constraint::Length(1),
-            Constraint::Length(8),
-            Constraint::Length(1),
-            Constraint::Length(8),
-            Constraint::Length(1),
-            Constraint::Length(8),
-        ])
-        .split(central_split[4]);
+        let digit_split =
+            Layout::horizontal([8, 1, 8, 1, 8, 1, 5, 1, 8, 1, 8, 1, 8]).split(central_split[4]);
 
         let action = if self.commentary_index == 0 {
             &game.action_results[game.action_results.len() - 1]
         } else {
             &game.action_results[self.action_results.len() - 1 - self.commentary_index]
         };
+        let home_score = action.home_score;
+        let away_score = action.away_score;
 
         let home_players = game
             .home_team_in_game
@@ -276,8 +333,6 @@ impl GamePanel {
             .players
             .values()
             .collect::<Vec<&Player>>();
-        let home_score = action.home_score;
-        let away_score = action.away_score;
 
         let base_home_player = home_players
             .iter()
@@ -466,53 +521,62 @@ impl GamePanel {
         area: Rect,
     ) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Min(8), Constraint::Length(73)]).split(area);
-        if let Some(game) = self.selected_game(world) {
-            let mut shot_img = None;
-            // Display shot gif if the last action was a made 3 or if it was a substitution and the second last was a made 3.
-            if let Some(last_action) = game.action_results.last() {
-                let mut should_display_shot_gif_for = None;
 
-                if last_action.score_change == 3 {
-                    should_display_shot_gif_for = Some(last_action.possession);
-                } else if last_action.situation == ActionSituation::AfterSubstitution
-                    && game.action_results.len() > 1
-                {
-                    let second_last_action = &game.action_results[game.action_results.len() - 2];
-                    if second_last_action.score_change == 3 {
-                        should_display_shot_gif_for = Some(second_last_action.possession);
-                    }
-                }
+        let game = if let Some(game) = Self::selected_game(
+            world,
+            self.index,
+            &self.game_ids,
+            &self.loaded_game_ids,
+            &self.loaded_games,
+        ) {
+            game
+        } else {
+            frame.render_widget(default_block().title("No games at the moment..."), area);
+            return Ok(());
+        };
+        let mut shot_img = None;
+        // Display shot gif if the last action was a made 3 or if it was a substitution and the second last was a made 3.
+        if let Some(last_action) = game.action_results.last() {
+            let mut should_display_shot_gif_for = None;
 
-                if let Some(side) = should_display_shot_gif_for {
-                    let shot_tick = game.starting_at + last_action.start_at.as_tick();
-                    let now = Tick::now();
-                    let shot_frame = now.saturating_sub(shot_tick) as usize / 140;
-                    if shot_frame < RIGHT_SHOT_GIF.len() {
-                        // After scoring the possesion is flipped, so the opposite team scored.
-                        if side == Possession::Home {
-                            shot_img = Some(&RIGHT_SHOT_GIF[shot_frame]);
-                        } else {
-                            shot_img = Some(&LEFT_SHOT_GIF[shot_frame]);
-                        }
-                    }
+            if last_action.score_change == 3 {
+                should_display_shot_gif_for = Some(last_action.possession);
+            } else if last_action.situation == ActionSituation::AfterSubstitution
+                && game.action_results.len() > 1
+            {
+                let second_last_action = &game.action_results[game.action_results.len() - 2];
+                if second_last_action.score_change == 3 {
+                    should_display_shot_gif_for = Some(second_last_action.possession);
                 }
             }
 
-            if let Some(img) = shot_img {
-                frame.render_widget(Paragraph::new(img.clone()).centered(), split[0]);
-            } else if self.pitch_view {
-                self.build_pitch_panel(frame, world, game, split[0])?;
-            } else {
-                self.build_commentary(frame, split[0]);
+            if let Some(side) = should_display_shot_gif_for {
+                let shot_tick = game.starting_at + last_action.start_at.as_tick();
+                let now = Tick::now();
+                let shot_frame = now.saturating_sub(shot_tick) as usize / 140;
+                if shot_frame < RIGHT_SHOT_GIF.len() {
+                    // After scoring the possesion is flipped, so the opposite team scored.
+                    if side == Possession::Home {
+                        shot_img = Some(&RIGHT_SHOT_GIF[shot_frame]);
+                    } else {
+                        shot_img = Some(&LEFT_SHOT_GIF[shot_frame]);
+                    }
+                }
             }
         }
 
-        if let Some(game) = self.selected_game(world) {
-            if self.player_status_view {
-                Self::build_status_box(game, frame, split[1]);
-            } else {
-                Self::build_stats_box(game, frame, split[1]);
-            }
+        if let Some(img) = shot_img {
+            frame.render_widget(Paragraph::new(img.clone()).centered(), split[0]);
+        } else if self.pitch_view {
+            self.build_pitch_panel(frame, world, game, split[0])?;
+        } else {
+            self.build_commentary(frame, split[0]);
+        }
+
+        if self.player_status_view {
+            Self::build_status_box(game, frame, split[1]);
+        } else {
+            Self::build_stats_box(game, frame, split[1]);
         }
 
         Ok(())
@@ -538,7 +602,7 @@ impl GamePanel {
         Line::from(vec![timer, text, arrow])
     }
 
-    fn build_commentary(&mut self, frame: &mut UiFrame, area: Rect) {
+    fn build_commentary(&self, frame: &mut UiFrame, area: Rect) {
         let mut commentary = vec![];
         let max_index = self.action_results.len() - self.commentary_index;
 
@@ -567,7 +631,11 @@ impl GamePanel {
         frame.render_widget(
             Paragraph::new(commentary)
                 .wrap(Wrap { trim: false })
-                .block(default_block().title("Commentary")),
+                .block(default_block().title(format!(
+                    "Commentary {}/{}",
+                    ui_key::NEXT_SELECTION,
+                    ui_key::PREVIOUS_SELECTION
+                ))),
             area,
         )
     }
@@ -606,18 +674,13 @@ impl GamePanel {
             plus_minus_total += player_data.plus_minus as i16;
 
             let role = match player_data.position {
-                Some(p) => (p as Position).as_str().to_string(),
+                Some(p) => (p as GamePosition).as_str().to_string(),
                 None => "".to_string(),
             };
 
             let name_span = {
-                let style = match player.tiredness {
-                    x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::DEFAULT,
-                    x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
-                    x if x < MAX_SKILL => UiStyle::ERROR,
-                    _ => UiStyle::UNSELECTABLE,
-                };
-
+                let style =
+                    ((MAX_SKILL - player.tiredness) / MAX_SKILL * GREEN_STYLE_SKILL).style();
                 Span::styled(player.info.short_name(), style)
             };
 
@@ -711,18 +774,13 @@ impl GamePanel {
             let player_data = &players_data[&player.id];
 
             let role = match player_data.position {
-                Some(p) => (p as Position).as_str().to_string(),
+                Some(p) => (p as GamePosition).as_str().to_string(),
                 None => "".to_string(),
             };
 
             let name_span = {
-                let style = match player.tiredness {
-                    x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::DEFAULT,
-                    x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
-                    x if x < MAX_SKILL => UiStyle::ERROR,
-                    _ => UiStyle::UNSELECTABLE,
-                };
-
+                let style =
+                    ((MAX_SKILL - player.tiredness) / MAX_SKILL * GREEN_STYLE_SKILL).style();
                 Span::styled(player.info.short_name(), style)
             };
 
@@ -732,12 +790,7 @@ impl GamePanel {
                 "▰".repeat(morale_length),
                 "▱".repeat(bars_length - morale_length),
             );
-            let morale_style = match player.morale {
-                x if x > 5.0 * MORALE_THRESHOLD_FOR_LEAVING => UiStyle::OK,
-                x if x > MORALE_THRESHOLD_FOR_LEAVING => UiStyle::WARNING,
-                x if x > 0.0 => UiStyle::ERROR,
-                _ => UiStyle::UNSELECTABLE,
-            };
+            let morale_style = (player.morale / MAX_SKILL * GREEN_STYLE_SKILL).style();
             let morale_span = Span::styled(morale_string, morale_style);
 
             let tiredness_length =
@@ -747,12 +800,8 @@ impl GamePanel {
                 "▰".repeat(bars_length - tiredness_length),
                 "▱".repeat(tiredness_length),
             );
-            let energy_style = match player.tiredness {
-                x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 0.75 => UiStyle::OK,
-                x if x < MIN_TIREDNESS_FOR_ROLL_DECLINE * 1.5 => UiStyle::WARNING,
-                x if x < MAX_SKILL => UiStyle::ERROR,
-                _ => UiStyle::UNSELECTABLE,
-            };
+            let energy_style =
+                ((MAX_SKILL - player.tiredness) / MAX_SKILL * GREEN_STYLE_SKILL).style();
             let energy_span = Span::styled(energy_string, energy_style);
 
             let cells = vec![
@@ -984,43 +1033,48 @@ impl Screen for GamePanel {
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
 
-        self.game_ids = world
-            .games
-            .iter()
-            .sorted_by(|&(_, a), &(_, b)| a.starting_at.cmp(&b.starting_at))
-            .map(|(k, _)| *k)
-            .collect_vec();
-
-        if self.game_ids.is_empty() {
-            self.index = None;
-        }
-
         if world.dirty_ui {
+            self.game_ids = world
+                .games
+                .iter()
+                .sorted_by(|&(_, a), &(_, b)| a.starting_at.cmp(&b.starting_at))
+                .map(|(k, _)| *k)
+                .collect_vec();
+
             // Try to keep track of current game when other games finish
-            if let Some(game) = self.selected_game(world) {
-                self.set_index(
-                    self.game_ids
-                        .iter()
-                        .position(|&id| id == game.id)
-                        .unwrap_or_default(),
-                );
+            if let Some(game) = Self::selected_game(
+                world,
+                self.index,
+                &self.game_ids,
+                &self.loaded_game_ids,
+                &self.loaded_games,
+            ) {
+                self.index = if let Some(index) = self.game_ids.iter().position(|&id| id == game.id)
+                {
+                    Some(index)
+                } else {
+                    self.loaded_game_ids.iter().position(|&id| id == game.id)
+                };
             }
         }
 
-        if let Some(game) = self.selected_game(world) {
-            if self.commentary_index == 0 {
+        if self.max_index() == 0 {
+            self.index = None;
+        } else if let Some(game) = Self::selected_game(
+            world,
+            self.index,
+            &self.game_ids,
+            &self.loaded_game_ids,
+            &self.loaded_games,
+        ) {
+            if self.commentary_index == 0 && self.action_results.len() != game.action_results.len()
+            {
                 // FIXME: we dont need to clone, remove self.action_results completely
                 self.action_results = game.action_results.clone();
             }
-        } else {
-            self.set_index(0);
         }
 
-        if let Some(index) = self.index {
-            if index >= self.game_ids.len() && !self.game_ids.is_empty() {
-                self.set_index(self.game_ids.len() - 1);
-            }
-        }
+        self.index = self.index.map(|index| index % self.max_index());
 
         Ok(())
     }
@@ -1030,16 +1084,15 @@ impl Screen for GamePanel {
         frame: &mut UiFrame,
         world: &World,
         area: Rect,
-
         _debug_view: bool,
     ) -> AppResult<()> {
-        if self.game_ids.is_empty() {
-            frame.render_widget(
-                Paragraph::new(" No games at the moment!").block(default_block()),
-                area,
-            );
-            return Ok(());
-        }
+        // if self.game_ids.is_empty() {
+        //     frame.render_widget(
+        //         Paragraph::new(" No games at the moment!").block(default_block()),
+        //         area,
+        //     );
+        //     return Ok(());
+        // }
 
         // Split into top and bottom panels
         let split = Layout::vertical([
@@ -1130,7 +1183,7 @@ impl SplitPanel for GamePanel {
     }
 
     fn max_index(&self) -> usize {
-        self.game_ids.len()
+        self.game_ids.len() + self.loaded_game_ids.len()
     }
 
     fn set_index(&mut self, index: usize) {

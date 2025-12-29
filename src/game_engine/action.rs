@@ -5,10 +5,10 @@ use super::{
 };
 use crate::{
     backcompat_repr_u8_enum,
+    core::{GamePosition, Player, MAX_GAME_POSITION},
     game_engine::{
-        brawl, constants::TACTIC_MODIFIER_MULTIPLIER, end_of_quarter, isolation, jump_ball,
-        off_the_screen, pick_and_roll, post, rebound, shot, start_of_quarter, substitution,
-        tactic::Tactic,
+        brawl, end_of_quarter, fastbreak, isolation, jump_ball, off_the_screen, pick_and_roll,
+        post, rebound, shot, start_of_quarter,
     },
 };
 use core::fmt::Debug;
@@ -16,6 +16,7 @@ use rand_chacha::ChaCha8Rng;
 use rand_distr::{weighted::WeightedIndex, Distribution};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use strum::EnumIter;
 
 // FIXME: migrate to repr
 // #[derive(Debug, Default, PartialEq, Clone, Copy, Serialize, Deserialize)]
@@ -27,7 +28,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 // }
 
 backcompat_repr_u8_enum! {
-    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[derive(Debug, EnumIter, PartialEq, Clone, Copy)]
     pub enum Advantage {
         Attack,
         Neutral,
@@ -58,6 +59,8 @@ pub enum ActionSituation {
     CloseShot,
     MediumShot,
     LongShot,
+    Fastbreak,
+    ForcedOffTheScreenAction, // FIXME: would be better to use an interal enum property action: Action
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
@@ -97,22 +100,17 @@ pub enum Action {
     CloseShot,
     MediumShot,
     LongShot,
-    Substitution,
+    Fastbreak,
 }
 
 impl Action {
-    pub(crate) fn tactic_modifier(&self, attack_tactic: Tactic, defense_tactic: Tactic) -> i16 {
-        (attack_tactic.attack_roll_bonus(self) - defense_tactic.defense_roll_bonus(self))
-            * TACTIC_MODIFIER_MULTIPLIER
-    }
-
     pub(crate) fn execute(
         &self,
         input: &ActionOutput,
         game: &Game,
         action_rng: &mut ChaCha8Rng,
         description_rng: &mut ChaCha8Rng,
-    ) -> Option<ActionOutput> {
+    ) -> ActionOutput {
         let mut output = match self {
             Action::JumpBall => jump_ball::execute(input, game, action_rng, description_rng),
             Action::StartOfQuarter => {
@@ -133,14 +131,23 @@ impl Action {
                 shot::execute_medium_shot(input, game, action_rng, description_rng)
             }
             Action::LongShot => shot::execute_long_shot(input, game, action_rng, description_rng),
-            Action::Substitution => substitution::execute(input, game, action_rng, description_rng),
             Action::Brawl => brawl::execute(input, game, action_rng, description_rng),
+            Action::Fastbreak => fastbreak::execute(input, game, action_rng, description_rng),
         };
-        output.as_mut()?.random_seed = action_rng.get_seed();
+        output.random_seed = action_rng.get_seed();
         output
     }
 }
 
-pub fn sample_player_index(rng: &mut ChaCha8Rng, weights: [u8; 5]) -> Option<usize> {
+pub fn sample_player_index(
+    rng: &mut ChaCha8Rng,
+    mut weights: [GamePosition; MAX_GAME_POSITION as usize],
+    players: [&Player; MAX_GAME_POSITION as usize],
+) -> Option<usize> {
+    for (idx, player) in players.iter().enumerate() {
+        if player.is_knocked_out() {
+            weights[idx] = 0;
+        }
+    }
     Some(WeightedIndex::new(weights).ok()?.sample(rng))
 }

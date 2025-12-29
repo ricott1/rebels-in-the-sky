@@ -1,6 +1,6 @@
 use super::collisions::HitBox;
-use crate::space_adventure::entity::Entity;
-use crate::space_adventure::traits::*;
+use super::entity::Entity;
+use super::traits::*;
 use glam::{I16Vec2, Vec2};
 use image::imageops::crop_imm;
 use image::Rgba;
@@ -142,7 +142,7 @@ pub fn draw_hitbox(base: &mut RgbaImage, entity: &Entity) {
 #[cfg(test)]
 mod test {
 
-    use crate::{types::AppResult, world::spaceship::SpaceshipPrefab};
+    use crate::{core::spaceship::SpaceshipPrefab, types::AppResult};
     use glam::I16Vec2;
     use image::imageops::rotate90;
 
@@ -151,7 +151,7 @@ mod test {
     #[test]
     fn test_hitbox_size() -> AppResult<()> {
         let spaceship = SpaceshipPrefab::Ibarruri.spaceship();
-        let base_gif = spaceship.compose_image()?;
+        let base_gif = spaceship.compose_image(None)?;
         let base_image = rotate90(&base_gif[0]);
         let (_, hit_box) = body_data_from_image(&base_image, false);
         assert!(hit_box.size() == I16Vec2::new(16, 20));

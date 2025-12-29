@@ -4,9 +4,10 @@ use super::color_map::{ColorMap, ColorPreset};
 use super::components::*;
 use super::types::Gif;
 use super::utils::{open_image, ExtraImageUtils};
+use crate::core::spaceship_components::{Engine, Hull, Shooter, Storage};
+use crate::core::Shield;
+use crate::image::utils::LightMaskStyle;
 use crate::types::AppResult;
-use crate::world::spaceship::{Engine, Hull, Shooter, Storage};
-use crate::world::Shield;
 use image::{Rgba, RgbaImage};
 use serde;
 use serde::{Deserialize, Serialize};
@@ -96,7 +97,8 @@ impl SpaceshipImage {
         shooter: Shooter,
         shield: Shield,
         in_shipyard: bool,
-        shooting: bool,
+        is_shooting: bool,
+        light_mask: Option<LightMaskStyle>,
     ) -> AppResult<Gif> {
         let mut gif = Gif::new();
         let size = Self::size(&hull);
@@ -163,7 +165,7 @@ impl SpaceshipImage {
                 base.copy_non_trasparent_from(&shipyard_img, x, y)?;
             }
 
-            if shooting {
+            if is_shooting {
                 let shooter_img = shooter.image(size)?;
                 let mut shooter_positions = vec![];
                 for x in 0..shooter_img.width() {
@@ -179,7 +181,7 @@ impl SpaceshipImage {
 
                 let x_offset = (base.width() - shooter_img.width()) / 2;
                 let y_offset = if shooter.fire_rate() > 0.0 {
-                    (tick as u32 / 2) % (36 / shooter.fire_rate() as u32) + 1
+                    (tick as u32) % (36 / shooter.fire_rate() as u32) + 1
                 } else {
                     0
                 };
@@ -191,6 +193,10 @@ impl SpaceshipImage {
                 }
             }
 
+            if let Some(mask) = light_mask.as_ref() {
+                base.apply_light_mask(mask);
+            }
+
             gif.push(base);
         }
         Ok(gif)
@@ -200,8 +206,15 @@ impl SpaceshipImage {
 #[cfg(test)]
 mod tests {
     use super::{SPACESHIP_IMAGE_HEIGHT, SPACESHIP_IMAGE_WIDTH};
-    use crate::{image::color_map::ColorMap, types::AppResult, world::spaceship::SpaceshipPrefab};
-    use image::{self, GenericImage, RgbaImage};
+    use crate::{
+        core::spaceship::SpaceshipPrefab,
+        image::{
+            color_map::ColorMap,
+            utils::{ExtraImageUtils, LightMaskStyle},
+        },
+        types::AppResult,
+    };
+    use image::{self, RgbaImage};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
     use std::path::Path;
@@ -215,13 +228,17 @@ mod tests {
         for prefab in SpaceshipPrefab::iter() {
             let spaceship = prefab.spaceship().with_color_map(ColorMap::random(rng));
             let mut base = RgbaImage::new(SPACESHIP_IMAGE_WIDTH * n, SPACESHIP_IMAGE_HEIGHT);
-            base.copy_from(&spaceship.compose_image()?[0], 0, 0)?;
-            base.copy_from(
+            base.copy_non_trasparent_from(
+                &spaceship.compose_image(Some(LightMaskStyle::radial()))?[0],
+                0,
+                0,
+            )?;
+            base.copy_non_trasparent_from(
                 &spaceship.compose_image_in_shipyard()?[0],
                 (SPACESHIP_IMAGE_WIDTH) as u32,
                 0,
             )?;
-            base.copy_from(
+            base.copy_non_trasparent_from(
                 &spaceship.compose_image_shooting()?[2],
                 (2 * SPACESHIP_IMAGE_WIDTH) as u32,
                 0,
@@ -229,7 +246,7 @@ mod tests {
             image::save_buffer(
                 &Path::new(
                     format!(
-                        "tests/spaceship_image_{}.png",
+                        "tests/images/spaceship_image_{}.png",
                         prefab.to_string().to_lowercase()
                     )
                     .as_str(),

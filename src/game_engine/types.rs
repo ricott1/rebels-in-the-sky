@@ -1,19 +1,19 @@
 use super::{action::Action, constants::MIN_TIREDNESS_FOR_ROLL_DECLINE, tactic::Tactic};
 use crate::{
     backcompat_repr_u8_enum,
-    game_engine::constants::NUMBER_OF_ROLLS,
-    image::game::PitchImage,
-    types::{AppResult, GameId, PlayerId, PlayerMap, TeamId, TeamMap},
-    world::{
+    core::{
         constants::MAX_PLAYERS_PER_GAME,
-        player::{InfoStats, Player},
-        position::{Position, MAX_POSITION},
-        skill::{Athletics, Defense, Mental, Offense, Technical, MAX_SKILL, MIN_SKILL},
+        player::Player,
+        position::{GamePosition, MAX_GAME_POSITION},
+        skill::{MAX_SKILL, MIN_SKILL},
         team::Team,
         types::TrainingFocus,
         utils::is_default,
-        Rated, MIN_PLAYERS_PER_GAME,
+        GamePositionUtils, GameSkill, Rated, Skill, MIN_PLAYERS_PER_GAME,
     },
+    game_engine::constants::NUMBER_OF_ROLLS,
+    image::game::PitchImage,
+    types::{AppResult, GameId, PlayerId, PlayerMap, TeamId, TeamMap},
 };
 use anyhow::anyhow;
 use itertools::Itertools;
@@ -32,7 +32,7 @@ pub struct GameStats {
     pub games: [u16; 3],
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub position: Option<Position>,
+    pub position: Option<GamePosition>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub seconds_played: u32,
@@ -133,15 +133,15 @@ impl GameStats {
 pub struct TeamInGame {
     pub team_id: TeamId,
     pub peer_id: Option<PeerId>,
-    pub reputation: f32,
+    pub reputation: Skill,
     pub version: u64,
     pub name: String,
     pub initial_positions: Vec<PlayerId>,
-    // this is necessary for NetworkGame and in general to be able to simulate a game from the start
+    // This is necessary for NetworkGame and in general to be able to simulate a game from the start
     // because the player tiredness is updated during the game.
     // The order is the same as initial_positions
-    pub initial_tiredness: Vec<f32>,
-    pub initial_morale: Vec<f32>,
+    pub initial_tiredness: Vec<Skill>,
+    pub initial_morale: Vec<Skill>,
     pub players: PlayerMap,
     pub stats: GameStatsMap,
     pub tactic: Tactic,
@@ -155,8 +155,8 @@ impl TeamInGame {
 
         for (idx, &player_id) in players.keys().enumerate() {
             let mut player_stats = GameStats::default();
-            if (idx as Position) < MAX_POSITION {
-                player_stats.position = Some(idx as Position);
+            if (idx as GamePosition) < MAX_GAME_POSITION {
+                player_stats.position = Some(idx as GamePosition);
             }
             stats.insert(player_id, player_stats.clone());
         }
@@ -186,6 +186,7 @@ impl TeamInGame {
         }
     }
 
+    // We expose this function rather than from_team because we need to get the players anyway.
     pub fn from_team_id(team_id: &TeamId, teams: &TeamMap, players: &PlayerMap) -> AppResult<Self> {
         let team = if let Some(team) = teams.get(team_id) {
             team
@@ -205,8 +206,14 @@ impl TeamInGame {
         Ok(TeamInGame::new(team, team_players))
     }
 
-    pub fn pick_action(&self, rng: &mut ChaCha8Rng) -> AppResult<Action> {
-        self.tactic.pick_action(rng)
+    pub fn pick_action(&self, rng: &mut ChaCha8Rng) -> Option<Action> {
+        let num_active_players = self
+            .players
+            .values()
+            .filter(|p| !p.is_knocked_out())
+            .count();
+
+        self.tactic.pick_action(rng, num_active_players)
     }
 }
 
@@ -222,63 +229,6 @@ impl Rated for TeamInGame {
             .map(|p| p.average_skill())
             .sum::<f32>()
             / self.players.len().max(MIN_PLAYERS_PER_GAME) as f32) as u8
-    }
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PersistedTeamInGame {
-    pub team_id: TeamId,
-    pub version: u64,
-    pub name: String,
-    pub initial_positions: Vec<PlayerId>,
-    pub players: PersistedPlayerMap,
-    pub stats: GameStatsMap,
-    pub tactic: Tactic,
-}
-
-impl PersistedTeamInGame {
-    pub fn from_team_in_game(team_in_game: &TeamInGame) -> Self {
-        let mut players = HashMap::new();
-        for (player_id, player) in team_in_game.players.iter() {
-            players.insert(*player_id, PersistedPlayer::from_player(player));
-        }
-        Self {
-            team_id: team_in_game.team_id,
-            version: team_in_game.version,
-            name: team_in_game.name.clone(),
-            initial_positions: team_in_game.initial_positions.clone(),
-            players,
-            stats: team_in_game.stats.clone(),
-            tactic: team_in_game.tactic,
-        }
-    }
-}
-
-type PersistedPlayerMap = HashMap<PlayerId, PersistedPlayer>;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PersistedPlayer {
-    pub id: PlayerId,
-    pub version: u64,
-    pub info: InfoStats,
-    pub athletics: Athletics,
-    pub offense: Offense,
-    pub technical: Technical,
-    pub defense: Defense,
-    pub mental: Mental,
-}
-
-impl PersistedPlayer {
-    pub fn from_player(player: &Player) -> Self {
-        Self {
-            id: player.id,
-            version: player.version,
-            info: player.info.clone(),
-            athletics: player.athletics,
-            offense: player.offense,
-            technical: player.technical,
-            defense: player.defense,
-            mental: player.mental,
-        }
     }
 }
 
@@ -376,11 +326,12 @@ pub trait EnginePlayer {
     fn min_roll(&self) -> i16;
     fn max_roll(&self) -> i16;
     fn roll(&self, rng: &mut ChaCha8Rng) -> i16;
+    fn in_game_rating_at_position(&self, position: GamePosition) -> f32;
 }
 
 impl EnginePlayer for Player {
     fn min_roll(&self) -> i16 {
-        self.morale as i16
+        self.morale.game_value()
     }
 
     fn max_roll(&self) -> i16 {
@@ -389,11 +340,13 @@ impl EnginePlayer for Player {
         }
 
         if self.tiredness <= MIN_TIREDNESS_FOR_ROLL_DECLINE {
-            return NUMBER_OF_ROLLS as i16 * MAX_SKILL as i16;
+            return MAX_SKILL as i16 * NUMBER_OF_ROLLS as i16;
         }
 
-        NUMBER_OF_ROLLS as i16
-            * (MAX_SKILL - (self.tiredness - MIN_TIREDNESS_FOR_ROLL_DECLINE)) as i16
+        const BASE: i16 = 3;
+        BASE * MAX_SKILL as i16
+            + (NUMBER_OF_ROLLS as i16 - BASE)
+                * (MAX_SKILL - (self.tiredness - MIN_TIREDNESS_FOR_ROLL_DECLINE)) as i16
     }
 
     fn roll(&self, rng: &mut ChaCha8Rng) -> i16 {
@@ -401,31 +354,47 @@ impl EnginePlayer for Player {
             .max(self.min_roll())
             .min(self.max_roll())
     }
+
+    fn in_game_rating_at_position(&self, position: GamePosition) -> f32 {
+        if self.is_knocked_out() {
+            return 0.0;
+        }
+
+        // Follow the general rule: Roll + 2 * skills ( + tactic but it's the same for evey player in the team).
+        let roll = ((MIN_SKILL as i16 + NUMBER_OF_ROLLS as i16 * MAX_SKILL as i16) / 2)
+            .max(self.min_roll())
+            .min(self.max_roll());
+
+        roll as f32 + 2.0 * position.player_rating(self.current_skill_array())
+    }
 }
 
 #[cfg(test)]
 #[test]
 fn test_roll() {
-    use crate::world::planet::Planet;
     use rand::SeedableRng;
 
     fn print_player_rolls(player: &Player, rng: &mut ChaCha8Rng) {
         let roll = player.roll(rng);
+        let roll2 = player.roll(rng);
         println!(
-            "Tiredness={} Morale={} => Min={:2} Max={:2} Roll={:2}",
+            "Tiredness={:<4.1} Morale={:<4.1} => Min={:<3} Max={:<3} Roll={:<3}  AdvAtk={:<3} AdvDef={:<3}",
             player.tiredness,
             player.morale,
             player.min_roll(),
             player.max_roll(),
-            roll
+            roll,
+            roll.max(roll2),
+            roll.min(roll2)
         );
+
         assert!(player.max_roll() >= roll);
         if player.max_roll() >= player.min_roll() {
             assert!(player.min_roll() <= roll);
         }
     }
     let rng = &mut ChaCha8Rng::from_os_rng();
-    let mut player = Player::random(rng, None, &Planet::default(), 0.0);
+    let mut player = Player::default().randomize(Some(rng));
 
     print_player_rolls(&player, rng);
 
@@ -435,7 +404,21 @@ fn test_roll() {
     player.morale = MIN_SKILL;
     print_player_rolls(&player, rng);
 
-    player.tiredness = MIN_SKILL;
+    player.tiredness = MIN_TIREDNESS_FOR_ROLL_DECLINE;
     player.morale = MIN_SKILL;
     print_player_rolls(&player, rng);
+
+    player.tiredness = MIN_TIREDNESS_FOR_ROLL_DECLINE + 2.0;
+    player.morale = MIN_SKILL;
+    print_player_rolls(&player, rng);
+
+    player.tiredness = MIN_TIREDNESS_FOR_ROLL_DECLINE + 2.0;
+    player.morale = MAX_SKILL / 2.0;
+    print_player_rolls(&player, rng);
+
+    for _ in 0..10 {
+        player.tiredness = rng.random_range(MIN_SKILL..=MAX_SKILL);
+        player.morale = rng.random_range(MIN_SKILL..=MAX_SKILL);
+        print_player_rolls(&player, rng);
+    }
 }

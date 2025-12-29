@@ -1,14 +1,9 @@
 use super::{
-    space_callback::SpaceCallback, traits::*, visual_effects::VisualEffect, ColliderType,
-    ControllableSpaceship,
+    constants::PROJECTILE_SPACESHIP_DAMAGE_MULTIPLIER, entity::Entity,
+    space_callback::SpaceCallback, traits::*, utils::EntityState, visual_effects::VisualEffect,
+    Body, Collider, ColliderType, ControllableSpaceship, ResourceFragment,
 };
-use crate::{
-    space_adventure::{
-        constants::PROJECTILE_SPACESHIP_DAMAGE_MULTIPLIER, entity::Entity, utils::EntityState,
-        Body, Collider, ResourceFragment,
-    },
-    types::AppResult,
-};
+use crate::types::AppResult;
 use glam::{I16Vec2, Vec2};
 use image::{Pixel, Rgba};
 use rand::{Rng, SeedableRng};
@@ -271,8 +266,25 @@ fn get_collision_callbacks(
             get_collision_callbacks(other, one, collision_point, deltatime)?
         }
         (ColliderType::Projectile { .. }, ColliderType::Asteroid) => {
+            let rng = &mut ChaCha8Rng::from_os_rng();
+            let particle_velocity = one.velocity().as_vec2() * rng.random_range(0.1..=0.15)
+                + Vec2::Y * rng.random_range(-1.0..=1.0) * 12.0;
             vec![
                 SpaceCallback::DestroyEntity { id: one.id() },
+                SpaceCallback::GenerateParticle {
+                    position: collision_point.as_vec2(),
+                    velocity: particle_velocity,
+                    color: Rgba([
+                        210 + rng.random_range(0..=45),
+                        15 + (200.0 * (particle_velocity.length_squared() / 100.0).min(1.0)) as u8,
+                        55,
+                        205,
+                    ]),
+                    particle_state: EntityState::Decaying {
+                        lifetime: 1.0 + rng.random_range(0.0..1.5),
+                    },
+                    layer: 2,
+                },
                 SpaceCallback::DamageEntity {
                     id: other.id(),
                     damage: one.collision_damage(),
@@ -289,9 +301,9 @@ fn get_collision_callbacks(
                     SpaceCallback::DestroyEntity { id: one.id() },
                     SpaceCallback::GenerateParticle {
                         position: collision_point.as_vec2(),
-                        velocity: one.velocity().as_vec2() * rng.random_range(0.75..=1.25)
-                            + Vec2::Y * rng.random_range(-0.5..=0.5),
-                        color: Rgba([235, 55, 85, 255]),
+                        velocity: one.velocity().as_vec2() * rng.random_range(-0.1..=0.01)
+                            + Vec2::Y * rng.random_range(-1.0..=1.0) * 8.0,
+                        color: Rgba([210 + rng.random_range(0..=45), 55, 75, 205]),
                         particle_state: EntityState::Decaying {
                             lifetime: 1.0 + rng.random_range(0.0..1.5),
                         },
@@ -325,9 +337,9 @@ fn get_collision_callbacks(
                     SpaceCallback::DestroyEntity { id: one.id() },
                     SpaceCallback::GenerateParticle {
                         position: collision_point.as_vec2(),
-                        velocity: one.velocity().as_vec2() * rng.random_range(0.75..=1.25)
-                            + Vec2::Y * rng.random_range(-0.5..=0.5),
-                        color: Rgba([185, 155, 85, 255]),
+                        velocity: one.velocity().as_vec2() * rng.random_range(-0.15..=-0.05)
+                            + Vec2::Y * rng.random_range(-1.0..=1.0) * 4.0,
+                        color: Rgba([210 + rng.random_range(0..=45), 125, 25, 205]),
                         particle_state: EntityState::Decaying {
                             lifetime: 1.0 + rng.random_range(0.0..1.5),
                         },
@@ -482,15 +494,11 @@ pub fn resolve_collision_between(
 
 #[cfg(test)]
 mod test {
-
-    use crate::{
-        space_adventure::{
-            collector::CollectorEntity, collisions::are_colliding, fragment::FragmentEntity,
-            traits::*,
-        },
-        types::AppResult,
-        world::resources::Resource,
+    use crate::space_adventure::resources::Resource;
+    use crate::space_adventure::{
+        collector::CollectorEntity, collisions::are_colliding, fragment::FragmentEntity, traits::*,
     };
+    use crate::types::AppResult;
     use glam::Vec2;
 
     #[test]
