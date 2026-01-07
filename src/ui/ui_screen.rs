@@ -11,7 +11,8 @@ use super::ui_key;
 use super::widgets::default_block;
 use super::{
     game_panel::GamePanel, my_team_panel::MyTeamPanel, new_team_screen::NewTeamScreen,
-    player_panel::PlayerListPanel, team_panel::TeamListPanel, traits::Screen,
+    player_panel::PlayerListPanel, team_panel::TeamListPanel, tournament_panel::TournamentPanel,
+    traits::Screen,
 };
 #[cfg(feature = "audio")]
 use crate::audio::{music_player::MusicPlayer, AudioPlayerState};
@@ -56,6 +57,7 @@ pub enum UiTab {
     Pirates,
     Galaxy,
     Games,
+    Tournaments,
     SpaceCove,
     Swarm,
 }
@@ -73,6 +75,7 @@ pub struct UiScreen {
     pub player_panel: PlayerListPanel,
     pub team_panel: TeamListPanel,
     pub game_panel: GamePanel,
+    pub tournament_panel: TournamentPanel,
     pub space_cove_panel: SpaceCovePanel,
     pub swarm_panel: SwarmPanel,
     pub my_team_panel: MyTeamPanel,
@@ -88,6 +91,7 @@ impl UiScreen {
         let player_panel = PlayerListPanel::new();
         let team_panel = TeamListPanel::new();
         let game_panel = GamePanel::new();
+        let tournament_panel = TournamentPanel::new();
         let space_cove_panel = SpaceCovePanel::new();
         let swarm_panel = SwarmPanel::new();
         let my_team_panel = MyTeamPanel::new();
@@ -101,6 +105,10 @@ impl UiScreen {
             UiTab::Galaxy,
             UiTab::Games,
         ];
+
+        if false {
+            ui_tabs.push(UiTab::Tournaments);
+        }
 
         if !disable_network {
             ui_tabs.push(UiTab::Swarm);
@@ -120,6 +128,7 @@ impl UiScreen {
             player_panel,
             team_panel,
             game_panel,
+            tournament_panel,
             space_cove_panel,
             swarm_panel,
             my_team_panel,
@@ -224,6 +233,7 @@ impl UiScreen {
                 UiTab::Pirates => &self.player_panel,
                 UiTab::Galaxy => &self.galaxy_panel,
                 UiTab::Games => &self.game_panel,
+                UiTab::Tournaments => &self.tournament_panel,
                 UiTab::SpaceCove => &self.space_cove_panel,
                 UiTab::Swarm => &self.swarm_panel,
             },
@@ -241,6 +251,7 @@ impl UiScreen {
                 UiTab::Pirates => Some(&mut self.player_panel),
                 UiTab::Galaxy => Some(&mut self.galaxy_panel),
                 UiTab::Games => Some(&mut self.game_panel),
+                UiTab::Tournaments => Some(&mut self.tournament_panel),
                 UiTab::SpaceCove => Some(&mut self.space_cove_panel),
                 UiTab::Swarm => Some(&mut self.swarm_panel),
             },
@@ -257,6 +268,7 @@ impl UiScreen {
                 UiTab::Pirates => &mut self.player_panel,
                 UiTab::Galaxy => &mut self.galaxy_panel,
                 UiTab::Games => &mut self.game_panel,
+                UiTab::Tournaments => &mut self.tournament_panel,
                 UiTab::SpaceCove => &mut self.space_cove_panel,
                 UiTab::Swarm => &mut self.swarm_panel,
             },
@@ -276,20 +288,10 @@ impl UiScreen {
                 }
 
                 let during_space_adventure = world.space_adventure.is_some();
-                let own_team = world.get_own_team().ok()?;
-                let mut on_peer_asteroid = false;
-                if let Some(planet_id) = own_team.is_on_planet().as_ref() {
-                    if let Ok(planet) = world.get_planet_or_err(planet_id) {
-                        if planet.peer_id.is_some() {
-                            on_peer_asteroid = true;
-                        }
-                    }
-                }
 
                 Some(UiCallback::PushUiPopup {
                     popup_message: PopupMessage::PromptQuit {
                         during_space_adventure,
-                        on_peer_asteroid,
                         tick: Tick::now(),
                     },
                 })
@@ -395,11 +397,16 @@ impl UiScreen {
                 self.team_panel.update(world)?;
                 self.player_panel.update(world)?;
                 self.game_panel.update(world)?;
+                if self.ui_tabs.contains(&UiTab::Tournaments) {
+                    self.tournament_panel.update(world)?;
+                }
                 self.galaxy_panel.update(world)?;
                 if self.ui_tabs.contains(&UiTab::SpaceCove) {
                     self.space_cove_panel.update(world)?;
                 }
-                self.swarm_panel.update(world)?;
+                if self.ui_tabs.contains(&UiTab::Swarm) {
+                    self.swarm_panel.update(world)?;
+                }
             }
             UiState::SpaceAdventure => self.space_screen.update(world)?,
         }

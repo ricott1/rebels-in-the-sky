@@ -23,7 +23,7 @@ use crate::{
         timer::{Period, Timer},
         types::{GameStatsMap, Possession},
     },
-    image::game::{PitchImage, PITCH_HEIGHT},
+    image::game::PitchImage,
     image::player::{PLAYER_IMAGE_HEIGHT, PLAYER_IMAGE_WIDTH},
     types::{AppResult, GameId, SystemTimeTick, Tick},
     ui::constants::*,
@@ -45,8 +45,10 @@ use std::collections::HashMap;
 pub struct GamePanel {
     index: Option<usize>,
     game_ids: Vec<GameId>,
+    recent_game_ids: Vec<GameId>, // Keeps track of games that have ended and are retained for displaying
     loaded_game_ids: Vec<GameId>, // Used to keep a strict order on the keys of loaded_games
     loaded_games: HashMap<GameId, Game>, // We store them possibly with error to avoid loading everytime from disk
+    last_selected_game_id: Option<GameId>, // Used to track selected game when UI updates.
     pitch_view: bool,
     pitch_view_filter: Option<Period>,
     player_status_view: bool,
@@ -72,31 +74,47 @@ impl GamePanel {
     pub fn set_active_game(&mut self, game_id: GameId) -> AppResult<()> {
         if let Some(index) = self.game_ids.iter().position(|&x| x == game_id) {
             self.set_index(index);
-        } else if let Some(index) = self.loaded_game_ids.iter().position(|&x| x == game_id) {
+        } else if let Some(index) = self.recent_game_ids.iter().position(|&x| x == game_id) {
             self.set_index(index + self.game_ids.len());
+        } else if let Some(index) = self.loaded_game_ids.iter().position(|&x| x == game_id) {
+            self.set_index(index + self.game_ids.len() + self.recent_game_ids.len());
         } else {
             // Try to load from disk
-            let game = load_game(game_id)?;
+            let game = load_game(&game_id)?;
             self.loaded_games.insert(game_id, game);
             self.loaded_game_ids.push(game_id);
-            self.set_index(self.loaded_game_ids.len() + self.game_ids.len() - 1);
+            self.set_index(self.max_index() - 1);
         }
 
         Ok(())
     }
 
+    pub fn add_load_game(&mut self, game: Game) {
+        self.loaded_game_ids.push(game.id);
+        self.loaded_games.insert(game.id, game);
+    }
+
     fn selected_game<'a>(
         world: &'a World,
         index: Option<usize>,
-        game_ids: &Vec<GameId>,
-        loaded_game_ids: &Vec<GameId>,
+        game_ids: &[GameId],
+        recent_game_ids: &[GameId],
+        loaded_game_ids: &[GameId],
         loaded_games: &'a HashMap<GameId, Game>,
     ) -> Option<&'a Game> {
         if let Some(game_id) = game_ids.get(index?) {
             return world.get_game(game_id);
         }
 
-        if let Some(game_id) = loaded_game_ids.get(index?.checked_sub(game_ids.len())?) {
+        if let Some(game_id) = recent_game_ids.get(index?.checked_sub(game_ids.len())?) {
+            return world.recently_finished_games.get(game_id);
+        }
+
+        if let Some(game_id) = loaded_game_ids.get(
+            index?
+                .checked_sub(game_ids.len())?
+                .checked_sub(recent_game_ids.len())?,
+        ) {
             return loaded_games.get(game_id);
         }
 
@@ -160,6 +178,7 @@ impl GamePanel {
                 ))
             })
             .collect::<Option<Vec<(String, Style)>>>();
+
         if let Some(options) = maybe_options {
             let list = selectable_list(options);
 
@@ -170,15 +189,23 @@ impl GamePanel {
                 area,
                 &mut ClickableListState::default().with_selected(list_index),
             );
+        } else {
+            frame.render_widget(default_block().title("Games ↓/↑"), area);
         }
     }
 
     fn build_recent_games_list(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
         let maybe_options = self
-            .loaded_game_ids
+            .recent_game_ids
             .iter()
+            .chain(self.loaded_game_ids.iter())
             .map(|game_id| {
-                let game = self.loaded_games.get(game_id)?;
+                let game = if world.recently_finished_games.contains_key(game_id) {
+                    world.recently_finished_games.get(game_id)?
+                } else {
+                    self.loaded_games.get(game_id)?
+                };
+
                 let mut style = UiStyle::DEFAULT;
 
                 if game.home_team_in_game.team_id == world.own_team_id
@@ -209,7 +236,7 @@ impl GamePanel {
             .collect::<Option<Vec<(String, Style)>>>();
 
         if let Some(options) = maybe_options {
-            let list = selectable_list(options);
+            let list = selectable_list(options).set_selection_offset(self.game_ids.len());
 
             let list_index = self
                 .index
@@ -221,6 +248,8 @@ impl GamePanel {
                 area,
                 &mut ClickableListState::default().with_selected(list_index),
             );
+        } else {
+            frame.render_widget(default_block().title("Past games ↓/↑"), area);
         }
     }
 
@@ -274,6 +303,7 @@ impl GamePanel {
             world,
             self.index,
             &self.game_ids,
+            &self.recent_game_ids,
             &self.loaded_game_ids,
             &self.loaded_games,
         ) {
@@ -305,8 +335,20 @@ impl GamePanel {
 
         frame.render_widget(
             Paragraph::new(format!(
-                "Playing on {}",
-                world.get_planet_or_err(&game.location)?.name
+                "{} on {}{}",
+                if game.part_of_tournament.is_some() {
+                    "Tournament"
+                } else if game.has_ended() {
+                    "Played"
+                } else {
+                    "Playing"
+                },
+                world.get_planet_or_err(&game.location)?.name,
+                if let Some(timestamp) = game.ended_at {
+                    format!(" on {}", timestamp.formatted_as_date())
+                } else {
+                    "".to_string()
+                }
             ))
             .centered(),
             central_split[3],
@@ -429,14 +471,6 @@ impl GamePanel {
         area: Rect,
     ) -> AppResult<()> {
         frame.render_widget(default_block().title("Shots map"), area);
-        let split = Layout::vertical([
-            Constraint::Length(PITCH_HEIGHT / 2 + 8), // pitch
-            Constraint::Min(1),                       // score
-        ])
-        .split(area.inner(Margin {
-            horizontal: 1,
-            vertical: 1,
-        }));
 
         let planet = world.get_planet_or_err(&game.location)?;
         let pitch_style = match planet.planet_type {
@@ -489,6 +523,15 @@ impl GamePanel {
 
         let pitch_image = pitch_style.image_with_shot_pixels(shots_map, last_shot, self.tick)?;
 
+        let split = Layout::vertical([
+            Constraint::Length(pitch_image.height() as u16 / 2 + 8), // pitch
+            Constraint::Min(1),                                      // score
+        ])
+        .split(area.inner(Margin {
+            horizontal: 1,
+            vertical: 1,
+        }));
+
         frame.render_widget(
             Paragraph::new(img_to_lines(&pitch_image)).centered(),
             split[0],
@@ -526,6 +569,7 @@ impl GamePanel {
             world,
             self.index,
             &self.game_ids,
+            &self.recent_game_ids,
             &self.loaded_game_ids,
             &self.loaded_games,
         ) {
@@ -620,7 +664,7 @@ impl GamePanel {
                 ActionSituation::BallInBackcourt
                 | ActionSituation::AfterDefensiveRebound
                 | ActionSituation::Turnover => {
-                    commentary.push(Line::from(""));
+                    commentary.push(Line::default());
                 }
                 _ => {}
             }
@@ -1041,29 +1085,46 @@ impl Screen for GamePanel {
                 .map(|(k, _)| *k)
                 .collect_vec();
 
-            // Try to keep track of current game when other games finish
-            if let Some(game) = Self::selected_game(
-                world,
-                self.index,
-                &self.game_ids,
-                &self.loaded_game_ids,
-                &self.loaded_games,
-            ) {
-                self.index = if let Some(index) = self.game_ids.iter().position(|&id| id == game.id)
+            self.recent_game_ids = world
+                .recently_finished_games
+                .iter()
+                .sorted_by(|&(_, a), &(_, b)| a.starting_at.cmp(&b.starting_at))
+                .map(|(k, _)| *k)
+                .collect_vec();
+
+            // Try to keep track of current game when other games finish.
+            // To do so, we track the currently selected game, before updating all the various indecies.
+            if let Some(game_id) = self.last_selected_game_id {
+                self.index = if let Some(index) = self.game_ids.iter().position(|&id| id == game_id)
                 {
                     Some(index)
+                } else if let Some(index) =
+                    self.recent_game_ids.iter().position(|&id| id == game_id)
+                {
+                    Some(index + self.game_ids.len())
                 } else {
-                    self.loaded_game_ids.iter().position(|&id| id == game.id)
+                    self.loaded_game_ids
+                        .iter()
+                        .position(|&id| id == game_id)
+                        .map(|index| index + self.game_ids.len() + self.recent_game_ids.len())
                 };
             }
         }
 
         if self.max_index() == 0 {
             self.index = None;
-        } else if let Some(game) = Self::selected_game(
+            self.last_selected_game_id = None;
+        } else if self.index.is_none() {
+            self.set_index(0);
+        }
+
+        self.index = self.index.map(|index| index % self.max_index());
+
+        if let Some(game) = Self::selected_game(
             world,
             self.index,
             &self.game_ids,
+            &self.recent_game_ids,
             &self.loaded_game_ids,
             &self.loaded_games,
         ) {
@@ -1073,8 +1134,6 @@ impl Screen for GamePanel {
                 self.action_results = game.action_results.clone();
             }
         }
-
-        self.index = self.index.map(|index| index % self.max_index());
 
         Ok(())
     }
@@ -1086,14 +1145,6 @@ impl Screen for GamePanel {
         area: Rect,
         _debug_view: bool,
     ) -> AppResult<()> {
-        // if self.game_ids.is_empty() {
-        //     frame.render_widget(
-        //         Paragraph::new(" No games at the moment!").block(default_block()),
-        //         area,
-        //     );
-        //     return Ok(());
-        // }
-
         // Split into top and bottom panels
         let split = Layout::vertical([
             Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2 - 1),
@@ -1183,11 +1234,28 @@ impl SplitPanel for GamePanel {
     }
 
     fn max_index(&self) -> usize {
-        self.game_ids.len() + self.loaded_game_ids.len()
+        self.game_ids.len() + self.recent_game_ids.len() + self.loaded_game_ids.len()
     }
 
     fn set_index(&mut self, index: usize) {
+        let index = index % self.max_index();
         self.index = Some(index);
         self.commentary_index = 0;
+        self.last_selected_game_id = if let Some(&game_id) = self.game_ids.get(index) {
+            Some(game_id)
+        } else if let Some(&game_id) = self
+            .recent_game_ids
+            .get(index.saturating_sub(self.game_ids.len()))
+        {
+            Some(game_id)
+        } else if let Some(&game_id) = self.loaded_game_ids.get(
+            index
+                .saturating_sub(self.game_ids.len())
+                .saturating_sub(self.recent_game_ids.len()),
+        ) {
+            Some(game_id)
+        } else {
+            None
+        };
     }
 }

@@ -2,11 +2,10 @@ use std::hash::Hash;
 
 use super::color_map::{ColorMap, ColorPreset};
 use super::components::*;
-use super::types::Gif;
 use super::utils::{open_image, ExtraImageUtils};
 use crate::core::spaceship_components::{Engine, Hull, Shooter, Storage};
 use crate::core::Shield;
-use crate::image::utils::LightMaskStyle;
+use crate::image::utils::{Gif, LightMaskStyle};
 use crate::types::AppResult;
 use image::{Rgba, RgbaImage};
 use serde;

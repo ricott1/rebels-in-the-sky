@@ -154,7 +154,7 @@ fn description(
             format!(
                 "{} can't believe {} missed that! Wide open!",
                 shooter.info.short_name(),
-                shooter.info.pronouns.as_subject()
+                shooter.info.pronouns.as_subject().to_lowercase()
             ),
             format!(
                 "{} fumbles the layup despite having no one near {}.",
@@ -416,7 +416,7 @@ fn description(
                 format!(
                     " The pass from {} was not perfect, but {} managed to convert it.",
                     passer.info.short_name(),
-                    shooter.info.pronouns.as_subject()
+                    shooter.info.pronouns.as_subject().to_lowercase()
                 ),
                 format!(
                     " {} managed to covert {}'s pass.",

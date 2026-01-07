@@ -3,8 +3,10 @@ use super::trade::Trade;
 use crate::core::planet::Planet;
 use crate::core::position::{GamePosition, MAX_GAME_POSITION};
 use crate::core::skill::Skill;
+use crate::core::TournamentRegistrationState;
 use crate::game_engine::timer::Timer;
 use crate::game_engine::types::GameStats;
+use crate::game_engine::{Tournament, TournamentId};
 use crate::types::{PlanetId, PlayerId, Tick};
 use crate::{
     core::{player::Player, team::Team, world::World},
@@ -20,16 +22,47 @@ use std::fmt::Debug;
 use strum_macros::Display;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[repr(u8)]
 #[allow(clippy::large_enum_variant)]
 pub enum NetworkData {
-    Team(Tick, NetworkTeam),
-    Challenge(Tick, Challenge),
-    Trade(Tick, Trade),
-    Message(Tick, String),
-    Game(Tick, NetworkGame),
-    SeedInfo(Tick, SeedInfo),
-    RelayerMessageToTeam(Tick, String, TeamId),
+    Team {
+        timestamp: Tick,
+        team: NetworkTeam,
+    },
+    Challenge {
+        timestamp: Tick,
+        challenge: Challenge,
+    },
+    Trade {
+        timestamp: Tick,
+        trade: Trade,
+    },
+    Message {
+        timestamp: Tick,
+        message: String,
+    },
+    Game {
+        timestamp: Tick,
+        game: NetworkGame,
+    },
+    SeedInfo {
+        timestamp: Tick,
+        seed_info: SeedInfo,
+    },
+    RelayerMessageToTeam {
+        timestamp: Tick,
+        message: String,
+        team_id: TeamId,
+    },
+    TournamentRegistrationRequest {
+        timestamp: Tick,
+        tournament_id: TournamentId,
+        team_id: TeamId,
+        state: TournamentRegistrationState,
+    },
+    Tournament {
+        timestamp: Tick,
+        tournament: Tournament,
+    },
 }
 
 #[derive(Debug, Clone, Display, Default, Serialize, Deserialize, PartialEq, Hash)]
@@ -95,6 +128,7 @@ pub struct NetworkGame {
     pub attendance: u32,
     pub starting_at: Tick,
     pub timer: Timer,
+    pub part_of_tournament: Option<TournamentId>,
 }
 
 impl NetworkGame {
@@ -153,6 +187,7 @@ impl NetworkGame {
             attendance: game.attendance,
             starting_at: game.starting_at,
             timer: game.timer,
+            part_of_tournament: game.part_of_tournament,
         })
     }
 }

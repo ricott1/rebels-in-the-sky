@@ -11,7 +11,11 @@ use super::{
 };
 use crate::app_version;
 use crate::core::{AsteroidUpgradeTarget, UpgradeableElement};
+use crate::game_engine::game::Game;
+use crate::game_engine::Tournament;
 use crate::network::{challenge::Challenge, trade::Trade};
+use crate::types::PlayerMap;
+use crate::ui::tournament_panel::TournamentView;
 use crate::ui::ui_key;
 use crate::{
     app::App,
@@ -54,6 +58,9 @@ pub enum UiCallback {
     },
     GoToGame {
         game_id: GameId,
+    },
+    GoToLoadedGame {
+        game: Game,
     },
     GoToPlanet {
         planet_id: PlanetId,
@@ -144,6 +151,9 @@ pub enum UiCallback {
     SetTeamPanelView {
         view: TeamView,
     },
+    SetTournamentPanelView {
+        view: TournamentView,
+    },
     AbandonAsteroid {
         asteroid_id: PlanetId,
     },
@@ -165,6 +175,11 @@ pub enum UiCallback {
     },
     Drink {
         player_id: PlayerId,
+    },
+
+    OrganizeNewTournament {
+        max_participants: usize,
+        starting_at: Tick,
     },
     GeneratePlayerTeam {
         name: String,
@@ -341,6 +356,16 @@ impl UiCallback {
         Box::new(move |app: &mut App| {
             app.ui.game_panel.update(&app.world)?;
             app.ui.game_panel.set_active_game(game_id)?;
+            app.ui.switch_to(super::ui_screen::UiTab::Games);
+            Ok(None)
+        })
+    }
+
+    fn go_to_loaded_game(game: Game) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            app.ui.game_panel.update(&app.world)?;
+            app.ui.game_panel.add_load_game(game.clone());
+            app.ui.game_panel.set_active_game(game.id)?;
             app.ui.switch_to(super::ui_screen::UiTab::Games);
             Ok(None)
         })
@@ -631,6 +656,72 @@ impl UiCallback {
         })
     }
 
+    fn organize_new_tournament(max_participants: usize, starting_at: Tick) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let own_team = app
+                .world
+                .teams
+                .get_mut(&app.world.own_team_id)
+                .expect("Own team should exists");
+            own_team.can_organize_tournament()?;
+
+            let planet_id = own_team
+                .has_space_cove_on()
+                .expect("Team should have a space cove");
+            let planet = app
+                .world
+                .planets
+                .get(&planet_id)
+                .expect("Space cove planet should exist.");
+
+            let mut tournament =
+                Tournament::new(own_team, max_participants, starting_at)?.on_planet(planet);
+
+            let mut players = PlayerMap::new();
+            for &player_id in own_team.player_ids.iter().take(MAX_PLAYERS_PER_GAME) {
+                let player = if let Some(player) = app.world.players.get(&player_id) {
+                    player.clone()
+                } else {
+                    return Err(anyhow!("Could not find player {player_id}"));
+                };
+                players.insert(player_id, player);
+            }
+
+            tournament.register_team(own_team, players)?;
+            app.world
+                .tournaments
+                .insert(tournament.id, tournament.clone());
+
+            own_team.tournament_registration_state = TournamentRegistrationState::Confirmed {
+                tournament_id: tournament.id,
+            };
+
+            app.ui.push_popup_to_top(PopupMessage::Ok {
+                message: format!(
+                    "New tournament created! \nStarting on {} {} on {} \n {}/{} registered teams",
+                    starting_at.formatted_as_date(),
+                    starting_at.formatted_as_time(),
+                    planet.name,
+                    tournament.participants.len(),
+                    tournament.max_participants
+                ),
+                is_skippable: true,
+                tick: Tick::now(),
+            });
+
+            if let Err(err) = app.network_handler.send_tournament(tournament) {
+                app.ui.push_log_event(
+                    Tick::now(),
+                    None,
+                    format!("Cannot send tournament: {err}"),
+                    log::Level::Error,
+                );
+            }
+
+            Ok(None)
+        })
+    }
+
     fn cancel_generate_own_team() -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.new_team_screen.set_state(CreationState::Players);
@@ -674,9 +765,7 @@ impl UiCallback {
     fn next_training_focus(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
             let mut team = app.world.get_team_or_err(&team_id)?.clone();
-            if team.current_game.is_some() {
-                return Err(anyhow!("Cannot change training focus:\nTeam is playing"));
-            }
+            team.can_change_training_focus()?;
 
             let new_focus = match team.training_focus {
                 Some(focus) => focus.next(),
@@ -1076,6 +1165,7 @@ impl UiCallback {
             Self::GoToTeam { team_id } => Self::go_to_team(*team_id)(app),
             Self::GoToPlayer { player_id } => Self::go_to_player(*player_id)(app),
             Self::GoToPlayerTeam { player_id } => Self::go_to_player_team(*player_id)(app),
+            Self::GoToLoadedGame { game } => Self::go_to_loaded_game(game.clone())(app),
             Self::GoToGame { game_id } => Self::go_to_game(*game_id)(app),
             Self::GoToPlanet { planet_id } => Self::go_to_planet(*planet_id)(app),
             Self::GoToSpaceCove => Self::go_to_space_cove()(app),
@@ -1199,7 +1289,7 @@ impl UiCallback {
             }
             Self::ContinueGame => {
                 app.ui.splash_screen.set_index(0);
-                app.load_world();
+                app.continue_game();
                 Ok(None)
             }
             Self::QuitGame => {
@@ -1248,6 +1338,10 @@ impl UiCallback {
             }
             Self::SetTeamPanelView { view } => {
                 app.ui.team_panel.set_view(*view);
+                Ok(None)
+            }
+            Self::SetTournamentPanelView { view } => {
+                app.ui.tournament_panel.set_view(*view);
                 Ok(None)
             }
             Self::AbandonAsteroid { asteroid_id } => {
@@ -1413,6 +1507,10 @@ impl UiCallback {
                 players.clone(),
                 spaceship.clone(),
             )(app),
+            Self::OrganizeNewTournament {
+                max_participants,
+                starting_at,
+            } => Self::organize_new_tournament(*max_participants, *starting_at)(app),
             Self::CancelGeneratePlayerTeam => Self::cancel_generate_own_team()(app),
             Self::AssignBestTeamPositions => Self::assign_best_team_positions()(app),
             Self::SwapPlayerPositions {
@@ -1578,8 +1676,6 @@ impl UiCallback {
                 }
 
                 if let Some(asteroid_type) = space.asteroid_planet_found() {
-                    own_team.reputation =
-                        (own_team.reputation + ReputationModifier::SMALL_BONUS).bound();
                     app.ui.push_popup(PopupMessage::AsteroidNameDialog {
                         tick: Tick::now(),
                         asteroid_type,

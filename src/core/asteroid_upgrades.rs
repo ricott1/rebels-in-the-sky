@@ -1,18 +1,16 @@
 use super::constants::HOURS;
 use super::resources::Resource;
-use crate::backcompat_repr_u8_enum;
 use crate::core::{UpgradeableElement, DAYS};
 use crate::types::Tick;
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::fmt::{self, Display};
 use strum_macros::EnumIter;
 
-// FIXME: migrate to repr
-backcompat_repr_u8_enum! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
-    pub enum AsteroidUpgradeTarget {
-        TeleportationPad,
-        SpaceCove,
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
+pub enum AsteroidUpgradeTarget {
+    TeleportationPad,
+    SpaceCove,
 }
 
 impl Display for AsteroidUpgradeTarget {

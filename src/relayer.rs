@@ -127,6 +127,8 @@ impl Relayer {
             event_sender,
             cancellation_token.clone(),
             DEFAULT_SEED_PORT,
+            true,
+            true,
         );
         while self.running {
             if let Some(AppEvent::NetworkEvent(swarm_event)) = event_receiver.recv().await {
@@ -163,7 +165,11 @@ impl Relayer {
             SwarmEvent::Behaviour(gossipsub::Event::Message { message, .. }) => {
                 assert!(message.topic == IdentTopic::new(TOPIC).hash());
                 let network_data = deserialize::<NetworkData>(&message.data)?;
-                if let NetworkData::Team(timestamp, network_team) = network_data {
+                if let NetworkData::Team {
+                    timestamp,
+                    team: network_team,
+                } = network_data
+                {
                     if let Some(current_ranking) = self.team_ranking.get(&network_team.team.id) {
                         if current_ranking.timestamp >= timestamp {
                             return Ok(());

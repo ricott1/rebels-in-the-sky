@@ -5,9 +5,7 @@ use std::cmp::min;
 use std::collections::HashMap;
 use strum::Display;
 
-pub const FLOOR_COLOR: Rgba<u8> = Rgba([254, 229, 165, 255]);
-pub const PITCH_WIDTH: u16 = 75;
-pub const PITCH_HEIGHT: u16 = 41;
+const FLOOR_COLOR: Rgba<u8> = Rgba([254, 229, 165, 255]);
 const BLINKING_STEP: usize = 15;
 
 pub fn floor_from_size(width: u32, height: u32) -> RgbaImage {
@@ -105,6 +103,9 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    const PITCH_WIDTH: u32 = 75;
+    const PITCH_HEIGHT: u32 = 41;
+
     #[test]
     #[ignore]
     fn test_generate_pitch_image() -> AppResult<()> {
@@ -121,8 +122,8 @@ mod tests {
                     format!("tests/{}_image.png", pitch.to_string().to_lowercase()).as_str(),
                 ),
                 &img,
-                PITCH_WIDTH as u32,
-                PITCH_HEIGHT as u32,
+                PITCH_WIDTH,
+                PITCH_HEIGHT,
                 image::ColorType::Rgba8,
             )?;
         }

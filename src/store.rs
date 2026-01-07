@@ -1,9 +1,17 @@
 #[cfg(feature = "relayer")]
 use crate::network::types::{PlayerRanking, TeamRanking};
-use crate::{core::world::World, game_engine::game::Game, types::*};
+use crate::{
+    core::world::World,
+    game_engine::{game::Game, Tournament, TournamentId},
+    types::*,
+};
 use anyhow::anyhow;
 use directories;
-use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
+use flate2::{
+    read::{GzDecoder, ZlibDecoder},
+    write::GzEncoder,
+    Compression,
+};
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 
@@ -17,20 +25,20 @@ use std::{
 pub static ASSETS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/assets/");
 static PERSISTED_WORLD_FILENAME: &str = "world";
 static PERSISTED_GAMES_PREFIX: &str = "games/game_";
+static PERSISTED_TOURNAMENTS_PREFIX: &str = "tournaments/tournament_";
 static LEGACY_PERSISTED_GAMES_PREFIX: &str = "game_";
 #[cfg(feature = "relayer")]
 static PERSISTED_TEAM_RANKING_FILENAME: &str = "relayer/team_ranking";
 #[cfg(feature = "relayer")]
 static PERSISTED_PLAYER_RANKING_FILENAME: &str = "relayer/player_ranking";
-const COMPRESSION_LEVEL: u32 = 4;
+const COMPRESSION_LEVEL: u32 = 5;
 
 fn prefixed_world_filename(store_prefix: &str) -> String {
     format!("{store_prefix}_{PERSISTED_WORLD_FILENAME}")
 }
 
 fn save_to_json<T: Serialize>(filename: &str, data: &T) -> AppResult<()> {
-    let path = store_path(&format!("{filename}.json.compressed"))?;
-
+    let path = store_path(&format!("{filename}.json.gz"))?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -40,31 +48,48 @@ fn save_to_json<T: Serialize>(filename: &str, data: &T) -> AppResult<()> {
     Ok(())
 }
 
-fn load_from_json<T: for<'a> Deserialize<'a>>(filename: &str) -> AppResult<T> {
-    let data: T =
-        if let Ok(bytes) = std::fs::read(store_path(&format!("{filename}.json.compressed"))?) {
-            deserialize(&bytes)?
-        } else {
-            // This fallback serves to migrate old files to the new compressed format
-            let file = std::fs::File::open(store_path(&format!("{filename}.json"))?)?;
-            serde_json::from_reader(file)?
-        };
+fn load_from_json<T: for<'a> Deserialize<'a> + Serialize>(filename: &str) -> AppResult<T> {
+    // New gzip format
+    if let Ok(bytes) = std::fs::read(store_path(&format!("{filename}.json.gz"))?) {
+        return deserialize(&bytes);
+    }
 
-    Ok(data)
+    // This fallback serves to migrate old zlib compression to the new gz format
+    let legacy_zlib = store_path(&format!("{filename}.json.compressed"))?;
+    if let Ok(bytes) = std::fs::read(&legacy_zlib) {
+        let data: T = deserialize(&bytes)?;
+        save_to_json(filename, &data)?; // writes .json.gz
+        if let Err(e) = std::fs::remove_file(&legacy_zlib) {
+            log::warn!("Failed to delete legacy file {legacy_zlib:?}: {e}");
+        }
+        return Ok(data);
+    }
+
+    // This fallback serves to migrate old files to the new gz format
+    let file = std::fs::File::open(store_path(&format!("{filename}.json"))?)?;
+    Ok(serde_json::from_reader(file)?)
 }
 
 fn compress(bytes: &[u8], level: u32) -> AppResult<Vec<u8>> {
-    let mut e = ZlibEncoder::new(Vec::new(), Compression::new(level));
+    let mut e = GzEncoder::new(Vec::new(), Compression::new(level));
     e.write_all(bytes)?;
-    let compressed_bytes = e.finish()?;
-    Ok(compressed_bytes)
+    Ok(e.finish()?)
 }
 
 fn decompress(bytes: &[u8]) -> AppResult<Vec<u8>> {
-    let mut d = ZlibDecoder::new(bytes);
-    let mut buf = Vec::new();
-    d.read_to_end(&mut buf)?;
-    Ok(buf)
+    // gzip magic bytes: 1F 8B
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        let mut d = GzDecoder::new(bytes);
+        let mut buf = Vec::new();
+        d.read_to_end(&mut buf)?;
+        Ok(buf)
+    } else {
+        // FIXME: remove legacy zlib
+        let mut d = ZlibDecoder::new(bytes);
+        let mut buf = Vec::new();
+        d.read_to_end(&mut buf)?;
+        Ok(buf)
+    }
 }
 
 pub fn serialize<T: Serialize>(value: &T) -> AppResult<Vec<u8>> {
@@ -137,19 +162,33 @@ pub fn load_world(store_prefix: &str) -> AppResult<World> {
 }
 
 pub fn save_game(game: &Game) -> AppResult<()> {
-    save_to_json(&format!("{}{}", PERSISTED_GAMES_PREFIX, game.id), &game)?;
+    save_to_json(&format!("{}{}", PERSISTED_GAMES_PREFIX, game.id), game)?;
     Ok(())
 }
 
-pub fn load_game(game_id: GameId) -> AppResult<Game> {
+pub fn load_game(game_id: &GameId) -> AppResult<Game> {
     // FIXME: remove this code, currently needed for migrating to new folder
     if let Ok(game) = load_from_json::<Game>(&format!("{PERSISTED_GAMES_PREFIX}{game_id}")) {
+        log::info!("Found game {game_id}");
         Ok(game)
     } else {
         let game = load_from_json::<Game>(&format!("{LEGACY_PERSISTED_GAMES_PREFIX}{game_id}"))?;
+        log::info!("Found legacy game {game_id}");
         save_game(&game)?;
         Ok(game)
     }
+}
+
+pub fn save_tournament(tournament: &Tournament) -> AppResult<()> {
+    save_to_json(
+        &format!("{}{}", PERSISTED_TOURNAMENTS_PREFIX, tournament.id),
+        tournament,
+    )?;
+    Ok(())
+}
+
+pub fn load_tournament(tournament_id: &TournamentId) -> AppResult<Tournament> {
+    load_from_json::<Tournament>(&format!("{PERSISTED_TOURNAMENTS_PREFIX}{tournament_id}"))
 }
 
 #[cfg(feature = "relayer")]
@@ -229,19 +268,14 @@ pub fn reset_store() -> AppResult<()> {
 
 pub fn save_game_exists(store_prefix: &str) -> bool {
     let filename = prefixed_world_filename(store_prefix);
-    if let Ok(path) = store_path(&format!("{filename}.json.compressed")) {
-        if path.exists() {
-            return true;
-        }
-    }
 
-    if let Ok(path) = store_path(&format!("{filename}.json")) {
-        if path.exists() {
-            return true;
-        }
-    }
-
-    false
+    [
+        format!("{filename}.json.gz"),
+        format!("{filename}.json.compressed"),
+        format!("{filename}.json"),
+    ]
+    .iter()
+    .any(|f| store_path(f).map(|p| p.exists()).unwrap_or(false))
 }
 
 pub fn save_data<C: AsRef<[u8]>>(filename: &str, data: &C) -> AppResult<()> {
@@ -257,14 +291,21 @@ pub fn load_data(filename: &str) -> AppResult<Vec<u8>> {
 pub fn world_file_data(store_prefix: &str) -> AppResult<std::fs::Metadata> {
     let filename = prefixed_world_filename(store_prefix);
 
-    if let Ok(compressed_metadata) =
-        std::fs::metadata(store_path(&format!("{filename}.json.compressed"))?)
-    {
-        Ok(compressed_metadata)
-    } else {
-        let metadata = std::fs::metadata(store_path(&format!("{filename}.json"))?)?;
-        Ok(metadata)
+    let candidates = [
+        format!("{filename}.json.gz"),
+        format!("{filename}.json.compressed"),
+        format!("{filename}.json"),
+    ];
+
+    for name in candidates {
+        if let Ok(path) = store_path(&name) {
+            if let Ok(metadata) = std::fs::metadata(&path) {
+                return Ok(metadata);
+            }
+        }
     }
+
+    Err(anyhow!("No world file found for prefix '{store_prefix}'"))
 }
 
 #[cfg(test)]
@@ -275,8 +316,6 @@ mod tests {
     };
     use directories;
     use itertools::Itertools;
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
     use std::fs::File;
 
     #[test]
@@ -313,14 +352,15 @@ mod tests {
     fn test_serialize_network_data() -> AppResult<()> {
         use super::{deserialize, serialize};
         use crate::network::types::{NetworkData, NetworkTeam};
-        let value = NetworkData::Message(0, "Hello".to_string());
+        let value = NetworkData::Message {
+            timestamp: 0,
+            message: "Hello".to_string(),
+        };
         let serialized_data = serialize(&value)?;
         let deserialized_data = deserialize(&serialized_data)?;
         assert!(value == deserialized_data);
 
-        let rng = &mut ChaCha8Rng::from_os_rng();
-
-        let mut team = Team::random(rng);
+        let mut team = Team::random(None);
 
         let mut players = vec![];
         for _ in 0..5 {
@@ -329,7 +369,10 @@ mod tests {
             players.push(player);
         }
 
-        let value = NetworkData::Team(0, NetworkTeam::new(team, players, vec![]));
+        let value = NetworkData::Team {
+            timestamp: 0,
+            team: NetworkTeam::new(team, players, vec![]),
+        };
         let serialized_data = serialize(&value)?;
         println!("Team size: {}", serialized_data.len());
 

@@ -14,7 +14,7 @@ use crate::{
         utils::is_default,
         DEFAULT_PLANET_ID,
     },
-    game_engine::{end_of_quarter, substitution},
+    game_engine::{end_of_quarter, substitution, TournamentId},
     types::*,
 };
 use itertools::Itertools;
@@ -30,8 +30,10 @@ pub struct GameSummary {
     pub away_team_id: TeamId,
     pub home_team_name: String,
     pub away_team_name: String,
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub home_team_knocked_out: bool,
+    #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub away_team_knocked_out: bool,
     pub home_quarters_score: [u16; 4],
@@ -39,11 +41,18 @@ pub struct GameSummary {
     pub location: PlanetId,
     pub attendance: u32,
     pub starting_at: Tick,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub ended_at: Option<Tick>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub winner: Option<TeamId>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub is_network: bool,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub part_of_tournament: Option<TournamentId>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     app_version: [usize; 3],
@@ -51,40 +60,7 @@ pub struct GameSummary {
 
 impl GameSummary {
     pub fn from_game(game: &Game) -> GameSummary {
-        let mut home_quarters_score = [0_u16; 4];
-        let mut away_quarters_score = [0_u16; 4];
-        for action in game.action_results.iter() {
-            // We need to loop over every action to cover the case in which the game ends abrutly because one team is knocked out.
-            // For quarters>1, we need to remove previous quarters score to get only the partial score of the quarter.
-            match action.start_at.period() {
-                Period::Q1 => {
-                    home_quarters_score[0] = action.home_score;
-                    away_quarters_score[0] = action.away_score;
-                }
-                Period::Q2 => {
-                    home_quarters_score[1] = action.home_score - home_quarters_score[0];
-                    away_quarters_score[1] = action.away_score - away_quarters_score[0];
-                }
-                Period::Q3 => {
-                    home_quarters_score[2] =
-                        action.home_score - home_quarters_score[0] - home_quarters_score[1];
-                    away_quarters_score[2] =
-                        action.away_score - away_quarters_score[0] - away_quarters_score[1];
-                }
-                Period::Q4 => {
-                    home_quarters_score[3] = action.home_score
-                        - home_quarters_score[0]
-                        - home_quarters_score[1]
-                        - home_quarters_score[2];
-                    away_quarters_score[3] = action.away_score
-                        - away_quarters_score[0]
-                        - away_quarters_score[1]
-                        - away_quarters_score[2];
-                }
-                _ => continue,
-            }
-        }
-
+        let (home_quarters_score, away_quarters_score) = game.get_score_by_quarter();
         Self {
             id: game.id,
             home_team_id: game.home_team_in_game.team_id,
@@ -101,6 +77,7 @@ impl GameSummary {
             ended_at: game.ended_at,
             winner: game.winner,
             is_network: game.is_network(),
+            part_of_tournament: game.part_of_tournament,
             app_version: game.app_version,
         }
     }
@@ -121,15 +98,30 @@ pub struct Game {
     pub location: PlanetId,
     pub attendance: u32,
     pub action_results: Vec<ActionOutput>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub won_jump_ball: Possession,
     pub starting_at: Tick,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub ended_at: Option<Tick>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub possession: Possession,
     pub timer: Timer,
     next_step: u16,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub winner: Option<TeamId>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub home_team_mvps: Option<Vec<GameMVPSummary>>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub away_team_mvps: Option<Vec<GameMVPSummary>>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub part_of_tournament: Option<TournamentId>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     app_version: [usize; 3],
@@ -146,9 +138,10 @@ impl Game {
             home_team_in_game,
             away_team_in_game,
             Tick::now(),
-            DEFAULT_PLANET_ID.clone(),
+            *DEFAULT_PLANET_ID,
             0,
             "Test arena",
+            None,
         )
     }
 
@@ -160,6 +153,7 @@ impl Game {
         planet_id: PlanetId,
         planet_total_population: u32,
         planet_name: &str,
+        part_of_tournament: Option<TournamentId>,
     ) -> Self {
         let total_reputation = home_team_in_game.reputation + away_team_in_game.reputation;
         let home_name = home_team_in_game.name.clone();
@@ -206,6 +200,7 @@ impl Game {
             winner: None,
             home_team_mvps: None,
             away_team_mvps: None,
+            part_of_tournament,
             app_version: app_version(),
         };
         let seed = game.get_rng_seed();
@@ -219,7 +214,7 @@ impl Game {
         game.attendance = attendance as u32;
         let mut default_output = ActionOutput::default();
 
-        let opening_text = [
+        let mut opening_text = [
             format!(
                 "{} vs {}. The intergalactic showdown is kicking off on {}! {} fans have packed the arena{}.",
                 home_name,
@@ -301,6 +296,10 @@ impl Game {
                 if game.attendance == 69 { " (nice)" } else { "" }
             ),
         ].choose(&mut rng).expect("There should be one option").clone();
+
+        if part_of_tournament.is_some() {
+            opening_text.push_str(" This game is part of a tournament.");
+        }
 
         default_output.description = opening_text;
         default_output.random_seed = seed;
@@ -555,7 +554,7 @@ impl Game {
             .copied()
             .collect_vec()
             .try_into()
-            .expect(format!("There should be exactly {} players", MAX_GAME_POSITION).as_str())
+            .unwrap_or_else(|_| panic!("There should be exactly {MAX_GAME_POSITION} players"))
     }
 
     pub fn defending_players_array(&self) -> [&Player; MAX_GAME_POSITION as usize] {
@@ -566,7 +565,7 @@ impl Game {
             .copied()
             .collect_vec()
             .try_into()
-            .expect(format!("There should be exactly {} players", MAX_GAME_POSITION).as_str())
+            .unwrap_or_else(|_| panic!("There should be exactly {MAX_GAME_POSITION} players"))
     }
 
     fn get_rng_seed(&self) -> [u8; 32] {
@@ -584,6 +583,44 @@ impl Game {
         } else {
             (0, 0)
         }
+    }
+
+    pub fn get_score_by_quarter(&self) -> ([u16; 4], [u16; 4]) {
+        let mut home_quarters_score = [0_u16; 4];
+        let mut away_quarters_score = [0_u16; 4];
+        for action in self.action_results.iter() {
+            // We need to loop over every action to cover the case in which the game ends abrutly because one team is knocked out.
+            // For quarters>1, we need to remove previous quarters score to get only the partial score of the quarter.
+            match action.start_at.period() {
+                Period::Q1 => {
+                    home_quarters_score[0] = action.home_score;
+                    away_quarters_score[0] = action.away_score;
+                }
+                Period::Q2 => {
+                    home_quarters_score[1] = action.home_score - home_quarters_score[0];
+                    away_quarters_score[1] = action.away_score - away_quarters_score[0];
+                }
+                Period::Q3 => {
+                    home_quarters_score[2] =
+                        action.home_score - home_quarters_score[0] - home_quarters_score[1];
+                    away_quarters_score[2] =
+                        action.away_score - away_quarters_score[0] - away_quarters_score[1];
+                }
+                Period::Q4 => {
+                    home_quarters_score[3] = action.home_score
+                        - home_quarters_score[0]
+                        - home_quarters_score[1]
+                        - home_quarters_score[2];
+                    away_quarters_score[3] = action.away_score
+                        - away_quarters_score[0]
+                        - away_quarters_score[1]
+                        - away_quarters_score[2];
+                }
+                _ => continue,
+            }
+        }
+
+        (home_quarters_score, away_quarters_score)
     }
 
     pub fn is_team_knocked_out(&self, side: Possession) -> bool {

@@ -454,7 +454,11 @@ impl GalaxyPanel {
 
                 player_planet_id == team_planet_id
             })
-            .sorted_by(|a, b| b.rating().cmp(&a.rating()))
+            .sorted_by(|a, b| {
+                b.rating()
+                    .partial_cmp(&a.rating())
+                    .expect("Skill should exist")
+            })
             .map(|player| {
                 let name_length = 2 * MAX_NAME_LENGTH + 2;
                 let text = format!(

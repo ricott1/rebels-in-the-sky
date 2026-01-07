@@ -156,25 +156,29 @@ impl<'a> Widget for Button<'a> {
         };
 
         let paragraph = if let Some(u) = self.hotkey {
-            let split = self
-                .text
-                .to_string()
-                .splitn(2, &u.to_string())
-                .map(|s| s.to_string())
-                .collect::<Vec<String>>();
-            if split.len() > 1 {
-                Paragraph::new(Line::from(vec![
-                    Span::raw(split[0].clone()),
+            // The hotkey is displayed as an underscored character,
+            // only if it is on the first text line.
+            let first_line = &self.text.lines[0];
+            let first_line_string = first_line.to_string();
+
+            if let Some((before, after)) = first_line_string.split_once(&u.to_string()) {
+                let highlighted = Line::from(vec![
+                    Span::raw(before.to_owned()),
                     Span::styled(u.to_string(), UiStyle::DEFAULT.underlined()),
-                    Span::raw(split[1].clone()),
-                ]))
-                .alignment(self.text_alignemnt)
+                    Span::raw(after.to_owned()),
+                ]);
+
+                let mut lines = self.text.lines.clone();
+                lines[0] = highlighted;
+
+                Paragraph::new(lines)
             } else {
-                Paragraph::new(self.text.clone()).alignment(self.text_alignemnt)
+                Paragraph::new(self.text)
             }
         } else {
-            Paragraph::new(self.text.clone()).alignment(self.text_alignemnt)
-        };
+            Paragraph::new(self.text)
+        }
+        .alignment(self.text_alignemnt);
 
         let paragraph_style = if self.selected {
             UiStyle::SELECTED_BUTTON

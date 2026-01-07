@@ -9,7 +9,7 @@ use ratatui::{
     prelude::*,
     style::{Style, Styled},
     text::Text,
-    widgets::{Block, HighlightSpacing, ListDirection, StatefulWidget, Widget},
+    widgets::{Block, ListDirection, StatefulWidget, Widget},
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -21,26 +21,9 @@ pub struct ClickableListState {
 }
 
 impl ClickableListState {
-    pub fn offset(&self) -> usize {
-        self.offset
-    }
-
-    pub fn offset_mut(&mut self) -> &mut usize {
-        &mut self.offset
-    }
-
     pub fn with_selected(mut self, selected: Option<usize>) -> Self {
         self.selected = selected;
         self
-    }
-
-    pub fn with_offset(mut self, offset: usize) -> Self {
-        self.offset = offset;
-        self
-    }
-
-    pub fn selected(&self) -> Option<usize> {
-        self.selected
     }
 
     pub fn select(&mut self, index: Option<usize>) {
@@ -68,17 +51,8 @@ impl<'a> ClickableListItem<'a> {
         }
     }
 
-    pub fn style(mut self, style: Style) -> ClickableListItem<'a> {
-        self.style = style;
-        self
-    }
-
     pub fn height(&self) -> usize {
         self.content.height()
-    }
-
-    pub fn width(&self) -> usize {
-        self.content.width()
     }
 }
 
@@ -98,10 +72,8 @@ pub struct ClickableList<'a> {
     highlight_symbol: Option<&'a str>,
     /// Whether to repeat the highlight symbol for each line of the selected item
     repeat_highlight_symbol: bool,
-    /// Decides when to allocate spacing for the selection symbol
-    highlight_spacing: HighlightSpacing,
-    /// How many items to try to keep visible before and after the selected item
-    scroll_padding: usize,
+    /// Hack to be able to select a different index when clicking with the mouse
+    selection_offset: usize,
 }
 
 impl<'a> ClickableList<'a> {
@@ -130,47 +102,9 @@ impl<'a> ClickableList<'a> {
         self
     }
 
-    pub fn highlight_symbol(mut self, highlight_symbol: &'a str) -> ClickableList<'a> {
-        self.highlight_symbol = Some(highlight_symbol);
+    pub const fn set_selection_offset(mut self, offset: usize) -> Self {
+        self.selection_offset = offset;
         self
-    }
-
-    pub const fn set_select_style(mut self, style: Style) -> ClickableList<'a> {
-        self.select_style = style;
-        self
-    }
-
-    pub const fn set_hover_style(mut self, style: Style) -> Self {
-        self.hover_style = style;
-        self
-    }
-
-    pub fn repeat_highlight_symbol(mut self, repeat: bool) -> ClickableList<'a> {
-        self.repeat_highlight_symbol = repeat;
-        self
-    }
-
-    pub fn highlight_spacing(mut self, value: HighlightSpacing) -> Self {
-        self.highlight_spacing = value;
-        self
-    }
-
-    pub const fn direction(mut self, direction: ListDirection) -> Self {
-        self.direction = direction;
-        self
-    }
-
-    pub const fn scroll_padding(mut self, padding: usize) -> Self {
-        self.scroll_padding = padding;
-        self
-    }
-
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
     }
 
     fn get_items_bounds(
@@ -429,7 +363,9 @@ impl InteractiveStatefulWidget for ClickableList<'_> {
             callback_registry.register_mouse_callback(
                 crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
                 Some(row_area),
-                UiCallback::SetPanelIndex { index },
+                UiCallback::SetPanelIndex {
+                    index: index + self.selection_offset,
+                },
             );
         }
     }

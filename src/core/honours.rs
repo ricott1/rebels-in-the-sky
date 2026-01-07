@@ -1,12 +1,13 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use super::constants::POLOSIUS_TEAM_ID;
 use crate::{
     core::{
-        Player, SpaceCoveState, Team, LIGHT_YEAR, MAX_PLAYERS_PER_GAME, SATOSHI_PER_BITCOIN, WEEKS,
+        Planet, Player, SpaceCoveState, Team, LIGHT_YEAR, MAX_NUM_ASTEROID_PER_TEAM,
+        MAX_PLAYERS_PER_GAME, SATOSHI_PER_BITCOIN, WEEKS,
     },
     game_engine::game::GameSummary,
-    types::{GameId, PlayerId, SystemTimeTick, Tick},
+    types::{GameId, PlanetId, PlayerId, SystemTimeTick, Tick},
 };
 use itertools::Itertools;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -18,6 +19,7 @@ use strum::{Display, EnumIter};
 #[repr(u8)]
 pub enum Honour {
     Defiant,
+    Galactic,
     Maximalist,
     MultiKulti,
     Pirate,
@@ -31,6 +33,7 @@ impl Honour {
         team: &Team,
         past_games: &HashMap<GameId, GameSummary>,
         players: &HashMap<PlayerId, Player>,
+        planets: &HashMap<PlanetId, Planet>,
     ) -> bool {
         match self {
             Self::Defiant => {
@@ -45,6 +48,28 @@ impl Honour {
                     })
                     .count()
                     > 0
+            }
+            Self::Galactic => {
+                let maybe_asteroids = team
+                    .asteroid_ids
+                    .iter()
+                    .map(|id| planets.get(id))
+                    .collect::<Option<Vec<&Planet>>>();
+
+                maybe_asteroids
+                    .map(|asteroids| {
+                        asteroids
+                            .iter()
+                            .map(|asteroid| {
+                                asteroid
+                                    .satellite_of
+                                    .expect("Asteroid should have a parent.")
+                            })
+                            .unique()
+                            .count()
+                            == MAX_NUM_ASTEROID_PER_TEAM
+                    })
+                    .unwrap_or_default()
             }
             Self::Maximalist => team.balance() >= SATOSHI_PER_BITCOIN,
             Self::MultiKulti => {
@@ -74,22 +99,30 @@ impl Honour {
         }
     }
 
-    pub fn description(&self) -> &str {
+    pub fn description(&self) -> Cow<'static, str> {
         match self {
-            Self::Defiant => "Defiant: Defeat the emeperial team Polosius III.",
-            Self::Maximalist => "Bitcoin Maximalist: Held at least 1 BTC at some point in time.",
-            Self::MultiKulti => {
-                "MultiKulti: Have pirates from 7 different populations in the crew."
+            Self::Defiant => Cow::Borrowed("Defiant: Defeat the imperial team Polosius III."),
+            Self::Galactic => Cow::Owned(format!(
+                "Galactic: Control an asteroid around {MAX_NUM_ASTEROID_PER_TEAM} different planets."
+            )),
+            Self::Maximalist => {
+                Cow::Borrowed("Bitcoin Maximalist: Held at least 1 BTC at some point in time.")
             }
-            Self::Pirate => "Pirate: Build the space cove on an asteroid.",
-            Self::Traveller => "Traveller: Travel through the galaxy for at least 1 light year.",
-            Self::Veteran => "Veteran: Played for a year.",
+            Self::MultiKulti => {
+                Cow::Borrowed("MultiKulti: Have pirates from 7 different populations in the crew.")
+            }
+            Self::Pirate => Cow::Borrowed("Pirate: Build the space cove on an asteroid."),
+            Self::Traveller => {
+                Cow::Borrowed("Traveller: Travel through the galaxy for at least 1 light year.")
+            }
+            Self::Veteran => Cow::Borrowed("Veteran: Played for a year."),
         }
     }
 
     pub fn symbol(&self) -> char {
         match self {
             Self::Defiant => 'D',
+            Self::Galactic => 'G',
             Self::Maximalist => 'B',
             Self::MultiKulti => 'M',
             Self::Pirate => 'P',
@@ -101,8 +134,6 @@ impl Honour {
 
 #[cfg(test)]
 mod tests {
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
 
     use crate::{
         app::App,
@@ -113,9 +144,8 @@ mod tests {
     #[test]
     fn test_conditions_not_met_multikulti() -> AppResult<()> {
         let app = &mut App::test_default()?;
-        let rng = &mut ChaCha8Rng::from_os_rng();
 
-        let mut team = Team::random(rng);
+        let mut team = Team::random(None);
         let team_id = team.id;
         team.add_resource(Resource::SATOSHI, 1_000_000)?;
         assert!(team.player_ids.len() == 0);
@@ -155,7 +185,8 @@ mod tests {
         assert!(!Honour::MultiKulti.conditions_met(
             &team,
             &app.world.past_games,
-            &app.world.players
+            &app.world.players,
+            &app.world.planets
         ));
 
         Ok(())
@@ -164,9 +195,8 @@ mod tests {
     #[test]
     fn test_conditions_met_multikulti() -> AppResult<()> {
         let app = &mut App::test_default()?;
-        let rng = &mut ChaCha8Rng::from_os_rng();
 
-        let mut team = Team::random(rng);
+        let mut team = Team::random(None);
         let team_id = team.id;
         team.add_resource(Resource::SATOSHI, 1_000_000)?;
         assert!(team.player_ids.len() == 0);
@@ -202,7 +232,8 @@ mod tests {
         assert!(Honour::MultiKulti.conditions_met(
             &team,
             &app.world.past_games,
-            &app.world.players
+            &app.world.players,
+            &app.world.planets
         ));
 
         Ok(())

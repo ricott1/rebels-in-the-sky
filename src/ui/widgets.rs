@@ -39,7 +39,7 @@ use once_cell::sync::Lazy;
 use ratatui::{
     prelude::*,
     text::Span,
-    widgets::{Block, BorderType, Borders, List, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph},
 };
 use strum::Display;
 
@@ -72,10 +72,6 @@ pub fn thick_block() -> Block<'static> {
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Thick)
-}
-
-pub fn default_list() -> List<'static> {
-    List::new::<Vec<String>>(vec![])
 }
 
 pub fn selectable_list<'a>(options: Vec<(String, Style)>) -> ClickableList<'a> {
@@ -213,7 +209,7 @@ pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button
     .set_hover_text("Drink a liter of rum, increasing morale and decreasing energy.");
 
     if let Err(err) = can_drink {
-        button.disable(Some(format!("{err}")));
+        button.disable(Some(err.to_string()));
     }
 
     Ok(button)
@@ -327,7 +323,7 @@ pub fn render_challenge_button(
         }
 
         if let Err(err) = can_challenge {
-            button.disable(Some(format!("{err}")));
+            button.disable(Some(err.to_string()));
         } else {
             button = if team.peer_id.is_some() {
                 button.block(default_block().border_style(UiStyle::NETWORK))
@@ -750,7 +746,7 @@ pub fn render_spaceship_description(
             .current_team_bonus(world, &team.id)
             .unwrap_or(1.0);
         let widget = Paragraph::new(vec![
-            Line::from(""),
+            Line::default(),
             Line::from(get_crew_spans(
                 team.player_ids.len(),
                 team.spaceship.crew_capacity() as usize,
@@ -839,19 +835,15 @@ pub fn render_spaceship_description(
         );
         frame.render_interactive_widget(reputation_span, split[2]);
 
-        let game_record = if team.peer_id.is_some() {
-            format!(
-                "Network record W{}/L{}/D{}",
-                team.network_game_record[0],
-                team.network_game_record[1],
-                team.network_game_record[2]
-            )
-        } else {
-            format!(
-                "Game record W{}/L{}/D{}",
-                team.game_record[0], team.game_record[1], team.game_record[2]
-            )
-        };
+        let game_record = format!(
+            "Local Elo {:.0}{}",
+            team.local_game_rating.rating,
+            if team.peer_id.is_some() || team.id == world.own_team_id {
+                format!("  Network Elo {:.0}", team.network_game_rating.rating)
+            } else {
+                "".to_string()
+            }
+        );
 
         let mut lines = vec![
             HoverTextLine::from(format!("Treasury {}", format_satoshi(team.balance()))),
@@ -894,6 +886,7 @@ pub fn render_spaceship_description(
 fn honour_lines<'a>(team_honours: &HashSet<Honour>) -> Vec<HoverTextLine<'a>> {
     let honour_color = |honour| match honour {
         Honour::Defiant => (Color::Blue, Color::Yellow),
+        Honour::Galactic => (Color::White, Color::Blue),
         Honour::Maximalist => (Color::Yellow, Color::DarkGray),
         Honour::MultiKulti => (Color::Red, Color::LightCyan),
         Honour::Pirate => (Color::Black, Color::Red),
@@ -1477,7 +1470,7 @@ fn format_player_skills(player: &'_ Player) -> Vec<Line<'_>> {
 
         text.push(Line::from(spans));
     }
-    text.push(Line::from(""));
+    text.push(Line::default());
 
     text.push(Line::from(vec![
         Span::styled(
@@ -1515,7 +1508,7 @@ fn format_player_skills(player: &'_ Player) -> Vec<Line<'_>> {
 
         text.push(Line::from(spans));
     }
-    text.push(Line::from(""));
+    text.push(Line::default());
     text.push(Line::from(vec![
         Span::styled(
             format!("{} {:<5}   ", "Technical", player.technical.stars()),
@@ -1573,7 +1566,7 @@ fn format_player_stats(player: &'_ Player) -> Vec<Line<'_>> {
         "Brawls", stats.brawls[0], stats.brawls[1], stats.brawls[2]
     )));
 
-    text.push(Line::from(""));
+    text.push(Line::default());
     text.push(Line::from(Span::styled(
         format!("{:<12} {:^9} {:>9}", "Stat", "Total", "Per game"),
         UiStyle::HEADER.bold(),
@@ -1704,7 +1697,7 @@ fn charge_unit_extra_description_lines<'a>(component: ChargeUnit) -> Vec<Line<'a
         lines.push(Line::from(vec![
             Span::raw("Max charge "),
             Span::styled(
-                format!("{:<+.0}", max_charge),
+                format!("{max_charge:<+.0}"),
                 if max_charge > 0.0 {
                     UiStyle::OK
                 } else {
@@ -1747,7 +1740,7 @@ fn shield_extra_description_lines<'a>(component: Shield) -> Vec<Line<'a>> {
         lines.push(Line::from(vec![
             Span::raw("Shield durability "),
             Span::styled(
-                format!("{:<+.0}", shield_durability),
+                format!("{shield_durability:<+.0}"),
                 if shield_durability > 0.0 {
                     UiStyle::OK
                 } else {
@@ -1937,13 +1930,10 @@ mod tests {
         core::{resources::Resource, spaceship::SpaceshipPrefab, team::Team},
         ui::widgets::get_storage_lengths,
     };
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
 
     #[test]
     fn test_storage_spans() -> AppResult<()> {
-        let rng = &mut ChaCha8Rng::from_os_rng();
-        let mut team = Team::random(rng);
+        let mut team = Team::random(None);
         team.spaceship = SpaceshipPrefab::Bresci.spaceship();
 
         let bars_length = BARS_LENGTH;

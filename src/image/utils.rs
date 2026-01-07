@@ -3,10 +3,11 @@ use crate::store::ASSETS_DIR;
 use crate::types::AppResult;
 use anyhow::anyhow;
 use image::error::{ParameterError, ParameterErrorKind};
-use image::ImageReader;
-use image::{ImageError, ImageResult, Rgb, Rgba, RgbaImage};
+use image::{ImageBuffer, ImageError, ImageReader, ImageResult, Rgb, Rgba, RgbaImage};
 use once_cell::sync::Lazy;
 use std::io::Cursor;
+
+pub type Gif = Vec<RgbaImage>;
 
 pub static UNIVERSE_BACKGROUND: Lazy<RgbaImage> =
     Lazy::new(|| open_image("universe/background.png").expect("Cannot open background.png."));
@@ -154,7 +155,7 @@ impl LightMaskStyle {
                 b = (b as f32 * (1.0 - v) + to_b as f32 * v).clamp(0.0, 255.0) as u8;
             }
 
-            return Rgba::from([r, g, b, a]);
+            Rgba::from([r, g, b, a])
         }
         RgbaImage::from_fn(width, height, |x, y| match *self {
             Self::Horizontal {
@@ -164,7 +165,7 @@ impl LightMaskStyle {
                 to_background,
             } => {
                 let v = x as f32 / width as f32;
-                return interpolate_pixel(v, from_background, to_background, from_alpha, to_alpha);
+                interpolate_pixel(v, from_background, to_background, from_alpha, to_alpha)
             }
             Self::Vertical {
                 from_alpha,
@@ -173,7 +174,7 @@ impl LightMaskStyle {
                 to_background,
             } => {
                 let v = y as f32 / height as f32;
-                return interpolate_pixel(v, from_background, to_background, from_alpha, to_alpha);
+                interpolate_pixel(v, from_background, to_background, from_alpha, to_alpha)
             }
             Self::Radial {
                 from_alpha,
@@ -192,7 +193,7 @@ impl LightMaskStyle {
                     * ((x as i32 - center.0 as i32).pow(2) + (y as i32 - center.1 as i32).pow(2))
                         as f32
                     / (width.pow(2) + height.pow(2)) as f32;
-                return interpolate_pixel(v, from_background, to_background, from_alpha, to_alpha);
+                interpolate_pixel(v, from_background, to_background, from_alpha, to_alpha)
             }
 
             Self::Exponential {
@@ -209,7 +210,7 @@ impl LightMaskStyle {
                 };
                 let d = (x as i32 - center.0 as i32).pow(2) + (y as i32 - center.1 as i32).pow(2);
                 let v = (-d as f32 / 8.0).exp();
-                return interpolate_pixel(v, from_background, to_background, from_alpha, to_alpha);
+                interpolate_pixel(v, from_background, to_background, from_alpha, to_alpha)
             }
         })
     }
@@ -442,4 +443,26 @@ pub fn open_image(path: &str) -> AppResult<RgbaImage> {
         .decode()?
         .into_rgba8();
     Ok(img)
+}
+
+pub fn open_gif(filename: String) -> AppResult<Gif> {
+    let mut decoder = gif::DecodeOptions::new();
+    // Configure the decoder such that it will expand the image to RGBA.
+    decoder.set_color_output(gif::ColorOutput::RGBA);
+    let file = ASSETS_DIR
+        .get_file(filename.clone())
+        .ok_or(anyhow!("Unable to open file {filename}"))?
+        .contents();
+    let mut decoder = decoder.read_info(file)?;
+    let mut gif: Gif = vec![];
+    while let Some(frame) = decoder.read_next_frame().unwrap() {
+        let img = ImageBuffer::from_raw(
+            frame.width as u32,
+            frame.height as u32,
+            frame.buffer.to_vec(),
+        )
+        .ok_or(anyhow!("Unable to decode file {filename} into gif"))?;
+        gif.push(img);
+    }
+    Ok(gif)
 }

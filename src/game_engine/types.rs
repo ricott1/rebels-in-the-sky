@@ -1,6 +1,5 @@
 use super::{action::Action, constants::MIN_TIREDNESS_FOR_ROLL_DECLINE, tactic::Tactic};
 use crate::{
-    backcompat_repr_u8_enum,
     core::{
         constants::MAX_PLAYERS_PER_GAME,
         player::Player,
@@ -9,7 +8,7 @@ use crate::{
         team::Team,
         types::TrainingFocus,
         utils::is_default,
-        GamePositionUtils, GameSkill, Rated, Skill, MIN_PLAYERS_PER_GAME,
+        GamePositionUtils, GameRating, GameSkill, Rated, Skill,
     },
     game_engine::constants::NUMBER_OF_ROLLS,
     image::game::PitchImage,
@@ -23,6 +22,7 @@ use once_cell::sync::Lazy;
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{collections::HashMap, ops::Not};
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
@@ -147,6 +147,9 @@ pub struct TeamInGame {
     pub tactic: Tactic,
     pub training_focus: Option<TrainingFocus>,
     pub momentum: u8,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub network_game_rating: GameRating,
 }
 
 impl TeamInGame {
@@ -169,6 +172,8 @@ impl TeamInGame {
             .keys()
             .map(|id| players.get(id).unwrap().morale)
             .collect();
+
+        let network_game_rating = team.network_game_rating.clone();
         Self {
             team_id: team.id,
             peer_id: team.peer_id,
@@ -182,6 +187,7 @@ impl TeamInGame {
             stats,
             tactic: team.game_tactic,
             training_focus: team.training_focus,
+            network_game_rating,
             ..Default::default()
         }
     }
@@ -218,33 +224,25 @@ impl TeamInGame {
 }
 
 impl Rated for TeamInGame {
-    fn rating(&self) -> u8 {
+    fn rating(&self) -> Skill {
         if self.players.is_empty() {
-            return 0;
+            return MIN_SKILL;
         }
 
-        (self
-            .players
+        self.players
             .values()
             .map(|p| p.average_skill())
-            .sum::<f32>()
-            / self.players.len().max(MIN_PLAYERS_PER_GAME) as f32) as u8
+            .sum::<Skill>()
+            / self.players.len() as Skill
     }
 }
 
-// FIXME: migrate to repr
-backcompat_repr_u8_enum!(
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub enum Possession {
-        Home,
-        Away,
-    }
-);
-
-impl Default for Possession {
-    fn default() -> Self {
-        Self::Home
-    }
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
+pub enum Possession {
+    #[default]
+    Home,
+    Away,
 }
 
 impl Not for Possession {

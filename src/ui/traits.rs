@@ -4,13 +4,18 @@ use super::ui_frame::UiFrame;
 use crate::core::resources::Resource;
 use crate::core::world::World;
 use crate::core::{Kartoffel, Trait};
+use crate::image::utils::Gif;
+use crate::ui::utils::img_to_lines;
 use crate::{core::skill::Rated, types::AppResult};
-use ratatui::text::Text;
-use ratatui::widgets::{StatefulWidget, Widget};
 use ratatui::{
     prelude::Rect,
     style::{Color, Style},
+    text::{Line, Text},
+    widgets::{StatefulWidget, Widget},
 };
+
+pub type ImageLines = Vec<Line<'static>>;
+pub type GifLines = Vec<ImageLines>;
 
 pub trait Screen {
     fn update(&mut self, world: &World) -> AppResult<()>;
@@ -77,25 +82,25 @@ impl UiStyled for Trait {
 
 impl UiStyled for f32 {
     fn style(&self) -> Style {
-        self.rating().style()
+        match self.rating() {
+            0.0 => Style::default().fg(Color::DarkGray),
+            x if x <= 2.0 => Style::default().fg(Color::Red),
+            x if x <= 4.0 => Style::default().fg(Color::LightRed),
+            x if x <= 6.0 => Style::default().fg(Color::Yellow),
+            x if x <= 8.0 => Style::default().fg(Color::LightYellow),
+            x if x <= 10.0 => Style::default().fg(Color::White),
+            x if x <= 12.0 => Style::default().fg(Color::White),
+            x if x <= 14.0 => Style::default().fg(Color::LightGreen),
+            x if x <= 16.0 => Style::default().fg(Color::Green),
+            x if x <= 18.0 => Style::default().fg(Color::Cyan),
+            x if x <= 20.0 => Style::default().fg(Color::Rgb(155, 95, 205)),
+            _ => Style::default().fg(Color::Rgb(155, 95, 205)), // To support TeamBonus large than MaxSkill
+        }
     }
 }
 impl UiStyled for u8 {
     fn style(&self) -> Style {
-        match self.rating() {
-            0 => Style::default().fg(Color::DarkGray),
-            1..=2 => Style::default().fg(Color::Red),
-            3..=4 => Style::default().fg(Color::LightRed),
-            5..=6 => Style::default().fg(Color::Yellow),
-            7..=8 => Style::default().fg(Color::LightYellow),
-            9..=10 => Style::default().fg(Color::White),
-            11..=12 => Style::default().fg(Color::White),
-            13..=14 => Style::default().fg(Color::LightGreen),
-            15..=16 => Style::default().fg(Color::Green),
-            17..=18 => Style::default().fg(Color::Cyan),
-            19..=20 => Style::default().fg(Color::Rgb(155, 95, 205)),
-            _ => Style::default().fg(Color::Rgb(155, 95, 205)), // To support TeamBonus large than MaxSkill
-        }
+        self.rating().style()
     }
 }
 
@@ -144,4 +149,14 @@ pub trait InteractiveStatefulWidget: StatefulWidget {
         state: &mut Self::State,
     );
     fn hover_text(&self) -> Text<'_>;
+}
+
+pub trait PrintableGif: Sized {
+    fn to_lines(&self) -> GifLines;
+}
+
+impl PrintableGif for Gif {
+    fn to_lines(&self) -> GifLines {
+        self.iter().map(img_to_lines).collect()
+    }
 }

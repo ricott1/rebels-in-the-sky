@@ -2,12 +2,13 @@ use super::ui_frame::UiFrame;
 use super::{traits::Screen, ui_callback::UiCallback};
 use crate::image::utils::ExtraImageUtils;
 use crate::image::utils::{open_image, LightMaskStyle};
-use crate::types::TeamId;
+use crate::types::{SystemTimeTick, TeamId, Tick};
+use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
-use crate::ui::constants::*;
 use crate::ui::traits::SplitPanel;
 use crate::ui::utils::img_to_lines;
 use crate::ui::widgets::{default_block, selectable_list, teleport_button};
+use crate::ui::{constants::*, ui_key};
 use crate::{core::*, types::AppResult};
 use anyhow::anyhow;
 use core::fmt::Debug;
@@ -166,6 +167,34 @@ impl SpaceCovePanel {
 
         Ok(())
     }
+
+    fn render_tournament_button(
+        &self,
+        frame: &mut UiFrame,
+        asteroid: &Planet,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
+        let own_team = world.get_own_team()?;
+        let mut tournament_button = Button::new(
+            "Organize tournament",
+            UiCallback::OrganizeNewTournament {
+                max_participants: 4,
+                starting_at: Tick::now() + HOURS,
+            },
+        )
+        .set_hotkey(ui_key::ORGANIZE_TOURNAMENT)
+        .set_hover_text(format!("Organize a tournament on {}", asteroid.name));
+
+        if let Err(err) = own_team.can_organize_tournament() {
+            tournament_button.disable(Some(err.to_string()));
+        }
+
+        tournament_button.disable(Some("Coming soon!"));
+        frame.render_interactive_widget(tournament_button, area);
+
+        Ok(())
+    }
 }
 
 impl Screen for SpaceCovePanel {
@@ -240,6 +269,7 @@ impl Screen for SpaceCovePanel {
         let side_split = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
+            Constraint::Length(3),
             Constraint::Length(8),
             Constraint::Fill(1),
         ])
@@ -253,12 +283,13 @@ impl Screen for SpaceCovePanel {
         );
 
         frame.render_interactive_widget(teleport_button(world, asteroid.id)?, side_split[1]);
+        self.render_tournament_button(frame, asteroid, world, side_split[2])?;
 
-        self.render_visiting_teams(frame, asteroid, world, side_split[2])?;
+        self.render_visiting_teams(frame, asteroid, world, side_split[3])?;
 
         frame.render_widget(
             default_block().title("No available upgrades"),
-            side_split[3],
+            side_split[4],
         );
 
         Ok(())

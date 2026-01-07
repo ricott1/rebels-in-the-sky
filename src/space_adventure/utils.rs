@@ -32,15 +32,6 @@ impl Direction {
             Self::Down => Vec2::Y,
         }
     }
-
-    pub fn as_i16vec2(&self) -> I16Vec2 {
-        match self {
-            Self::Left => I16Vec2::NEG_X,
-            Self::Right => I16Vec2::X,
-            Self::Up => I16Vec2::NEG_Y,
-            Self::Down => I16Vec2::Y,
-        }
-    }
 }
 
 pub fn body_data_from_image(image: &RgbaImage, should_crop: bool) -> (RgbaImage, HitBox) {

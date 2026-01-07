@@ -201,7 +201,7 @@ pub(crate) fn execute(
                     ),
                     format!(
                         "{} passes to {} as {} come off {}'s screen for a look at the basket.",
-                        playmaker.info.short_name(), target.info.short_name(), target.info.pronouns.as_subject(),s.info.short_name(),
+                        playmaker.info.short_name(), target.info.short_name(), target.info.pronouns.as_subject().to_lowercase(),s.info.short_name(),
                     ),
                 ]}else{[
                     format!(

@@ -9,20 +9,21 @@ use super::skill::{GameSkill, MAX_SKILL};
 use super::spaceship::Spaceship;
 use super::team::Team;
 use super::types::{PlayerLocation, TeamBonus, TeamLocation};
-use super::utils::{PLANET_DATA, TEAM_DATA};
-use crate::core::utils::is_default;
-use crate::core::{AutonomousStrategy, Honour, Rated, RatedPlayers, Upgrade};
+use super::utils::{is_default, PLANET_DATA, TEAM_DATA};
+use crate::core::{
+    AutonomousStrategy, GameResult, Honour, Rated, RatedPlayers, Skill,
+    TournamentRegistrationState, Upgrade, MIN_SKILL,
+};
 use crate::game_engine::game::{Game, GameSummary};
 use crate::game_engine::tactic::Tactic;
 use crate::game_engine::types::{Possession, TeamInGame};
-use crate::game_engine::RECOVERING_TIREDNESS_PER_SHORT_TICK;
+use crate::game_engine::{TournamentId, RECOVERING_TIREDNESS_PER_SHORT_TICK};
 use crate::image::color_map::ColorMap;
 use crate::network::types::{NetworkGame, NetworkTeam};
 use crate::space_adventure::SpaceAdventure;
-use crate::store::save_game;
+use crate::store::{save_game, save_tournament};
 use crate::types::*;
-use crate::ui::popup_message::PopupMessage;
-use crate::ui::ui_callback::UiCallback;
+use crate::ui::{PopupMessage, UiCallback};
 use anyhow::anyhow;
 use itertools::Itertools;
 use libp2p::PeerId;
@@ -33,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use strum::IntoEnumIterator;
 
-const GAME_CLEANUP_TIME: Tick = 10 * SECONDS;
+// const GAME_CLEANUP_TIME: Tick = 10 * SECONDS;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct World {
@@ -66,18 +67,23 @@ pub struct World {
     pub planets: PlanetMap,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub games: GameMap,
+    pub games: GameMap, // Holds currently running games.
+    #[serde(skip)]
+    pub recently_finished_games: GameMap, // Holds finished games for the session, but are not persisted.
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub past_games: GameSummaryMap, // Holds summary of finished games, persisted.
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub kartoffeln: KartoffelMap,
-    #[serde(skip_serializing_if = "is_default")]
-    #[serde(default)]
-    pub past_games: GameSummaryMap,
     #[serde(skip)]
     pub space_adventure: Option<SpaceAdventure>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub network_keypair: Option<Vec<u8>>, // Allows to re-establish the same PeerId across sessions.
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub tournaments: TournamentMap,
 }
 
 impl World {
@@ -168,7 +174,7 @@ impl World {
         ship_name: String,
         team_base_level: Option<f32>,
     ) -> AppResult<TeamId> {
-        let team = Team::random(rng)
+        let team = Team::random(Some(rng))
             .with_name(team_name)
             .with_spaceship_name(ship_name)
             .with_home_planet(home_planet_id);
@@ -842,7 +848,8 @@ impl World {
         mut home_team_in_game: TeamInGame,
         mut away_team_in_game: TeamInGame,
         starting_at: Tick,
-        location: PlanetId,
+        planet_id: PlanetId,
+        part_of_tournament: Option<TournamentId>,
     ) -> AppResult<GameId> {
         // Generate deterministic game id from team IDs and starting time.
         // Two games starting at u64::MAX milliseconds apart ~ 584_942_417 years
@@ -855,7 +862,7 @@ impl World {
         let rng = &mut ChaCha8Rng::seed_from_u64(rng_seed);
         let game_id = GameId::from_u128(rng.random());
 
-        let planet = self.get_planet_or_err(&location)?;
+        let planet = self.get_planet_or_err(&planet_id)?;
 
         // Give morale bonus to players based on planet populations
         for (_, player) in home_team_in_game.players.iter_mut() {
@@ -886,6 +893,7 @@ impl World {
             planet.id,
             planet.total_population(),
             planet.name.as_str(),
+            part_of_tournament,
         );
         self.games.insert(game.id, game);
 
@@ -905,7 +913,6 @@ impl World {
         // In particular, we check if our game has already a game, not the other.
         // This is necessary because of a race condition when a team can be received
         // over the network before the challenge confirmation message.
-
         if self.own_team_id == home_team.id {
             if home_team.current_game.is_some() {
                 return Err(anyhow!("{} is already playing", home_team.name));
@@ -928,6 +935,7 @@ impl World {
             away_team_in_game,
             starting_at,
             location,
+            None,
         )?;
 
         if let Some(previous_game_id) = home_team.current_game {
@@ -986,6 +994,7 @@ impl World {
             away_team_in_game,
             starting_at,
             location,
+            None,
         )?;
 
         for team_id in team_ids.iter() {
@@ -1045,6 +1054,7 @@ impl World {
                 planet.id,
                 planet.total_population(),
                 planet.name.as_str(),
+                network_game.part_of_tournament,
             );
 
             while game.timer.value < network_game.timer.value && !game.timer.has_ended() {
@@ -1058,7 +1068,7 @@ impl World {
         Ok(())
     }
 
-    pub fn add_network_team(&mut self, network_team: NetworkTeam) -> AppResult<()> {
+    pub fn add_network_team(&mut self, network_team: NetworkTeam) -> AppResult<bool> {
         let NetworkTeam {
             team,
             players,
@@ -1107,6 +1117,8 @@ impl World {
             self.planets.insert(asteroid.id, asteroid);
         }
 
+        let mut team_version_updated = false;
+
         if let Some(previous_version_team) = db_team.as_ref() {
             if let TeamLocation::OnPlanet { planet_id } = previous_version_team.current_location {
                 // Remove team from previous planet
@@ -1117,6 +1129,10 @@ impl World {
             // Remove players from db_team that are not in the new team to clean up fired players
             for player_id in &previous_version_team.player_ids {
                 self.players.remove(player_id);
+            }
+
+            if previous_version_team.version < team.version {
+                team_version_updated = true;
             }
         }
 
@@ -1138,7 +1154,7 @@ impl World {
         self.teams.insert(team.id, team);
         self.dirty_ui = true;
 
-        Ok(())
+        Ok(team_version_updated)
     }
 
     pub fn get_team(&self, id: &TeamId) -> Option<&Team> {
@@ -1217,18 +1233,34 @@ impl World {
         self.get_game(id).ok_or(anyhow!("Game {id:?} not found"))
     }
 
-    pub fn team_rating(&self, team_id: &TeamId) -> AppResult<f32> {
+    pub fn team_rating(&self, team_id: &TeamId) -> AppResult<Skill> {
         let team = self.get_team_or_err(team_id)?;
         if team.player_ids.is_empty() {
-            return Ok(0.0);
+            return Ok(MIN_SKILL);
         }
         Ok(team
             .player_ids
             .iter()
             .filter(|&id| self.get_player(id).is_some())
             .map(|id| self.get_player(id).unwrap().average_skill())
-            .sum::<f32>()
-            / team.player_ids.len().max(MIN_PLAYERS_PER_GAME) as f32)
+            .sum::<Skill>()
+            / team.player_ids.len().max(MIN_PLAYERS_PER_GAME) as Skill)
+    }
+
+    pub fn tournament_rating(&self, tournament_id: &TournamentId) -> AppResult<Skill> {
+        let tournament = self
+            .tournaments
+            .get(tournament_id)
+            .ok_or(anyhow!("Cannot find tournament {tournament_id}."))?;
+        if tournament.participants.is_empty() {
+            return Ok(MIN_SKILL);
+        }
+        Ok(tournament
+            .participants
+            .values()
+            .map(|team| team.rating())
+            .sum::<Skill>()
+            / tournament.participants.len() as Skill)
     }
 
     pub fn is_simulating(&self) -> bool {
@@ -1312,6 +1344,8 @@ impl World {
 
         if current_tick >= self.last_tick_short_interval + TickInterval::SHORT {
             self.tick_games(current_tick)?;
+            self.tick_tournaments(current_tick)?;
+
             if let Some(cb) = self.cleanup_games(current_tick)? {
                 callbacks.push(cb);
             }
@@ -1386,12 +1420,8 @@ impl World {
         let mut own_team_game_notification = None;
 
         for game in self.games.values() {
+            // In this loop we process ended games before they are cleaned up.
             if !game.has_ended() {
-                continue;
-            }
-
-            // This check ensures that we run the cleanup logic only once.
-            if self.past_games.contains_key(&game.id) {
                 continue;
             }
 
@@ -1495,6 +1525,7 @@ impl World {
 
             let game_summary = GameSummary::from_game(game);
             self.past_games.insert(game_summary.id, game_summary);
+            self.recently_finished_games.insert(game.id, game.clone());
 
             // Past games of the own team are persisted in the store.
             if game.home_team_in_game.team_id == self.own_team_id
@@ -1507,11 +1538,25 @@ impl World {
                 own_team_game_notification = Some(UiCallback::PushUiPopup {
                     popup_message: PopupMessage::Ok {
                         message: format!(
-                            "Game ended\n{} {}-{} {}",
+                            "Game ended\n{} {}-{} {}\n{}",
                             game.home_team_in_game.name,
                             game.get_score().0,
                             game.get_score().1,
-                            game.away_team_in_game.name
+                            game.away_team_in_game.name,
+                            if game.part_of_tournament.is_some() {
+                                format!(
+                                    "{} advances to the next round.",
+                                    game.winner
+                                        .map(|w| if w == game.home_team_in_game.team_id {
+                                            game.home_team_in_game.name.as_str()
+                                        } else {
+                                            game.away_team_in_game.name.as_str()
+                                        })
+                                        .unwrap_or("Who knows who")
+                                )
+                            } else {
+                                "".to_string()
+                            }
                         ),
                         is_skippable: false,
                         tick: current_tick,
@@ -1544,33 +1589,6 @@ impl World {
                 _ => {}
             }
 
-            // Winner team gets reputation bonus
-            let reputation_bonus = if game.is_network() {
-                ReputationModifier::MEDIUM_BONUS
-            } else {
-                0.0
-            };
-
-            let (home_team_reputation, away_team_reputation) = match game.winner {
-                Some(winner) => {
-                    if winner == game.home_team_in_game.team_id {
-                        (
-                            ReputationModifier::HIGH_BONUS + reputation_bonus,
-                            ReputationModifier::MEDIUM_MALUS,
-                        )
-                    } else {
-                        (
-                            ReputationModifier::MEDIUM_MALUS,
-                            ReputationModifier::HIGH_BONUS + reputation_bonus,
-                        )
-                    }
-                }
-                None => (
-                    ReputationModifier::MEDIUM_BONUS,
-                    ReputationModifier::MEDIUM_BONUS,
-                ),
-            };
-
             // Winner team gets 1 rum per player, Loser team gets 1 rum in total
             let (home_team_rum, away_team_rum) = match game.winner {
                 Some(winner) => {
@@ -1583,71 +1601,121 @@ impl World {
                 None => (1, 1),
             };
 
-            // Update to team game records.
-            let (home_team_record, away_team_record) = match game.winner {
-                Some(winner) => {
-                    if winner == game.home_team_in_game.team_id {
-                        ([1, 0, 0], [0, 1, 0])
-                    } else {
-                        ([0, 1, 0], [1, 0, 0])
-                    }
-                }
-                None => ([0, 0, 1], [0, 0, 1]),
-            };
-
             // Set playing teams current game to None and assign income, reputation, and rum.
-            if let Ok(res) = self.get_team_or_err(&game.home_team_in_game.team_id) {
-                let mut home_team = res.clone();
-                home_team.current_game = None;
+            // Network games allow for not finding the team in the world.teams, local games don't
+            let team_ids = [
+                game.home_team_in_game.team_id,
+                game.away_team_in_game.team_id,
+            ];
 
-                home_team.saturating_add_resource(Resource::SATOSHI, home_team_income);
-                home_team.reputation = (home_team.reputation + home_team_reputation).bound();
-                home_team.saturating_add_resource(Resource::RUM, home_team_rum);
-                if game.home_team_in_game.peer_id.is_some()
-                    && game.away_team_in_game.peer_id.is_some()
-                {
-                    // If it's a network game, update the network game record,
-                    home_team.network_game_record = [
-                        home_team.network_game_record[0] + home_team_record[0],
-                        home_team.network_game_record[1] + home_team_record[1],
-                        home_team.network_game_record[2] + home_team_record[2],
-                    ];
-                } else {
-                    // else update the game record.
-                    home_team.game_record = [
-                        home_team.game_record[0] + home_team_record[0],
-                        home_team.game_record[1] + home_team_record[1],
-                        home_team.game_record[2] + home_team_record[2],
-                    ];
+            if game.is_network() {
+                for (idx, team_id) in team_ids.iter().enumerate() {
+                    // It is possible not to have a network team in the world.
+                    let mut team = if let Some(team) = self.get_team(team_id) {
+                        team.clone()
+                    } else {
+                        continue;
+                    };
+
+                    let other_rating = if idx == 0 {
+                        &game.away_team_in_game.network_game_rating
+                    } else {
+                        &game.home_team_in_game.network_game_rating
+                    };
+
+                    match game.winner {
+                        Some(winner) => {
+                            if winner == *team_id {
+                                team.network_game_rating
+                                    .update(GameResult::Win, other_rating);
+                                team.reputation = (team.reputation
+                                    + ReputationModifier::HIGH_BONUS
+                                    + ReputationModifier::MEDIUM_BONUS)
+                                    .bound();
+                            } else {
+                                team.network_game_rating
+                                    .update(GameResult::Loss, other_rating);
+                                team.reputation =
+                                    (team.reputation + ReputationModifier::MEDIUM_MALUS).bound();
+                            }
+                        }
+                        None => {
+                            team.network_game_rating
+                                .update(GameResult::Draw, other_rating);
+                            team.reputation =
+                                (team.reputation + ReputationModifier::MEDIUM_BONUS).bound()
+                        }
+                    }
+
+                    team.current_game = None;
+                    let income_bonus = if idx == 0 {
+                        home_team_income
+                    } else {
+                        away_team_income
+                    };
+                    team.saturating_add_resource(Resource::SATOSHI, income_bonus);
+
+                    let rum_bonus = if idx == 0 {
+                        home_team_rum
+                    } else {
+                        away_team_rum
+                    };
+                    team.saturating_add_resource(Resource::RUM, rum_bonus);
+
+                    self.teams.insert(team.id, team);
                 }
-                self.teams.insert(home_team.id, home_team);
-            }
+            } else {
+                for (idx, team_id) in team_ids.iter().enumerate() {
+                    let mut team = self.get_team_or_err(team_id)?.clone();
 
-            if let Ok(res) = self.get_team_or_err(&game.away_team_in_game.team_id) {
-                let mut away_team = res.clone();
-                away_team.current_game = None;
-                away_team.saturating_add_resource(Resource::SATOSHI, away_team_income);
-                away_team.reputation = (away_team.reputation + away_team_reputation).bound();
-                away_team.saturating_add_resource(Resource::RUM, away_team_rum);
+                    let other_rating = if idx == 0 {
+                        &self
+                            .get_team_or_err(&game.away_team_in_game.team_id)?
+                            .local_game_rating
+                    } else {
+                        &self
+                            .get_team_or_err(&game.home_team_in_game.team_id)?
+                            .local_game_rating
+                    };
 
-                if game.home_team_in_game.peer_id.is_some()
-                    && game.away_team_in_game.peer_id.is_some()
-                {
-                    // If it's a network game, update the network game record,
-                    away_team.network_game_record = [
-                        away_team.network_game_record[0] + away_team_record[0],
-                        away_team.network_game_record[1] + away_team_record[1],
-                        away_team.network_game_record[2] + away_team_record[2],
-                    ];
-                } else {
-                    // else update the game record.
-                    away_team.game_record = [
-                        away_team.game_record[0] + away_team_record[0],
-                        away_team.game_record[1] + away_team_record[1],
-                        away_team.game_record[2] + away_team_record[2],
-                    ];
+                    match game.winner {
+                        Some(winner) => {
+                            if winner == *team_id {
+                                team.local_game_rating.update(GameResult::Win, other_rating);
+                                team.reputation =
+                                    (team.reputation + ReputationModifier::HIGH_BONUS).bound();
+                            } else {
+                                team.local_game_rating
+                                    .update(GameResult::Loss, other_rating);
+                                team.reputation =
+                                    (team.reputation + ReputationModifier::MEDIUM_MALUS).bound();
+                            }
+                        }
+                        None => {
+                            team.local_game_rating
+                                .update(GameResult::Draw, other_rating);
+                            team.reputation =
+                                (team.reputation + ReputationModifier::MEDIUM_BONUS).bound()
+                        }
+                    }
+
+                    team.current_game = None;
+                    let income_bonus = if idx == 0 {
+                        home_team_income
+                    } else {
+                        away_team_income
+                    };
+                    team.saturating_add_resource(Resource::SATOSHI, income_bonus);
+
+                    let rum_bonus = if idx == 0 {
+                        home_team_rum
+                    } else {
+                        away_team_rum
+                    };
+                    team.saturating_add_resource(Resource::RUM, rum_bonus);
+
+                    self.teams.insert(team.id, team);
                 }
-                self.teams.insert(away_team.id, away_team);
             }
 
             self.dirty = true;
@@ -1656,10 +1724,7 @@ impl World {
 
         // We wait an extra GAME_CLEANUP_TIME before removing the game from the games
         // collection so that we can leave it up for the UI to visualize.
-        // FIXME: This is not ideal, and should be rather handled in the UI.
-        self.games.retain(|_, game| {
-            !game.has_ended() || current_tick <= game.ended_at.unwrap() + GAME_CLEANUP_TIME
-        });
+        self.games.retain(|_, game| !game.has_ended());
 
         Ok(own_team_game_notification)
     }
@@ -1669,10 +1734,57 @@ impl World {
         //         the idea is that the game is completely determined at the beginning,
         //         so we can similuate it through.
         for game in self.games.values_mut() {
-            if game.has_started(current_tick) && !game.has_ended() {
+            if game.has_started(current_tick) {
                 game.tick(current_tick);
             }
         }
+        Ok(())
+    }
+
+    fn tick_tournaments(&mut self, current_tick: Tick) -> AppResult<()> {
+        let mut new_games = vec![];
+        for (&tournament_id, tournament) in self.tournaments.iter_mut() {
+            if !tournament.has_started(current_tick) {
+                continue;
+            }
+
+            let tournament_games = self
+                .games
+                .iter()
+                .filter(
+                    |(_, game)| matches!(game.part_of_tournament, Some(id) if id == tournament_id),
+                )
+                .collect::<HashMap<&GameId, &Game>>();
+
+            new_games.append(&mut tournament.generate_next_games(current_tick, tournament_games));
+            // FIXME: restore tiredness and morale, at least patially??
+        }
+
+        for game in new_games {
+            self.games.insert(game.id, game);
+        }
+
+        for tournament in self.tournaments.values() {
+            if tournament.has_ended() {
+                save_tournament(tournament)?;
+                for team_id in tournament.participants.keys() {
+                    let team = if let Some(team) = self.teams.get_mut(team_id) {
+                        team
+                    } else {
+                        continue;
+                    };
+
+                    if team.peer_id.is_some() {
+                        continue;
+                    }
+
+                    team.tournament_registration_state = TournamentRegistrationState::None;
+                }
+            }
+        }
+
+        self.tournaments.retain(|_, t| !t.has_ended());
+
         Ok(())
     }
 
@@ -2093,7 +2205,7 @@ impl World {
                 .sum::<f32>()
                 / team.player_ids.len().max(1) as f32;
 
-            // If team reputation is smaller than players average reputationl, it increases.
+            // If team reputation is smaller than players average reputation, it increases.
             // Otherwise, it decreases.
             let mut reputation_modifier =
                 ((players_reputation - team.reputation) / MAX_SKILL) / 2.0;
@@ -2101,7 +2213,8 @@ impl World {
                 reputation_modifier *= TeamBonus::Reputation.current_team_bonus(self, &team.id)?;
             }
             let new_reputation = (team.reputation * (1.0 + reputation_modifier)).bound();
-            reputation_update.push((team.id, new_reputation));
+            let min_reputation = team.honours.len() as f32 * MIN_REPUTATION_PER_HONOUR;
+            reputation_update.push((team.id, new_reputation.max(min_reputation)));
         }
 
         for (team_id, new_reputation) in reputation_update {
@@ -2240,7 +2353,7 @@ impl World {
 
         for honour in Honour::iter() {
             if !own_team.honours.contains(&honour)
-                && honour.conditions_met(own_team, &self.past_games, &self.players)
+                && honour.conditions_met(own_team, &self.past_games, &self.players, &self.planets)
             {
                 own_team.honours.insert(honour);
             }
@@ -2295,14 +2408,27 @@ impl World {
 
     pub fn filter_peer_data(&mut self, peer_id: Option<PeerId>) -> AppResult<()> {
         let mut own_team = self.get_own_team()?.clone();
+        let own_team_current_location = own_team.is_on_planet();
         if let Some(peer_id) = peer_id {
             // Filter all data that has a specific peer_id
             self.teams
-                .retain(|_, team| team.peer_id.is_none() || team.peer_id.unwrap() != peer_id);
+                .retain(|_, team| !matches!(team.peer_id, Some(id) if id == peer_id));
             self.players
-                .retain(|_, player| player.peer_id.is_none() || player.peer_id.unwrap() != peer_id);
-            self.planets
-                .retain(|_, planet| planet.peer_id.is_none() || planet.peer_id.unwrap() != peer_id);
+                .retain(|_, player| !matches!(player.peer_id, Some(id) if id == peer_id));
+
+            // If team is on peer asteroid, dont filter it
+            self.planets.retain(|_, planet| {
+                !matches!(planet.peer_id, Some(id) if id == peer_id)
+                    || matches!(own_team_current_location, Some(id) if id == planet.id)
+            });
+            // self.teams
+            //     .retain(|_, team| team.peer_id.is_none() || team.peer_id.unwrap() != peer_id);
+            // self.players
+            //     .retain(|_, player| player.peer_id.is_none() || player.peer_id.unwrap() != peer_id);
+
+            // FIXME: if team is on peer asteroid, dont filter it
+            // self.planets
+            //     .retain(|_, planet| planet.peer_id.is_none() || planet.peer_id.unwrap() != peer_id);
             self.games.retain(|_, game| {
                 game.home_team_in_game.team_id == self.own_team_id
                     || game.away_team_in_game.team_id == self.own_team_id
@@ -2327,7 +2453,11 @@ impl World {
             // Filter all data that has a peer_id (i.e. keep only local data)
             self.teams.retain(|_, team| team.peer_id.is_none());
             self.players.retain(|_, player| player.peer_id.is_none());
-            self.planets.retain(|_, planet| planet.peer_id.is_none());
+            self.planets.retain(|_, planet| {
+                planet.peer_id.is_none()
+                    || matches!(own_team_current_location, Some(id) if id == planet.id )
+            });
+
             self.games.retain(|_, game| {
                 game.home_team_in_game.team_id == self.own_team_id
                     || game.away_team_in_game.team_id == self.own_team_id
@@ -2478,6 +2608,7 @@ impl World {
             players: self.players.clone(),
             planets: self.planets.clone(),
             games: self.games.clone(),
+            tournaments: self.tournaments.clone(),
             kartoffeln: self.kartoffeln.clone(),
             past_games: self.past_games.clone(),
             serialized_size: self.serialized_size,
@@ -2508,7 +2639,7 @@ mod test {
             RatedPlayers, DEFAULT_PLANET_ID,
         },
         types::{StorableResourceMap, SystemTimeTick, Tick},
-        ui::ui_callback::UiCallback,
+        ui::UiCallback,
     };
     use itertools::Itertools;
     use rand::{Rng, SeedableRng};

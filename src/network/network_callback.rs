@@ -3,11 +3,12 @@ use super::trade::Trade;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::app_version;
 use crate::core::constants::NETWORK_GAME_START_DELAY;
-use crate::core::MAX_AVG_TIREDNESS_PER_AUTO_GAME;
+use crate::core::{TournamentRegistrationState, MAX_AVG_TIREDNESS_PER_AUTO_GAME};
 use crate::game_engine::types::TeamInGame;
+use crate::game_engine::{Tournament, TournamentId};
 use crate::store::deserialize;
-use crate::types::{AppResult, SystemTimeTick, TeamId, Tick};
-use crate::ui::popup_message::PopupMessage;
+use crate::types::{AppResult, PlayerMap, SystemTimeTick, TeamId, Tick};
+use crate::ui::PopupMessage;
 use crate::{app::App, types::AppCallback};
 use anyhow::anyhow;
 use libp2p::gossipsub::TopicHash;
@@ -123,28 +124,35 @@ impl NetworkCallback {
         network_team: NetworkTeam,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.world.add_network_team(network_team.clone())?;
+            let team_version_updated = app.world.add_network_team(network_team.clone())?;
 
             if let Some(id) = peer_id {
                 app.ui.swarm_panel.add_peer_id(id, network_team.team.id);
             }
-            app.ui.push_log_event(
-                timestamp,
-                peer_id,
-                format!(
-                    "Received team {} (version {})",
-                    network_team.team.name, network_team.team.version
-                ),
-                log::Level::Info,
-            );
+
+            if team_version_updated {
+                app.ui.push_log_event(
+                    timestamp,
+                    peer_id,
+                    format!(
+                        "Received team {} (version {})",
+                        network_team.team.name, network_team.team.version
+                    ),
+                    log::Level::Info,
+                );
+            }
 
             Ok(None)
         })
     }
 
-    fn handle_message_topic(peer_id: Option<PeerId>, timestamp: Tick, text: String) -> AppCallback {
+    fn handle_message_topic(
+        peer_id: Option<PeerId>,
+        timestamp: Tick,
+        message: String,
+    ) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.push_chat_event(timestamp, peer_id, text.clone());
+            app.ui.push_chat_event(timestamp, peer_id, message.clone());
             Ok(None)
         })
     }
@@ -162,6 +170,176 @@ impl NetworkCallback {
                     tick: timestamp,
                 });
             }
+
+            Ok(None)
+        })
+    }
+
+    fn handle_tournament_registration_request_topic(
+        tournament_id: TournamentId,
+        team_id: TeamId,
+        state: TournamentRegistrationState,
+    ) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let tournament = if let Some(t) = app.world.tournaments.get_mut(&tournament_id) {
+                t
+            } else {
+                return Err(anyhow!("No tournament with id {tournament_id} found."));
+            };
+
+            // Check that state and tournament_id are consistent
+            match state {
+                TournamentRegistrationState::Pending {
+                    tournament_id: state_tid,
+                }
+                | TournamentRegistrationState::Confirmed {
+                    tournament_id: state_tid,
+                } => {
+                    if tournament_id != state_tid {
+                        return Err(anyhow!(
+                            "Inconsistent tournament ids: {tournament_id} and {state_tid}"
+                        ));
+                    }
+                }
+                TournamentRegistrationState::None => {}
+            }
+
+            // Check if own_team is tournament organizer.
+            // In this case, we register the team to the tournament and send back the response.
+            if tournament.organizer_id == app.world.own_team_id {
+                // We process only requests with state = TournamentRegistrationState::Pending { tournament_id }
+                if !matches!(state, TournamentRegistrationState::Pending { .. }) {
+                    app.network_handler.send_tournament_registration_request(
+                        tournament_id,
+                        team_id,
+                        TournamentRegistrationState::None,
+                    )?;
+                    app.ui.push_log_event(
+                        Tick::now(),
+                        None,
+                        format!(
+                            "Registration declined by organizer: Invalid tournament state received: {state}"
+                        ),
+                        log::Level::Error,
+                    );
+                }
+
+                let team = app
+                    .world
+                    .teams
+                    .get(&team_id)
+                    .ok_or(anyhow!("Team {team_id} not found."))?;
+                let mut players = PlayerMap::new();
+                for player_id in team.player_ids.iter() {
+                    let player = app
+                        .world
+                        .players
+                        .get(player_id)
+                        .ok_or(anyhow!("Player {player_id} not found."))?
+                        .clone();
+                    players.insert(player.id, player);
+                }
+                match tournament.register_team(team, players) {
+                    Ok(()) => {
+                        app.network_handler.send_tournament_registration_request(
+                            tournament_id,
+                            team_id,
+                            TournamentRegistrationState::Confirmed { tournament_id },
+                        )?;
+                        app.ui.push_log_event(Tick::now(), None, format!("Registration to tournament {tournament_id} confirmed for team {team_id}."), log::Level::Info);
+                        app.network_handler.send_tournament(tournament.clone())?;
+                    }
+                    Err(err) => {
+                        app.network_handler.send_tournament_registration_request(
+                            tournament_id,
+                            team_id,
+                            TournamentRegistrationState::None,
+                        )?;
+                        app.ui.push_log_event(Tick::now(), None, format!("Registration to tournament {tournament_id} declined for team {team_id}: {err}"), log::Level::Warn);
+                    }
+                }
+            }
+            // Check if own_team is team_id (sender of request).
+            // In this case we intepret the state as a confirmation or a cancelation,
+            // if the state of the team is pending and the tournament id matches.
+            else if team_id == app.world.own_team_id {
+                let own_team = app.world.get_own_team_mut()?;
+                if !matches!(
+                    own_team.tournament_registration_state,
+                    TournamentRegistrationState::Pending {tournament_id: id} if id == tournament_id
+                ) {
+                    // Discard message
+                    app.ui.push_log_event(
+                        Tick::now(),
+                        None,
+                        format!("Invalid tournament state received: {state}"),
+                        log::Level::Error,
+                    );
+                }
+
+                // We process only requests with state = TournamentRegistrationState::Confirmed { tournament_id } or None
+                match state {
+                    TournamentRegistrationState::None => {
+                        app.ui.push_log_event(
+                            Tick::now(),
+                            None,
+                            format!("Registration to tournament {tournament_id} declined."),
+                            log::Level::Warn,
+                        );
+                        own_team.tournament_registration_state = TournamentRegistrationState::None;
+                    }
+                    TournamentRegistrationState::Pending { tournament_id } => {
+                        app.ui.push_log_event(
+                            Tick::now(),
+                            None,
+                            format!("Invalid tournament {tournament_id} state received: {state}"),
+                            log::Level::Error,
+                        );
+                    }
+                    TournamentRegistrationState::Confirmed { tournament_id } => {
+                        app.ui.push_log_event(
+                            Tick::now(),
+                            None,
+                            format!("Registration to tournament {tournament_id} accepted."),
+                            log::Level::Info,
+                        );
+                        own_team.tournament_registration_state =
+                            TournamentRegistrationState::Confirmed { tournament_id };
+                    }
+                }
+            }
+
+            Ok(None)
+        })
+    }
+
+    fn handle_tournament_topic(tournament: Tournament) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            if tournament.organizer_id == app.world.own_team_id {
+                return Err(anyhow!(
+                    "Cannot receive tournament organized by oneself over the network."
+                ));
+            }
+
+            if !tournament.has_started(Tick::now())
+                && tournament.has_available_spots()
+                && !app.world.tournaments.contains_key(&tournament.id)
+            {
+                let planet = app.world.get_planet_or_err(&tournament.planet_id)?;
+                app.ui.push_popup_to_top(PopupMessage::Ok {
+                    message: format!(
+                        "There is a tournament on {} starting in {} with available spots.",
+                        planet.name,
+                        (tournament.starting_at - Tick::now()).formatted_as_time()
+                    ),
+                    is_skippable: true,
+                    tick: Tick::now(),
+                });
+            }
+
+            app.world
+                .tournaments
+                .insert(tournament.id, tournament.clone());
 
             Ok(None)
         })
@@ -475,6 +653,7 @@ impl NetworkCallback {
                     let own_team = app.world.get_own_team_mut()?;
 
                     if own_team.current_game.is_none()
+                        && own_team.committed_to_tournament().is_none()
                         && own_team.autonomous_strategy.challenge_network
                         && average_tiredness <= MAX_AVG_TIREDNESS_PER_AUTO_GAME
                     {
@@ -719,26 +898,45 @@ impl NetworkCallback {
 
                 let network_data = deserialize::<NetworkData>(&message.data)?;
                 match network_data {
-                    NetworkData::Team(timestamp, team) => {
+                    NetworkData::Team { timestamp, team } => {
                         Self::handle_team_topic(peer_id, timestamp, team)(app)
                     }
-                    NetworkData::Message(timestamp, text) => {
-                        Self::handle_message_topic(peer_id, timestamp, text)(app)
+                    NetworkData::Message { timestamp, message } => {
+                        Self::handle_message_topic(peer_id, timestamp, message)(app)
                     }
-                    NetworkData::Challenge(timestamp, challenge) => {
-                        Self::handle_challenge_topic(peer_id, timestamp, challenge)(app)
-                    }
-                    NetworkData::Trade(timestamp, trade) => {
+                    NetworkData::Challenge {
+                        timestamp,
+                        challenge,
+                    } => Self::handle_challenge_topic(peer_id, timestamp, challenge)(app),
+                    NetworkData::Trade { timestamp, trade } => {
                         Self::handle_trade_topic(peer_id, timestamp, trade)(app)
                     }
-                    NetworkData::Game(timestamp, game) => {
+                    NetworkData::Game { timestamp, game } => {
                         Self::handle_game_topic(peer_id, timestamp, game)(app)
                     }
-                    NetworkData::SeedInfo(timestamp, seed_info) => {
-                        Self::handle_seed_topic(peer_id, timestamp, seed_info)(app)
-                    }
-                    NetworkData::RelayerMessageToTeam(timestamp, message, team_id) => {
+                    NetworkData::SeedInfo {
+                        timestamp,
+                        seed_info,
+                    } => Self::handle_seed_topic(peer_id, timestamp, seed_info)(app),
+                    NetworkData::RelayerMessageToTeam {
+                        timestamp,
+                        message,
+                        team_id,
+                    } => {
                         Self::handle_relayer_message_to_team_topic(timestamp, message, team_id)(app)
+                    }
+                    NetworkData::TournamentRegistrationRequest {
+                        tournament_id,
+                        team_id,
+                        state,
+                        ..
+                    } => Self::handle_tournament_registration_request_topic(
+                        tournament_id,
+                        team_id,
+                        state,
+                    )(app),
+                    NetworkData::Tournament { tournament, .. } => {
+                        Self::handle_tournament_topic(tournament)(app)
                     }
                 }
             }

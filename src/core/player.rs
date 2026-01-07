@@ -12,7 +12,7 @@ use super::{
 use crate::{
     core::PLANET_DATA,
     game_engine::types::GameStats,
-    image::{player::PlayerImage, types::Gif},
+    image::{player::PlayerImage, utils::Gif},
     types::{AppResult, PlanetId, PlayerId, StorableResourceMap, TeamId},
 };
 use anyhow::anyhow;
@@ -1124,8 +1124,8 @@ impl Player {
 }
 
 impl Rated for Player {
-    fn rating(&self) -> u8 {
-        self.average_skill().value()
+    fn rating(&self) -> Skill {
+        self.average_skill()
     }
 }
 

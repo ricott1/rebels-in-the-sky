@@ -24,7 +24,7 @@ use crate::{
         utils::{draw_hitbox, EntityMap},
     },
     types::{AppResult, ResourceMap, SystemTimeTick, Tick},
-    ui::{popup_message::PopupMessage, ui_callback::UiCallback},
+    ui::{PopupMessage, UiCallback},
 };
 use anyhow::anyhow;
 use glam::Vec2;

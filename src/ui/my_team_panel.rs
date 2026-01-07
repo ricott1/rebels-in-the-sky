@@ -10,6 +10,7 @@ use super::{
     utils::format_satoshi,
     widgets::*,
 };
+use crate::game_engine::timer::Period;
 use crate::types::Tick;
 use crate::ui::popup_message::PopupMessage;
 use crate::ui::ui_key;
@@ -75,8 +76,8 @@ pub struct MyTeamPanel {
     view: MyTeamView,
     player_widget_view: PlayerWidgetView,
     active_list: PanelList,
-    recent_games: Vec<GameId>,
-    loaded_games: HashMap<GameId, Game>,
+    past_game_ids: Vec<GameId>,
+    loaded_games: HashMap<GameId, AppResult<Game>>,
     planet_markets: Vec<PlanetId>,
     challenge_teams: Vec<TeamId>,
     asteroid_ids: Vec<PlanetId>,
@@ -489,7 +490,7 @@ impl MyTeamPanel {
         let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
 
         let info = Paragraph::new(vec![
-            Line::from(""),
+            Line::default(),
             Line::from(format!(
                 "Rating {:5}  Reputation {:5}",
                 world.team_rating(&own_team.id).unwrap_or_default().stars(),
@@ -497,16 +498,11 @@ impl MyTeamPanel {
             )),
             Line::from(vec![
                 Span::raw(format!(
-                    "Game record W{}/L{}/D{}  ",
-                    own_team.game_record[0], own_team.game_record[1], own_team.game_record[2]
+                    "Local Elo {:.0}",
+                    own_team.local_game_rating.rating
                 )),
                 Span::styled(
-                    format!(
-                        "Network W{}/L{}/D{} ",
-                        own_team.network_game_record[0],
-                        own_team.network_game_record[1],
-                        own_team.network_game_record[2]
-                    ),
+                    format!("  Network Elo {:.0}", own_team.network_game_rating.rating),
                     UiStyle::NETWORK,
                 ),
             ]),
@@ -692,7 +688,7 @@ impl MyTeamPanel {
         .set_hover_text("Change the training focus, which skills increase faster.")
         .set_hotkey(ui_key::team::TRAINING_FOCUS);
         if let Err(err) = can_change_training_focus {
-            training_button.disable(Some(format!("{err}")));
+            training_button.disable(Some(err.to_string()));
         }
         frame.render_interactive_widget(training_button, top_button_split[1]);
 
@@ -819,7 +815,7 @@ impl MyTeamPanel {
     ) -> AppResult<()> {
         frame.render_widget(default_block().title("Recent Games".to_string()), area);
 
-        if self.recent_games.is_empty() {
+        if self.past_game_ids.is_empty() {
             return Ok(());
         }
 
@@ -855,7 +851,7 @@ impl MyTeamPanel {
             }
         }
 
-        for game_id in self.recent_games.iter() {
+        for game_id in self.past_game_ids.iter() {
             if let Some(game) = world.past_games.get(game_id) {
                 let text = format!(
                     " {:>12} {:>3}-{:<3} {:<}",
@@ -883,67 +879,62 @@ impl MyTeamPanel {
             &mut ClickableListState::default().with_selected(self.game_index),
         );
 
-        if let Some(index) = self.game_index {
-            if let Some(&game_id) = self.recent_games.get(index) {
-                frame.render_interactive_widget(
-                    Button::new("Go to game", UiCallback::GoToGame { game_id })
-                        .set_hotkey(ui_key::GO_TO_GAME)
-                        .set_hover_text("Go to game"),
-                    v_split[1],
-                );
-            }
+        let game_index = if let Some(index) = self.game_index {
+            index % self.past_game_ids.len()
+        } else {
+            return Ok(());
+        };
+
+        let game_id = if let Some(&game_id) = self.past_game_ids.get(game_index) {
+            game_id
+        } else {
+            return Ok(());
+        };
+
+        if world.games.contains_key(&game_id)
+            || world.recently_finished_games.contains_key(&game_id)
+        {
+            let button = Button::new("Go to game", UiCallback::GoToGame { game_id })
+                .set_hotkey(ui_key::GO_TO_GAME)
+                .set_hover_text("Go to game");
+
+            frame.render_interactive_widget(button, v_split[1]);
+        } else if let Some(loaded_game) = self.loaded_games.get(&game_id) {
+            let button = match loaded_game {
+                Ok(game) => Button::new(
+                    "Go to game",
+                    UiCallback::GoToLoadedGame { game: game.clone() },
+                )
+                .set_hotkey(ui_key::GO_TO_GAME)
+                .set_hover_text("Go to game"),
+
+                Err(err) => Button::new("Go to game", UiCallback::None)
+                    .set_hotkey(ui_key::GO_TO_GAME)
+                    .set_hover_text("Go to game")
+                    .disabled(Some(err.to_string())),
+            };
+
+            frame.render_interactive_widget(button, v_split[1]);
         }
 
-        let game_id = self.recent_games[self.game_index.unwrap_or_default()];
-
         let summary = if let Ok(current_game) = world.get_game_or_err(&game_id) {
-            Paragraph::new(format!(
-                "Location {} - Attendance {}\nCurrently playing: {}",
-                world.get_planet_or_err(&current_game.location)?.name,
-                current_game.attendance,
-                current_game.timer.format(),
-            ))
-        } else {
-            if let std::collections::hash_map::Entry::Vacant(e) = self.loaded_games.entry(game_id) {
-                if let Ok(game) = load_game(game_id) {
-                    e.insert(game);
-                } else {
-                    log::error!("Failed to load game {game_id}");
-                    return Ok(());
-                }
-            }
-            let game = world
-                .past_games
-                .get(&game_id)
-                .ok_or(anyhow!("Unable to get past game."))?;
-
-            let loaded_game = self
-                .loaded_games
-                .get(&game_id)
-                .expect("Failed to load game");
-
-            let home_mvps = loaded_game
-                .home_team_mvps
-                .as_ref()
-                .expect("Loaded game should have set mvps.");
-            let away_mvps = loaded_game
-                .away_team_mvps
-                .as_ref()
-                .expect("Loaded game should have set mvps.");
+            let (home_quarters_score, away_quarters_score) = current_game.get_score_by_quarter();
 
             let lines = vec![
                 Line::from(format!(
                     "Location {} - Attendance {}",
-                    world.get_planet_or_err(&game.location)?.name,
-                    game.attendance
+                    if let Ok(planet) = world.get_planet_or_err(&current_game.location) {
+                        planet.name.as_str()
+                    } else {
+                        "Unknown"
+                    },
+                    current_game.attendance,
                 )),
                 Line::from(format!(
-                    "Ended on {}",
-                    game.ended_at
-                        .expect("Past games should have ended")
-                        .formatted_as_date()
+                    "Currently playing: {}",
+                    current_game.timer.format(),
                 )),
-                Line::from(""),
+                Line::default(),
                 Line::from(Span::styled(
                     format!(
                         "{:12} {} {} {} {} {}",
@@ -953,10 +944,108 @@ impl MyTeamPanel {
                 )),
                 Line::from(vec![
                     Span::styled(
-                        format!("{:12} ", game.home_team_name),
-                        if game.home_team_id == self.own_team_id {
+                        format!("{:12} ", current_game.home_team_in_game.name),
+                        if current_game.home_team_in_game.team_id == self.own_team_id {
                             UiStyle::OWN_TEAM
-                        } else if game.is_network {
+                        } else if current_game.is_network() {
+                            UiStyle::NETWORK
+                        } else {
+                            UiStyle::DEFAULT
+                        },
+                    ),
+                    Span::raw(format!(
+                        "{:02} {} {} {} {:^6}",
+                        home_quarters_score[0],
+                        if current_game.timer.period() >= Period::Q2 {
+                            format!("{:02}", home_quarters_score[1])
+                        } else {
+                            "--".to_string()
+                        },
+                        if current_game.timer.period() >= Period::Q3 {
+                            format!("{:02}", home_quarters_score[2])
+                        } else {
+                            "--".to_string()
+                        },
+                        if current_game.timer.period() >= Period::Q4 {
+                            format!("{:02}", home_quarters_score[3])
+                        } else {
+                            "--".to_string()
+                        },
+                        home_quarters_score.iter().sum::<u16>(),
+                    )),
+                ]),
+                Line::from(vec![
+                    Span::styled(
+                        format!("{:12} ", current_game.away_team_in_game.name),
+                        if current_game.away_team_in_game.team_id == self.own_team_id {
+                            UiStyle::OWN_TEAM
+                        } else if current_game.is_network() {
+                            UiStyle::NETWORK
+                        } else {
+                            UiStyle::DEFAULT
+                        },
+                    ),
+                    Span::raw(format!(
+                        "{:02} {} {} {} {:^6}",
+                        away_quarters_score[0],
+                        if current_game.timer.period() >= Period::Q2 {
+                            format!("{:02}", away_quarters_score[1])
+                        } else {
+                            "--".to_string()
+                        },
+                        if current_game.timer.period() >= Period::Q3 {
+                            format!("{:02}", away_quarters_score[2])
+                        } else {
+                            "--".to_string()
+                        },
+                        if current_game.timer.period() >= Period::Q4 {
+                            format!("{:02}", away_quarters_score[3])
+                        } else {
+                            "--".to_string()
+                        },
+                        away_quarters_score.iter().sum::<u16>(),
+                    )),
+                ]),
+            ];
+
+            Paragraph::new(lines)
+        } else {
+            let game_summary = world
+                .past_games
+                .get(&game_id)
+                .ok_or(anyhow!("Unable to get past game."))?;
+
+            let mut lines = vec![
+                Line::from(format!(
+                    "Location {} - Attendance {}",
+                    if let Ok(planet) = world.get_planet_or_err(&game_summary.location) {
+                        planet.name.as_str()
+                    } else {
+                        "Unknown"
+                    },
+                    game_summary.attendance
+                )),
+                Line::from(format!(
+                    "Ended on {}",
+                    game_summary
+                        .ended_at
+                        .expect("Past games should have ended")
+                        .formatted_as_date()
+                )),
+                Line::default(),
+                Line::from(Span::styled(
+                    format!(
+                        "{:12} {} {} {} {} {}",
+                        "Team", "Q1", "Q2", "Q3", "Q4", "Result"
+                    ),
+                    UiStyle::HEADER.bold(),
+                )),
+                Line::from(vec![
+                    Span::styled(
+                        format!("{:12} ", game_summary.home_team_name),
+                        if game_summary.home_team_id == self.own_team_id {
+                            UiStyle::OWN_TEAM
+                        } else if game_summary.is_network {
                             UiStyle::NETWORK
                         } else {
                             UiStyle::DEFAULT
@@ -964,12 +1053,12 @@ impl MyTeamPanel {
                     ),
                     Span::raw(format!(
                         "{:02} {:02} {:02} {:02} {:^6} {}",
-                        game.home_quarters_score[0],
-                        game.home_quarters_score[1],
-                        game.home_quarters_score[2],
-                        game.home_quarters_score[3],
-                        game.home_quarters_score.iter().sum::<u16>(),
-                        if game.home_team_knocked_out {
+                        game_summary.home_quarters_score[0],
+                        game_summary.home_quarters_score[1],
+                        game_summary.home_quarters_score[2],
+                        game_summary.home_quarters_score[3],
+                        game_summary.home_quarters_score.iter().sum::<u16>(),
+                        if game_summary.home_team_knocked_out {
                             "wasted"
                         } else {
                             ""
@@ -978,10 +1067,10 @@ impl MyTeamPanel {
                 ]),
                 Line::from(vec![
                     Span::styled(
-                        format!("{:12} ", game.away_team_name),
-                        if game.away_team_id == self.own_team_id {
+                        format!("{:12} ", game_summary.away_team_name),
+                        if game_summary.away_team_id == self.own_team_id {
                             UiStyle::OWN_TEAM
-                        } else if game.is_network {
+                        } else if game_summary.is_network {
                             UiStyle::NETWORK
                         } else {
                             UiStyle::DEFAULT
@@ -989,125 +1078,21 @@ impl MyTeamPanel {
                     ),
                     Span::raw(format!(
                         "{:02} {:02} {:02} {:02} {:^6} {}",
-                        game.away_quarters_score[0],
-                        game.away_quarters_score[1],
-                        game.away_quarters_score[2],
-                        game.away_quarters_score[3],
-                        game.away_quarters_score.iter().sum::<u16>(),
-                        if game.away_team_knocked_out {
+                        game_summary.away_quarters_score[0],
+                        game_summary.away_quarters_score[1],
+                        game_summary.away_quarters_score[2],
+                        game_summary.away_quarters_score[3],
+                        game_summary.away_quarters_score.iter().sum::<u16>(),
+                        if game_summary.away_team_knocked_out {
                             "wasted"
                         } else {
                             ""
                         }
                     )),
                 ]),
-                Line::from(String::new()),
-                Line::from(Span::styled(
-                    game.home_team_name.clone(),
-                    UiStyle::HEADER.bold(),
-                )),
-                Line::from(format!(
-                    "{:<18}{:<8}{:<8}{:<8}",
-                    home_mvps[0].name,
-                    format!(
-                        "{:>2} {}",
-                        home_mvps[0].best_stats[0].1, home_mvps[0].best_stats[0].0
-                    ),
-                    format!(
-                        "{:>2} {}",
-                        home_mvps[0].best_stats[1].1, home_mvps[0].best_stats[1].0
-                    ),
-                    format!(
-                        "{:>2} {}",
-                        home_mvps[0].best_stats[2].1, home_mvps[0].best_stats[2].0
-                    )
-                )),
-                Line::from(format!(
-                    "{:<18}{:<8}{:<8}{:<8}",
-                    home_mvps[1].name,
-                    format!(
-                        "{:>2} {}",
-                        home_mvps[1].best_stats[0].1, home_mvps[1].best_stats[0].0
-                    ),
-                    format!(
-                        "{:>2} {}",
-                        home_mvps[1].best_stats[1].1, home_mvps[1].best_stats[1].0
-                    ),
-                    format!(
-                        "{:>2} {}",
-                        home_mvps[1].best_stats[2].1, home_mvps[1].best_stats[2].0
-                    )
-                )),
-                Line::from(format!(
-                    "{:<18}{:<8}{:<8}{:<8}",
-                    home_mvps[2].name,
-                    format!(
-                        "{:>2} {}",
-                        home_mvps[2].best_stats[0].1, home_mvps[2].best_stats[0].0
-                    ),
-                    format!(
-                        "{:>2} {}",
-                        home_mvps[2].best_stats[1].1, home_mvps[2].best_stats[1].0
-                    ),
-                    format!(
-                        "{:>2} {}",
-                        home_mvps[2].best_stats[2].1, home_mvps[2].best_stats[2].0
-                    )
-                )),
-                Line::from(""),
-                Line::from(Span::styled(
-                    game.away_team_name.clone(),
-                    UiStyle::HEADER.bold(),
-                )),
-                Line::from(format!(
-                    "{:<18}{:<8}{:<8}{:<8}",
-                    away_mvps[0].name,
-                    format!(
-                        "{:>2} {}",
-                        away_mvps[0].best_stats[0].1, away_mvps[0].best_stats[0].0
-                    ),
-                    format!(
-                        "{:>2} {}",
-                        away_mvps[0].best_stats[1].1, away_mvps[0].best_stats[1].0
-                    ),
-                    format!(
-                        "{:>2} {}",
-                        away_mvps[0].best_stats[2].1, away_mvps[0].best_stats[2].0
-                    )
-                )),
-                Line::from(format!(
-                    "{:<18}{:<8}{:<8}{:<8}",
-                    away_mvps[1].name,
-                    format!(
-                        "{:>2} {}",
-                        away_mvps[1].best_stats[0].1, away_mvps[1].best_stats[0].0
-                    ),
-                    format!(
-                        "{:>2} {}",
-                        away_mvps[1].best_stats[1].1, away_mvps[1].best_stats[1].0
-                    ),
-                    format!(
-                        "{:>2} {}",
-                        away_mvps[1].best_stats[2].1, away_mvps[1].best_stats[2].0
-                    )
-                )),
-                Line::from(format!(
-                    "{:<18}{:<8}{:<8}{:<8}",
-                    away_mvps[2].name,
-                    format!(
-                        "{:>2} {}",
-                        away_mvps[2].best_stats[0].1, away_mvps[2].best_stats[0].0
-                    ),
-                    format!(
-                        "{:>2} {}",
-                        away_mvps[2].best_stats[1].1, away_mvps[2].best_stats[1].0
-                    ),
-                    format!(
-                        "{:>2} {}",
-                        away_mvps[2].best_stats[2].1, away_mvps[2].best_stats[2].0
-                    )
-                )),
             ];
+
+            lines.append(&mut self.get_loaded_game_description(game_id, world));
 
             Paragraph::new(lines)
         };
@@ -1121,6 +1106,83 @@ impl MyTeamPanel {
         );
 
         Ok(())
+    }
+
+    fn get_loaded_game_description<'a>(
+        &'a mut self,
+        game_id: GameId,
+        world: &'a World,
+    ) -> Vec<Line<'a>> {
+        let game = if let Some(game) = world.recently_finished_games.get(&game_id) {
+            game
+        } else {
+            let entry = self
+                .loaded_games
+                .entry(game_id)
+                .or_insert_with(|| load_game(&game_id));
+
+            match entry {
+                Ok(game) => game,
+                Err(_) => return vec![],
+            }
+        };
+
+        let mut lines = vec![];
+
+        let home_mvps = game
+            .home_team_mvps
+            .as_ref()
+            .expect("Loaded game should have set mvps.");
+
+        let mut extra_lines = home_mvps
+            .iter()
+            .map(|mvp| {
+                Line::from(format!(
+                    "{:<18}{:<8}{:<8}{:<8}",
+                    mvp.name,
+                    format!("{:>2} {}", mvp.best_stats[0].1, mvp.best_stats[0].0),
+                    format!("{:>2} {}", mvp.best_stats[1].1, mvp.best_stats[1].0),
+                    format!("{:>2} {}", mvp.best_stats[2].1, mvp.best_stats[2].0)
+                ))
+            })
+            .collect_vec();
+
+        lines.append(&mut vec![
+            Line::from(String::new()),
+            Line::from(Span::styled(
+                game.home_team_in_game.name.as_str(),
+                UiStyle::HEADER.bold(),
+            )),
+        ]);
+        lines.append(&mut extra_lines);
+
+        let away_mvps = game
+            .away_team_mvps
+            .as_ref()
+            .expect("Loaded game should have set mvps.");
+
+        let mut extra_lines = away_mvps
+            .iter()
+            .map(|mvp| {
+                Line::from(format!(
+                    "{:<18}{:<8}{:<8}{:<8}",
+                    mvp.name,
+                    format!("{:>2} {}", mvp.best_stats[0].1, mvp.best_stats[0].0),
+                    format!("{:>2} {}", mvp.best_stats[1].1, mvp.best_stats[1].0),
+                    format!("{:>2} {}", mvp.best_stats[2].1, mvp.best_stats[2].0)
+                ))
+            })
+            .collect_vec();
+        lines.append(&mut vec![
+            Line::from(String::new()),
+            Line::from(Span::styled(
+                game.away_team_in_game.name.as_str(),
+                UiStyle::HEADER.bold(),
+            )),
+        ]);
+        lines.append(&mut extra_lines);
+
+        lines
     }
 
     fn render_shipyard(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
@@ -1305,14 +1367,14 @@ impl MyTeamPanel {
             lines
         } else if self.spaceship_upgrade_index == SpaceshipUpgradeTarget::iter().count() - 1 {
             vec![
-                Line::from(""),
-                Line::from(""),
+                Line::default(),
+                Line::default(),
                 Line::from("Fully repaired").centered(),
             ]
         } else {
             vec![
-                Line::from(""),
-                Line::from(""),
+                Line::default(),
+                Line::default(),
                 Line::from("No more upgrades").centered(),
                 Line::from("available").centered(),
             ]
@@ -1945,7 +2007,7 @@ impl MyTeamPanel {
         .set_hover_text("Fire pirate from the crew!")
         .set_hotkey(ui_key::player::FIRE);
         if let Err(err) = can_release {
-            release_button.disable(Some(format!("{err}")));
+            release_button.disable(Some(err.to_string()));
         } else {
             release_button = release_button.block(default_block().border_style(UiStyle::WARNING));
         }
@@ -2155,103 +2217,113 @@ impl MyTeamPanel {
             top_split[1],
         );
 
+        if let Some(game_id) = own_team.current_game {
+            let game = world.get_game_or_err(&game_id)?;
+            let game_text = format!(
+                "{:>} {:>3}-{:<3} {:<}",
+                game.home_team_in_game.name,
+                if let Some(action) = game.action_results.last() {
+                    action.home_score
+                } else {
+                    0
+                },
+                if let Some(action) = game.action_results.last() {
+                    action.away_score
+                } else {
+                    0
+                },
+                game.away_team_in_game.name,
+            );
+            let border_style = if game.is_network() {
+                UiStyle::NETWORK
+            } else {
+                UiStyle::OWN_TEAM
+            };
+
+            let table_bottom = Layout::vertical([Constraint::Fill(1), Constraint::Length(6)])
+                .split(top_split[0].inner(Margin::new(1, 1)));
+
+            frame.render_interactive_widget(
+                Button::new(
+                    vec![
+                        Line::from("Currently playing".to_string()).centered(),
+                        Line::default(),
+                        Line::from(game_text.to_string()).centered(),
+                        Line::from(game.timer.format().to_string()).centered(),
+                    ],
+                    UiCallback::GoToGame { game_id },
+                )
+                .set_hover_text("Go to current game")
+                .set_hotkey(ui_key::GO_TO_CURRENT_GAME)
+                .block(default_block().border_style(border_style)),
+                table_bottom[1],
+            );
+            return Ok(());
+        }
+
         let table_bottom = Layout::vertical([
-            Constraint::Min(10),
+            Constraint::Fill(1),
             Constraint::Length(3), //position buttons
             Constraint::Length(3), // role buttons
         ])
         .split(top_split[0].inner(Margin::new(1, 1)));
-        if let Some(game_id) = own_team.current_game {
-            if let Ok(game) = world.get_game_or_err(&game_id) {
-                let game_text = if let Some(action) = game.action_results.last() {
-                    format!(
-                        "{} {:>3}-{:<3} {}",
-                        game.home_team_in_game.name,
-                        action.home_score,
-                        action.away_score,
-                        game.away_team_in_game.name,
-                    )
-                } else {
-                    format!(
-                        "{}   0-0   {}",
-                        game.home_team_in_game.name, game.away_team_in_game.name,
-                    )
-                };
-                let border_style = if game.is_network() {
-                    UiStyle::NETWORK
-                } else {
-                    UiStyle::OWN_TEAM
-                };
-                frame.render_interactive_widget(
-                    Button::new(
-                        format!("Playing - {} - {}", game_text, game.timer.format()),
-                        UiCallback::GoToGame { game_id },
-                    )
-                    .set_hover_text("Go to current game")
-                    .set_hotkey(ui_key::GO_TO_GAME)
-                    .block(default_block().border_style(border_style)),
-                    table_bottom[1],
-                );
-                return Ok(());
+        let position_button_splits = Layout::horizontal([
+            Constraint::Length(6),  //pg
+            Constraint::Length(6),  //sg
+            Constraint::Length(6),  //sf
+            Constraint::Length(6),  //pf
+            Constraint::Length(6),  //c
+            Constraint::Length(6),  //bench
+            Constraint::Length(6),  //bench
+            Constraint::Length(30), //auto-assign
+            Constraint::Min(0),
+        ])
+        .split(table_bottom[1].inner(Margin {
+            vertical: 0,
+            horizontal: 1,
+        }));
+
+        let player_id = player.id;
+        for idx in 0..MAX_PLAYERS_PER_GAME {
+            let position = idx as GamePosition;
+            let rect = position_button_splits[idx];
+            let mut button = Button::new(
+                format!(
+                    "{}:{:<2}",
+                    (idx + 1),
+                    if position == 5 {
+                        "B1"
+                    } else if position == 6 {
+                        "B2"
+                    } else {
+                        position.as_str()
+                    }
+                ),
+                UiCallback::SwapPlayerPositions {
+                    player_id,
+                    position: idx,
+                },
+            )
+            .set_hover_text(format!(
+                "Set player initial position to {}.",
+                position.as_str()
+            ))
+            .set_hotkey(ui_key::team::set_player_position(position));
+
+            let position = own_team.player_ids.iter().position(|id| *id == player.id);
+            if position.is_some() && position.unwrap() == idx {
+                button.select();
             }
-        } else {
-            let position_button_splits = Layout::horizontal([
-                Constraint::Length(6),  //pg
-                Constraint::Length(6),  //sg
-                Constraint::Length(6),  //sf
-                Constraint::Length(6),  //pf
-                Constraint::Length(6),  //c
-                Constraint::Length(6),  //bench
-                Constraint::Length(6),  //bench
-                Constraint::Length(30), //auto-assign
-                Constraint::Min(0),
-            ])
-            .split(table_bottom[1].inner(Margin {
-                vertical: 0,
-                horizontal: 1,
-            }));
-
-            let player_id = player.id;
-            for idx in 0..MAX_PLAYERS_PER_GAME {
-                let position = idx as GamePosition;
-                let rect = position_button_splits[idx];
-                let mut button = Button::new(
-                    format!(
-                        "{}:{:<2}",
-                        (idx + 1),
-                        if position == 5 {
-                            "B1"
-                        } else if position == 6 {
-                            "B2"
-                        } else {
-                            position.as_str()
-                        }
-                    ),
-                    UiCallback::SwapPlayerPositions {
-                        player_id,
-                        position: idx,
-                    },
-                )
-                .set_hover_text(format!(
-                    "Set player initial position to {}.",
-                    position.as_str()
-                ))
-                .set_hotkey(ui_key::team::set_player_position(position));
-
-                let position = own_team.player_ids.iter().position(|id| *id == player.id);
-                if position.is_some() && position.unwrap() == idx {
-                    button.select();
-                }
-                frame.render_interactive_widget(button, rect);
-            }
-
-            let auto_assign_button =
-                Button::new("Auto-assign positions", UiCallback::AssignBestTeamPositions)
-                    .set_hover_text("Auto-assign players' initial position.")
-                    .set_hotkey(ui_key::team::AUTO_ASSIGN);
-            frame.render_interactive_widget(auto_assign_button, position_button_splits[7]);
-            self.render_player_buttons(&sorted_players, frame, world, table_bottom[2])?;
+            frame.render_interactive_widget(button, rect);
         }
+
+        let auto_assign_button =
+            Button::new("Auto-assign positions", UiCallback::AssignBestTeamPositions)
+                .set_hover_text("Auto-assign players' initial position.")
+                .set_hotkey(ui_key::team::AUTO_ASSIGN);
+        frame.render_interactive_widget(auto_assign_button, position_button_splits[7]);
+        self.render_player_buttons(&sorted_players, frame, world, table_bottom[2])?;
+
         Ok(())
     }
 
@@ -2525,7 +2597,7 @@ impl Screen for MyTeamPanel {
             {
                 games.push(game.id);
             }
-            self.recent_games = games;
+            self.past_game_ids = games;
 
             self.challenge_teams = world
                 .teams
@@ -2554,9 +2626,9 @@ impl Screen for MyTeamPanel {
             // self.players_table = Self::build_players_table(players, world, table_width)
         }
 
-        self.game_index = if !self.recent_games.is_empty() {
+        self.game_index = if !self.past_game_ids.is_empty() {
             if let Some(index) = self.game_index {
-                Some(index % self.recent_games.len())
+                Some(index % self.past_game_ids.len())
             } else {
                 Some(0)
             }
@@ -2652,7 +2724,7 @@ impl SplitPanel for MyTeamPanel {
 
     fn max_index(&self) -> usize {
         if self.active_list == PanelList::Bottom && self.view == MyTeamView::Games {
-            return self.recent_games.len();
+            return self.past_game_ids.len();
         } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Market {
             return self.planet_markets.len();
         } else if self.active_list == PanelList::Bottom && self.view == MyTeamView::Shipyard {

@@ -1,7 +1,6 @@
-pub mod color_map;
-pub mod components;
-pub mod game;
-pub mod player;
-pub mod spaceship;
-pub mod types;
-pub mod utils;
+pub(crate) mod color_map;
+pub(crate) mod components;
+pub(crate) mod game;
+pub(crate) mod player;
+pub(crate) mod spaceship;
+pub(crate) mod utils;

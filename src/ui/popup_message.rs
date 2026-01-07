@@ -7,16 +7,19 @@ use super::utils::{img_to_lines, input_from_key_event, validate_textarea_input};
 use super::widgets::{default_block, thick_block};
 use crate::core::planet::PlanetType;
 use crate::core::{player::Player, resources::Resource, skill::Rated};
-use crate::image::types::{Gif, PrintableGif};
+use crate::image::utils::open_gif;
 use crate::types::*;
 use crate::ui::constants::MAX_NAME_LENGTH;
 use crate::ui::gif_map::PORTAL_GIFS;
+use crate::ui::traits::PrintableGif;
 use crate::ui::ui_key;
 use anyhow::anyhow;
 use core::fmt::Debug;
+use itertools::Itertools;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::layout::{Margin, Rect};
 use ratatui::style::Stylize;
+use ratatui::text::Line;
 use ratatui::widgets::{Clear, Paragraph, Wrap};
 use strum_macros::Display;
 use tui_textarea::TextArea;
@@ -37,7 +40,6 @@ pub enum PopupMessage {
     },
     PromptQuit {
         during_space_adventure: bool,
-        on_peer_asteroid: bool,
         tick: Tick,
     },
     ReleasePlayer {
@@ -258,10 +260,10 @@ impl PopupMessage {
                     .centered(),
                     split[0],
                 );
+
+                let lines = message.split("\n").map(Line::from).collect_vec();
                 frame.render_widget(
-                    Paragraph::new(message.clone())
-                        .centered()
-                        .wrap(Wrap { trim: true }),
+                    Paragraph::new(lines).centered().wrap(Wrap { trim: true }),
                     split[1].inner(Margin {
                         horizontal: 1,
                         vertical: 1,
@@ -476,7 +478,6 @@ impl PopupMessage {
 
             PopupMessage::PromptQuit {
                 during_space_adventure,
-                on_peer_asteroid,
                 ..
             } => {
                 frame.render_widget(
@@ -489,8 +490,6 @@ impl PopupMessage {
 
                 let text = if *during_space_adventure {
                     format!("Are you sure you want to quit?\nYou will lose the whole cargo! Go back to the base first\n(Press '{}')", ui_key::space::BACK_TO_BASE)
-                } else if *on_peer_asteroid {
-                    "Are you sure you want to quit?\nYou will lose all your rum! Travel back to a planet first".to_string()
                 } else {
                     "Are you sure you want to quit?".to_string()
                 };
@@ -815,7 +814,7 @@ impl PopupMessage {
                 let planet_gif = if *planet_type == PlanetType::Asteroid {
                     GifMap::asteroid_zoom_out(planet_filename)?
                 } else {
-                    Gif::open(format!("planets/{planet_filename}_zoomout.gif"))?
+                    open_gif(format!("planets/{planet_filename}_zoomout.gif"))?
                 };
 
                 let planet_gif_lines = planet_gif.to_lines();

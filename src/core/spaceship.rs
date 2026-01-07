@@ -1,12 +1,13 @@
 use super::constants::*;
 use crate::{
-    core::spaceship_components::*,
-    core::{utils::is_default, SpaceshipUpgradeTarget, Upgrade, UpgradeableElement},
+    core::{
+        spaceship_components::*, utils::is_default, SpaceshipUpgradeTarget, Upgrade,
+        UpgradeableElement,
+    },
     image::{
         color_map::ColorMap,
         spaceship::{SpaceshipImage, SpaceshipImageId},
-        types::Gif,
-        utils::LightMaskStyle,
+        utils::{Gif, LightMaskStyle},
     },
     types::{AppResult, Tick},
 };
@@ -404,7 +405,6 @@ mod tests {
         types::SystemTimeTick,
     };
     use itertools::Itertools;
-    use rand::SeedableRng;
 
     #[test]
     fn test_spaceship_prefab_data() {
@@ -457,8 +457,7 @@ mod tests {
         let planet_ids = world.planets.keys().collect_vec();
         let from = planet_ids[0].clone();
         let to = planet_ids[1].clone();
-        let rng = &mut ChaCha8Rng::from_os_rng();
-        let mut team = Team::random(rng).with_home_planet(from);
+        let mut team = Team::random(None).with_home_planet(from);
         team.spaceship = spaceship;
         team.current_location = TeamLocation::Travelling {
             from,

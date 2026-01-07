@@ -1,19 +1,21 @@
 use super::*;
 use crate::{
     core::{constants::MAX_CREW_SIZE, utils::is_default},
-    game_engine::{tactic::Tactic, types::EnginePlayer},
+    game_engine::{tactic::Tactic, types::EnginePlayer, Tournament, TournamentId},
     network::{challenge::Challenge, trade::Trade},
     types::*,
 };
 use anyhow::anyhow;
 use itertools::Itertools;
 use libp2p::PeerId;
+use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::min,
     collections::{HashMap, HashSet},
 };
+use strum::Display;
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
 pub struct CrewRoles {
@@ -22,6 +24,18 @@ pub struct CrewRoles {
     pub pilot: Option<PlayerId>,
     pub engineer: Option<PlayerId>,
     pub mozzo: Vec<PlayerId>,
+}
+
+#[derive(Debug, Default, Display, Serialize, Deserialize, Clone, PartialEq)]
+pub enum TournamentRegistrationState {
+    #[default]
+    None,
+    Pending {
+        tournament_id: TournamentId,
+    },
+    Confirmed {
+        tournament_id: TournamentId,
+    },
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
@@ -55,10 +69,13 @@ pub struct Team {
     pub current_game: Option<GameId>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub game_record: [u32; 3], // Stores game record as wins/losses/draws
+    pub tournament_registration_state: TournamentRegistrationState,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub network_game_record: [u32; 3], // Stores game record as wins/losses/draws
+    pub local_game_rating: GameRating,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub network_game_rating: GameRating,
     pub game_tactic: Tactic,
     pub training_focus: Option<TrainingFocus>,
     #[serde(skip)]
@@ -87,7 +104,12 @@ pub struct Team {
 }
 
 impl Team {
-    pub fn random(rng: &mut ChaCha8Rng) -> Self {
+    pub fn random(rng: Option<&mut ChaCha8Rng>) -> Self {
+        let rng = if let Some(r) = rng {
+            r
+        } else {
+            &mut ChaCha8Rng::from_os_rng()
+        };
         let jersey = Jersey::random(rng);
         let ship_color = jersey.color;
         let mut resources = HashMap::new();
@@ -249,6 +271,14 @@ impl Team {
         }
     }
 
+    pub fn committed_to_tournament(&self) -> Option<PlanetId> {
+        match self.tournament_registration_state {
+            TournamentRegistrationState::None => None,
+            TournamentRegistrationState::Pending { tournament_id }
+            | TournamentRegistrationState::Confirmed { tournament_id } => Some(tournament_id),
+        }
+    }
+
     pub fn average_tiredness(&self, world: &World) -> f32 {
         let tiredness_iter = self
             .player_ids
@@ -377,6 +407,10 @@ impl Team {
             return Err(anyhow!("{} is playing", self.name));
         }
 
+        if self.committed_to_tournament().is_some() {
+            return Err(anyhow!("{} is in a tournament", self.name));
+        }
+
         Ok(())
     }
 
@@ -389,10 +423,22 @@ impl Team {
             return Err(anyhow!("{} is playing", self.name));
         }
 
+        if self.committed_to_tournament().is_some() {
+            return Err(anyhow!("{} is in a tournament", self.name));
+        }
+
         Ok(())
     }
 
     fn can_play_game_with_team(&self, team: &Team) -> AppResult<()> {
+        if self.committed_to_tournament().is_some() {
+            return Err(anyhow!("{} is in a tournament", self.name));
+        }
+
+        if team.committed_to_tournament().is_some() {
+            return Err(anyhow!("{} is in a tournament", team.name));
+        }
+
         if self.id == team.id {
             return Err(anyhow!("Cannot play alone"));
         }
@@ -416,8 +462,70 @@ impl Team {
         Ok(())
     }
 
+    pub fn can_organize_tournament(&self) -> AppResult<()> {
+        if self.current_game.is_some() {
+            return Err(anyhow!("{} is playing", self.name));
+        }
+
+        if self.committed_to_tournament().is_some() {
+            return Err(anyhow!("{} is in a tournament", self.name));
+        }
+
+        match self.space_cove {
+            SpaceCoveState::Ready { planet_id } => {
+                if !matches!(self.is_on_planet(), Some(id) if id == planet_id) {
+                    return Err(anyhow!(
+                        "Cannot organize a tournament while not at your space cove planet."
+                    ));
+                }
+            }
+
+            _ => {
+                return Err(anyhow!(
+                    "Cannot organize a tournament without a space cove."
+                ));
+            }
+        }
+
+        // FIXME: add conditions on kartoffeln
+
+        Ok(())
+    }
+
+    pub fn can_register_to_tournament(
+        &self,
+        tournament: &Tournament,
+        team_rating: Skill,
+    ) -> AppResult<()> {
+        if tournament.has_started(Tick::now()) {
+            return Err(anyhow!("Tournament has already started."));
+        }
+
+        if tournament.participants.len() == tournament.max_participants {
+            return Err(anyhow!("Tournament is already full."));
+        }
+
+        if self.current_game.is_some() {
+            return Err(anyhow!("Team is playing a game."));
+        }
+
+        if !matches!(self.is_on_planet(), Some(id) if id == tournament.planet_id) {
+            return Err(anyhow!("Team is not at the tournament location."));
+        }
+
+        if team_rating < tournament.minimum_team_rating {
+            return Err(anyhow!(
+                "Team rating is too low ({} < {}).",
+                team_rating,
+                tournament.minimum_team_rating
+            ));
+        }
+
+        Ok(())
+    }
+
     pub fn can_accept_network_challenge(&self, team: &Team) -> AppResult<()> {
-        // This function runs checks similar to can_challenge_team,
+        // This function runs checks similar to can_challenge_local_team,
         // but crucially skips the checks about the current_game.
         // This is to go around a race condition described in the challenge SynAck protocol.
 
@@ -495,6 +603,14 @@ impl Team {
             return Err(anyhow!("{} is playing", target_team.name));
         }
 
+        if self.committed_to_tournament().is_some() {
+            return Err(anyhow!("{} is in a tournament", self.name));
+        }
+
+        if target_team.committed_to_tournament().is_some() {
+            return Err(anyhow!("{} is in a tournament", target_team.name));
+        }
+
         Ok(())
     }
 
@@ -519,6 +635,10 @@ impl Team {
 
         if self.current_game.is_some() {
             return Err(anyhow!("{} is playing", self.name));
+        }
+
+        if self.committed_to_tournament().is_some() {
+            return Err(anyhow!("{} is in a tournament", self.name));
         }
 
         let is_teleporting = duration == TELEPORT_TRAVEL_DURATION;
@@ -567,6 +687,10 @@ impl Team {
             return Err(anyhow!("{} is playing", self.name));
         }
 
+        if self.committed_to_tournament().is_some() {
+            return Err(anyhow!("{} is in a tournament", self.name));
+        }
+
         if self.spaceship.current_durability() == 0 {
             return Err(anyhow!("Spaceship needs reparations"));
         }
@@ -613,6 +737,11 @@ impl Team {
         if self.current_game.is_some() {
             return Err(anyhow!("{} is playing", self.name));
         }
+
+        if self.committed_to_tournament().is_some() {
+            return Err(anyhow!("{} is in a tournament", self.name));
+        }
+
         Ok(())
     }
 

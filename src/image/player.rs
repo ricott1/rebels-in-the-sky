@@ -1,12 +1,11 @@
 use super::color_map::{ColorMap, HairColorMap};
 use super::components::*;
-use super::types::Gif;
 use super::utils::{open_image, ExtraImageUtils};
 use crate::core::jersey::{Jersey, JerseyStyle};
 use crate::core::player::InfoStats;
 use crate::core::role::CrewRole;
 use crate::core::types::{Population, Pronoun};
-use crate::image::utils::LightMaskStyle;
+use crate::image::utils::{Gif, LightMaskStyle};
 use crate::types::AppResult;
 use image::RgbaImage;
 use rand::seq::IteratorRandom;

@@ -71,7 +71,7 @@ pub(crate) fn execute(
             result.description = format!(
                 "{} quickly brings the ball to the other side: {} {} all alone at the basket.",
                 playmaker.info.short_name(),
-                playmaker.info.pronouns.as_subject(),
+                playmaker.info.pronouns.as_subject().to_lowercase(),
                 playmaker.info.pronouns.to_be()
             );
         }
@@ -109,7 +109,7 @@ pub(crate) fn execute(
                         "{} brings the ball to the other side, but {} catches up and {} decide{} to pass to {}.",
                         playmaker.info.short_name(),
                         playmaker_defender.info.short_name(),
-                        playmaker.info.pronouns.as_subject(),
+                        playmaker.info.pronouns.as_subject().to_lowercase(),
                         if playmaker.info.pronouns == Pronoun::They {""} else {"s"},
                         target.info.short_name()
 

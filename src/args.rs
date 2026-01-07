@@ -36,6 +36,8 @@ pub struct AppArgs {
     pub seed_node_ip: Option<String>,
     #[clap(long, short = 'p', action=ArgAction::Set, help = "Set network port")]
     network_port: Option<u16>,
+    #[clap(long, short = 'v', action=ArgAction::SetTrue, help = "Use ipv6 instead of ipv4")]
+    use_ipv6: bool,
     #[clap(long, action=ArgAction::Set, help = "Set store prefix")]
     store_prefix: Option<String>,
     #[clap(long, action=ArgAction::SetTrue, help = "Save game to uncompressed json")]
@@ -64,6 +66,7 @@ impl AppArgs {
             ssh_server: false,
             seed_node_ip: None,
             network_port,
+            use_ipv6: true,
             store_prefix,
             store_uncompressed: false,
             auto_quit_after,
@@ -84,6 +87,7 @@ impl AppArgs {
             ssh_server: false,
             seed_node_ip: None,
             network_port: None,
+            use_ipv6: true,
             store_prefix: None,
             store_uncompressed: false,
             auto_quit_after: None,
@@ -121,6 +125,14 @@ impl AppArgs {
         } else {
             Some(self.network_port.unwrap_or(DEFAULT_NETWORK_PORT))
         }
+    }
+
+    pub fn use_ipv4(&self) -> bool {
+        !self.use_ipv6
+    }
+
+    pub fn use_ipv6(&self) -> bool {
+        self.use_ipv6
     }
 
     pub fn store_prefix(&self) -> &str {

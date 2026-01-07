@@ -51,20 +51,20 @@ pub enum TeamView {
 impl TeamView {
     fn next(&self) -> Self {
         match self {
-            TeamView::All => TeamView::OpenToChallenge,
-            TeamView::OpenToChallenge => TeamView::Peers,
-            TeamView::Peers => TeamView::All,
+            Self::All => TeamView::OpenToChallenge,
+            Self::OpenToChallenge => TeamView::Peers,
+            Self::Peers => TeamView::All,
         }
     }
 
     fn rule(&self, team: &Team, own_team: &Team) -> bool {
         match self {
-            TeamView::All => true,
-            TeamView::OpenToChallenge => {
+            Self::All => true,
+            Self::OpenToChallenge => {
                 own_team.can_challenge_local_team(team).is_ok()
                     || own_team.can_challenge_network_team(team).is_ok()
             }
-            TeamView::Peers => team.peer_id.is_some(),
+            Self::Peers => team.peer_id.is_some(),
         }
     }
 }
@@ -121,7 +121,7 @@ impl TeamListPanel {
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Min(1),
+            Constraint::Fill(1),
         ])
         .split(area);
 
@@ -219,7 +219,7 @@ impl TeamListPanel {
             Constraint::Length(1),                              //floor
             Constraint::Length(1),                              //name
             Constraint::Length(2),                              //rating
-            Constraint::Min(1),                                 //bottom
+            Constraint::Fill(1),                                //bottom
         ])
         .split(area);
 
@@ -232,20 +232,14 @@ impl TeamListPanel {
             }),
         );
 
-        let side_length = if area.width > (PLAYER_IMAGE_WIDTH as u16 + 2) * 5 {
-            (area.width - (PLAYER_IMAGE_WIDTH as u16 + 2) * 5) / 2
-        } else {
-            0
-        };
-
         let constraints = [
-            Constraint::Min(side_length),
+            Constraint::Fill(1),
             Constraint::Min(PLAYER_IMAGE_WIDTH as u16 + 2),
             Constraint::Min(PLAYER_IMAGE_WIDTH as u16 + 2),
             Constraint::Min(PLAYER_IMAGE_WIDTH as u16 + 2),
             Constraint::Min(PLAYER_IMAGE_WIDTH as u16 + 2),
             Constraint::Min(PLAYER_IMAGE_WIDTH as u16 + 2),
-            Constraint::Min(side_length),
+            Constraint::Fill(1),
         ];
 
         let player_img_split = Layout::horizontal(constraints).split(vertical_split[0]);
@@ -310,7 +304,7 @@ impl TeamListPanel {
         .split(vertical_split[4]);
 
         let bench_out_split =
-            Layout::vertical([Constraint::Length(6), Constraint::Min(0)]).split(bottom_split[0]);
+            Layout::vertical([Constraint::Length(6), Constraint::Fill(1)]).split(bottom_split[0]);
 
         frame.render_widget(default_block().title("Bench"), bench_out_split[0]);
         frame.render_widget(default_block().title("Out"), bench_out_split[1]);
@@ -319,7 +313,7 @@ impl TeamListPanel {
             let out_row_split = Layout::vertical([
                 Constraint::Length(4),
                 Constraint::Length(4),
-                Constraint::Min(0),
+                Constraint::Fill(1),
             ])
             .split(bench_out_split[1].inner(Margin {
                 horizontal: 2,
@@ -414,7 +408,7 @@ impl TeamListPanel {
 
         let box_split = Layout::vertical([
             Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2 + 4),
-            Constraint::Min(0),
+            Constraint::Fill(1),
         ])
         .split(area);
 
@@ -449,24 +443,23 @@ impl Screen for TeamListPanel {
         if world.dirty_ui || self.all_team_ids.len() != world.teams.len() {
             self.all_team_ids = world.teams.keys().copied().collect();
             self.all_team_ids.sort_by(|a, b| {
-                let a = world.get_team_or_err(a).unwrap();
-                let b = world.get_team_or_err(b).unwrap();
                 world
-                    .team_rating(&b.id)
+                    .team_rating(b)
                     .unwrap_or_default()
-                    .partial_cmp(&world.team_rating(&a.id).unwrap_or_default())
+                    .partial_cmp(&world.team_rating(a).unwrap_or_default())
                     .expect("Rating should exists")
             });
             self.update_view = true;
         }
 
         if self.update_view {
+            let own_team = world.get_own_team()?;
             self.team_ids = self
                 .all_team_ids
                 .iter()
                 .filter(|&team_id| {
                     let team = world.get_team_or_err(team_id).unwrap();
-                    self.view.rule(team, world.get_own_team().unwrap())
+                    self.view.rule(team, own_team)
                 })
                 .copied()
                 .collect();
@@ -504,17 +497,6 @@ impl Screen for TeamListPanel {
 
         _debug_view: bool,
     ) -> AppResult<()> {
-        if self.all_team_ids.is_empty() {
-            frame.render_widget(
-                Paragraph::new(" No team yet!"),
-                area.inner(Margin {
-                    vertical: 1,
-                    horizontal: 1,
-                }),
-            );
-            return Ok(());
-        }
-
         // Split into left and right panels
         let left_right_split = Layout::horizontal([
             Constraint::Length(LEFT_PANEL_WIDTH),
@@ -522,6 +504,13 @@ impl Screen for TeamListPanel {
         ])
         .split(area);
         self.build_left_panel(frame, world, left_right_split[0]);
+        if self.all_team_ids.is_empty() {
+            frame.render_widget(
+                Paragraph::new(" No teams yet!"),
+                left_right_split[1].inner(Margin::new(1, 1)),
+            );
+            return Ok(());
+        }
         self.build_right_panel(frame, world, left_right_split[1])?;
         Ok(())
     }

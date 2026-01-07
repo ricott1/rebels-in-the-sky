@@ -127,7 +127,17 @@ impl SwarmPanel {
     }
 
     pub fn update_team_ranking(&mut self, team_ranking: &[(TeamId, TeamRanking)]) {
-        self.team_ranking = team_ranking.to_vec();
+        self.team_ranking = team_ranking
+            .iter()
+            .sorted_by(|(_, a), (_, b)| {
+                b.team
+                    .network_game_rating
+                    .rating
+                    .partial_cmp(&a.team.network_game_rating.rating)
+                    .expect("Netowrk rating should be a number")
+            })
+            .cloned()
+            .collect_vec();
         if self.team_ranking_index.is_none() && !self.team_ranking.is_empty() {
             self.team_ranking_index = Some(0);
         }
@@ -501,11 +511,20 @@ impl SwarmPanel {
 
     fn render_team_ranking(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
         let h_split = Layout::horizontal([Constraint::Min(1), Constraint::Length(80)]).split(area);
+        if self.team_ranking.is_empty() {
+            frame.render_widget(
+                default_block().title("Top 10 Crews by Elo (Reputation)"),
+                h_split[0],
+            );
+            frame.render_widget(default_block(), h_split[1]);
+            return;
+        }
+
         let team_ranking_index = if let Some(index) = self.team_ranking_index {
             index % self.team_ranking.len()
         } else {
             frame.render_widget(
-                default_block().title("Top 10 Crews by Reputation"),
+                default_block().title("Top 10 Crews by Elo (Reputation)"),
                 h_split[0],
             );
             frame.render_widget(default_block(), h_split[1]);
@@ -539,9 +558,10 @@ impl SwarmPanel {
             .map(|(idx, (_, ranking))| {
                 let team_id = ranking.team.id;
                 let text = format!(
-                    "{:>2}. {:<MAX_NAME_LENGTH$} {}",
+                    "{:>2}. {:<MAX_NAME_LENGTH$} {:5<} {}",
                     idx + 1,
                     &ranking.team.name,
+                    ranking.team.network_game_rating.rating,
                     ranking.team.reputation.stars()
                 );
 
@@ -561,7 +581,7 @@ impl SwarmPanel {
         let list = selectable_list(options);
 
         frame.render_stateful_interactive_widget(
-            list.block(default_block().title("Top 10 Crews by Reputation")),
+            list.block(default_block().title("Top 10 Crews by Elo (Reputation)")),
             h_split[0],
             &mut ClickableListState::default().with_selected(Some(team_ranking_index)),
         );
@@ -569,6 +589,15 @@ impl SwarmPanel {
 
     fn render_player_ranking(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
         let h_split = Layout::horizontal([Constraint::Min(1), Constraint::Length(60)]).split(area);
+        if self.player_ranking.is_empty() {
+            frame.render_widget(
+                default_block().title("Top 20 Pirates by Reputation"),
+                h_split[0],
+            );
+            frame.render_widget(default_block(), h_split[1]);
+            return;
+        }
+
         let player_ranking_index = if let Some(index) = self.player_ranking_index {
             index % self.player_ranking.len()
         } else {
@@ -791,6 +820,19 @@ impl SwarmPanel {
 impl Screen for SwarmPanel {
     fn update(&mut self, _world: &World) -> AppResult<()> {
         self.tick += 1;
+
+        if self.max_index() == 0 {
+            match self.view {
+                SwarmView::Chat => self.chat_message_index = None,
+                SwarmView::Log => self.log_message_index = None,
+                SwarmView::Ranking => match self.active_list {
+                    PanelList::Players => self.player_ranking_index = None,
+                    PanelList::Teams => self.team_ranking_index = None,
+                },
+                SwarmView::Requests => {}
+            }
+        }
+
         Ok(())
     }
 

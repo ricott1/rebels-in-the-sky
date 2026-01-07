@@ -1,5 +1,6 @@
-use crate::{backcompat_repr_u8_enum, core::constants::TickInterval, types::Tick};
+use crate::{core::constants::TickInterval, types::Tick};
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::Display;
 
 const MINUTES_PER_QUARTER: u16 = 10;
@@ -9,40 +10,21 @@ const MINUTES_PER_BREAK: u16 = 2;
 const SECONDS_PER_MINUTE: u16 = 60;
 const MAX_TIME: u16 = SECONDS_PER_MINUTE * (MINUTES_PER_QUARTER * 4 + MINUTES_PER_BREAK * 3);
 
-// FIXME: migrate to repr
-// #[derive(Debug, Display, Default, PartialEq, Clone, Copy, Serialize, Deserialize)]
-// pub enum Period {
-//     #[default]
-//     NotStarted,
-//     Q1,
-//     B1,
-//     Q2,
-//     B2,
-//     Q3,
-//     B3,
-//     Q4,
-//     B4,
-// }
-
-backcompat_repr_u8_enum! {
-    #[derive(Debug, Display, PartialEq, Clone, Copy)]
-    pub enum Period {
-        NotStarted,
-        Q1,
-        B1,
-        Q2,
-        B2,
-        Q3,
-        B3,
-        Q4,
-        B4,
-    }
-}
-
-impl Default for Period {
-    fn default() -> Self {
-        Self::NotStarted
-    }
+#[derive(
+    Debug, Display, Default, PartialEq, PartialOrd, Clone, Copy, Serialize_repr, Deserialize_repr,
+)]
+#[repr(u8)]
+pub enum Period {
+    #[default]
+    NotStarted,
+    Q1,
+    B1,
+    Q2,
+    B2,
+    Q3,
+    B3,
+    Q4,
+    B4,
 }
 
 impl Period {

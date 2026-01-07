@@ -220,7 +220,7 @@ pub(crate) fn execute(
                         description: [
                             format!(
                                 "{} tries to make the post moves work against {} but {} is all over {}.",
-                                poster.info.short_name(), defender.info.short_name(), defender.info.pronouns.as_subject(),  poster.info.pronouns.as_object()
+                                poster.info.short_name(), defender.info.short_name(), defender.info.pronouns.as_subject().to_lowercase(),  poster.info.pronouns.as_object()
                             ),
                             format!(
                                 "{} attempts a post move on {} but can't shake off the tight defense, resulting in a bad shot.",

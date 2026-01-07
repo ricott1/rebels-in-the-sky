@@ -47,7 +47,7 @@ impl Trade {
 #[cfg(test)]
 mod tests {
     use super::Trade;
-    use crate::{app::App, core::skill::MAX_SKILL, types::AppResult, ui::ui_callback::UiCallback};
+    use crate::{app::App, core::skill::MAX_SKILL, types::AppResult, ui::UiCallback};
     use libp2p::PeerId;
     use rand::{seq::IteratorRandom, SeedableRng};
     use rand_chacha::ChaCha8Rng;

@@ -11,8 +11,7 @@ use crate::{
     tui::{TerminalEvent, Tui, WriterProxy},
     types::{AppResult, ResourceMap, StorableResourceMap, SystemTimeTick, Tick},
     ui::{
-        popup_message::PopupMessage,
-        ui_screen::{UiScreen, UiState},
+        PopupMessage, {UiScreen, UiState},
     },
 };
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -80,50 +79,26 @@ impl App {
             .get_own_team()
             .expect("There should be an own team when simulating.");
 
-        match own_team.current_location {
-            TeamLocation::OnSpaceAdventure { around } => {
-                // If team is on a space adventure, bring it back to base planet.
-                // This is an ad-hoc fix to avoid problems when the game is closed during a space adventure,
-                // since the space property of the world is not serialized and stored.
-                let own_team = self
-                    .world
-                    .get_own_team_mut()
-                    .expect("There should be an own team when simulating.");
-                // The team loses all resources but satoshis, we told you so!
-                let current_treasury = own_team.resources.value(&Resource::SATOSHI);
-                own_team.resources = ResourceMap::default();
-                own_team
-                    .add_resource(Resource::SATOSHI, current_treasury)
-                    .expect("It should always be possible to add satoshis");
-                own_team.spaceship.set_current_durability(0);
-                own_team.current_location = TeamLocation::OnPlanet { planet_id: around };
+        if let TeamLocation::OnSpaceAdventure { around } = own_team.current_location {
+            // If team is on a space adventure, bring it back to base planet.
+            // This is an ad-hoc fix to avoid problems when the game is closed during a space adventure,
+            // since the space property of the world is not serialized and stored.
+            let own_team = self
+                .world
+                .get_own_team_mut()
+                .expect("There should be an own team when simulating.");
+            // The team loses all resources but satoshis, we told you so!
+            let current_treasury = own_team.resources.value(&Resource::SATOSHI);
+            own_team.resources = ResourceMap::default();
+            own_team
+                .add_resource(Resource::SATOSHI, current_treasury)
+                .expect("It should always be possible to add satoshis");
+            own_team.spaceship.set_current_durability(0);
+            own_team.current_location = TeamLocation::OnPlanet { planet_id: around };
 
-                self.ui
-                .push_popup(PopupMessage::Ok{
-                   message: "The game was closed during a space adventure.\nAll the cargo and fuel have been lost.\nNext time go back to the base first!".to_string(), is_skippable:false,tick: Tick::now()});
-            }
-            TeamLocation::OnPlanet { planet_id } => {
-                if !self.world.planets.contains_key(&planet_id) {
-                    let own_team = self
-                        .world
-                        .get_own_team_mut()
-                        .expect("There should be an own team when simulating.");
-                    // If on a peer asteroid, the planet is not part of the world.
-                    // In this case, return the team to home planet (lose all Rum).
-                    own_team
-                        .resources
-                        .saturating_sub(Resource::RUM, own_team.storage_capacity());
-
-                    own_team.current_location = TeamLocation::OnPlanet {
-                        planet_id: own_team.home_planet_id,
-                    };
-
-                    self.ui
-                .push_popup(PopupMessage::Ok{
-                   message: "The game was closed while the team was on a peer asteroid.\nAll the rum has been lost.\nNext time go back to the base first!".to_string(), is_skippable:false,tick: Tick::now()});
-                }
-            }
-            _ => {}
+            self.ui
+            .push_popup(PopupMessage::Ok{
+               message: "The game was closed during a space adventure.\nAll the cargo and fuel have been lost.\nNext time go back to the base first!".to_string(), is_skippable:false,tick: Tick::now()});
         }
 
         const SIMULATION_UPDATE_INTERVAL: Tick = 250 * MILLISECONDS;
@@ -253,7 +228,7 @@ impl App {
     pub async fn run<W: WriterProxy>(&mut self, mut tui: Tui<W>) -> AppResult<()> {
         if self.args.is_ui_disabled() {
             // With no UI, world must be loaded from file.
-            self.load_world();
+            self.continue_game();
         }
 
         crossterm_event_handler::start_event_handler(
@@ -297,6 +272,8 @@ impl App {
                         self.get_event_sender(),
                         self.get_cancellation_token(),
                         tcp_port,
+                        self.args.use_ipv4(),
+                        self.args.use_ipv6(),
                     );
                 }
                 network_started = true;
@@ -370,7 +347,7 @@ impl App {
                     && version_patch > own_version_patch)
             {
                 let message = format!(
-                    "New version {version_major}.{version_minor}.{version_patch} available. Download at https://rebels.frittura.org",
+                    "New version {version_major}.{version_minor}.{version_patch} available. \nDownload at https://rebels.frittura.org",
                 );
                 self.ui.push_popup(PopupMessage::Ok {
                     message,
@@ -389,7 +366,7 @@ impl App {
         }
     }
 
-    pub fn load_world(&mut self) {
+    pub fn continue_game(&mut self) {
         // Try to load an existing world.
         match load_world(self.args.store_prefix()) {
             Ok(w) => self.world = w,
@@ -559,6 +536,15 @@ impl App {
                         Tick::now(),
                         None,
                         format!("Failed to send own team to peers: {e}"),
+                        log::Level::Error,
+                    );
+                }
+
+                if let Err(err) = self.network_handler.resend_tournaments(&self.world) {
+                    self.ui.push_log_event(
+                        Tick::now(),
+                        None,
+                        format!("Cannot send tournament: {err}"),
                         log::Level::Error,
                     );
                 }

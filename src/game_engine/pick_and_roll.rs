@@ -591,7 +591,7 @@ fn playmaker_passes_to_target(
                             ),
                             format!(
                                 "{} was ready to get the pass by {} but {} decides to give the ball to {} instead.",
-                                target.info.short_name(), playmaker.info.short_name(), playmaker.info.pronouns.as_subject(), off_screen_player.info.short_name()
+                                target.info.short_name(), playmaker.info.short_name(), playmaker.info.pronouns.as_subject().to_lowercase(), off_screen_player.info.short_name()
                             ),
                         ].choose(description_rng)
                         .expect("There should be one option")

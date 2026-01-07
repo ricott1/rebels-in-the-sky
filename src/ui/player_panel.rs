@@ -42,10 +42,10 @@ pub enum PlayerView {
 impl PlayerView {
     fn next(&self) -> Self {
         match self {
-            PlayerView::All => PlayerView::FreePirates,
-            PlayerView::FreePirates => PlayerView::Tradable,
-            PlayerView::Tradable => PlayerView::OwnTeam,
-            PlayerView::OwnTeam => PlayerView::All,
+            Self::All => PlayerView::FreePirates,
+            Self::FreePirates => PlayerView::Tradable,
+            Self::Tradable => PlayerView::OwnTeam,
+            Self::OwnTeam => PlayerView::All,
         }
     }
 
@@ -57,8 +57,8 @@ impl PlayerView {
         };
 
         match self {
-            PlayerView::All => true,
-            PlayerView::FreePirates => {
+            Self::All => true,
+            Self::FreePirates => {
                 if player.team.is_some() {
                     return false;
                 }
@@ -77,7 +77,7 @@ impl PlayerView {
 
                 player_planet_id == own_team_planet_id
             }
-            PlayerView::Tradable => {
+            Self::Tradable => {
                 let own_team_planet_id = match own_team.current_location {
                     TeamLocation::OnPlanet { planet_id } => planet_id,
                     _ => return false,
@@ -104,7 +104,7 @@ impl PlayerView {
 
                 player_team_planet_id == own_team_planet_id
             }
-            PlayerView::OwnTeam => player.team.is_some() && player.team.unwrap() == own_team.id,
+            Self::OwnTeam => player.team.is_some() && player.team.unwrap() == own_team.id,
         }
     }
 }
@@ -405,9 +405,7 @@ impl PlayerListPanel {
 
         // Add hire button for free pirates
         if player.team.is_none() {
-            let can_hire = own_team.can_hire_player(player);
             let hire_cost = player.hire_cost(own_team.reputation);
-
             let mut button = Button::new(
                 format!("Hire (-{})", format_satoshi(hire_cost)),
                 UiCallback::HirePlayer {
@@ -419,8 +417,8 @@ impl PlayerListPanel {
                 format_satoshi(hire_cost)
             ))
             .set_hotkey(ui_key::player::HIRE);
-            if let Err(err) = can_hire {
-                button.disable(Some(format!("{err}")));
+            if let Err(err) = own_team.can_hire_player(player) {
+                button.disable(Some(err.to_string()));
             }
 
             frame.render_interactive_widget(button, buttons_split[3]);
@@ -450,7 +448,7 @@ impl PlayerListPanel {
                     proposer_team.can_trade_players(proposer_player, target_player, own_team);
 
                 if let Err(err) = can_trade {
-                    button.disable(Some(format!("{err}")));
+                    button.disable(Some(err.to_string()));
                 }
                 frame.render_interactive_widget(button, buttons_split[3]);
             } else if player.id == self.locked_player_id.expect("One player should be locked") {
@@ -544,7 +542,9 @@ impl Screen for PlayerListPanel {
                         .partial_cmp(&a.average_skill())
                         .expect("Skill value should exist.")
                 } else {
-                    b.rating().cmp(&a.rating())
+                    b.rating()
+                        .partial_cmp(&a.rating())
+                        .expect("Skill should exist")
                 }
             });
             self.update_view = true;
@@ -587,29 +587,6 @@ impl Screen for PlayerListPanel {
         area: Rect,
         _debug_view: bool,
     ) -> AppResult<()> {
-        if self.all_players.is_empty() {
-            frame.render_widget(
-                Paragraph::new(" No player yet!"),
-                area.inner(Margin {
-                    vertical: 1,
-                    horizontal: 1,
-                }),
-            );
-            return Ok(());
-        }
-
-        frame.register_mouse_callback(
-            crossterm::event::MouseEventKind::ScrollDown,
-            None,
-            UiCallback::NextPanelIndex,
-        );
-
-        frame.register_mouse_callback(
-            crossterm::event::MouseEventKind::ScrollUp,
-            None,
-            UiCallback::PreviousPanelIndex,
-        );
-
         // Split into left and right panels
         let left_right_split = Layout::horizontal([
             Constraint::Length(LEFT_PANEL_WIDTH),
@@ -617,6 +594,14 @@ impl Screen for PlayerListPanel {
         ])
         .split(area);
         self.build_left_panel(frame, world, left_right_split[0]);
+
+        if self.all_players.is_empty() {
+            frame.render_widget(
+                Paragraph::new(" No players yet!"),
+                left_right_split[1].inner(Margin::new(1, 1)),
+            );
+            return Ok(());
+        }
         self.build_right_panel(frame, world, left_right_split[1])?;
         Ok(())
     }

@@ -7,7 +7,9 @@ use super::types::SeedInfo;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam};
 use crate::app::AppEvent;
 use crate::core::world::World;
+use crate::core::TournamentRegistrationState;
 use crate::game_engine::types::TeamInGame;
+use crate::game_engine::{Tournament, TournamentId};
 use crate::store::serialize;
 use crate::types::{AppResult, GameId};
 use crate::types::{PlayerId, TeamId};
@@ -29,7 +31,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 enum SwarmStatus {
     #[default]
     Uninitialized,
@@ -54,7 +56,12 @@ pub struct NetworkHandler {
 }
 
 impl NetworkHandler {
-    fn new_swarm(keypair: Keypair, tcp_port: u16) -> AppResult<Swarm<gossipsub::Behaviour>> {
+    fn new_swarm(
+        keypair: Keypair,
+        tcp_port: u16,
+        use_ipv4: bool,
+        use_ipv6: bool,
+    ) -> AppResult<Swarm<gossipsub::Behaviour>> {
         // To content-address message, we can take the hash of message and use it as an ID.
         let message_id_fn = |message: &gossipsub::Message| {
             let mut s = DefaultHasher::new();
@@ -93,16 +100,23 @@ impl NetworkHandler {
             .build();
 
         let mut succesful_listen_on = false;
-        if let Err(e) = swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{tcp_port}").parse()?) {
-            log::error!("Could not listen on ip4: {e}");
-        } else {
-            succesful_listen_on = true;
+
+        if use_ipv6 {
+            if let Err(e) = swarm.listen_on(format!("/ip6/::/tcp/{tcp_port}").parse()?) {
+                log::error!("Could not listen on ip6: {e}");
+            } else {
+                succesful_listen_on = true;
+            };
         }
-        if let Err(e) = swarm.listen_on(format!("/ip6/::/tcp/{tcp_port}").parse()?) {
-            log::error!("Could not listen on ip6: {e}");
-        } else {
-            succesful_listen_on = true;
-        };
+
+        // Fallback to ipv4 if ipv6 gave an error.
+        if use_ipv4 || !succesful_listen_on {
+            if let Err(e) = swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{tcp_port}").parse()?) {
+                log::error!("Could not listen on ip4: {e}");
+            } else {
+                succesful_listen_on = true;
+            }
+        }
 
         if !succesful_listen_on {
             return Err(anyhow!("Swarm could not start listening."));
@@ -184,6 +198,8 @@ impl NetworkHandler {
         event_sender: mpsc::Sender<AppEvent>,
         cancellation_token: CancellationToken,
         tcp_port: u16,
+        use_ipv4: bool,
+        use_ipv6: bool,
     ) -> JoinHandle<()> {
         let local_keypair = self.local_keypair.clone();
         let own_peer_id = *self.own_peer_id();
@@ -192,11 +208,12 @@ impl NetworkHandler {
 
         self.swarm_status = SwarmStatus::Ready { sender };
         let handle = tokio::spawn(async move {
-            let mut swarm = if let Ok(swarm) = Self::new_swarm(local_keypair, tcp_port) {
-                swarm
-            } else {
-                return;
-            };
+            let mut swarm =
+                if let Ok(swarm) = Self::new_swarm(local_keypair, tcp_port, use_ipv4, use_ipv6) {
+                    swarm
+                } else {
+                    return;
+                };
 
             assert_eq!(own_peer_id, *swarm.local_peer_id());
 
@@ -277,21 +294,31 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub fn send_message(&mut self, msg: String) -> AppResult<()> {
-        self._send(&NetworkData::Message(Tick::now(), msg))
+    pub fn send_message(&mut self, message: String) -> AppResult<()> {
+        self._send(&NetworkData::Message {
+            timestamp: Tick::now(),
+            message,
+        })
     }
 
-    pub fn send_relayer_message_to_team(&mut self, msg: String, team_id: TeamId) -> AppResult<()> {
-        self._send(&NetworkData::RelayerMessageToTeam(
-            Tick::now(),
-            msg,
+    pub fn send_relayer_message_to_team(
+        &mut self,
+        message: String,
+        team_id: TeamId,
+    ) -> AppResult<()> {
+        self._send(&NetworkData::RelayerMessageToTeam {
+            timestamp: Tick::now(),
+            message,
             team_id,
-        ))
+        })
     }
 
     #[cfg(feature = "relayer")]
     pub fn send_seed_info(&mut self, seed_info: SeedInfo) -> AppResult<()> {
-        self._send(&NetworkData::SeedInfo(Tick::now(), seed_info))
+        self._send(&NetworkData::SeedInfo {
+            timestamp: Tick::now(),
+            seed_info,
+        })
     }
 
     pub fn send_own_team(&mut self, world: &World) -> AppResult<()> {
@@ -304,11 +331,8 @@ impl NetworkHandler {
         // If own team is playing with network peer, send the game.
         if let Some(game_id) = world.get_own_team()?.current_game {
             let game = world.get_game_or_err(&game_id)?;
-            // FIX BUG?? Send game even if we are playing with local team.
-            // return self.send_game(world, game_id);
-
-            if game.home_team_in_game.peer_id.is_some() && game.away_team_in_game.peer_id.is_some()
-            {
+            // FIXME: Send game even if we are playing with local team.
+            if game.is_network() {
                 return self.send_game(world, &game_id);
             }
         }
@@ -316,7 +340,14 @@ impl NetworkHandler {
         Ok(())
     }
 
-    // FIXME: good idea, now failing because the peer_id changes
+    pub fn resend_tournaments(&mut self, world: &World) -> AppResult<()> {
+        for tournament in world.tournaments.values() {
+            self.send_tournament(tournament.clone())?;
+        }
+
+        Ok(())
+    }
+
     pub fn resend_open_trades(&mut self, world: &World) -> AppResult<()> {
         let own_team = world.get_own_team()?;
         for trade in own_team.sent_trades.values() {
@@ -340,21 +371,54 @@ impl NetworkHandler {
     }
 
     fn send_game(&mut self, world: &World, game_id: &GameId) -> AppResult<()> {
-        let network_game = NetworkGame::from_game_id(world, game_id)?;
-        self._send(&NetworkData::Game(Tick::now(), network_game))
+        let game = NetworkGame::from_game_id(world, game_id)?;
+        self._send(&NetworkData::Game {
+            timestamp: Tick::now(),
+            game,
+        })
     }
 
     fn send_team(&mut self, world: &World, team_id: TeamId) -> AppResult<()> {
-        let network_team = NetworkTeam::from_team_id(world, &team_id, *self.own_peer_id())?;
-        self._send(&NetworkData::Team(Tick::now(), network_team))
+        let team = NetworkTeam::from_team_id(world, &team_id, *self.own_peer_id())?;
+        self._send(&NetworkData::Team {
+            timestamp: Tick::now(),
+            team,
+        })
+    }
+
+    pub fn send_tournament(&mut self, tournament: Tournament) -> AppResult<()> {
+        self._send(&NetworkData::Tournament {
+            timestamp: Tick::now(),
+            tournament,
+        })
+    }
+
+    pub fn send_tournament_registration_request(
+        &mut self,
+        tournament_id: TournamentId,
+        team_id: TeamId,
+        state: TournamentRegistrationState,
+    ) -> AppResult<()> {
+        self._send(&NetworkData::TournamentRegistrationRequest {
+            timestamp: Tick::now(),
+            tournament_id,
+            team_id,
+            state,
+        })
     }
 
     pub fn send_challenge(&mut self, challenge: Challenge) -> AppResult<()> {
-        self._send(&NetworkData::Challenge(Tick::now(), challenge))
+        self._send(&NetworkData::Challenge {
+            timestamp: Tick::now(),
+            challenge,
+        })
     }
 
     pub fn send_trade(&mut self, trade: Trade) -> AppResult<()> {
-        self._send(&NetworkData::Trade(Tick::now(), trade))
+        self._send(&NetworkData::Trade {
+            timestamp: Tick::now(),
+            trade,
+        })
     }
 
     pub fn send_new_challenge(
@@ -589,7 +653,7 @@ mod tests {
         },
         store::{deserialize, serialize},
         types::{AppResult, SystemTimeTick, Tick},
-        ui::ui_callback::UiCallback,
+        ui::UiCallback,
     };
     use anyhow::anyhow;
     use libp2p::{
@@ -653,7 +717,10 @@ mod tests {
             .clone();
 
         // Mock up send_challenge
-        let network_data = NetworkData::Challenge(Tick::now(), syn_challenge);
+        let network_data = NetworkData::Challenge {
+            timestamp: Tick::now(),
+            challenge: syn_challenge,
+        };
         let data = serialize::<NetworkData>(&network_data)?;
 
         let message = Message {
@@ -690,7 +757,10 @@ mod tests {
         ack_challenge.starting_at = Some(starting_at);
         ack_challenge.state = NetworkRequestState::Ack;
 
-        let network_data = NetworkData::Challenge(Tick::now(), syn_ack_challenge);
+        let network_data = NetworkData::Challenge {
+            timestamp: Tick::now(),
+            challenge: syn_ack_challenge,
+        };
         let data = serialize::<NetworkData>(&network_data)?;
 
         let message = Message {
@@ -716,7 +786,10 @@ mod tests {
         let game = app1.world.get_game_or_err(&game_id)?;
         println!("{:?}, starting_at {}", game_id, game.starting_at);
 
-        let network_data = NetworkData::Challenge(Tick::now(), ack_challenge);
+        let network_data = NetworkData::Challenge {
+            timestamp: Tick::now(),
+            challenge: ack_challenge,
+        };
         let data = serialize::<NetworkData>(&network_data)?;
 
         let message = Message {
@@ -755,13 +828,18 @@ mod tests {
             NetworkTeam::from_team_id(&world, &own_team_id.unwrap(), PeerId::random()).unwrap();
 
         let timestamp = Tick::now();
-        let serialized_network_data =
-            serialize(&NetworkData::Team(timestamp, network_team.clone()))?;
+        let serialized_network_data = serialize(&NetworkData::Team {
+            timestamp,
+            team: network_team.clone(),
+        })?;
 
         let deserialized_network_data = deserialize::<NetworkData>(&serialized_network_data)?;
 
         match deserialized_network_data {
-            NetworkData::Team(deserialized_timestamp, deserialized_team) => {
+            NetworkData::Team {
+                timestamp: deserialized_timestamp,
+                team: deserialized_team,
+            } => {
                 assert!(deserialized_timestamp == timestamp);
 
                 assert_eq!(deserialized_team.team, network_team.team);

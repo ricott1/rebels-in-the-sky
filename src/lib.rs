@@ -1,7 +1,6 @@
 pub mod app;
 pub mod args;
 pub mod audio;
-pub mod backcompat_repr;
 pub mod core;
 pub mod crossterm_event_handler;
 pub mod game_engine;

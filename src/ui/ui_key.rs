@@ -18,9 +18,12 @@ pub const CREATE_TRADE: KeyCode = KeyCode::Char('P');
 pub const ACCEPT_TRADE: KeyCode = KeyCode::Char('A');
 pub const DECLINE_TRADE: KeyCode = KeyCode::Char('D');
 
+pub const ORGANIZE_TOURNAMENT: KeyCode = KeyCode::Char('t');
+
 pub const GO_TO_TEAM: KeyCode = KeyCode::Backspace;
 pub const GO_TO_TEAM_ALT: KeyCode = KeyCode::Char('t');
 pub const GO_TO_GAME: KeyCode = KeyCode::Char('g');
+pub const GO_TO_CURRENT_GAME: KeyCode = KeyCode::Char('C');
 
 pub const ON_PLANET: KeyCode = KeyCode::Char('O');
 pub const GO_TO_PLANET: KeyCode = KeyCode::Char('G');

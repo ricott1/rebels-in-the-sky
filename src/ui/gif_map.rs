@@ -9,10 +9,13 @@ use crate::{
     image::{
         color_map::AsteroidColorMap,
         spaceship::SpaceshipImageId,
-        types::*,
-        utils::{open_image, ExtraImageUtils, LightMaskStyle, STAR_LAYERS, UNIVERSE_BACKGROUND},
+        utils::{
+            open_gif, open_image, ExtraImageUtils, Gif, LightMaskStyle, STAR_LAYERS,
+            UNIVERSE_BACKGROUND,
+        },
     },
     types::{AppResult, PlanetId, PlayerId},
+    ui::traits::{GifLines, ImageLines, PrintableGif},
 };
 use anyhow::anyhow;
 use image::{imageops::resize, GenericImageView, Rgba, RgbaImage};
@@ -28,7 +31,7 @@ pub const FRAMES_PER_REVOLUTION: usize = 360;
 pub static SPINNING_BALL_GIF: Lazy<GifLines> = Lazy::new(|| {
     const X_BLIT: u32 = MAX_GIF_WIDTH / 2 + 30;
     const Y_BLIT: u32 = MAX_GIF_HEIGHT / 2 + 20;
-    Gif::open("game/spinning_ball.gif".to_string())
+    open_gif("game/spinning_ball.gif".to_string())
         .expect("Left shot gif should open")
         .iter()
         .map(|img: &RgbaImage| {
@@ -53,33 +56,33 @@ pub static SPINNING_BALL_GIF: Lazy<GifLines> = Lazy::new(|| {
 });
 
 pub static LEFT_SHOT_GIF: Lazy<GifLines> = Lazy::new(|| {
-    Gif::open("game/left_shot.gif".to_string())
+    open_gif("game/left_shot.gif".to_string())
         .expect("Left shot gif should open")
         .to_lines()
 });
 
 pub static RIGHT_SHOT_GIF: Lazy<GifLines> = Lazy::new(|| {
-    Gif::open("game/right_shot.gif".to_string())
+    open_gif("game/right_shot.gif".to_string())
         .expect("Right shot gif should open")
         .to_lines()
 });
 
 pub static PORTAL_GIFS: Lazy<Vec<GifLines>> = Lazy::new(|| {
     vec![
-        Gif::open("portal/portal_blue.gif".into())
+        open_gif("portal/portal_blue.gif".into())
             .expect("Cannot open portal_blue.gif.")
             .to_lines(),
-        Gif::open("portal/portal_pink.gif".into())
+        open_gif("portal/portal_pink.gif".into())
             .expect("Cannot open portal_pink.gif.")
             .to_lines(),
-        Gif::open("portal/portal_red.gif".into())
+        open_gif("portal/portal_red.gif".into())
             .expect("Cannot open portal_red.gif.")
             .to_lines(),
     ]
 });
 
 pub static TREASURE_GIF: Lazy<GifLines> = Lazy::new(|| {
-    Gif::open("treasure/treasure.gif".into())
+    open_gif("treasure/treasure.gif".into())
         .expect("Cannot open treasure.gif.")
         .to_lines()
 });
@@ -160,7 +163,7 @@ impl GifMap {
             img.apply_color_map(color_map);
             vec![img]
         } else {
-            Gif::open(format!("planets/{}_full.gif", planet.filename))?
+            open_gif(format!("planets/{}_full.gif", planet.filename))?
                 .iter()
                 .map(|img: &RgbaImage| {
                     let base = &mut UNIVERSE_BACKGROUND.clone();
@@ -231,7 +234,7 @@ impl GifMap {
     fn planet_zoom_out(planet: &Planet, world: &World) -> AppResult<Gif> {
         // Background images. The black hole has the galaxy gif as base image.
         let base_images = if planet.satellite_of.is_none() {
-            let galaxy_gif = Gif::open("planets/galaxy.gif".to_string())?;
+            let galaxy_gif = open_gif("planets/galaxy.gif".to_string())?;
             let mut base_gif = vec![];
             for frame in galaxy_gif.iter() {
                 let mut frame_base = RgbaImage::new(MAX_GIF_WIDTH, MAX_GIF_HEIGHT);
@@ -247,9 +250,9 @@ impl GifMap {
             vec![UNIVERSE_BACKGROUND.clone()]
         };
 
-        let mut center_images: Gif = Gif::open(format!("planets/{}_zoomout.gif", planet.filename))?;
+        let mut center_images = open_gif(format!("planets/{}_zoomout.gif", planet.filename))?;
 
-        let satellites_images: Vec<Gif> = planet
+        let satellites_images = planet
             .satellites
             .iter()
             .map(|satellite_id| {
@@ -262,7 +265,7 @@ impl GifMap {
                     img.apply_color_map(color_map);
                     vec![img] as Gif
                 } else {
-                    Gif::open(format!("planets/{}_zoomout.gif", satellite.filename))?
+                    open_gif(format!("planets/{}_zoomout.gif", satellite.filename))?
                 };
 
                 let size = ImageResizeInGalaxyGif::ZoomOutSatellite {

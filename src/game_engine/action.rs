@@ -4,8 +4,7 @@ use super::{
     types::{GameStatsMap, Possession},
 };
 use crate::{
-    backcompat_repr_u8_enum,
-    core::{GamePosition, Player, MAX_GAME_POSITION},
+    core::{utils::is_default, GamePosition, Player, MAX_GAME_POSITION},
     game_engine::{
         brawl, end_of_quarter, fastbreak, isolation, jump_ball, off_the_screen, pick_and_roll,
         post, rebound, shot, start_of_quarter,
@@ -18,28 +17,13 @@ use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::EnumIter;
 
-// FIXME: migrate to repr
-// #[derive(Debug, Default, PartialEq, Clone, Copy, Serialize, Deserialize)]
-// pub enum Advantage {
-//     Attack,
-//     #[default]
-//     Neutral,
-//     Defense,
-// }
-
-backcompat_repr_u8_enum! {
-    #[derive(Debug, EnumIter, PartialEq, Clone, Copy)]
-    pub enum Advantage {
-        Attack,
-        Neutral,
-        Defense,
-    }
-}
-
-impl Default for Advantage {
-    fn default() -> Self {
-        Self::Neutral
-    }
+#[derive(Debug, Default, PartialEq, Clone, Copy, EnumIter, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
+pub enum Advantage {
+    Attack,
+    #[default]
+    Neutral,
+    Defense,
 }
 
 #[derive(Debug, Default, Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq)]
@@ -66,21 +50,45 @@ pub enum ActionSituation {
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ActionOutput {
     pub random_seed: [u8; 32],
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub advantage: Advantage,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub attackers: Vec<usize>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub defenders: Vec<usize>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub assist_from: Option<usize>,
     pub situation: ActionSituation,
     pub description: String,
     pub start_at: Timer,
     pub end_at: Timer,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub attack_stats_update: Option<GameStatsMap>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub defense_stats_update: Option<GameStatsMap>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub foul_from: Option<usize>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub foul_on: Option<usize>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub home_score: u16,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub away_score: u16,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub score_change: u16,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub possession: Possession,
 }
 

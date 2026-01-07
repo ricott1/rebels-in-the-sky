@@ -15,6 +15,8 @@ mod start_of_quarter;
 mod substitution;
 pub mod tactic;
 pub mod timer;
+mod tournament;
 pub mod types;
 
 pub use constants::{MIN_TIREDNESS_FOR_ROLL_DECLINE, RECOVERING_TIREDNESS_PER_SHORT_TICK};
+pub use tournament::{Tournament, TournamentId};

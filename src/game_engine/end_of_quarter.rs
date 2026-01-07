@@ -34,7 +34,8 @@ pub(crate) fn execute(
         _ => {}
     }
 
-    let result = ActionOutput {
+    
+    ActionOutput {
         possession: input.possession,
         situation: ActionSituation::EndOfQuarter,
         description,
@@ -43,6 +44,5 @@ pub(crate) fn execute(
         home_score: input.home_score,
         away_score: input.away_score,
         ..Default::default()
-    };
-    result
+    }
 }

@@ -146,7 +146,7 @@ impl ColorPreset {
             .expect("There should be at least a color")
     }
 
-    pub fn to_rgb(&self) -> Rgb<u8> {
+    pub fn to_rgb(self) -> Rgb<u8> {
         match self {
             Self::Red => Rgb([220, 20, 60]),
             Self::Maroon3 => Rgb([176, 48, 96]),
@@ -308,11 +308,6 @@ pub enum HairColorMap {
 }
 
 impl HairColorMap {
-    pub fn random(rng: &mut ChaCha8Rng) -> Self {
-        Self::iter()
-            .choose_stable(rng)
-            .expect("There should be at least a HairColorMap")
-    }
     pub fn color_map(&self) -> ColorMap {
         match self {
             Self::Black => ColorMap {
@@ -371,9 +366,6 @@ pub enum AsteroidColorMap {
 }
 
 impl AsteroidColorMap {
-    pub fn random(_rng: &mut ChaCha8Rng) -> Self {
-        Self::Base
-    }
     pub fn color_map(&self) -> ColorMap {
         match self {
             Self::Base => ColorMap {

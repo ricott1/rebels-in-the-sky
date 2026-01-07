@@ -55,7 +55,8 @@ pub(crate) fn execute(
         _ => unreachable!("Invalid period {}", input.end_at.period()),
     };
 
-    let result = ActionOutput {
+    
+    ActionOutput {
         situation: ActionSituation::BallInBackcourt,
         description,
         start_at: input.end_at,
@@ -64,6 +65,5 @@ pub(crate) fn execute(
         home_score: input.home_score,
         away_score: input.away_score,
         ..Default::default()
-    };
-    result
+    }
 }

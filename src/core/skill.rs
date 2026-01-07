@@ -6,6 +6,8 @@ use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
 use serde::{Deserialize, Serialize};
 
+pub type Skill = f32;
+
 const NORMAL_AVG: f32 = 0.6;
 const NORMAL_STD: f32 = 4.4;
 const LEVEL_BONUS: u8 = 2;
@@ -36,38 +38,36 @@ pub const SKILL_NAMES: [&str; 20] = [
 ];
 
 pub trait Rated {
-    fn rating(&self) -> u8;
+    fn rating(&self) -> Skill;
     fn stars(&self) -> String {
         match self.rating() {
-            0 => "☆☆☆☆☆".to_string(),
-            1..=2 => "½☆☆☆☆".to_string(),
-            3..=4 => "★☆☆☆☆".to_string(),
-            5..=6 => "★½☆☆☆".to_string(),
-            7..=8 => "★★☆☆☆".to_string(),
-            9..=10 => "★★½☆☆".to_string(),
-            11..=12 => "★★★☆☆".to_string(),
-            13..=14 => "★★★½☆".to_string(),
-            15..=16 => "★★★★☆".to_string(),
-            17..=18 => "★★★★½".to_string(),
-            19..=20 => "★★★★★".to_string(),
+            0.0 => "☆☆☆☆☆".to_string(),
+            x if x <= 2.0 => "½☆☆☆☆".to_string(),
+            x if x <= 4.0 => "★☆☆☆☆".to_string(),
+            x if x <= 6.0 => "★½☆☆☆".to_string(),
+            x if x <= 8.0 => "★★☆☆☆".to_string(),
+            x if x <= 10.0 => "★★½☆☆".to_string(),
+            x if x <= 12.0 => "★★★☆☆".to_string(),
+            x if x <= 14.0 => "★★★½☆".to_string(),
+            x if x <= 16.0 => "★★★★☆".to_string(),
+            x if x <= 18.0 => "★★★★½".to_string(),
+            x if x <= 20.0 => "★★★★★".to_string(),
             _ => panic!("Invalid rating"),
         }
     }
 }
 
 impl Rated for f32 {
-    fn rating(&self) -> u8 {
-        *self as u8
+    fn rating(&self) -> Skill {
+        *self as Skill
     }
 }
 
 impl Rated for u8 {
-    fn rating(&self) -> u8 {
-        *self
+    fn rating(&self) -> Skill {
+        *self as Skill
     }
 }
-
-pub type Skill = f32;
 
 pub trait GameSkill: fmt::Display + fmt::Debug {
     fn value(&self) -> u8 {
@@ -122,7 +122,9 @@ impl RatedPlayers for Vec<&Player> {
                     .partial_cmp(&a.average_skill())
                     .expect("Skill value should exist")
             } else {
-                b.rating().cmp(&a.rating())
+                b.rating()
+                    .partial_cmp(&a.rating())
+                    .expect("Skill value should exist")
             }
         });
 
@@ -156,8 +158,8 @@ impl Athletics {
 }
 
 impl Rated for Athletics {
-    fn rating(&self) -> u8 {
-        (self.quickness + self.vertical + self.strength + self.stamina) as u8 / 4
+    fn rating(&self) -> Skill {
+        (self.quickness + self.vertical + self.strength + self.stamina) / 4.0
     }
 }
 
@@ -187,8 +189,8 @@ impl Offense {
 }
 
 impl Rated for Offense {
-    fn rating(&self) -> u8 {
-        (self.brawl + self.close_range + self.medium_range + self.long_range) as u8 / 4
+    fn rating(&self) -> Skill {
+        (self.brawl + self.close_range + self.medium_range + self.long_range) / 4.0
     }
 }
 
@@ -218,8 +220,8 @@ impl Defense {
 }
 
 impl Rated for Defense {
-    fn rating(&self) -> u8 {
-        (self.steal + self.block + self.perimeter_defense + self.interior_defense) as u8 / 4
+    fn rating(&self) -> Skill {
+        (self.steal + self.block + self.perimeter_defense + self.interior_defense) / 4.0
     }
 }
 
@@ -249,8 +251,8 @@ impl Technical {
 }
 
 impl Rated for Technical {
-    fn rating(&self) -> u8 {
-        (self.passing + self.ball_handling + self.post_moves + self.rebounds) as u8 / 4
+    fn rating(&self) -> Skill {
+        (self.passing + self.ball_handling + self.post_moves + self.rebounds) / 4.0
     }
 }
 
@@ -280,7 +282,7 @@ impl Mental {
 }
 
 impl Rated for Mental {
-    fn rating(&self) -> u8 {
-        (self.vision + self.aggression + self.intuition + self.charisma) as u8 / 4
+    fn rating(&self) -> Skill {
+        (self.vision + self.aggression + self.intuition + self.charisma) / 4.0
     }
 }
