@@ -39,6 +39,9 @@ pub struct GameSummary {
     pub home_quarters_score: [u16; 4],
     pub away_quarters_score: [u16; 4],
     pub location: PlanetId,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub planet_name: String,
     pub attendance: u32,
     pub starting_at: Tick,
     #[serde(skip_serializing_if = "is_default")]
@@ -72,6 +75,7 @@ impl GameSummary {
             home_quarters_score,
             away_quarters_score,
             location: game.location,
+            planet_name: game.planet_name.clone(),
             attendance: game.attendance,
             starting_at: game.starting_at,
             ended_at: game.ended_at,
@@ -96,6 +100,9 @@ pub struct Game {
     pub home_team_in_game: TeamInGame,
     pub away_team_in_game: TeamInGame,
     pub location: PlanetId,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub planet_name: String,
     pub attendance: u32,
     pub action_results: Vec<ActionOutput>,
     #[serde(skip_serializing_if = "is_default")]
@@ -130,6 +137,10 @@ pub struct Game {
 impl Game {
     pub fn is_network(&self) -> bool {
         self.home_team_in_game.peer_id.is_some() && self.away_team_in_game.peer_id.is_some()
+    }
+
+    pub fn is_local(&self) -> bool {
+        !self.is_network()
     }
 
     pub fn test(home_team_in_game: TeamInGame, away_team_in_game: TeamInGame) -> Self {
@@ -189,10 +200,11 @@ impl Game {
             home_team_in_game,
             away_team_in_game,
             location: planet_id,
+            planet_name: planet_name.to_string(),
             attendance: 0,
             starting_at,
             ended_at: None,
-            action_results: vec![], // We start from default empty output
+            action_results: vec![],
             won_jump_ball: Possession::default(),
             possession: Possession::default(),
             timer: Timer::default(),

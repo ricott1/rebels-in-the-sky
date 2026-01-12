@@ -101,6 +101,7 @@ mod tests {
         assert!(cb.call(&mut app).is_ok());
 
         let proposer_player = app.world.get_player_or_err(&proposer_player_id)?;
+        // FIXME: this is flaky and fails sometimes.
         assert!(proposer_player.team == Some(target_team_id));
 
         let target_player = app.world.get_player_or_err(&target_player_id)?;

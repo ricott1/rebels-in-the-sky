@@ -1,5 +1,6 @@
 pub mod app;
 pub mod args;
+#[cfg(feature = "audio")]
 pub mod audio;
 pub mod core;
 pub mod crossterm_event_handler;
@@ -23,4 +24,11 @@ pub fn app_version() -> [usize; 3] {
         env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or_default(),
         env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or_default(),
     ]
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AudioPlayerState {
+    Playing,
+    Paused,
+    Disabled,
 }

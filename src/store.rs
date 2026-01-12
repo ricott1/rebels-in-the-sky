@@ -312,7 +312,7 @@ pub fn world_file_data(store_prefix: &str) -> AppResult<std::fs::Metadata> {
 mod tests {
     use crate::{
         core::{player::Player, team::Team, world::World},
-        types::AppResult,
+        types::{AppResult, PlayerMap},
     };
     use directories;
     use itertools::Itertools;
@@ -362,11 +362,11 @@ mod tests {
 
         let mut team = Team::random(None);
 
-        let mut players = vec![];
+        let mut players = PlayerMap::new();
         for _ in 0..5 {
             let player = Player::default().randomize(None);
             team.player_ids.push(player.id);
-            players.push(player);
+            players.insert(player.id, player);
         }
 
         let value = NetworkData::Team {

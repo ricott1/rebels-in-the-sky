@@ -621,6 +621,7 @@ impl SpaceshipComponent for Storage {
             Self::ShuttleSingle => 2000,
             Self::ShuttleDouble => 4000,
             Self::PincherSingle => 3000,
+            Self::JesterSingle => 1600,
             _ => 0,
         }
     }
@@ -639,7 +640,7 @@ impl SpaceshipComponent for Storage {
             Self::ShuttleSingle => 1.02,
             Self::ShuttleDouble => 1.03,
             Self::PincherSingle => 1.03,
-            Self::JesterSingle => 1.02,
+            Self::JesterSingle => 1.04,
             _ => 1.0,
         }
     }
@@ -659,7 +660,7 @@ impl SpaceshipComponent for Storage {
             Self::ShuttleSingle => 10,
             Self::ShuttleDouble => 11,
             Self::PincherSingle => 7,
-            Self::JesterSingle => 2,
+            Self::JesterSingle => 4,
             _ => 0,
         }
     }

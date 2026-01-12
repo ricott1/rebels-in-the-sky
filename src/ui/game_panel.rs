@@ -129,17 +129,28 @@ impl GamePanel {
         ])
         .split(area);
 
-        let game_button_split = Layout::vertical([
-            Constraint::Fill(1),
-            Constraint::Fill(1),
-            Constraint::Length(3),
-        ])
-        .split(split[0]);
-        self.build_game_list(frame, world, game_button_split[0]);
-        self.build_recent_games_list(frame, world, game_button_split[1]);
-        self.build_game_buttons(frame, game_button_split[2]);
+        let game_button_split =
+            Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).split(split[0]);
+        frame.render_widget(
+            default_block().title("Past games ↓/↑"),
+            game_button_split[1],
+        );
+        frame.render_widget(default_block().title("Games ↓/↑"), split[0]);
+
+        self.build_game_list(frame, world, game_button_split[0].inner(Margin::new(1, 1)));
+        self.build_recent_games_list(frame, world, game_button_split[1].inner(Margin::new(1, 1)));
 
         self.build_score_panel(frame, world, split[1])?;
+
+        // Render game buttons on top of score panel.
+        let gbv_split = Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Length(3),
+            Constraint::Length(1),
+        ])
+        .split(split[1]);
+
+        self.build_game_buttons(frame, gbv_split[1]);
 
         Ok(())
     }
@@ -156,14 +167,8 @@ impl GamePanel {
                     || game.away_team_in_game.team_id == world.own_team_id
                 {
                     style = UiStyle::OWN_TEAM
-                } else {
-                    {
-                        if game.home_team_in_game.peer_id.is_some()
-                            || game.away_team_in_game.peer_id.is_some()
-                        {
-                            style = UiStyle::NETWORK;
-                        }
-                    }
+                } else if game.is_network() {
+                    style = UiStyle::NETWORK;
                 }
 
                 Some((
@@ -185,12 +190,10 @@ impl GamePanel {
             let list_index = self.index.filter(|&index| index < self.game_ids.len());
 
             frame.render_stateful_interactive_widget(
-                list.block(default_block().title("Games ↓/↑")),
+                list,
                 area,
                 &mut ClickableListState::default().with_selected(list_index),
             );
-        } else {
-            frame.render_widget(default_block().title("Games ↓/↑"), area);
         }
     }
 
@@ -244,18 +247,25 @@ impl GamePanel {
                 .map(|index| index - self.game_ids.len());
 
             frame.render_stateful_interactive_widget(
-                list.block(default_block().title("Past games ↓/↑")),
+                list,
                 area,
                 &mut ClickableListState::default().with_selected(list_index),
             );
-        } else {
-            frame.render_widget(default_block().title("Past games ↓/↑"), area);
         }
     }
 
     fn build_game_buttons(&mut self, frame: &mut UiFrame, area: Rect) {
-        let b_split =
-            Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(area);
+        if self.index.is_none() {
+            return;
+        };
+        let b_split = Layout::horizontal([
+            Constraint::Fill(3),
+            Constraint::Length(18),
+            Constraint::Fill(2),
+            Constraint::Length(18),
+            Constraint::Fill(3),
+        ])
+        .split(area);
         let text = if self.pitch_view {
             "Commentary view"
         } else {
@@ -272,7 +282,7 @@ impl GamePanel {
             ))
             .set_hotkey(ui_key::game::PITCH_VIEW);
 
-        frame.render_interactive_widget(pitch_button, b_split[0]);
+        frame.render_interactive_widget(pitch_button, b_split[1]);
 
         let text = if self.player_status_view {
             "Game stats"
@@ -290,7 +300,7 @@ impl GamePanel {
             ))
             .set_hotkey(ui_key::game::PLAYER_STATUS_VIEW);
 
-        frame.render_interactive_widget(player_status_button, b_split[1]);
+        frame.render_interactive_widget(player_status_button, b_split[3]);
     }
 
     fn build_score_panel(
@@ -321,12 +331,11 @@ impl GamePanel {
             Constraint::Length(PLAYER_IMAGE_WIDTH as u16),
             Constraint::Fill(1),
         ])
-        .split(area); //FIXME: check if split[0] is needed
+        .split(area);
 
         let central_split = Layout::vertical([
             Constraint::Fill(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
+            Constraint::Length(2),
             Constraint::Length(2),
             Constraint::Length(8),
             Constraint::Fill(1),
@@ -351,11 +360,11 @@ impl GamePanel {
                 }
             ))
             .centered(),
-            central_split[3],
+            central_split[2],
         );
 
         let digit_split =
-            Layout::horizontal([8, 1, 8, 1, 8, 1, 5, 1, 8, 1, 8, 1, 8]).split(central_split[4]);
+            Layout::horizontal([8, 1, 8, 1, 8, 1, 5, 1, 8, 1, 8, 1, 8]).split(central_split[3]);
 
         let action = if self.commentary_index == 0 {
             &game.action_results[game.action_results.len() - 1]
@@ -405,28 +414,65 @@ impl GamePanel {
         }
 
         let home_dot = if action.possession == Possession::Home {
-            "●"
+            "● "
         } else {
-            " "
+            "  "
         };
         let away_dot = if action.possession == Possession::Away {
-            "●"
+            " ●"
         } else {
-            " "
+            "  "
         };
         let l = MAX_NAME_LENGTH + 2;
-        frame.render_widget(
-            Paragraph::new(Line::from(format!(
-                "{:>l$} vs {:<l$}",
-                format!("{} {}", home_dot, game.home_team_in_game.name),
-                format!("{} {}", game.away_team_in_game.name, away_dot),
-            )))
-            .centered(),
-            central_split[1],
-        );
+        let spans_split = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(2),
+            Constraint::Max(l as u16),
+            Constraint::Length(4),
+            Constraint::Max(l as u16),
+            Constraint::Length(2),
+            Constraint::Fill(1),
+        ])
+        .split(central_split[1]);
+        frame.render_widget(Paragraph::new(home_dot), spans_split[1]);
+
+        if world.teams.contains_key(&game.home_team_in_game.team_id) {
+            let home_button = Button::new(
+                format!("{:>}", game.home_team_in_game.name),
+                UiCallback::GoToTeam {
+                    team_id: game.home_team_in_game.team_id,
+                },
+            )
+            .set_hover_text(format!("Go to {} team", game.home_team_in_game.name));
+            frame.render_interactive_widget(home_button, spans_split[2]);
+        } else {
+            frame.render_widget(
+                Paragraph::new(format!("{:>}", game.home_team_in_game.name)),
+                spans_split[2],
+            );
+        }
+
+        frame.render_widget(Paragraph::default(), spans_split[3]);
+
+        if world.teams.contains_key(&game.away_team_in_game.team_id) {
+            let away_button = Button::new(
+                format!("{:>}", game.away_team_in_game.name),
+                UiCallback::GoToTeam {
+                    team_id: game.away_team_in_game.team_id,
+                },
+            )
+            .set_hover_text(format!("Go to {} team", game.away_team_in_game.name));
+            frame.render_interactive_widget(away_button, spans_split[4]);
+        } else {
+            frame.render_widget(
+                Paragraph::new(format!("{:<}", game.away_team_in_game.name)),
+                spans_split[4],
+            );
+        }
+        frame.render_widget(Paragraph::new(away_dot), spans_split[5]);
 
         let timer_lines = self.build_timer_lines(world, game);
-        frame.render_widget(Paragraph::new(timer_lines).centered(), central_split[5]);
+        frame.render_widget(Paragraph::new(timer_lines).centered(), central_split[4]);
         match home_score {
             x if x < 10 => frame.render_widget((home_score % 10).big_font(), digit_split[4]),
             x if x < 100 => {

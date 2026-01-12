@@ -20,8 +20,6 @@ use libp2p::{gossipsub, swarm::SwarmEvent};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::time::{Duration, Instant};
-#[cfg(feature = "audio")]
-use stream_download::{storage::temp::TempStorageProvider, StreamDownload};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -38,8 +36,6 @@ pub enum AppEvent {
     FastTick(Tick),
     TerminalEvent(TerminalEvent),
     NetworkEvent(SwarmEvent<gossipsub::Event>),
-    #[cfg(feature = "audio")]
-    AudioEvent(StreamDownload<TempStorageProvider>),
 }
 
 #[derive(Debug)]
@@ -190,17 +186,17 @@ impl App {
         #[cfg(feature = "audio")]
         let audio_player = {
             if args.is_audio_disabled() {
-                log::info!("Audio disabled, skipping audio player creation.");
+                log::info!("Audio disabled, skipping music player creation.");
                 None
             } else {
-                match MusicPlayer::new(event_sender.clone()) {
+                match MusicPlayer::new() {
                     Ok(player) => {
-                        log::info!("Audio player created succesfully.");
+                        log::info!("Music player created succesfully.");
                         Some(player)
                     }
 
                     Err(err) => {
-                        log::warn!("Could not create audio player: {err}.");
+                        log::warn!("Could not create music player: {err}.");
                         None
                     }
                 }
@@ -236,14 +232,24 @@ impl App {
             self.get_cancellation_token(),
         );
 
-        let mut network_started = false;
-
         tick_event_handler::start_tick_event_loop(
             self.get_event_sender(),
             self.get_cancellation_token(),
         );
 
+        #[cfg(feature = "audio")]
+        {
+            let cancellation_token = self.get_cancellation_token();
+            if let Some(player) = self.audio_player.as_mut() {
+                if let Err(err) = player.start_audio_event_loop(cancellation_token) {
+                    self.audio_player = None;
+                    log::error!("Error starting audio event loop: {err}");
+                }
+            }
+        }
+
         let mut last_user_input = Instant::now();
+        let mut network_started = false;
 
         while self.state != AppState::Quitting {
             if self.state == AppState::Simulating {
@@ -289,11 +295,11 @@ impl App {
             if let Some(app_event) = self.event_receiver.recv().await {
                 match app_event {
                     AppEvent::SlowTick(tick) => {
-                        self.handle_slow_tick_events(tick);
+                        self.handle_world_slow_tick_events(tick);
                         self.draw(&mut tui).await;
                     }
                     AppEvent::FastTick(tick) => {
-                        if self.should_draw_fast_tick_events(tick) {
+                        if self.should_draw_world_fast_tick_events(tick) {
                             self.draw(&mut tui).await
                         }
                     }
@@ -321,11 +327,6 @@ impl App {
 
                     AppEvent::NetworkEvent(swarm_event) => {
                         self.handle_network_events(swarm_event)?;
-                    }
-
-                    #[cfg(feature = "audio")]
-                    AppEvent::AudioEvent(streaming_data) => {
-                        self.handle_audio_streaming_data(streaming_data)?;
                     }
                 }
             }
@@ -369,7 +370,11 @@ impl App {
     pub fn continue_game(&mut self) {
         // Try to load an existing world.
         match load_world(self.args.store_prefix()) {
-            Ok(w) => self.world = w,
+            Ok(mut w) => {
+                w.dirty_network = true;
+                w.dirty_ui = true;
+                self.world = w;
+            }
             Err(e) => panic!("Failed to load world: {e}"),
         }
 
@@ -424,7 +429,7 @@ impl App {
         };
     }
 
-    fn should_draw_fast_tick_events(&mut self, current_tick: Tick) -> bool {
+    fn should_draw_world_fast_tick_events(&mut self, current_tick: Tick) -> bool {
         match self.world.handle_fast_tick_events(current_tick) {
             Ok(callbacks) => {
                 for callback in callbacks.iter() {
@@ -458,7 +463,7 @@ impl App {
         self.world.space_adventure.is_some()
     }
 
-    fn handle_slow_tick_events(&mut self, current_tick: Tick) {
+    fn handle_world_slow_tick_events(&mut self, current_tick: Tick) {
         // If there was a callback, or ui was updated --> draw.
         match self.world.handle_slow_tick_events(current_tick) {
             Ok(callbacks) => {
@@ -661,17 +666,6 @@ impl App {
                         .push_log_event(Tick::now(), None, e.to_string(), log::Level::Error);
                 }
             }
-        }
-        Ok(())
-    }
-
-    #[cfg(feature = "audio")]
-    fn handle_audio_streaming_data(
-        &mut self,
-        data: StreamDownload<TempStorageProvider>,
-    ) -> AppResult<()> {
-        if let Some(audio_player) = &mut self.audio_player {
-            audio_player.handle_streaming_ready(data)?;
         }
         Ok(())
     }

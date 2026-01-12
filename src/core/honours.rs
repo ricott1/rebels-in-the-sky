@@ -135,9 +135,13 @@ impl Honour {
 #[cfg(test)]
 mod tests {
 
+    use itertools::Itertools;
+
     use crate::{
         app::App,
-        core::{Honour, Player, Population, Region, Resource, Team},
+        core::{
+            Honour, Planet, Player, Population, Region, Resource, Team, MAX_NUM_ASTEROID_PER_TEAM,
+        },
         types::AppResult,
     };
 
@@ -230,6 +234,41 @@ mod tests {
         assert!(team.player_ids.len() == 7);
 
         assert!(Honour::MultiKulti.conditions_met(
+            &team,
+            &app.world.past_games,
+            &app.world.players,
+            &app.world.planets
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_conditions_met_galactic() -> AppResult<()> {
+        let app = &mut App::test_default()?;
+
+        let mut team = Team::random(None);
+
+        let parent_planets = app
+            .world
+            .planets
+            .values()
+            .filter(|p| p.total_population() > 0)
+            .map(|p| p.id)
+            .collect_vec();
+
+        for idx in 0..MAX_NUM_ASTEROID_PER_TEAM {
+            let asteroid = Planet::asteroid(
+                "name".to_string(),
+                "filename".to_string(),
+                parent_planets[idx],
+            );
+            team.asteroid_ids.push(asteroid.id);
+            app.world.planets.insert(asteroid.id, asteroid);
+        }
+
+        
+        assert!(Honour::Galactic.conditions_met(
             &team,
             &app.world.past_games,
             &app.world.players,

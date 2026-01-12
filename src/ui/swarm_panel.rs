@@ -161,7 +161,7 @@ impl SwarmPanel {
             // but update the timestamp
             if last_event.peer_id == event.peer_id
                 && last_event.text == event.text
-                && event.timestamp - last_event.timestamp <= EVENT_DUPLICATE_DELAY
+                && event.timestamp.saturating_sub(last_event.timestamp) <= EVENT_DUPLICATE_DELAY
             {
                 last_event.timestamp = event.timestamp;
                 return;
@@ -217,7 +217,7 @@ impl SwarmPanel {
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Min(3),
+            Constraint::Fill(1),
             Constraint::Length(3),
         ])
         .split(area);
@@ -337,7 +337,7 @@ impl SwarmPanel {
         };
 
         let mut constraints = [Constraint::Length(3)].repeat(challenges.len());
-        constraints.push(Constraint::Min(0));
+        constraints.push(Constraint::Fill(1));
         let split = Layout::vertical(constraints).split(area.inner(Margin {
             horizontal: 1,
             vertical: 1,
@@ -355,7 +355,7 @@ impl SwarmPanel {
                 Constraint::Length(32),
                 Constraint::Length(6),
                 Constraint::Length(6),
-                Constraint::Min(0),
+                Constraint::Fill(1),
             ])
             .split(split[idx]);
 
@@ -439,7 +439,7 @@ impl SwarmPanel {
         };
 
         let mut constraints = [Constraint::Length(3)].repeat(trades.len());
-        constraints.push(Constraint::Min(0));
+        constraints.push(Constraint::Fill(1));
         let split = Layout::vertical(constraints).split(area.inner(Margin {
             horizontal: 1,
             vertical: 1,
@@ -450,7 +450,7 @@ impl SwarmPanel {
                 Constraint::Length(46),
                 Constraint::Length(6),
                 Constraint::Length(6),
-                Constraint::Min(0),
+                Constraint::Fill(1),
             ])
             .split(split[idx]);
 
@@ -510,12 +510,10 @@ impl SwarmPanel {
     }
 
     fn render_team_ranking(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
-        let h_split = Layout::horizontal([Constraint::Min(1), Constraint::Length(80)]).split(area);
+        let block_title = "Top 10 Crews by Elo";
+        let h_split = Layout::horizontal([Constraint::Fill(1), Constraint::Length(80)]).split(area);
         if self.team_ranking.is_empty() {
-            frame.render_widget(
-                default_block().title("Top 10 Crews by Elo (Reputation)"),
-                h_split[0],
-            );
+            frame.render_widget(default_block().title(block_title), h_split[0]);
             frame.render_widget(default_block(), h_split[1]);
             return;
         }
@@ -523,10 +521,7 @@ impl SwarmPanel {
         let team_ranking_index = if let Some(index) = self.team_ranking_index {
             index % self.team_ranking.len()
         } else {
-            frame.render_widget(
-                default_block().title("Top 10 Crews by Elo (Reputation)"),
-                h_split[0],
-            );
+            frame.render_widget(default_block().title(block_title), h_split[0]);
             frame.render_widget(default_block(), h_split[1]);
             return;
         };
@@ -558,7 +553,7 @@ impl SwarmPanel {
             .map(|(idx, (_, ranking))| {
                 let team_id = ranking.team.id;
                 let text = format!(
-                    "{:>2}. {:<MAX_NAME_LENGTH$} {:5<} {}",
+                    "{:>2}. {:<MAX_NAME_LENGTH$} {:5.0}   {}",
                     idx + 1,
                     &ranking.team.name,
                     ranking.team.network_game_rating.rating,
@@ -578,22 +573,35 @@ impl SwarmPanel {
             })
             .collect_vec();
 
+        frame.render_widget(default_block().title(block_title), h_split[0]);
+        let list_split = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)])
+            .split(h_split[0].inner(Margin::new(1, 1)));
+
+        frame.render_widget(
+            Span::styled(
+                format!(
+                    "{:>2}   {:<MAX_NAME_LENGTH$}  {}    {}",
+                    "", "Team", "Elo", "Reputation"
+                ),
+                UiStyle::HEADER,
+            ),
+            list_split[0],
+        );
+
         let list = selectable_list(options);
 
         frame.render_stateful_interactive_widget(
-            list.block(default_block().title("Top 10 Crews by Elo (Reputation)")),
-            h_split[0],
+            list,
+            list_split[1],
             &mut ClickableListState::default().with_selected(Some(team_ranking_index)),
         );
     }
 
     fn render_player_ranking(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
-        let h_split = Layout::horizontal([Constraint::Min(1), Constraint::Length(60)]).split(area);
+        let block_title = "Top 20 Pirates by Reputation";
+        let h_split = Layout::horizontal([Constraint::Fill(1), Constraint::Length(60)]).split(area);
         if self.player_ranking.is_empty() {
-            frame.render_widget(
-                default_block().title("Top 20 Pirates by Reputation"),
-                h_split[0],
-            );
+            frame.render_widget(default_block().title(block_title), h_split[0]);
             frame.render_widget(default_block(), h_split[1]);
             return;
         }
@@ -601,10 +609,7 @@ impl SwarmPanel {
         let player_ranking_index = if let Some(index) = self.player_ranking_index {
             index % self.player_ranking.len()
         } else {
-            frame.render_widget(
-                default_block().title("Top 20 Pirates by Reputation"),
-                h_split[0],
-            );
+            frame.render_widget(default_block().title(block_title), h_split[0]);
             frame.render_widget(default_block(), h_split[1]);
             return;
         };
@@ -633,11 +638,11 @@ impl SwarmPanel {
                 };
 
                 let text = format!(
-                    "{:>2}. {:<name_length$} {} {}",
+                    "{:>2}. {:<name_length$} {:<MAX_NAME_LENGTH$} {}",
                     idx + 1,
                     player.info.full_name(),
+                    ranking.team_name,
                     player.reputation.stars(),
-                    ranking.team_name
                 );
 
                 let mut style = UiStyle::DISCONNECTED;
@@ -655,11 +660,26 @@ impl SwarmPanel {
             })
             .collect_vec();
 
+        frame.render_widget(default_block().title(block_title), h_split[0]);
+        let list_split = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)])
+            .split(h_split[0].inner(Margin::new(1, 1)));
+
+        frame.render_widget(
+            Span::styled(
+                format!(
+                    "{:>2}   {:<name_length$} {:<MAX_NAME_LENGTH$} {}",
+                    "", "Player", "Team", "Reputation"
+                ),
+                UiStyle::HEADER,
+            ),
+            list_split[0],
+        );
+
         let list = selectable_list(options);
 
         frame.render_stateful_interactive_widget(
-            list.block(default_block().title("Top 20 Pirates by Reputation")),
-            h_split[0],
+            list,
+            list_split[1],
             &mut ClickableListState::default().with_selected(Some(player_ranking_index)),
         );
     }
@@ -670,7 +690,7 @@ impl SwarmPanel {
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
-        let split = Layout::vertical([Constraint::Min(1), Constraint::Length(3)]).split(area);
+        let split = Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).split(area);
 
         self.textarea.set_block(default_block());
         frame.render_widget(&self.textarea, split[1]);
@@ -693,7 +713,7 @@ impl SwarmPanel {
             }
             SwarmView::Ranking => {
                 let ranking_split =
-                    Layout::vertical([Constraint::Length(24), Constraint::Min(1)]).split(split[0]);
+                    Layout::vertical([Constraint::Length(24), Constraint::Fill(1)]).split(split[0]);
                 if frame.is_hovering(ranking_split[0]) {
                     self.active_list = PanelList::Players;
                 } else {
@@ -843,7 +863,7 @@ impl Screen for SwarmPanel {
         area: Rect,
         _debug_view: bool,
     ) -> AppResult<()> {
-        let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Min(1)])
+        let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Fill(1)])
             .split(area);
 
         self.build_left_panel(frame, world, split[0]);

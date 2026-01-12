@@ -93,7 +93,10 @@ impl SpaceCovePanel {
             let ship_img = &team.spaceship.compose_image_in_shipyard()?[0];
             let y = 40;
             base.copy_non_trasparent_from(ship_img, x, y)?;
-            x += ship_img.width() + 2;
+            x += ship_img.width();
+            if x + ship_img.width() > base.width() {
+                break;
+            }
         }
 
         if !is_blinking_left {
@@ -180,7 +183,7 @@ impl SpaceCovePanel {
             "Organize tournament",
             UiCallback::OrganizeNewTournament {
                 max_participants: 4,
-                starting_at: Tick::now() + HOURS,
+                registrations_closing_at: Tick::now() + 1 * MINUTES,
             },
         )
         .set_hotkey(ui_key::ORGANIZE_TOURNAMENT)
@@ -190,7 +193,7 @@ impl SpaceCovePanel {
             tournament_button.disable(Some(err.to_string()));
         }
 
-        tournament_button.disable(Some("Coming soon!"));
+        // tournament_button.disable(Some("Coming soon!"));
         frame.render_interactive_widget(tournament_button, area);
 
         Ok(())

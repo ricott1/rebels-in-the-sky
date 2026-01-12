@@ -8,26 +8,24 @@ use super::{
     widgets::{default_block, selectable_list},
 };
 use crate::core::team::Team;
-use crate::core::Skill;
-use crate::game_engine::Tournament;
+use crate::game_engine::{Tournament, TournamentState};
 use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::ui::ui_key;
 use crate::{
     core::{skill::Rated, world::World},
     types::TeamId,
 };
+use anyhow::anyhow;
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
-use ratatui::layout::Margin;
-use ratatui::style::Stylize;
+use itertools::Itertools;
+use ratatui::style::{Style, Stylize};
 use ratatui::{
     layout::{Constraint, Layout},
     prelude::Rect,
     widgets::Paragraph,
 };
 use std::fmt::Display;
-
-const IMG_FRAME_WIDTH: u16 = 80;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Hash)]
 pub enum TournamentView {
@@ -44,11 +42,11 @@ impl TournamentView {
         }
     }
 
-    fn rule(&self, tournament: &Tournament, own_team: &Team, team_rating: Skill) -> bool {
+    fn rule(&self, tournament: &Tournament, own_team: &Team) -> bool {
         match self {
             Self::All => true,
             Self::Open => own_team
-                .can_register_to_tournament(tournament, team_rating)
+                .can_register_to_tournament(tournament, Tick::now())
                 .is_ok(),
         }
     }
@@ -129,8 +127,8 @@ impl TournamentPanel {
                 }
 
                 let text = format!(
-                    "{:<MAX_NAME_LENGTH$} {}",
-                    tournament.planet_name,
+                    "{:<24} {}",
+                    tournament.name(),
                     world
                         .tournament_rating(&tournament.id)
                         .unwrap_or_default()
@@ -175,14 +173,211 @@ impl TournamentPanel {
             return Ok(());
         };
 
-        if !tournament.has_started(Tick::now()) {
-            self.render_started_tournament(tournament, frame, world, area)?;
-        } else if !tournament.has_ended() {
-            self.render_started_tournament(tournament, frame, world, area)?;
-        } else {
-            self.render_started_tournament(tournament, frame, world, area)?;
+        let split = Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(area);
+
+        let planet_id = tournament.planet_id;
+        let tournament_main_button =
+            Button::new(tournament.name(), UiCallback::GoToPlanet { planet_id });
+        frame.render_interactive_widget(tournament_main_button, split[0]);
+
+        let inner = split[1];
+
+        match tournament.state(Tick::now()) {
+            TournamentState::Canceled => {}
+            TournamentState::Registration => {
+                self.render_registration_tournament(tournament, frame, world, inner)?
+            }
+            TournamentState::Confirmation => {
+                self.render_confirmation_tournament(tournament, frame, inner)?
+            }
+            TournamentState::Syncing => self.render_syncing_tournament(tournament, frame, inner)?,
+            TournamentState::Started => {
+                self.render_started_tournament(tournament, frame, world, inner)?
+            }
+            TournamentState::Ended => {
+                frame.render_widget(Paragraph::new("Ended").centered(), split[1])
+            }
         }
 
+        Ok(())
+    }
+
+    fn render_registration_tournament(
+        &self,
+        tournament: &Tournament,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
+        let t_split = Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(area);
+        let countdown = (tournament
+            .registrations_closing_at
+            .saturating_sub(Tick::now()))
+        .formatted();
+        frame.render_widget(
+            Paragraph::new(format!("Registrations closing in {countdown}"))
+                .centered()
+                .block(default_block()),
+            t_split[0],
+        );
+
+        let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Fill(1)])
+            .split(t_split[1]);
+
+        let options = tournament
+            .registered_teams
+            .values()
+            .map(|team| {
+                let mut style = UiStyle::DEFAULT;
+                if team.team_id == world.own_team_id {
+                    style = UiStyle::OWN_TEAM;
+                } else if team.peer_id.is_some() {
+                    style = UiStyle::NETWORK;
+                }
+                let text = format!("{:<MAX_NAME_LENGTH$} {}", team.name, team.rating().stars());
+                (text, style)
+            })
+            .collect_vec();
+
+        let list = selectable_list(options);
+
+        frame.render_stateful_interactive_widget(
+            list.block(default_block().title("Registered crews ↓/↑")),
+            split[0],
+            &mut ClickableListState::default().with_selected(None),
+        );
+
+        let own_team = world.get_own_team()?;
+
+        let b_split = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Fill(1),
+        ])
+        .split(split[1]);
+
+        if tournament.organizer_id == world.own_team_id {
+            frame.render_widget(
+                Paragraph::new("Thanks for organizing!".to_string())
+                    .centered()
+                    .block(default_block()),
+                b_split[0],
+            );
+        } else {
+            let mut register_button = Button::new(
+                "Register now!",
+                UiCallback::RegisterToTournament {
+                    tournament_id: tournament.id,
+                    team_id: world.own_team_id,
+                },
+            )
+            .set_hotkey(ui_key::REGISTER_TO_TOURNAMENT)
+            .set_hover_text(format!(
+                "Register to {}. Participation will be confirmed on {} at {}.",
+                tournament.name(),
+                tournament.registrations_closing_at.formatted_as_date(),
+                tournament.registrations_closing_at.formatted_as_time(),
+            ));
+
+            if let Err(err) = own_team.can_register_to_tournament(tournament, Tick::now()) {
+                register_button.disable(Some(err.to_string()));
+                if tournament.is_team_registered(&world.own_team_id) {
+                    register_button.set_text("Already registered");
+                }
+            }
+
+            frame.render_interactive_widget(register_button, b_split[0]);
+        }
+
+        frame.render_widget(
+            Paragraph::new(format!("Max participants: {}", tournament.max_participants))
+                .centered()
+                .block(default_block()),
+            b_split[1],
+        );
+
+        Ok(())
+    }
+
+    fn render_confirmation_tournament(
+        &self,
+        tournament: &Tournament,
+        frame: &mut UiFrame,
+        area: Rect,
+    ) -> AppResult<()> {
+        let t_split = Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(area);
+        frame.render_widget(
+            Paragraph::new("Selecting participants...")
+                .centered()
+                .block(default_block()),
+            t_split[0],
+        );
+
+        let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Fill(1)])
+            .split(t_split[1]);
+
+        let options = tournament
+            .registered_teams
+            .values()
+            .map(|team| {
+                let style = if tournament.participants.contains_key(&team.team_id) {
+                    UiStyle::OK
+                } else {
+                    UiStyle::WARNING
+                };
+                let text = format!("{:<MAX_NAME_LENGTH$} {}", team.name, team.rating().stars());
+                (text, style)
+            })
+            .collect_vec();
+
+        let list = selectable_list(options);
+
+        frame.render_stateful_interactive_widget(
+            list.block(default_block().title("Registered crews ↓/↑")),
+            split[0],
+            &mut ClickableListState::default().with_selected(None),
+        );
+        Ok(())
+    }
+
+    fn render_syncing_tournament(
+        &self,
+        tournament: &Tournament,
+        frame: &mut UiFrame,
+        area: Rect,
+    ) -> AppResult<()> {
+        let t_split = Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(area);
+        frame.render_widget(
+            Paragraph::new("Syncing...")
+                .centered()
+                .block(default_block()),
+            t_split[0],
+        );
+
+        let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Fill(1)])
+            .split(t_split[1]);
+
+        let options = tournament
+            .registered_teams
+            .values()
+            .map(|team| {
+                let style = if tournament.participants.contains_key(&team.team_id) {
+                    UiStyle::OK
+                } else {
+                    UiStyle::ERROR
+                };
+                let text = format!("{:<MAX_NAME_LENGTH$} {}", team.name, team.rating().stars());
+                (text, style)
+            })
+            .collect_vec();
+
+        let list = selectable_list(options);
+
+        frame.render_stateful_interactive_widget(
+            list.block(default_block().title("Registered crews ↓/↑")),
+            split[0],
+            &mut ClickableListState::default().with_selected(None),
+        );
         Ok(())
     }
 
@@ -190,19 +385,82 @@ impl TournamentPanel {
         &self,
         tournament: &Tournament,
         frame: &mut UiFrame,
-        _world: &World,
+        world: &World,
         area: Rect,
     ) -> AppResult<()> {
-        let split = Layout::vertical([
-            Constraint::Length(3),
-            Constraint::Length(3),
+        let t_split = Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(area);
+        frame.render_widget(
+            Paragraph::new("Currently playing!")
+                .centered()
+                .block(default_block()),
+            t_split[0],
+        );
+
+        let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Fill(1)])
+            .split(t_split[1]);
+
+        let c_split = Layout::vertical([
+            Constraint::Length(tournament.participants.len() as u16 + 2),
             Constraint::Fill(1),
         ])
-        .split(area);
+        .split(split[0]);
 
-        frame.render_widget(
-            Paragraph::new(tournament.name()).centered().bold(),
-            split[0],
+        let options = tournament
+            .participants
+            .values()
+            .map(|team| {
+                let mut style = UiStyle::DEFAULT;
+                if team.team_id == world.own_team_id {
+                    style = UiStyle::OWN_TEAM;
+                } else if team.peer_id.is_some() {
+                    style = UiStyle::NETWORK;
+                }
+                let text = format!("{:<MAX_NAME_LENGTH$} {}", team.name, team.rating().stars());
+                (text, style)
+            })
+            .collect_vec();
+
+        let list = selectable_list(options);
+
+        frame.render_stateful_interactive_widget(
+            list.block(default_block().title("Participants ↓/↑")),
+            c_split[0],
+            &mut ClickableListState::default().with_selected(None),
+        );
+
+        let options = world
+            .games
+            .values()
+            .filter(|game| matches!(game.part_of_tournament, Some(id) if id == tournament.id))
+            .map(|game| {
+                let mut style = UiStyle::DEFAULT;
+                if game.home_team_in_game.team_id == world.own_team_id
+                    || game.away_team_in_game.team_id == world.own_team_id
+                {
+                    style = UiStyle::OWN_TEAM;
+                } else if game.is_network() {
+                    style = UiStyle::NETWORK;
+                }
+                Some((
+                    format!(
+                        "{:>12} {:>3}-{:<3} {:<12}",
+                        game.home_team_in_game.name,
+                        game.action_results.last()?.home_score,
+                        game.action_results.last()?.away_score,
+                        game.away_team_in_game.name
+                    ),
+                    style,
+                ))
+            })
+            .collect::<Option<Vec<(String, Style)>>>()
+            .ok_or(anyhow!("Invalid game in tournament"))?;
+
+        let list = selectable_list(options);
+
+        frame.render_stateful_interactive_widget(
+            list.block(default_block().title("Games ↓/↑")),
+            c_split[1],
+            &mut ClickableListState::default().with_selected(None),
         );
 
         Ok(())
@@ -221,11 +479,7 @@ impl TournamentPanel {
 impl Screen for TournamentPanel {
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
-        log::info!(
-            "update {} and {}",
-            world.tournaments.len(),
-            self.all_tournament_ids.len()
-        );
+
         if world.dirty_ui || self.all_tournament_ids.len() != world.tournaments.len() {
             self.all_tournament_ids = world.tournaments.keys().copied().collect();
             self.all_tournament_ids.sort_by(|a, b| {
@@ -240,14 +494,13 @@ impl Screen for TournamentPanel {
 
         if self.update_view {
             let own_team = world.get_own_team()?;
-            let team_rating = world.team_rating(&world.own_team_id)?;
 
             self.tournament_ids = self
                 .all_tournament_ids
                 .iter()
                 .filter(|&id| {
                     let tournament = world.tournaments.get(id).unwrap();
-                    self.view.rule(tournament, own_team, team_rating)
+                    self.view.rule(tournament, own_team)
                 })
                 .copied()
                 .collect();
@@ -279,17 +532,15 @@ impl Screen for TournamentPanel {
         _debug_view: bool,
     ) -> AppResult<()> {
         // Split into left and right panels
-        let left_right_split = Layout::horizontal([
-            Constraint::Length(LEFT_PANEL_WIDTH),
-            Constraint::Min(IMG_FRAME_WIDTH),
-        ])
-        .split(area);
+        let left_right_split =
+            Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Fill(1)])
+                .split(area);
         self.build_left_panel(frame, world, left_right_split[0]);
 
         if self.all_tournament_ids.is_empty() {
             frame.render_widget(
-                Paragraph::new(" No tournaments yet!"),
-                left_right_split[1].inner(Margin::new(1, 1)),
+                default_block().title(" No tournaments at the moment..."),
+                left_right_split[1],
             );
             return Ok(());
         }
@@ -340,6 +591,10 @@ impl SplitPanel for TournamentPanel {
     }
 
     fn set_index(&mut self, index: usize) {
-        self.index = Some(index);
+        if self.max_index() == 0 {
+            self.index = None;
+        } else {
+            self.index = Some(index % self.max_index());
+        }
     }
 }

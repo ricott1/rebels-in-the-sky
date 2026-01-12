@@ -153,8 +153,9 @@ impl StatefulWidget for ClickableList<'_> {
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         buf.set_style(area, self.style);
-        self.block.render(area, buf);
         let list_area = self.block.inner_if_some(area);
+
+        self.block.render(area, buf);
 
         if list_area.is_empty() {
             return;

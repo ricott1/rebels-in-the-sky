@@ -7,11 +7,11 @@ use super::types::SeedInfo;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam};
 use crate::app::AppEvent;
 use crate::core::world::World;
-use crate::core::TournamentRegistrationState;
+use crate::core::{Team, TournamentRegistrationState};
 use crate::game_engine::types::TeamInGame;
 use crate::game_engine::{Tournament, TournamentId};
 use crate::store::serialize;
-use crate::types::{AppResult, GameId};
+use crate::types::{AppResult, GameId, PlayerMap};
 use crate::types::{PlayerId, TeamId};
 use crate::types::{SystemTimeTick, Tick};
 use anyhow::anyhow;
@@ -342,7 +342,10 @@ impl NetworkHandler {
 
     pub fn resend_tournaments(&mut self, world: &World) -> AppResult<()> {
         for tournament in world.tournaments.values() {
-            self.send_tournament(tournament.clone())?;
+            // Only organizer has most updated state of the tournament.
+            if tournament.organizer_id == world.own_team_id || tournament.has_started(Tick::now()) {
+                self.send_tournament(tournament.clone())?;
+            }
         }
 
         Ok(())
@@ -397,12 +400,14 @@ impl NetworkHandler {
         &mut self,
         tournament_id: TournamentId,
         team_id: TeamId,
+        team_data: Option<(Team, PlayerMap)>,
         state: TournamentRegistrationState,
     ) -> AppResult<()> {
         self._send(&NetworkData::TournamentRegistrationRequest {
             timestamp: Tick::now(),
             tournament_id,
             team_id,
+            team_data,
             state,
         })
     }
@@ -845,8 +850,9 @@ mod tests {
                 assert_eq!(deserialized_team.team, network_team.team);
                 assert_eq!(deserialized_team.players.len(), network_team.players.len());
 
-                let network_player = network_team.players[0].clone();
-                let deserialized_player = deserialized_team.players[0].clone();
+                let player_id = &network_team.team.player_ids[0];
+                let network_player = network_team.players.get(player_id).unwrap().clone();
+                let deserialized_player = deserialized_team.players.get(player_id).unwrap().clone();
                 assert_eq!(deserialized_player.id, network_player.id);
                 assert_eq!(deserialized_player.mental, network_player.mental);
             }

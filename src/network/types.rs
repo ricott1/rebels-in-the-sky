@@ -7,7 +7,7 @@ use crate::core::TournamentRegistrationState;
 use crate::game_engine::timer::Timer;
 use crate::game_engine::types::GameStats;
 use crate::game_engine::{Tournament, TournamentId};
-use crate::types::{PlanetId, PlayerId, Tick};
+use crate::types::{PlanetId, PlayerId, PlayerMap, Tick};
 use crate::{
     core::{player::Player, team::Team, world::World},
     game_engine::types::TeamInGame,
@@ -57,6 +57,7 @@ pub enum NetworkData {
         timestamp: Tick,
         tournament_id: TournamentId,
         team_id: TeamId,
+        team_data: Option<(Team, PlayerMap)>,
         state: TournamentRegistrationState,
     },
     Tournament {
@@ -79,12 +80,12 @@ pub enum NetworkRequestState {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NetworkTeam {
     pub team: Team,
-    pub players: Vec<Player>,
+    pub players: PlayerMap,
     pub asteroids: Vec<Planet>,
 }
 
 impl NetworkTeam {
-    pub fn new(team: Team, players: Vec<Player>, asteroids: Vec<Planet>) -> Self {
+    pub fn new(team: Team, players: PlayerMap, asteroids: Vec<Planet>) -> Self {
         Self {
             team,
             players,
@@ -94,7 +95,7 @@ impl NetworkTeam {
 
     pub fn from_team_id(world: &World, team_id: &TeamId, peer_id: PeerId) -> AppResult<Self> {
         let mut team = world.get_team_or_err(team_id)?.clone();
-        let mut players = world.get_players_by_team(&team)?;
+        let mut players = World::get_players_by_team(&world.players, &team)?;
         let asteroids = team
             .asteroid_ids
             .iter()
@@ -111,7 +112,7 @@ impl NetworkTeam {
         // Set the peer_id for team we are sending out
         // This means that the team can be challenged online and it will not be stored.
         team.peer_id = Some(peer_id);
-        for player in players.iter_mut() {
+        for player in players.values_mut() {
             player.peer_id = Some(peer_id);
         }
 
@@ -206,7 +207,7 @@ impl TeamRanking {
             timestamp,
             player_ratings: network_team
                 .players
-                .iter()
+                .values()
                 .map(|p| p.average_skill())
                 .collect_vec(),
         }

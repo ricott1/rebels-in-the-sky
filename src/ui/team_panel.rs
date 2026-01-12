@@ -133,7 +133,7 @@ impl TeamListPanel {
         )
         .bold()
         .set_hotkey(ui_key::CYCLE_VIEW)
-        .set_hover_text("View all teams.");
+        .set_hover_text("View all crews.");
 
         let mut filter_challenge_button = Button::new(
             TeamView::OpenToChallenge.to_string(),
@@ -143,7 +143,7 @@ impl TeamListPanel {
         )
         .bold()
         .set_hotkey(ui_key::CYCLE_VIEW)
-        .set_hover_text("View all teams that can be currently challenged to a game.");
+        .set_hover_text("View all crews that can be currently challenged to a game.");
 
         let mut filter_peers_button = Button::new(
             TeamView::Peers.to_string(),
@@ -153,7 +153,7 @@ impl TeamListPanel {
         ).bold()
         .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text(
-            "View all teams received from the network (i.e. teams controlled by other players online)."
+            "View all crews received from the network (i.e. crews controlled by other players online)."
                 ,
         );
         match self.view {
@@ -190,12 +190,12 @@ impl TeamListPanel {
             let list = selectable_list(options);
 
             frame.render_stateful_interactive_widget(
-                list.block(default_block().title("Teams ↓/↑")),
+                list.block(default_block().title("Crews ↓/↑")),
                 split[3],
                 &mut ClickableListState::default().with_selected(self.index),
             );
         } else {
-            frame.render_widget(default_block().title("Teams"), split[3]);
+            frame.render_widget(default_block().title("Crews"), split[3]);
         }
     }
 
@@ -506,7 +506,7 @@ impl Screen for TeamListPanel {
         self.build_left_panel(frame, world, left_right_split[0]);
         if self.all_team_ids.is_empty() {
             frame.render_widget(
-                Paragraph::new(" No teams yet!"),
+                Paragraph::new(" No crews yet!"),
                 left_right_split[1].inner(Margin::new(1, 1)),
             );
             return Ok(());

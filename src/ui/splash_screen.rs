@@ -7,10 +7,10 @@ use super::{
     traits::{Screen, SplitPanel},
     widgets::default_block,
 };
-use crate::audio::AudioPlayerState;
 use crate::core::constants::{DEBUG_TIME_MULTIPLIER, SOL_ID};
 use crate::store::world_file_data;
 use crate::types::{AppResult, SystemTimeTick, Tick};
+use crate::AudioPlayerState;
 use crate::{core::world::World, store::save_game_exists};
 use core::fmt::Debug;
 use crossterm::event::KeyCode;
@@ -46,8 +46,8 @@ const QUOTES: [&str;19] = [
     " “To make a thief, make an owner; to create crime, create laws.” - U. K. Le Guin",
     " “There, did you think to kill me? There's no flesh or blood within this cloak to kill. There's only an idea. Ideas are bulletproof.” - A. Moore",
     " “The state calls its own violence law, but that of the individual, crime.” - M. Stirner",
-    " “Certo bisogna farne di strada Da una ginnastica d’obbedienza Fino ad un gesto molto più umano Che ti dia il senso della violenza
-    Però bisogna farne altrettanta Per diventare così coglioni Da non riuscire più a capire Che non ci sono poteri buoni.” - F. De Andre'",
+    " “Certo bisogna farne di strada da una ginnastica d'obbedienza fino ad un gesto molto più umano che ti dia il senso della violenza.
+    Però bisogna farne altrettanta per diventare così coglioni da non riuscire più a capire che non ci sono poteri buoni.” - F. De Andre'",
     " “Erano dei re… e i re si decapitano.” - A. Barbero",
     " “The state is a condition, a certain relationship between human beings, a mode of behaviour; we destroy it by contracting other relationships, by behaving differently toward one another…” - G. Orwell",
     " “Underneath the gaze of Orion's belt, where the Sea of Tranquility meets the edge of twilight, lies a hidden trove of wisdom, forgotten by many, coveted by those in the know. It holds the keys to untold power.” - Anonymous",
@@ -239,7 +239,7 @@ impl Screen for SplashScreen {
 
         // if world is simulating, substitute text for continue button.
         if world.is_simulating() {
-            let t = Tick::now() - world.last_tick_short_interval;
+            let t = Tick::now().saturating_sub(world.last_tick_short_interval);
 
             let time_ago = match t {
                 x if x.as_days() > 0 => format!("{} days", t.as_days()),

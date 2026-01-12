@@ -7,7 +7,7 @@ use crate::{
     game_engine::{
         game::{Game, GameSummary},
         types::GameStatsMap,
-        Tournament, TournamentId,
+        Tournament, TournamentId, TournamentSummary,
     },
 };
 use anyhow::anyhow;
@@ -36,6 +36,7 @@ pub type GameMap = HashMap<GameId, Game>;
 pub type GameSummaryMap = HashMap<GameId, GameSummary>;
 pub type KartoffelMap = HashMap<KartoffelId, Kartoffel>;
 pub type TournamentMap = HashMap<TournamentId, Tournament>;
+pub type TournamentSummaryMap = HashMap<TournamentId, TournamentSummary>;
 pub type ResourceMap = HashMap<Resource, u32>;
 
 pub trait StorableResourceMap {

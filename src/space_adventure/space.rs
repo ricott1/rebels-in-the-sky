@@ -208,6 +208,7 @@ impl SpaceAdventure {
             color_map.blue.0[2] / 6,
         ]);
         let spaceship = SpaceshipPrefab::iter()
+            .filter(|s| s.spaceship().shooting_points() > 0)
             .choose(&mut rand::rng())
             .ok_or(anyhow!("There should be one spaceship available"))?
             .spaceship()

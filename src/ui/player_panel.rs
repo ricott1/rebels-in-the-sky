@@ -158,7 +158,7 @@ impl PlayerListPanel {
         )
         .bold()
         .set_hotkey(ui_key::CYCLE_VIEW)
-        .set_hover_text("View all players.");
+        .set_hover_text("View all pirates.");
 
         let mut filter_free_pirates_button = Button::new(
             PlayerView::FreePirates.to_string(),
@@ -188,7 +188,7 @@ impl PlayerListPanel {
         )
         .bold()
         .set_hotkey(ui_key::CYCLE_VIEW)
-        .set_hover_text("View your own team players.");
+        .set_hover_text("View your pirates from your crew.");
         match self.view {
             PlayerView::All => filter_all_button.select(),
             PlayerView::FreePirates => filter_free_pirates_button.select(),
@@ -229,12 +229,12 @@ impl PlayerListPanel {
             }
             let list = selectable_list(options);
             frame.render_stateful_interactive_widget(
-                list.block(default_block().title("Players ↓/↑")),
+                list.block(default_block().title("Pirates ↓/↑")),
                 split[4],
                 &mut ClickableListState::default().with_selected(self.index),
             );
         } else {
-            frame.render_widget(default_block().title("Players"), split[4]);
+            frame.render_widget(default_block().title("Pirates"), split[4]);
         }
     }
 
@@ -597,7 +597,7 @@ impl Screen for PlayerListPanel {
 
         if self.all_players.is_empty() {
             frame.render_widget(
-                Paragraph::new(" No players yet!"),
+                Paragraph::new(" No pirates yet!"),
                 left_right_split[1].inner(Margin::new(1, 1)),
             );
             return Ok(());

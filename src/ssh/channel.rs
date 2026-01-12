@@ -153,7 +153,6 @@ impl AppChannel {
             app_event_sender: app.get_event_sender(),
         };
 
-        // Main loop to run the update, including updating and drawing.
         task::spawn(async move {
             if let Err(e) = app.run(tui).await {
                 log::error!("Error running app: {e}")

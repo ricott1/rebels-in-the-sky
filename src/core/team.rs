@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     core::{constants::MAX_CREW_SIZE, utils::is_default},
-    game_engine::{tactic::Tactic, types::EnginePlayer, Tournament, TournamentId},
+    game_engine::{tactic::Tactic, types::EnginePlayer, Tournament, TournamentId, TournamentState},
     network::{challenge::Challenge, trade::Trade},
     types::*,
 };
@@ -31,6 +31,9 @@ pub enum TournamentRegistrationState {
     #[default]
     None,
     Pending {
+        tournament_id: TournamentId,
+    },
+    Preconfirmed {
         tournament_id: TournamentId,
     },
     Confirmed {
@@ -101,6 +104,9 @@ pub struct Team {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub space_cove: SpaceCoveState,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub tournaments_won: Vec<TournamentId>,
 }
 
 impl Team {
@@ -275,6 +281,7 @@ impl Team {
         match self.tournament_registration_state {
             TournamentRegistrationState::None => None,
             TournamentRegistrationState::Pending { tournament_id }
+            | TournamentRegistrationState::Preconfirmed { tournament_id }
             | TournamentRegistrationState::Confirmed { tournament_id } => Some(tournament_id),
         }
     }
@@ -430,13 +437,19 @@ impl Team {
         Ok(())
     }
 
-    fn can_play_game_with_team(&self, team: &Team) -> AppResult<()> {
-        if self.committed_to_tournament().is_some() {
-            return Err(anyhow!("{} is in a tournament", self.name));
+    fn can_play_game_with_team(
+        &self,
+        team: &Team,
+        part_of_tournament: Option<TournamentId>,
+    ) -> AppResult<()> {
+        if self.committed_to_tournament() != part_of_tournament {
+            return Err(anyhow!(
+                "{} game and team tournaments not matching",
+                self.name
+            ));
         }
-
-        if team.committed_to_tournament().is_some() {
-            return Err(anyhow!("{} is in a tournament", team.name));
+        if team.committed_to_tournament() != part_of_tournament {
+            return Err(anyhow!("Team game and team tournaments not matching"));
         }
 
         if self.id == team.id {
@@ -448,7 +461,13 @@ impl Team {
         }
 
         if self.is_on_planet() != team.is_on_planet() {
-            return Err(anyhow!("Not on the same planet"));
+            return Err(anyhow!(
+                "{} and {} not on the same planet: {:#?} and {:#?}",
+                self.name,
+                team.name,
+                self.is_on_planet(),
+                team.is_on_planet()
+            ));
         }
 
         if self.player_ids.len() < MIN_PLAYERS_PER_GAME {
@@ -495,10 +514,60 @@ impl Team {
     pub fn can_register_to_tournament(
         &self,
         tournament: &Tournament,
-        team_rating: Skill,
+        timestamp: Tick,
     ) -> AppResult<()> {
-        if tournament.has_started(Tick::now()) {
-            return Err(anyhow!("Tournament has already started."));
+        if !matches!(tournament.state(timestamp), TournamentState::Registration) {
+            return Err(anyhow!("Tournament registrations are closed."));
+        }
+
+        if tournament.is_team_registered(&self.id) {
+            return Err(anyhow!("Team is already registered to this tournament."));
+        }
+
+        if self.current_game.is_some() {
+            return Err(anyhow!("Team is playing a game."));
+        }
+
+        // Only allowed state are None and Pending
+        if matches!(
+            self.tournament_registration_state,
+            TournamentRegistrationState::Preconfirmed { tournament_id } if tournament_id != tournament.id
+        ) {
+            return Err(anyhow!("Team is registered to another tournament."));
+        }
+
+        if matches!(
+            self.tournament_registration_state,
+            TournamentRegistrationState::Preconfirmed { tournament_id } if tournament_id == tournament.id
+        ) {
+            return Err(anyhow!("Team is registered to this tournament."));
+        }
+
+        if matches!(
+            self.tournament_registration_state,
+            TournamentRegistrationState::Confirmed { .. }
+        ) {
+            return Err(anyhow!("Team is playing in a tournament."));
+        }
+
+        if !matches!(self.is_on_planet(), Some(id) if id == tournament.planet_id) {
+            return Err(anyhow!("Team is not at the tournament location."));
+        }
+
+        Ok(())
+    }
+
+    pub fn can_confirm_tournament_registration(
+        &self,
+        tournament: &Tournament,
+        timestamp: Tick,
+    ) -> AppResult<()> {
+        if !matches!(tournament.state(timestamp), TournamentState::Confirmation) {
+            return Err(anyhow!("Tournament confirmations are closed."));
+        }
+
+        if !tournament.is_team_registered(&self.id) {
+            return Err(anyhow!("Team is not registered to this tournament."));
         }
 
         if tournament.participants.len() == tournament.max_participants {
@@ -509,16 +578,20 @@ impl Team {
             return Err(anyhow!("Team is playing a game."));
         }
 
-        if !matches!(self.is_on_planet(), Some(id) if id == tournament.planet_id) {
-            return Err(anyhow!("Team is not at the tournament location."));
+        if self.id != tournament.organizer_id
+            && !matches!(
+                self.tournament_registration_state,
+                TournamentRegistrationState::Preconfirmed { tournament_id } if tournament_id == tournament.id
+            )
+        {
+            return Err(anyhow!(
+                "Team {} is not preconfirmed for this tournament.",
+                self.name
+            ));
         }
 
-        if team_rating < tournament.minimum_team_rating {
-            return Err(anyhow!(
-                "Team rating is too low ({} < {}).",
-                team_rating,
-                tournament.minimum_team_rating
-            ));
+        if !matches!(self.is_on_planet(), Some(id) if id == tournament.planet_id) {
+            return Err(anyhow!("Team is not at the tournament location."));
         }
 
         Ok(())
@@ -529,7 +602,7 @@ impl Team {
         // but crucially skips the checks about the current_game.
         // This is to go around a race condition described in the challenge SynAck protocol.
 
-        self.can_play_game_with_team(team)
+        self.can_play_game_with_team(team, None)
     }
 
     pub fn can_challenge_local_team(&self, team: &Team) -> AppResult<()> {
@@ -545,7 +618,7 @@ impl Team {
             return Err(anyhow!("{} is already playing", team.name));
         }
 
-        self.can_play_game_with_team(team)
+        self.can_play_game_with_team(team, None)
     }
 
     pub fn can_challenge_network_team(&self, team: &Team) -> AppResult<()> {
@@ -565,7 +638,7 @@ impl Team {
             return Err(anyhow!("Already challenged {}", team.name));
         }
 
-        self.can_play_game_with_team(team)
+        self.can_play_game_with_team(team, None)
     }
 
     pub fn can_trade_players(
@@ -736,10 +809,6 @@ impl Team {
     pub fn can_change_training_focus(&self) -> AppResult<()> {
         if self.current_game.is_some() {
             return Err(anyhow!("{} is playing", self.name));
-        }
-
-        if self.committed_to_tournament().is_some() {
-            return Err(anyhow!("{} is in a tournament", self.name));
         }
 
         Ok(())

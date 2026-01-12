@@ -15,12 +15,14 @@ use super::{
     traits::Screen,
 };
 #[cfg(feature = "audio")]
-use crate::audio::{music_player::MusicPlayer, AudioPlayerState};
+use crate::audio::music_player::MusicPlayer;
 use crate::core::world::World;
 use crate::core::SpaceCoveState;
 use crate::types::Tick;
 use crate::types::{AppResult, SystemTimeTick};
 use crate::ui::space_cove_panel::SpaceCovePanel;
+#[cfg(feature = "audio")]
+use crate::AudioPlayerState;
 use core::fmt::Debug;
 use itertools::Itertools;
 use libp2p::PeerId;
@@ -66,7 +68,7 @@ pub enum UiTab {
 pub struct UiScreen {
     pub state: UiState,
     ui_tabs: Vec<UiTab>,
-    pub tab_index: usize,
+    tab_index: usize,
     debug_view: bool,
     last_render: Instant,
     pub splash_screen: SplashScreen,
@@ -102,13 +104,10 @@ impl UiScreen {
             UiTab::MyTeam,
             UiTab::Crews,
             UiTab::Pirates,
-            UiTab::Galaxy,
             UiTab::Games,
+            UiTab::Tournaments,
+            UiTab::Galaxy,
         ];
-
-        if false {
-            ui_tabs.push(UiTab::Tournaments);
-        }
 
         if !disable_network {
             ui_tabs.push(UiTab::Swarm);
@@ -231,9 +230,9 @@ impl UiScreen {
                 UiTab::MyTeam => &self.my_team_panel,
                 UiTab::Crews => &self.team_panel,
                 UiTab::Pirates => &self.player_panel,
-                UiTab::Galaxy => &self.galaxy_panel,
                 UiTab::Games => &self.game_panel,
                 UiTab::Tournaments => &self.tournament_panel,
+                UiTab::Galaxy => &self.galaxy_panel,
                 UiTab::SpaceCove => &self.space_cove_panel,
                 UiTab::Swarm => &self.swarm_panel,
             },
@@ -249,9 +248,9 @@ impl UiScreen {
                 UiTab::MyTeam => Some(&mut self.my_team_panel),
                 UiTab::Crews => Some(&mut self.team_panel),
                 UiTab::Pirates => Some(&mut self.player_panel),
-                UiTab::Galaxy => Some(&mut self.galaxy_panel),
                 UiTab::Games => Some(&mut self.game_panel),
                 UiTab::Tournaments => Some(&mut self.tournament_panel),
+                UiTab::Galaxy => Some(&mut self.galaxy_panel),
                 UiTab::SpaceCove => Some(&mut self.space_cove_panel),
                 UiTab::Swarm => Some(&mut self.swarm_panel),
             },
@@ -266,9 +265,9 @@ impl UiScreen {
                 UiTab::MyTeam => &mut self.my_team_panel,
                 UiTab::Crews => &mut self.team_panel,
                 UiTab::Pirates => &mut self.player_panel,
-                UiTab::Galaxy => &mut self.galaxy_panel,
                 UiTab::Games => &mut self.game_panel,
                 UiTab::Tournaments => &mut self.tournament_panel,
+                UiTab::Galaxy => &mut self.galaxy_panel,
                 UiTab::SpaceCove => &mut self.space_cove_panel,
                 UiTab::Swarm => &mut self.swarm_panel,
             },
@@ -637,22 +636,27 @@ impl UiScreen {
 
         #[cfg(feature = "audio")]
         if let Some(audio_player) = &audio_player {
-            frame.render_interactive_widget(
-                Button::no_box(
-                    format!(
-                        " {}: Turn radio {} ",
-                        ui_key::radio::TOGGLE_AUDIO,
-                        if audio_player.is_playing() {
-                            "off"
-                        } else {
-                            "on "
-                        }
-                    ),
-                    UiCallback::ToggleAudio,
-                )
-                .set_hotkey(ui_key::radio::TOGGLE_AUDIO),
-                split[1],
-            );
+            let mut audio_button = Button::no_box(
+                format!(
+                    " {}: {}",
+                    ui_key::radio::TOGGLE_AUDIO,
+                    if audio_player.is_buffering() {
+                        "Buffering...   "
+                    } else if !audio_player.is_playing() {
+                        "Turn radio on  "
+                    } else {
+                        "Turn radio off "
+                    }
+                ),
+                UiCallback::ToggleAudio,
+            )
+            .set_hotkey(ui_key::radio::TOGGLE_AUDIO);
+
+            if audio_player.is_buffering() {
+                audio_button.disable(Some("Buffering..."));
+            }
+
+            frame.render_interactive_widget(audio_button, split[1]);
 
             frame.render_interactive_widget(
                 Button::no_box(
@@ -671,10 +675,8 @@ impl UiScreen {
                 .set_hotkey(ui_key::radio::NEXT_RADIO),
                 split[3],
             );
-            if audio_player.is_playing() {
-                if let Some(currently_playing) = audio_player.currently_playing() {
-                    frame.render_widget(Paragraph::new(format!(" {currently_playing} ")), split[4]);
-                }
+            if let Some(currently_playing) = audio_player.currently_playing() {
+                frame.render_widget(Paragraph::new(currently_playing).centered(), split[4]);
             }
         }
     }

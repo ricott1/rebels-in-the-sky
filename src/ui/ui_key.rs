@@ -19,6 +19,7 @@ pub const ACCEPT_TRADE: KeyCode = KeyCode::Char('A');
 pub const DECLINE_TRADE: KeyCode = KeyCode::Char('D');
 
 pub const ORGANIZE_TOURNAMENT: KeyCode = KeyCode::Char('t');
+pub const REGISTER_TO_TOURNAMENT: KeyCode = KeyCode::Char('R');
 
 pub const GO_TO_TEAM: KeyCode = KeyCode::Backspace;
 pub const GO_TO_TEAM_ALT: KeyCode = KeyCode::Char('t');

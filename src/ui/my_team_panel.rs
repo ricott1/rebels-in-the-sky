@@ -925,6 +925,8 @@ impl MyTeamPanel {
                     "Location {} - Attendance {}",
                     if let Ok(planet) = world.get_planet_or_err(&current_game.location) {
                         planet.name.as_str()
+                    } else if current_game.planet_name != String::default() {
+                        current_game.planet_name.as_str()
                     } else {
                         "Unknown"
                     },
@@ -1020,6 +1022,8 @@ impl MyTeamPanel {
                     "Location {} - Attendance {}",
                     if let Ok(planet) = world.get_planet_or_err(&game_summary.location) {
                         planet.name.as_str()
+                    } else if game_summary.planet_name != String::default() {
+                        game_summary.planet_name.as_str()
                     } else {
                         "Unknown"
                     },

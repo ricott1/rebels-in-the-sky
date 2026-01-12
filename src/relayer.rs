@@ -203,7 +203,7 @@ impl Relayer {
                         println!("Error while saving team ranking: {err}");
                     }
 
-                    for player in network_team.players.iter() {
+                    for player in network_team.players.values() {
                         let team_name = if let Some(team_id) = player.team.as_ref() {
                             if let Some(team_ranking) = self.team_ranking.get(team_id) {
                                 team_ranking.team.name.clone()

@@ -17,7 +17,9 @@ use crate::core::{
 use crate::game_engine::game::{Game, GameSummary};
 use crate::game_engine::tactic::Tactic;
 use crate::game_engine::types::{Possession, TeamInGame};
-use crate::game_engine::{TournamentId, RECOVERING_TIREDNESS_PER_SHORT_TICK};
+use crate::game_engine::{
+    TournamentId, TournamentState, TournamentSummary, RECOVERING_TIREDNESS_PER_SHORT_TICK,
+};
 use crate::image::color_map::ColorMap;
 use crate::network::types::{NetworkGame, NetworkTeam};
 use crate::space_adventure::SpaceAdventure;
@@ -38,8 +40,11 @@ use strum::IntoEnumIterator;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct World {
+    #[serde(skip)]
     pub dirty: bool, // Whether anything relevant for the world state has changed and thus should be stored.
+    #[serde(skip)]
     pub dirty_network: bool, // Whether anything relevant for the entwork has changed and thus should be sent over.
+    #[serde(skip)]
     pub dirty_ui: bool, // Whether anything relevant for UI has changed and thus should be drawn.
     pub serialized_size: u64,
     pub seed: u64,
@@ -84,6 +89,11 @@ pub struct World {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub tournaments: TournamentMap,
+    #[serde(skip)]
+    pub recently_finished_tournaments: TournamentMap, // Holds finished tournaments for the session, but are not persisted.
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub past_tournaments: TournamentSummaryMap, // Holds summary of finished tournaments, persisted.
 }
 
 impl World {
@@ -1004,26 +1014,13 @@ impl World {
                 .ok_or(anyhow!("Team {team_id:?} not found"))?;
 
             team.current_game = Some(game_id);
-            if team.id != self.own_team_id {
-                team.player_ids = Team::best_position_assignment(
-                    team.player_ids
-                        .iter()
-                        .map(|&id| self.players.get(&id).unwrap())
-                        .collect(),
-                );
-
-                let rng = &mut ChaCha8Rng::from_os_rng();
-                team.game_tactic = Tactic::random(rng);
-            } else {
+            if team.id == self.own_team_id {
                 self.dirty_network = true
             }
         }
 
         self.dirty = true;
         self.dirty_ui = true;
-
-        // self.teams.insert(home_team.id, home_team);
-        // self.teams.insert(away_team.id, away_team);
 
         Ok(game_id)
     }
@@ -1089,14 +1086,14 @@ impl World {
         //       In this case, the received team would have current_game set to some (set to the challenge game
         //       they just started) and the challenge would fail on our hand since the challenge team must have no game.
         let own_team = self.get_own_team()?;
-        for player in &players {
+        for player_id in players.keys() {
             // Check if any player in the team is part of own team, in which case fail.
             // This check guarantees that the own team state gets precedence over
             // what we receive from the network.
             // Note: finalizing a trade in handle_trade_topic assumes that this check is in place
             //       to ensure that there is no race condition between receiving the trade
             //       syn_ack state and the network team from the trade proposer.
-            if own_team.player_ids.contains(&player.id) {
+            if own_team.player_ids.contains(player_id) {
                 return Err(anyhow!(
                     "Cannot receive over the network a player which is part of own team."
                 ));
@@ -1139,10 +1136,12 @@ impl World {
         // Add team to new planet
         if let TeamLocation::OnPlanet { planet_id } = team.current_location {
             let planet = self.get_planet_mut_or_err(&planet_id)?;
-            planet.team_ids.push(team.id);
+            if !planet.team_ids.contains(&team.id) {
+                planet.team_ids.push(team.id);
+            }
         }
 
-        for player in players {
+        for (_, player) in players {
             if player.peer_id.is_none() || player.peer_id.unwrap() != team.peer_id.unwrap() {
                 return Err(anyhow!(
                     "Cannot receive player with wrong peer_id over the network."
@@ -1211,18 +1210,16 @@ impl World {
             .ok_or(anyhow!("Player {id:?} not found"))
     }
 
-    pub fn get_players_by_team(&self, team: &Team) -> AppResult<Vec<Player>> {
-        Ok(team
-            .player_ids
-            .iter()
-            .map(|&id| {
-                self.get_player(&id)
-                    .ok_or(anyhow!("Player {id:?} not found"))
-            })
-            .collect::<Result<Vec<&Player>, _>>()?
-            .iter()
-            .map(|&p| p.clone())
-            .collect::<Vec<Player>>())
+    pub fn get_players_by_team(players: &PlayerMap, team: &Team) -> AppResult<PlayerMap> {
+        let mut team_players = PlayerMap::new();
+        for player_id in team.player_ids.iter() {
+            let player = players
+                .get(player_id)
+                .ok_or(anyhow!("Player {player_id} not found."))?
+                .clone();
+            team_players.insert(player.id, player);
+        }
+        Ok(team_players)
     }
 
     pub fn get_game(&self, id: &GameId) -> Option<&Game> {
@@ -1252,15 +1249,21 @@ impl World {
             .tournaments
             .get(tournament_id)
             .ok_or(anyhow!("Cannot find tournament {tournament_id}."))?;
-        if tournament.participants.is_empty() {
+
+        let teams = match tournament.state(Tick::now()) {
+            TournamentState::Registration => &tournament.registered_teams,
+            TournamentState::Confirmation
+            | TournamentState::Started
+            | TournamentState::Ended
+            | TournamentState::Syncing => &tournament.participants,
+            TournamentState::Canceled => &HashMap::default(),
+        };
+
+        if teams.is_empty() {
             return Ok(MIN_SKILL);
         }
-        Ok(tournament
-            .participants
-            .values()
-            .map(|team| team.rating())
-            .sum::<Skill>()
-            / tournament.participants.len() as Skill)
+
+        Ok(teams.values().map(|team| team.rating()).sum::<Skill>() / teams.len() as Skill)
     }
 
     pub fn is_simulating(&self) -> bool {
@@ -1271,7 +1274,7 @@ impl World {
         // This works if we assume that we can't lag behind more than a SHORT interval (1 second).
         // DEBUG_TIME_MULTIPLIER than cannot be too large or due to finite FPS this condition
         // would always return true.
-        Tick::now() > self.last_tick_short_interval + TickInterval::SHORT
+        Tick::now() > self.last_tick_min_interval + TickInterval::SHORT
     }
 
     fn resources_found_after_exploration(
@@ -1340,11 +1343,19 @@ impl World {
         }
 
         let mut callbacks: Vec<UiCallback> = vec![];
+        // FIXME: this workls only if we use it for medium intervals...
         let is_simulating = self.is_simulating();
+        if is_simulating {
+            // If we are simulating, we update last_tick_min_interval by hand,
+            // as we do not call handle_fast_tick_events to update it and
+            // the is_simulating bool depends on it.
+            self.last_tick_min_interval = current_tick;
+        }
+        log::info!("World slow ticks: is simulating? {is_simulating}");
 
         if current_tick >= self.last_tick_short_interval + TickInterval::SHORT {
             self.tick_games(current_tick)?;
-            self.tick_tournaments(current_tick)?;
+            callbacks.append(&mut self.tick_tournaments(current_tick, is_simulating)?);
 
             if let Some(cb) = self.cleanup_games(current_tick)? {
                 callbacks.push(cb);
@@ -1451,6 +1462,8 @@ impl World {
                 if team.peer_id.is_some() && team.team_id != self.own_team_id {
                     continue;
                 }
+
+                let is_tournament_game = game.part_of_tournament.is_some();
                 for game_player in team.players.values() {
                     // Set tiredness and morale to the value in game.
                     // We do not clone the game_player as other changes may have occured to the player
@@ -1473,6 +1486,13 @@ impl World {
 
                     player.version += 1;
                     player.add_morale(MORALE_INCREASE_PER_GAME);
+
+                    // Restore tiredness and morale, at least partially if it's a tournament game.
+                    if is_tournament_game {
+                        player.add_morale(MORALE_INCREASE_AFTER_TOURNAMENT_GAME);
+                        player.tiredness =
+                            (player.tiredness - TIREDNESS_DECREASE_AFTER_TOURNAMENT_GAME).bound();
+                    }
 
                     let stats = team
                         .stats
@@ -1535,6 +1555,34 @@ impl World {
                 // Update network that game has ended.
                 self.dirty_network = true;
 
+                let mut tournament_text = "".to_string();
+                if let Some(id) = game.part_of_tournament.as_ref() {
+                    if let Some(tournament) = self.tournaments.get(id) {
+                        if tournament.has_ended() {
+                            tournament_text = format!(
+                                "{} has won the tournament. Congrats!",
+                                game.winner
+                                    .map(|w| if w == game.home_team_in_game.team_id {
+                                        game.home_team_in_game.name.as_str()
+                                    } else {
+                                        game.away_team_in_game.name.as_str()
+                                    })
+                                    .unwrap_or("Who knows who")
+                            );
+                        } else {
+                            tournament_text = format!(
+                                "{} advances to the next round.",
+                                game.winner
+                                    .map(|w| if w == game.home_team_in_game.team_id {
+                                        game.home_team_in_game.name.as_str()
+                                    } else {
+                                        game.away_team_in_game.name.as_str()
+                                    })
+                                    .unwrap_or("Who knows who")
+                            );
+                        }
+                    }
+                }
                 own_team_game_notification = Some(UiCallback::PushUiPopup {
                     popup_message: PopupMessage::Ok {
                         message: format!(
@@ -1543,20 +1591,7 @@ impl World {
                             game.get_score().0,
                             game.get_score().1,
                             game.away_team_in_game.name,
-                            if game.part_of_tournament.is_some() {
-                                format!(
-                                    "{} advances to the next round.",
-                                    game.winner
-                                        .map(|w| if w == game.home_team_in_game.team_id {
-                                            game.home_team_in_game.name.as_str()
-                                        } else {
-                                            game.away_team_in_game.name.as_str()
-                                        })
-                                        .unwrap_or("Who knows who")
-                                )
-                            } else {
-                                "".to_string()
-                            }
+                            tournament_text
                         ),
                         is_skippable: false,
                         tick: current_tick,
@@ -1741,32 +1776,108 @@ impl World {
         Ok(())
     }
 
-    fn tick_tournaments(&mut self, current_tick: Tick) -> AppResult<()> {
+    fn tick_tournaments(
+        &mut self,
+        current_tick: Tick,
+        is_simulating: bool,
+    ) -> AppResult<Vec<UiCallback>> {
+        let mut callbacks = vec![];
         let mut new_games = vec![];
         for (&tournament_id, tournament) in self.tournaments.iter_mut() {
-            if !tournament.has_started(current_tick) {
-                continue;
+            match tournament.state(current_tick) {
+                TournamentState::Registration => {}
+                TournamentState::Canceled => {}
+                TournamentState::Confirmation => {
+                    // Append callback to send Confirmation.
+                    // If we are simulating, abort tournament.
+                    if tournament.organizer_id == self.own_team_id && is_simulating {
+                        log::warn!("Canceling tournament {tournament_id}: Confirmation cannot be run while simulating.");
+                        callbacks.push(UiCallback::CancelTournament { tournament_id });
+                        continue;
+                    }
+
+                    if tournament.registered_teams.len() < 2 {
+                        log::warn!(
+                            "Canceling tournament {tournament_id}: Insufficient registered teams ({}).", tournament.registered_teams.len()
+                        );
+                        callbacks.push(UiCallback::CancelTournament { tournament_id });
+                        continue;
+                    }
+                    if tournament.organizer_id == self.own_team_id {
+                        callbacks.push(UiCallback::ConfirmTournamentParticipants { tournament_id });
+                    }
+                }
+                TournamentState::Syncing => {
+                    if tournament.organizer_id == self.own_team_id {
+                        if is_simulating {
+                            log::warn!("Canceling tournament {tournament_id}: Syncing cannot be run while simulating.");
+                            callbacks.push(UiCallback::CancelTournament { tournament_id });
+                            continue;
+                        }
+                        callbacks.push(UiCallback::SendConfirmedTournament { tournament_id });
+                    }
+                }
+                TournamentState::Started => {
+                    if tournament.participants.len() < 2 {
+                        log::warn!(
+                            "Canceling tournament {tournament_id}: Insufficient participants ({}).",
+                            tournament.participants.len()
+                        );
+                        callbacks.push(UiCallback::CancelTournament { tournament_id });
+                        continue;
+                    }
+
+                    // FIXME: this is not very robust. For instance, it relies on retaining all
+                    // tournament games when storing, otherwise the hashmap would be incorrect.
+                    let tournament_games = self
+                        .games
+                        .iter()
+                        .filter(
+                            |(_, game)| matches!(game.part_of_tournament, Some(id) if id == tournament_id),
+                        )
+                        .collect::<HashMap<&GameId, &Game>>();
+
+                    new_games.append(
+                        &mut tournament.generate_next_games(current_tick, tournament_games),
+                    );
+                }
+                TournamentState::Ended => {
+                    unreachable!(
+                        "Tournament ended, it should have been removed from the world state."
+                    )
+                }
             }
-
-            let tournament_games = self
-                .games
-                .iter()
-                .filter(
-                    |(_, game)| matches!(game.part_of_tournament, Some(id) if id == tournament_id),
-                )
-                .collect::<HashMap<&GameId, &Game>>();
-
-            new_games.append(&mut tournament.generate_next_games(current_tick, tournament_games));
-            // FIXME: restore tiredness and morale, at least patially??
         }
 
         for game in new_games {
+            let team_ids = [
+                game.home_team_in_game.team_id,
+                game.away_team_in_game.team_id,
+            ];
+            for team_id in team_ids.iter() {
+                let team = if let Some(team) = self.teams.get_mut(team_id) {
+                    team
+                } else {
+                    continue;
+                };
+
+                team.current_game = Some(game.id);
+                if team.id == self.own_team_id {
+                    self.dirty_network = true
+                }
+            }
             self.games.insert(game.id, game);
         }
 
         for tournament in self.tournaments.values() {
             if tournament.has_ended() {
-                save_tournament(tournament)?;
+                if tournament.is_team_participating(&self.own_team_id) {
+                    save_tournament(tournament)?;
+                    let summary = TournamentSummary::from_tournament(tournament);
+                    self.past_tournaments.insert(summary.id, summary);
+                    self.recently_finished_tournaments
+                        .insert(tournament.id, tournament.clone());
+                }
                 for team_id in tournament.participants.keys() {
                     let team = if let Some(team) = self.teams.get_mut(team_id) {
                         team
@@ -1780,12 +1891,30 @@ impl World {
 
                     team.tournament_registration_state = TournamentRegistrationState::None;
                 }
+
+                if let Some(winner) = tournament.winner.as_ref() {
+                    if let Some(team) = self.teams.get_mut(winner) {
+                        team.tournaments_won.push(tournament.id);
+                    }
+                }
             }
         }
 
-        self.tournaments.retain(|_, t| !t.has_ended());
+        self.tournaments
+            .retain(|_, t| !t.has_ended() && !t.is_canceled());
 
-        Ok(())
+        // FIXME: This should not be necessary, but there are still bugs and it is convenient.
+        let own_team = self
+            .teams
+            .get_mut(&self.own_team_id)
+            .expect("Own team should exist");
+        if let Some(tournament_id) = own_team.committed_to_tournament() {
+            if !self.tournaments.contains_key(&tournament_id) {
+                own_team.tournament_registration_state = TournamentRegistrationState::None;
+            }
+        }
+
+        Ok(callbacks)
     }
 
     fn team_reputation_bonus_per_distance(distance: KILOMETER) -> f32 {
@@ -2035,6 +2164,9 @@ impl World {
                     .map(|&id| self.players.get(&id).unwrap())
                     .collect(),
             );
+
+            let rng = &mut ChaCha8Rng::from_os_rng();
+            team.game_tactic = Tactic::random(rng);
         }
 
         Ok(())
@@ -2090,29 +2222,46 @@ impl World {
                 })
                 .collect_vec();
 
-            if !available_free_pirates.is_empty() {
-                let best_pirate = available_free_pirates[0];
-                if team.player_ids.len() == team.spaceship.crew_capacity() as usize {
-                    // Check if weakest pirate is worse than best free pirate.
-                    // If not, continue.
-                    let worst_pirate = *team
-                        .player_ids
-                        .iter()
-                        .map(|id| self.get_player(id).unwrap())
-                        .collect_vec()
-                        .sort_by_rating()
-                        .last()
-                        .expect("There should be at least one pirate in the crew.");
+            if available_free_pirates.is_empty() {
+                continue;
+            }
 
-                    if worst_pirate.rating() >= best_pirate.rating() {
-                        continue;
-                    }
-                    released_player_ids.push(worst_pirate.id);
+            // Hire as many pirates are needed to reach MIN_PLAYERS_PER_GAME
+            let needed_pirates = MIN_PLAYERS_PER_GAME
+                .saturating_sub(team.player_ids.len())
+                .max(1);
+
+            let candidates = available_free_pirates
+                .iter()
+                .take(needed_pirates)
+                .collect_vec();
+
+            if team.player_ids.len() == team.spaceship.crew_capacity() as usize {
+                // If the team is at capacity, it definetely had at least MIN_PLAYERS_PER_GAME.
+                assert!(candidates.len() <= 1);
+                // Check if weakest pirate is worse than best free pirate.
+                // If not, continue.
+                let worst_pirate = *team
+                    .player_ids
+                    .iter()
+                    .map(|id| self.get_player(id).unwrap())
+                    .collect_vec()
+                    .sort_by_rating()
+                    .last()
+                    .expect("There should be at least one pirate in the crew.");
+                let best_pirate = candidates[0];
+                if worst_pirate.rating() >= best_pirate.rating() {
+                    continue;
                 }
-                hired_player_ids.push(best_pirate.id);
+                released_player_ids.push(worst_pirate.id);
+            }
+
+            for player in candidates {
+                hired_player_ids.push(player.id);
                 hiring_team_ids.push(team.id);
             }
         }
+
         assert!(hired_player_ids.len() == hiring_team_ids.len());
 
         for &player_id in released_player_ids.iter() {
@@ -2399,7 +2548,9 @@ impl World {
             let away_team_in_game =
                 TeamInGame::from_team_id(&teams[1].id, &self.teams, &self.players)?;
 
-            self.generate_local_game(home_team_in_game, away_team_in_game)?;
+            if let Err(err) = self.generate_local_game(home_team_in_game, away_team_in_game) {
+                log::error!("Error while generating local game: {err}");
+            }
             return Ok(()); // Generate only one game per call
         }
 
@@ -2421,14 +2572,7 @@ impl World {
                 !matches!(planet.peer_id, Some(id) if id == peer_id)
                     || matches!(own_team_current_location, Some(id) if id == planet.id)
             });
-            // self.teams
-            //     .retain(|_, team| team.peer_id.is_none() || team.peer_id.unwrap() != peer_id);
-            // self.players
-            //     .retain(|_, player| player.peer_id.is_none() || player.peer_id.unwrap() != peer_id);
 
-            // FIXME: if team is on peer asteroid, dont filter it
-            // self.planets
-            //     .retain(|_, planet| planet.peer_id.is_none() || planet.peer_id.unwrap() != peer_id);
             self.games.retain(|_, game| {
                 game.home_team_in_game.team_id == self.own_team_id
                     || game.away_team_in_game.team_id == self.own_team_id
@@ -2436,6 +2580,7 @@ impl World {
                         || game.home_team_in_game.peer_id.unwrap() != peer_id)
                         && (game.away_team_in_game.peer_id.is_none()
                             || game.away_team_in_game.peer_id.unwrap() != peer_id))
+                    || game.part_of_tournament.is_some()
             });
             own_team
                 .sent_challenges
@@ -2461,12 +2606,17 @@ impl World {
             self.games.retain(|_, game| {
                 game.home_team_in_game.team_id == self.own_team_id
                     || game.away_team_in_game.team_id == self.own_team_id
-                    || (game.home_team_in_game.peer_id.is_none()
-                        && game.away_team_in_game.peer_id.is_none())
+                    || game.is_local()
+                    || game.part_of_tournament.is_some()
             });
             own_team.clear_challenges();
             own_team.clear_trades();
         }
+
+        self.tournaments.retain(|_, t| {
+            t.is_team_registered(&self.own_team_id) || t.is_team_participating(&self.own_team_id)
+        });
+
         self.teams.insert(own_team.id, own_team);
 
         // Remove teams from planet teams vector.
@@ -2598,6 +2748,7 @@ impl World {
     }
 
     pub fn to_store(&self) -> AppResult<World> {
+        // FIXME: this can be optimized by not cloning and filtering directly
         let mut w = World {
             seed: self.seed,
             last_tick_short_interval: self.last_tick_short_interval,
@@ -2636,7 +2787,7 @@ mod test {
             types::TeamLocation,
             utils::PLANET_DATA,
             world::{TickInterval, AU, EXPLORATION_DURATION},
-            RatedPlayers, DEFAULT_PLANET_ID,
+            RatedPlayers, DEFAULT_PLANET_ID, MIN_PLAYERS_PER_GAME,
         },
         types::{StorableResourceMap, SystemTimeTick, Tick},
         ui::UiCallback,
@@ -3134,28 +3285,66 @@ mod test {
     }
 
     #[test]
+    fn test_auto_hiring_multiple() -> AppResult<()> {
+        let mut app = App::test_default()?;
+
+        for team in app.world.teams.values_mut() {
+            team.add_resource(Resource::SATOSHI, 200_000)?;
+        }
+
+        let rng = &mut ChaCha8Rng::seed_from_u64(app.world.seed);
+        let team_id = app.world.generate_random_team(
+            rng,
+            DEFAULT_PLANET_ID.clone(),
+            "Testen".to_string(),
+            "Tosten".to_string(),
+            Some(0.0),
+        )?;
+
+        let mut team = app.world.get_team_or_err(&team_id)?.clone();
+
+        while team.player_ids.len() >= MIN_PLAYERS_PER_GAME {
+            let player_id = team.player_ids[0];
+            team.player_ids.retain(|&p| p != player_id);
+        }
+
+        assert!(team.player_ids.len() < MIN_PLAYERS_PER_GAME);
+
+        app.world.teams.insert(team.id, team);
+
+        app.world.tick_auto_hire_free_pirates()?;
+
+        let team = app.world.get_team_or_err(&team_id)?;
+        assert!(team.player_ids.len() == MIN_PLAYERS_PER_GAME);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_is_simulating() -> AppResult<()> {
         let mut app = App::test_default()?;
 
         let world = &mut app.world;
         assert!(world.is_simulating() == false);
 
-        world.last_tick_short_interval = Tick::now();
+        let now = Tick::now();
+        let mut current_tick = now;
+        world.last_tick_min_interval = now;
 
-        let cycles = 2;
+        let cycles = 3;
         // After waiting the world should be exactly two ticks behind.
         // We add a small buffer to ensure there is no race condition.
-        thread::sleep(Duration::from_millis(
-            cycles * TickInterval::SHORT as u64 + 5,
-        ));
+        thread::sleep(Duration::from_millis(cycles * TickInterval::SHORT - 350));
 
-        assert!(world.is_simulating() == true);
         let mut runs = 0;
+
         while world.is_simulating() {
-            world.handle_slow_tick_events(Tick::now())?;
+            world.handle_slow_tick_events(current_tick)?;
+            current_tick += TickInterval::SHORT;
             runs += 1;
         }
 
+        println!("{} {}", runs, cycles);
         assert!(runs == cycles);
         assert!(world.is_simulating() == false);
 
