@@ -85,6 +85,13 @@ impl GameSummary {
             app_version: game.app_version,
         }
     }
+
+    pub fn get_score(&self) -> (u16, u16) {
+        (
+            self.home_quarters_score.iter().sum(),
+            self.away_quarters_score.iter().sum(),
+        )
+    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
@@ -677,10 +684,25 @@ impl Game {
                 )
             }
 
-            None => format!(
-                "It's a tie! The final score is {} {}-{} {}.",
-                self.home_team_in_game.name, home_score, away_score, self.away_team_in_game.name
-            ),
+            None => {
+                if self.part_of_tournament.is_some() {
+                    format!(
+                        "It's a tie! The final score is {} {}-{} {}, but this is a tournament and there will be a winner, chosen randomly.",
+                        self.home_team_in_game.name,
+                        home_score,
+                        away_score,
+                        self.away_team_in_game.name
+                    )
+                } else {
+                    format!(
+                        "It's a tie! The final score is {} {}-{} {}.",
+                        self.home_team_in_game.name,
+                        home_score,
+                        away_score,
+                        self.away_team_in_game.name
+                    )
+                }
+            }
         }
     }
 
@@ -714,7 +736,17 @@ impl Game {
                     self.game_end_description(Some(Possession::Away))
                 }
                 _ => {
-                    self.winner = None;
+                    if self.part_of_tournament.is_some() {
+                        let seed = self.get_rng_seed();
+                        let action_rng = &mut ChaCha8Rng::from_seed(seed);
+                        if action_rng.random_bool(0.5) {
+                            self.winner = Some(self.home_team_in_game.team_id);
+                        } else {
+                            self.winner = Some(self.away_team_in_game.team_id);
+                        }
+                    } else {
+                        self.winner = None;
+                    }
                     self.game_end_description(None)
                 }
             };
@@ -891,34 +923,19 @@ mod tests {
     use super::Game;
     use crate::core::constants::DEFAULT_PLANET_ID;
     use crate::core::world::World;
-    use crate::core::{Player, Team, TickInterval, MAX_PLAYERS_PER_GAME};
+    use crate::core::TickInterval;
     use crate::game_engine::action::{ActionSituation, Advantage};
     use crate::game_engine::game::GameSummary;
     use crate::game_engine::types::{GameStatsMap, Possession, TeamInGame};
-    use crate::types::{AppResult, PlayerMap, TeamId};
+    use crate::types::AppResult;
     use crate::types::{SystemTimeTick, Tick};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    fn generate_team_in_game() -> TeamInGame {
-        let team = Team {
-            id: TeamId::new_v4(),
-            ..Default::default()
-        };
-
-        let mut players = PlayerMap::new();
-        for _ in 0..MAX_PLAYERS_PER_GAME {
-            let player = Player::default().randomize(None);
-            players.insert(player.id, player);
-        }
-
-        TeamInGame::new(&team, players)
-    }
-
     #[test]
     fn test_game_consistency() -> AppResult<()> {
-        let home_team_in_game = generate_team_in_game();
-        let away_team_in_game = generate_team_in_game();
+        let home_team_in_game = TeamInGame::test();
+        let away_team_in_game = TeamInGame::test();
         let mut game = Game::test(home_team_in_game, away_team_in_game);
 
         let mut current_tick = game.starting_at;

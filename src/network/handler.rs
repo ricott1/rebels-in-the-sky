@@ -7,11 +7,12 @@ use super::types::SeedInfo;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam};
 use crate::app::AppEvent;
 use crate::core::world::World;
-use crate::core::{Team, TournamentRegistrationState};
+use crate::core::Team;
 use crate::game_engine::types::TeamInGame;
 use crate::game_engine::{Tournament, TournamentId};
+use crate::network::types::TournamentRequestState;
 use crate::store::serialize;
-use crate::types::{AppResult, GameId, PlayerMap};
+use crate::types::{AppResult, GameId, HashMapWithResult, PlayerMap};
 use crate::types::{PlayerId, TeamId};
 use crate::types::{SystemTimeTick, Tick};
 use anyhow::anyhow;
@@ -330,7 +331,7 @@ impl NetworkHandler {
 
         // If own team is playing with network peer, send the game.
         if let Some(game_id) = world.get_own_team()?.current_game {
-            let game = world.get_game_or_err(&game_id)?;
+            let game = world.games.get_or_err(&game_id)?;
             // FIXME: Send game even if we are playing with local team.
             if game.is_network() {
                 return self.send_game(world, &game_id);
@@ -401,14 +402,14 @@ impl NetworkHandler {
         tournament_id: TournamentId,
         team_id: TeamId,
         team_data: Option<(Team, PlayerMap)>,
-        state: TournamentRegistrationState,
+        request_state: TournamentRequestState,
     ) -> AppResult<()> {
         self._send(&NetworkData::TournamentRegistrationRequest {
             timestamp: Tick::now(),
             tournament_id,
             team_id,
             team_data,
-            state,
+            request_state,
         })
     }
 
@@ -461,8 +462,8 @@ impl NetworkHandler {
     ) -> AppResult<Trade> {
         self.send_own_team(world)?;
 
-        let proposer_player = world.get_player_or_err(&proposer_player_id)?.clone();
-        let target_player = world.get_player_or_err(&target_player_id)?.clone();
+        let proposer_player = world.players.get_or_err(&proposer_player_id)?.clone();
+        let target_player = world.players.get_or_err(&target_player_id)?.clone();
 
         let trade = Trade::new(
             *self.own_peer_id(),
@@ -479,8 +480,12 @@ impl NetworkHandler {
     pub fn accept_challenge(&mut self, world: &World, challenge: Challenge) -> AppResult<()> {
         self.send_own_team(world)?;
         let mut handle_syn = || -> AppResult<()> {
-            let home_team = world.get_team_or_err(&challenge.home_team_in_game.team_id)?;
-            let away_team = world.get_team_or_err(&challenge.away_team_in_game.team_id)?;
+            let home_team = world
+                .teams
+                .get_or_err(&challenge.home_team_in_game.team_id)?;
+            let away_team = world
+                .teams
+                .get_or_err(&challenge.away_team_in_game.team_id)?;
 
             // Away team is our team.
             if away_team.current_game.is_some() {
@@ -528,7 +533,7 @@ impl NetworkHandler {
         let mut handle_syn = || -> AppResult<()> {
             let own_team = world.get_own_team()?;
             let proposer_team = if let Some(proposer_team_id) = trade.proposer_player.team {
-                world.get_team_or_err(&proposer_team_id)?
+                world.teams.get_or_err(&proposer_team_id)?
             } else {
                 return Err(anyhow!("Trade target player has no team"));
             };
@@ -538,7 +543,7 @@ impl NetworkHandler {
             // and the status of the proposer could have changed considerably
             // possibly making the trade invalid.
             let mut trade = trade.clone();
-            let target_player = world.get_player_or_err(&trade.target_player.id)?.clone();
+            let target_player = world.players.get_or_err(&trade.target_player.id)?.clone();
             trade.target_player = target_player;
             proposer_team.can_trade_players(
                 &trade.proposer_player,
@@ -657,7 +662,7 @@ mod tests {
             types::{NetworkData, NetworkRequestState, NetworkTeam},
         },
         store::{deserialize, serialize},
-        types::{AppResult, SystemTimeTick, Tick},
+        types::{AppResult, HashMapWithResult, SystemTimeTick, Tick},
         ui::UiCallback,
     };
     use anyhow::anyhow;
@@ -788,7 +793,7 @@ mod tests {
         assert!(own_team1.current_game.is_some());
 
         let game_id = own_team1.current_game.unwrap();
-        let game = app1.world.get_game_or_err(&game_id)?;
+        let game = app1.world.games.get_or_err(&game_id)?;
         println!("{:?}, starting_at {}", game_id, game.starting_at);
 
         let network_data = NetworkData::Challenge {
@@ -814,7 +819,7 @@ mod tests {
 
         let own_team2 = app2.world.get_own_team()?.clone();
         let game_id = own_team2.current_game.unwrap();
-        let game = app2.world.get_game_or_err(&game_id)?;
+        let game = app2.world.games.get_or_err(&game_id)?;
         println!("{:?}, starting_at {}", game_id, game.starting_at);
         assert!(own_team2.current_game == Some(game_id));
 

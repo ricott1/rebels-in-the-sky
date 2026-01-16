@@ -12,6 +12,7 @@ use super::{
     widgets::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
 };
 use crate::store::load_game;
+use crate::types::HashMapWithResult;
 use crate::ui::traits::UiStyled;
 use crate::ui::ui_key;
 use crate::ui::widgets::GREEN_STYLE_SKILL;
@@ -53,7 +54,8 @@ pub struct GamePanel {
     pitch_view_filter: Option<Period>,
     player_status_view: bool,
     commentary_index: usize,
-    action_results: Vec<ActionOutput>,
+    // action_results: Vec<ActionOutput>,
+    action_results_len: usize,
     tick: usize,
     gif_map: GifMap,
 }
@@ -103,7 +105,7 @@ impl GamePanel {
         loaded_games: &'a HashMap<GameId, Game>,
     ) -> Option<&'a Game> {
         if let Some(game_id) = game_ids.get(index?) {
-            return world.get_game(game_id);
+            return world.games.get(game_id);
         }
 
         if let Some(game_id) = recent_game_ids.get(index?.checked_sub(game_ids.len())?) {
@@ -160,7 +162,7 @@ impl GamePanel {
             .game_ids
             .iter()
             .map(|id| {
-                let game = world.get_game(id)?;
+                let game = world.games.get(id)?;
                 let mut style = UiStyle::DEFAULT;
 
                 if game.home_team_in_game.team_id == world.own_team_id
@@ -352,7 +354,7 @@ impl GamePanel {
                 } else {
                     "Playing"
                 },
-                world.get_planet_or_err(&game.location)?.name,
+                world.planets.get_or_err(&game.location)?.name,
                 if let Some(timestamp) = game.ended_at {
                     format!(" on {}", timestamp.formatted_as_date())
                 } else {
@@ -369,7 +371,7 @@ impl GamePanel {
         let action = if self.commentary_index == 0 {
             &game.action_results[game.action_results.len() - 1]
         } else {
-            &game.action_results[self.action_results.len() - 1 - self.commentary_index]
+            &game.action_results[self.action_results_len - 1 - self.commentary_index]
         };
         let home_score = action.home_score;
         let away_score = action.away_score;
@@ -456,7 +458,7 @@ impl GamePanel {
 
         if world.teams.contains_key(&game.away_team_in_game.team_id) {
             let away_button = Button::new(
-                format!("{:>}", game.away_team_in_game.name),
+                format!("{:<}", game.away_team_in_game.name),
                 UiCallback::GoToTeam {
                     team_id: game.away_team_in_game.team_id,
                 },
@@ -518,7 +520,7 @@ impl GamePanel {
     ) -> AppResult<()> {
         frame.render_widget(default_block().title("Shots map"), area);
 
-        let planet = world.get_planet_or_err(&game.location)?;
+        let planet = world.planets.get_or_err(&game.location)?;
         let pitch_style = match planet.planet_type {
             PlanetType::Earth => PitchImage::PitchFancy,
             PlanetType::Ring | PlanetType::Rocky => PitchImage::PitchBall,
@@ -526,7 +528,7 @@ impl GamePanel {
             _ => PitchImage::PitchClassic,
         };
 
-        let max_index = self.action_results.len() - self.commentary_index;
+        let max_index = self.action_results_len - self.commentary_index;
 
         // These map will contain every shot up to the max_index action.
         let mut shots_map: HashMap<(u32, u32), (u8, u8)> = HashMap::new();
@@ -660,7 +662,7 @@ impl GamePanel {
         } else if self.pitch_view {
             self.build_pitch_panel(frame, world, game, split[0])?;
         } else {
-            self.build_commentary(frame, split[0]);
+            self.build_commentary(frame, game, split[0]);
         }
 
         if self.player_status_view {
@@ -692,16 +694,21 @@ impl GamePanel {
         Line::from(vec![timer, text, arrow])
     }
 
-    fn build_commentary(&self, frame: &mut UiFrame, area: Rect) {
+    fn build_commentary(&self, frame: &mut UiFrame, game: &Game, area: Rect) {
         let mut commentary = vec![];
-        let max_index = self.action_results.len() - self.commentary_index;
+        let max_index = self
+            .action_results_len
+            .saturating_sub(self.commentary_index)
+            // This is necessary as action_results_len is updated in the update
+            // but the game could be modified by changin the index.
+            .min(game.action_results.len());
 
         for idx in 0..max_index {
-            let result = &self.action_results[idx];
+            let result = &game.action_results[idx];
             let situation = &result.situation;
-            let timer = self.action_results[idx].start_at;
+            let timer = game.action_results[idx].start_at;
             let switch_possession = if idx > 0 {
-                result.possession != self.action_results[idx - 1].possession
+                result.possession != game.action_results[idx - 1].possession
             } else {
                 false
             };
@@ -916,7 +923,7 @@ impl GamePanel {
 
     fn build_timer_lines(&self, world: &World, game: &Game) -> Vec<Line<'static>> {
         let timer = if self.commentary_index > 0 {
-            self.action_results[self.action_results.len() - 1 - self.commentary_index].start_at
+            game.action_results[self.action_results_len - 1 - self.commentary_index].start_at
         } else {
             game.timer
         };
@@ -1174,11 +1181,7 @@ impl Screen for GamePanel {
             &self.loaded_game_ids,
             &self.loaded_games,
         ) {
-            if self.commentary_index == 0 && self.action_results.len() != game.action_results.len()
-            {
-                // FIXME: we dont need to clone, remove self.action_results completely
-                self.action_results = game.action_results.clone();
-            }
+            self.action_results_len = game.action_results.len();
         }
 
         Ok(())
@@ -1217,7 +1220,7 @@ impl Screen for GamePanel {
                 }
             }
             ui_key::NEXT_SELECTION => {
-                if self.commentary_index < self.action_results.len() - 1 {
+                if self.commentary_index < self.action_results_len - 1 {
                     self.commentary_index += 1;
                 }
             }

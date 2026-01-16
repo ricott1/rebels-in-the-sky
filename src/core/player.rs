@@ -13,7 +13,7 @@ use crate::{
     core::PLANET_DATA,
     game_engine::types::GameStats,
     image::{player::PlayerImage, utils::Gif},
-    types::{AppResult, PlanetId, PlayerId, StorableResourceMap, TeamId},
+    types::{AppResult, HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, TeamId},
 };
 use anyhow::anyhow;
 
@@ -705,9 +705,9 @@ impl Player {
         // Check if player is currently playing.
         // In this case, read current tiredness from game.
         if let Some(team_id) = self.team {
-            if let Ok(team) = world.get_team_or_err(&team_id) {
+            if let Ok(team) = world.teams.get_or_err(&team_id) {
                 if let Some(game_id) = team.current_game {
-                    if let Ok(game) = world.get_game_or_err(&game_id) {
+                    if let Ok(game) = world.games.get_or_err(&game_id) {
                         if let Some(p) = if game.home_team_in_game.team_id == team_id {
                             game.home_team_in_game.players.get(&self.id)
                         } else {
@@ -728,9 +728,9 @@ impl Player {
         // Check if player is currently playing.
         // In this case, read current morale from game.
         if let Some(team_id) = self.team {
-            if let Ok(team) = world.get_team_or_err(&team_id) {
+            if let Ok(team) = world.teams.get_or_err(&team_id) {
                 if let Some(game_id) = team.current_game {
-                    if let Ok(game) = world.get_game_or_err(&game_id) {
+                    if let Ok(game) = world.games.get_or_err(&game_id) {
                         if let Some(p) = if game.home_team_in_game.team_id == team_id {
                             game.home_team_in_game.players.get(&self.id)
                         } else {
@@ -751,7 +751,9 @@ impl Player {
             return Err(anyhow!("Player has no team, so no rum to drink"));
         }
 
-        let team = world.get_team_or_err(&self.team.expect("Player should have team"))?;
+        let team = world
+            .teams
+            .get_or_err(&self.team.expect("Player should have team"))?;
 
         if team.current_game.is_some() {
             return Err(anyhow!("Can't drink during game"));
@@ -1256,7 +1258,11 @@ impl Trait {
 
 #[cfg(test)]
 mod test {
-    use crate::{app::App, core::skill::Rated, types::AppResult};
+    use crate::{
+        app::App,
+        core::skill::Rated,
+        types::{AppResult, HashMapWithResult},
+    };
     use itertools::Itertools;
     use serde::{Deserialize, Serialize};
 
@@ -1273,7 +1279,7 @@ mod test {
             .expect("There should be at least one player")
             .id;
 
-        let mut player = world.get_player_or_err(&player_id)?.clone();
+        let player = world.players.get_mut_or_err(&player_id)?;
         player.info.age = player.info.population.min_age();
 
         for _ in 0..20 {

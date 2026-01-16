@@ -15,6 +15,7 @@ use super::{
 };
 use crate::image::utils::LightMaskStyle;
 use crate::image::{color_map::ColorPreset, spaceship::SPACESHIP_IMAGE_WIDTH};
+use crate::types::HashMapWithResult;
 use crate::{
     core::*,
     image::color_map::ColorMap,
@@ -356,7 +357,7 @@ impl NewTeamScreen {
             .planet_players
             .get(&planet_id)
             .unwrap_or_else(|| panic!("No players found on planet {}", planet_id.to_string()));
-        let mut player = world.get_player_or_err(&planet_players[0].0)?.clone();
+        let mut player = world.players.get_or_err(&planet_players[0].0)?.clone();
         let jersey = Jersey {
             style,
             color: self.get_team_colors(),
@@ -474,7 +475,9 @@ impl NewTeamScreen {
         area: Rect,
     ) -> AppResult<()> {
         if self.state > CreationState::Planet {
-            let selected_planet = world.get_planet_or_err(&self.planet_ids[self.planet_index])?;
+            let selected_planet = world
+                .planets
+                .get_or_err(&self.planet_ids[self.planet_index])?;
             frame.render_widget(
                 Paragraph::new(format!(" {}", selected_planet.name.clone())).block(
                     thick_block()
@@ -488,7 +491,7 @@ impl NewTeamScreen {
                 .planet_ids
                 .iter()
                 .map(|planet_id| {
-                    let planet = world.get_planet_or_err(planet_id).unwrap();
+                    let planet = world.planets.get_or_err(planet_id).unwrap();
                     (planet.name.clone(), UiStyle::DEFAULT)
                 })
                 .collect_vec();
@@ -516,7 +519,7 @@ impl NewTeamScreen {
 
     fn render_planet(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         let planet_id = self.planet_ids[self.planet_index];
-        let planet = world.get_planet_or_err(&planet_id)?;
+        let planet = world.planets.get_or_err(&planet_id)?;
 
         let mut lines = self.gif_map.planet_zoom_in_frame_lines(
             &planet_id,
@@ -631,7 +634,7 @@ impl NewTeamScreen {
                 {
                     return ("".to_string(), style);
                 }
-                let player = world.get_player_or_err(&player_id).unwrap();
+                let player = world.players.get_or_err(&player_id).unwrap();
                 let full_name = player.info.full_name();
 
                 let max_width = 2 * MAX_NAME_LENGTH;
@@ -678,7 +681,9 @@ impl NewTeamScreen {
     fn render_player(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         let planet_id = self.planet_ids[self.planet_index];
         let planet_players = self.planet_players.get(&planet_id).unwrap();
-        let player = world.get_player_or_err(&planet_players[self.player_index].0)?;
+        let player = world
+            .players
+            .get_or_err(&planet_players[self.player_index].0)?;
         render_player_description(
             player,
             PlayerWidgetView::Skills,
@@ -705,7 +710,9 @@ impl NewTeamScreen {
         ])
         .split(area);
         let name = self.team_name_textarea.lines()[0].clone();
-        let planet = world.get_planet_or_err(&self.planet_ids[self.planet_index])?;
+        let planet = world
+            .planets
+            .get_or_err(&self.planet_ids[self.planet_index])?;
         let text = Paragraph::new(vec![
             Line::from(Span::raw(format!("{} from {}", name, planet.name))),
             Line::from(Span::raw("Ready to sail the cosmic waves?")),
@@ -775,8 +782,10 @@ impl Screen for NewTeamScreen {
                 .planets
                 .keys()
                 .filter(|&planet_id| {
-                    let planet = world.get_planet(planet_id).unwrap();
-                    planet.total_population() > 0
+                    if let Some(planet) = world.planets.get(planet_id) {
+                        return planet.total_population() > 0;
+                    }
+                    false
                 })
                 .sorted_by(|a, b| a.cmp(b))
                 .copied()
@@ -789,9 +798,17 @@ impl Screen for NewTeamScreen {
                         .or_default();
                     planet_players.push((player.id, player.hire_cost(0.0)));
                     planet_players.sort_by(|a, b| {
-                        let p1 = world.get_player(&a.0).unwrap();
-                        let p2 = world.get_player(&b.0).unwrap();
-                        p2.hire_cost(0.0).cmp(&p1.hire_cost(0.0))
+                        let p1 = world
+                            .players
+                            .get(&a.0)
+                            .map(|p| p.hire_cost(0.0))
+                            .unwrap_or_default();
+                        let p2 = world
+                            .players
+                            .get(&b.0)
+                            .map(|p| p.hire_cost(0.0))
+                            .unwrap_or_default();
+                        p2.cmp(&p1)
                     });
                 }
             }

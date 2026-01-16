@@ -2,7 +2,7 @@ use super::ui_frame::UiFrame;
 use super::{traits::Screen, ui_callback::UiCallback};
 use crate::image::utils::ExtraImageUtils;
 use crate::image::utils::{open_image, LightMaskStyle};
-use crate::types::{SystemTimeTick, TeamId, Tick};
+use crate::types::{HashMapWithResult, SystemTimeTick, TeamId, Tick};
 use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::traits::SplitPanel;
@@ -18,6 +18,7 @@ use ratatui::layout::{Constraint, Layout, Margin};
 use ratatui::prelude::Rect;
 use ratatui::style::Stylize;
 use ratatui::widgets::Paragraph;
+use std::collections::HashSet;
 
 #[derive(Debug, Default)]
 pub struct SpaceCovePanel {
@@ -59,7 +60,7 @@ impl SpaceCovePanel {
                 ))
             }
         };
-        world.get_planet_or_err(&asteroid_id)
+        world.planets.get_or_err(&asteroid_id)
     }
 
     fn get_cove_images(
@@ -88,7 +89,7 @@ impl SpaceCovePanel {
             base.copy_non_trasparent_from(&right_eye, RIGHT_EYE_POSITION.0, RIGHT_EYE_POSITION.1)?;
         }
 
-        let mut x = 7;
+        let mut x = 5;
         for team in teams.iter().take(4) {
             let ship_img = &team.spaceship.compose_image_in_shipyard()?[0];
             let y = 40;
@@ -132,14 +133,13 @@ impl SpaceCovePanel {
     fn render_visiting_teams(
         &self,
         frame: &mut UiFrame,
-        asteroid: &Planet,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
-        if !asteroid.team_ids.is_empty() {
+        if !self.team_ids.is_empty() {
             let mut options = vec![];
-            for team_id in asteroid.team_ids.iter() {
-                let team = if let Some(team) = world.get_team(team_id) {
+            for team_id in self.team_ids.iter() {
+                let team = if let Some(team) = world.teams.get(team_id) {
                     team
                 } else {
                     continue;
@@ -171,30 +171,49 @@ impl SpaceCovePanel {
         Ok(())
     }
 
-    fn render_tournament_button(
+    fn render_tournament_buttons(
         &self,
         frame: &mut UiFrame,
         asteroid: &Planet,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
+        let split = Layout::vertical([3, 3]).split(area);
         let own_team = world.get_own_team()?;
         let mut tournament_button = Button::new(
-            "Organize tournament",
+            "Organize quick tournament",
             UiCallback::OrganizeNewTournament {
                 max_participants: 4,
-                registrations_closing_at: Tick::now() + 1 * MINUTES,
+                registrations_closing_at: Tick::now() + 5 * MINUTES,
             },
         )
-        .set_hotkey(ui_key::ORGANIZE_TOURNAMENT)
-        .set_hover_text(format!("Organize a tournament on {}", asteroid.name));
+        .set_hotkey(ui_key::ORGANIZE_QUICK_TOURNAMENT)
+        .set_hover_text(format!("Organize a quick tournament on {}. Registrations close in 5 minutes, max 4 participants.", asteroid.name));
 
         if let Err(err) = own_team.can_organize_tournament() {
             tournament_button.disable(Some(err.to_string()));
         }
 
-        // tournament_button.disable(Some("Coming soon!"));
-        frame.render_interactive_widget(tournament_button, area);
+        frame.render_interactive_widget(tournament_button, split[0]);
+
+        let mut tournament_button = Button::new(
+            "Organize big tournament",
+            UiCallback::OrganizeNewTournament {
+                max_participants: 8,
+                registrations_closing_at: Tick::now() + HOURS,
+            },
+        )
+        .set_hotkey(ui_key::ORGANIZE_BIG_TOURNAMENT)
+        .set_hover_text(format!(
+            "Organize a big tournament on {}. Registrations close in 1 hour, max 8 participants.",
+            asteroid.name
+        ));
+
+        if let Err(err) = own_team.can_organize_tournament() {
+            tournament_button.disable(Some(err.to_string()));
+        }
+
+        frame.render_interactive_widget(tournament_button, split[1]);
 
         Ok(())
     }
@@ -206,14 +225,21 @@ impl Screen for SpaceCovePanel {
 
         let asteroid = Self::get_asteroid(world)?;
         if world.dirty_ui || self.team_ids.len() != asteroid.team_ids.len() {
-            self.team_ids = asteroid.team_ids.clone();
+            // Update team_ids but maintain team_ids existing order.
+            let new_set: HashSet<TeamId> = asteroid.team_ids.iter().copied().collect();
+            self.team_ids.retain(|id| new_set.contains(id));
+            for id in &asteroid.team_ids {
+                if !self.team_ids.contains(id) {
+                    self.team_ids.push(*id);
+                }
+            }
 
             let teams = self
                 .team_ids
                 .iter()
                 .take(4)
                 .filter(|id| world.teams.contains_key(id))
-                .map(|id| world.get_team(id).unwrap())
+                .map(|id| world.teams.get(id).unwrap())
                 .collect_vec();
 
             let cove_image_widget = Self::get_cove_image_widgets(&teams, false, false)
@@ -272,7 +298,7 @@ impl Screen for SpaceCovePanel {
         let side_split = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Length(3),
+            Constraint::Length(6),
             Constraint::Length(8),
             Constraint::Fill(1),
         ])
@@ -286,9 +312,9 @@ impl Screen for SpaceCovePanel {
         );
 
         frame.render_interactive_widget(teleport_button(world, asteroid.id)?, side_split[1]);
-        self.render_tournament_button(frame, asteroid, world, side_split[2])?;
+        self.render_tournament_buttons(frame, asteroid, world, side_split[2])?;
 
-        self.render_visiting_teams(frame, asteroid, world, side_split[3])?;
+        self.render_visiting_teams(frame, world, side_split[3])?;
 
         frame.render_widget(
             default_block().title("No available upgrades"),

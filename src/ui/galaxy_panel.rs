@@ -6,7 +6,7 @@ use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
 use super::widgets::{space_adventure_button, thick_block};
 use super::{traits::Screen, widgets::default_block};
-use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId};
+use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId};
 use crate::ui::traits::UiStyled;
 use crate::ui::utils::format_au;
 use crate::ui::{constants::*, ui_key};
@@ -128,7 +128,8 @@ impl GalaxyPanel {
                 planet.name.clone()
             } else {
                 world
-                    .get_planet_or_err(&planet.satellites[index - 1])?
+                    .planets
+                    .get_or_err(&planet.satellites[index - 1])?
                     .name
                     .clone()
             };
@@ -188,7 +189,7 @@ impl GalaxyPanel {
                 planet.satellites[self.planet_index - 1]
             };
 
-            let target = world.get_planet_or_err(&target_id)?;
+            let target = world.planets.get_or_err(&target_id)?;
             let zoom_level = if self.planet_index == 0 || target.satellites.is_empty() {
                 ZoomLevel::In
             } else {
@@ -234,14 +235,21 @@ impl GalaxyPanel {
         let target = if self.planet_index == 0 {
             planet
         } else {
-            world.get_planet_or_err(&planet.satellites[self.planet_index - 1])?
+            world
+                .planets
+                .get_or_err(&planet.satellites[self.planet_index - 1])?
         };
 
         let mut current_id = target.id;
         let mut buttons = vec![];
-        while world.get_planet_or_err(&current_id)?.satellite_of.is_some() {
-            let parent_id = world.get_planet_or_err(&current_id)?.satellite_of.unwrap();
-            let parent = world.get_planet_or_err(&parent_id)?;
+        while world
+            .planets
+            .get_or_err(&current_id)?
+            .satellite_of
+            .is_some()
+        {
+            let parent_id = world.planets.get_or_err(&current_id)?.satellite_of.unwrap();
+            let parent = world.planets.get_or_err(&parent_id)?;
             let button = Button::new(
                 parent.name.to_string(),
                 UiCallback::GoToPlanetZoomOut {
@@ -402,13 +410,15 @@ impl GalaxyPanel {
         let target = if self.planet_index == 0 {
             planet
         } else {
-            world.get_planet_or_err(&planet.satellites[self.planet_index - 1])?
+            world
+                .planets
+                .get_or_err(&planet.satellites[self.planet_index - 1])?
         };
 
         let team_options = target
             .team_ids
             .iter()
-            .filter(|&team_id| world.get_team_or_err(team_id).is_ok())
+            .filter(|&team_id| world.teams.get_or_err(team_id).is_ok())
             .sorted_by(|&a, &b| {
                 world
                     .team_rating(b)
@@ -418,7 +428,8 @@ impl GalaxyPanel {
             })
             .map(|team_id| {
                 let team = world
-                    .get_team_or_err(team_id)
+                    .teams
+                    .get_or_err(team_id)
                     .expect("Team should be part of the world");
                 let style = if *team_id == world.own_team_id {
                     UiStyle::OWN_TEAM
@@ -577,7 +588,7 @@ impl GalaxyPanel {
         world: &World,
         area: Rect,
     ) -> (f32, f32, u16, u16) {
-        let central_planet = world.get_planet_or_err(central_planet_id).unwrap();
+        let central_planet = world.planets.get_or_err(central_planet_id).unwrap();
         match index {
             0 => {
                 let size = ImageResizeInGalaxyGif::ZoomOutCentral {
@@ -594,7 +605,8 @@ impl GalaxyPanel {
             }
             _ => {
                 let satellite = world
-                    .get_planet_or_err(&central_planet.satellites[index - 1])
+                    .planets
+                    .get_or_err(&central_planet.satellites[index - 1])
                     .unwrap();
                 let size = ImageResizeInGalaxyGif::ZoomOutSatellite {
                     planet_type: satellite.planet_type,
@@ -653,7 +665,7 @@ impl Screen for GalaxyPanel {
         area: Rect,
         _debug_view: bool,
     ) -> AppResult<()> {
-        let planet = world.get_planet_or_err(&self.planet_id)?;
+        let planet = world.planets.get_or_err(&self.planet_id)?;
         self.render_planet_gif(frame, planet, world, area)?;
         if self.zoom_level == ZoomLevel::Out {
             self.render_gif_rects(frame, planet, world, area)?;
@@ -693,7 +705,7 @@ impl Screen for GalaxyPanel {
                     planet.satellites[self.planet_index - 1]
                 };
 
-                if let Ok(target) = world.get_planet_or_err(&target_id) {
+                if let Ok(target) = world.planets.get_or_err(&target_id) {
                     return self.select_target(target);
                 }
             }

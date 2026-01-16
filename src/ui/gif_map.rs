@@ -14,7 +14,7 @@ use crate::{
             UNIVERSE_BACKGROUND,
         },
     },
-    types::{AppResult, PlanetId, PlayerId},
+    types::{AppResult, HashMapWithResult, PlanetId, PlayerId},
     ui::traits::{GifLines, ImageLines, PrintableGif},
 };
 use anyhow::anyhow;
@@ -199,7 +199,8 @@ impl GifMap {
         }
 
         let planet = world
-            .get_planet(planet_id)
+            .planets
+            .get(planet_id)
             .ok_or(anyhow!("World: Planet not found."))?;
 
         let gif = Self::planet_zoom_in(planet)?;
@@ -256,7 +257,7 @@ impl GifMap {
             .satellites
             .iter()
             .map(|satellite_id| {
-                let satellite = world.get_planet_or_err(satellite_id)?;
+                let satellite = world.planets.get_or_err(satellite_id)?;
 
                 let gif = if satellite.planet_type == PlanetType::Asteroid {
                     let mut img =
@@ -305,7 +306,7 @@ impl GifMap {
 
             // Blit satellite images on base
             for (idx, satellite_id) in planet.satellites.iter().enumerate() {
-                let satellite = world.get_planet_or_err(satellite_id)?;
+                let satellite = world.planets.get_or_err(satellite_id)?;
                 // Satellite img moves along an ellipse
                 // Can divide safely because if we enter the loop => planet.satellites.len() > 0.
                 let theta_0 =

@@ -11,7 +11,7 @@ use super::{
     widgets::*,
 };
 use crate::game_engine::timer::Period;
-use crate::types::Tick;
+use crate::types::{HashMapWithResult, Tick};
 use crate::ui::popup_message::PopupMessage;
 use crate::ui::ui_key;
 use crate::{
@@ -217,7 +217,7 @@ impl MyTeamPanel {
 
         let mut options = vec![];
         for id in self.planet_markets.iter() {
-            let planet = world.get_planet_or_err(id)?;
+            let planet = world.planets.get_or_err(id)?;
             let text = planet.name.clone();
             let style = match own_team.current_location {
                 TeamLocation::OnPlanet { planet_id } => {
@@ -244,7 +244,7 @@ impl MyTeamPanel {
 
         let planet_id =
             self.planet_markets[self.planet_index.unwrap_or_default() % self.planet_markets.len()];
-        let planet = world.get_planet_or_err(&planet_id)?;
+        let planet = world.planets.get_or_err(&planet_id)?;
         let merchant_bonus = TeamBonus::TradePrice.current_team_bonus(world, &own_team.id)?;
 
         let mut lines = vec![Line::from(Span::styled(
@@ -320,7 +320,7 @@ impl MyTeamPanel {
             }
         };
 
-        let planet = world.get_planet_or_err(&planet_id)?;
+        let planet = world.planets.get_or_err(&planet_id)?;
         frame.render_widget(
             default_block().title(format!("Planet {} Market", planet.name)),
             area,
@@ -791,7 +791,7 @@ impl MyTeamPanel {
             .take(displayed_challenges)
             .enumerate()
         {
-            let team = world.get_team_or_err(team_id)?;
+            let team = world.teams.get_or_err(team_id)?;
             frame.render_widget(
                 Paragraph::new(format!(
                     "{:<MAX_NAME_LENGTH$} {}",
@@ -826,7 +826,7 @@ impl MyTeamPanel {
 
         let mut options = vec![];
         if let Some(game_id) = own_team.current_game {
-            if let Ok(game) = world.get_game_or_err(&game_id) {
+            if let Ok(game) = world.games.get_or_err(&game_id) {
                 if let Some(action) = game.action_results.last() {
                     let text = format!(
                         " {:>12} {:>3}-{:<3} {:<}",
@@ -917,13 +917,13 @@ impl MyTeamPanel {
             frame.render_interactive_widget(button, v_split[1]);
         }
 
-        let summary = if let Ok(current_game) = world.get_game_or_err(&game_id) {
+        let summary = if let Ok(current_game) = world.games.get_or_err(&game_id) {
             let (home_quarters_score, away_quarters_score) = current_game.get_score_by_quarter();
 
             let lines = vec![
                 Line::from(format!(
                     "Location {} - Attendance {}",
-                    if let Ok(planet) = world.get_planet_or_err(&current_game.location) {
+                    if let Ok(planet) = world.planets.get_or_err(&current_game.location) {
                         planet.name.as_str()
                     } else if current_game.planet_name != String::default() {
                         current_game.planet_name.as_str()
@@ -1020,7 +1020,7 @@ impl MyTeamPanel {
             let mut lines = vec![
                 Line::from(format!(
                     "Location {} - Attendance {}",
-                    if let Ok(planet) = world.get_planet_or_err(&game_summary.location) {
+                    if let Ok(planet) = world.planets.get_or_err(&game_summary.location) {
                         planet.name.as_str()
                     } else if game_summary.planet_name != String::default() {
                         game_summary.planet_name.as_str()
@@ -1562,9 +1562,9 @@ impl MyTeamPanel {
         let options = self
             .asteroid_ids
             .iter()
-            .filter(|&asteroid_id| world.get_planet_or_err(asteroid_id).is_ok())
+            .filter(|&asteroid_id| world.planets.get_or_err(asteroid_id).is_ok())
             .map(|&asteroid_id| {
-                let asteroid = world.get_planet_or_err(&asteroid_id).unwrap();
+                let asteroid = world.planets.get_or_err(&asteroid_id).unwrap();
                 let style = match own_team.current_location {
                     TeamLocation::OnPlanet { planet_id } => {
                         if planet_id == asteroid_id {
@@ -1593,7 +1593,7 @@ impl MyTeamPanel {
 
         if let Some(index) = self.asteroid_index {
             let asteroid_id = own_team.asteroid_ids[index % own_team.asteroid_ids.len()];
-            let asteroid = world.get_planet_or_err(&asteroid_id)?;
+            let asteroid = world.planets.get_or_err(&asteroid_id)?;
 
             let mut lines = vec![Line::from(Span::styled(
                 "Resources",
@@ -1779,12 +1779,12 @@ impl MyTeamPanel {
 
         let asteroid_id =
             self.asteroid_ids[self.asteroid_index.unwrap_or_default() % self.asteroid_ids.len()];
-        let asteroid = world.get_planet_or_err(&asteroid_id)?;
+        let asteroid = world.planets.get_or_err(&asteroid_id)?;
 
         let mut parents = vec![asteroid];
         let mut current = asteroid;
         while let Some(parent_id) = current.satellite_of {
-            let parent = world.get_planet_or_err(&parent_id)?;
+            let parent = world.planets.get_or_err(&parent_id)?;
             parents.push(parent);
             current = parent;
         }
@@ -2186,7 +2186,7 @@ impl MyTeamPanel {
         let sorted_players = own_team
             .player_ids
             .iter()
-            .map(|id| world.get_player(id).unwrap())
+            .map(|id| world.players.get(id).unwrap())
             .collect_vec()
             .sort_by_rating();
 
@@ -2222,7 +2222,7 @@ impl MyTeamPanel {
         );
 
         if let Some(game_id) = own_team.current_game {
-            let game = world.get_game_or_err(&game_id)?;
+            let game = world.games.get_or_err(&game_id)?;
             let game_text = format!(
                 "{:>} {:>3}-{:<3} {:<}",
                 game.home_team_in_game.name,
@@ -2478,7 +2478,7 @@ impl MyTeamPanel {
             let paragraph = Paragraph::new(lines);
             frame.render_widget(paragraph.centered(), rect);
         }
-        let planet = world.get_planet_or_err(planet_id)?;
+        let planet = world.planets.get_or_err(planet_id)?;
         frame.render_widget(
             default_block().title(format!("Travelling to {} - {}", planet.name, countdown)),
             area,
@@ -2516,7 +2516,7 @@ impl MyTeamPanel {
             let paragraph = Paragraph::new(lines);
             frame.render_widget(paragraph.centered(), rect);
         }
-        let planet = world.get_planet_or_err(planet_id)?;
+        let planet = world.planets.get_or_err(planet_id)?;
         frame.render_widget(
             default_block().title(format!("Exploring around {} - {}", planet.name, countdown)),
             area,
@@ -2607,7 +2607,7 @@ impl Screen for MyTeamPanel {
                 .teams
                 .keys()
                 .filter(|&id| {
-                    let team = if let Ok(team) = world.get_team_or_err(id) {
+                    let team = if let Ok(team) = world.teams.get_or_err(id) {
                         team
                     } else {
                         return false;
@@ -2618,8 +2618,8 @@ impl Screen for MyTeamPanel {
                 .cloned()
                 .collect();
             self.challenge_teams.sort_by(|a, b| {
-                let a = world.get_team_or_err(a).unwrap();
-                let b = world.get_team_or_err(b).unwrap();
+                let a = world.teams.get_or_err(a).unwrap();
+                let b = world.teams.get_or_err(b).unwrap();
                 world
                     .team_rating(&b.id)
                     .unwrap_or_default()

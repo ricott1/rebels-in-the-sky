@@ -17,6 +17,7 @@ mod space_screen;
 mod splash_screen;
 mod swarm_panel;
 mod team_panel;
+mod tournament_brackets_lines;
 mod tournament_panel;
 mod traits;
 mod ui_callback;

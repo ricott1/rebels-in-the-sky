@@ -13,7 +13,7 @@ use super::{
 };
 
 use crate::network::trade::Trade;
-use crate::types::AppResult;
+use crate::types::{AppResult, HashMapWithResult};
 use crate::ui::ui_key;
 use crate::{
     core::*,
@@ -91,7 +91,7 @@ impl PlayerView {
                     return false;
                 }
 
-                let try_player_team = world.get_team_or_err(&player.team.unwrap());
+                let try_player_team = world.teams.get_or_err(&player.team.unwrap());
                 if try_player_team.is_err() {
                     return false;
                 }
@@ -206,7 +206,7 @@ impl PlayerListPanel {
 
             let name_length = 2 * MAX_NAME_LENGTH + 2;
             for player_id in self.players.iter() {
-                let player = if let Some(p) = world.get_player(player_id) {
+                let player = if let Some(p) = world.players.get(player_id) {
                     p
                 } else {
                     continue;
@@ -260,7 +260,7 @@ impl PlayerListPanel {
         ])
         .split(v_split[1]);
 
-        let player = world.get_player_or_err(&self.selected_player_id)?;
+        let player = world.players.get_or_err(&self.selected_player_id)?;
         let own_team = world.get_own_team()?;
 
         // Display open trade if the selected and lock player are the two being traded.
@@ -298,7 +298,7 @@ impl PlayerListPanel {
         // display a button to accept
 
         if let Some(locked_player_id) = self.locked_player_id {
-            let locked_player = world.get_player_or_err(&locked_player_id)?;
+            let locked_player = world.players.get_or_err(&locked_player_id)?;
             render_player_description(
                 locked_player,
                 self.player_widget_view,
@@ -335,7 +335,7 @@ impl PlayerListPanel {
 
         match player.current_location {
             PlayerLocation::OnPlanet { planet_id } => {
-                let planet = world.get_planet_or_err(&planet_id)?;
+                let planet = world.planets.get_or_err(&planet_id)?;
                 let button = Button::new(
                     format!("Free pirate - On planet {}", planet.name),
                     UiCallback::GoToPlanetZoomIn { planet_id },
@@ -348,7 +348,7 @@ impl PlayerListPanel {
                 frame.render_interactive_widget(button, buttons_split[0]);
             }
             PlayerLocation::WithTeam => {
-                let team = world.get_team_or_err(&player.team.unwrap())?;
+                let team = world.teams.get_or_err(&player.team.unwrap())?;
                 let button = Button::new(
                     format!("team {}", team.name),
                     UiCallback::GoToPlayerTeam {
@@ -429,7 +429,8 @@ impl PlayerListPanel {
             let target_player = &trade.target_player;
             if player.id == self.selected_player_id {
                 let proposer_team = world
-                    .get_team_or_err(&proposer_player.team.expect("Player should have a team"))?;
+                    .teams
+                    .get_or_err(&proposer_player.team.expect("Player should have a team"))?;
                 let mut button = Button::new(
                     "Accept trade",
                     UiCallback::AcceptTrade {
@@ -474,10 +475,10 @@ impl PlayerListPanel {
         else if let Some(locked_player_id) = self.locked_player_id {
             //If player is selected and part of own team
             if own_team.player_ids.contains(&player.id) && player.id == self.selected_player_id {
-                let proposer_player = world.get_player_or_err(&player.id)?;
-                let target_player = world.get_player_or_err(&locked_player_id)?;
+                let proposer_player = world.players.get_or_err(&player.id)?;
+                let target_player = world.players.get_or_err(&locked_player_id)?;
                 if let Some(target_team_id) = target_player.team {
-                    let target_team = world.get_team_or_err(&target_team_id)?;
+                    let target_team = world.teams.get_or_err(&target_team_id)?;
                     if own_team
                         .can_trade_players(proposer_player, target_player, target_team)
                         .is_ok()
@@ -535,8 +536,8 @@ impl Screen for PlayerListPanel {
         if world.dirty_ui || self.all_players.len() != world.players.len() {
             self.all_players = world.players.keys().copied().collect();
             self.all_players.sort_by(|a, b| {
-                let a = world.get_player(a).unwrap();
-                let b = world.get_player(b).unwrap();
+                let a = world.players.get(a).unwrap();
+                let b = world.players.get(b).unwrap();
                 if a.rating() == b.rating() {
                     b.average_skill()
                         .partial_cmp(&a.average_skill())
@@ -554,7 +555,7 @@ impl Screen for PlayerListPanel {
                 .all_players
                 .iter()
                 .filter(|&&player_id| {
-                    let player = world.get_player(&player_id).unwrap();
+                    let player = world.players.get(&player_id).unwrap();
                     self.view.rule(player, world)
                 })
                 .copied()
@@ -571,7 +572,7 @@ impl Screen for PlayerListPanel {
 
             if index < self.players.len() && !self.players.is_empty() {
                 self.selected_player_id = self.players[index];
-                self.selected_team_id = world.get_player_or_err(&self.selected_player_id)?.team;
+                self.selected_team_id = world.players.get_or_err(&self.selected_player_id)?.team;
             }
         } else if !self.players.is_empty() {
             self.set_index(0);

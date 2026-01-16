@@ -39,6 +39,35 @@ pub type TournamentMap = HashMap<TournamentId, Tournament>;
 pub type TournamentSummaryMap = HashMap<TournamentId, TournamentSummary>;
 pub type ResourceMap = HashMap<Resource, u32>;
 
+pub trait HashMapWithResult<V> {
+    fn get_or_err(&self, id: &uuid::Uuid) -> AppResult<&V>;
+    fn get_mut_or_err(&mut self, id: &uuid::Uuid) -> AppResult<&mut V>;
+}
+macro_rules! impl_hashmap_with_result {
+    ($map:ty, $value:ty, $label:expr) => {
+        impl HashMapWithResult<$value> for $map {
+            fn get_or_err(&self, id: &uuid::Uuid) -> AppResult<&$value> {
+                self.get(id)
+                    .ok_or_else(|| anyhow!("{} {} not found.", $label, id))
+            }
+
+            fn get_mut_or_err(&mut self, id: &uuid::Uuid) -> AppResult<&mut $value> {
+                self.get_mut(id)
+                    .ok_or_else(|| anyhow!("{} {} not found.", $label, id))
+            }
+        }
+    };
+}
+
+impl_hashmap_with_result!(PlayerMap, Player, "Player");
+impl_hashmap_with_result!(TeamMap, Team, "Team");
+impl_hashmap_with_result!(PlanetMap, Planet, "Planet");
+impl_hashmap_with_result!(GameMap, Game, "Game");
+impl_hashmap_with_result!(GameSummaryMap, GameSummary, "GameSummary");
+impl_hashmap_with_result!(KartoffelMap, Kartoffel, "Kartoffel");
+impl_hashmap_with_result!(TournamentMap, Tournament, "Tournament");
+impl_hashmap_with_result!(TournamentSummaryMap, TournamentSummary, "TournamentSummary");
+
 pub trait StorableResourceMap {
     fn value(&self, resource: &Resource) -> u32;
     fn used_storage_capacity(&self) -> u32;

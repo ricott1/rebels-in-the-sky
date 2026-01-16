@@ -15,7 +15,7 @@ use super::{
 use crate::core::constants::MIN_PLAYERS_PER_GAME;
 use crate::core::team::Team;
 use crate::image::spaceship::{SPACESHIP_IMAGE_HEIGHT, SPACESHIP_IMAGE_WIDTH};
-use crate::types::AppResult;
+use crate::types::{AppResult, HashMapWithResult};
 use crate::ui::ui_key;
 use crate::{
     core::{
@@ -169,7 +169,7 @@ impl TeamListPanel {
         if !self.team_ids.is_empty() {
             let mut options = vec![];
             for team_id in self.team_ids.iter() {
-                let team = if let Some(team) = world.get_team(team_id) {
+                let team = if let Some(team) = world.teams.get(team_id) {
                     team
                 } else {
                     continue;
@@ -212,7 +212,7 @@ impl TeamListPanel {
             return Ok(());
         };
 
-        let team = world.get_team_or_err(&self.team_ids[index])?;
+        let team = world.teams.get_or_err(&self.team_ids[index])?;
         self.current_team_players_length = team.player_ids.len();
         let vertical_split = Layout::vertical([
             Constraint::Length(PLAYER_IMAGE_HEIGHT as u16 / 2), //players
@@ -273,7 +273,7 @@ impl TeamListPanel {
 
             frame.render_interactive_widget(button, button_area);
 
-            let player = world.get_player_or_err(&team.player_ids[i])?;
+            let player = world.players.get_or_err(&team.player_ids[i])?;
 
             if let Ok(lines) = self.gif_map.player_frame_lines(player, self.tick) {
                 frame.render_widget(Paragraph::new(lines).centered(), player_img_split[i + 1]);
@@ -339,7 +339,7 @@ impl TeamListPanel {
                 .skip(MIN_PLAYERS_PER_GAME)
                 .enumerate()
             {
-                if let Some(player) = world.get_player(player_id) {
+                if let Some(player) = world.players.get(player_id) {
                     let info = format!("{}\n", player.info.short_name());
                     let skills = player.current_skill_array();
                     let best_role = GamePosition::best(skills);
@@ -399,7 +399,7 @@ impl TeamListPanel {
             world,
             world.team_rating(&team.id).unwrap_or_default(),
             false,
-            world.get_team(&team.id).is_some(),
+            world.teams.get(&team.id).is_some(),
             &mut self.gif_map,
             self.tick,
             frame,
@@ -458,7 +458,7 @@ impl Screen for TeamListPanel {
                 .all_team_ids
                 .iter()
                 .filter(|&team_id| {
-                    let team = world.get_team_or_err(team_id).unwrap();
+                    let team = world.teams.get_or_err(team_id).unwrap();
                     self.view.rule(team, own_team)
                 })
                 .copied()
@@ -476,7 +476,8 @@ impl Screen for TeamListPanel {
             if index < self.team_ids.len() {
                 self.selected_team_id = self.team_ids[index];
                 let players = world
-                    .get_team_or_err(&self.selected_team_id)?
+                    .teams
+                    .get_or_err(&self.selected_team_id)?
                     .player_ids
                     .clone();
                 if self.player_index < players.len() {

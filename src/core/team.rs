@@ -26,14 +26,14 @@ pub struct CrewRoles {
     pub mozzo: Vec<PlayerId>,
 }
 
-#[derive(Debug, Default, Display, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Default, Display, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum TournamentRegistrationState {
     #[default]
     None,
     Pending {
         tournament_id: TournamentId,
     },
-    Preconfirmed {
+    Registered {
         tournament_id: TournamentId,
     },
     Confirmed {
@@ -281,7 +281,7 @@ impl Team {
         match self.tournament_registration_state {
             TournamentRegistrationState::None => None,
             TournamentRegistrationState::Pending { tournament_id }
-            | TournamentRegistrationState::Preconfirmed { tournament_id }
+            | TournamentRegistrationState::Registered { tournament_id }
             | TournamentRegistrationState::Confirmed { tournament_id } => Some(tournament_id),
         }
     }
@@ -292,7 +292,7 @@ impl Team {
             .iter()
             .take(MAX_PLAYERS_PER_GAME)
             .map(|&id| {
-                if let Ok(player) = world.get_player_or_err(&id) {
+                if let Ok(player) = world.players.get_or_err(&id) {
                     player.current_tiredness(world)
                 } else {
                     0.0
@@ -531,14 +531,14 @@ impl Team {
         // Only allowed state are None and Pending
         if matches!(
             self.tournament_registration_state,
-            TournamentRegistrationState::Preconfirmed { tournament_id } if tournament_id != tournament.id
+            TournamentRegistrationState::Registered { tournament_id } if tournament_id != tournament.id
         ) {
             return Err(anyhow!("Team is registered to another tournament."));
         }
 
         if matches!(
             self.tournament_registration_state,
-            TournamentRegistrationState::Preconfirmed { tournament_id } if tournament_id == tournament.id
+            TournamentRegistrationState::Registered { tournament_id } if tournament_id == tournament.id
         ) {
             return Err(anyhow!("Team is registered to this tournament."));
         }
@@ -581,11 +581,11 @@ impl Team {
         if self.id != tournament.organizer_id
             && !matches!(
                 self.tournament_registration_state,
-                TournamentRegistrationState::Preconfirmed { tournament_id } if tournament_id == tournament.id
+                TournamentRegistrationState::Registered { tournament_id } if tournament_id == tournament.id
             )
         {
             return Err(anyhow!(
-                "Team {} is not preconfirmed for this tournament.",
+                "Team {} is not Registered for this tournament.",
                 self.name
             ));
         }

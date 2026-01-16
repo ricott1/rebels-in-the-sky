@@ -192,6 +192,21 @@ impl TeamInGame {
         }
     }
 
+    pub fn test() -> Self {
+        let team = Team {
+            id: TeamId::new_v4(),
+            ..Default::default()
+        };
+
+        let mut players = PlayerMap::new();
+        for _ in 0..MAX_PLAYERS_PER_GAME {
+            let player = Player::default().randomize(None);
+            players.insert(player.id, player);
+        }
+
+        Self::new(&team, players)
+    }
+
     // We expose this function rather than from_team because we need to get the players anyway.
     pub fn from_team_id(team_id: &TeamId, teams: &TeamMap, players: &PlayerMap) -> AppResult<Self> {
         let team = if let Some(team) = teams.get(team_id) {

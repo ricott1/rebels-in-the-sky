@@ -3,11 +3,10 @@ use super::trade::Trade;
 use crate::core::planet::Planet;
 use crate::core::position::{GamePosition, MAX_GAME_POSITION};
 use crate::core::skill::Skill;
-use crate::core::TournamentRegistrationState;
 use crate::game_engine::timer::Timer;
 use crate::game_engine::types::GameStats;
 use crate::game_engine::{Tournament, TournamentId};
-use crate::types::{PlanetId, PlayerId, PlayerMap, Tick};
+use crate::types::{HashMapWithResult, PlanetId, PlayerId, PlayerMap, Tick};
 use crate::{
     core::{player::Player, team::Team, world::World},
     game_engine::types::TeamInGame,
@@ -20,6 +19,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use strum_macros::Display;
+
+#[derive(Debug, Display, Serialize, Deserialize, Clone, PartialEq)]
+pub enum TournamentRequestState {
+    RegistrationRequest,
+    RegistrationDeclined { reason: String },
+    RegistrationOk,
+    ConfirmationRequest,
+    ConfirmationDeclined { reason: String },
+    ParticipationRequest,
+    ParticipationDeclined { reason: String },
+    ParticipationOk,
+    Cancellation { reason: String },
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[allow(clippy::large_enum_variant)]
@@ -58,7 +70,7 @@ pub enum NetworkData {
         tournament_id: TournamentId,
         team_id: TeamId,
         team_data: Option<(Team, PlayerMap)>,
-        state: TournamentRegistrationState,
+        request_state: TournamentRequestState,
     },
     Tournament {
         timestamp: Tick,
@@ -94,14 +106,15 @@ impl NetworkTeam {
     }
 
     pub fn from_team_id(world: &World, team_id: &TeamId, peer_id: PeerId) -> AppResult<Self> {
-        let mut team = world.get_team_or_err(team_id)?.clone();
+        let mut team = world.teams.get_or_err(team_id)?.clone();
         let mut players = World::get_players_by_team(&world.players, &team)?;
         let asteroids = team
             .asteroid_ids
             .iter()
             .map(|asteroid_id| {
                 let mut asteroid = world
-                    .get_planet_or_err(asteroid_id)
+                    .planets
+                    .get_or_err(asteroid_id)
                     .expect("Asteroid should be part of world")
                     .clone();
                 asteroid.peer_id = Some(peer_id);
@@ -134,7 +147,7 @@ pub struct NetworkGame {
 
 impl NetworkGame {
     pub fn from_game_id(world: &World, game_id: &GameId) -> AppResult<Self> {
-        let game = world.get_game_or_err(game_id)?.clone();
+        let game = world.games.get_or_err(game_id)?.clone();
 
         let mut home_team_in_game = game.home_team_in_game.clone();
         // Reset stats

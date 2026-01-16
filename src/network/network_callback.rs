@@ -6,9 +6,10 @@ use crate::core::constants::NETWORK_GAME_START_DELAY;
 use crate::core::{Team, TournamentRegistrationState, World, MAX_AVG_TIREDNESS_PER_AUTO_GAME};
 use crate::game_engine::types::TeamInGame;
 use crate::game_engine::{Tournament, TournamentId, TournamentState};
+use crate::network::types::TournamentRequestState;
 use crate::store::deserialize;
-use crate::types::{AppResult, PlayerMap, SystemTimeTick, TeamId, Tick};
-use crate::ui::PopupMessage;
+use crate::types::{AppResult, HashMapWithResult, PlayerMap, SystemTimeTick, TeamId, Tick};
+use crate::ui::{PopupMessage, UiScreen};
 use crate::{app::App, types::AppCallback};
 use anyhow::anyhow;
 use libp2p::gossipsub::TopicHash;
@@ -179,17 +180,17 @@ impl NetworkCallback {
         tournament_id: TournamentId,
         team_id: TeamId,
         team_data: Option<(Team, PlayerMap)>,
-        state: TournamentRegistrationState,
+        request_state: TournamentRequestState,
     ) -> AppCallback {
         // ---------------------------------------- creation time -------------------------------------------------
         //
         //                      ------------                             -------------
-        //     set Pending      |          |  ------- Pending ----->     |           | can_register_to_tournament?
+        //     set Pending      |          |  - RegistrationRequest ->   |           | can_register_to_tournament?
         //                      |          |                             |           |
         //                      |          |                             |           |
-        //  set Preconfirmed    |   team   |  <---- Preconfirmed ---     | organizer |  is_ok()
+        //  set Registered      |   team   |  <--- RegistrationOk ---    | organizer |  is_ok()
         //                      |          |                             |           |
-        //     set None         |          |  <-------- None -------     |           |  is_err()
+        //     set None         |          |  <---- RegDeclined ----     |           |  is_err()
         //                      |          |                             |           |
         //                      |          |                             |           |
         //                      ------------                             -------------
@@ -197,18 +198,42 @@ impl NetworkCallback {
         // ---------------------------------- registration closed time --------------------------------------------
         //
         //                      ------------                             -------------
-        //   can_register_..?   |          |  <------ Pending ------     |           |
-        //     && Preconfirmed  |          |                             |           |
+        //   can_register_..?   |          |  <-- ConfirmationRequest -- |           |
+        //     && Registered    |          |                             |           |
         //                      |          |                             |           |
-        //        is_ok()       |   team   |  ----- Confirmed ----->     | organizer | --- can_register_? -|
-        //                      |          |                             |           |                     |
-        //       is_err()       |          |  -------- None ------->     |           |                     |
-        //                      |          |                             |           |                     |
-        //      set Confirmed   |          |  <------ Confirmed -----    |           | -------is_ok()------|
-        //      set None.       |          |  <------ None ----------    |           | -------is_err()------
-        //                      ------------  <----- (Tournament) ---    -------------
+        //        is_ok()       |   team   |  - ParticipationRequest ->  | organizer | --- can_participate_?-|
+        //                      |          |                             |           |                       |
+        //       is_err()       |          |  ---- ConfDeclined --->     |           |                       |
+        //                      |          |                             |           |                       |
+        //      set Confirmed   |          |  <--- ParticipationOk --    |           | -------is_ok()------ /|
+        //      set None.       |          |  <--- PartDeclined -----    |           | -------is_err()------/
+        //                      ------------                             -------------
         //
-        // ---------------------------------- Torunarment start time --------------------------------------------
+        // ---------------------------------- Confirmation time -------------------------------------------------
+        //
+        //                      ------------                             -------------
+        //                      |          |                             |           |
+        //                      |   team   |  <----- Tournament ----     | organizer |
+        //                      |          |                             |           |
+        //                      ------------                             -------------
+
+        // ---------------------------------- Syncing time ------------------------------------------------------
+        // ---------------------------------- Tournarment start time --------------------------------------------
+
+        fn discard_request_log_event(
+            ui: &mut UiScreen,
+            request_state: &TournamentRequestState,
+            tournament_state: &TournamentState,
+        ) {
+            ui.push_log_event(
+                Tick::now(),
+                None,
+                format!(
+                    "Discard tournament request with state {request_state} for tournament state {tournament_state}"
+                ),
+                log::Level::Error,
+            );
+        }
         Box::new(move |app: &mut App| {
             let tournament = if let Some(t) = app.world.tournaments.get_mut(&tournament_id) {
                 t
@@ -216,114 +241,108 @@ impl NetworkCallback {
                 return Err(anyhow!("No tournament with id {tournament_id} found."));
             };
 
-            // Check that state and tournament_id are consistent
-            match state {
-                TournamentRegistrationState::Pending {
-                    tournament_id: state_tid,
-                }
-                | TournamentRegistrationState::Preconfirmed {
-                    tournament_id: state_tid,
-                }
-                | TournamentRegistrationState::Confirmed {
-                    tournament_id: state_tid,
-                } => {
-                    if tournament_id != state_tid {
-                        return Err(anyhow!(
-                            "Inconsistent tournament ids: {tournament_id} and {state_tid}"
-                        ));
-                    }
-                }
-                TournamentRegistrationState::None => {}
-            }
-
             // Check if own_team is tournament organizer.
             if tournament.organizer_id == app.world.own_team_id {
                 assert!(team_id != app.world.own_team_id);
                 // Only possible combinations are
-                // TournamentState::Registration && state = TournamentRegistrationState::Pending
-                // TournamentState::Confirmation  && state = TournamentRegistrationState::(Preconfirmed || None)
+                // TournamentState::Registration && state = TournamentRequestState::RegistrationRequest
+                // TournamentState::Confirmation  && state = TournamentRequestState::ParticipationRequest|Declined
                 let timestamp = Tick::now();
                 match tournament.state(timestamp) {
                     TournamentState::Registration => {
-                        // We process only requests with state = TournamentRegistrationState::Pending { tournament_id }
-                        if !matches!(state, TournamentRegistrationState::Pending { .. }) {
+                        // We process only requests with state = TournamentRequestState::RegistrationRequest
+                        if request_state != TournamentRequestState::RegistrationRequest {
+                            let reason =
+                                format!("Invalid tournament request received: {request_state}");
                             app.network_handler.send_tournament_registration_request(
                                 tournament_id,
                                 team_id,
                                 None,
-                                TournamentRegistrationState::None,
+                                TournamentRequestState::RegistrationDeclined {
+                                    reason: reason.clone(),
+                                },
                             )?;
                             app.ui.push_log_event(
                         Tick::now(),
-                        None,
-                        format!(
-                            "Registration to tournament {tournament_id} declined for team {team_id}: Invalid tournament state received: {state}"
-                        ),
-                        log::Level::Error,
-                    );
+                            None,
+                            format!(
+                                "Registration to tournament {tournament_id} declined for team {team_id}: {reason}."
+                            ),
+                            log::Level::Error,
+                        );
                         }
 
                         let (team, players) = if let Some(data) = team_data.as_ref() {
                             data
                         } else {
+                            let reason = "Missing team data".to_string();
                             app.network_handler.send_tournament_registration_request(
                                 tournament_id,
                                 team_id,
                                 None,
-                                TournamentRegistrationState::None,
+                                TournamentRequestState::RegistrationDeclined {
+                                    reason: reason.clone(),
+                                },
                             )?;
-                            app.ui.push_log_event(Tick::now(), None, format!("Registration to tournament {tournament_id} declined for team {team_id}: missing team data."), log::Level::Warn);
+                            app.ui.push_log_event(Tick::now(), None, format!("Registration to tournament {tournament_id} declined for team {team_id}: {reason}."), log::Level::Warn);
                             return Ok(None);
                         };
+
                         match tournament.register_team(team, players.clone(), Tick::now()) {
                             Ok(()) => {
                                 app.network_handler.send_tournament_registration_request(
                                     tournament_id,
                                     team_id,
                                     None,
-                                    TournamentRegistrationState::Preconfirmed { tournament_id },
+                                    TournamentRequestState::RegistrationOk,
                                 )?;
-                                app.ui.push_log_event(Tick::now(), None, format!("Registration to tournament {tournament_id} confirmed for team {team_id}."), log::Level::Info);
+                                app.ui.push_log_event(Tick::now(), None, format!("Registration to tournament {tournament_id} succesful for team {team_id}."), log::Level::Info);
                                 app.network_handler.send_tournament(tournament.clone())?;
                             }
+
                             Err(err) => {
                                 app.network_handler.send_tournament_registration_request(
                                     tournament_id,
                                     team_id,
                                     None,
-                                    TournamentRegistrationState::None,
+                                    TournamentRequestState::RegistrationDeclined {
+                                        reason: err.to_string(),
+                                    },
                                 )?;
-                                app.ui.push_log_event(Tick::now(), None, format!("Registration to tournament {tournament_id} declined for team {team_id}: {err}"), log::Level::Warn);
+                                app.ui.push_log_event(Tick::now(), None, format!("Registration to tournament {tournament_id} declined for team {team_id}: {err}."), log::Level::Warn);
                             }
                         }
                     }
 
                     TournamentState::Confirmation => {
                         // We process only requests with
-                        // TournamentRegistrationState::Confirmed || TournamentRegistrationState::None
-                        match state {
-                            TournamentRegistrationState::None => {
+                        // TournamentRequestState::ParticipationRequest|Declined
+                        match &request_state {
+                            TournamentRequestState::ConfirmationDeclined { reason } => {
                                 // Team did not confirm registration
                                 app.ui.push_log_event(
                                     Tick::now(),
                                     None,
                                     format!(
-                                        "Team {team_id} did not confirm registration to tournament."
+                                        "Team {team_id} did not confirm registration to tournament: {reason}."
                                     ),
-                                    log::Level::Error,
+                                    log::Level::Warn,
                                 );
                             }
-                            TournamentRegistrationState::Confirmed { .. } => {
+                            TournamentRequestState::ParticipationRequest => {
                                 let (team, players) = if let Some(data) = team_data.as_ref() {
                                     data
                                 } else {
+                                    let reason = "missing team data".to_string();
                                     app.network_handler.send_tournament_registration_request(
                                         tournament_id,
                                         team_id,
                                         None,
-                                        TournamentRegistrationState::None,
+                                        TournamentRequestState::ParticipationDeclined {
+                                            reason: reason.clone(),
+                                        },
                                     )?;
-                                    app.ui.push_log_event(Tick::now(), None, format!("Registration to tournament {tournament_id} declined for team {team_id}: missing team data."), log::Level::Warn);
+                                    app.ui.push_log_event(Tick::now(), None, format!("Participation to tournament {tournament_id} declined for team {team_id}: {reason}."), log::Level::Warn);
                                     return Ok(None);
                                 };
                                 match tournament.confirm_team_registration(
@@ -336,91 +355,79 @@ impl NetworkCallback {
                                             tournament_id,
                                             team_id,
                                             None,
-                                            TournamentRegistrationState::Confirmed {
-                                                tournament_id,
-                                            },
+                                            TournamentRequestState::ParticipationOk,
                                         )?;
-                                        app.ui.push_log_event(Tick::now(), None, format!("Registration to tournament {tournament_id} confirmed for team {team_id}."), log::Level::Info);
-                                        app.network_handler.send_tournament(tournament.clone())?;
+                                        app.ui.push_log_event(Tick::now(), None, format!("Participation to tournament {tournament_id} confirmed for team {team_id}."), log::Level::Info);
                                     }
                                     Err(err) => {
                                         app.network_handler.send_tournament_registration_request(
                                             tournament_id,
                                             team_id,
                                             None,
-                                            TournamentRegistrationState::None,
+                                            TournamentRequestState::ParticipationDeclined {
+                                                reason: err.to_string(),
+                                            },
                                         )?;
-                                        app.ui.push_log_event(Tick::now(), None, format!("Registration to tournament {tournament_id} declined for team {team_id}: {err}"), log::Level::Warn);
+                                        app.ui.push_log_event(Tick::now(), None, format!("Participation to tournament {tournament_id} declined for team {team_id}: {err}."), log::Level::Warn);
                                     }
                                 }
                             }
-                            _ => app.ui.push_log_event(
-                                Tick::now(),
-                                None,
-                                format!(
-                                    "Discard tournament messages for state {}",
-                                    tournament.state(timestamp)
-                                ),
-                                log::Level::Error,
+                            _ => discard_request_log_event(
+                                &mut app.ui,
+                                &request_state,
+                                &tournament.state(timestamp),
                             ),
                         }
                     }
 
-                    _ => {
-                        // Tournament has already started, discard
-                        app.ui.push_log_event(
-                            Tick::now(),
-                            None,
-                            format!(
-                                "Discard tournament messages for state {}",
-                                tournament.state(timestamp)
-                            ),
-                            log::Level::Error,
-                        );
-                    }
+                    _ => discard_request_log_event(
+                        &mut app.ui,
+                        &request_state,
+                        &tournament.state(timestamp),
+                    ),
                 }
             }
             // Check if own_team is team_id (sender of request).
             else if team_id == app.world.own_team_id {
                 // Only possible combinations are
-                // TournamentState::Registration && state = TournamentRegistrationState::(Preconfirmed || None)
+                // TournamentState::Registration && state = TournamentRegistrationState::(Registered || None)
                 // TournamentState::Confirmation  && state = TournamentRegistrationState::(Pending || Confirmed || None)
                 let own_team = app
                     .world
                     .teams
                     .get_mut(&app.world.own_team_id)
                     .expect("Own team should exist");
+
                 let timestamp = Tick::now();
+
                 match tournament.state(timestamp) {
                     TournamentState::Registration => {
                         if !matches!(
                             own_team.tournament_registration_state,
                             TournamentRegistrationState::Pending {tournament_id: id} if id == tournament_id
                         ) {
-                            // Discard message
-                            app.ui.push_log_event(
-                                Tick::now(),
-                                None,
-                                format!("Invalid tournament state received: {state}"),
-                                log::Level::Error,
+                            discard_request_log_event(
+                                &mut app.ui,
+                                &request_state,
+                                &tournament.state(timestamp),
                             );
                             return Ok(None);
                         }
 
-                        // We process only requests with state = TournamentRegistrationState::Confirmed { tournament_id } or None
-                        match state {
-                            TournamentRegistrationState::None => {
+                        // We process only requests with state = TournamentRequestState::RegistrationOk|Declined
+                        match &request_state {
+                            TournamentRequestState::RegistrationDeclined { reason } => {
                                 app.ui.push_log_event(
                                     Tick::now(),
                                     None,
-                                    format!("Registration to tournament {tournament_id} declined."),
+                                    format!("Registration to tournament {tournament_id} declined: {reason}."),
                                     log::Level::Warn,
                                 );
                                 own_team.tournament_registration_state =
                                     TournamentRegistrationState::None;
                             }
 
-                            TournamentRegistrationState::Preconfirmed { tournament_id } => {
+                            TournamentRequestState::RegistrationOk => {
                                 app.ui.push_log_event(
                                     Tick::now(),
                                     None,
@@ -428,99 +435,109 @@ impl NetworkCallback {
                                     log::Level::Info,
                                 );
                                 own_team.tournament_registration_state =
-                                    TournamentRegistrationState::Preconfirmed { tournament_id };
+                                    TournamentRegistrationState::Registered { tournament_id };
                             }
 
-                            TournamentRegistrationState::Pending { tournament_id }
-                            | TournamentRegistrationState::Confirmed { tournament_id } => {
-                                app.ui.push_log_event(
-                            Tick::now(),
-                            None,
-                            format!("Invalid tournament {tournament_id} state received: {state}"),
-                            log::Level::Error,
-                        );
-                            }
+                            _ => discard_request_log_event(
+                                &mut app.ui,
+                                &request_state,
+                                &tournament.state(timestamp),
+                            ),
                         }
                     }
 
                     TournamentState::Confirmation => {
-                        if !matches!(
+                        //If we are already Confirmed, return.
+                        if matches!(
                             own_team.tournament_registration_state,
-                            TournamentRegistrationState::Preconfirmed {tournament_id: id} if id == tournament_id
+                            TournamentRegistrationState::Confirmed {tournament_id: id} if id == tournament_id
                         ) {
-                            app.network_handler.send_tournament_registration_request(
-                                tournament_id,
-                                own_team.id,
-                                None,
-                                TournamentRegistrationState::None,
-                            )?;
-                            own_team.tournament_registration_state =
-                                TournamentRegistrationState::None;
-                            // Discard message
                             app.ui.push_log_event(
                                 Tick::now(),
                                 None,
-                                format!("Invalid tournament state received: {state}"),
-                                log::Level::Error,
-                            );
-                            return Ok(None);
-                        }
-
-                        if let Err(err) =
-                            own_team.can_confirm_tournament_registration(tournament, Tick::now())
-                        {
-                            app.network_handler.send_tournament_registration_request(
-                                tournament_id,
-                                own_team.id,
-                                None,
-                                TournamentRegistrationState::None,
-                            )?;
-                            own_team.tournament_registration_state =
-                                TournamentRegistrationState::None;
-                            // Discard message
-                            app.ui.push_log_event(
-                                Tick::now(),
-                                None,
-                                format!("Cannot confirm tournament participation: {err}"),
+                                format!("Tournament participation already confirmed."),
                                 log::Level::Warn,
                             );
                             return Ok(None);
                         }
-                        // We process only requests with
-                        // TournamentRegistrationState::(Pending || Confirmed || None)
-                        match state {
-                            TournamentRegistrationState::Pending { .. } => {
-                                // We are asked to confirm our participation
-                                let team_data = Some((
-                                    own_team.clone(),
-                                    World::get_players_by_team(&app.world.players, own_team)?,
-                                ));
+
+                        // Basically if tournament_registration_state == None | Pending
+                        if !matches!(
+                            own_team.tournament_registration_state,
+                            TournamentRegistrationState::Registered {tournament_id: id} if id == tournament_id
+                        ) {
+                            own_team.tournament_registration_state =
+                                TournamentRegistrationState::None;
+
+                            discard_request_log_event(
+                                &mut app.ui,
+                                &request_state,
+                                &tournament.state(timestamp),
+                            );
+                            return Ok(None);
+                        }
+
+                        // Here we know that tournament_registration_state == Registered
+                        // We process only requests with TournamentRequestState::(ConfirmationRequest || ParticipationOk|Declined)
+                        match &request_state {
+                            // We are asked to confirm our participation.
+                            TournamentRequestState::ConfirmationRequest => {
+                                // First, check if we can participate.
+                                if let Err(err) = own_team
+                                    .can_confirm_tournament_registration(tournament, Tick::now())
+                                {
+                                    app.network_handler.send_tournament_registration_request(
+                                        tournament_id,
+                                        own_team.id,
+                                        None,
+                                        TournamentRequestState::ConfirmationDeclined {
+                                            reason: err.to_string(),
+                                        },
+                                    )?;
+                                    own_team.tournament_registration_state =
+                                        TournamentRegistrationState::None;
+                                    app.ui.push_log_event(
+                                        Tick::now(),
+                                        None,
+                                        format!("Cannot confirm tournament participation: {err}."),
+                                        log::Level::Warn,
+                                    );
+                                    return Ok(None);
+                                }
+
+                                // We can participate, so we answer with a ParticipationRequest.
+                                let mut team = own_team.clone();
+                                team.peer_id = Some(app.network_handler.own_peer_id().clone());
+                                let players =
+                                    World::get_players_by_team(&app.world.players, &team)?;
+                                let team_data = Some((team, players));
                                 app.network_handler.send_tournament_registration_request(
                                     tournament_id,
                                     own_team.id,
                                     team_data,
-                                    TournamentRegistrationState::Confirmed { tournament_id },
+                                    TournamentRequestState::ParticipationRequest,
                                 )?;
                                 app.ui.push_log_event(
                                     Tick::now(),
                                     None,
-                                    "Tournament participation confirmed, waiting for response."
+                                    "Tournament participation request sent, waiting for response."
                                         .to_string(),
                                     log::Level::Info,
                                 )
                             }
-                            TournamentRegistrationState::None => {
-                                // Our participation was confirmed!
+
+                            // Ourparticipation was declined :(
+                            TournamentRequestState::ParticipationDeclined { reason } => {
                                 own_team.tournament_registration_state =
                                     TournamentRegistrationState::None;
                                 app.ui.push_log_event(
                                     Tick::now(),
                                     None,
-                                    "Tournament participation declined :(".to_string(),
+                                    format!("Tournament participation declined: {reason}."),
                                     log::Level::Warn,
-                                )
+                                );
                             }
-                            TournamentRegistrationState::Confirmed { .. } => {
+                            TournamentRequestState::ParticipationOk => {
                                 // Our participation was confirmed!
                                 own_team.tournament_registration_state =
                                     TournamentRegistrationState::Confirmed { tournament_id };
@@ -531,32 +548,19 @@ impl NetworkCallback {
                                     log::Level::Info,
                                 )
                             }
-                            TournamentRegistrationState::Preconfirmed { .. } => {
-                                app.ui.push_log_event(
-                                    Tick::now(),
-                                    None,
-                                    format!(
-                                        "Discard tournament messages for state {}",
-                                        tournament.state(timestamp)
-                                    ),
-                                    log::Level::Error,
-                                )
-                            }
+                            _ => discard_request_log_event(
+                                &mut app.ui,
+                                &request_state,
+                                &tournament.state(timestamp),
+                            ),
                         }
                     }
 
-                    _ => {
-                        // Tournament has already started, discard
-                        app.ui.push_log_event(
-                            Tick::now(),
-                            None,
-                            format!(
-                                "Discard tournament messages for state {}",
-                                tournament.state(timestamp)
-                            ),
-                            log::Level::Error,
-                        );
-                    }
+                    _ => discard_request_log_event(
+                        &mut app.ui,
+                        &request_state,
+                        &tournament.state(timestamp),
+                    ),
                 }
             }
 
@@ -572,15 +576,40 @@ impl NetworkCallback {
                 ));
             }
 
+            // FIXME: the following checks are correct in principle, but sometimes can fail if the tournament is received before
+            // the tournament status update message.
+            // let own_team = app.world.get_own_team()?;
+            // if tournament.state(Tick::now()) == TournamentState::Registration
+            //     && tournament.is_team_registered(&app.world.own_team_id)
+            //     && !matches!(
+            //         own_team.tournament_registration_state,
+            //         TournamentRegistrationState::Registered { tournament_id:id } if id == tournament.id
+            //     )
+            // {
+            //     app.ui.push_log_event(Tick::now(), None, format!("Received tournament {} indicating team is registered, but team status is wrong ({})", tournament.id, own_team.tournament_registration_state), log::Level::Error);
+            //     return Ok(None);
+            // }
+
+            // if tournament.state(Tick::now()) == TournamentState::Started
+            //     && tournament.is_team_participating(&app.world.own_team_id)
+            //     && !matches!(
+            //         own_team.tournament_registration_state,
+            //         TournamentRegistrationState::Confirmed { tournament_id:id } if id == tournament.id
+            //     )
+            // {
+            //     app.ui.push_log_event(Tick::now(), None, format!("Received tournament {} indicating team is partecipating, but team status is wrong ({})", tournament.id, own_team.tournament_registration_state), log::Level::Error);
+            //     return Ok(None);
+            // }
+
             if tournament.state(Tick::now()) == TournamentState::Registration
                 && !app.world.tournaments.contains_key(&tournament.id)
             {
-                let planet = app.world.get_planet_or_err(&tournament.planet_id)?;
-                app.ui.push_popup_to_top(PopupMessage::Ok {
+                let planet = app.world.planets.get_or_err(&tournament.planet_id)?;
+                app.ui.push_popup(PopupMessage::Ok {
                     message: format!(
                         "There is a tournament on {} starting in {} with available spots.",
                         planet.name,
-                        (tournament.starting_at - Tick::now()).formatted_as_time()
+                        (tournament.starting_at() - Tick::now()).formatted_as_time()
                     ),
                     is_skippable: true,
                     tick: Tick::now(),
@@ -695,7 +724,8 @@ impl NetworkCallback {
                         let mut trade = trade.clone();
                         let proposer_player = app
                             .world
-                            .get_player_or_err(&trade.proposer_player.id)?
+                            .players
+                            .get_or_err(&trade.proposer_player.id)?
                             .clone();
                         trade.proposer_player = proposer_player;
 
@@ -708,7 +738,7 @@ impl NetworkCallback {
                             .insert(trade.target_player.id, trade.target_player.clone());
 
                         let own_team = app.world.get_own_team()?;
-                        let target_team = app.world.get_team_or_err(
+                        let target_team = app.world.teams.get_or_err(
                             &trade
                                 .target_player
                                 .team
@@ -795,7 +825,7 @@ impl NetworkCallback {
                             .insert(trade.proposer_player.id, trade.proposer_player.clone());
 
                         let own_team = app.world.get_own_team()?;
-                        let proposer_team = app.world.get_team_or_err(
+                        let proposer_team = app.world.teams.get_or_err(
                             &trade
                                 .proposer_player
                                 .team
@@ -1179,13 +1209,13 @@ impl NetworkCallback {
                         tournament_id,
                         team_id,
                         team_data,
-                        state,
+                        request_state,
                         ..
                     } => Self::handle_tournament_registration_request_topic(
                         tournament_id,
                         team_id,
                         team_data,
-                        state,
+                        request_state,
                     )(app),
                     NetworkData::Tournament { tournament, .. } => {
                         Self::handle_tournament_topic(tournament)(app)

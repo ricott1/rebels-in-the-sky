@@ -52,9 +52,9 @@ impl UpgradeableElement for AsteroidUpgradeTarget {
             }
             AsteroidUpgradeTarget::SpaceCove => {
                 vec![
-                    (Resource::SATOSHI, 150_000),
-                    (Resource::SCRAPS, 250),
-                    (Resource::GOLD, 777),
+                    (Resource::SATOSHI, 180_000),
+                    (Resource::SCRAPS, 220),
+                    (Resource::GOLD, 100),
                 ]
             }
         }

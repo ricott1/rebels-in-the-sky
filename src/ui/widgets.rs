@@ -84,7 +84,7 @@ pub fn selectable_list<'a>(options: Vec<(String, Style)>) -> ClickableList<'a> {
 }
 
 pub fn go_to_planet_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Button<'a>> {
-    let planet_name = world.get_planet_or_err(&planet_id)?.name.as_str();
+    let planet_name = world.planets.get_or_err(&planet_id)?.name.as_str();
     Ok(Button::new(
         format!("Go to planet: {planet_name}"),
         UiCallback::GoToPlanet { planet_id },
@@ -101,7 +101,7 @@ pub fn go_to_space_cove_button<'a>() -> AppResult<Button<'a>> {
 
 pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Button<'a>> {
     let own_team = world.get_own_team()?;
-    let planet = world.get_planet_or_err(&planet_id)?;
+    let planet = world.planets.get_or_err(&planet_id)?;
 
     let mut teleport_button = Button::new(
         format!("Teleport (-{} Rum)", own_team.player_ids.len()),
@@ -126,8 +126,8 @@ pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Butt
 }
 
 pub fn go_to_team_home_planet_button<'a>(world: &World, team_id: &TeamId) -> AppResult<Button<'a>> {
-    let team = world.get_team_or_err(team_id)?;
-    let planet_name = &world.get_planet_or_err(&team.home_planet_id)?.name;
+    let team = world.teams.get_or_err(team_id)?;
+    let planet_name = &world.planets.get_or_err(&team.home_planet_id)?.name;
     Ok(Button::new(
         format!("Home planet {planet_name}"),
         UiCallback::GoToHomePlanet { team_id: team.id },
@@ -140,15 +140,15 @@ pub fn go_to_team_current_planet_button<'a>(
     world: &World,
     team_id: &TeamId,
 ) -> AppResult<Button<'a>> {
-    let team = world.get_team_or_err(team_id)?;
+    let team = world.teams.get_or_err(team_id)?;
     let go_to_team_current_planet_button = match team.current_location {
         TeamLocation::OnPlanet { planet_id } => Button::new(
-            format!("On planet {}", world.get_planet_or_err(&planet_id)?.name),
+            format!("On planet {}", world.planets.get_or_err(&planet_id)?.name),
             UiCallback::GoToCurrentTeamPlanet { team_id: team.id },
         )
         .set_hover_text(format!(
             "Go to planet {}",
-            world.get_planet_or_err(&planet_id)?.name
+            world.planets.get_or_err(&planet_id)?.name
         ))
         .set_hotkey(ui_key::ON_PLANET),
 
@@ -159,7 +159,7 @@ pub fn go_to_team_current_planet_button<'a>(
             duration,
             ..
         } => {
-            let to = world.get_planet_or_err(&to)?.name.to_string();
+            let to = world.planets.get_or_err(&to)?.name.to_string();
             let text = if started + duration > world.last_tick_short_interval + 3 * SECONDS {
                 format!("Travelling to {to}")
             } else {
@@ -173,7 +173,7 @@ pub fn go_to_team_current_planet_button<'a>(
             started,
             duration,
         } => {
-            let around_planet = world.get_planet_or_err(&around)?.name.to_string();
+            let around_planet = world.planets.get_or_err(&around)?.name.to_string();
             let text = if started + duration > world.last_tick_short_interval + 3 * SECONDS {
                 format!("Around {around_planet}")
             } else {
@@ -196,7 +196,7 @@ pub fn go_to_team_current_planet_button<'a>(
 }
 
 pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button<'a>> {
-    let player = world.get_player_or_err(player_id)?;
+    let player = world.players.get_or_err(player_id)?;
     let can_drink = player.can_drink(world);
 
     let mut button = Button::new(
@@ -286,7 +286,7 @@ pub fn render_challenge_button(
 
     let challenge_button = if let Some(game_id) = team.current_game {
         // FIXME: The game is not necessarily part of the world if it's a network game.
-        let game_text = if let Ok(game) = world.get_game_or_err(&game_id) {
+        let game_text = if let Ok(game) = world.games.get_or_err(&game_id) {
             if let Some(action) = game.action_results.last() {
                 format!(
                     "{} {:>3}-{:<3} {}",
@@ -310,7 +310,7 @@ pub fn render_challenge_button(
         )
         .set_hover_text("Go to team's game")
         .set_hotkey(ui_key::GO_TO_GAME);
-        if world.get_game_or_err(&game_id).is_err() {
+        if world.games.get_or_err(&game_id).is_err() {
             b.disable(Some("Game is not visible"));
         }
         b
@@ -394,7 +394,7 @@ pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
 
     match team.current_location {
         TeamLocation::OnPlanet { planet_id } => {
-            let planet = world.get_planet_or_err(&planet_id)?;
+            let planet = world.planets.get_or_err(&planet_id)?;
             let needed_fuel = (duration as f32 * team.spaceship_fuel_consumption_per_tick()) as u32;
             button = button.set_hover_text(
                 format!(
@@ -415,7 +415,7 @@ pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
                 "Explore the space on autopilot. Hope to find resources, free pirates or more..."
                     .to_string(),
             );
-            let to = world.get_planet_or_err(&to)?.name.to_string();
+            let to = world.planets.get_or_err(&to)?.name.to_string();
             button.disable(Some(format!("Travelling to planet {to}")));
         }
         TeamLocation::Exploring { around, .. } => {
@@ -423,7 +423,7 @@ pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
                 "Explore the space on autopilot. Hope to find resources, free pirates or more..."
                     .to_string(),
             );
-            let around_planet = world.get_planet_or_err(&around)?.name.to_string();
+            let around_planet = world.planets.get_or_err(&around)?.name.to_string();
             button.disable(Some(format!("Exploring around planet {around_planet}")));
         }
         TeamLocation::OnSpaceAdventure { .. } => {
@@ -440,7 +440,7 @@ pub fn space_adventure_button<'a>(world: &World, team: &Team) -> AppResult<Butto
 
     match team.current_location {
         TeamLocation::OnPlanet { planet_id } => {
-            let planet = world.get_planet_or_err(&planet_id)?;
+            let planet = world.planets.get_or_err(&planet_id)?;
             button = button.set_hover_text(format!(
                 "Start a space adventure around {} to collect resources and more...",
                 planet.name,
@@ -456,14 +456,14 @@ pub fn space_adventure_button<'a>(world: &World, team: &Team) -> AppResult<Butto
             button = button.set_hover_text(
                 "Start a space adventure to manually collect resources and more...".to_string(),
             );
-            let to = world.get_planet_or_err(&to)?.name.to_string();
+            let to = world.planets.get_or_err(&to)?.name.to_string();
             button.disable(Some(format!("Travelling to planet {to}")));
         }
         TeamLocation::Exploring { around, .. } => {
             button = button.set_hover_text(
                 "Start a space adventure to manually collect resources and more...".to_string(),
             );
-            let around_planet = world.get_planet_or_err(&around)?.name.to_string();
+            let around_planet = world.planets.get_or_err(&around)?.name.to_string();
             button.disable(Some(format!("Exploring around planet {around_planet}")));
         }
         TeamLocation::OnSpaceAdventure { .. } => {

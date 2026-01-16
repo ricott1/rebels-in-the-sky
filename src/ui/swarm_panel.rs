@@ -15,7 +15,7 @@ use super::{
 use crate::core::constants::{MINUTES, MIN_PLAYERS_PER_GAME};
 use crate::core::{skill::Rated, world::World};
 use crate::network::types::{PlayerRanking, TeamRanking};
-use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId, Tick};
+use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId, Tick};
 use crate::ui::clickable_list::{ClickableList, ClickableListItem};
 use crate::ui::ui_key;
 use crate::ui::utils::wrap_text;
@@ -277,7 +277,7 @@ impl SwarmPanel {
         let mut items: Vec<ListItem> = vec![];
 
         for (&team_id, peer_id) in self.team_id_to_peer_id.iter() {
-            if let Ok(team) = world.get_team_or_err(&team_id) {
+            if let Ok(team) = world.teams.get_or_err(&team_id) {
                 let style = if self.is_peer_connected(peer_id) {
                     UiStyle::NETWORK
                 } else {
@@ -527,7 +527,7 @@ impl SwarmPanel {
         };
 
         let (_, top_team) = &self.team_ranking[team_ranking_index];
-        let team_rating = if world.get_team(&top_team.team.id).is_some() {
+        let team_rating = if world.teams.get(&top_team.team.id).is_some() {
             world.team_rating(&top_team.team.id).unwrap_or_default()
         } else {
             top_team.player_ratings.iter().sum::<f32>()
@@ -631,7 +631,7 @@ impl SwarmPanel {
             .iter()
             .enumerate()
             .map(|(idx, (player_id, ranking))| {
-                let player = if let Ok(p) = world.get_player_or_err(player_id) {
+                let player = if let Ok(p) = world.players.get_or_err(player_id) {
                     p
                 } else {
                     &ranking.player
@@ -764,7 +764,7 @@ impl SwarmPanel {
                 let author_span = match event.peer_id {
                     Some(peer_id) => {
                         let from = if let Some(team_id) = self.peer_id_to_team_id.get(&peer_id) {
-                            if let Ok(team) = world.get_team_or_err(team_id) {
+                            if let Ok(team) = world.teams.get_or_err(team_id) {
                                 team.name.as_str()
                             } else {
                                 "Unknown"

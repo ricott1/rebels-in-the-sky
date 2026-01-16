@@ -13,8 +13,9 @@ use crate::app_version;
 use crate::core::{AsteroidUpgradeTarget, UpgradeableElement};
 use crate::game_engine::game::Game;
 use crate::game_engine::{Tournament, TournamentId};
+use crate::network::types::TournamentRequestState;
 use crate::network::{challenge::Challenge, trade::Trade};
-use crate::types::PlayerMap;
+use crate::types::{HashMapWithResult, PlayerMap};
 use crate::ui::tournament_panel::TournamentView;
 use crate::ui::ui_key;
 use crate::{
@@ -183,19 +184,19 @@ pub enum UiCallback {
 
     CancelTournament {
         tournament_id: TournamentId,
+        error_message: String,
     },
 
     ConfirmTournamentParticipants {
         tournament_id: TournamentId,
     },
 
-    SendConfirmedTournament {
+    SendInitializedTournament {
         tournament_id: TournamentId,
     },
 
     RegisterToTournament {
         tournament_id: TournamentId,
-        team_id: TeamId,
     },
 
     GeneratePlayerTeam {
@@ -340,7 +341,8 @@ impl UiCallback {
             app.ui.team_panel.update(&app.world)?;
             let team_id = app
                 .world
-                .get_player_or_err(&player_id)?
+                .players
+                .get_or_err(&player_id)?
                 .team
                 .ok_or(anyhow!("Player {player_id:?} has no team"))?;
 
@@ -356,7 +358,8 @@ impl UiCallback {
                 app.ui.team_panel.set_index(index);
                 let player_index = app
                     .world
-                    .get_team_or_err(&team_id)?
+                    .teams
+                    .get_or_err(&team_id)?
                     .player_ids
                     .iter()
                     .position(|&x| x == player_id)
@@ -409,7 +412,7 @@ impl UiCallback {
 
     fn go_to_home_planet(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let team = app.world.get_team_or_err(&team_id)?;
+            let team = app.world.teams.get_or_err(&team_id)?;
             app.ui
                 .galaxy_panel
                 .go_to_planet(team.home_planet_id, ZoomLevel::In);
@@ -421,11 +424,11 @@ impl UiCallback {
 
     fn go_to_current_team_planet(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let team = app.world.get_team_or_err(&team_id)?;
+            let team = app.world.teams.get_or_err(&team_id)?;
             let target = match team.current_location {
                 TeamLocation::OnPlanet {
                     planet_id: current_planet_id,
-                } => app.world.get_planet_or_err(&current_planet_id)?,
+                } => app.world.planets.get_or_err(&current_planet_id)?,
                 TeamLocation::Travelling { .. } => {
                     return Err(anyhow!("Team is travelling"));
                 }
@@ -446,13 +449,13 @@ impl UiCallback {
 
     fn go_to_current_player_planet(player_id: PlayerId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let player = app.world.get_player_or_err(&player_id)?;
+            let player = app.world.players.get_or_err(&player_id)?;
 
             match player.current_location {
                 PlayerLocation::OnPlanet {
                     planet_id: current_planet_id,
                 } => {
-                    let target = app.world.get_planet_or_err(&current_planet_id)?;
+                    let target = app.world.planets.get_or_err(&current_planet_id)?;
                     app.ui.galaxy_panel.go_to_planet(target.id, ZoomLevel::In);
                     app.ui.switch_to(super::ui_screen::UiTab::Galaxy);
                 }
@@ -512,7 +515,7 @@ impl UiCallback {
     fn challenge_team(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
             let own_team = app.world.get_own_team()?;
-            let team = app.world.get_team_or_err(&team_id)?;
+            let team = app.world.teams.get_or_err(&team_id)?;
 
             // Challenge to network team.
             if let Some(peer_id) = team.peer_id {
@@ -568,14 +571,14 @@ impl UiCallback {
         Box::new(move |app: &mut App| {
             let own_team = app.world.get_own_team()?;
 
-            let target_player = app.world.get_player_or_err(&target_player_id)?;
+            let target_player = app.world.players.get_or_err(&target_player_id)?;
             let target_team = if let Some(team_id) = target_player.team {
-                app.world.get_team_or_err(&team_id)?
+                app.world.teams.get_or_err(&team_id)?
             } else {
                 return Err(anyhow!("Target player has no team"));
             };
 
-            let proposer_player = app.world.get_player_or_err(&proposer_player_id)?;
+            let proposer_player = app.world.players.get_or_err(&proposer_player_id)?;
             own_team.can_trade_players(proposer_player, target_player, target_team)?;
 
             // Network trade
@@ -707,7 +710,7 @@ impl UiCallback {
                 .tournaments
                 .insert(tournament.id, tournament.clone());
 
-            own_team.tournament_registration_state = TournamentRegistrationState::Preconfirmed {
+            own_team.tournament_registration_state = TournamentRegistrationState::Registered {
                 tournament_id: tournament.id,
             };
 
@@ -779,7 +782,7 @@ impl UiCallback {
 
     fn next_training_focus(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let mut team = app.world.get_team_or_err(&team_id)?.clone();
+            let mut team = app.world.teams.get_or_err(&team_id)?.clone();
             team.can_change_training_focus()?;
 
             let new_focus = match team.training_focus {
@@ -797,7 +800,7 @@ impl UiCallback {
     fn travel_to_planet(planet_id: PlanetId) -> AppCallback {
         Box::new(move |app: &mut App| {
             let mut own_team = app.world.get_own_team()?.clone();
-            let target_planet = app.world.get_planet_or_err(&planet_id)?;
+            let target_planet = app.world.planets.get_or_err(&planet_id)?;
 
             let mut current_planet = match own_team.current_location {
                 TeamLocation::OnPlanet {
@@ -806,7 +809,7 @@ impl UiCallback {
                     if current_planet_id == planet_id {
                         return Err(anyhow!("Already on planet"));
                     }
-                    app.world.get_planet_or_err(&current_planet_id)?.clone()
+                    app.world.planets.get_or_err(&current_planet_id)?.clone()
                 }
                 TeamLocation::Travelling { .. } => return Err(anyhow!("Team is travelling")),
                 TeamLocation::Exploring { .. } => return Err(anyhow!("Team is exploring")),
@@ -864,7 +867,7 @@ impl UiCallback {
             };
 
             for player in own_team.player_ids.iter() {
-                let mut player = app.world.get_player_or_err(player)?.clone();
+                let mut player = app.world.players.get_or_err(player)?.clone();
                 player.set_jersey(&pirate_jersey);
                 app.world.players.insert(player.id, player);
             }
@@ -891,7 +894,7 @@ impl UiCallback {
                 }
             };
 
-            let mut around_planet = app.world.get_planet_or_err(&planet_id)?.clone();
+            let mut around_planet = app.world.planets.get_or_err(&planet_id)?.clone();
             own_team.can_explore_around_planet(&around_planet, duration)?;
 
             own_team.current_location = TeamLocation::Exploring {
@@ -917,7 +920,7 @@ impl UiCallback {
             };
 
             for player_id in own_team.player_ids.iter() {
-                let mut player = app.world.get_player_or_err(player_id)?.clone();
+                let mut player = app.world.players.get_or_err(player_id)?.clone();
                 player.set_jersey(&pirate_jersey);
                 app.world.players.insert(player.id, player);
             }
@@ -967,7 +970,7 @@ impl UiCallback {
                         filename.clone(),
                         planet_id,
                     )?;
-                    let mut current_planet = app.world.get_planet_or_err(&planet_id)?.clone();
+                    let mut current_planet = app.world.planets.get_or_err(&planet_id)?.clone();
                     current_planet.team_ids.retain(|&x| x != own_team.id);
                     app.world.planets.insert(current_planet.id, current_planet);
 
@@ -975,7 +978,7 @@ impl UiCallback {
                         planet_id: asteroid_id,
                     };
 
-                    let mut asteroid = app.world.get_planet_or_err(&asteroid_id)?.clone();
+                    let mut asteroid = app.world.planets.get_or_err(&asteroid_id)?.clone();
                     asteroid.team_ids.push(own_team.id);
                     asteroid.version += 1;
 
@@ -1404,7 +1407,7 @@ impl UiCallback {
             }
 
             Self::Drink { player_id } => {
-                let mut player = app.world.get_player_or_err(player_id)?.clone();
+                let mut player = app.world.players.get_or_err(player_id)?.clone();
                 player.can_drink(&app.world)?;
 
                 let morale_bonus = if matches!(player.special_trait, Some(Trait::Spugna)) {
@@ -1424,7 +1427,8 @@ impl UiCallback {
 
                 let mut team = app
                     .world
-                    .get_team_or_err(&player.team.expect("Player should have team"))?
+                    .teams
+                    .get_or_err(&player.team.expect("Player should have team"))?
                     .clone();
 
                 team.sub_resource(Resource::RUM, 1)?;
@@ -1468,7 +1472,7 @@ impl UiCallback {
                             .map(|(&id, _)| id),
                     };
                     if let Some(to) = portal_target_id {
-                        let portal_target = app.world.get_planet_or_err(&to)?;
+                        let portal_target = app.world.planets.get_or_err(&to)?;
                         // We set the new target to the portal_target
                         let from = match team.current_location {
                             TeamLocation::OnPlanet { .. }
@@ -1526,7 +1530,10 @@ impl UiCallback {
                 registrations_closing_at,
             } => Self::organize_new_tournament(*max_participants, *registrations_closing_at)(app),
 
-            Self::CancelTournament { tournament_id } => {
+            Self::CancelTournament {
+                tournament_id,
+                error_message,
+            } => {
                 if let Some(tournament) = app.world.tournaments.get_mut(tournament_id) {
                     tournament.cancel();
                     for &team_id in tournament.registered_teams.keys() {
@@ -1537,7 +1544,9 @@ impl UiCallback {
                             *tournament_id,
                             team_id,
                             None,
-                            TournamentRegistrationState::None,
+                            TournamentRequestState::Cancellation {
+                                reason: error_message.clone(),
+                            },
                         );
                     }
 
@@ -1548,7 +1557,7 @@ impl UiCallback {
                             .get_mut(&app.world.own_team_id)
                             .expect("There should be the own team.");
                         own_team.tournament_registration_state = TournamentRegistrationState::None;
-                        app.ui.push_popup_to_top(PopupMessage::Ok {
+                        app.ui.push_popup(PopupMessage::Ok {
                             message: format!("{} tournament got cancelled.", tournament.name()),
                             tick: Tick::now(),
                             is_skippable: false,
@@ -1558,7 +1567,11 @@ impl UiCallback {
                     app.ui.push_log_event(
                         Tick::now(),
                         None,
-                        format!("{} tournament got cancelled.", tournament.name()),
+                        format!(
+                            "{} tournament got cancelled: {}",
+                            tournament.name(),
+                            error_message
+                        ),
                         log::Level::Warn,
                     );
                 }
@@ -1608,9 +1621,7 @@ impl UiCallback {
                             *tournament_id,
                             team_id,
                             None,
-                            TournamentRegistrationState::Pending {
-                                tournament_id: *tournament_id,
-                            },
+                            TournamentRequestState::ConfirmationRequest,
                         );
                     }
                 } else {
@@ -1622,42 +1633,36 @@ impl UiCallback {
                 Ok(None)
             }
 
-            Self::SendConfirmedTournament { tournament_id } => {
+            Self::SendInitializedTournament { tournament_id } => {
                 if let Some(tournament) = app.world.tournaments.get(tournament_id) {
                     let _ = app.network_handler.send_tournament(tournament.clone());
                 } else {
                     log::warn!(
-                        "Invalid tournament id {tournament_id} for SendConfirmedTournament."
+                        "Invalid tournament id {tournament_id} for SendInitializedTournament."
                     );
                 }
 
                 Ok(None)
             }
 
-            Self::RegisterToTournament {
-                tournament_id,
-                team_id,
-            } => {
+            Self::RegisterToTournament { tournament_id } => {
                 if let Some(tournament) = app.world.tournaments.get(tournament_id) {
                     let tournament_id = *tournament_id;
-                    let team = app
-                        .world
-                        .teams
-                        .get_mut(team_id)
-                        .ok_or(anyhow!("Team not found {team_id}"))?;
+                    let mut team = app.world.get_own_team()?.clone();
                     team.can_register_to_tournament(tournament, Tick::now())?;
-                    let team_data = Some((
-                        team.clone(),
-                        World::get_players_by_team(&app.world.players, team)?,
-                    ));
+                    team.peer_id = Some(app.network_handler.own_peer_id().clone());
+                    let players = World::get_players_by_team(&app.world.players, &team)?;
+                    let team_data = Some((team, players));
+
                     app.network_handler.send_tournament_registration_request(
                         tournament_id,
-                        *team_id,
+                        app.world.own_team_id,
                         team_data,
-                        TournamentRegistrationState::Pending { tournament_id },
+                        TournamentRequestState::RegistrationRequest,
                     )?;
 
-                    team.tournament_registration_state =
+                    let own_team = app.world.get_own_team_mut()?;
+                    own_team.tournament_registration_state =
                         TournamentRegistrationState::Pending { tournament_id };
                 } else {
                     log::warn!("Invalid tournament id {tournament_id} for RegisterToTournament.");
@@ -1711,7 +1716,7 @@ impl UiCallback {
 
                 let should_spawn_asteroid = match own_team.current_location {
                     TeamLocation::OnPlanet { planet_id } => {
-                        let current_planet = app.world.get_planet_or_err(&planet_id)?;
+                        let current_planet = app.world.planets.get_or_err(&planet_id)?;
                         current_planet.asteroid_probability > 0.0
                             && own_team.asteroid_ids.len() < MAX_NUM_ASTEROID_PER_TEAM
                     }
@@ -1725,7 +1730,7 @@ impl UiCallback {
 
                 let gold_fragment_probability = match own_team.current_location {
                     TeamLocation::OnPlanet { planet_id } => {
-                        let current_planet = app.world.get_planet_or_err(&planet_id)?;
+                        let current_planet = app.world.planets.get_or_err(&planet_id)?;
                         0.001
                             + 0.075 * (current_planet.resources.value(&Resource::GOLD) as f64)
                                 / MAX_SKILL as f64

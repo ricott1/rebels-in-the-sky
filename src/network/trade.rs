@@ -47,7 +47,12 @@ impl Trade {
 #[cfg(test)]
 mod tests {
     use super::Trade;
-    use crate::{app::App, core::skill::MAX_SKILL, types::AppResult, ui::UiCallback};
+    use crate::{
+        app::App,
+        core::skill::MAX_SKILL,
+        types::{AppResult, HashMapWithResult},
+        ui::UiCallback,
+    };
     use libp2p::PeerId;
     use rand::{seq::IteratorRandom, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -56,7 +61,7 @@ mod tests {
     fn test_local_trade_success() -> AppResult<()> {
         let mut app = App::test_default()?;
 
-        let own_team = app.world.get_team_or_err(&app.world.own_team_id)?.clone();
+        let own_team = app.world.teams.get_or_err(&app.world.own_team_id)?.clone();
         let proposer_player_id = own_team.player_ids[0];
         let mut proposer_player = app.world.players.get(&proposer_player_id).unwrap().clone();
         assert!(proposer_player.team == Some(own_team.id));
@@ -91,7 +96,7 @@ mod tests {
         let target_player_id = target_team.player_ids[0];
         app.world.teams.insert(target_team.id, target_team);
 
-        let target_player = app.world.get_player_or_err(&target_player_id)?;
+        let target_player = app.world.players.get_or_err(&target_player_id)?;
         assert!(target_player.team == Some(target_team_id));
 
         let cb = UiCallback::CreateTradeProposal {
@@ -100,11 +105,11 @@ mod tests {
         };
         assert!(cb.call(&mut app).is_ok());
 
-        let proposer_player = app.world.get_player_or_err(&proposer_player_id)?;
+        let proposer_player = app.world.players.get_or_err(&proposer_player_id)?;
         // FIXME: this is flaky and fails sometimes.
         assert!(proposer_player.team == Some(target_team_id));
 
-        let target_player = app.world.get_player_or_err(&target_player_id)?;
+        let target_player = app.world.players.get_or_err(&target_player_id)?;
         assert!(target_player.team == Some(app.world.own_team_id));
 
         Ok(())
@@ -130,7 +135,7 @@ mod tests {
         let target_team_id = target_team.id;
 
         let target_player_id = target_team.player_ids[0];
-        let target_player = app.world.get_player_or_err(&target_player_id)?;
+        let target_player = app.world.players.get_or_err(&target_player_id)?;
         assert!(target_player.team == Some(target_team.id));
 
         let cb = UiCallback::CreateTradeProposal {
@@ -140,10 +145,10 @@ mod tests {
 
         assert!(cb.call(&mut app).unwrap_err().to_string() == "Not on the same planet".to_string());
 
-        let proposer_player = app.world.get_player_or_err(&proposer_player_id)?;
+        let proposer_player = app.world.players.get_or_err(&proposer_player_id)?;
         assert!(proposer_player.team == Some(app.world.own_team_id));
 
-        let target_player = app.world.get_player_or_err(&target_player_id)?;
+        let target_player = app.world.players.get_or_err(&target_player_id)?;
         assert!(target_player.team == Some(target_team_id));
 
         Ok(())
@@ -170,10 +175,10 @@ mod tests {
             cb.call(&mut app).unwrap_err().to_string() == "Cannot trade with oneself".to_string()
         );
 
-        let proposer_player = app.world.get_player_or_err(&proposer_player_id)?;
+        let proposer_player = app.world.players.get_or_err(&proposer_player_id)?;
         assert!(proposer_player.team == Some(app.world.own_team_id));
 
-        let target_player = app.world.get_player_or_err(&target_player_id)?;
+        let target_player = app.world.players.get_or_err(&target_player_id)?;
         assert!(target_player.team == Some(app.world.own_team_id));
 
         Ok(())
@@ -197,7 +202,7 @@ mod tests {
             None,
         )?;
 
-        let mut target_team = world.get_team_or_err(&target_team_id)?.clone();
+        let mut target_team = world.teams.get_or_err(&target_team_id)?.clone();
 
         let target_team_peer_id = PeerId::random();
         target_team.peer_id = Some(target_team_peer_id);
@@ -208,9 +213,9 @@ mod tests {
         let own_team_peer_id = PeerId::random();
 
         let proposer_player_id = own_team.player_ids[0];
-        let proposer_player = world.get_player_or_err(&proposer_player_id)?.clone();
+        let proposer_player = world.players.get_or_err(&proposer_player_id)?.clone();
 
-        let target_player = world.get_player_or_err(&target_player_id)?.clone();
+        let target_player = world.players.get_or_err(&target_player_id)?.clone();
 
         let _trade = Trade::new(
             own_team_peer_id,

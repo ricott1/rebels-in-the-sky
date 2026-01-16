@@ -7,7 +7,7 @@ use super::{
 use crate::{
     core::{Resource, Trait},
     image::color_map::SkinColorMap,
-    types::{AppResult, PlanetId, SystemTimeTick, TeamId, Tick},
+    types::{AppResult, HashMapWithResult, PlanetId, SystemTimeTick, TeamId, Tick},
 };
 use rand::{seq::IteratorRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -478,7 +478,7 @@ impl TeamBonus {
     pub const BASE_BONUS: f32 = 1.0;
     const BONUS_PER_SKILL: f32 = 1.0 / MAX_SKILL;
     pub fn current_team_bonus(&self, world: &World, team_id: &TeamId) -> AppResult<f32> {
-        let team = world.get_team_or_err(team_id)?;
+        let team = world.teams.get_or_err(team_id)?;
         let player_id = match self {
             TeamBonus::Exploration => team.crew_roles.pilot,
             TeamBonus::SpaceshipSpeed => team.crew_roles.pilot,
@@ -491,7 +491,7 @@ impl TeamBonus {
         };
 
         let skill = if let Some(id) = player_id {
-            let player = world.get_player_or_err(&id)?;
+            let player = world.players.get_or_err(&id)?;
             self.as_skill(player)
         } else {
             0.0

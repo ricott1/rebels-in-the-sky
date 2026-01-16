@@ -191,7 +191,9 @@ impl UiScreen {
     }
 
     pub fn close_popup(&mut self) {
-        self.popup_messages.remove(0);
+        if !self.popup_messages.is_empty() {
+            self.popup_messages.remove(0);
+        }
     }
 
     pub fn push_log_event(
