@@ -271,6 +271,6 @@ impl MusicPlayer {
     }
 
     pub fn currently_playing(&self) -> Option<String> {
-        Some(self.streams[self.index].name.clone())
+        Some(self.streams.get(self.index)?.name.clone())
     }
 }
