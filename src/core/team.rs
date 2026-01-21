@@ -75,6 +75,9 @@ pub struct Team {
     pub tournament_registration_state: TournamentRegistrationState,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
+    pub is_organizing_tournament: Option<TournamentId>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub local_game_rating: GameRating,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
@@ -103,7 +106,7 @@ pub struct Team {
     pub honours: HashSet<Honour>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub space_cove: SpaceCoveState,
+    pub space_cove: Option<SpaceCove>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub tournaments_won: Vec<TournamentId>,
@@ -277,6 +280,15 @@ impl Team {
         }
     }
 
+    pub fn playing_in_tournament(&self) -> Option<PlanetId> {
+        match self.tournament_registration_state {
+            TournamentRegistrationState::None
+            | TournamentRegistrationState::Pending { .. }
+            | TournamentRegistrationState::Registered { .. } => None,
+            TournamentRegistrationState::Confirmed { tournament_id } => Some(tournament_id),
+        }
+    }
+
     pub fn committed_to_tournament(&self) -> Option<PlanetId> {
         match self.tournament_registration_state {
             TournamentRegistrationState::None => None,
@@ -309,12 +321,7 @@ impl Team {
     }
 
     pub fn has_space_cove_on(&self) -> Option<PlanetId> {
-        match self.space_cove {
-            SpaceCoveState::None => None,
-            SpaceCoveState::Pending { planet_id } | SpaceCoveState::Ready { planet_id } => {
-                Some(planet_id)
-            }
-        }
+        self.space_cove.as_ref().map(|cove| cove.planet_id)
     }
 
     pub fn can_teleport_to(&self, to: &Planet) -> AppResult<()> {
@@ -414,7 +421,7 @@ impl Team {
             return Err(anyhow!("{} is playing", self.name));
         }
 
-        if self.committed_to_tournament().is_some() {
+        if self.playing_in_tournament().is_some() {
             return Err(anyhow!("{} is in a tournament", self.name));
         }
 
@@ -430,7 +437,7 @@ impl Team {
             return Err(anyhow!("{} is playing", self.name));
         }
 
-        if self.committed_to_tournament().is_some() {
+        if self.playing_in_tournament().is_some() {
             return Err(anyhow!("{} is in a tournament", self.name));
         }
 
@@ -442,13 +449,13 @@ impl Team {
         team: &Team,
         part_of_tournament: Option<TournamentId>,
     ) -> AppResult<()> {
-        if self.committed_to_tournament() != part_of_tournament {
+        if self.playing_in_tournament() != part_of_tournament {
             return Err(anyhow!(
                 "{} game and team tournaments not matching",
                 self.name
             ));
         }
-        if team.committed_to_tournament() != part_of_tournament {
+        if team.playing_in_tournament() != part_of_tournament {
             return Err(anyhow!("Team game and team tournaments not matching"));
         }
 
@@ -487,23 +494,33 @@ impl Team {
         }
 
         if self.committed_to_tournament().is_some() {
-            return Err(anyhow!("{} is in a tournament", self.name));
+            return Err(anyhow!("{} is already commited to a tournament", self.name));
         }
 
-        match self.space_cove {
-            SpaceCoveState::Ready { planet_id } => {
-                if !matches!(self.is_on_planet(), Some(id) if id == planet_id) {
-                    return Err(anyhow!(
-                        "Cannot organize a tournament while not at your space cove planet."
-                    ));
-                }
-            }
+        if self.is_organizing_tournament.is_some() {
+            return Err(anyhow!("{} is already organizing a tournament", self.name));
+        }
 
-            _ => {
+        match self.space_cove.as_ref() {
+            None => {
                 return Err(anyhow!(
                     "Cannot organize a tournament without a space cove."
                 ));
             }
+            Some(cove) => match cove.state {
+                SpaceCoveState::UnderConstruction => {
+                    return Err(anyhow!(
+                        "Cannot organize a tournament if space cove is not ready."
+                    ))
+                }
+                SpaceCoveState::Ready => {
+                    if !matches!(self.is_on_planet(), Some(id) if id == cove.planet_id) {
+                        return Err(anyhow!(
+                            "Cannot organize a tournament while not at your space cove planet."
+                        ));
+                    }
+                }
+            },
         }
 
         // FIXME: add conditions on kartoffeln
@@ -676,12 +693,12 @@ impl Team {
             return Err(anyhow!("{} is playing", target_team.name));
         }
 
-        if self.committed_to_tournament().is_some() {
-            return Err(anyhow!("{} is in a tournament", self.name));
+        if self.playing_in_tournament().is_some() {
+            return Err(anyhow!("{} is playing in a tournament", self.name));
         }
 
-        if target_team.committed_to_tournament().is_some() {
-            return Err(anyhow!("{} is in a tournament", target_team.name));
+        if target_team.playing_in_tournament().is_some() {
+            return Err(anyhow!("{} is playing in a tournament", target_team.name));
         }
 
         Ok(())
@@ -710,8 +727,8 @@ impl Team {
             return Err(anyhow!("{} is playing", self.name));
         }
 
-        if self.committed_to_tournament().is_some() {
-            return Err(anyhow!("{} is in a tournament", self.name));
+        if self.playing_in_tournament().is_some() {
+            return Err(anyhow!("{} is playing in a tournament", self.name));
         }
 
         let is_teleporting = duration == TELEPORT_TRAVEL_DURATION;
@@ -760,8 +777,8 @@ impl Team {
             return Err(anyhow!("{} is playing", self.name));
         }
 
-        if self.committed_to_tournament().is_some() {
-            return Err(anyhow!("{} is in a tournament", self.name));
+        if self.playing_in_tournament().is_some() {
+            return Err(anyhow!("{} is playing in a tournament", self.name));
         }
 
         if self.spaceship.current_durability() == 0 {
@@ -877,8 +894,7 @@ impl Team {
         }
 
         // Special rules for space cove: it has to be unique across all asteroids.
-        if upgrade.target == AsteroidUpgradeTarget::SpaceCove && self.has_space_cove_on().is_some()
-        {
+        if upgrade.target == AsteroidUpgradeTarget::SpaceCove && self.space_cove.is_some() {
             return Err(anyhow!("You already have a space cove"));
         }
 
@@ -909,7 +925,7 @@ impl Team {
         }
 
         if self.is_on_planet() != Some(asteroid.id) {
-            return Err(anyhow!("Can only upgrade when the team is on the asteroid"));
+            return Err(anyhow!("Can only build on the asteroid"));
         }
 
         for (resource, amount) in upgrade.target.upgrade_cost().iter() {

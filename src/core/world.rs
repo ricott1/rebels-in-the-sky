@@ -1043,7 +1043,7 @@ impl World {
             ));
         }
 
-        if self.games.get(&network_game.id).is_none() {
+        if !self.games.contains_key(&network_game.id) {
             let planet = self.planets.get_or_err(&network_game.location)?;
             let mut game = Game::new(
                 network_game.id,
@@ -1179,6 +1179,19 @@ impl World {
         Ok(team_players)
     }
 
+    pub fn get_game_players_by_team(players: &PlayerMap, team: &Team) -> AppResult<PlayerMap> {
+        let mut team_players = PlayerMap::new();
+        for player_id in team.player_ids.iter().take(MAX_PLAYERS_PER_GAME) {
+            let mut player = players
+                .get(player_id)
+                .ok_or(anyhow!("Player {player_id} not found."))?
+                .clone();
+            player.peer_id = team.peer_id;
+            team_players.insert(player.id, player);
+        }
+        Ok(team_players)
+    }
+
     pub fn team_rating(&self, team_id: &TeamId) -> AppResult<Skill> {
         let team = self.teams.get_or_err(team_id)?;
         if team.player_ids.is_empty() {
@@ -1187,7 +1200,7 @@ impl World {
         Ok(team
             .player_ids
             .iter()
-            .filter(|&id| self.players.get(id).is_some())
+            .filter(|&id| self.players.contains_key(id))
             .map(|id| self.players.get(id).unwrap().average_skill())
             .sum::<Skill>()
             / team.player_ids.len().max(MIN_PLAYERS_PER_GAME) as Skill)
@@ -1407,6 +1420,7 @@ impl World {
                     player.add_morale(MORALE_INCREASE_PER_GAME);
 
                     // Restore tiredness and morale, at least partially if it's a tournament game.
+                    // FIXME: this shouldnt be applied if the tournament is over, but we dont know it yet here.
                     if is_tournament_game {
                         player.add_morale(MORALE_INCREASE_AFTER_TOURNAMENT_GAME);
                         player.tiredness =
@@ -1679,17 +1693,6 @@ impl World {
                     // Append callback to send Confirmation.
                     // If we are simulating, abort tournament.
                     if tournament.organizer_id == self.own_team_id {
-                        // if is_simulating {
-                        //     let error_message =
-                        //         "Confirmation cannot be run while simulating.".to_string();
-                        //     log::warn!("Canceling tournament {tournament_id}: {error_message}");
-                        //     callbacks.push(UiCallback::CancelTournament {
-                        //         tournament_id,
-                        //         error_message,
-                        //     });
-                        //     continue;
-                        // }
-
                         if tournament.registered_teams.len() < 2 {
                             let error_message = format!(
                                 "Insufficient registered teams ({}).",
@@ -1708,17 +1711,6 @@ impl World {
                 }
                 TournamentState::Syncing => {
                     if tournament.organizer_id == self.own_team_id {
-                        // if is_simulating {
-                        //     let error_message =
-                        //         "Syncing cannot be run while simulating.".to_string();
-                        //     log::warn!("Canceling tournament {tournament_id}: {error_message}");
-                        //     callbacks.push(UiCallback::CancelTournament {
-                        //         tournament_id,
-                        //         error_message,
-                        //     });
-                        //     continue;
-                        // }
-
                         if tournament.participants.len() < 2 {
                             let error_message = format!(
                                 "Insufficient participants ({}).",
@@ -1751,18 +1743,6 @@ impl World {
                         continue;
                     }
 
-                    if tournament.participants.len() < 2 {
-                        let error_message = format!(
-                            "Insufficient participants ({}).",
-                            tournament.participants.len()
-                        );
-                        log::warn!("Canceling tournament {tournament_id}: {error_message}");
-                        callbacks.push(UiCallback::CancelTournament {
-                            tournament_id,
-                            error_message,
-                        });
-                        continue;
-                    }
                     // FIXME: this is not very robust. For instance, it relies on retaining all
                     // tournament games when storing, otherwise the hashmap would be incorrect.
                     if tournament.is_team_participating(&self.own_team_id) {
@@ -1774,13 +1754,14 @@ impl World {
                     // If we receive a valid initialized tournament from the network where the team is not participating,
                     // the next games cannot be generated correctly as the world does not contain the games.
                     // In this case, we just accept the error.
-                    else if let Ok(mut t_games) =
-                        tournament.generate_next_games(current_tick, &self.games)
-                    {
-                        new_games.append(&mut t_games);
-                    } else {
-                        log::warn!("Skipping simulation of network tournament.");
-                        continue;
+                    else {
+                        match tournament.generate_next_games(current_tick, &self.games) {
+                            Ok(mut t_games) => new_games.append(&mut t_games),
+                            Err(err) => {
+                                log::warn!("Error while simulating network tournament: {err}.");
+                                continue;
+                            }
+                        }
                     }
 
                     if tournament.has_ended() {
@@ -1855,6 +1836,9 @@ impl World {
                     };
 
                     team.tournament_registration_state = TournamentRegistrationState::None;
+                    if matches!(team.is_organizing_tournament, Some(id) if id == tournament.id) {
+                        team.is_organizing_tournament = None;
+                    }
                 }
 
                 if let Some(winner) = tournament.winner.as_ref() {
@@ -1868,11 +1852,14 @@ impl World {
         self.tournaments
             .retain(|_, t| !t.has_ended() && !t.is_canceled());
 
-        // FIXME: This should not be necessary, but there are still bugs and it is convenient.
-        let own_team = self
-            .teams
-            .get_mut(&self.own_team_id)
-            .expect("Own team should exist");
+        let own_team = self.teams.get_mut_or_err(&self.own_team_id)?;
+        if let Some(tournament_id) = own_team.is_organizing_tournament {
+            if !self.tournaments.contains_key(&tournament_id) {
+                own_team.is_organizing_tournament = None;
+            }
+        }
+
+        // FIXME: The following check should not be necessary, but there are still bugs and it is convenient.
         if let Some(tournament_id) = own_team.committed_to_tournament() {
             if !self.tournaments.contains_key(&tournament_id) {
                 own_team.tournament_registration_state = TournamentRegistrationState::None;
@@ -2529,7 +2516,14 @@ impl World {
 
     pub fn filter_peer_data(&mut self, peer_id: Option<PeerId>) -> AppResult<()> {
         let mut own_team = self.get_own_team()?.clone();
-        let own_team_current_location = own_team.is_on_planet();
+        let own_team_current_location = match own_team.current_location {
+            TeamLocation::OnPlanet { planet_id } => Some(planet_id),
+            TeamLocation::Exploring { around, .. } | TeamLocation::OnSpaceAdventure { around } => {
+                Some(around)
+            }
+            TeamLocation::Travelling { to, .. } => Some(to),
+        };
+
         if let Some(peer_id) = peer_id {
             // Filter all data that has a specific peer_id
             self.teams
@@ -2546,6 +2540,7 @@ impl World {
             self.tournaments.retain(|_, t| {
                 (t.is_team_registered(&self.own_team_id) && !t.has_started(Tick::now()))
                     || t.is_team_participating(&self.own_team_id)
+                    || t.organizer_id == self.own_team_id
             });
 
             self.games.retain(|_, game| {
@@ -2583,6 +2578,7 @@ impl World {
             self.tournaments.retain(|_, t| {
                 (t.is_team_registered(&self.own_team_id) && !t.has_started(Tick::now()))
                     || t.is_team_participating(&self.own_team_id)
+                    || t.organizer_id == self.own_team_id
             });
             self.games.retain(|_, game| {
                 game.home_team_in_game.team_id == self.own_team_id

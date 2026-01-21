@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     app_version,
-    core::{Planet, Rated, Skill, Team, HOURS, MIN_SKILL, SECONDS},
+    core::{Planet, Rated, Skill, Team, MINUTES, MIN_SKILL, SECONDS},
     game_engine::{
         game::{Game, GameSummary},
         types::TeamInGame,
@@ -63,7 +63,7 @@ impl TournamentSummary {
             organizer_id: tournament.organizer_id,
             max_participants: tournament.max_participants,
             participants: tournament.participants.clone(),
-            game_ids: tournament.game_ids.clone(),
+            game_ids: tournament.games.iter().map(|g| g.id).collect(),
             planet_id: tournament.planet_id,
             planet_name: tournament.planet_name.clone(),
             planet_total_population: tournament.planet_total_population,
@@ -81,32 +81,32 @@ impl TournamentSummary {
     }
 
     pub fn name(&self) -> String {
-        let size_name = match self.tournament_type {
-            TournamentType::Brackets => match self.max_participants {
-                x if x <= 8 => "cup",
-                _ => "supercup",
-            },
-            TournamentType::RoundRobin => match self.max_participants {
-                x if x <= 6 => "league",
-                _ => "championship",
-            },
-            TournamentType::Swiss => match self.max_participants {
-                x if x <= 6 => "prix",
-                _ => "grand prix",
-            },
-        };
-
-        format!("{} {}", self.planet_name, size_name)
+        format!("{} {}", self.planet_name, self.tournament_type)
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq)]
+#[derive(Debug, Default, Display, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq)]
 #[repr(u8)]
-enum TournamentType {
+pub enum TournamentType {
     #[default]
-    Brackets,
-    RoundRobin,
-    Swiss,
+    Cup,
+    Supercup,
+}
+
+impl TournamentType {
+    pub fn max_participants(&self) -> usize {
+        match self {
+            Self::Cup => 4,
+            Self::Supercup => 8,
+        }
+    }
+
+    pub fn registration_duration(&self) -> Tick {
+        match self {
+            Self::Cup => 5 * MINUTES,
+            Self::Supercup => 45 * MINUTES,
+        }
+    }
 }
 
 #[derive(Debug, Display, PartialEq)]
@@ -143,7 +143,7 @@ pub struct Tournament {
     canceled: bool,
     pub registered_teams: HashMap<TeamId, TeamInGame>,
     pub participants: HashMap<TeamId, TeamInGame>,
-    pub game_ids: Vec<GameId>,
+    pub games: Vec<Game>,
     pending_team_for_next_game: Option<TeamId>,
     pub planet_id: PlanetId,
     pub planet_name: String,
@@ -227,17 +227,16 @@ impl Tournament {
             + Self::SYNCING_STATE_DURATION
     }
 
-    pub fn new(
-        organizer: &Team,
-        max_participants: usize,
-        registrations_closing_at: Tick,
-    ) -> AppResult<Self> {
+    pub fn new(organizer: &Team, tournament_type: TournamentType) -> AppResult<Self> {
         organizer.can_organize_tournament()?;
 
         let now = Tick::now();
+        let registrations_closing_at = Tick::now() + tournament_type.registration_duration();
         if registrations_closing_at <= now {
             return Err(anyhow!("Tournament is closing registrations in the past!"));
         }
+
+        let max_participants = tournament_type.max_participants();
 
         let tournament = Self {
             organizer_id: organizer.id,
@@ -245,7 +244,8 @@ impl Tournament {
             max_participants,
             registrations_closing_at,
             app_version: app_version(),
-            game_time_interval: 1 * HOURS,
+            game_time_interval: 30 * MINUTES,
+            tournament_type,
             ..Default::default()
         };
 
@@ -256,7 +256,8 @@ impl Tournament {
         let mut t = Self {
             id: TournamentId::from_u128(1),
             max_participants,
-            registrations_closing_at: Tick::now() + 1 * SECONDS,
+            registrations_closing_at: Tick::now() + SECONDS,
+            game_time_interval: 30 * MINUTES,
             ..Default::default()
         };
 
@@ -280,22 +281,7 @@ impl Tournament {
     }
 
     pub fn name(&self) -> String {
-        let size_name = match self.tournament_type {
-            TournamentType::Brackets => match self.max_participants {
-                x if x <= 8 => "cup",
-                _ => "supercup",
-            },
-            TournamentType::RoundRobin => match self.max_participants {
-                x if x <= 6 => "league",
-                _ => "championship",
-            },
-            TournamentType::Swiss => match self.max_participants {
-                x if x <= 6 => "prix",
-                _ => "grand prix",
-            },
-        };
-
-        format!("{} {}", self.planet_name, size_name)
+        format!("{} {}", self.planet_name, self.tournament_type)
     }
 
     pub fn register_team(
@@ -307,22 +293,6 @@ impl Tournament {
         team.can_register_to_tournament(self, timestamp)?;
         let team_in_game = TeamInGame::new(team, players);
         self.registered_teams.insert(team.id, team_in_game);
-
-        Ok(())
-    }
-
-    pub fn confirm_organizing_team(
-        &mut self,
-        team: &Team,
-        players: PlayerMap,
-        timestamp: Tick,
-    ) -> AppResult<()> {
-        if team.id != self.organizer_id {
-            return Err(anyhow!("Only organizing team can be confirmed directly."));
-        }
-        team.can_confirm_tournament_registration(self, timestamp)?;
-        let team_in_game = TeamInGame::new(team, players);
-        self.participants.insert(team.id, team_in_game);
 
         Ok(())
     }
@@ -369,7 +339,7 @@ impl Tournament {
     }
 
     pub fn is_initialized(&self) -> bool {
-        !self.game_ids.is_empty()
+        !self.games.is_empty()
     }
 
     pub fn initialize(&mut self) -> Vec<Game> {
@@ -401,12 +371,12 @@ impl Tournament {
 
                 let game = self.new_game(
                     rng,
-                    team_in_game.clone(),
                     pending_team.clone(),
+                    team_in_game.clone(),
                     self.starting_at()
                         + self.game_time_interval * ((idx + 1) / pairings.len()) as u64,
                 );
-                self.game_ids.push(game.id);
+                self.games.push(game.clone());
                 new_games.push(game);
             } else {
                 self.pending_team_for_next_game = Some(team_in_game.team_id);
@@ -419,7 +389,7 @@ impl Tournament {
             assert!(self.pending_team_for_next_game.is_some());
         }
 
-        return new_games;
+        new_games
     }
 
     pub fn generate_next_games(
@@ -449,9 +419,9 @@ impl Tournament {
 
         let mut tournament_games = vec![];
 
-        for game_id in self.game_ids.iter() {
-            if let Some(game) = games.get(game_id) {
-                tournament_games.push(game);
+        for game in self.games.iter() {
+            if let Some(world_game) = games.get(&game.id) {
+                tournament_games.push(world_game);
             }
         }
 
@@ -468,7 +438,7 @@ impl Tournament {
             return Ok(vec![]);
         }
 
-        let rng = &mut self.get_rng(self.game_ids.len() as u64 + 1);
+        let rng = &mut self.get_rng(self.games.len() as u64 + 1);
         let mut new_games = vec![];
         for game in tournament_games {
             // Game could have ended because we process tournaments AFTER ticking games and BEFORE removing ended games.
@@ -484,11 +454,11 @@ impl Tournament {
             if let Some(other_team_id) = self.pending_team_for_next_game {
                 let home_team_in_game = self
                     .participants
-                    .get(&winner_team_id)
+                    .get(&other_team_id)
                     .expect("Team should be a participant");
                 let away_team_in_game = self
                     .participants
-                    .get(&other_team_id)
+                    .get(&winner_team_id)
                     .expect("Team should be a participant");
 
                 let game = self.new_game(
@@ -497,7 +467,7 @@ impl Tournament {
                     away_team_in_game.clone(),
                     current_tick + self.game_time_interval,
                 );
-                self.game_ids.push(game.id);
+                self.games.push(game.clone());
                 new_games.push(game);
 
                 self.pending_team_for_next_game = None;
@@ -510,18 +480,18 @@ impl Tournament {
     }
 
     pub fn active_games<'a>(&'a self, games: &'a GameMap) -> Vec<&'a Game> {
-        self.game_ids
+        self.games
             .iter()
-            .filter_map(|id| games.get(id))
+            .filter_map(|game| games.get(&game.id))
             .collect::<Vec<&Game>>()
     }
     pub fn past_game_summaries<'a>(
         &'a self,
         past_games: &'a GameSummaryMap,
     ) -> Vec<&'a GameSummary> {
-        self.game_ids
+        self.games
             .iter()
-            .filter_map(|id| past_games.get(id))
+            .filter_map(|game| past_games.get(&game.id))
             .collect::<Vec<&GameSummary>>()
     }
 }
@@ -548,8 +518,8 @@ impl Rated for Tournament {
 #[cfg(test)]
 mod tests {
 
-    use crate::core::{Player, Team, TeamLocation, TickInterval, MAX_PLAYERS_PER_GAME, SECONDS};
-    use crate::game_engine::Tournament;
+    use crate::core::{Player, Team, TeamLocation, TickInterval, MAX_PLAYERS_PER_GAME};
+    use crate::game_engine::{Tournament, TournamentType};
     use crate::types::{AppResult, GameMap, PlanetId, PlayerMap, SystemTimeTick, TeamId, Tick};
     use itertools::Itertools;
     use libp2p::PeerId;
@@ -661,17 +631,12 @@ mod tests {
 
     #[test]
     fn test_tournament_error_registrations_closed() -> AppResult<()> {
-        const MAX_PARTICIPANTS: usize = 0;
-
         let mut organizer = Team::random(None);
         let planet_id = PlanetId::default();
-        organizer.space_cove = crate::core::SpaceCoveState::Ready { planet_id };
+        organizer.space_cove = Some(crate::core::SpaceCove::ready(planet_id));
         organizer.current_location = TeamLocation::OnPlanet { planet_id };
 
-        let registrations_closing_at = Tick::now() + 1 * SECONDS;
-
-        let mut tournament =
-            Tournament::new(&organizer, MAX_PARTICIPANTS, registrations_closing_at)?;
+        let mut tournament = Tournament::new(&organizer, TournamentType::Cup)?;
 
         let team = Team {
             id: TeamId::new_v4(),
@@ -687,7 +652,7 @@ mod tests {
         }
 
         assert!(matches!(
-            tournament.register_team(&team, players, registrations_closing_at + 1),
+            tournament.register_team(&team, players, tournament.registrations_closing_at + 1),
             Err(e) if e.to_string() == "Tournament registrations are closed."
         ));
         Ok(())
@@ -695,16 +660,13 @@ mod tests {
 
     #[test]
     fn test_tournament_error_wrong_location() -> AppResult<()> {
-        const MAX_PARTICIPANTS: usize = 4;
-
         let mut organizer = Team::random(None);
         let planet_id = PlanetId::default();
-        organizer.space_cove = crate::core::SpaceCoveState::Ready { planet_id };
+        organizer.space_cove = Some(crate::core::SpaceCove::ready(planet_id));
         organizer.current_location = TeamLocation::OnPlanet { planet_id };
 
         let timestamp = Tick::now();
-        let mut tournament =
-            Tournament::new(&organizer, MAX_PARTICIPANTS, timestamp + 30 * SECONDS)?;
+        let mut tournament = Tournament::new(&organizer, TournamentType::Supercup)?;
 
         let mut players = PlayerMap::new();
         for _ in 0..MAX_PLAYERS_PER_GAME {

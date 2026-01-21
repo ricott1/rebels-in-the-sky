@@ -527,7 +527,7 @@ impl SwarmPanel {
         };
 
         let (_, top_team) = &self.team_ranking[team_ranking_index];
-        let team_rating = if world.teams.get(&top_team.team.id).is_some() {
+        let team_rating = if world.teams.contains_key(&top_team.team.id) {
             world.team_rating(&top_team.team.id).unwrap_or_default()
         } else {
             top_team.player_ratings.iter().sum::<f32>()

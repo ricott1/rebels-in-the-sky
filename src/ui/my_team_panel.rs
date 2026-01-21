@@ -1386,7 +1386,8 @@ impl MyTeamPanel {
 
         frame.render_widget(Paragraph::new(lines), h_split[1].inner(Margin::new(3, 1)));
 
-        Self::render_available_spaceship_upgrades(
+        render_available_spaceship_upgrades(
+            own_team.spaceship.pending_upgrade,
             possible_upgrade,
             world,
             own_team,
@@ -1394,46 +1395,6 @@ impl MyTeamPanel {
             v_split[1],
         )?;
         self.render_upgrade_spaceship_button(possible_upgrade, own_team, frame, v_split[2])?;
-
-        Ok(())
-    }
-
-    fn render_available_spaceship_upgrades(
-        possible_upgrade: Option<Upgrade<SpaceshipUpgradeTarget>>,
-        world: &World,
-        own_team: &Team,
-        frame: &mut UiFrame,
-        area: Rect,
-    ) -> AppResult<()> {
-        let spaceship = &own_team.spaceship;
-        if let Some(pending_upgrade) = spaceship.pending_upgrade {
-            let header = match pending_upgrade.target {
-                SpaceshipUpgradeTarget::Repairs { .. } => "Repairing spaceship".to_string(),
-                target => format!("Upgrading {target}"),
-            };
-
-            let countdown = (pending_upgrade.started + pending_upgrade.duration)
-                .saturating_sub(world.last_tick_short_interval)
-                .formatted();
-
-            frame.render_widget(
-                Paragraph::new(vec![
-                    Line::from(vec![Span::styled(header, UiStyle::HEADER.bold())]),
-                    Line::from(countdown),
-                ])
-                .centered(),
-                area,
-            )
-        } else if let Some(upgrade) = possible_upgrade {
-            {
-                let mut lines =
-                    vec![
-                        Line::from(Span::styled("Upgrade cost", UiStyle::HEADER.bold())).centered(),
-                    ];
-                lines.append(&mut upgrade_resources_lines(upgrade.target, own_team));
-                frame.render_widget(Paragraph::new(lines).centered(), area);
-            }
-        }
 
         Ok(())
     }
@@ -1634,133 +1595,21 @@ impl MyTeamPanel {
                 None
             };
 
-            Self::render_available_asteroid_upgrades(
-                asteroid,
-                world,
+            render_available_upgrades(
+                asteroid.pending_upgrade,
                 possible_upgrade,
+                world,
                 own_team,
                 frame,
                 v_split[1],
             )?;
-            Self::render_build_asteroid_upgrade_button(
+            render_build_asteroid_upgrade_button(
                 asteroid,
                 possible_upgrade,
                 own_team,
                 frame,
                 v_split[2],
             )?;
-        }
-
-        Ok(())
-    }
-
-    fn render_available_asteroid_upgrades(
-        asteroid: &Planet,
-        world: &World,
-        possible_upgrade: Option<Upgrade<AsteroidUpgradeTarget>>,
-        own_team: &Team,
-        frame: &mut UiFrame,
-        area: Rect,
-    ) -> AppResult<()> {
-        if let Some(pending_upgrade) = asteroid.pending_upgrade {
-            let countdown = (pending_upgrade.started + pending_upgrade.duration)
-                .saturating_sub(world.last_tick_short_interval)
-                .formatted();
-
-            frame.render_widget(
-                Paragraph::new(vec![
-                    Line::from(Span::styled(
-                        format!("Building {}", pending_upgrade.target),
-                        UiStyle::HEADER.bold(),
-                    )),
-                    Line::from(countdown),
-                ])
-                .centered(),
-                area,
-            );
-        } else if let Some(upgrade) = possible_upgrade {
-            {
-                let mut lines = vec![Line::from(Span::styled(
-                    format!("{} upgrade cost", upgrade.target),
-                    UiStyle::HEADER.bold(),
-                ))];
-                lines.append(&mut upgrade_resources_lines(upgrade.target, own_team));
-                frame.render_widget(Paragraph::new(lines).centered(), area);
-            }
-        } else {
-            let lines = vec![
-                Line::from("Nothing left"),
-                Line::from(format!("to build on {}", asteroid.name)),
-            ];
-            frame.render_widget(Paragraph::new(lines).centered(), area);
-        }
-
-        Ok(())
-    }
-
-    fn render_build_asteroid_upgrade_button(
-        asteroid: &Planet,
-        possible_upgrade: Option<Upgrade<AsteroidUpgradeTarget>>,
-        own_team: &Team,
-        frame: &mut UiFrame,
-        area: Rect,
-    ) -> AppResult<()> {
-        if let Some(pending_upgrade) = asteroid.pending_upgrade {
-            let build_button = Button::new(
-                format!("Building {}", pending_upgrade.target),
-                UiCallback::None,
-            )
-            .set_hover_text(format!(
-                "Building {} on {}",
-                pending_upgrade.target, asteroid.name
-            ))
-            .disabled(Some(format!("Already building {}", pending_upgrade.target)));
-
-            frame.render_interactive_widget(build_button, area);
-        } else if let Some(upgrade) = possible_upgrade {
-            let on_click = if upgrade.target == AsteroidUpgradeTarget::SpaceCove {
-                UiCallback::PushUiPopup {
-                    popup_message: PopupMessage::BuildSpaceCove {
-                        asteroid_name: asteroid.name.clone(),
-                        asteroid_id: asteroid.id,
-                        tick: Tick::now(),
-                    },
-                }
-            } else {
-                UiCallback::SetAsteroidPendingUpgrade {
-                    asteroid_id: asteroid.id,
-                    upgrade,
-                }
-            };
-
-            let mut build_button = Button::new(
-                format!(
-                    "Build {} ({})",
-                    upgrade.target,
-                    upgrade.duration.formatted()
-                ),
-                on_click,
-            )
-            .set_hotkey(ui_key::BUILD_ASTEROID_UPGRADE)
-            .set_hover_text(upgrade.target.description());
-
-            if upgrade.target == AsteroidUpgradeTarget::SpaceCove {
-                build_button = build_button.block(default_block().border_style(UiStyle::WARNING));
-            }
-
-            let can_upgrade_asteroid = own_team.can_upgrade_asteroid(asteroid, &upgrade);
-            if let Err(e) = can_upgrade_asteroid.as_ref() {
-                build_button.disable(Some(e.to_string()));
-            }
-
-            frame.render_interactive_widget(build_button, area);
-        } else {
-            let build_button = Button::new(
-                format!("Nothing left to build on {}", asteroid.name),
-                UiCallback::None,
-            )
-            .disabled(None::<String>);
-            frame.render_interactive_widget(build_button, area);
         }
 
         Ok(())

@@ -11,6 +11,7 @@ use ratatui::{
     widgets::{block::Title, Paragraph},
 };
 use tui_textarea::{Input, Key, TextArea};
+use unicode_width::UnicodeWidthStr;
 
 pub fn input_from_key_event(key: KeyEvent) -> Input {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
@@ -126,11 +127,12 @@ pub fn validate_textarea_input<'a>(
     title: impl Into<Title<'a>>,
 ) -> bool {
     let text = textarea.lines()[0].trim();
-    if text.len() < MIN_NAME_LENGTH {
+    let width = UnicodeWidthStr::width(text);
+    if width < MIN_NAME_LENGTH {
         textarea.set_style(UiStyle::ERROR);
         textarea.set_block(default_block().title(title).title("(too short)"));
         false
-    } else if text.len() > MAX_NAME_LENGTH {
+    } else if width > MAX_NAME_LENGTH {
         textarea.set_style(UiStyle::ERROR);
         textarea.set_block(default_block().title(title).title("(too long)"));
         false

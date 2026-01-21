@@ -561,7 +561,7 @@ impl TeamBonus {
     }
 }
 
-pub trait UpgradeableElement: Sized {
+pub trait UpgradeableElement: Sized + Display {
     fn next(&self) -> Option<Self>;
     fn previous(&self) -> Option<Self>;
     fn upgrade_cost(&self) -> Vec<(Resource, u32)>;

@@ -4,6 +4,7 @@ use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, S
 use crate::app_version;
 use crate::core::constants::NETWORK_GAME_START_DELAY;
 use crate::core::{Team, TournamentRegistrationState, World, MAX_AVG_TIREDNESS_PER_AUTO_GAME};
+use crate::game_engine::game::GameSummary;
 use crate::game_engine::types::TeamInGame;
 use crate::game_engine::{Tournament, TournamentId, TournamentState};
 use crate::network::types::TournamentRequestState;
@@ -455,7 +456,7 @@ impl NetworkCallback {
                             app.ui.push_log_event(
                                 Tick::now(),
                                 None,
-                                format!("Tournament participation already confirmed."),
+                                "Tournament participation already confirmed.".to_string(),
                                 log::Level::Warn,
                             );
                             return Ok(None);
@@ -507,9 +508,9 @@ impl NetworkCallback {
 
                                 // We can participate, so we answer with a ParticipationRequest.
                                 let mut team = own_team.clone();
-                                team.peer_id = Some(app.network_handler.own_peer_id().clone());
+                                team.peer_id = Some(*app.network_handler.own_peer_id());
                                 let players =
-                                    World::get_players_by_team(&app.world.players, &team)?;
+                                    World::get_game_players_by_team(&app.world.players, &team)?;
                                 let team_data = Some((team, players));
                                 app.network_handler.send_tournament_registration_request(
                                     tournament_id,
@@ -576,31 +577,6 @@ impl NetworkCallback {
                 ));
             }
 
-            // FIXME: the following checks are correct in principle, but sometimes can fail if the tournament is received before
-            // the tournament status update message.
-            // let own_team = app.world.get_own_team()?;
-            // if tournament.state(Tick::now()) == TournamentState::Registration
-            //     && tournament.is_team_registered(&app.world.own_team_id)
-            //     && !matches!(
-            //         own_team.tournament_registration_state,
-            //         TournamentRegistrationState::Registered { tournament_id:id } if id == tournament.id
-            //     )
-            // {
-            //     app.ui.push_log_event(Tick::now(), None, format!("Received tournament {} indicating team is registered, but team status is wrong ({})", tournament.id, own_team.tournament_registration_state), log::Level::Error);
-            //     return Ok(None);
-            // }
-
-            // if tournament.state(Tick::now()) == TournamentState::Started
-            //     && tournament.is_team_participating(&app.world.own_team_id)
-            //     && !matches!(
-            //         own_team.tournament_registration_state,
-            //         TournamentRegistrationState::Confirmed { tournament_id:id } if id == tournament.id
-            //     )
-            // {
-            //     app.ui.push_log_event(Tick::now(), None, format!("Received tournament {} indicating team is partecipating, but team status is wrong ({})", tournament.id, own_team.tournament_registration_state), log::Level::Error);
-            //     return Ok(None);
-            // }
-
             if tournament.state(Tick::now()) == TournamentState::Registration
                 && !app.world.tournaments.contains_key(&tournament.id)
             {
@@ -616,9 +592,40 @@ impl NetworkCallback {
                 });
             }
 
-            app.world
-                .tournaments
-                .insert(tournament.id, tournament.clone());
+            let received_tournament_is_latest =
+                if let Some(previous_t) = app.world.tournaments.get(&tournament.id) {
+                    // Try to keep most recent tournament. This is important to avoid recreating same games twice.
+                    // If previous tournament is already initialized, then no need to update
+                    if previous_t.is_initialized() {
+                        false
+                    } else {
+                        tournament.is_initialized()
+                            || tournament.is_canceled()
+                            || tournament.registered_teams.len() > previous_t.registered_teams.len()
+                    }
+                } else {
+                    true
+                };
+
+            if received_tournament_is_latest {
+                // We move tournament games to world to be able to siumulate them.
+                for game in tournament.games.iter() {
+                    if game.has_ended() && !app.world.past_games.contains_key(&game.id) {
+                        app.world
+                            .past_games
+                            .insert(game.id, GameSummary::from_game(game));
+                    } else if !game.has_ended() && !app.world.games.contains_key(&game.id) {
+                        app.world.games.insert(game.id, game.clone());
+                    }
+                }
+
+                app.world
+                    .tournaments
+                    .insert(tournament.id, tournament.clone());
+
+                app.world.dirty = true;
+                app.world.dirty_ui = true;
+            }
 
             Ok(None)
         })
@@ -932,6 +939,8 @@ impl NetworkCallback {
 
                     let own_team = app.world.get_own_team_mut()?;
 
+                    // Here we check not to be committed to a tournament, to avoid accepting a challenge
+                    // which would stop the team from entering the tournament later.
                     if own_team.current_game.is_none()
                         && own_team.committed_to_tournament().is_none()
                         && own_team.autonomous_strategy.challenge_network

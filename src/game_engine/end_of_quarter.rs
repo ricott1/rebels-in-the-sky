@@ -34,7 +34,6 @@ pub(crate) fn execute(
         _ => {}
     }
 
-    
     ActionOutput {
         possession: input.possession,
         situation: ActionSituation::EndOfQuarter,

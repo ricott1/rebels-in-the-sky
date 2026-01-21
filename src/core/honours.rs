@@ -90,7 +90,11 @@ impl Honour {
                     .count()
                     >= MAX_PLAYERS_PER_GAME
             }
-            Self::Pirate => matches!(team.space_cove, SpaceCoveState::Ready { .. }),
+            Self::Pirate => team
+                .space_cove
+                .as_ref()
+                .filter(|cove| cove.state == SpaceCoveState::Ready)
+                .is_some(),
             Self::Traveller => team.total_travelled >= LIGHT_YEAR,
             Self::Veteran => {
                 team.creation_time != Tick::default()
@@ -267,7 +271,6 @@ mod tests {
             app.world.planets.insert(asteroid.id, asteroid);
         }
 
-        
         assert!(Honour::Galactic.conditions_met(
             &team,
             &app.world.past_games,

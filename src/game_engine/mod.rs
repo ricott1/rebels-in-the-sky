@@ -19,4 +19,6 @@ mod tournament;
 pub mod types;
 
 pub use constants::{MIN_TIREDNESS_FOR_ROLL_DECLINE, RECOVERING_TIREDNESS_PER_SHORT_TICK};
-pub use tournament::{Tournament, TournamentId, TournamentState, TournamentSummary};
+pub use tournament::{
+    Tournament, TournamentId, TournamentState, TournamentSummary, TournamentType,
+};

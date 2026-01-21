@@ -43,14 +43,14 @@ impl UpgradeableElement for AsteroidUpgradeTarget {
 
     fn upgrade_cost(&self) -> Vec<(Resource, u32)> {
         match self {
-            AsteroidUpgradeTarget::TeleportationPad => {
+            Self::TeleportationPad => {
                 vec![
                     (Resource::SCRAPS, 125),
                     (Resource::GOLD, 25),
                     (Resource::RUM, 10),
                 ]
             }
-            AsteroidUpgradeTarget::SpaceCove => {
+            Self::SpaceCove => {
                 vec![
                     (Resource::SATOSHI, 180_000),
                     (Resource::SCRAPS, 220),

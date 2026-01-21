@@ -399,7 +399,7 @@ impl TeamListPanel {
             world,
             world.team_rating(&team.id).unwrap_or_default(),
             false,
-            world.teams.get(&team.id).is_some(),
+            world.teams.contains_key(&team.id),
             &mut self.gif_map,
             self.tick,
             frame,

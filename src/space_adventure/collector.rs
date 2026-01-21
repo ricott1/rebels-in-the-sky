@@ -1,5 +1,5 @@
-use super::{collisions::HitBox, space_callback::SpaceCallback, traits::*};
 use super::entity::Entity;
+use super::{collisions::HitBox, space_callback::SpaceCallback, traits::*};
 use glam::{I16Vec2, Vec2};
 use image::{Rgba, RgbaImage};
 use std::collections::HashMap;

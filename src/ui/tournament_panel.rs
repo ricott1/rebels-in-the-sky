@@ -74,7 +74,7 @@ impl Display for TournamentView {
 pub struct TournamentPanel {
     index: Option<usize>,
     selected_tournament_id: TournamentId,
-    tournament_ids: Vec<TournamentId>,
+    filtered_tournament_ids: Vec<TournamentId>,
     past_tournament_ids: Vec<TournamentId>,
     all_tournament_ids: Vec<TournamentId>,
     view: TournamentView,
@@ -146,9 +146,9 @@ impl TournamentPanel {
     }
 
     fn build_tournament_list(&self, frame: &mut UiFrame, world: &World, area: Rect) {
-        if !self.tournament_ids.is_empty() {
+        if !self.filtered_tournament_ids.is_empty() {
             let mut options = vec![];
-            for tournament_id in self.tournament_ids.iter() {
+            for tournament_id in self.filtered_tournament_ids.iter() {
                 let tournament = if let Some(t) = world.tournaments.get(tournament_id) {
                     t
                 } else {
@@ -175,7 +175,7 @@ impl TournamentPanel {
     fn build_tournament_summary_list(&self, frame: &mut UiFrame, world: &World, area: Rect) {
         if !self.past_tournament_ids.is_empty() {
             let mut options = vec![];
-            for tournament_id in self.tournament_ids.iter() {
+            for tournament_id in self.filtered_tournament_ids.iter() {
                 let tournament = if let Some(t) = world.past_tournaments.get(tournament_id) {
                     t
                 } else {
@@ -213,12 +213,11 @@ impl TournamentPanel {
         };
 
         let tournament_id = self
-            .tournament_ids
+            .filtered_tournament_ids
             .get(index)
             .expect("Tournament id selection should be valid.");
 
         let split = Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(area);
-        let inner = split[1].inner(Margin::new(1, 1));
         if self.view == TournamentView::Past {
             let tournament_summary = if let Some(t) = world.past_tournaments.get(tournament_id) {
                 t
@@ -232,7 +231,7 @@ impl TournamentPanel {
                 UiCallback::GoToPlanet { planet_id },
             );
             frame.render_interactive_widget(tournament_main_button, split[0]);
-            self.render_past_tournament(tournament_summary, frame, world, inner)?;
+            self.render_past_tournament(tournament_summary, frame, world, split[1])?;
             return Ok(());
         }
 
@@ -251,15 +250,17 @@ impl TournamentPanel {
         match tournament.state(Tick::now()) {
             TournamentState::Canceled => {}
             TournamentState::Registration => {
-                self.render_registration_tournament(tournament, frame, world, inner)?
+                self.render_registration_tournament(tournament, frame, world, split[1])?
             }
             TournamentState::Confirmation => {
-                self.render_confirmation_tournament(tournament, frame, inner)?
+                self.render_confirmation_tournament(tournament, frame, split[1])?
             }
-            TournamentState::Syncing => self.render_syncing_tournament(tournament, frame, inner)?,
+            TournamentState::Syncing => {
+                self.render_syncing_tournament(tournament, frame, split[1])?
+            }
             TournamentState::Started => {
                 if tournament.is_initialized() {
-                    self.render_started_tournament(tournament, frame, world, inner)?
+                    self.render_started_tournament(tournament, frame, world, split[1])?
                 }
             }
             TournamentState::Ended => {}
@@ -318,6 +319,30 @@ impl TournamentPanel {
         );
 
         let own_team = world.get_own_team()?;
+        let b_split =
+            Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(split[1]);
+        let mut register_button = Button::new(
+            "Register now!",
+            UiCallback::RegisterToTournament {
+                tournament_id: tournament.id,
+            },
+        )
+        .set_hotkey(ui_key::REGISTER_TO_TOURNAMENT)
+        .set_hover_text(format!(
+            "Register to {}. Participation will be confirmed on {} at {}.",
+            tournament.name(),
+            tournament.registrations_closing_at.formatted_as_date(),
+            tournament.registrations_closing_at.formatted_as_time(),
+        ));
+
+        if let Err(err) = own_team.can_register_to_tournament(tournament, Tick::now()) {
+            register_button.disable(Some(err.to_string()));
+            if tournament.is_team_registered(&world.own_team_id) {
+                register_button.set_text("Already registered");
+            }
+        }
+
+        frame.render_interactive_widget(register_button, b_split[0]);
 
         if tournament.organizer_id == world.own_team_id {
             frame.render_widget(
@@ -327,34 +352,9 @@ impl TournamentPanel {
                     Line::from("or the tournament will be canceled."),
                 ])
                 .centered(),
-                split[1],
+                b_split[1],
             );
         } else {
-            let b_split =
-                Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(split[1]);
-            let mut register_button = Button::new(
-                "Register now!",
-                UiCallback::RegisterToTournament {
-                    tournament_id: tournament.id,
-                },
-            )
-            .set_hotkey(ui_key::REGISTER_TO_TOURNAMENT)
-            .set_hover_text(format!(
-                "Register to {}. Participation will be confirmed on {} at {}.",
-                tournament.name(),
-                tournament.registrations_closing_at.formatted_as_date(),
-                tournament.registrations_closing_at.formatted_as_time(),
-            ));
-
-            if let Err(err) = own_team.can_register_to_tournament(tournament, Tick::now()) {
-                register_button.disable(Some(err.to_string()));
-                if tournament.is_team_registered(&world.own_team_id) {
-                    register_button.set_text("Already registered");
-                }
-            }
-
-            frame.render_interactive_widget(register_button, b_split[0]);
-
             frame.render_widget(
                 Paragraph::new(vec![
                 Line::from("Register at any time and be sure to be online at the time registrations close"),
@@ -576,15 +576,27 @@ impl Screen for TournamentPanel {
         self.tick += 1;
 
         if world.dirty_ui || self.all_tournament_ids.len() != world.tournaments.len() {
-            self.all_tournament_ids = world.tournaments.keys().copied().collect();
-            self.past_tournament_ids = world.past_tournaments.keys().copied().collect();
+            self.all_tournament_ids = world
+                .tournaments
+                .values()
+                .sorted_by(|a, b| a.starting_at().cmp(&b.starting_at()))
+                .map(|t| &t.id)
+                .copied()
+                .collect();
+            self.past_tournament_ids = world
+                .past_tournaments
+                .values()
+                .sorted_by(|a, b| a.starting_at().cmp(&b.starting_at()))
+                .map(|t| &t.id)
+                .copied()
+                .collect();
 
             self.update_view = true;
         }
 
         if self.update_view {
-            self.tournament_ids = if self.view == TournamentView::Past {
-                self.past_tournament_ids.iter().copied().collect()
+            self.filtered_tournament_ids = if self.view == TournamentView::Past {
+                self.past_tournament_ids.to_vec()
             } else {
                 self.all_tournament_ids
                     .iter()
@@ -597,16 +609,18 @@ impl Screen for TournamentPanel {
         }
 
         if let Some(index) = self.index {
-            if self.tournament_ids.is_empty() {
+            if self.filtered_tournament_ids.is_empty() {
                 self.index = None;
-            } else if index >= self.tournament_ids.len() && !self.tournament_ids.is_empty() {
-                self.set_index(self.tournament_ids.len() - 1);
+            } else if index >= self.filtered_tournament_ids.len()
+                && !self.filtered_tournament_ids.is_empty()
+            {
+                self.set_index(self.filtered_tournament_ids.len() - 1);
             }
 
-            if index < self.tournament_ids.len() {
-                self.selected_tournament_id = self.tournament_ids[index];
+            if index < self.filtered_tournament_ids.len() {
+                self.selected_tournament_id = self.filtered_tournament_ids[index];
             }
-        } else if !self.tournament_ids.is_empty() {
+        } else if !self.filtered_tournament_ids.is_empty() {
             self.set_index(0);
         }
 
@@ -626,7 +640,7 @@ impl Screen for TournamentPanel {
                 .split(area);
         self.build_left_panel(frame, world, left_right_split[0]);
 
-        if self.tournament_ids.is_empty() {
+        if self.filtered_tournament_ids.is_empty() {
             frame.render_widget(
                 default_block().title(" No tournaments at the moment..."),
                 left_right_split[1],
@@ -676,7 +690,7 @@ impl SplitPanel for TournamentPanel {
     }
 
     fn max_index(&self) -> usize {
-        self.tournament_ids.len()
+        self.filtered_tournament_ids.len()
     }
 
     fn set_index(&mut self, index: usize) {

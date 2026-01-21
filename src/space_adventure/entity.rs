@@ -1,10 +1,10 @@
-use super::{collisions::HitBox, space_callback::SpaceCallback, visual_effects::VisualEffect};
 use super::collector::CollectorEntity;
 use super::shield::ShieldEntity;
 use super::{
     asteroid::AsteroidEntity, fragment::FragmentEntity, particle::ParticleEntity,
     projectile::ProjectileEntity, traits::*, SpaceshipEntity,
 };
+use super::{collisions::HitBox, space_callback::SpaceCallback, visual_effects::VisualEffect};
 use crate::types::AppResult;
 use anyhow::anyhow;
 use glam::I16Vec2;

@@ -1,13 +1,16 @@
 use super::ui_frame::UiFrame;
 use super::{traits::Screen, ui_callback::UiCallback};
+use crate::game_engine::TournamentType;
 use crate::image::utils::ExtraImageUtils;
 use crate::image::utils::{open_image, LightMaskStyle};
-use crate::types::{HashMapWithResult, SystemTimeTick, TeamId, Tick};
+use crate::types::{HashMapWithResult, TeamId};
 use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::traits::SplitPanel;
 use crate::ui::utils::img_to_lines;
-use crate::ui::widgets::{default_block, selectable_list, teleport_button};
+use crate::ui::widgets::{
+    default_block, render_available_upgrades, selectable_list, teleport_button,
+};
 use crate::ui::{constants::*, ui_key};
 use crate::{core::*, types::AppResult};
 use anyhow::anyhow;
@@ -52,15 +55,18 @@ impl SpaceCovePanel {
 
     fn get_asteroid(world: &World) -> AppResult<&Planet> {
         let own_team = world.get_own_team()?;
-        let asteroid_id = match own_team.space_cove {
-            SpaceCoveState::Ready { planet_id } => planet_id,
-            state => {
-                return Err(anyhow!(
-                    "Space cove panel should not exist for space cove state {state}."
-                ))
-            }
-        };
+        let asteroid_id = own_team
+            .has_space_cove_on()
+            .ok_or_else(|| anyhow!("Space cove panel should be ready."))?;
         world.planets.get_or_err(&asteroid_id)
+    }
+
+    fn _get_space_cove(own_team: &Team) -> AppResult<&SpaceCove> {
+        own_team
+            .space_cove
+            .as_ref()
+            .filter(|cove| cove.state == SpaceCoveState::Ready)
+            .ok_or_else(|| anyhow!("Space cove panel should be ready."))
     }
 
     fn get_cove_images(
@@ -183,8 +189,7 @@ impl SpaceCovePanel {
         let mut tournament_button = Button::new(
             "Organize quick tournament",
             UiCallback::OrganizeNewTournament {
-                max_participants: 4,
-                registrations_closing_at: Tick::now() + 5 * MINUTES,
+                tournament_type: TournamentType::Cup
             },
         )
         .set_hotkey(ui_key::ORGANIZE_QUICK_TOURNAMENT)
@@ -199,8 +204,7 @@ impl SpaceCovePanel {
         let mut tournament_button = Button::new(
             "Organize big tournament",
             UiCallback::OrganizeNewTournament {
-                max_participants: 8,
-                registrations_closing_at: Tick::now() + HOURS,
+                tournament_type: TournamentType::Supercup,
             },
         )
         .set_hotkey(ui_key::ORGANIZE_BIG_TOURNAMENT)
@@ -214,6 +218,32 @@ impl SpaceCovePanel {
         }
 
         frame.render_interactive_widget(tournament_button, split[1]);
+
+        Ok(())
+    }
+
+    fn _render_upgrades(&self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
+        let own_team = world.get_own_team()?;
+        let space_cove = Self::_get_space_cove(own_team)?;
+
+        let split = Layout::vertical([Constraint::Fill(1), Constraint::Length(4)]).split(area);
+
+        let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
+        let possible_upgrade = if !space_cove.upgrades.contains(&SpaceCoveUpgradeTarget::Skull) {
+            Some(Upgrade::new(SpaceCoveUpgradeTarget::Skull, bonus))
+        } else {
+            None
+        };
+
+        frame.render_widget(default_block(), split[0]);
+        render_available_upgrades::<SpaceCoveUpgradeTarget>(
+            space_cove.pending_upgrade,
+            possible_upgrade,
+            world,
+            own_team,
+            frame,
+            split[0].inner(Margin::new(1, 1)),
+        )?;
 
         Ok(())
     }
@@ -287,7 +317,7 @@ impl Screen for SpaceCovePanel {
         } else if !left_eye_blinking && right_eye_blinking {
             &self.cove_image_widgets[2]
         } else {
-            //if left_eye_blinking && right_eye_blinking
+            //if both left_eye_blinking and right_eye_blinking
             &self.cove_image_widgets[3]
         };
 
@@ -300,6 +330,7 @@ impl Screen for SpaceCovePanel {
             Constraint::Length(3),
             Constraint::Length(6),
             Constraint::Length(8),
+            Constraint::Length(11),
             Constraint::Fill(1),
         ])
         .split(split[0]);
@@ -313,13 +344,8 @@ impl Screen for SpaceCovePanel {
 
         frame.render_interactive_widget(teleport_button(world, asteroid.id)?, side_split[1]);
         self.render_tournament_buttons(frame, asteroid, world, side_split[2])?;
-
         self.render_visiting_teams(frame, world, side_split[3])?;
-
-        frame.render_widget(
-            default_block().title("No available upgrades"),
-            side_split[4],
-        );
+        // self.render_upgrades(frame, world, side_split[4])?;
 
         Ok(())
     }

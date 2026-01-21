@@ -344,7 +344,7 @@ impl NetworkHandler {
     pub fn resend_tournaments(&mut self, world: &World) -> AppResult<()> {
         for tournament in world.tournaments.values() {
             // Only organizer has most updated state of the tournament.
-            if tournament.organizer_id == world.own_team_id || tournament.has_started(Tick::now()) {
+            if tournament.organizer_id == world.own_team_id || tournament.is_initialized() {
                 self.send_tournament(tournament.clone())?;
             }
         }

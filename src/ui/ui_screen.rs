@@ -381,13 +381,19 @@ impl UiScreen {
             }
             UiState::NewTeam => self.new_team_screen.update(world)?,
             UiState::Main => {
-                if world.dirty_ui && !self.ui_tabs.contains(&UiTab::SpaceCove) {
+                if world.dirty_ui {
                     let own_team = world.get_own_team()?;
-                    if matches!(own_team.space_cove, SpaceCoveState::Ready { .. }) {
+                    let has_space_cove = own_team
+                        .space_cove
+                        .as_ref()
+                        .filter(|cove| cove.state == SpaceCoveState::Ready)
+                        .is_some();
+                    if !self.ui_tabs.contains(&UiTab::SpaceCove) && has_space_cove {
                         self.ui_tabs.insert(1, UiTab::SpaceCove);
+                    } else if self.ui_tabs.contains(&UiTab::SpaceCove) && !has_space_cove {
+                        self.ui_tabs.remove(1);
                     }
                 }
-
                 // Update panels. Can we get away updating only the active one?
                 // Links between panels means they need to be updated.
                 // Example: going to a game from the crews panel.

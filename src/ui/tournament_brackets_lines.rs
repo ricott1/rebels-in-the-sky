@@ -1,5 +1,8 @@
 use crate::{
-    game_engine::game::{Game, GameSummary},
+    game_engine::{
+        game::{Game, GameSummary},
+        types::Possession,
+    },
     types::{TeamId, Tick},
     ui::constants::UiStyle,
 };
@@ -14,6 +17,113 @@ const BLOCK_HEIGHT: usize = 3;
 const GAP: usize = 1;
 const COL_WIDTH: usize = 20;
 const ROUND_LINES_LEN: usize = MAX_ROUND_LINES * (BLOCK_HEIGHT + GAP);
+
+struct TournamentDescription {
+    home_team_name: String,
+    home_team_style: Style,
+    away_team_name: String,
+    away_team_style: Style,
+    result: String,
+    winner: Option<Possession>,
+}
+
+trait TournamentDescriptionTrait {
+    fn tournament_description(&self, own_team_id: TeamId, timestamp: Tick)
+        -> TournamentDescription;
+}
+
+impl TournamentDescriptionTrait for Game {
+    fn tournament_description(
+        &self,
+        own_team_id: TeamId,
+        timestamp: Tick,
+    ) -> TournamentDescription {
+        let score = self.get_score();
+
+        let home_team_name = self.home_team_in_game.name.to_string();
+        let home_team_style = if self.home_team_in_game.team_id == own_team_id {
+            UiStyle::OWN_TEAM
+        } else if self.is_network() {
+            UiStyle::NETWORK
+        } else {
+            UiStyle::DEFAULT
+        };
+
+        let away_team_name = self.away_team_in_game.name.to_string();
+        let away_team_style = if self.away_team_in_game.team_id == own_team_id {
+            UiStyle::OWN_TEAM
+        } else if self.is_network() {
+            UiStyle::NETWORK
+        } else {
+            UiStyle::DEFAULT
+        };
+
+        let result = if self.has_started(timestamp) {
+            format!("{} {:>3}-{:<3}", self.timer.format(), score.0, score.1)
+        } else {
+            "vs".to_string()
+        };
+
+        TournamentDescription {
+            home_team_name,
+            home_team_style,
+            away_team_name,
+            away_team_style,
+            result,
+            winner: self.winner.map(|id| {
+                if id == self.home_team_in_game.team_id {
+                    Possession::Home
+                } else {
+                    Possession::Away
+                }
+            }),
+        }
+    }
+}
+
+impl TournamentDescriptionTrait for GameSummary {
+    fn tournament_description(
+        &self,
+        own_team_id: TeamId,
+        _timestamp: Tick,
+    ) -> TournamentDescription {
+        let home_team_name = self.home_team_name.clone();
+        let home_team_style = if self.home_team_id == own_team_id {
+            UiStyle::OWN_TEAM
+        } else if self.is_network {
+            UiStyle::NETWORK
+        } else {
+            UiStyle::DEFAULT
+        };
+
+        let away_team_name = self.away_team_name.clone();
+        let away_team_style = if self.away_team_id == own_team_id {
+            UiStyle::OWN_TEAM
+        } else if self.is_network {
+            UiStyle::NETWORK
+        } else {
+            UiStyle::DEFAULT
+        };
+
+        let score = self.get_score();
+        let result = format!("{:>3}-{:<3}", score.0, score.1);
+
+        TournamentDescription {
+            home_team_name,
+            home_team_style,
+            away_team_name,
+            away_team_style,
+            result,
+            winner: self.winner.map(|id| {
+                if id == self.home_team_id {
+                    Possession::Home
+                } else {
+                    Possession::Away
+                }
+            }),
+        }
+    }
+}
 
 pub fn number_of_rounds(participants: usize) -> usize {
     (participants as f32).log2().ceil() as usize
@@ -40,7 +150,7 @@ pub fn compute_round_sizes(participants: usize) -> Vec<usize> {
     while remaining_players > 1 {
         let games = remaining_players / 2;
         rounds.push(games);
-        remaining_players = remaining_players - games;
+        remaining_players -= games;
     }
 
     rounds
@@ -48,26 +158,35 @@ pub fn compute_round_sizes(participants: usize) -> Vec<usize> {
 
 fn get_round_lines(
     round_idx: usize,
-    round_description: Vec<((String, Style), (String, Style), String, Option<bool>)>,
+    round_description: Vec<TournamentDescription>,
     odd_participants: bool,
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = (0..ROUND_LINES_LEN).map(|_| Line::default()).collect_vec();
 
     let num_blank_lines = (1usize << round_idx).saturating_sub(1);
 
-    for (idx, ((home_name, home_style), (away_name, away_style), result, winner)) in
-        round_description.iter().enumerate()
+    for (
+        idx,
+        TournamentDescription {
+            home_team_name,
+            home_team_style,
+            away_team_name,
+            away_team_style,
+            result,
+            winner,
+        },
+    ) in round_description.into_iter().enumerate()
     {
-        let bracket_idx = if idx == 0 || !odd_participants {
-            idx
-        } else {
+        let bracket_idx = if odd_participants && round_idx == 0 {
             idx + 1
+        } else {
+            idx
         };
         let stride = (BLOCK_HEIGHT + GAP) * (1 << round_idx);
         let central_line_index = bracket_idx * stride + stride / 2 - GAP / 2;
-        let l = COL_WIDTH.saturating_sub(home_name.len()) / 2;
+        let l = COL_WIDTH.saturating_sub(home_team_name.len()) / 2;
 
-        let style = if matches!(winner, Some(b) if *b) {
+        let style = if matches!(winner, Some(p) if p == Possession::Home) {
             UiStyle::OK
         } else {
             UiStyle::DEFAULT
@@ -75,10 +194,10 @@ fn get_round_lines(
         lines[central_line_index - num_blank_lines - 1] = Line::from(vec![
             Span::styled("═".repeat(l), style),
             Span::raw(" "),
-            Span::styled(home_name.clone(), home_style.clone()),
+            Span::styled(home_team_name.clone(), home_team_style),
             Span::raw(" "),
             Span::styled(
-                "═".repeat(l + COL_WIDTH.saturating_sub(home_name.len()) % 2),
+                "═".repeat(l + COL_WIDTH.saturating_sub(home_team_name.len()) % 2),
                 style,
             ),
             Span::styled("╗   ", style),
@@ -95,12 +214,12 @@ fn get_round_lines(
 
         let result_width = COL_WIDTH + 2;
 
-        if matches!(winner, Some(b) if *b) {
+        if matches!(winner, Some(p)  if p == Possession::Home) {
             lines[central_line_index] = Line::from(vec![
                 Span::raw(format!("{:^result_width$}", result.clone())),
                 Span::styled("╚═", UiStyle::OK),
             ]);
-        } else if matches!(winner, Some(b) if !b) {
+        } else if matches!(winner, Some(p)  if p == Possession::Away) {
             lines[central_line_index] = Line::from(vec![
                 Span::raw(format!("{:^result_width$}", result.clone())),
                 Span::styled("╔═", UiStyle::OK),
@@ -112,7 +231,7 @@ fn get_round_lines(
             ]);
         };
 
-        let style = if matches!(winner, Some(b) if !b) {
+        let style = if matches!(winner,Some(p)  if p == Possession::Away) {
             UiStyle::OK
         } else {
             UiStyle::DEFAULT
@@ -125,15 +244,15 @@ fn get_round_lines(
         for b_idx in 0..num_blank_lines {
             lines[central_line_index + 1 + b_idx] = blank_line.clone();
         }
-        let l = COL_WIDTH.saturating_sub(away_name.len()) / 2;
+        let l = COL_WIDTH.saturating_sub(away_team_name.len()) / 2;
 
         lines[central_line_index + num_blank_lines + 1] = Line::from(vec![
             Span::styled("═".repeat(l), style),
             Span::raw(" "),
-            Span::styled(away_name.clone(), away_style.clone()),
+            Span::styled(away_team_name.clone(), away_team_style),
             Span::raw(" "),
             Span::styled(
-                "═".repeat(l + COL_WIDTH.saturating_sub(away_name.len()) % 2),
+                "═".repeat(l + COL_WIDTH.saturating_sub(away_team_name.len()) % 2),
                 style,
             ),
             Span::styled("╝   ", style),
@@ -143,83 +262,11 @@ fn get_round_lines(
     lines
 }
 
-fn game_summary_description<'a>(
-    game: &'a GameSummary,
-    own_team_id: TeamId,
-) -> ((String, Style), (String, Style), String, Option<bool>) {
-    let home_name = game.home_team_name.clone();
-    let home_style = if game.home_team_id == own_team_id {
-        UiStyle::OWN_TEAM
-    } else if game.is_network {
-        UiStyle::NETWORK
-    } else {
-        UiStyle::DEFAULT
-    };
-
-    let away_name = game.away_team_name.clone();
-    let away_style = if game.away_team_id == own_team_id {
-        UiStyle::OWN_TEAM
-    } else if game.is_network {
-        UiStyle::NETWORK
-    } else {
-        UiStyle::DEFAULT
-    };
-
-    let score = game.get_score();
-    let result = format!("{:>3}-{:<3}", score.0, score.1);
-
-    (
-        (home_name, home_style),
-        (away_name, away_style),
-        result,
-        game.winner.map(|id| id == game.home_team_id),
-    )
-}
-
-fn game_description<'a>(
-    game: &'a Game,
-    own_team_id: TeamId,
-    timestamp: Tick,
-) -> ((String, Style), (String, Style), String, Option<bool>) {
-    let score = game.get_score();
-
-    let home_name = format!("{}", game.home_team_in_game.name);
-    let home_style = if game.home_team_in_game.team_id == own_team_id {
-        UiStyle::OWN_TEAM
-    } else if game.is_network() {
-        UiStyle::NETWORK
-    } else {
-        UiStyle::DEFAULT
-    };
-
-    let away_name = format!("{}", game.away_team_in_game.name);
-    let away_style = if game.away_team_in_game.team_id == own_team_id {
-        UiStyle::OWN_TEAM
-    } else if game.is_network() {
-        UiStyle::NETWORK
-    } else {
-        UiStyle::DEFAULT
-    };
-
-    let result = if game.has_started(timestamp) {
-        format!("{} {:>3}-{:<3}", game.timer.format(), score.0, score.1)
-    } else {
-        "vs".to_string()
-    };
-
-    (
-        (home_name, home_style),
-        (away_name, away_style),
-        result,
-        game.winner.map(|id| id == game.home_team_in_game.team_id),
-    )
-}
-
 pub fn get_bracket_lines(
-    winner: Option<String>,
+    winner_team_name: Option<String>,
     num_participants: usize,
-    active_games: &Vec<&Game>,
-    past_game_summaries: &Vec<&GameSummary>,
+    active_games: &[&Game],
+    past_game_summaries: &[&GameSummary],
     own_team_id: TeamId,
     timestamp: Tick,
 ) -> Vec<Vec<Line<'static>>> {
@@ -228,12 +275,6 @@ pub fn get_bracket_lines(
     let round_sizes = compute_round_sizes(num_participants);
     let num_round = round_sizes.len();
 
-    let mut are_round_participants_odd = Vec::with_capacity(num_round);
-    are_round_participants_odd.push(!num_participants.is_multiple_of(2));
-    for idx in 1..num_round {
-        are_round_participants_odd.push(!are_round_participants_odd[idx - 1]);
-    }
-
     // We start filling in the descriptions using the past_game_summaries (older active_games).
     let all_games_len = past_game_summaries.len() + active_games.len();
     let mut idx = 0;
@@ -241,15 +282,14 @@ pub fn get_bracket_lines(
 
     'outer: for (round_idx, round_size) in round_sizes.into_iter().enumerate() {
         let mut round_description = vec![];
-        let odd_participants = are_round_participants_odd[round_idx];
 
         for _ in (0..round_size).rev() {
             let description = if idx < past_game_summaries.len() {
                 let game = past_game_summaries[idx];
-                game_summary_description(game, own_team_id)
+                game.tournament_description(own_team_id, timestamp)
             } else if idx < all_games_len {
                 let game = active_games[idx - past_game_summaries.len()];
-                game_description(game, own_team_id, timestamp)
+                game.tournament_description(own_team_id, timestamp)
             } else {
                 break 'outer;
             };
@@ -260,11 +300,11 @@ pub fn get_bracket_lines(
         lines.push(get_round_lines(
             round_idx,
             round_description,
-            odd_participants,
+            !num_participants.is_multiple_of(2),
         ));
     }
 
-    if let Some(winner) = winner {
+    if let Some(winner) = winner_team_name {
         let mut winner_lines: Vec<Line> =
             (0..ROUND_LINES_LEN).map(|_| Line::default()).collect_vec();
 
@@ -273,7 +313,7 @@ pub fn get_bracket_lines(
 
         winner_lines[central_line_index] = Line::from(vec![
             Span::styled("══ ", UiStyle::OK),
-            Span::raw(format!("{winner}")),
+            Span::raw(winner.to_string()),
         ]);
         lines.push(winner_lines);
     }
@@ -424,7 +464,7 @@ mod tests {
     #[ignore]
     fn test_rendering_ended_tournament() -> AppResult<()> {
         fn run() -> AppResult<()> {
-            let mut tournament = Tournament::test(7, 8);
+            let mut tournament = Tournament::test(5, 16);
             let own_team_id = tournament.participants.keys().collect_vec()[0].clone();
             let mut games = GameMap::new();
             let mut past_games = GameSummaryMap::new();

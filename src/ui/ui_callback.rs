@@ -12,7 +12,7 @@ use super::{
 use crate::app_version;
 use crate::core::{AsteroidUpgradeTarget, UpgradeableElement};
 use crate::game_engine::game::Game;
-use crate::game_engine::{Tournament, TournamentId};
+use crate::game_engine::{Tournament, TournamentId, TournamentType};
 use crate::network::types::TournamentRequestState;
 use crate::network::{challenge::Challenge, trade::Trade};
 use crate::types::{HashMapWithResult, PlayerMap};
@@ -178,8 +178,7 @@ pub enum UiCallback {
     },
 
     OrganizeNewTournament {
-        max_participants: usize,
-        registrations_closing_at: Tick,
+        tournament_type: TournamentType,
     },
 
     CancelTournament {
@@ -663,10 +662,7 @@ impl UiCallback {
         })
     }
 
-    fn organize_new_tournament(
-        max_participants: usize,
-        registrations_closing_at: Tick,
-    ) -> AppCallback {
+    fn organize_new_tournament(tournament_type: TournamentType) -> AppCallback {
         Box::new(move |app: &mut App| {
             let own_team = app
                 .world
@@ -685,42 +681,20 @@ impl UiCallback {
                 .get(&planet_id)
                 .expect("Space cove planet should exist.");
 
-            let own_peer_id = *app.network_handler.own_peer_id();
-            let mut tournament =
-                Tournament::new(&own_team, max_participants, registrations_closing_at)?
-                    .on_planet(planet);
+            let tournament = Tournament::new(own_team, tournament_type)?.on_planet(planet);
 
-            let mut players = PlayerMap::new();
-            for &player_id in own_team.player_ids.iter().take(MAX_PLAYERS_PER_GAME) {
-                let player = if let Some(player) = app.world.players.get(&player_id) {
-                    let mut p = player.clone();
-                    p.peer_id = Some(own_peer_id);
-                    p
-                } else {
-                    return Err(anyhow!("Could not find player {player_id}"));
-                };
-                players.insert(player_id, player);
-            }
+            own_team.is_organizing_tournament = Some(tournament.id);
 
-            let mut team = own_team.clone();
-            // Set peer id, so everyone gets it right when tournament is sent around.
-            team.peer_id = Some(own_peer_id);
-            tournament.register_team(&team, players, Tick::now())?;
             app.world
                 .tournaments
                 .insert(tournament.id, tournament.clone());
 
-            own_team.tournament_registration_state = TournamentRegistrationState::Registered {
-                tournament_id: tournament.id,
-            };
-
             app.ui.push_popup_to_top(PopupMessage::Ok {
                 message: format!(
-                    "New tournament created! \nRegistrations closing on {} {} at {} \n {} registered teams, {} max participants.",
-                    registrations_closing_at.formatted_as_date(),
-                    registrations_closing_at.formatted_as_time(),
+                    "New tournament created! \nRegistrations closing on {} {} at {} \n {} max participants.",
+                    tournament.registrations_closing_at.formatted_as_date(),
+                    tournament.registrations_closing_at.formatted_as_time(),
                     planet.name,
-                    tournament.registered_teams.len(),
                     tournament.max_participants
                 ),
                 is_skippable: true,
@@ -1093,9 +1067,7 @@ impl UiCallback {
 
             // Special handling for space cove
             if upgrade.target == AsteroidUpgradeTarget::SpaceCove {
-                own_team.space_cove = SpaceCoveState::Pending {
-                    planet_id: asteroid_id,
-                }
+                own_team.space_cove = Some(SpaceCove::under_construction(asteroid_id));
             }
 
             asteroid.pending_upgrade = Some(upgrade);
@@ -1128,14 +1100,37 @@ impl UiCallback {
                 let own_team = if let Some(team) = app.world.teams.get_mut(&app.world.own_team_id) {
                     team
                 } else {
-                    app.ui.push_popup(PopupMessage::Error {
-                        message: format!("Cannot find own team {}", app.world.own_team_id),
-                        tick: Tick::now(),
-                    });
+                    app.ui.push_log_event(
+                        Tick::now(),
+                        None,
+                        format!("Cannot find own team {}", app.world.own_team_id),
+                        log::Level::Error,
+                    );
                     return Ok(None);
                 };
-                own_team.space_cove = SpaceCoveState::Ready {
-                    planet_id: asteroid_id,
+                if let Some(cove) = own_team.space_cove.as_mut() {
+                    if cove.planet_id != asteroid_id {
+                        app.ui.push_log_event(
+                            Tick::now(),
+                            None,
+                            format!("Cannot finalize space cove upgrade: mismatching planet id."),
+                            log::Level::Error,
+                        );
+                        return Ok(None);
+                    }
+
+                    cove.finish_contruction();
+                    own_team.version += 1;
+                } else {
+                    app.ui.push_log_event(
+                        Tick::now(),
+                        None,
+                        format!(
+                            "Cannot finalize space cove upgrade: no space cove under construction.",
+                        ),
+                        log::Level::Error,
+                    );
+                    return Ok(None);
                 }
             }
 
@@ -1366,7 +1361,7 @@ impl UiCallback {
 
                 // Remove space cove if it was on the abandoned asteroid
                 if matches!(own_team.has_space_cove_on(), Some(id) if id == *asteroid_id) {
-                    own_team.space_cove = SpaceCoveState::None;
+                    own_team.space_cove = None;
                 }
                 app.ui.close_popup();
                 Ok(None)
@@ -1525,10 +1520,9 @@ impl UiCallback {
                 spaceship.clone(),
             )(app),
 
-            Self::OrganizeNewTournament {
-                max_participants,
-                registrations_closing_at,
-            } => Self::organize_new_tournament(*max_participants, *registrations_closing_at)(app),
+            Self::OrganizeNewTournament { tournament_type } => {
+                Self::organize_new_tournament(*tournament_type)(app)
+            }
 
             Self::CancelTournament {
                 tournament_id,
@@ -1536,26 +1530,28 @@ impl UiCallback {
             } => {
                 if let Some(tournament) = app.world.tournaments.get_mut(tournament_id) {
                     tournament.cancel();
-                    for &team_id in tournament.registered_teams.keys() {
-                        if team_id == tournament.organizer_id {
-                            continue;
+
+                    if app.world.own_team_id == tournament.organizer_id {
+                        for &team_id in tournament.registered_teams.keys() {
+                            if team_id == tournament.organizer_id {
+                                continue;
+                            }
+                            let _ = app.network_handler.send_tournament_registration_request(
+                                *tournament_id,
+                                team_id,
+                                None,
+                                TournamentRequestState::Cancellation {
+                                    reason: error_message.clone(),
+                                },
+                            );
                         }
-                        let _ = app.network_handler.send_tournament_registration_request(
-                            *tournament_id,
-                            team_id,
-                            None,
-                            TournamentRequestState::Cancellation {
-                                reason: error_message.clone(),
-                            },
-                        );
+
+                        let own_team = app.world.teams.get_mut_or_err(&app.world.own_team_id)?;
+                        own_team.is_organizing_tournament = None;
                     }
 
                     if tournament.is_team_registered(&app.world.own_team_id) {
-                        let own_team = app
-                            .world
-                            .teams
-                            .get_mut(&app.world.own_team_id)
-                            .expect("There should be the own team.");
+                        let own_team = app.world.teams.get_mut_or_err(&app.world.own_team_id)?;
                         own_team.tournament_registration_state = TournamentRegistrationState::None;
                         app.ui.push_popup(PopupMessage::Ok {
                             message: format!("{} tournament got cancelled.", tournament.name()),
@@ -1593,6 +1589,8 @@ impl UiCallback {
                         .expect("Own team should exist in world.");
                     let own_peer_id = *app.network_handler.own_peer_id();
                     let mut team = own_team.clone();
+
+                    // FIXME: All these dances with the peerId can be avoided if we set it for the own team when loading, now that we can.
                     // Set peer id, so everyone gets it right when tournament is sent around.
                     team.peer_id = Some(own_peer_id);
 
@@ -1608,15 +1606,21 @@ impl UiCallback {
                         players.insert(player_id, player);
                     }
 
-                    tournament.confirm_organizing_team(&team, players, Tick::now())?;
-
-                    // FIXME: All these dances with the peerId can be avoided if we set it for the own team when loading, now that we can.
-                    own_team.tournament_registration_state =
-                        TournamentRegistrationState::Confirmed {
-                            tournament_id: tournament.id,
-                        };
+                    if tournament
+                        .confirm_team_registration(&team, players, Tick::now())
+                        .is_ok()
+                    {
+                        own_team.tournament_registration_state =
+                            TournamentRegistrationState::Confirmed {
+                                tournament_id: tournament.id,
+                            };
+                    }
 
                     for &team_id in tournament.registered_teams.keys() {
+                        if team_id == app.world.own_team_id {
+                            continue;
+                        }
+
                         let _ = app.network_handler.send_tournament_registration_request(
                             *tournament_id,
                             team_id,
@@ -1646,26 +1650,44 @@ impl UiCallback {
             }
 
             Self::RegisterToTournament { tournament_id } => {
-                if let Some(tournament) = app.world.tournaments.get(tournament_id) {
-                    let tournament_id = *tournament_id;
-                    let mut team = app.world.get_own_team()?.clone();
-                    team.can_register_to_tournament(tournament, Tick::now())?;
-                    team.peer_id = Some(app.network_handler.own_peer_id().clone());
-                    let players = World::get_players_by_team(&app.world.players, &team)?;
-                    let team_data = Some((team, players));
+                let mut team = app.world.get_own_team()?.clone();
+                team.peer_id = Some(*app.network_handler.own_peer_id());
 
+                if let Some(tournament) = app.world.tournaments.get(tournament_id) {
+                    team.can_register_to_tournament(tournament, Tick::now())?;
+                } else {
+                    log::warn!("Invalid tournament id {tournament_id} for RegisterToTournament.");
+                    return Ok(None);
+                };
+
+                let players = World::get_game_players_by_team(&app.world.players, &team)?;
+
+                let tournament = app
+                    .world
+                    .tournaments
+                    .get_mut(tournament_id)
+                    .expect("Tournament should exist here.");
+                // Organizer gets registered immediately.
+                if tournament.organizer_id == app.world.own_team_id {
+                    tournament.register_team(&team, players, Tick::now())?;
+                    let own_team = app.world.get_own_team_mut()?;
+                    own_team.tournament_registration_state =
+                        TournamentRegistrationState::Registered {
+                            tournament_id: *tournament_id,
+                        };
+                } else {
+                    let team_data = Some((team, players));
                     app.network_handler.send_tournament_registration_request(
-                        tournament_id,
+                        *tournament_id,
                         app.world.own_team_id,
                         team_data,
                         TournamentRequestState::RegistrationRequest,
                     )?;
 
                     let own_team = app.world.get_own_team_mut()?;
-                    own_team.tournament_registration_state =
-                        TournamentRegistrationState::Pending { tournament_id };
-                } else {
-                    log::warn!("Invalid tournament id {tournament_id} for RegisterToTournament.");
+                    own_team.tournament_registration_state = TournamentRegistrationState::Pending {
+                        tournament_id: *tournament_id,
+                    };
                 }
 
                 Ok(None)

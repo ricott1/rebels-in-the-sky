@@ -55,7 +55,6 @@ pub(crate) fn execute(
         _ => unreachable!("Invalid period {}", input.end_at.period()),
     };
 
-    
     ActionOutput {
         situation: ActionSituation::BallInBackcourt,
         description,
