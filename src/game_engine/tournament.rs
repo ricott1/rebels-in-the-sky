@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-
 use crate::{
     app_version,
-    core::{Planet, Rated, Skill, Team, MINUTES, MIN_SKILL, SECONDS},
+    core::{utils::is_default, Planet, Rated, Skill, Team, MINUTES, MIN_SKILL, SECONDS},
     game_engine::{
         game::{Game, GameSummary},
         types::TeamInGame,
@@ -18,6 +16,7 @@ use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::collections::HashMap;
 use strum::Display;
 
 pub type TournamentId = uuid::Uuid;
@@ -29,7 +28,9 @@ pub struct TournamentSummary {
     kartoffel_id: KartoffelId,
     pub organizer_id: TeamId,
     max_participants: usize,
-    pub participants: HashMap<TeamId, TeamInGame>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub participant_ids: Vec<TeamId>,
     pub game_ids: Vec<GameId>,
     pub planet_id: PlanetId,
     planet_name: String,
@@ -37,20 +38,18 @@ pub struct TournamentSummary {
     registrations_closing_at: Tick,
     pub ended_at: Option<Tick>,
     pub winner: Option<TeamId>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub winner_name: String,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    tournament_rating: Skill,
     app_version: [usize; 3],
 }
 
 impl Rated for TournamentSummary {
     fn rating(&self) -> Skill {
-        if self.participants.is_empty() {
-            return MIN_SKILL;
-        }
-
-        self.participants
-            .values()
-            .map(|team| team.rating())
-            .sum::<Skill>()
-            / self.participants.len() as Skill
+        self.tournament_rating
     }
 }
 
@@ -62,7 +61,7 @@ impl TournamentSummary {
             kartoffel_id: tournament.kartoffel_id,
             organizer_id: tournament.organizer_id,
             max_participants: tournament.max_participants,
-            participants: tournament.participants.clone(),
+            participant_ids: tournament.participants.keys().copied().collect(),
             game_ids: tournament.games.iter().map(|g| g.id).collect(),
             planet_id: tournament.planet_id,
             planet_name: tournament.planet_name.clone(),
@@ -70,6 +69,18 @@ impl TournamentSummary {
             registrations_closing_at: tournament.registrations_closing_at,
             ended_at: tournament.ended_at,
             winner: tournament.winner,
+            winner_name: tournament
+                .winner
+                .map(|id| {
+                    tournament
+                        .participants
+                        .get(&id)
+                        .expect("Winner should be a participant")
+                        .name
+                        .clone()
+                })
+                .expect("Ended tournament should have a winner"),
+            tournament_rating: tournament.rating(),
             app_version: tournament.app_version,
         }
     }
@@ -418,11 +429,30 @@ impl Tournament {
         }
 
         let mut tournament_games = vec![];
-
+        let mut generated_past_games = 0;
         for game in self.games.iter() {
             if let Some(world_game) = games.get(&game.id) {
                 tournament_games.push(world_game);
+            } else {
+                generated_past_games += 1;
             }
+        }
+
+        // This is some sort of extra stop to ensure we don't generate extra games.
+        // FIXME: Not sure why this is necessary...
+        if generated_past_games == self.participants.len() - 1 {
+            if self.pending_team_for_next_game.is_none() {
+                return Err(anyhow!(
+                    "There should be a pending team if there are no available tournament games."
+                ));
+            }
+            self.winner = self.pending_team_for_next_game;
+            self.ended_at = Some(current_tick);
+            log::info!(
+                "Tournament {} is over: reached max number of games.",
+                self.id
+            );
+            return Ok(vec![]);
         }
 
         // At this point, tournament_games can be empty only if the last game was the final,
@@ -435,6 +465,7 @@ impl Tournament {
             }
             self.winner = self.pending_team_for_next_game;
             self.ended_at = Some(current_tick);
+            log::info!("Tournament {} is over: no available games.", self.id);
             return Ok(vec![]);
         }
 
@@ -461,14 +492,15 @@ impl Tournament {
                     .get(&winner_team_id)
                     .expect("Team should be a participant");
 
-                let game = self.new_game(
+                // FIXME: during simulation new games are created at the wrong time.
+                let new_game = self.new_game(
                     rng,
                     home_team_in_game.clone(),
                     away_team_in_game.clone(),
-                    current_tick + self.game_time_interval,
+                    game.ended_at.expect("Ended at should be set") + self.game_time_interval,
                 );
-                self.games.push(game.clone());
-                new_games.push(game);
+                self.games.push(new_game.clone());
+                new_games.push(new_game);
 
                 self.pending_team_for_next_game = None;
             } else {
@@ -518,7 +550,7 @@ impl Rated for Tournament {
 #[cfg(test)]
 mod tests {
 
-    use crate::core::{Player, Team, TeamLocation, TickInterval, MAX_PLAYERS_PER_GAME};
+    use crate::core::{Player, Team, TeamLocation, TickInterval, MAX_PLAYERS_PER_GAME, SECONDS};
     use crate::game_engine::{Tournament, TournamentType};
     use crate::types::{AppResult, GameMap, PlanetId, PlayerMap, SystemTimeTick, TeamId, Tick};
     use itertools::Itertools;
@@ -527,6 +559,7 @@ mod tests {
     #[test]
     fn test_tournament_determinism() -> AppResult<()> {
         let mut tournament = Tournament::test(6, 8);
+        tournament.registrations_closing_at = Tick::now() + 10 * SECONDS;
         let mut replay_tournament = tournament.clone();
 
         fn process_tournament(tournament: &mut Tournament) -> AppResult<()> {

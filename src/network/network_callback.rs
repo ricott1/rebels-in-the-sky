@@ -21,11 +21,6 @@ use rand_chacha::ChaCha8Rng;
 
 #[derive(Debug, Clone)]
 pub enum NetworkCallback {
-    PushSwarmPanelChat {
-        timestamp: Tick,
-        peer_id: PeerId,
-        text: String,
-    },
     PushSwarmPanelLog {
         timestamp: Tick,
         peer_id: Option<PeerId>,
@@ -55,14 +50,6 @@ pub enum NetworkCallback {
     },
 }
 impl NetworkCallback {
-    fn push_swarm_panel_message(timestamp: Tick, peer_id: PeerId, text: String) -> AppCallback {
-        Box::new(move |app: &mut App| {
-            app.ui
-                .push_chat_event(timestamp, Some(peer_id), text.clone());
-            Ok(None)
-        })
-    }
-
     fn bind_address(address: Multiaddr) -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.push_log_event(
@@ -154,7 +141,8 @@ impl NetworkCallback {
         message: String,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.push_chat_event(timestamp, peer_id, message.clone());
+            app.ui
+                .push_chat_event(timestamp, peer_id, message.to_owned());
             Ok(None)
         })
     }
@@ -1152,11 +1140,6 @@ impl NetworkCallback {
 
     pub fn call(&self, app: &mut App) -> AppResult<Option<String>> {
         match self {
-            Self::PushSwarmPanelChat {
-                timestamp,
-                peer_id,
-                text,
-            } => Self::push_swarm_panel_message(*timestamp, *peer_id, text.clone())(app),
             Self::PushSwarmPanelLog {
                 timestamp,
                 peer_id,
@@ -1173,6 +1156,9 @@ impl NetworkCallback {
             Self::CloseConnection { peer_id } => Self::close_connection(*peer_id)(app),
             Self::HandleConnectionEstablished { peer_id } => {
                 app.network_handler.send_own_team(&app.world)?;
+                app.ui
+                    .swarm_panel
+                    .add_peer_id(*app.network_handler.own_peer_id(), app.world.own_team_id);
 
                 app.ui.push_log_event(
                     Tick::now(),
@@ -1190,9 +1176,11 @@ impl NetworkCallback {
                     NetworkData::Team { timestamp, team } => {
                         Self::handle_team_topic(peer_id, timestamp, team)(app)
                     }
-                    NetworkData::Message { timestamp, message } => {
-                        Self::handle_message_topic(peer_id, timestamp, message)(app)
-                    }
+                    NetworkData::Message {
+                        timestamp,
+                        from,
+                        message,
+                    } => Self::handle_message_topic(Some(from), timestamp, message)(app),
                     NetworkData::Challenge {
                         timestamp,
                         challenge,

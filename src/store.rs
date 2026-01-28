@@ -316,6 +316,7 @@ mod tests {
     };
     use directories;
     use itertools::Itertools;
+    use libp2p::PeerId;
     use std::fs::File;
 
     #[test]
@@ -354,6 +355,7 @@ mod tests {
         use crate::network::types::{NetworkData, NetworkTeam};
         let value = NetworkData::Message {
             timestamp: 0,
+            from: PeerId::random(),
             message: "Hello".to_string(),
         };
         let serialized_data = serialize(&value)?;

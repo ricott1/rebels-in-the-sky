@@ -148,7 +148,7 @@ impl<'a> ClickableList<'a> {
     }
 }
 
-impl StatefulWidget for ClickableList<'_> {
+impl StatefulWidget for &ClickableList<'_> {
     type State = ClickableListState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
@@ -256,6 +256,14 @@ impl StatefulWidget for ClickableList<'_> {
     }
 }
 
+impl StatefulWidget for ClickableList<'_> {
+    type State = ClickableListState;
+
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        StatefulWidget::render(&self, area, buf, state);
+    }
+}
+
 impl<'a> Widget for ClickableList<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let mut state = ClickableListState::default();
@@ -275,7 +283,7 @@ impl<'a> Styled for ClickableList<'a> {
     }
 }
 
-impl InteractiveStatefulWidget for ClickableList<'_> {
+impl InteractiveStatefulWidget for &ClickableList<'_> {
     fn layer(&self) -> usize {
         0
     }
@@ -285,7 +293,7 @@ impl InteractiveStatefulWidget for ClickableList<'_> {
     }
 
     fn before_rendering(
-        &mut self,
+        &self,
         area: Rect,
         callback_registry: &mut CallbackRegistry,
         state: &mut Self::State,
@@ -369,5 +377,24 @@ impl InteractiveStatefulWidget for ClickableList<'_> {
                 },
             );
         }
+    }
+}
+
+impl InteractiveStatefulWidget for ClickableList<'_> {
+    fn layer(&self) -> usize {
+        0
+    }
+
+    fn hover_text(&self) -> Text<'_> {
+        "".into()
+    }
+
+    fn before_rendering(
+        &self,
+        area: Rect,
+        callback_registry: &mut CallbackRegistry,
+        state: &mut Self::State,
+    ) {
+        InteractiveStatefulWidget::before_rendering(&self, area, callback_registry, state);
     }
 }

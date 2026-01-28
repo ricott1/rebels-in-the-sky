@@ -3,7 +3,7 @@ use crate::{
         game::{Game, GameSummary},
         types::Possession,
     },
-    types::{TeamId, Tick},
+    types::{SystemTimeTick, TeamId, Tick},
     ui::constants::UiStyle,
 };
 use itertools::Itertools;
@@ -61,7 +61,8 @@ impl TournamentDescriptionTrait for Game {
         let result = if self.has_started(timestamp) {
             format!("{} {:>3}-{:<3}", self.timer.format(), score.0, score.1)
         } else {
-            "vs".to_string()
+            let countdown = (self.starting_at.saturating_sub(timestamp)).formatted();
+            format!("Starting in {}", countdown)
         };
 
         TournamentDescription {
@@ -125,12 +126,12 @@ impl TournamentDescriptionTrait for GameSummary {
     }
 }
 
-pub fn number_of_rounds(participants: usize) -> usize {
-    (participants as f32).log2().ceil() as usize
+pub fn number_of_rounds(num_participants: usize) -> usize {
+    (num_participants as f32).log2().ceil() as usize
 }
 
-pub fn current_round(participants: usize, games_played: usize) -> usize {
-    let round_sizes = compute_round_sizes(participants);
+pub fn current_round(num_participants: usize, games_played: usize) -> usize {
+    let round_sizes = compute_round_sizes(num_participants);
     let mut counter = 0;
     for (idx, round_size) in round_sizes.iter().enumerate() {
         counter += round_size;
@@ -263,7 +264,7 @@ fn get_round_lines(
 }
 
 pub fn get_bracket_lines(
-    winner_team_name: Option<String>,
+    winner_team_name: Option<&str>,
     num_participants: usize,
     active_games: &[&Game],
     past_game_summaries: &[&GameSummary],
@@ -346,9 +347,10 @@ mod tests {
         past_game_summaries: Vec<&GameSummary>,
         current_tick: Tick,
     ) {
-        let number_of_rounds = number_of_rounds(tournament.participants.len());
+        let num_participants = tournament.participants.len();
+        let number_of_rounds = number_of_rounds(num_participants);
         let current_round = current_round(
-            tournament.participants.len(),
+            num_participants,
             past_game_summaries.len() + active_games.len(),
         ) + 1;
 
@@ -366,9 +368,9 @@ mod tests {
                     .get(&id)
                     .expect("Winner should be a participant")
                     .name
-                    .clone()
+                    .as_str()
             }),
-            tournament.participants.len(),
+            num_participants,
             &active_games,
             &past_game_summaries,
             own_team_id,

@@ -87,6 +87,12 @@ pub static TREASURE_GIF: Lazy<GifLines> = Lazy::new(|| {
         .to_lines()
 });
 
+pub static _FLAG_GIF: Lazy<GifLines> = Lazy::new(|| {
+    open_gif("cove/flag.gif".into())
+        .expect("Cannot open flag.gif.")
+        .to_lines()
+});
+
 pub enum ImageResizeInGalaxyGif {
     ZoomOutCentral { planet_type: PlanetType },
     ZoomOutSatellite { planet_type: PlanetType },

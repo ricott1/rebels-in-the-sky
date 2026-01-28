@@ -717,7 +717,7 @@ impl PopupMessage {
                 };
 
                 let m_split = Layout::vertical([
-                    Constraint::Min(3),
+                    Constraint::Fill(1),
                     Constraint::Length(treasure_image_height),
                 ])
                 .split(split[1]);

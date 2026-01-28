@@ -298,10 +298,26 @@ impl NetworkHandler {
     pub fn send_message(&mut self, message: String) -> AppResult<()> {
         self._send(&NetworkData::Message {
             timestamp: Tick::now(),
+            from: *self.own_peer_id(),
             message,
         })
     }
 
+    #[cfg(feature = "relayer")]
+    pub fn resend_message(
+        &mut self,
+        timestamp: Tick,
+        from: PeerId,
+        message: String,
+    ) -> AppResult<()> {
+        self._send(&NetworkData::Message {
+            timestamp,
+            from,
+            message,
+        })
+    }
+
+    #[cfg(feature = "relayer")]
     pub fn send_relayer_message_to_team(
         &mut self,
         message: String,

@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use russh::server::{Handle, Session};
 use russh::{ChannelId, CryptoVec};
 use std::fmt::Debug;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task;
 use tokio_util::sync::CancellationToken;
@@ -157,6 +158,9 @@ impl AppChannel {
             if let Err(e) = app.run(tui).await {
                 log::error!("Error running app: {e}")
             };
+
+            // Sleep here to be able to send EoF to client.
+            std::thread::sleep(Duration::from_millis(500));
         });
 
         self.window_change_request(width, height).await?;

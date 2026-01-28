@@ -1,6 +1,6 @@
 [package]
 name = "rebels"
-version = "1.5.6"
+version = "1.5.7"
 edition = "2021"
 authors = ["Alessandro Ricottone <ricott2@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -29,7 +29,7 @@ opt-level = 3
 [dependencies]
 anyhow = "1.0.99"
 chrono = "0.4.41"
-clap = { version = "4.5.54", features = ["derive"] }
+clap = { version = "4.5.55", features = ["derive"] }
 crossterm = "0.29.0"
 directories = "6.0.0"
 flate2 = { version = "1.1.8", features = ["zlib-ng"], default-features = false }
@@ -67,12 +67,12 @@ tokio = { version = "1.49.0", features = ["rt", "time", "macros", "sync"] }
 tokio-util = "0.7.18"
 tui-textarea = "0.7.0"
 unicode-width = "0.2"
-uuid = { version = "1.18.1", features = ["v4", "serde"] }
+uuid = { version = "1.20.0", features = ["v4", "serde"] }
 
 # Feature deps
 rodio = { version = "0.20.1", optional = true }
-russh = { version = "0.55.0", optional = true }
-stream-download = { version = "0.23.0", optional = true }
+russh = { version = "0.57.0", optional = true }
+stream-download = { version = "0.23.0", features = ["reqwest-rustls"], optional = true }
 url = { version = "2.5.8", optional = true }
 
 [features]

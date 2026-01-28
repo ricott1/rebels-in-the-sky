@@ -50,6 +50,7 @@ pub enum NetworkData {
     },
     Message {
         timestamp: Tick,
+        from: PeerId,
         message: String,
     },
     Game {

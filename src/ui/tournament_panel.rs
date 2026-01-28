@@ -463,9 +463,11 @@ impl TournamentPanel {
 
         let active_games = tournament.active_games(&world.games);
         let past_game_summaries = tournament.past_game_summaries(&world.past_games);
-        let number_of_rounds = number_of_rounds(tournament.participants.len());
+
+        let num_participants = tournament.participants.len();
+        let number_of_rounds = number_of_rounds(num_participants);
         let current_round = current_round(
-            tournament.participants.len(),
+            num_participants,
             past_game_summaries.len() + active_games.len(),
         ) + 1;
 
@@ -489,9 +491,9 @@ impl TournamentPanel {
                     .get(&id)
                     .expect("Winner should be a participant")
                     .name
-                    .clone()
+                    .as_str()
             }),
-            tournament.participants.len(),
+            num_participants,
             &active_games,
             &past_game_summaries,
             world.own_team_id,
@@ -533,22 +535,16 @@ impl TournamentPanel {
             .filter_map(|id| world.past_games.get(id))
             .collect::<Vec<&GameSummary>>();
 
-        let number_of_rounds = number_of_rounds(tournament_summary.participants.len());
+        let num_participants = tournament_summary.participant_ids.len();
+        let number_of_rounds = number_of_rounds(num_participants);
 
         let brackets_split =
             Layout::horizontal([Constraint::Length(24)].repeat(number_of_rounds + 1))
                 .split(t_split[1]);
 
         let brackets = tournament_brackets_lines::get_bracket_lines(
-            tournament_summary.winner.map(|id| {
-                tournament_summary
-                    .participants
-                    .get(&id)
-                    .expect("Winner should be a participant")
-                    .name
-                    .clone()
-            }),
-            tournament_summary.participants.len(),
+            Some(tournament_summary.winner_name.as_str()),
+            num_participants,
             &games,
             &game_summaries,
             world.own_team_id,

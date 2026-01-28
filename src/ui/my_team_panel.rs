@@ -85,7 +85,7 @@ pub struct MyTeamPanel {
     current_planet_id: Option<PlanetId>,
     tick: usize,
     gif_map: GifMap,
-    // players_table: ClickableTable<'static>,
+    players_table: ClickableTable<'static>,
 }
 
 impl MyTeamPanel {
@@ -1878,7 +1878,7 @@ impl MyTeamPanel {
         players: &'a Vec<&Player>,
         world: &'a World,
         table_width: u16,
-    ) -> AppResult<ClickableTable<'a>> {
+    ) -> AppResult<ClickableTable<'static>> {
         let own_team = world.get_own_team()?;
         let header_cells = [
             "Name",
@@ -2040,22 +2040,17 @@ impl MyTeamPanel {
             .sort_by_rating();
 
         let player_index = if let Some(index) = self.player_index {
-            index.min(sorted_players.len() - 1)
+            index.min(own_team.player_ids.len() - 1)
         } else {
             return Ok(());
         };
         let player = sorted_players[player_index];
 
         let top_split =
-            Layout::horizontal([Constraint::Min(10), Constraint::Length(60)]).split(area);
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(60)]).split(area);
 
-        let table = Self::build_players_table(&sorted_players, world, top_split[0].width)?;
         frame.render_stateful_interactive_widget(
-            table.block(default_block().title(format!(
-                "{} {} ↓/↑",
-                own_team.name.clone(),
-                world.team_rating(&own_team.id).unwrap_or_default().stars()
-            ))),
+            &self.players_table,
             top_split[0],
             &mut ClickableTableState::default().with_selected(self.player_index),
         );
@@ -2476,7 +2471,20 @@ impl Screen for MyTeamPanel {
                     .unwrap()
             });
 
-            // self.players_table = Self::build_players_table(players, world, table_width)
+            let sorted_players = own_team
+                .player_ids
+                .iter()
+                .map(|id| world.players.get(id).unwrap())
+                .collect_vec()
+                .sort_by_rating();
+
+            let table_width = UI_SCREEN_SIZE.0 - 60;
+            self.players_table = Self::build_players_table(&sorted_players, world, table_width)?
+                .block(default_block().title(format!(
+                    "{} {} ↓/↑",
+                    own_team.name,
+                    world.team_rating(&own_team.id).unwrap_or_default().stars()
+                )));
         }
 
         self.game_index = if !self.past_game_ids.is_empty() {

@@ -733,6 +733,8 @@ impl UiCallback {
             );
 
             app.world.teams.insert(team.id, team);
+            app.world.dirty = true;
+            app.world.dirty_ui = true;
 
             Ok(None)
         })
@@ -1309,8 +1311,14 @@ impl UiCallback {
             }
             #[cfg(feature = "audio")]
             Self::ToggleAudio => {
+                let app_sender = app.get_event_sender();
                 if let Some(player) = app.audio_player.as_mut() {
-                    player.toggle_state()?;
+                    if let Err(err) = player.toggle_state(app_sender) {
+                        app.ui.push_popup_to_top(PopupMessage::Error {
+                            message: format!("Cannot toggle audio: {err}"),
+                            tick: Tick::now(),
+                        });
+                    }
                 } else {
                     log::info!("No audio player, cannot toggle it");
                 }
@@ -1319,8 +1327,14 @@ impl UiCallback {
             }
             #[cfg(feature = "audio")]
             Self::PreviousRadio => {
+                let app_sender = app.get_event_sender();
                 if let Some(player) = app.audio_player.as_mut() {
-                    player.previous_radio_stream()?;
+                    if let Err(err) = player.previous_radio_stream(app_sender) {
+                        app.ui.push_popup_to_top(PopupMessage::Error {
+                            message: format!("Cannot toggle audio: {err}"),
+                            tick: Tick::now(),
+                        });
+                    }
                 } else {
                     log::info!("No audio player, cannot select previous sample");
                 }
@@ -1328,8 +1342,14 @@ impl UiCallback {
             }
             #[cfg(feature = "audio")]
             Self::NextRadio => {
+                let app_sender = app.get_event_sender();
                 if let Some(player) = app.audio_player.as_mut() {
-                    player.next_radio_stream()?;
+                    if let Err(err) = player.next_radio_stream(app_sender) {
+                        app.ui.push_popup_to_top(PopupMessage::Error {
+                            message: format!("Cannot toggle audio: {err}"),
+                            tick: Tick::now(),
+                        });
+                    }
                 } else {
                     log::info!("No audio player, cannot select next sample");
                 }
@@ -1550,13 +1570,15 @@ impl UiCallback {
                         own_team.is_organizing_tournament = None;
                     }
 
-                    if tournament.is_team_registered(&app.world.own_team_id) {
+                    if tournament.is_team_registered(&app.world.own_team_id)
+                        || app.world.own_team_id == tournament.organizer_id
+                    {
                         let own_team = app.world.teams.get_mut_or_err(&app.world.own_team_id)?;
                         own_team.tournament_registration_state = TournamentRegistrationState::None;
                         app.ui.push_popup(PopupMessage::Ok {
                             message: format!("{} tournament got cancelled.", tournament.name()),
                             tick: Tick::now(),
-                            is_skippable: false,
+                            is_skippable: true,
                         });
                     }
 

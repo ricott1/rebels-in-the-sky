@@ -143,7 +143,7 @@ pub trait InteractiveWidget: Widget {
 pub trait InteractiveStatefulWidget: StatefulWidget {
     fn layer(&self) -> usize;
     fn before_rendering(
-        &mut self,
+        &self,
         area: Rect,
         callback_registry: &mut CallbackRegistry,
         state: &mut Self::State,

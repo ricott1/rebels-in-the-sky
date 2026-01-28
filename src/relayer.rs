@@ -1,9 +1,10 @@
 use crate::app::AppEvent;
+use crate::core::HOURS;
 use crate::network::constants::{DEFAULT_SEED_PORT, TOPIC};
 use crate::network::types::{NetworkData, PlayerRanking, TeamRanking};
 use crate::network::{handler::NetworkHandler, types::SeedInfo};
 use crate::store::*;
-use crate::types::{AppResult, PlayerId, TeamId};
+use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId, Tick};
 use itertools::Itertools;
 use libp2p::gossipsub::IdentTopic;
 use libp2p::{gossipsub, swarm::SwarmEvent};
@@ -13,6 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 const TOP_PLAYER_RANKING_LENGTH: usize = 20;
 const TOP_TEAM_RANKING_LENGTH: usize = 10;
+const CHAT_RETENTION_DURATION: Tick = 24 * HOURS;
 
 pub struct Relayer {
     running: bool,
@@ -21,7 +23,8 @@ pub struct Relayer {
     top_team_ranking: Vec<(TeamId, TeamRanking)>,
     player_ranking: HashMap<PlayerId, PlayerRanking>,
     top_player_ranking: Vec<(PlayerId, PlayerRanking)>,
-    messages: Vec<String>,
+    relayer_messages: Vec<String>,
+    chat_messages: HashMap<u64, Vec<NetworkData>>, // timestamp to message data
     last_message_sent_to_team: HashMap<TeamId, usize>,
 }
 
@@ -113,7 +116,8 @@ impl Relayer {
             top_team_ranking,
             player_ranking,
             top_player_ranking,
-            messages: Vec::new(),
+            relayer_messages: Vec::new(),
+            chat_messages: HashMap::new(),
             last_message_sent_to_team: HashMap::new(),
         }
     }
@@ -159,6 +163,33 @@ impl Relayer {
                         self.top_team_ranking.clone(),
                         self.top_player_ranking.clone(),
                     )?)?;
+
+                    println!(
+                        "Resending {} past chat messages to {}",
+                        self.chat_messages.len(),
+                        peer_id
+                    );
+                    for entry in self.chat_messages.values() {
+                        for data in entry.iter() {
+                            if let NetworkData::Message {
+                                timestamp,
+                                from,
+                                message,
+                            } = data
+                            {
+                                println!("\nResending {message}\n");
+                                self.network_handler.resend_message(
+                                    *timestamp,
+                                    *from,
+                                    message.clone(),
+                                )?;
+                            } else {
+                                log::error!(
+                                    "Relayer error: chat message entry should be NetworkData::Message."
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -226,7 +257,7 @@ impl Relayer {
                     self.top_player_ranking = self.get_top_player_ranking();
 
                     // Check if there are new messages to send and append them to self.messages.
-                    self.messages.extend(load_relayer_messages()?);
+                    self.relayer_messages.extend(load_relayer_messages()?);
 
                     // Send messages starting from last sent message.
                     let last_message_sent = self
@@ -234,7 +265,7 @@ impl Relayer {
                         .get(&network_team.team.id)
                         .unwrap_or(&0);
 
-                    for (index, message) in self.messages.iter().enumerate() {
+                    for (index, message) in self.relayer_messages.iter().enumerate() {
                         if index < *last_message_sent {
                             continue;
                         }
@@ -244,7 +275,20 @@ impl Relayer {
                     }
 
                     self.last_message_sent_to_team
-                        .insert(network_team.team.id, self.messages.len());
+                        .insert(network_team.team.id, self.relayer_messages.len());
+                } else if let NetworkData::Message { timestamp, .. } = network_data {
+                    let now = Tick::now();
+                    self.chat_messages.retain(|&timestamp, _| {
+                        now.saturating_sub(timestamp) <= CHAT_RETENTION_DURATION
+                    });
+
+                    println!("Chat message stored: {network_data:#?}");
+                    self.chat_messages
+                        .entry(timestamp)
+                        .and_modify(|e| {
+                            e.push(network_data.clone());
+                        })
+                        .or_insert(vec![network_data]);
                 }
             }
             _ => {}

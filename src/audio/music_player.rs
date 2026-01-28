@@ -1,3 +1,4 @@
+use crate::app::AppEvent;
 use crate::store::ASSETS_DIR;
 use crate::types::AppResult;
 use anyhow::anyhow;
@@ -17,6 +18,12 @@ use tokio_util::sync::CancellationToken;
 use url::Url;
 
 const STREAMING_TIMEOUT_MILLIS: u64 = 2_000;
+
+#[derive(Debug)]
+pub enum MusicPlayerEvent {
+    StreamOk,
+    StreamErr { error_message: String },
+}
 
 #[derive(Debug, Deserialize)]
 struct Stream {
@@ -64,7 +71,7 @@ impl MusicPlayer {
             .url()
     }
 
-    fn start_streaming(&self, url: Url) {
+    fn start_streaming(&self, url: Url, app_sender: tokio::sync::mpsc::Sender<AppEvent>) {
         let sender = match &self.stream_status {
             StreamStatus::Uninitialized => unreachable!("Stream should have been initialized."),
             StreamStatus::Ready { sender } => sender.clone(),
@@ -91,14 +98,32 @@ impl MusicPlayer {
                 Ok(Ok(data)) => {
                     // send the StreamDownload to the audio thread
                     if let Err(send_err) = sender.send(AudioCommand::Append(data)) {
-                        log::error!("Audio thread receiver dropped: {send_err:?}");
+                        let error_message = format!("Audio thread receiver dropped: {send_err:?}");
+                        log::error!("{error_message}");
+                        let _ = app_sender
+                            .send(AppEvent::AudioEvent(MusicPlayerEvent::StreamErr {
+                                error_message,
+                            }))
+                            .await;
                     }
                 }
                 Ok(Err(err)) => {
-                    log::error!("Unable to start audio stream: {err}");
+                    let error_message = format!("Unable to start audio stream: {err}");
+                    log::error!("{error_message}");
+                    let _ = app_sender
+                        .send(AppEvent::AudioEvent(MusicPlayerEvent::StreamErr {
+                            error_message,
+                        }))
+                        .await;
                 }
                 Err(_) => {
-                    log::error!("Audio streaming timed out");
+                    let error_message = "Audio streaming timed out".to_string();
+                    log::error!("{error_message}");
+                    let _ = app_sender
+                        .send(AppEvent::AudioEvent(MusicPlayerEvent::StreamErr {
+                            error_message,
+                        }))
+                        .await;
                 }
             }
 
@@ -210,7 +235,10 @@ impl MusicPlayer {
         self.is_playing.load(Ordering::Relaxed)
     }
 
-    pub fn previous_radio_stream(&mut self) -> AppResult<()> {
+    pub fn previous_radio_stream(
+        &mut self,
+        app_sender: tokio::sync::mpsc::Sender<AppEvent>,
+    ) -> AppResult<()> {
         let sender = match &self.stream_status {
             StreamStatus::Uninitialized => return Err(anyhow!("Stream is not initialized.")),
             StreamStatus::Ready { sender } => sender,
@@ -223,14 +251,17 @@ impl MusicPlayer {
         if self.is_playing() {
             let _ = sender.send(AudioCommand::Clear);
             let url = self.current_url()?;
-            self.start_streaming(url);
+            self.start_streaming(url, app_sender);
         } else {
             let _ = sender.send(AudioCommand::Clear);
         }
         Ok(())
     }
 
-    pub fn next_radio_stream(&mut self) -> AppResult<()> {
+    pub fn next_radio_stream(
+        &mut self,
+        app_sender: tokio::sync::mpsc::Sender<AppEvent>,
+    ) -> AppResult<()> {
         let sender = match &self.stream_status {
             StreamStatus::Uninitialized => return Err(anyhow!("Stream is not initialized.")),
             StreamStatus::Ready { sender } => sender,
@@ -243,14 +274,17 @@ impl MusicPlayer {
         if self.is_playing() {
             let _ = sender.send(AudioCommand::Clear);
             let url = self.current_url()?;
-            self.start_streaming(url);
+            self.start_streaming(url, app_sender);
         } else {
             let _ = sender.send(AudioCommand::Clear);
         }
         Ok(())
     }
 
-    pub fn toggle_state(&mut self) -> AppResult<()> {
+    pub fn toggle_state(
+        &mut self,
+        app_sender: tokio::sync::mpsc::Sender<AppEvent>,
+    ) -> AppResult<()> {
         let sender = match &self.stream_status {
             StreamStatus::Uninitialized => return Err(anyhow!("Stream is not initialized.")),
             StreamStatus::Ready { sender } => sender,
@@ -261,7 +295,7 @@ impl MusicPlayer {
         } else if !self.has_buffer.load(Ordering::Relaxed) {
             if !self.is_buffering() {
                 let url = self.current_url()?;
-                self.start_streaming(url);
+                self.start_streaming(url, app_sender);
             }
         } else {
             let _ = sender.send(AudioCommand::Play);

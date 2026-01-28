@@ -1,7 +1,7 @@
 use crate::app_version;
 use crate::args::AppArgs;
 #[cfg(feature = "audio")]
-use crate::audio::music_player::MusicPlayer;
+use crate::audio::music_player::{MusicPlayer, MusicPlayerEvent};
 use crate::network::handler::NetworkHandler;
 use crate::{
     core::*,
@@ -36,6 +36,8 @@ pub enum AppEvent {
     FastTick(Tick),
     TerminalEvent(TerminalEvent),
     NetworkEvent(SwarmEvent<gossipsub::Event>),
+    #[cfg(feature = "audio")]
+    AudioEvent(MusicPlayerEvent),
 }
 
 #[derive(Debug)]
@@ -328,6 +330,17 @@ impl App {
                     AppEvent::NetworkEvent(swarm_event) => {
                         self.handle_network_events(swarm_event)?;
                     }
+
+                    #[cfg(feature = "audio")]
+                    AppEvent::AudioEvent(audio_event) => match audio_event {
+                        MusicPlayerEvent::StreamOk => {}
+                        MusicPlayerEvent::StreamErr { error_message } => {
+                            self.ui.push_popup(PopupMessage::Error {
+                                message: format!("Music player error: {error_message}"),
+                                tick: Tick::now(),
+                            });
+                        }
+                    },
                 }
             }
         }

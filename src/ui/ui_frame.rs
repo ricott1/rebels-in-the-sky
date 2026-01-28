@@ -135,7 +135,7 @@ impl<'a, 'b> UiFrame<'a, 'b> {
 
     pub fn render_stateful_interactive_widget<W>(
         &mut self,
-        mut widget: W,
+        widget: W,
         area: Rect,
         state: &mut W::State,
     ) where

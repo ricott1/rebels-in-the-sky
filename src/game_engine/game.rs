@@ -452,6 +452,18 @@ impl Game {
         let defending_stats = &mut defending_team.stats;
         let defending_players = &mut defending_team.players;
 
+        for stats in attacking_stats.values_mut() {
+            if stats.is_playing() {
+                stats.plus_minus += score_change as i32;
+            }
+        }
+
+        for stats in defending_stats.values_mut() {
+            if stats.is_playing() {
+                stats.plus_minus -= score_change as i32;
+            }
+        }
+
         for (stats_update, stats, players) in [
             (attack_stats_update, attacking_stats, attacking_players),
             (defense_stats_update, defending_stats, defending_players),
@@ -469,17 +481,6 @@ impl Game {
                     player.add_tiredness(stats.extra_tiredness);
                     player.add_morale(stats.extra_morale);
                 }
-            }
-        }
-
-        for stats in defending_stats.values_mut() {
-            if stats.is_playing() {
-                stats.plus_minus += score_change as i32;
-            }
-        }
-        for stats in defending_stats.values_mut() {
-            if stats.is_playing() {
-                stats.plus_minus -= score_change as i32;
             }
         }
     }

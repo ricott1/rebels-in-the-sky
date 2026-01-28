@@ -58,7 +58,7 @@ impl SwarmView {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct SwarmPanelEvent {
     timestamp: Tick,
     peer_id: Option<PeerId>,
@@ -102,6 +102,9 @@ pub struct SwarmPanel {
     unread_chat_messages: usize,
     chat_message_index: Option<usize>,
     log_message_index: Option<usize>,
+    chat_message_list: ClickableList<'static>,
+    log_message_list: ClickableList<'static>,
+    should_update_message_list: Option<SwarmView>,
 }
 
 impl SwarmPanel {
@@ -151,12 +154,15 @@ impl SwarmPanel {
     }
 
     pub fn push_log_event(&mut self, event: SwarmPanelEvent) {
-        if let Some(last_event) = self
+        let log_events = self
             .events
             .get_mut(&SwarmView::Log)
-            .expect("Should have Log events")
-            .last_mut()
-        {
+            .expect("Should have Log events");
+
+        log_events.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        log_events.dedup();
+
+        if let Some(last_event) = log_events.last_mut() {
             // If we recently pushed the same event, don't push it again,
             // but update the timestamp
             if last_event.peer_id == event.peer_id
@@ -168,33 +174,38 @@ impl SwarmPanel {
             }
         }
 
-        self.events
-            .get_mut(&SwarmView::Log)
-            .expect("Should have Log events")
-            .push(event);
+        log_events.push(event);
 
         self.log_message_index = match self.log_message_index {
             Some(index) => Some(index + 1),
             None => Some(0),
-        }
+        };
+        self.should_update_message_list = Some(SwarmView::Log);
     }
 
     pub fn push_chat_event(&mut self, event: SwarmPanelEvent) {
-        self.events
+        let chat_events = self
+            .events
             .get_mut(&SwarmView::Chat)
-            .expect("Should have Chat events")
-            .push(event);
+            .expect("Should have Log events");
+
+        chat_events.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        chat_events.dedup();
+
+        chat_events.push(event);
         self.unread_chat_messages += 1;
         self.chat_message_index = match self.chat_message_index {
             Some(index) => Some(index + 1),
             None => Some(0),
-        }
+        };
+        self.should_update_message_list = Some(SwarmView::Chat);
     }
 
     pub fn add_peer_id(&mut self, peer_id: PeerId, team_id: TeamId) {
         self.team_id_to_peer_id.insert(team_id, peer_id);
         self.peer_id_to_team_id.insert(peer_id, team_id);
         self.connected_peers.insert(peer_id, Tick::now());
+        self.should_update_message_list = Some(SwarmView::Chat);
     }
 
     pub fn remove_peer_id(&mut self, peer_id: &PeerId) {
@@ -724,8 +735,8 @@ impl SwarmPanel {
                 self.render_team_ranking(frame, world, ranking_split[1]);
             }
 
-            SwarmView::Chat => self.render_event_messages(frame, world, SwarmView::Chat, split[0]),
-            SwarmView::Log => self.render_event_messages(frame, world, SwarmView::Log, split[0]),
+            SwarmView::Chat => self.render_event_messages(frame, SwarmView::Chat, split[0]),
+            SwarmView::Log => self.render_event_messages(frame, SwarmView::Log, split[0]),
         }
 
         // Reset only if current index is equal to max index - 1
@@ -738,13 +749,7 @@ impl SwarmPanel {
         Ok(())
     }
 
-    fn render_event_messages(
-        &self,
-        frame: &mut UiFrame,
-        world: &World,
-        swarm_view: SwarmView,
-        area: Rect,
-    ) {
+    fn update_event_message_list(&mut self, world: &World, swarm_view: SwarmView) {
         let items = if let Some(events) = self.events.get(&swarm_view) {
             let mut items = vec![];
             for event in events.iter() {
@@ -753,7 +758,7 @@ impl SwarmPanel {
                     UiStyle::HIGHLIGHT,
                 );
 
-                let style = match event.level {
+                let mut style = match event.level {
                     log::Level::Debug => UiStyle::NETWORK,
                     log::Level::Info => UiStyle::OK,
                     log::Level::Warn => UiStyle::WARNING,
@@ -764,7 +769,10 @@ impl SwarmPanel {
                 let author_span = match event.peer_id {
                     Some(peer_id) => {
                         let from = if let Some(team_id) = self.peer_id_to_team_id.get(&peer_id) {
-                            if let Ok(team) = world.teams.get_or_err(team_id) {
+                            if *team_id == world.own_team_id {
+                                style = UiStyle::OWN_TEAM;
+                                "You"
+                            } else if let Ok(team) = world.teams.get_or_err(team_id) {
                                 team.name.as_str()
                             } else {
                                 "Unknown"
@@ -794,7 +802,9 @@ impl SwarmPanel {
 
                 let timestamp_length = timestamp_span.content.len();
                 let incipit_length = timestamp_length + author_span.content.len();
-                let message_max_length = (area.width as usize).saturating_sub(2 + incipit_length); // Extra 2 is because of Block outside.
+                // FIXME: we should ideally use area.width and make this adaptive.
+                let message_max_length =
+                    (UI_SCREEN_SIZE.0 as usize).saturating_sub(36 + 2 + incipit_length); // 36 is left panel width, extra 2 is because of Block outside.
 
                 let text_lines = wrap_text(event.text.as_str(), message_max_length);
                 let mut lines = vec![Line::from(vec![
@@ -819,17 +829,29 @@ impl SwarmPanel {
             vec![]
         };
 
-        let list = ClickableList::new(items);
-        let index = if swarm_view == SwarmView::Chat {
-            self.chat_message_index
+        let list = ClickableList::new(items).block(default_block().title(swarm_view.to_string()));
+
+        if swarm_view == SwarmView::Chat {
+            self.chat_message_list = list;
         } else {
-            self.log_message_index
-        };
-        frame.render_stateful_interactive_widget(
-            list.block(default_block().title(swarm_view.to_string())),
-            area,
-            &mut ClickableListState::default().with_selected(index),
-        );
+            self.log_message_list = list;
+        }
+    }
+
+    fn render_event_messages(&self, frame: &mut UiFrame, swarm_view: SwarmView, area: Rect) {
+        if swarm_view == SwarmView::Chat {
+            frame.render_stateful_interactive_widget(
+                &self.chat_message_list,
+                area,
+                &mut ClickableListState::default().with_selected(self.chat_message_index),
+            );
+        } else {
+            frame.render_stateful_interactive_widget(
+                &self.log_message_list,
+                area,
+                &mut ClickableListState::default().with_selected(self.log_message_index),
+            )
+        }
     }
 
     pub fn set_view(&mut self, topic: SwarmView) {
@@ -838,7 +860,7 @@ impl SwarmPanel {
 }
 
 impl Screen for SwarmPanel {
-    fn update(&mut self, _world: &World) -> AppResult<()> {
+    fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
 
         if self.max_index() == 0 {
@@ -851,6 +873,11 @@ impl Screen for SwarmPanel {
                 },
                 SwarmView::Requests => {}
             }
+        }
+
+        if let Some(swarm_view) = self.should_update_message_list {
+            self.update_event_message_list(world, swarm_view);
+            self.should_update_message_list = None;
         }
 
         Ok(())

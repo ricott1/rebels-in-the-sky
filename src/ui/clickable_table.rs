@@ -311,15 +311,15 @@ impl ClickableTableState {
     }
 }
 
-impl<'a> StatefulWidget for ClickableTable<'a> {
+impl<'a> StatefulWidget for &ClickableTable<'a> {
     type State = ClickableTableState;
 
-    fn render(mut self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         if area.area() == 0 {
             return;
         }
         buf.set_style(area, self.style);
-        let table_area = match self.block.take() {
+        let table_area = match self.block.as_ref() {
             Some(b) => {
                 let inner_area = b.inner(area);
                 b.render(area, buf);
@@ -376,7 +376,7 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
         state.offset = start;
         for (i, table_row) in self
             .rows
-            .iter_mut()
+            .iter()
             .enumerate()
             .skip(state.offset)
             .take(end - start)
@@ -425,6 +425,14 @@ impl<'a> StatefulWidget for ClickableTable<'a> {
     }
 }
 
+impl StatefulWidget for ClickableTable<'_> {
+    type State = ClickableTableState;
+
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        StatefulWidget::render(&self, area, buf, state);
+    }
+}
+
 fn render_cell(buf: &mut Buffer, cell: &ClickableCell, area: Rect) {
     buf.set_style(area, cell.style);
     for (i, line) in cell.content.lines.iter().enumerate() {
@@ -449,7 +457,7 @@ impl<'a> Widget for ClickableTable<'a> {
     }
 }
 
-impl InteractiveStatefulWidget for ClickableTable<'_> {
+impl InteractiveStatefulWidget for &ClickableTable<'_> {
     fn layer(&self) -> usize {
         0
     }
@@ -459,7 +467,7 @@ impl InteractiveStatefulWidget for ClickableTable<'_> {
     }
 
     fn before_rendering(
-        &mut self,
+        &self,
         area: Rect,
         callback_registry: &mut CallbackRegistry,
         state: &mut Self::State,
@@ -508,7 +516,7 @@ impl InteractiveStatefulWidget for ClickableTable<'_> {
         let mut selected_element: Option<(Rect, usize)> = None;
         for (i, table_row) in self
             .rows
-            .iter_mut()
+            .iter()
             .enumerate()
             .skip(state.offset)
             .take(end - start)
@@ -536,5 +544,24 @@ impl InteractiveStatefulWidget for ClickableTable<'_> {
                 UiCallback::SetPanelIndex { index },
             );
         }
+    }
+}
+
+impl InteractiveStatefulWidget for ClickableTable<'_> {
+    fn layer(&self) -> usize {
+        0
+    }
+
+    fn hover_text(&self) -> Text<'_> {
+        "".into()
+    }
+
+    fn before_rendering(
+        &self,
+        area: Rect,
+        callback_registry: &mut CallbackRegistry,
+        state: &mut Self::State,
+    ) {
+        InteractiveStatefulWidget::before_rendering(&self, area, callback_registry, state);
     }
 }

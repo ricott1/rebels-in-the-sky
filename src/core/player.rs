@@ -1065,7 +1065,7 @@ impl Player {
         // potential_modifier has a value ranging from 0.0 to 2.0.
         // Players with skills below their potential improve faster, above their potential improve slower.
         let potential_modifier = if self.average_skill() > self.potential {
-            (1.0 + (self.potential - self.average_skill()) / MAX_SKILL).powf(10.0)
+            (1.0 + (self.potential - self.average_skill()) / MAX_SKILL).powf(2.0)
         } else {
             1.0 + (self.potential - self.average_skill()) / MAX_SKILL
         };

@@ -1277,12 +1277,18 @@ impl World {
         Ok(vec![])
     }
 
-    pub fn handle_slow_tick_events(&mut self, current_tick: Tick) -> AppResult<Vec<UiCallback>> {
+    pub fn handle_slow_tick_events(
+        &mut self,
+        mut current_tick: Tick,
+    ) -> AppResult<Vec<UiCallback>> {
         if !self.has_own_team() {
             return Ok(Vec::default());
         }
 
         let mut callbacks: Vec<UiCallback> = vec![];
+
+        // ROund up to keep it in sync across network.
+        current_tick -= current_tick % TickInterval::SHORT;
 
         if current_tick >= self.last_tick_short_interval + TickInterval::SHORT {
             self.tick_games(current_tick)?;
@@ -1464,8 +1470,13 @@ impl World {
                             )?)
                     .bound();
 
-                    let training_bonus =
+                    let mut training_bonus =
                         TeamBonus::Training.current_team_bonus(self, &team.team_id)?;
+
+                    if is_tournament_game {
+                        training_bonus *= TOURNAMENT_GAME_TRAINING_BONUS_MODIFIER;
+                    }
+
                     let training_focus = team.training_focus;
                     player.update_skills_training(
                         stats.experience_at_position,
