@@ -18,7 +18,7 @@ use std::{
 
 const SPACESHIP_COLLISION_DAMAGE: f32 = 5.0;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct HitBox {
     inner: HashMap<I16Vec2, bool>,
     size: I16Vec2,
@@ -275,10 +275,10 @@ fn get_collision_callbacks(
                     position: collision_point.as_vec2(),
                     velocity: particle_velocity,
                     color: Rgba([
-                        210 + rng.random_range(0..=45),
-                        15 + (200.0 * (particle_velocity.length_squared() / 100.0).min(1.0)) as u8,
-                        55,
-                        205,
+                        55 + rng.random_range(0..25),
+                        55 + rng.random_range(0..25),
+                        55 + rng.random_range(0..25),
+                        255,
                     ]),
                     particle_state: EntityState::Decaying {
                         lifetime: 1.0 + rng.random_range(0.0..1.5),

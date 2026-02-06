@@ -3,7 +3,7 @@ use super::galaxy_panel::GalaxyPanel;
 use super::popup_message::PopupMessage;
 use super::space_screen::SpaceScreen;
 use super::splash_screen::SplashScreen;
-use super::swarm_panel::{SwarmPanel, SwarmPanelEvent};
+use super::swarm_panel::SwarmPanel;
 use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::ui_frame::UiFrame;
@@ -26,6 +26,7 @@ use crate::AudioPlayerState;
 use core::fmt::Debug;
 use itertools::Itertools;
 use libp2p::PeerId;
+use ratatui::crossterm;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
@@ -138,9 +139,15 @@ impl UiScreen {
         }
     }
 
-    pub fn push_chat_event(&mut self, timestamp: Tick, peer_id: Option<PeerId>, message: String) {
-        let event = SwarmPanelEvent::new(timestamp, peer_id, message, log::Level::Info);
-        self.swarm_panel.push_chat_event(event);
+    pub fn push_chat_event(
+        &mut self,
+        timestamp: Tick,
+        peer_id: PeerId,
+        author: String,
+        message: String,
+    ) {
+        self.swarm_panel
+            .push_chat_event(timestamp, peer_id, author, message);
     }
 
     pub fn push_popup(&mut self, popup_message: PopupMessage) {
@@ -204,14 +211,14 @@ impl UiScreen {
         level: log::Level,
     ) {
         self.swarm_panel
-            .push_log_event(SwarmPanelEvent::new(timestamp, peer_id, text, level));
+            .push_log_event(timestamp, peer_id, text, level);
     }
 
-    pub fn set_state(&mut self, state: UiState) {
+    pub const fn set_state(&mut self, state: UiState) {
         self.state = state;
     }
 
-    pub fn toggle_data_view(&mut self) {
+    pub const fn toggle_data_view(&mut self) {
         self.debug_view = !self.debug_view;
     }
 
@@ -347,11 +354,11 @@ impl UiScreen {
         self.inner_registry.handle_mouse_event(&mouse_event)
     }
 
-    pub(super) fn next_tab(&mut self) {
+    pub(super) const fn next_tab(&mut self) {
         self.tab_index = (self.tab_index + 1) % self.ui_tabs.len();
     }
 
-    pub(super) fn previous_tab(&mut self) {
+    pub(super) const fn previous_tab(&mut self) {
         self.tab_index = (self.tab_index + self.ui_tabs.len() - 1) % self.ui_tabs.len();
     }
 
@@ -490,7 +497,9 @@ impl UiScreen {
                         format!(
                             "{}{}",
                             tab,
-                            if self.swarm_panel.unread_chat_messages() > 0 {
+                            if self.swarm_panel.unread_chat_messages() > 99 {
+                                " (99+)".to_string()
+                            } else if self.swarm_panel.unread_chat_messages() > 0 {
                                 format!(" ({})", self.swarm_panel.unread_chat_messages())
                             } else {
                                 "".to_string()

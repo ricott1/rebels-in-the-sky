@@ -636,7 +636,7 @@ impl Game {
                         - away_quarters_score[1]
                         - away_quarters_score[2];
                 }
-                _ => continue,
+                _ => {}
             }
         }
 

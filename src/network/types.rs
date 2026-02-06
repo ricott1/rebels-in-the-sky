@@ -50,7 +50,8 @@ pub enum NetworkData {
     },
     Message {
         timestamp: Tick,
-        from: PeerId,
+        from_peer_id: PeerId,
+        author: String,
         message: String,
     },
     Game {
@@ -161,9 +162,10 @@ impl NetworkGame {
             }
             stats.insert(*player_id, player_stats.clone());
 
-            let player = home_team_in_game.players.get_mut(player_id).ok_or(anyhow!(
-                "Cannot get player for home team in game".to_string()
-            ))?;
+            let player = home_team_in_game
+                .players
+                .get_mut(player_id)
+                .ok_or_else(|| anyhow!("Cannot get player for home team in game".to_string()))?;
             // Reset tiredness to initial one
             let tiredness = home_team_in_game.initial_tiredness[idx];
             player.tiredness = tiredness;
@@ -182,9 +184,10 @@ impl NetworkGame {
             }
             stats.insert(*player_id, player_stats.clone());
 
-            let player = away_team_in_game.players.get_mut(player_id).ok_or(anyhow!(
-                "Cannot get player for away team in game".to_string()
-            ))?;
+            let player = away_team_in_game
+                .players
+                .get_mut(player_id)
+                .ok_or_else(|| anyhow!("Cannot get player for away team in game".to_string()))?;
             // Reset tiredness to initial one
             let tiredness = away_team_in_game.initial_tiredness[idx];
             player.tiredness = tiredness;

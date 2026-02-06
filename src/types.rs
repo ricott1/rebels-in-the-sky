@@ -268,10 +268,10 @@ impl SystemTimeTick for Tick {
 
     fn formatted(&self) -> String {
         let seconds = self.as_secs() % 60;
-        let minutes = (self.as_minutes() as f32) as Tick % 60;
-        let hours = (self.as_hours() as f32) as Tick % 24;
-        let days = (self.as_days() as f32) as Tick % 365;
-        let years = (self.as_days() as f32 / 365.0) as Tick;
+        let minutes = self.as_minutes() % 60;
+        let hours = self.as_hours() % 24;
+        let days = self.as_days() % 365;
+        let years = (self.as_days() as f32 / 365.0) as Self;
 
         if years > 0 {
             format!("{years}y {days}d {hours:02}:{minutes:02}:{seconds:02}")

@@ -4,7 +4,8 @@ use super::{
     ui_callback::{CallbackRegistry, UiCallback},
     widgets::default_block,
 };
-use crossterm::event::KeyCode;
+use ratatui::crossterm;
+use ratatui::crossterm::event::KeyCode;
 use ratatui::{
     layout::{Margin, Rect},
     style::{Style, Styled, Stylize},
@@ -72,15 +73,15 @@ impl<'a> Button<'a> {
         self
     }
 
-    pub fn enable(&mut self) {
+    pub const fn enable(&mut self) {
         self.disabled = false;
     }
 
-    pub fn select(&mut self) {
+    pub const fn select(&mut self) {
         self.selected = true;
     }
 
-    pub fn selected(mut self) -> Self {
+    pub const fn selected(mut self) -> Self {
         self.select();
         self
     }
@@ -115,12 +116,12 @@ impl<'a> Button<'a> {
         self
     }
 
-    pub fn set_hotkey(mut self, k: KeyCode) -> Self {
+    pub const fn set_hotkey(mut self, k: KeyCode) -> Self {
         self.hotkey = Some(k);
         self
     }
 
-    pub fn set_layer(mut self, layer: usize) -> Self {
+    pub const fn set_layer(mut self, layer: usize) -> Self {
         self.layer = layer;
         self
     }
@@ -225,22 +226,14 @@ impl InteractiveWidget for Button<'_> {
     }
 
     fn before_rendering(&mut self, area: Rect, callback_registry: &mut CallbackRegistry) {
-        let inner = if area.height >= 3 {
-            area.inner(Margin {
-                horizontal: 1,
-                vertical: 1,
-            })
-        } else {
-            area
-        };
-        self.is_hovered = callback_registry.is_hovering(inner)
+        self.is_hovered = callback_registry.is_hovering(area)
             && callback_registry.get_active_layer() == self.layer();
 
         if !self.disabled {
             if self.is_hovered {
                 callback_registry.register_mouse_callback(
                     crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
-                    Some(inner),
+                    Some(area),
                     self.on_click.clone(),
                 );
             }

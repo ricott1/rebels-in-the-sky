@@ -15,7 +15,7 @@ use crate::{
     types::{PlanetId, PlanetMap},
 };
 use core::fmt::Debug;
-use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use itertools::Itertools;
 use ratatui::layout::{Constraint, Margin};
 use ratatui::style::Stylize;
@@ -56,19 +56,19 @@ impl GalaxyPanel {
         }
     }
 
-    pub fn set_zoom_level(&mut self, zoom_level: ZoomLevel) {
+    pub const fn set_zoom_level(&mut self, zoom_level: ZoomLevel) {
         self.zoom_level = zoom_level;
     }
 
-    pub fn set_planet_id(&mut self, planet_id: PlanetId) {
+    pub const fn set_planet_id(&mut self, planet_id: PlanetId) {
         self.planet_id = planet_id;
     }
 
-    pub fn set_planet_index(&mut self, index: usize) {
+    pub const fn set_planet_index(&mut self, index: usize) {
         self.planet_index = index;
     }
 
-    pub fn go_to_planet(&mut self, planet_id: PlanetId, zoom_level: ZoomLevel) {
+    pub const fn go_to_planet(&mut self, planet_id: PlanetId, zoom_level: ZoomLevel) {
         self.planet_id = planet_id;
         self.planet_index = 0;
         self.zoom_level = zoom_level;
@@ -226,7 +226,7 @@ impl GalaxyPanel {
     }
 
     fn render_planet_buttons(
-        &mut self,
+        &self,
         frame: &mut UiFrame,
         planet: &Planet,
         world: &World,
@@ -401,7 +401,7 @@ impl GalaxyPanel {
     }
 
     fn render_planet_lists(
-        &mut self,
+        &self,
         frame: &mut UiFrame,
         planet: &Planet,
         world: &World,
@@ -631,7 +631,7 @@ impl GalaxyPanel {
         }
     }
 
-    fn select_target(&mut self, target: &Planet) -> Option<UiCallback> {
+    const fn select_target(&self, target: &Planet) -> Option<UiCallback> {
         match self.zoom_level {
             ZoomLevel::In => {}
             ZoomLevel::Out => {

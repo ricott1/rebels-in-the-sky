@@ -4,15 +4,39 @@ use crate::types::AppResult;
 use anyhow::anyhow;
 use image::error::{ParameterError, ParameterErrorKind};
 use image::{ImageBuffer, ImageError, ImageReader, ImageResult, Rgb, Rgba, RgbaImage};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use std::io::Cursor;
 
 pub type Gif = Vec<RgbaImage>;
 
-pub static UNIVERSE_BACKGROUND: Lazy<RgbaImage> =
-    Lazy::new(|| open_image("universe/background.png").expect("Cannot open background.png."));
+pub static UNIVERSE_BACKGROUND: LazyLock<RgbaImage> = LazyLock::new(|| {
+    fn try_blit(mut background: RgbaImage) -> AppResult<RgbaImage> {
+        for star_layer in STAR_LAYERS.iter().take(2) {
+            for x_idx in 0..WIDTH_MUL {
+                for y_idx in 0..HEIGHT_MUL {
+                    background.copy_non_trasparent_from(
+                        star_layer,
+                        x_idx * star_layer.width(),
+                        y_idx * star_layer.height(),
+                    )?;
+                }
+            }
+        }
 
-pub static STAR_LAYERS: Lazy<[RgbaImage; 3]> = Lazy::new(|| {
+        Ok(background)
+    }
+
+    const WIDTH_MUL: u32 = 2;
+    const HEIGHT_MUL: u32 = 6;
+
+    let background = RgbaImage::new(
+        STAR_LAYERS[0].width() * WIDTH_MUL,
+        STAR_LAYERS[0].height() * HEIGHT_MUL,
+    );
+    try_blit(background).expect("Should blit on background")
+});
+
+pub static STAR_LAYERS: LazyLock<[RgbaImage; 3]> = LazyLock::new(|| {
     [
         open_image("universe/star_layer_1.png").expect("Cannot open star_layer_1.png."),
         open_image("universe/star_layer_2.png").expect("Cannot open star_layer_2.png."),
@@ -436,7 +460,7 @@ impl ExtraImageUtils for RgbaImage {
 pub fn open_image(path: &str) -> AppResult<RgbaImage> {
     let file = ASSETS_DIR
         .get_file(path)
-        .ok_or(anyhow!("File {path} not found"))?;
+        .ok_or_else(|| anyhow!("File {path} not found"))?;
 
     let img = ImageReader::new(Cursor::new(file.contents()))
         .with_guessed_format()?
@@ -451,7 +475,7 @@ pub fn open_gif(filename: String) -> AppResult<Gif> {
     decoder.set_color_output(gif::ColorOutput::RGBA);
     let file = ASSETS_DIR
         .get_file(filename.clone())
-        .ok_or(anyhow!("Unable to open file {filename}"))?
+        .ok_or_else(|| anyhow!("Unable to open file {filename}"))?
         .contents();
     let mut decoder = decoder.read_info(file)?;
     let mut gif: Gif = vec![];
@@ -461,7 +485,7 @@ pub fn open_gif(filename: String) -> AppResult<Gif> {
             frame.height as u32,
             frame.buffer.to_vec(),
         )
-        .ok_or(anyhow!("Unable to decode file {filename} into gif"))?;
+        .ok_or_else(|| anyhow!("Unable to decode file {filename} into gif"))?;
         gif.push(img);
     }
     Ok(gif)

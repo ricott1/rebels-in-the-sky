@@ -22,8 +22,9 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::fmt::Debug;
-use crossterm::event::KeyCode;
 use itertools::Itertools;
+use ratatui::crossterm;
+use ratatui::crossterm::event::KeyCode;
 use ratatui::style::Stylize;
 use ratatui::{
     layout::Margin,
@@ -46,14 +47,14 @@ pub enum MyTeamView {
 }
 
 impl MyTeamView {
-    fn next(&self) -> Self {
+    const fn next(&self) -> Self {
         match self {
-            MyTeamView::Info => MyTeamView::Team,
-            MyTeamView::Team => MyTeamView::Games,
-            MyTeamView::Games => MyTeamView::Market,
-            MyTeamView::Market => MyTeamView::Shipyard,
-            MyTeamView::Shipyard => MyTeamView::Asteroids,
-            MyTeamView::Asteroids => MyTeamView::Info,
+            Self::Info => Self::Team,
+            Self::Team => Self::Games,
+            Self::Games => Self::Market,
+            Self::Market => Self::Shipyard,
+            Self::Shipyard => Self::Asteroids,
+            Self::Asteroids => Self::Info,
         }
     }
 }
@@ -1015,7 +1016,7 @@ impl MyTeamPanel {
             let game_summary = world
                 .past_games
                 .get(&game_id)
-                .ok_or(anyhow!("Unable to get past game."))?;
+                .ok_or_else(|| anyhow!("Unable to get past game."))?;
 
             let mut lines = vec![
                 Line::from(format!(
@@ -1393,7 +1394,7 @@ impl MyTeamPanel {
             own_team,
             frame,
             v_split[1],
-        )?;
+        );
         self.render_upgrade_spaceship_button(possible_upgrade, own_team, frame, v_split[2])?;
 
         Ok(())
@@ -1609,7 +1610,7 @@ impl MyTeamPanel {
                 own_team,
                 frame,
                 v_split[2],
-            )?;
+            );
         }
 
         Ok(())
@@ -2096,8 +2097,8 @@ impl MyTeamPanel {
                     vec![
                         Line::from("Currently playing".to_string()).centered(),
                         Line::default(),
-                        Line::from(game_text.to_string()).centered(),
-                        Line::from(game.timer.format().to_string()).centered(),
+                        Line::from(game_text).centered(),
+                        Line::from(game.timer.format()).centered(),
                     ],
                     UiCallback::GoToGame { game_id },
                 )
@@ -2368,11 +2369,11 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    pub fn set_view(&mut self, view: MyTeamView) {
+    pub const fn set_view(&mut self, view: MyTeamView) {
         self.view = view;
     }
 
-    pub fn reset_view(&mut self) {
+    pub const fn reset_view(&mut self) {
         self.set_view(MyTeamView::Info);
     }
 }

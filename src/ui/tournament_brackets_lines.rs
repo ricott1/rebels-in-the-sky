@@ -331,7 +331,7 @@ mod tests {
         game_engine::Tournament,
         types::{AppResult, GameMap, GameSummaryMap, SystemTimeTick, TeamId, Tick},
     };
-    use crossterm::event::{self, Event};
+    use ratatui::crossterm::event::{self, Event};
     use itertools::Itertools;
     use ratatui::{
         layout::{Constraint, Layout},

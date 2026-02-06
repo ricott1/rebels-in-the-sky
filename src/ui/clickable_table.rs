@@ -1,3 +1,9 @@
+use super::{
+    constants::UiStyle,
+    traits::InteractiveStatefulWidget,
+    ui_callback::{CallbackRegistry, UiCallback},
+};
+use ratatui::crossterm;
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Layout, Rect},
@@ -7,12 +13,6 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use super::{
-    constants::UiStyle,
-    traits::InteractiveStatefulWidget,
-    ui_callback::{CallbackRegistry, UiCallback},
-};
-
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
 pub struct ClickableCell<'a> {
     content: Text<'a>,
@@ -21,7 +21,7 @@ pub struct ClickableCell<'a> {
 
 impl<'a> ClickableCell<'a> {
     /// Set the `Style` of this cell.
-    pub fn style(mut self, style: Style) -> Self {
+    pub const fn style(mut self, style: Style) -> Self {
         self.style = style;
         self
     }
@@ -32,7 +32,7 @@ where
     T: Into<Text<'a>>,
 {
     fn from(content: T) -> ClickableCell<'a> {
-        ClickableCell {
+        Self {
             content: content.into(),
             style: Style::default(),
         }
@@ -76,26 +76,26 @@ impl<'a> ClickableRow<'a> {
 
     /// Set the fixed height of the [`ClickableRow`]. Any [`ClickableCell`] whose content has more lines than this
     /// height will see its content truncated.
-    pub fn _height(mut self, height: u16) -> Self {
+    pub const fn _height(mut self, height: u16) -> Self {
         self.height = height;
         self
     }
 
     /// Set the [`Style`] of the entire row. This [`Style`] can be overridden by the [`Style`] of a
     /// any individual [`ClickableCell`] or event by their [`Text`] content.
-    pub fn style(mut self, style: Style) -> Self {
+    pub const fn style(mut self, style: Style) -> Self {
         self.style = style;
         self
     }
 
     /// Set the bottom margin. By default, the bottom margin is `0`.
-    pub fn _bottom_margin(mut self, margin: u16) -> Self {
+    pub const fn _bottom_margin(mut self, margin: u16) -> Self {
         self.bottom_margin = margin;
         self
     }
 
     /// Returns the total height of the row.
-    fn total_height(&self) -> u16 {
+    const fn total_height(&self) -> u16 {
         self.height.saturating_add(self.bottom_margin)
     }
 }
@@ -179,12 +179,12 @@ impl<'a> ClickableTable<'a> {
         self
     }
 
-    pub fn style(mut self, style: Style) -> Self {
+    pub const fn style(mut self, style: Style) -> Self {
         self.style = style;
         self
     }
 
-    pub fn _highlight_symbol(mut self, highlight_symbol: &'a str) -> Self {
+    pub const fn _highlight_symbol(mut self, highlight_symbol: &'a str) -> Self {
         self.highlight_symbol = Some(highlight_symbol);
         self
     }
@@ -281,29 +281,29 @@ pub struct ClickableTableState {
 }
 
 impl ClickableTableState {
-    pub fn _offset(&self) -> usize {
+    pub const fn _offset(&self) -> usize {
         self.offset
     }
 
-    pub fn _offset_mut(&mut self) -> &mut usize {
+    pub const fn _offset_mut(&mut self) -> &mut usize {
         &mut self.offset
     }
 
-    pub fn with_selected(mut self, selected: Option<usize>) -> Self {
+    pub const fn with_selected(mut self, selected: Option<usize>) -> Self {
         self.selected = selected;
         self
     }
 
-    pub fn _with_offset(mut self, offset: usize) -> Self {
+    pub const fn _with_offset(mut self, offset: usize) -> Self {
         self.offset = offset;
         self
     }
 
-    pub fn _selected(&self) -> Option<usize> {
+    pub const fn _selected(&self) -> Option<usize> {
         self.selected
     }
 
-    pub fn _select(&mut self, index: Option<usize>) {
+    pub const fn _select(&mut self, index: Option<usize>) {
         self.selected = index;
         if index.is_none() {
             self.offset = 0;

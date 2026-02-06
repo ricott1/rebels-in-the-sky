@@ -20,7 +20,8 @@ use crate::{
     types::{PlayerId, TeamId},
 };
 use core::fmt::Debug;
-use crossterm::event::KeyCode;
+use ratatui::crossterm;
+use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::Margin;
 use ratatui::style::Stylize;
 use ratatui::{
@@ -30,7 +31,7 @@ use ratatui::{
 };
 use std::fmt::Display;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum PlayerView {
     #[default]
     All,
@@ -40,12 +41,12 @@ pub enum PlayerView {
 }
 
 impl PlayerView {
-    fn next(&self) -> Self {
+    const fn next(&self) -> Self {
         match self {
-            Self::All => PlayerView::FreePirates,
-            Self::FreePirates => PlayerView::Tradable,
-            Self::Tradable => PlayerView::OwnTeam,
-            Self::OwnTeam => PlayerView::All,
+            Self::All => Self::FreePirates,
+            Self::FreePirates => Self::Tradable,
+            Self::Tradable => Self::OwnTeam,
+            Self::OwnTeam => Self::All,
         }
     }
 
@@ -140,7 +141,7 @@ impl PlayerListPanel {
         Self::default()
     }
 
-    fn build_left_panel(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn build_left_panel(&self, frame: &mut UiFrame, world: &World, area: Rect) {
         let split = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
@@ -513,16 +514,16 @@ impl PlayerListPanel {
         Ok(())
     }
 
-    pub fn set_view(&mut self, filter: PlayerView) {
+    pub const fn set_view(&mut self, filter: PlayerView) {
         self.view = filter;
         self.update_view = true;
     }
 
-    pub fn reset_view(&mut self) {
+    pub const fn reset_view(&mut self) {
         self.set_view(PlayerView::All);
     }
 
-    pub fn toggle_player_widget_view(&mut self) {
+    pub const fn toggle_player_widget_view(&mut self) {
         match self.player_widget_view {
             PlayerWidgetView::Skills => self.player_widget_view = PlayerWidgetView::Stats,
             PlayerWidgetView::Stats => self.player_widget_view = PlayerWidgetView::Skills,

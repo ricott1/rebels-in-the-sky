@@ -1,5 +1,5 @@
 use crate::app::AppEvent;
-use crate::core::HOURS;
+use crate::core::DAYS;
 use crate::network::constants::{DEFAULT_SEED_PORT, TOPIC};
 use crate::network::types::{NetworkData, PlayerRanking, TeamRanking};
 use crate::network::{handler::NetworkHandler, types::SeedInfo};
@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 const TOP_PLAYER_RANKING_LENGTH: usize = 20;
 const TOP_TEAM_RANKING_LENGTH: usize = 10;
-const CHAT_RETENTION_DURATION: Tick = 24 * HOURS;
+const CHAT_RETENTION_DURATION: Tick = 5 * DAYS;
 
 pub struct Relayer {
     running: bool,
@@ -138,7 +138,7 @@ impl Relayer {
             if let Some(AppEvent::NetworkEvent(swarm_event)) = event_receiver.recv().await {
                 let result = self.handle_network_events(swarm_event);
                 if result.is_err() {
-                    log::error!("Error handling network event: {result:?}");
+                    println!("Error handling network event: {result:?}");
                 }
             }
         }
@@ -173,18 +173,19 @@ impl Relayer {
                         for data in entry.iter() {
                             if let NetworkData::Message {
                                 timestamp,
-                                from,
+                                from_peer_id,
+                                author,
                                 message,
                             } = data
                             {
-                                println!("\nResending {message}\n");
-                                self.network_handler.resend_message(
+                                self.network_handler.send_message(
                                     *timestamp,
-                                    *from,
+                                    *from_peer_id,
+                                    author.clone(),
                                     message.clone(),
                                 )?;
                             } else {
-                                log::error!(
+                                println!(
                                     "Relayer error: chat message entry should be NetworkData::Message."
                                 )
                             }

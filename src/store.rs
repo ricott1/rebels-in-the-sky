@@ -109,7 +109,7 @@ fn config_dirs() -> AppResult<PathBuf> {
     // Windows: C:\Users\Alice\AppData\Roaming\frittura\rebels
     // macOS:   /Users/Alice/Library/Application Support/org.frittura.rebels
     let dirs = directories::ProjectDirs::from("org", "frittura", "rebels")
-        .ok_or(anyhow!("Failed to get directories"))?;
+        .ok_or_else(|| anyhow!("Failed to get directories"))?;
     let config_dirs = dirs.config_dir().to_path_buf();
     if !config_dirs.exists() {
         std::fs::create_dir_all(&config_dirs)?;
@@ -257,7 +257,7 @@ pub fn get_world_size(store_prefix: &str) -> AppResult<u64> {
 
 pub fn reset_store() -> AppResult<()> {
     let dirs = directories::ProjectDirs::from("org", "frittura", "rebels")
-        .ok_or(anyhow!("Failed to get directories"))?;
+        .ok_or_else(|| anyhow!("Failed to get directories"))?;
     let config_dirs = dirs.config_dir();
     if config_dirs.exists() {
         std::fs::remove_dir_all(config_dirs)?;
@@ -311,7 +311,7 @@ pub fn world_file_data(store_prefix: &str) -> AppResult<std::fs::Metadata> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        core::{player::Player, team::Team, world::World},
+        core::{player::Player, team::Team, world::World, MIN_PLAYERS_PER_GAME},
         types::{AppResult, PlayerMap},
     };
     use directories;
@@ -355,7 +355,8 @@ mod tests {
         use crate::network::types::{NetworkData, NetworkTeam};
         let value = NetworkData::Message {
             timestamp: 0,
-            from: PeerId::random(),
+            from_peer_id: PeerId::random(),
+            author: "Test".to_string(),
             message: "Hello".to_string(),
         };
         let serialized_data = serialize(&value)?;
@@ -365,7 +366,7 @@ mod tests {
         let mut team = Team::random(None);
 
         let mut players = PlayerMap::new();
-        for _ in 0..5 {
+        for _ in 0..MIN_PLAYERS_PER_GAME {
             let player = Player::default().randomize(None);
             team.player_ids.push(player.id);
             players.insert(player.id, player);

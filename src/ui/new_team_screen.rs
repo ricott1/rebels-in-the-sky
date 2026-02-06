@@ -23,7 +23,7 @@ use crate::{
 };
 use core::fmt::Debug;
 use core::panic;
-use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use itertools::Itertools;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -61,27 +61,27 @@ pub enum CreationState {
 }
 
 impl CreationState {
-    pub fn next(&self) -> Self {
+    pub const fn next(&self) -> Self {
         match self {
-            CreationState::TeamName => CreationState::ShipName,
-            CreationState::ShipName => CreationState::Planet,
-            CreationState::Planet => CreationState::Jersey,
-            CreationState::Jersey => CreationState::ShipModel,
-            CreationState::ShipModel => CreationState::Players,
-            CreationState::Players => CreationState::Done,
-            CreationState::Done => CreationState::Done,
+            Self::TeamName => Self::ShipName,
+            Self::ShipName => Self::Planet,
+            Self::Planet => Self::Jersey,
+            Self::Jersey => Self::ShipModel,
+            Self::ShipModel => Self::Players,
+            Self::Players => Self::Done,
+            Self::Done => Self::Done,
         }
     }
 
-    pub fn previous(&self) -> Self {
+    pub const fn previous(&self) -> Self {
         match self {
-            CreationState::TeamName => CreationState::TeamName,
-            CreationState::ShipName => CreationState::TeamName,
-            CreationState::Planet => CreationState::ShipName,
-            CreationState::Jersey => CreationState::Planet,
-            CreationState::ShipModel => CreationState::Jersey,
-            CreationState::Players => CreationState::ShipModel,
-            CreationState::Done => CreationState::Players,
+            Self::TeamName => Self::TeamName,
+            Self::ShipName => Self::TeamName,
+            Self::Planet => Self::ShipName,
+            Self::Jersey => Self::Planet,
+            Self::ShipModel => Self::Jersey,
+            Self::Players => Self::ShipModel,
+            Self::Done => Self::Players,
         }
     }
 }
@@ -186,7 +186,7 @@ impl NewTeamScreen {
         self.set_index(0);
     }
 
-    fn render_intro(&mut self, frame: &mut UiFrame, area: Rect) {
+    fn render_intro(&self, frame: &mut UiFrame, area: Rect) {
         let text = "
         It's the year 2101. Corporations have taken over the world. 
         The only way to be free is to join a pirate crew and start plundering the galaxy.
@@ -208,7 +208,7 @@ impl NewTeamScreen {
         frame.render_widget(default_block(), area);
     }
 
-    fn render_spaceship(&mut self, frame: &mut UiFrame, area: Rect) {
+    fn render_spaceship(&self, frame: &mut UiFrame, area: Rect) {
         let split = Layout::horizontal([
             Constraint::Length(SPACESHIP_IMAGE_WIDTH as u16 + 2),
             Constraint::Min(1),
@@ -312,7 +312,7 @@ impl NewTeamScreen {
         }
     }
 
-    fn render_jersey_selection(&mut self, frame: &mut UiFrame, area: Rect) {
+    fn render_jersey_selection(&self, frame: &mut UiFrame, area: Rect) {
         if self.state > CreationState::Jersey {
             let selected_jersey_style = self.jersey_styles[self.jersey_style_index];
             frame.render_widget(
@@ -469,7 +469,7 @@ impl NewTeamScreen {
     }
 
     fn render_planet_selection(
-        &mut self,
+        &self,
         frame: &mut UiFrame,
         world: &World,
         area: Rect,
@@ -585,7 +585,7 @@ impl NewTeamScreen {
         INITIAL_TEAM_BALANCE as i32 - hiring_costs - ship_cost as i32
     }
 
-    fn render_remaining_balance(&mut self, frame: &mut UiFrame, area: Rect) {
+    fn render_remaining_balance(&self, frame: &mut UiFrame, area: Rect) {
         let remaining_balance = self.get_remaining_balance();
         let text = format!(" Remaining balance: {remaining_balance:>} sat");
 
@@ -597,12 +597,7 @@ impl NewTeamScreen {
         frame.render_widget(Paragraph::new(text).block(block), area);
     }
 
-    fn render_player_list(
-        &mut self,
-        frame: &mut UiFrame,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn render_player_list(&self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         if self.state < CreationState::Players {
             frame.render_widget(
                 default_block()
@@ -622,12 +617,13 @@ impl NewTeamScreen {
             .iter()
             .map(|&player_data| {
                 let player_id = player_data.0;
-                let mut style = UiStyle::DEFAULT;
-                if self.selected_players.contains(&player_id)
+                let style = if self.selected_players.contains(&player_id)
                     && self.state <= CreationState::Players
                 {
-                    style = UiStyle::OK;
-                }
+                    UiStyle::OK
+                } else {
+                    UiStyle::DEFAULT
+                };
 
                 if self.state > CreationState::Players
                     && !self.selected_players.contains(&player_id)
@@ -696,12 +692,7 @@ impl NewTeamScreen {
         Ok(())
     }
 
-    fn render_confirm_box(
-        &mut self,
-        frame: &mut UiFrame,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn render_confirm_box(&self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         let split = Layout::vertical([
             Constraint::Min(1),
             Constraint::Length(4),
@@ -1139,7 +1130,7 @@ impl Screen for NewTeamScreen {
                                 jersey_style: self.jersey_styles[self.jersey_style_index],
                                 jersey_colors: self.get_team_colors(),
                                 players: self.selected_players.clone(),
-                                spaceship: self.selected_ship().clone(),
+                                spaceship: self.selected_ship(),
                             });
                         }
                         KeyCode::Backspace => {

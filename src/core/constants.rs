@@ -2,7 +2,7 @@ use crate::{
     game_engine::MIN_TIREDNESS_FOR_ROLL_DECLINE,
     types::{PlanetId, TeamId, Tick},
 };
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use uuid::uuid;
 
 // DEBUG_TIME_MULTIPLIER should be between 1 and 1000;
@@ -101,11 +101,11 @@ pub const NETWORK_GAME_START_DELAY: Tick = 30 * SECONDS;
 static GALAXY_ROOT_STR: &str = "71a43700-0000-0000-0000-000000000000";
 static DEFAULT_PLANET_STR: &str = "71a43700-0000-0000-0002-000000000000";
 static SOL_STR: &str = "71a43700-0000-0000-0001-000000000000";
-pub static GALAXY_ROOT_ID: Lazy<PlanetId> =
-    Lazy::new(|| PlanetId::try_parse(GALAXY_ROOT_STR).unwrap());
-pub static DEFAULT_PLANET_ID: Lazy<PlanetId> =
-    Lazy::new(|| PlanetId::try_parse(DEFAULT_PLANET_STR).unwrap());
-pub static SOL_ID: Lazy<PlanetId> = Lazy::new(|| PlanetId::try_parse(SOL_STR).unwrap());
+pub static GALAXY_ROOT_ID: LazyLock<PlanetId> =
+    LazyLock::new(|| PlanetId::try_parse(GALAXY_ROOT_STR).unwrap());
+pub static DEFAULT_PLANET_ID: LazyLock<PlanetId> =
+    LazyLock::new(|| PlanetId::try_parse(DEFAULT_PLANET_STR).unwrap());
+pub static SOL_ID: LazyLock<PlanetId> = LazyLock::new(|| PlanetId::try_parse(SOL_STR).unwrap());
 
 pub struct TirednessCost;
 impl TirednessCost {
@@ -142,7 +142,7 @@ impl ReputationModifier {
     pub const MEDIUM_BONUS: f32 = 0.2;
     pub const HIGH_BONUS: f32 = 0.5;
     pub const SEVERE_BONUS: f32 = 1.5;
-    pub const BONUS_PER_DISTANCE: f32 = 0.000002;
+    pub const BONUS_PER_DISTANCE: f32 = 0.000_002;
 }
 
 pub const MORALE_DECREASE_PER_LONG_TICK: f32 = MoraleModifier::MEDIUM_MALUS;

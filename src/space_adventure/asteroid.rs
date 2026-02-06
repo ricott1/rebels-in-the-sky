@@ -10,7 +10,7 @@ use crate::image::utils::{open_image, ExtraImageUtils, Gif};
 use glam::{I16Vec2, Vec2};
 use image::imageops::{rotate180, rotate270, rotate90};
 use image::{Pixel, Rgba, RgbaImage};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use rand::seq::IteratorRandom;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -23,46 +23,48 @@ const MAX_ROTATION: usize = 4;
 // Calculate astroid gifs, hit boxes, and contours once to be more efficient.
 type AsteroidData = (AsteroidSize, usize); // (asteroid size, image type)
 type ZippedImageHitbox = (Gif, Vec<HitBox>);
-static ASTEROID_IMAGE_DATA: Lazy<HashMap<AsteroidData, ZippedImageHitbox>> = Lazy::new(|| {
-    let mut data = HashMap::new();
+static ASTEROID_IMAGE_DATA: LazyLock<HashMap<AsteroidData, ZippedImageHitbox>> =
+    LazyLock::new(|| {
+        let mut data = HashMap::new();
 
-    for size in AsteroidSize::iter() {
-        for n_idx in 0..size.max_image_type() {
-            let mut gif = vec![];
-            let mut hit_boxes = vec![];
+        for size in AsteroidSize::iter() {
+            for n_idx in 0..size.max_image_type() {
+                let mut gif = vec![];
+                let mut hit_boxes = vec![];
 
-            let path = if size == AsteroidSize::Planet {
-                format!("asteroids/asteroid{}.png", rand::rng().random_range(0..30))
-            } else {
-                format!(
-                    "space_adventure/asteroid_{}{}.png",
-                    size.to_string().to_ascii_lowercase(),
-                    n_idx
-                )
-            };
-            let mut base_img = open_image(&path).expect("Should open asteroid image");
-            if size == AsteroidSize::Planet {
-                base_img.apply_color_map(AsteroidColorMap::Base.color_map());
-            }
-
-            for rotation_idx in 0..MAX_ROTATION {
-                let image = match rotation_idx {
-                    0 => base_img.clone(),
-                    1 => rotate90(&base_img),
-                    2 => rotate180(&base_img),
-                    3 => rotate270(&base_img),
-                    _ => unreachable!(),
+                let path = if size == AsteroidSize::Planet {
+                    format!("asteroids/asteroid{}.png", rand::rng().random_range(0..30))
+                } else {
+                    format!(
+                        "space_adventure/asteroid_{}{}.png",
+                        size.to_string().to_ascii_lowercase(),
+                        n_idx
+                    )
                 };
-                let (image, hit_box) = body_data_from_image(&image, size == AsteroidSize::Planet);
-                gif.push(image);
-                hit_boxes.push(hit_box);
-            }
-            data.insert((size, n_idx), (gif, hit_boxes));
-        }
-    }
+                let mut base_img = open_image(&path).expect("Should open asteroid image");
+                if size == AsteroidSize::Planet {
+                    base_img.apply_color_map(AsteroidColorMap::Base.color_map());
+                }
 
-    data
-});
+                for rotation_idx in 0..MAX_ROTATION {
+                    let image = match rotation_idx {
+                        0 => base_img.clone(),
+                        1 => rotate90(&base_img),
+                        2 => rotate180(&base_img),
+                        3 => rotate270(&base_img),
+                        _ => unreachable!(),
+                    };
+                    let (image, hit_box) =
+                        body_data_from_image(&image, size == AsteroidSize::Planet);
+                    gif.push(image);
+                    hit_boxes.push(hit_box);
+                }
+                data.insert((size, n_idx), (gif, hit_boxes));
+            }
+        }
+
+        data
+    });
 
 #[derive(
     Default,

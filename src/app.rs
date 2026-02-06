@@ -14,11 +14,12 @@ use crate::{
         PopupMessage, {UiScreen, UiState},
     },
 };
-use crossterm::event::{KeyCode, KeyModifiers};
 use libp2p::identity::Keypair;
 use libp2p::{gossipsub, swarm::SwarmEvent};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use ratatui::crossterm;
+use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -599,9 +600,7 @@ impl App {
         let mut should_draw = false;
         match key_event.code {
             // Exit application directly on `Ctrl-C`. `Esc` asks for confirmation first.
-            KeyCode::Char('c') | KeyCode::Char('C')
-                if key_event.modifiers == KeyModifiers::CONTROL =>
-            {
+            KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
                 self.quit()?;
             }
             _ => {

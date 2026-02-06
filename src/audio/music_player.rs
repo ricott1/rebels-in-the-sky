@@ -67,7 +67,7 @@ impl MusicPlayer {
     fn current_url(&self) -> AppResult<Url> {
         self.streams
             .get(self.index)
-            .ok_or(anyhow!("No streams available"))?
+            .ok_or_else(|| anyhow!("No streams available"))?
             .url()
     }
 

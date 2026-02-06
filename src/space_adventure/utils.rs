@@ -24,7 +24,7 @@ pub enum Direction {
 }
 
 impl Direction {
-    pub fn as_vec2(&self) -> Vec2 {
+    pub const fn as_vec2(&self) -> Vec2 {
         match self {
             Self::Left => Vec2::NEG_X,
             Self::Right => Vec2::X,

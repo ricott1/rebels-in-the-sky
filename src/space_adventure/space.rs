@@ -16,7 +16,7 @@ use crate::{
     core::{resources::Resource, spaceship::Spaceship, Shield, SpaceshipPrefab},
     image::{
         color_map::ColorMap,
-        utils::{ExtraImageUtils, STAR_LAYERS},
+        utils::{ExtraImageUtils, UNIVERSE_BACKGROUND},
     },
     space_adventure::{
         entity::Entity,
@@ -47,7 +47,7 @@ enum SpaceAdventureState {
 }
 
 impl SpaceAdventureState {
-    pub const STARTING_DURATION: Duration = Duration::from_millis(2500);
+    pub const STARTING_DURATION: Duration = Duration::from_millis(3500);
     pub const ENDING_DURATION: Duration = Duration::from_millis(2500);
 }
 
@@ -139,11 +139,11 @@ impl SpaceAdventure {
         id
     }
 
-    pub fn is_starting(&self) -> bool {
+    pub const fn is_starting(&self) -> bool {
         matches!(self.state, SpaceAdventureState::Starting { .. })
     }
 
-    pub fn is_ending(&self) -> bool {
+    pub const fn is_ending(&self) -> bool {
         matches!(self.state, SpaceAdventureState::Ending { .. })
     }
 
@@ -210,7 +210,7 @@ impl SpaceAdventure {
         let spaceship = SpaceshipPrefab::iter()
             .filter(|s| s.spaceship().shooting_points() > 0)
             .choose(&mut rand::rng())
-            .ok_or(anyhow!("There should be one spaceship available"))?
+            .ok_or_else(|| anyhow!("There should be one spaceship available"))?
             .spaceship()
             .with_name("Baddy")
             .with_color_map(color_map);
@@ -292,7 +292,7 @@ impl SpaceAdventure {
         ))
     }
 
-    pub fn asteroid_planet_found(&self) -> Option<usize> {
+    pub const fn asteroid_planet_found(&self) -> Option<usize> {
         match self.asteroid_planet_state {
             AsteroidPlanetState::Landed { image_number } => Some(image_number),
             _ => None,
@@ -300,29 +300,9 @@ impl SpaceAdventure {
     }
 
     pub fn new(should_spawn_asteroid: bool, gold_fragment_probability: f64) -> AppResult<Self> {
-        let mut background =
-            RgbaImage::new(STAR_LAYERS[0].width() * 2, STAR_LAYERS[0].height() * 3);
-
-        for star_layer in STAR_LAYERS.iter().take(2) {
-            background.copy_non_trasparent_from(star_layer, 0, 0)?;
-            background.copy_non_trasparent_from(star_layer, star_layer.width(), 0)?;
-            background.copy_non_trasparent_from(star_layer, 0, star_layer.height())?;
-            background.copy_non_trasparent_from(
-                star_layer,
-                star_layer.width(),
-                star_layer.height(),
-            )?;
-            background.copy_non_trasparent_from(star_layer, 0, 2 * star_layer.height())?;
-            background.copy_non_trasparent_from(
-                star_layer,
-                star_layer.width(),
-                2 * star_layer.height(),
-            )?;
-        }
-
         // Crop background
         let background = crop_imm(
-            &background,
+            &UNIVERSE_BACKGROUND.clone(),
             0,
             0,
             BACKGROUND_IMAGE_SIZE.x,
@@ -396,7 +376,9 @@ impl SpaceAdventure {
             _ => return Ok(()),
         }
 
-        let player = self.get_player_mut().ok_or(anyhow!("No player set"))?;
+        let player = self
+            .get_player_mut()
+            .ok_or_else(|| anyhow!("No player set"))?;
         player.handle_player_input(input);
 
         Ok(())

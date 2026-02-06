@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, MouseEventKind};
+use ratatui::crossterm::event::{KeyCode, MouseEventKind};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     widgets::{Clear, Paragraph, StatefulWidget, Widget},
@@ -18,15 +18,15 @@ pub struct UiFrame<'a, 'b> {
 }
 
 impl<'a, 'b> UiFrame<'a, 'b> {
-    fn is_hovered(&self, rect: Rect, layer: usize) -> bool {
+    const fn is_hovered(&self, rect: Rect, layer: usize) -> bool {
         self.callback_registry.is_hovering(rect) && layer == self.get_active_layer()
     }
 
-    pub fn set_active_layer(&mut self, layer: usize) {
+    pub const fn set_active_layer(&mut self, layer: usize) {
         self.callback_registry.set_active_layer(layer);
     }
 
-    pub fn get_active_layer(&self) -> usize {
+    pub const fn get_active_layer(&self) -> usize {
         self.callback_registry.get_active_layer()
     }
 
@@ -49,15 +49,15 @@ impl<'a, 'b> UiFrame<'a, 'b> {
         self.callback_registry.clear();
     }
 
-    pub fn is_hovering(&self, rect: Rect) -> bool {
+    pub const fn is_hovering(&self, rect: Rect) -> bool {
         self.callback_registry.is_hovering(rect)
     }
 
-    pub fn set_hovering(&mut self, position: (u16, u16)) {
+    pub const fn set_hovering(&mut self, position: (u16, u16)) {
         self.callback_registry.set_hovering(position);
     }
 
-    pub fn callback_registry(&self) -> &CallbackRegistry {
+    pub const fn callback_registry(&self) -> &CallbackRegistry {
         &self.callback_registry
     }
 

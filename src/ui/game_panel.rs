@@ -30,8 +30,9 @@ use crate::{
     ui::constants::*,
 };
 use core::fmt::Debug;
-use crossterm::event::KeyCode;
 use itertools::Itertools;
+use ratatui::crossterm;
+use ratatui::crossterm::event::KeyCode;
 use ratatui::style::{Style, Stylize};
 use ratatui::{
     layout::{Constraint, Layout, Margin},
@@ -65,11 +66,11 @@ impl GamePanel {
         Self::default()
     }
 
-    pub fn toggle_pitch_view(&mut self) {
+    pub const fn toggle_pitch_view(&mut self) {
         self.pitch_view = !self.pitch_view;
     }
 
-    pub fn toggle_player_status_view(&mut self) {
+    pub const fn toggle_player_status_view(&mut self) {
         self.player_status_view = !self.player_status_view;
     }
 
@@ -157,7 +158,7 @@ impl GamePanel {
         Ok(())
     }
 
-    fn build_game_list(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn build_game_list(&self, frame: &mut UiFrame, world: &World, area: Rect) {
         let maybe_options = self
             .game_ids
             .iter()
@@ -199,7 +200,7 @@ impl GamePanel {
         }
     }
 
-    fn build_recent_games_list(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn build_recent_games_list(&self, frame: &mut UiFrame, world: &World, area: Rect) {
         let maybe_options = self
             .recent_game_ids
             .iter()
@@ -256,7 +257,7 @@ impl GamePanel {
         }
     }
 
-    fn build_game_buttons(&mut self, frame: &mut UiFrame, area: Rect) {
+    fn build_game_buttons(&self, frame: &mut UiFrame, area: Rect) {
         if self.index.is_none() {
             return;
         };
@@ -605,12 +606,7 @@ impl GamePanel {
         Ok(())
     }
 
-    fn build_bottom_panel(
-        &mut self,
-        frame: &mut UiFrame,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn build_bottom_panel(&self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Min(8), Constraint::Length(73)]).split(area);
 
         let game = if let Some(game) = Self::selected_game(

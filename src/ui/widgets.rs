@@ -37,26 +37,29 @@ use crate::{
     types::*,
 };
 use anyhow::anyhow;
-use crossterm::event::KeyCode;
-use once_cell::sync::Lazy;
+use ratatui::crossterm::event::KeyCode;
 use ratatui::{
     prelude::*,
     text::Span,
     widgets::{Block, BorderType, Borders, Paragraph},
 };
+use std::sync::LazyLock;
 use strum::Display;
 
 // This is used as a convenience value so that the bars are colored green if at max value.
 pub const GREEN_STYLE_SKILL: f32 = 16.0;
 
-pub static UP_ARROW_SPAN: Lazy<Span<'static>> = Lazy::new(|| Span::styled("↑", UiStyle::HEADER));
-pub static UP_RIGHT_ARROW_SPAN: Lazy<Span<'static>> = Lazy::new(|| Span::styled("↗", UiStyle::OK));
-pub static DOWN_ARROW_SPAN: Lazy<Span<'static>> = Lazy::new(|| Span::styled("↓", UiStyle::ERROR));
-pub static DOWN_RIGHT_ARROW_SPAN: Lazy<Span<'static>> =
-    Lazy::new(|| Span::styled("↘", UiStyle::WARNING));
+pub static UP_ARROW_SPAN: LazyLock<Span<'static>> =
+    LazyLock::new(|| Span::styled("↑", UiStyle::HEADER));
+pub static UP_RIGHT_ARROW_SPAN: LazyLock<Span<'static>> =
+    LazyLock::new(|| Span::styled("↗", UiStyle::OK));
+pub static DOWN_ARROW_SPAN: LazyLock<Span<'static>> =
+    LazyLock::new(|| Span::styled("↓", UiStyle::ERROR));
+pub static DOWN_RIGHT_ARROW_SPAN: LazyLock<Span<'static>> =
+    LazyLock::new(|| Span::styled("↘", UiStyle::WARNING));
 
-pub static SWITCH_ARROW_SPAN: Lazy<Span<'static>> =
-    Lazy::new(|| Span::styled("⇆", Style::default().fg(Color::Yellow)));
+pub static SWITCH_ARROW_SPAN: LazyLock<Span<'static>> =
+    LazyLock::new(|| Span::styled("⇆", Style::default().fg(Color::Yellow)));
 
 #[derive(Debug, Default, Display, Clone, Copy, PartialEq)]
 pub enum PlayerWidgetView {
@@ -114,7 +117,7 @@ pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Butt
         "Travel instantaneously to {}{}",
         planet.name,
         if planet_id == own_team.home_planet_id {
-            "".to_string()
+            String::new()
         } else {
             format!(" for {} Rum", own_team.player_ids.len()) // FIXME: don't hardcode this, but get it somehow from the teleport action.)
         }
@@ -438,8 +441,20 @@ pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
 }
 
 pub fn space_adventure_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
-    let mut button = Button::new("Space Adventure", UiCallback::StartSpaceAdventure)
-        .set_hotkey(ui_key::SPACE_ADVENTURE);
+    let has_shooter = team.spaceship.shooting_points() > 0;
+
+    let on_click = if has_shooter {
+        UiCallback::StartSpaceAdventure
+    } else {
+        let popup_message = PopupMessage::Warning {
+            message:
+                "Your spaceship has no shooters, are you sure you want to go on a space adventure?"
+                    .to_string(),
+            tick: Tick::now(),
+        };
+        UiCallback::PushUiPopup { popup_message }
+    };
+    let mut button = Button::new("Space Adventure", on_click).set_hotkey(ui_key::SPACE_ADVENTURE);
 
     match team.current_location {
         TeamLocation::OnPlanet { planet_id } => {
@@ -477,7 +492,7 @@ pub fn space_adventure_button<'a>(world: &World, team: &Team) -> AppResult<Butto
     Ok(button)
 }
 
-pub(crate) fn get_storage_lengths(
+pub fn get_storage_lengths(
     resources: &ResourceMap,
     storage_capacity: u32,
     bars_length: usize,
@@ -631,15 +646,10 @@ pub fn get_durability_spans<'a>(
         * shield_bars_length as f32)
         .round() as usize;
 
-    let value_bars = "▰".repeat(value_length).to_string();
-    let empty_bars = "▱"
-        .repeat(value_bars_length.saturating_sub(value_length))
-        .to_string();
-    let shield_bars = "▰".repeat(shield_value_length).to_string();
-    let shield_empty_bars = "▱"
-        .repeat(shield_bars_length.saturating_sub(shield_value_length))
-        .to_string();
-
+    let value_bars = "▰".repeat(value_length);
+    let empty_bars = "▱".repeat(value_bars_length.saturating_sub(value_length));
+    let shield_bars = "▰".repeat(shield_value_length);
+    let shield_empty_bars = "▱".repeat(shield_bars_length.saturating_sub(shield_value_length));
     let value_style = (GREEN_STYLE_SKILL * (value as f32 / max_value as f32))
         .bound()
         .style();
@@ -655,7 +665,7 @@ pub fn get_durability_spans<'a>(
             if max_shield_value > 0 {
                 format!("+{shield_value}/{max_shield_value}")
             } else {
-                "".to_string()
+                String::new()
             }
         )),
     ]
@@ -844,7 +854,7 @@ pub fn render_spaceship_description(
             if team.peer_id.is_some() || team.id == world.own_team_id {
                 format!("  Network Elo {:.0}", team.network_game_rating.rating)
             } else {
-                "".to_string()
+                String::new()
             }
         );
 
@@ -963,7 +973,7 @@ pub fn render_available_upgrades<U: UpgradeableElement>(
                 format!("{} upgrade cost", upgrade.target),
                 UiStyle::HEADER.bold(),
             ))];
-            lines.append(&mut upgrade_resources_lines(upgrade.target, own_team));
+            lines.append(&mut upgrade_resources_lines(&upgrade.target, own_team));
             frame.render_widget(Paragraph::new(lines).centered(), area);
         }
     } else {
@@ -980,7 +990,7 @@ pub fn render_available_spaceship_upgrades(
     own_team: &Team,
     frame: &mut UiFrame,
     area: Rect,
-) -> AppResult<()> {
+) {
     if let Some(upgrade) = pending_upgrade {
         let header = match upgrade.target {
             SpaceshipUpgradeTarget::Repairs { .. } => "Repairing spaceship".to_string(),
@@ -998,17 +1008,15 @@ pub fn render_available_spaceship_upgrades(
             ])
             .centered(),
             area,
-        )
+        );
     } else if let Some(upgrade) = possible_upgrade {
         {
             let mut lines =
                 vec![Line::from(Span::styled("Upgrade cost", UiStyle::HEADER.bold())).centered()];
-            lines.append(&mut upgrade_resources_lines(upgrade.target, own_team));
+            lines.append(&mut upgrade_resources_lines(&upgrade.target, own_team));
             frame.render_widget(Paragraph::new(lines).centered(), area);
         }
     }
-
-    Ok(())
 }
 
 pub fn render_build_asteroid_upgrade_button(
@@ -1017,7 +1025,7 @@ pub fn render_build_asteroid_upgrade_button(
     own_team: &Team,
     frame: &mut UiFrame,
     area: Rect,
-) -> AppResult<()> {
+) {
     if let Some(pending_upgrade) = asteroid.pending_upgrade {
         let build_button = Button::new(
             format!("Building {}", pending_upgrade.target),
@@ -1075,8 +1083,6 @@ pub fn render_build_asteroid_upgrade_button(
         .disabled(None::<String>);
         frame.render_interactive_widget(build_button, area);
     }
-
-    Ok(())
 }
 
 pub fn render_spaceship_upgrade(
@@ -1437,11 +1443,10 @@ pub fn render_player_description(
         frame.render_widget(paragraph, header_body_img[1]);
     }
 
-    let trait_span = if let Some(t) = player.special_trait {
-        Span::styled(format!("{t}"), t.style())
-    } else {
-        Span::raw("")
-    };
+    let trait_span = player.special_trait.map_or_else(
+        || Span::raw(""),
+        |t| Span::styled(format!("{t}"), t.style()),
+    );
 
     let line = HoverTextLine::from(vec![
         HoverTextSpan::new(
@@ -1453,11 +1458,7 @@ pub fn render_player_description(
         ),
         HoverTextSpan::new(
             trait_span,
-            if let Some(t) = player.special_trait {
-                t.description(player)
-            } else {
-                    "".to_string()
-            },
+            player.special_trait.map_or_else(String::new, |t| t.description(player)),
         )
     ]);
     frame.render_interactive_widget(line, header_body_stats[1]);
@@ -1540,7 +1541,10 @@ pub fn render_player_description(
     frame.render_widget(block, area);
 }
 
-pub fn upgrade_resources_lines<U: UpgradeableElement>(upgrade: U, team: &Team) -> Vec<Line<'_>> {
+pub fn upgrade_resources_lines<'a, U: UpgradeableElement>(
+    upgrade: &'a U,
+    team: &'a Team,
+) -> Vec<Line<'a>> {
     let mut lines = vec![];
     for &(resource, amount) in upgrade.upgrade_cost().iter() {
         if amount == 0 {
@@ -1551,12 +1555,12 @@ pub fn upgrade_resources_lines<U: UpgradeableElement>(upgrade: U, team: &Team) -
             lines.push(Line::from(vec![
                 Span::styled(format!("{:<7} ", resource.to_string()), resource.style()),
                 Span::styled(format!("{have:>5}/{amount:<5} ❌"), UiStyle::ERROR),
-            ]))
+            ]));
         } else {
             lines.push(Line::from(vec![
                 Span::styled(format!("{:<7} ", resource.to_string()), resource.style()),
                 Span::styled(format!("{amount:^11} ✅"), UiStyle::OK),
-            ]))
+            ]));
         }
     }
 
@@ -1941,9 +1945,9 @@ fn shooter_extra_description_lines<'a>(component: Shooter) -> Vec<Line<'a>> {
         ]));
     }
 
-    let shooting_points = component.shooting_points() as i8
+    let shooting_points = component.shooting_points().cast_signed()
         - previous_component
-            .map(|c| c.shooting_points() as i8)
+            .map(|c| c.shooting_points().cast_signed())
             .unwrap_or_default();
     if shooting_points != 0 {
         lines.push(Line::from(vec![
@@ -1966,9 +1970,9 @@ fn spaceship_component_description_lines<'a, C: SpaceshipComponent>(component: C
     let previous_component = component.previous();
     let mut lines = Vec::new();
 
-    let crew = component.crew_capacity() as i8
+    let crew = component.crew_capacity().cast_signed()
         - previous_component
-            .map(|c| c.crew_capacity() as i8)
+            .map(|c| c.crew_capacity().cast_signed())
             .unwrap_or_default();
     if crew != 0 {
         lines.push(Line::from(vec![
@@ -1984,9 +1988,9 @@ fn spaceship_component_description_lines<'a, C: SpaceshipComponent>(component: C
         ]));
     }
 
-    let storage = component.storage_capacity() as i32
+    let storage = component.storage_capacity().cast_signed()
         - previous_component
-            .map(|c| c.storage_capacity() as i32)
+            .map(|c| c.storage_capacity().cast_signed())
             .unwrap_or_default();
     if storage != 0 {
         lines.push(Line::from(vec![
@@ -2002,9 +2006,9 @@ fn spaceship_component_description_lines<'a, C: SpaceshipComponent>(component: C
         ]));
     }
 
-    let tank = component.fuel_capacity() as i32
+    let tank = component.fuel_capacity().cast_signed()
         - previous_component
-            .map(|c| c.fuel_capacity() as i32)
+            .map(|c| c.fuel_capacity().cast_signed())
             .unwrap_or_default();
     if tank != 0 {
         lines.push(Line::from(vec![
@@ -2053,9 +2057,9 @@ fn spaceship_component_description_lines<'a, C: SpaceshipComponent>(component: C
         ]));
     }
 
-    let durability = component.durability() as i32
+    let durability = component.durability().cast_signed()
         - previous_component
-            .map(|c| c.durability() as i32)
+            .map(|c| c.durability().cast_signed())
             .unwrap_or_default();
     if durability != 0 {
         lines.push(Line::from(vec![

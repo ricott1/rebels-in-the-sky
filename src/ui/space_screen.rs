@@ -9,6 +9,7 @@ use crate::space_adventure::ControllableSpaceship;
 use crate::types::AppResult;
 use crate::ui::ui_key;
 use core::fmt::Debug;
+use ratatui::crossterm;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::text::Line;
 use ratatui::widgets::Clear;

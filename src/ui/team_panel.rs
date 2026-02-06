@@ -28,7 +28,8 @@ use crate::{
     types::{PlayerId, TeamId},
 };
 use core::fmt::Debug;
-use crossterm::event::KeyCode;
+use ratatui::crossterm;
+use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::Margin;
 use ratatui::style::{Styled, Stylize};
 use ratatui::{
@@ -40,7 +41,7 @@ use std::fmt::Display;
 
 const IMG_FRAME_WIDTH: u16 = 80;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum TeamView {
     #[default]
     All,
@@ -49,11 +50,11 @@ pub enum TeamView {
 }
 
 impl TeamView {
-    fn next(&self) -> Self {
+    const fn next(&self) -> Self {
         match self {
-            Self::All => TeamView::OpenToChallenge,
-            Self::OpenToChallenge => TeamView::Peers,
-            Self::Peers => TeamView::All,
+            Self::All => Self::OpenToChallenge,
+            Self::OpenToChallenge => Self::Peers,
+            Self::Peers => Self::All,
         }
     }
 
@@ -99,7 +100,7 @@ impl TeamListPanel {
         Self::default()
     }
 
-    fn next_player_index(&mut self) {
+    const fn next_player_index(&mut self) {
         if self.current_team_players_length == 0 {
             return;
         }
@@ -107,7 +108,7 @@ impl TeamListPanel {
         self.player_index = (current_index + 1) % self.current_team_players_length;
     }
 
-    fn previous_player_index(&mut self) {
+    const fn previous_player_index(&mut self) {
         if self.current_team_players_length == 0 {
             return;
         }
@@ -116,7 +117,7 @@ impl TeamListPanel {
             % self.current_team_players_length;
     }
 
-    fn build_left_panel(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn build_left_panel(&self, frame: &mut UiFrame, world: &World, area: Rect) {
         let split = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
@@ -427,12 +428,12 @@ impl TeamListPanel {
         Ok(())
     }
 
-    pub fn set_view(&mut self, filter: TeamView) {
+    pub const fn set_view(&mut self, filter: TeamView) {
         self.view = filter;
         self.update_view = true;
     }
 
-    pub fn reset_view(&mut self) {
+    pub const fn reset_view(&mut self) {
         self.set_view(TeamView::All);
     }
 }

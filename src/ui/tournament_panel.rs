@@ -14,8 +14,9 @@ use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::ui::tournament_brackets_lines::{current_round, number_of_rounds};
 use crate::ui::{tournament_brackets_lines, ui_key};
 use core::fmt::Debug;
-use crossterm::event::KeyCode;
 use itertools::Itertools;
+use ratatui::crossterm;
+use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::Margin;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -26,7 +27,7 @@ use ratatui::{
 };
 use std::fmt::Display;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum TournamentView {
     #[default]
     All,
@@ -35,7 +36,7 @@ pub enum TournamentView {
 }
 
 impl TournamentView {
-    fn next(&self) -> Self {
+    const fn next(&self) -> Self {
         match self {
             Self::All => Self::Open,
             Self::Open => Self::Past,
@@ -154,10 +155,11 @@ impl TournamentPanel {
                 } else {
                     continue;
                 };
-                let mut style = UiStyle::DEFAULT;
-                if tournament.organizer_id == world.own_team_id {
-                    style = UiStyle::OWN_TEAM;
-                }
+                let style = if tournament.organizer_id == world.own_team_id {
+                    UiStyle::OWN_TEAM
+                } else {
+                    UiStyle::DEFAULT
+                };
 
                 let text = format!("{:<24} {}", tournament.name(), tournament.stars());
                 options.push((text, style));
@@ -181,10 +183,11 @@ impl TournamentPanel {
                 } else {
                     continue;
                 };
-                let mut style = UiStyle::DEFAULT;
-                if tournament.organizer_id == world.own_team_id {
-                    style = UiStyle::OWN_TEAM;
-                }
+                let style = if tournament.organizer_id == world.own_team_id {
+                    UiStyle::OWN_TEAM
+                } else {
+                    UiStyle::DEFAULT
+                };
 
                 let text = format!("{:<24} {}", tournament.name(), tournament.stars());
                 options.push((text, style));
@@ -199,12 +202,7 @@ impl TournamentPanel {
         }
     }
 
-    fn build_right_panel(
-        &mut self,
-        frame: &mut UiFrame,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn build_right_panel(&self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         let index = if let Some(index) = self.index {
             index
         } else {
@@ -348,7 +346,7 @@ impl TournamentPanel {
             frame.render_widget(
                 Paragraph::new(vec![
                     Line::from("Thanks for organizing!"),
-                    Line::from("Be sure to online when registrations close"),
+                    Line::from("Be sure to be online when registrations close"),
                     Line::from("or the tournament will be canceled."),
                 ])
                 .centered(),
@@ -557,12 +555,12 @@ impl TournamentPanel {
         Ok(())
     }
 
-    pub fn set_view(&mut self, filter: TournamentView) {
+    pub const fn set_view(&mut self, filter: TournamentView) {
         self.view = filter;
         self.update_view = true;
     }
 
-    pub fn reset_view(&mut self) {
+    pub const fn reset_view(&mut self) {
         self.set_view(TournamentView::All);
     }
 }

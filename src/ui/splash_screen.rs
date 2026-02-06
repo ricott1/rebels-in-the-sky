@@ -13,11 +13,13 @@ use crate::types::{AppResult, SystemTimeTick, Tick};
 use crate::AudioPlayerState;
 use crate::{core::world::World, store::save_game_exists};
 use core::fmt::Debug;
-use crossterm::event::KeyCode;
 use rand::seq::IndexedRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use ratatui::crossterm;
+use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::Margin;
+use ratatui::widgets::Clear;
 use ratatui::{
     prelude::{Constraint, Layout, Rect},
     widgets::{Paragraph, Wrap},
@@ -39,7 +41,7 @@ pub struct SplashScreen {
     gif_map: GifMap,
 }
 
-const QUOTES: [&str;19] = [
+const QUOTES: [&str;21] = [
     " “What cannot be destroyed can, nonetheless, be diverted, frozen, transformed, and gradually deprived of its substance - which in the case of states, is ultimately their capacity to inspire terror.” - D. Graeber",
     " “Aber der Staat lügt in allen Zungen des Guten und Bösen; und was er auch redet, er lügt—und was er auch hat, gestohlen hat er's.” - F. Nietzsche",
     " “That is what I have always understood to be the essence of anarchism: the conviction that the burden of proof has to be placed on authority, and that it should be dismantled if that burden cannot be met.” - N. Chomsky",
@@ -59,7 +61,9 @@ const QUOTES: [&str;19] = [
     " “There is now a widespread tendency to argue that one can only defend democracy by totalitarian methods. If one loves democracy, the argument runs, one must crush its enemies by no matter what means. [..] In other words, defending democracy involves destroying all independence of thought.” - G. Orwell",
     " “Van a envejecer y van a tener arrugas, y un día se van a mirar en el espejo y tendrán que preguntarse, ese día, si traicionaron al niño que tenían adentro.” - José 'Pepe' Mujica",
     " “Se ha generado una literatura contra el Estado falsa. Pero el Estado es como la caja de herramientas, no tiene conciencia. Los que fallamos somos los humanos que manejamos el Estado.” - José 'Pepe' Mujica",    
-    " “Chi trova il coraggio di costruire la propria esistenza nel mare mosso dell’incerto riuscirà più facilmente a trovare il proprio spazio nel presente di chi invece tenta di gettare l’ancora verso i lidi di epoche passate.” - Alexander Langer"
+    " “Chi trova il coraggio di costruire la propria esistenza nel mare mosso dell'incerto riuscirà più facilmente a trovare il proprio spazio nel presente di chi invece tenta di gettare l'ancora verso i lidi di epoche passate.” - Alexander Langer",
+    " “May you'll be half an hour in heaven before the devil knows you're dead.” - The Irish Rovers",
+    " “All'effimero occidentale preferiamo il duraturo, alla plastica l'acciaio, alla freddezza il calore, ma al calore la freddezza. Ognuno ha l'immaginario che si merita.” - Giovanni Lindo Ferretti"
     ];
 
 const TITLE: [&str; 13] = [
@@ -121,7 +125,7 @@ impl SplashScreen {
         }
     }
 
-    fn get_ui_preset_at_index(&self, index: usize) -> UiCallback {
+    const fn get_ui_preset_at_index(&self, index: usize) -> UiCallback {
         match index {
             0 => UiCallback::ContinueGame,
             1 => UiCallback::NewGame,
@@ -131,7 +135,7 @@ impl SplashScreen {
         }
     }
 
-    pub fn set_audio_player_state(&mut self, state: AudioPlayerState) {
+    pub const fn set_audio_player_state(&mut self, state: AudioPlayerState) {
         self.audio_player_state = state;
     }
 }
@@ -162,15 +166,10 @@ impl Screen for SplashScreen {
         ])
         .split(area);
 
-        let side_length = if area.width > TITLE_WIDTH {
-            (area.width - TITLE_WIDTH) / 2
-        } else {
-            0
-        };
         let title = Layout::horizontal([
-            Constraint::Length(side_length),
+            Constraint::Fill(1),
             Constraint::Length(TITLE_WIDTH),
-            Constraint::Length(side_length),
+            Constraint::Fill(1),
         ])
         .split(split[1]);
 
@@ -192,16 +191,10 @@ impl Screen for SplashScreen {
             }),
         );
 
-        let side_width = if area.width > BUTTON_WIDTH {
-            (area.width - BUTTON_WIDTH) / 2
-        } else {
-            0
-        };
-
         let body = Layout::horizontal([
-            Constraint::Length(side_width),
-            Constraint::Min(12),
-            Constraint::Length(side_width),
+            Constraint::Fill(1),
+            Constraint::Length(BUTTON_WIDTH),
+            Constraint::Fill(1),
         ])
         .split(split[3]);
 
@@ -251,6 +244,7 @@ impl Screen for SplashScreen {
             self.selection_text[0] = format!("Simulating {time_ago} ago",);
         }
 
+        frame.render_widget(Clear, selection_split[self.index]);
         for i in 0..selection_split.len() - 1 {
             let mut button = if i == self.index {
                 Button::new(

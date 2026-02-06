@@ -3,6 +3,7 @@ use super::{
     traits::InteractiveStatefulWidget,
     ui_callback::{CallbackRegistry, UiCallback},
 };
+use ratatui::crossterm;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -21,12 +22,12 @@ pub struct ClickableListState {
 }
 
 impl ClickableListState {
-    pub fn with_selected(mut self, selected: Option<usize>) -> Self {
+    pub const fn with_selected(mut self, selected: Option<usize>) -> Self {
         self.selected = selected;
         self
     }
 
-    pub fn select(&mut self, index: Option<usize>) {
+    pub const fn select(&mut self, index: Option<usize>) {
         self.selected = index;
         if index.is_none() {
             self.offset = 0;
@@ -74,6 +75,7 @@ pub struct ClickableList<'a> {
     repeat_highlight_symbol: bool,
     /// Hack to be able to select a different index when clicking with the mouse
     selection_offset: usize,
+    disabled_scrolling: bool,
 }
 
 impl<'a> ClickableList<'a> {
@@ -97,7 +99,7 @@ impl<'a> ClickableList<'a> {
         self
     }
 
-    pub fn style(mut self, style: Style) -> ClickableList<'a> {
+    pub const fn style(mut self, style: Style) -> ClickableList<'a> {
         self.style = style;
         self
     }
@@ -105,6 +107,14 @@ impl<'a> ClickableList<'a> {
     pub const fn set_selection_offset(mut self, offset: usize) -> Self {
         self.selection_offset = offset;
         self
+    }
+
+    pub const fn disable_scrolling(&mut self) {
+        self.disabled_scrolling = true;
+    }
+
+    pub const fn enable_scrolling(&mut self) {
+        self.disabled_scrolling = false;
     }
 
     fn get_items_bounds(
@@ -316,17 +326,19 @@ impl InteractiveStatefulWidget for &ClickableList<'_> {
             return;
         }
 
-        callback_registry.register_mouse_callback(
-            crossterm::event::MouseEventKind::ScrollDown,
-            None,
-            UiCallback::NextPanelIndex,
-        );
+        if !self.disabled_scrolling {
+            callback_registry.register_mouse_callback(
+                crossterm::event::MouseEventKind::ScrollDown,
+                None,
+                UiCallback::NextPanelIndex,
+            );
 
-        callback_registry.register_mouse_callback(
-            crossterm::event::MouseEventKind::ScrollUp,
-            None,
-            UiCallback::PreviousPanelIndex,
-        );
+            callback_registry.register_mouse_callback(
+                crossterm::event::MouseEventKind::ScrollUp,
+                None,
+                UiCallback::PreviousPanelIndex,
+            );
+        }
 
         let list_height = list_area.height as usize;
 

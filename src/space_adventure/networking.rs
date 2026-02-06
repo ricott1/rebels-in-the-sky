@@ -44,7 +44,7 @@ impl NetworkSpaceData {
         self.new_entities.push((id, image_type));
     }
 
-    fn update_state(&mut self, entities: &[EntityMap; MAX_LAYER]) {
+    fn update_state(&self, entities: &[EntityMap; MAX_LAYER]) {
         let mut state = vec![];
         for layer_entities in entities.iter().take(MAX_LAYER) {
             for (id, entity) in layer_entities.iter() {

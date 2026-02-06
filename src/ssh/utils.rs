@@ -1,9 +1,12 @@
 use crate::{app::AppEvent, tui::TerminalEvent, types::AppResult};
 use anyhow::anyhow;
-use crossterm::event::{KeyEventKind, KeyModifiers};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::Alphanumeric;
+use ratatui::crossterm::{
+    self,
+    event::{KeyEventKind, KeyModifiers},
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::SystemTime;

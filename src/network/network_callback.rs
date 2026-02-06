@@ -136,13 +136,14 @@ impl NetworkCallback {
     }
 
     fn handle_message_topic(
-        peer_id: Option<PeerId>,
+        peer_id: PeerId,
         timestamp: Tick,
+        author: String,
         message: String,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui
-                .push_chat_event(timestamp, peer_id, message.to_owned());
+                .push_chat_event(timestamp, peer_id, author.clone(), message.clone());
             Ok(None)
         })
     }
@@ -737,7 +738,7 @@ impl NetworkCallback {
                             &trade
                                 .target_player
                                 .team
-                                .ok_or(anyhow!("Player in trade should have a team"))?,
+                                .ok_or_else(|| anyhow!("Player in trade should have a team"))?,
                         )?;
 
                         own_team.can_trade_players(
@@ -824,7 +825,7 @@ impl NetworkCallback {
                             &trade
                                 .proposer_player
                                 .team
-                                .ok_or(anyhow!("Player in trade should have a team"))?,
+                                .ok_or_else(|| anyhow!("Player in trade should have a team"))?,
                         )?;
 
                         proposer_team.can_trade_players(
@@ -1178,9 +1179,10 @@ impl NetworkCallback {
                     }
                     NetworkData::Message {
                         timestamp,
-                        from,
+                        from_peer_id,
+                        author,
                         message,
-                    } => Self::handle_message_topic(Some(from), timestamp, message)(app),
+                    } => Self::handle_message_topic(from_peer_id, timestamp, author, message)(app),
                     NetworkData::Challenge {
                         timestamp,
                         challenge,

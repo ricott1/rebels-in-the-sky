@@ -18,7 +18,7 @@ use anyhow::anyhow;
 use itertools::Itertools;
 
 use libp2p::PeerId;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -273,22 +273,22 @@ impl Not for Possession {
 
 pub type GameStatsMap = HashMap<GameId, GameStats>;
 
-pub static HOME_CLOSE_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchImage::HomeCloseShotMask));
-pub static AWAY_CLOSE_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchImage::AwayCloseShotMask));
-pub static HOME_MEDIUM_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchImage::HomeMediumShotMask));
-pub static AWAY_MEDIUM_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchImage::AwayMediumShotMask));
-pub static HOME_LONG_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchImage::HomeLongShotMask));
-pub static AWAY_LONG_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchImage::AwayLongShotMask));
-pub static HOME_IMPOSSIBLE_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchImage::HomeImpossibleShotMask));
-pub static AWAY_IMPOSSIBLE_SHOT_POSITIONS: Lazy<Vec<(u8, u8)>> =
-    Lazy::new(|| get_shot_positions(PitchImage::AwayImpossibleShotMask));
+pub static HOME_CLOSE_SHOT_POSITIONS: LazyLock<Vec<(u8, u8)>> =
+    LazyLock::new(|| get_shot_positions(PitchImage::HomeCloseShotMask));
+pub static AWAY_CLOSE_SHOT_POSITIONS: LazyLock<Vec<(u8, u8)>> =
+    LazyLock::new(|| get_shot_positions(PitchImage::AwayCloseShotMask));
+pub static HOME_MEDIUM_SHOT_POSITIONS: LazyLock<Vec<(u8, u8)>> =
+    LazyLock::new(|| get_shot_positions(PitchImage::HomeMediumShotMask));
+pub static AWAY_MEDIUM_SHOT_POSITIONS: LazyLock<Vec<(u8, u8)>> =
+    LazyLock::new(|| get_shot_positions(PitchImage::AwayMediumShotMask));
+pub static HOME_LONG_SHOT_POSITIONS: LazyLock<Vec<(u8, u8)>> =
+    LazyLock::new(|| get_shot_positions(PitchImage::HomeLongShotMask));
+pub static AWAY_LONG_SHOT_POSITIONS: LazyLock<Vec<(u8, u8)>> =
+    LazyLock::new(|| get_shot_positions(PitchImage::AwayLongShotMask));
+pub static HOME_IMPOSSIBLE_SHOT_POSITIONS: LazyLock<Vec<(u8, u8)>> =
+    LazyLock::new(|| get_shot_positions(PitchImage::HomeImpossibleShotMask));
+pub static AWAY_IMPOSSIBLE_SHOT_POSITIONS: LazyLock<Vec<(u8, u8)>> =
+    LazyLock::new(|| get_shot_positions(PitchImage::AwayImpossibleShotMask));
 
 fn get_shot_positions(mask: PitchImage) -> Vec<(u8, u8)> {
     let img = mask.image().unwrap();

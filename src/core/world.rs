@@ -263,9 +263,10 @@ impl World {
         let player_ids = self.teams.get_or_err(&team_id)?.player_ids.clone();
         self.auto_assign_crew_roles(player_ids)?;
 
-        let mut planet = self.planets.get_or_err(&home_planet_id)?.clone();
-        planet.team_ids.push(team_id);
-        self.planets.insert(planet.id, planet);
+        self.planets
+            .get_mut_or_err(&home_planet_id)?
+            .team_ids
+            .push(team_id);
 
         self.dirty = true;
         self.dirty_network = true;
@@ -283,10 +284,9 @@ impl World {
         let asteroid_id = asteroid.id;
         self.planets.insert(asteroid_id, asteroid);
 
-        let mut satellite_of_planet = self.planets.get_or_err(&satellite_of)?.clone();
+        let satellite_of_planet = self.planets.get_mut_or_err(&satellite_of)?;
         satellite_of_planet.satellites.push(asteroid_id);
         satellite_of_planet.version += 1;
-        self.planets.insert(satellite_of, satellite_of_planet);
 
         Ok(asteroid_id)
     }
@@ -600,15 +600,13 @@ impl World {
 
         // Demote previous crew role player to mozzo.
         if let Some(crew_player_id) = current_role_player_id {
-            let mut current_role_player = self.players.get_or_err(&crew_player_id)?.clone();
+            let current_role_player = self.players.get_mut_or_err(&crew_player_id)?;
             current_role_player.info.crew_role = CrewRole::Mozzo;
             team.crew_roles.mozzo.push(current_role_player.id);
             // Demoted player is a bit demoralized :(
             current_role_player.morale =
                 (current_role_player.morale + MORALE_DEMOTION_MALUS).bound();
             current_role_player.set_jersey(&jersey);
-
-            self.players.insert(crew_player_id, current_role_player);
         }
 
         // Set player to new role.
@@ -789,12 +787,12 @@ impl World {
             .players
             .get_or_err(&player_id1)?
             .team
-            .ok_or(anyhow!("Player swapped should have a team"))?;
+            .ok_or_else(|| anyhow!("Player swapped should have a team"))?;
         let team_id2 = self
             .players
             .get_or_err(&player_id2)?
             .team
-            .ok_or(anyhow!("Player swapped should have a team"))?;
+            .ok_or_else(|| anyhow!("Player swapped should have a team"))?;
 
         self.release_player_from_team(player_id1)?;
         self.release_player_from_team(player_id2)?;
@@ -804,7 +802,7 @@ impl World {
     }
 
     pub fn release_player_from_team(&mut self, player_id: PlayerId) -> AppResult<()> {
-        let mut player = self.players.get_mut_or_err(&player_id)?.clone();
+        let mut player = self.players.get_or_err(&player_id)?.clone();
 
         let team_id = if let Some(team_id) = player.team {
             team_id
@@ -1013,7 +1011,7 @@ impl World {
             let team = self
                 .teams
                 .get_mut(team_id)
-                .ok_or(anyhow!("Team {team_id:?} not found"))?;
+                .ok_or_else(|| anyhow!("Team {team_id:?} not found"))?;
 
             team.current_game = Some(game_id);
             if team.id == self.own_team_id {
@@ -1171,7 +1169,7 @@ impl World {
         for player_id in team.player_ids.iter() {
             let mut player = players
                 .get(player_id)
-                .ok_or(anyhow!("Player {player_id} not found."))?
+                .ok_or_else(|| anyhow!("Player {player_id} not found."))?
                 .clone();
             player.peer_id = team.peer_id;
             team_players.insert(player.id, player);
@@ -1184,7 +1182,7 @@ impl World {
         for player_id in team.player_ids.iter().take(MAX_PLAYERS_PER_GAME) {
             let mut player = players
                 .get(player_id)
-                .ok_or(anyhow!("Player {player_id} not found."))?
+                .ok_or_else(|| anyhow!("Player {player_id} not found."))?
                 .clone();
             player.peer_id = team.peer_id;
             team_players.insert(player.id, player);
@@ -1436,7 +1434,7 @@ impl World {
                     let stats = team
                         .stats
                         .get(&player.id)
-                        .ok_or(anyhow!("Player {:?} not found in team stats", player.id))?;
+                        .ok_or_else(|| anyhow!("Player {:?} not found in team stats", player.id))?;
 
                     // Update player global stats, but remove position, shots and last action shot
                     player.historical_stats.update(stats);
@@ -1888,7 +1886,7 @@ impl World {
         let own_team = self
             .teams
             .get_mut(&self.own_team_id)
-            .ok_or(anyhow!("Could not find own team."))?;
+            .ok_or_else(|| anyhow!("Could not find own team."))?;
         match own_team.current_location {
             TeamLocation::Travelling {
                 from: _,
@@ -1902,7 +1900,7 @@ impl World {
                     let planet = self
                         .planets
                         .get_mut(&to)
-                        .ok_or(anyhow!("Could not find planet {to}."))?;
+                        .ok_or_else(|| anyhow!("Could not find planet {to}."))?;
                     planet.team_ids.push(own_team.id);
 
                     let team_name = own_team.name.clone();
@@ -1914,7 +1912,7 @@ impl World {
                         let player = self
                             .players
                             .get_mut(player_id)
-                            .ok_or(anyhow!("Could not find player {player_id}."))?;
+                            .ok_or_else(|| anyhow!("Could not find player {player_id}."))?;
                         player.set_jersey(&own_team.jersey);
                     }
 
@@ -2049,7 +2047,7 @@ impl World {
         Ok(vec![])
     }
 
-    fn tick_spaceship_upgrade(&mut self, current_tick: Tick) -> AppResult<Option<UiCallback>> {
+    fn tick_spaceship_upgrade(&self, current_tick: Tick) -> AppResult<Option<UiCallback>> {
         let own_team = self.get_own_team()?;
         if let Some(upgrade) = own_team.spaceship.pending_upgrade {
             if current_tick > upgrade.started + upgrade.duration {
@@ -2059,7 +2057,7 @@ impl World {
         Ok(None)
     }
 
-    fn tick_asteroid_upgrade(&mut self, current_tick: Tick) -> AppResult<Vec<UiCallback>> {
+    fn tick_asteroid_upgrade(&self, current_tick: Tick) -> AppResult<Vec<UiCallback>> {
         let own_team = self.get_own_team()?;
         let mut callbacks = vec![];
         for asteroid_id in own_team.asteroid_ids.iter() {
@@ -2466,7 +2464,7 @@ impl World {
         let own_team = self
             .teams
             .get_mut(&self.own_team_id)
-            .ok_or(anyhow!("Team {:?} not found", self.own_team_id))?;
+            .ok_or_else(|| anyhow!("Team {:?} not found", self.own_team_id))?;
 
         for honour in Honour::iter() {
             if !own_team.honours.contains(&honour)

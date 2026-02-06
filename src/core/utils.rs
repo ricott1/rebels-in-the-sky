@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::{planet::Planet, skill::GameSkill, types::Population};
 use crate::store::ASSETS_DIR;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -28,7 +28,7 @@ pub fn skill_linear_interpolation(base_skill: f32, mod_skill: f32, coords: [f32;
     (base_skill * modifier).bound()
 }
 
-pub static PLAYER_DATA: Lazy<HashMap<Population, PlayerData>> = Lazy::new(|| {
+pub static PLAYER_DATA: LazyLock<HashMap<Population, PlayerData>> = LazyLock::new(|| {
     let file = ASSETS_DIR
         .get_file("data/players_data.json")
         .expect("Could not find players_data.json");
@@ -38,7 +38,7 @@ pub static PLAYER_DATA: Lazy<HashMap<Population, PlayerData>> = Lazy::new(|| {
     serde_json::from_str(data).unwrap_or_else(|e| panic!("Could not parse players_data.json: {e}"))
 });
 
-pub static TEAM_DATA: Lazy<Vec<(String, String)>> = Lazy::new(|| {
+pub static TEAM_DATA: LazyLock<Vec<(String, String)>> = LazyLock::new(|| {
     let file = ASSETS_DIR
         .get_file("data/teams_data.json")
         .expect("Could not find teams_data.json");
@@ -49,7 +49,7 @@ pub static TEAM_DATA: Lazy<Vec<(String, String)>> = Lazy::new(|| {
     serde_json::from_str(data).unwrap_or_else(|e| panic!("Could not parse teams_data.json: {e}"))
 });
 
-pub static PLANET_DATA: Lazy<Vec<Planet>> = Lazy::new(|| {
+pub static PLANET_DATA: LazyLock<Vec<Planet>> = LazyLock::new(|| {
     let file = ASSETS_DIR
         .get_file("data/planets_data.json")
         .expect("Could not find planets_data.json");

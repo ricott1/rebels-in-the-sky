@@ -18,15 +18,15 @@ impl VisualEffect {
         T: GameEntity,
     {
         match &self {
-            VisualEffect::FadeIn => {
-                VisualEffect::FadeIn.apply_global_effect(img, time);
+            Self::FadeIn => {
+                Self::FadeIn.apply_global_effect(img, time);
             }
 
-            VisualEffect::FadeOut => {
-                VisualEffect::FadeOut.apply_global_effect(img, time);
+            Self::FadeOut => {
+                Self::FadeOut.apply_global_effect(img, time);
             }
 
-            VisualEffect::ColorMask { color } => {
+            Self::ColorMask { color } => {
                 for (point, &is_border) in entity.hit_box().iter() {
                     if is_border {
                         let mut pixel = *img.get_pixel(point.x as u32, point.y as u32);
@@ -49,7 +49,7 @@ impl VisualEffect {
 
     pub fn apply_global_effect(&self, img: &mut RgbaImage, time: f32) {
         match &self {
-            VisualEffect::FadeIn => {
+            Self::FadeIn => {
                 let modifier = (time / Self::FADE_IN_LIFETIME).clamp(0.0, 1.0);
                 for x in 0..img.width() {
                     for y in 0..img.height() {
@@ -63,7 +63,7 @@ impl VisualEffect {
                 }
             }
 
-            VisualEffect::FadeOut => {
+            Self::FadeOut => {
                 let modifier = (1.0 - time / Self::FADE_IN_LIFETIME).clamp(0.0, 1.0);
 
                 for x in 0..img.width() {

@@ -40,7 +40,7 @@ struct ShooterInSpaceAdventure {
 }
 
 impl ShooterInSpaceAdventure {
-    pub fn new(positions: Vec<I16Vec2>, damage: f32, fire_rate: f32) -> Self {
+    pub const fn new(positions: Vec<I16Vec2>, damage: f32, fire_rate: f32) -> Self {
         Self {
             positions,
             damage,
@@ -50,7 +50,7 @@ impl ShooterInSpaceAdventure {
         }
     }
 
-    fn set_state(&mut self, state: ShooterState) {
+    const fn set_state(&mut self, state: ShooterState) {
         self.state = state;
     }
 }
@@ -72,7 +72,7 @@ impl ChargeUnitInSpaceAdventure {
     const CHARGE_RECOVERY_PER_SECOND: f32 = 2.5;
     const RECHARGE_RECOVERY_PER_SECOND: f32 = 2.25;
 
-    pub fn new(max_charge: f32) -> Self {
+    pub const fn new(max_charge: f32) -> Self {
         Self {
             current_charge: max_charge,
             max_charge,
@@ -95,12 +95,10 @@ impl ChargeUnitInSpaceAdventure {
     fn recharge(&mut self, deltatime: f32) {
         match self.state {
             ChargeUnitState::Ready => {
-                self.add_charge(ChargeUnitInSpaceAdventure::CHARGE_RECOVERY_PER_SECOND * deltatime);
+                self.add_charge(Self::CHARGE_RECOVERY_PER_SECOND * deltatime);
             }
             ChargeUnitState::Recharging => {
-                self.add_charge(
-                    ChargeUnitInSpaceAdventure::RECHARGE_RECOVERY_PER_SECOND * deltatime,
-                );
+                self.add_charge(Self::RECHARGE_RECOVERY_PER_SECOND * deltatime);
             }
         }
     }
@@ -658,16 +656,17 @@ impl SpaceshipEntity {
 
     fn thrust(&self) -> f32 {
         self.base_thrust
-            / (1.0 + SPEED_PENALTY_PER_UNIT_STORAGE * self.used_storage_capacity as f32)
+            / SPEED_PENALTY_PER_UNIT_STORAGE.mul_add(self.used_storage_capacity as f32, 1.0)
     }
 
     fn max_speed(&self) -> f32 {
-        self.base_speed / (1.0 + SPEED_PENALTY_PER_UNIT_STORAGE * self.used_storage_capacity as f32)
+        self.base_speed
+            / SPEED_PENALTY_PER_UNIT_STORAGE.mul_add(self.used_storage_capacity as f32, 1.0)
     }
 
     fn fuel_consumption(&self) -> f32 {
         self.base_fuel_consumption
-            / (1.0 + FUEL_CONSUMPTION_PER_UNIT_STORAGE * self.used_storage_capacity as f32)
+            / FUEL_CONSUMPTION_PER_UNIT_STORAGE.mul_add(self.used_storage_capacity as f32, 1.0)
     }
 
     pub fn thrust_towards(&mut self, direction: Vec2) {
@@ -681,7 +680,7 @@ impl SpaceshipEntity {
         self.resources.insert(Resource::FUEL, self.fuel());
     }
 
-    fn frame(&self) -> usize {
+    const fn frame(&self) -> usize {
         self.tick % self.gif.len()
     }
 

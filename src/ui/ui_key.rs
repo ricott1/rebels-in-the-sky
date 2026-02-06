@@ -1,4 +1,4 @@
-use crossterm::event::KeyCode;
+use ratatui::crossterm::event::KeyCode;
 
 pub const ESC: KeyCode = KeyCode::Esc;
 
@@ -13,6 +13,9 @@ pub const CYCLE_VIEW: KeyCode = KeyCode::Tab;
 
 pub const YES_TO_DIALOG: KeyCode = KeyCode::Enter;
 pub const NO_TO_DIALOG: KeyCode = KeyCode::Backspace;
+
+pub const GO_TO_CHAT: KeyCode = KeyCode::Char('C');
+pub const GO_TO_CHALLENGES: KeyCode = KeyCode::Char('C');
 
 pub const CREATE_TRADE: KeyCode = KeyCode::Char('P');
 pub const ACCEPT_TRADE: KeyCode = KeyCode::Char('A');

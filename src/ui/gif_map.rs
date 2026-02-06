@@ -21,16 +21,16 @@ use anyhow::anyhow;
 use image::{imageops::resize, GenericImageView, Rgba, RgbaImage};
 use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 const MAX_GIF_WIDTH: u32 = 160;
 const MAX_GIF_HEIGHT: u32 = 140;
 pub const FRAMES_PER_REVOLUTION: usize = 360;
 
-pub static SPINNING_BALL_GIF: Lazy<GifLines> = Lazy::new(|| {
+pub static SPINNING_BALL_GIF: LazyLock<GifLines> = LazyLock::new(|| {
     const X_BLIT: u32 = MAX_GIF_WIDTH / 2 + 30;
-    const Y_BLIT: u32 = MAX_GIF_HEIGHT / 2 + 20;
+    const Y_BLIT: u32 = MAX_GIF_HEIGHT / 2 + 20 + 8;
     open_gif("game/spinning_ball.gif".to_string())
         .expect("Left shot gif should open")
         .iter()
@@ -55,19 +55,19 @@ pub static SPINNING_BALL_GIF: Lazy<GifLines> = Lazy::new(|| {
         .to_lines()
 });
 
-pub static LEFT_SHOT_GIF: Lazy<GifLines> = Lazy::new(|| {
+pub static LEFT_SHOT_GIF: LazyLock<GifLines> = LazyLock::new(|| {
     open_gif("game/left_shot.gif".to_string())
         .expect("Left shot gif should open")
         .to_lines()
 });
 
-pub static RIGHT_SHOT_GIF: Lazy<GifLines> = Lazy::new(|| {
+pub static RIGHT_SHOT_GIF: LazyLock<GifLines> = LazyLock::new(|| {
     open_gif("game/right_shot.gif".to_string())
         .expect("Right shot gif should open")
         .to_lines()
 });
 
-pub static PORTAL_GIFS: Lazy<Vec<GifLines>> = Lazy::new(|| {
+pub static PORTAL_GIFS: LazyLock<Vec<GifLines>> = LazyLock::new(|| {
     vec![
         open_gif("portal/portal_blue.gif".into())
             .expect("Cannot open portal_blue.gif.")
@@ -81,13 +81,13 @@ pub static PORTAL_GIFS: Lazy<Vec<GifLines>> = Lazy::new(|| {
     ]
 });
 
-pub static TREASURE_GIF: Lazy<GifLines> = Lazy::new(|| {
+pub static TREASURE_GIF: LazyLock<GifLines> = LazyLock::new(|| {
     open_gif("treasure/treasure.gif".into())
         .expect("Cannot open treasure.gif.")
         .to_lines()
 });
 
-pub static _FLAG_GIF: Lazy<GifLines> = Lazy::new(|| {
+pub static _FLAG_GIF: LazyLock<GifLines> = LazyLock::new(|| {
     open_gif("cove/flag.gif".into())
         .expect("Cannot open flag.gif.")
         .to_lines()
@@ -99,16 +99,16 @@ pub enum ImageResizeInGalaxyGif {
 }
 
 impl ImageResizeInGalaxyGif {
-    pub fn size(&self) -> u32 {
+    pub const fn size(&self) -> u32 {
         match self {
-            ImageResizeInGalaxyGif::ZoomOutCentral { planet_type } => match planet_type {
+            Self::ZoomOutCentral { planet_type } => match planet_type {
                 PlanetType::BlackHole => 16,
                 PlanetType::Sol => 28,
                 PlanetType::Rocky => 16,
                 PlanetType::Ring => 32,
                 _ => 24,
             },
-            ImageResizeInGalaxyGif::ZoomOutSatellite { planet_type } => match planet_type {
+            Self::ZoomOutSatellite { planet_type } => match planet_type {
                 PlanetType::Gas => 8,
                 PlanetType::Sol => 8,
                 PlanetType::Rocky => 4,
@@ -137,7 +137,7 @@ impl GifMap {
         Self::default()
     }
 
-    fn player(&mut self, player: &Player) -> AppResult<Gif> {
+    fn player(&self, player: &Player) -> AppResult<Gif> {
         player.compose_image()
     }
 
@@ -161,12 +161,29 @@ impl GifMap {
     fn planet_zoom_in(planet: &Planet) -> AppResult<Gif> {
         // just picked those randomly, we could do better by using some deterministic position
         let x_blit = MAX_GIF_WIDTH / 2 + planet.axis.0 as u32;
-        let y_blit = MAX_GIF_HEIGHT / 2 + planet.axis.1 as u32;
+        let y_blit = MAX_GIF_HEIGHT / 2 + planet.axis.1 as u32 + 8;
         let gif = if planet.planet_type == PlanetType::Asteroid {
-            let mut img = open_image(format!("asteroids/{}.png", planet.filename).as_str())?;
-
+            let mut base = UNIVERSE_BACKGROUND.clone();
+            let mut asteroid_img =
+                open_image(format!("asteroids/{}.png", planet.filename).as_str())?;
             let color_map = AsteroidColorMap::Base.color_map();
-            img.apply_color_map(color_map);
+            asteroid_img.apply_color_map(color_map);
+
+            // Blit img on base
+            base.copy_non_trasparent_from(&asteroid_img, x_blit, y_blit)?;
+            let center = (
+                x_blit + asteroid_img.width() / 2,
+                y_blit + asteroid_img.height() / 2,
+            );
+            let img = base
+                .view(
+                    center.0 - MAX_GIF_WIDTH / 2,
+                    center.1 - MAX_GIF_HEIGHT / 2,
+                    MAX_GIF_WIDTH,
+                    MAX_GIF_HEIGHT,
+                )
+                .to_image();
+
             vec![img]
         } else {
             open_gif(format!("planets/{}_full.gif", planet.filename))?
@@ -207,7 +224,7 @@ impl GifMap {
         let planet = world
             .planets
             .get(planet_id)
-            .ok_or(anyhow!("World: Planet not found."))?;
+            .ok_or_else(|| anyhow!("World: Planet not found."))?;
 
         let gif = Self::planet_zoom_in(planet)?;
         let lines = gif.to_lines();

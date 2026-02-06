@@ -155,11 +155,11 @@ pub trait ColoredResource {
 impl ColoredResource for Resource {
     fn color(&self) -> Rgba<u8> {
         match self {
-            Resource::GOLD => [240, 230, 140, 255],
-            Resource::SCRAPS => [192, 192, 192, 255],
-            Resource::RUM => [114, 47, 55, 255],
-            Resource::FUEL => [64, 224, 208, 255],
-            Resource::SATOSHI => [255, 255, 255, 255],
+            Self::GOLD => [240, 230, 140, 255],
+            Self::SCRAPS => [192, 192, 192, 255],
+            Self::RUM => [114, 47, 55, 255],
+            Self::FUEL => [64, 224, 208, 255],
+            Self::SATOSHI => [255, 255, 255, 255],
         }
         .into()
     }

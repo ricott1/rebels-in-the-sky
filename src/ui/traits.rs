@@ -7,6 +7,7 @@ use crate::core::{Kartoffel, Trait};
 use crate::image::utils::Gif;
 use crate::ui::utils::img_to_lines;
 use crate::{core::skill::Rated, types::AppResult};
+use ratatui::crossterm;
 use ratatui::{
     prelude::Rect,
     style::{Color, Style},
@@ -71,11 +72,11 @@ pub trait UiStyled {
 impl UiStyled for Trait {
     fn style(&self) -> Style {
         match self {
-            Trait::Killer => UiStyle::DEFAULT.fg(Color::Red),
-            Trait::Showpirate => UiStyle::DEFAULT.fg(Color::Magenta),
-            Trait::Relentless => UiStyle::DEFAULT.fg(Color::Blue),
-            Trait::Spugna => UiStyle::DEFAULT.fg(Color::LightRed),
-            Trait::Crumiro => UiStyle::DEFAULT.fg(Color::Rgb(212, 175, 55)),
+            Self::Killer => UiStyle::DEFAULT.fg(Color::Red),
+            Self::Showpirate => UiStyle::DEFAULT.fg(Color::Magenta),
+            Self::Relentless => UiStyle::DEFAULT.fg(Color::Blue),
+            Self::Spugna => UiStyle::DEFAULT.fg(Color::LightRed),
+            Self::Crumiro => UiStyle::DEFAULT.fg(Color::Rgb(212, 175, 55)),
         }
     }
 }
@@ -107,11 +108,11 @@ impl UiStyled for u8 {
 impl UiStyled for Resource {
     fn style(&self) -> Style {
         let [r, g, b] = match self {
-            Resource::GOLD => [240, 230, 140],
-            Resource::SCRAPS => [192, 192, 192],
-            Resource::RUM => [114, 47, 55],
-            Resource::FUEL => [64, 224, 208],
-            Resource::SATOSHI => [255, 255, 255],
+            Self::GOLD => [240, 230, 140],
+            Self::SCRAPS => [192, 192, 192],
+            Self::RUM => [114, 47, 55],
+            Self::FUEL => [64, 224, 208],
+            Self::SATOSHI => [255, 255, 255],
         };
 
         UiStyle::DEFAULT.fg(Color::Rgb(r, g, b))

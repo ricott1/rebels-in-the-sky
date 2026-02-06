@@ -18,6 +18,7 @@ pub mod tui;
 pub mod types;
 pub mod ui;
 
+#[must_use]
 pub fn app_version() -> [usize; 3] {
     [
         env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or_default(),

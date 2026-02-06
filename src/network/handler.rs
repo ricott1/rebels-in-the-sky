@@ -266,7 +266,7 @@ impl NetworkHandler {
         handle
     }
 
-    fn _send(&mut self, data: &NetworkData) -> AppResult<()> {
+    fn _send(&self, data: &NetworkData) -> AppResult<()> {
         match &self.swarm_status {
             SwarmStatus::Uninitialized => {}
             SwarmStatus::Ready { sender } => {
@@ -295,24 +295,17 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub fn send_message(&mut self, message: String) -> AppResult<()> {
-        self._send(&NetworkData::Message {
-            timestamp: Tick::now(),
-            from: *self.own_peer_id(),
-            message,
-        })
-    }
-
-    #[cfg(feature = "relayer")]
-    pub fn resend_message(
+    pub fn send_message(
         &mut self,
         timestamp: Tick,
-        from: PeerId,
+        from_peer_id: PeerId,
+        author: String,
         message: String,
     ) -> AppResult<()> {
         self._send(&NetworkData::Message {
             timestamp,
-            from,
+            from_peer_id,
+            author,
             message,
         })
     }
@@ -390,7 +383,7 @@ impl NetworkHandler {
         Ok(())
     }
 
-    fn send_game(&mut self, world: &World, game_id: &GameId) -> AppResult<()> {
+    fn send_game(&self, world: &World, game_id: &GameId) -> AppResult<()> {
         let game = NetworkGame::from_game_id(world, game_id)?;
         self._send(&NetworkData::Game {
             timestamp: Tick::now(),
@@ -398,7 +391,7 @@ impl NetworkHandler {
         })
     }
 
-    fn send_team(&mut self, world: &World, team_id: TeamId) -> AppResult<()> {
+    fn send_team(&self, world: &World, team_id: TeamId) -> AppResult<()> {
         let team = NetworkTeam::from_team_id(world, &team_id, *self.own_peer_id())?;
         self._send(&NetworkData::Team {
             timestamp: Tick::now(),

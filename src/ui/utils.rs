@@ -3,7 +3,7 @@ use super::{
     widgets::default_block,
 };
 use crate::core::{AU, LIGHT_YEAR, SATOSHI_PER_BITCOIN};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use image::RgbaImage;
 use ratatui::{
     style::{Color, Style},
@@ -13,7 +13,7 @@ use ratatui::{
 use tui_textarea::{Input, Key, TextArea};
 use unicode_width::UnicodeWidthStr;
 
-pub fn input_from_key_event(key: KeyEvent) -> Input {
+pub const fn input_from_key_event(key: KeyEvent) -> Input {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
     let shift = key.modifiers.contains(KeyModifiers::SHIFT);

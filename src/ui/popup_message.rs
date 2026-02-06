@@ -16,6 +16,7 @@ use crate::ui::ui_key;
 use anyhow::anyhow;
 use core::fmt::Debug;
 use itertools::Itertools;
+use ratatui::crossterm;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::layout::{Margin, Rect};
 use ratatui::style::Stylize;
@@ -30,6 +31,10 @@ const TREASURE_GIF_ANIMATION_DELAY: Tick = 450;
 #[derive(Debug, Display, Clone, PartialEq)]
 pub enum PopupMessage {
     Error {
+        message: String,
+        tick: Tick,
+    },
+    Warning {
         message: String,
         tick: Tick,
     },
@@ -87,19 +92,19 @@ pub enum PopupMessage {
 }
 
 impl PopupMessage {
-    const MAX_TUTORIAL_PAGE: usize = 4;
+    const MAX_TUTORIAL_PAGE: usize = 6;
     fn rect(&self, area: Rect) -> Rect {
         let (width, height) = match self {
-            PopupMessage::AsteroidNameDialog { .. } => (54, 28),
-            PopupMessage::PortalFound { .. } => (54, 44),
-            PopupMessage::ExplorationResult { resources, .. } => {
+            Self::AsteroidNameDialog { .. } => (54, 28),
+            Self::PortalFound { .. } => (54, 44),
+            Self::ExplorationResult { resources, .. } => {
                 if resources.value(&Resource::GOLD) > 0 {
                     (54, 26)
                 } else {
                     (54, 16)
                 }
             }
-            PopupMessage::TeamLanded { .. } => (54, 26),
+            Self::TeamLanded { .. } => (54, 26),
             _ => (48, 16),
         };
 
@@ -130,10 +135,10 @@ impl PopupMessage {
         Rect::new(x, y, rect_width, rect_height)
     }
 
-    pub fn is_skippable(&self) -> bool {
+    pub const fn is_skippable(&self) -> bool {
         match self {
-            PopupMessage::Error { .. } => true,
-            PopupMessage::Ok { is_skippable, .. } => *is_skippable,
+            Self::Error { .. } | Self::Warning { .. } => true,
+            Self::Ok { is_skippable, .. } => *is_skippable,
             _ => false,
         }
     }
@@ -146,7 +151,7 @@ impl PopupMessage {
         key_event: crossterm::event::KeyEvent,
     ) -> Option<UiCallback> {
         match self {
-            PopupMessage::AsteroidNameDialog { tick, .. } => {
+            Self::AsteroidNameDialog { tick, .. } => {
                 if key_event.code == ui_key::YES_TO_DIALOG {
                     let mut name = popup_input.lines()[0].clone();
                     name = name
@@ -169,7 +174,7 @@ impl PopupMessage {
                 }
             }
 
-            PopupMessage::ReleasePlayer { player_id, .. } => {
+            Self::ReleasePlayer { player_id, .. } => {
                 if key_event.code == ui_key::YES_TO_DIALOG {
                     return Some(UiCallback::ReleasePlayer {
                         player_id: *player_id,
@@ -179,7 +184,7 @@ impl PopupMessage {
                 }
             }
 
-            PopupMessage::AbandonAsteroid { asteroid_id, .. } => {
+            Self::AbandonAsteroid { asteroid_id, .. } => {
                 if key_event.code == ui_key::YES_TO_DIALOG {
                     return Some(UiCallback::AbandonAsteroid {
                         asteroid_id: *asteroid_id,
@@ -189,7 +194,7 @@ impl PopupMessage {
                 }
             }
 
-            PopupMessage::BuildSpaceCove { asteroid_id, .. } => {
+            Self::BuildSpaceCove { asteroid_id, .. } => {
                 if key_event.code == ui_key::YES_TO_DIALOG {
                     return Some(UiCallback::BuildSpaceCove {
                         asteroid_id: *asteroid_id,
@@ -199,7 +204,7 @@ impl PopupMessage {
                 }
             }
 
-            PopupMessage::PromptQuit { .. } => {
+            Self::PromptQuit { .. } => {
                 if key_event.code == ui_key::YES_TO_DIALOG {
                     return Some(UiCallback::QuitGame);
                 } else if key_event.code == ui_key::NO_TO_DIALOG {
@@ -207,10 +212,8 @@ impl PopupMessage {
                 }
             }
 
-            PopupMessage::Tutorial { index, .. } => {
-                if key_event.code == ui_key::YES_TO_DIALOG
-                    && *index == PopupMessage::MAX_TUTORIAL_PAGE
-                {
+            Self::Tutorial { index, .. } => {
+                if key_event.code == ui_key::YES_TO_DIALOG && *index == Self::MAX_TUTORIAL_PAGE {
                     return Some(UiCallback::CloseUiPopup);
                 } else if key_event.code == ui_key::YES_TO_DIALOG {
                     return Some(UiCallback::PushTutorialPage { index: index + 1 });
@@ -248,7 +251,7 @@ impl PopupMessage {
         frame.render_widget(Clear, rect);
         frame.render_widget(thick_block(), rect);
         match self {
-            PopupMessage::Ok { message, tick, .. } => {
+            Self::Ok { message, tick, .. } => {
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Message: {} {}",
@@ -284,7 +287,7 @@ impl PopupMessage {
                 );
             }
 
-            PopupMessage::Error { message, tick } => {
+            Self::Error { message, tick } => {
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Error: {} {}",
@@ -320,7 +323,43 @@ impl PopupMessage {
                 );
             }
 
-            PopupMessage::ReleasePlayer {
+            Self::Warning { message, tick } => {
+                frame.render_widget(
+                    Paragraph::new(format!(
+                        "Warning: {} {}",
+                        tick.formatted_as_date(),
+                        tick.formatted_as_time()
+                    ))
+                    .bold()
+                    .block(default_block().border_style(UiStyle::WARNING))
+                    .centered(),
+                    split[0],
+                );
+                frame.render_widget(
+                    Paragraph::new(message.clone())
+                        .centered()
+                        .wrap(Wrap { trim: true }),
+                    split[1].inner(Margin {
+                        horizontal: 1,
+                        vertical: 1,
+                    }),
+                );
+                let button = Button::new(UiText::YES, UiCallback::CloseUiPopup)
+                    .set_hover_text("Close the popup")
+                    .set_hotkey(ui_key::YES_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::OK))
+                    .set_layer(1);
+
+                frame.render_interactive_widget(
+                    button,
+                    split[2].inner(Margin {
+                        vertical: 0,
+                        horizontal: 8,
+                    }),
+                );
+            }
+
+            Self::ReleasePlayer {
                 player_name,
                 player_id,
                 not_enough_players_for_game,
@@ -376,7 +415,7 @@ impl PopupMessage {
                 frame.render_interactive_widget(no_button, buttons_split[1]);
             }
 
-            PopupMessage::AbandonAsteroid {
+            Self::AbandonAsteroid {
                 asteroid_name,
                 asteroid_id,
                 ..
@@ -426,7 +465,7 @@ impl PopupMessage {
                 frame.render_interactive_widget(no_button, buttons_split[1]);
             }
 
-            PopupMessage::BuildSpaceCove {
+            Self::BuildSpaceCove {
                 asteroid_name,
                 asteroid_id,
                 ..
@@ -476,7 +515,7 @@ impl PopupMessage {
                 frame.render_interactive_widget(no_button, buttons_split[1]);
             }
 
-            PopupMessage::PromptQuit {
+            Self::PromptQuit {
                 during_space_adventure,
                 ..
             } => {
@@ -489,7 +528,10 @@ impl PopupMessage {
                 );
 
                 let text = if *during_space_adventure {
-                    format!("Are you sure you want to quit?\nYou will lose the whole cargo! Go back to the base first\n(Press '{}')", ui_key::space::BACK_TO_BASE)
+                    format!(
+                        "Are you sure you want to quit?\nTo go back to the base press '{}'",
+                        ui_key::space::BACK_TO_BASE
+                    )
                 } else {
                     "Are you sure you want to quit?".to_string()
                 };
@@ -522,7 +564,7 @@ impl PopupMessage {
                 frame.render_interactive_widget(no_button, buttons_split[1]);
             }
 
-            PopupMessage::AsteroidNameDialog {
+            Self::AsteroidNameDialog {
                 tick,
                 asteroid_type,
             } => {
@@ -617,7 +659,7 @@ impl PopupMessage {
                 frame.render_interactive_widget(no_button, buttons_split[1]);
             }
 
-            PopupMessage::PortalFound {
+            Self::PortalFound {
                 player_name,
                 portal_target,
                 tick,
@@ -686,7 +728,7 @@ impl PopupMessage {
                 );
             }
 
-            PopupMessage::ExplorationResult {
+            Self::ExplorationResult {
                 planet_name,
                 resources,
                 players,
@@ -792,7 +834,7 @@ impl PopupMessage {
                 );
             }
 
-            PopupMessage::TeamLanded {
+            Self::TeamLanded {
                 team_name,
                 planet_name,
                 planet_filename,
@@ -866,12 +908,12 @@ impl PopupMessage {
                 );
             }
 
-            PopupMessage::Tutorial { index, .. } => {
+            Self::Tutorial { index, .. } => {
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Tutorial {}/{}",
                         index + 1,
-                        PopupMessage::MAX_TUTORIAL_PAGE + 1
+                        Self::MAX_TUTORIAL_PAGE + 1
                     ))
                     .bold()
                     .block(default_block().border_style(UiStyle::HIGHLIGHT))
@@ -879,21 +921,34 @@ impl PopupMessage {
                     split[0],
                 );
 
-                let message = match index {
-                    0 => "Hello pirate! This is your team page.\nHere you can check your pirates, upgrade your spaceship and trade resources on the market.",
-                    1 => "You can navigate around by clicking on the tabs at the top\nor using the arrow keys.",
-                    2 => "To start, you can try to challenge another team to a game,\nor maybe explore around your planet to gather resources.",
-                    3 => "Ultimately, the key is to gather together a great crew and mess around.\n",
-                    _ => "Be sure to check out the Chat in the Swarm panel from time to time.\nHave fun!"
-                };
+                let messages = [
+                     "Hello pirate! This is your team page.\nHere you can check your pirates, upgrade your spaceship and trade resources on the market.",
+                     "You can navigate around by clicking on the tabs at the top\nor using the arrow keys.",
+                     "To start, you can try to challenge another team to a game.",
+                     "You can also explore around your planet to gather resources.",
+                     "Ultimately, the key is to gather together a great crew and mess around.\n",
+                     "Be sure to check out the Chat in the Swarm panel from time to time.\nHave fun!"
+                ];
+
+                let message = messages.get(*index).copied().unwrap_or_default();
+
+                let central_split =
+                    Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).split(split[1]);
 
                 frame.render_widget(
                     Paragraph::new(message).centered().wrap(Wrap { trim: true }),
-                    split[1].inner(Margin {
-                        horizontal: 1,
-                        vertical: 1,
-                    }),
+                    central_split[0].inner(Margin::new(1, 1)),
                 );
+
+                let close_button = Button::new("Close", UiCallback::CloseUiPopup)
+                    .set_hover_text("Skip the tutorial")
+                    .set_hotkey(ui_key::NO_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::ERROR))
+                    .set_layer(1);
+
+                let buttons_split =
+                    Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                        .split(split[2]);
 
                 let next_button =
                     Button::new("Next >>", UiCallback::PushTutorialPage { index: index + 1 })
@@ -902,22 +957,32 @@ impl PopupMessage {
                         .block(default_block().border_style(UiStyle::OK))
                         .set_layer(1);
 
-                let close_button = Button::new("Close", UiCallback::CloseUiPopup)
-                    .set_hover_text("Skip the tutorial")
-                    .set_hotkey(ui_key::NO_TO_DIALOG)
-                    .block(default_block().border_style(UiStyle::ERROR))
-                    .set_layer(1);
-
                 match index {
-                    x if *x < PopupMessage::MAX_TUTORIAL_PAGE => {
-                        let buttons_split =
-                            Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-                                .split(split[2]);
+                    2 => {
+                        let games_button =
+                            Button::new("Challenges", UiCallback::TutorialGoToChallenges)
+                                .set_hover_text("Go to available challenges")
+                                .set_hotkey(ui_key::GO_TO_CHALLENGES)
+                                .block(default_block())
+                                .set_layer(1);
+                        frame.render_interactive_widget(games_button, central_split[1]);
+
                         frame.render_interactive_widget(next_button, buttons_split[0]);
                         frame.render_interactive_widget(close_button, buttons_split[1]);
                     }
+                    4 => {
+                        let chat_button = Button::new("Chat", UiCallback::TutorialGoToChat)
+                            .set_hover_text("Go to Chat")
+                            .set_hotkey(ui_key::GO_TO_CHAT)
+                            .block(default_block().border_style(UiStyle::NETWORK))
+                            .set_layer(1);
+                        frame.render_interactive_widget(chat_button, buttons_split[0]);
+                        frame.render_interactive_widget(close_button, buttons_split[1]);
+                    }
+
                     _ => {
-                        frame.render_interactive_widget(close_button, split[2]);
+                        frame.render_interactive_widget(next_button, buttons_split[0]);
+                        frame.render_interactive_widget(close_button, buttons_split[1]);
                     }
                 }
             }

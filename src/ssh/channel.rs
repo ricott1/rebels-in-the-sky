@@ -136,7 +136,9 @@ impl AppChannel {
             return Err(anyhow!("pty has been already allocated"));
         };
 
-        let writer = SSHWriterProxy::new(id, session.handle());
+        let handle = session.handle();
+        let channel_id = id;
+        let writer = SSHWriterProxy::new(id, handle.clone());
 
         let username = self.username.clone();
         let network_port = self.network_port;
@@ -159,8 +161,9 @@ impl AppChannel {
                 log::error!("Error running app: {e}")
             };
 
-            // Sleep here to be able to send EoF to client.
-            std::thread::sleep(Duration::from_millis(500));
+            // Send EOF and close the channel so the client returns to its prompt.
+            let _ = handle.eof(channel_id).await;
+            let _ = handle.close(channel_id).await;
         });
 
         self.window_change_request(width, height).await?;

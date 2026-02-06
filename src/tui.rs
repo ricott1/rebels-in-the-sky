@@ -5,12 +5,14 @@ use crate::core::world::World;
 use crate::ssh::SSHWriterProxy;
 use crate::types::AppResult;
 use crate::ui::*;
-use crossterm::cursor::{Hide, Show};
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture, KeyEvent, MouseEvent};
-use crossterm::terminal::{self, Clear, EnterAlternateScreen, LeaveAlternateScreen, SetTitle};
+use ratatui::crossterm::cursor::{Hide, Show};
+use ratatui::crossterm::event::{DisableMouseCapture, EnableMouseCapture, KeyEvent, MouseEvent};
+use ratatui::crossterm::terminal::{
+    self, Clear, EnterAlternateScreen, LeaveAlternateScreen, SetTitle,
+};
 use ratatui::layout::Rect;
 use ratatui::prelude::CrosstermBackend;
-use ratatui::{Terminal, TerminalOptions, Viewport};
+use ratatui::{crossterm, Terminal, TerminalOptions, Viewport};
 use std::io::{self};
 use std::panic;
 use std::time::{Duration, Instant};
@@ -224,11 +226,14 @@ where
             self.terminal.backend_mut(),
             LeaveAlternateScreen,
             DisableMouseCapture,
-            Clear(crossterm::terminal::ClearType::All),
             Show
         )?;
 
         if self.tui_type == TuiType::Local {
+            crossterm::execute!(
+                self.terminal.backend_mut(),
+                Clear(crossterm::terminal::ClearType::All)
+            )?;
             terminal::disable_raw_mode()?;
         }
 

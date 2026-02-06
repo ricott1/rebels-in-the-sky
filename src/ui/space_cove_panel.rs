@@ -17,6 +17,7 @@ use anyhow::anyhow;
 use core::fmt::Debug;
 use image::RgbaImage;
 use itertools::Itertools;
+use ratatui::crossterm;
 use ratatui::layout::{Constraint, Layout, Margin};
 use ratatui::prelude::Rect;
 use ratatui::style::Stylize;
