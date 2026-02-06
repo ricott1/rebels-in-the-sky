@@ -11,6 +11,8 @@ The game is under heavy development and breaking changes are often introduced. I
 
 [![Trailer on youtube](https://youtu.be/5Lu9MSgmTBc/0.jpg)](https://youtu.be/5Lu9MSgmTBc)
 
+## [Wiki](https://wiki.rebels.frittura.org)
+
 ## Just try it out!
 
 Connect via SSH to try the game.
