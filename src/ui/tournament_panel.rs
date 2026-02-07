@@ -466,7 +466,7 @@ impl TournamentPanel {
         let number_of_rounds = number_of_rounds(num_participants);
         let current_round = current_round(
             num_participants,
-            past_game_summaries.len() + active_games.len(),
+            past_game_summaries.len(),
         ) + 1;
 
         frame.render_widget(

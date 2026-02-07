@@ -27,6 +27,15 @@ struct TournamentDescription {
     winner: Option<Possession>,
 }
 
+impl TournamentDescription {
+    fn winner_name(&self) -> Option<&str> {
+        self.winner.map(|p| match p {
+            Possession::Home => self.home_team_name.as_str(),
+            Possession::Away => self.away_team_name.as_str(),
+        })
+    }
+}
+
 trait TournamentDescriptionTrait {
     fn tournament_description(&self, own_team_id: TeamId, timestamp: Tick)
         -> TournamentDescription;
@@ -130,37 +139,37 @@ pub fn number_of_rounds(num_participants: usize) -> usize {
     (num_participants as f32).log2().ceil() as usize
 }
 
-pub fn current_round(num_participants: usize, games_played: usize) -> usize {
+pub fn current_round(num_participants: usize, games_completed: usize) -> usize {
     let round_sizes = compute_round_sizes(num_participants);
     let mut counter = 0;
     for (idx, round_size) in round_sizes.iter().enumerate() {
         counter += round_size;
 
-        if games_played <= counter {
+        if games_completed < counter {
             return idx;
         }
     }
 
-    unreachable!()
+    round_sizes.len() - 1
 }
 
 pub fn compute_round_sizes(participants: usize) -> Vec<usize> {
-    let mut remaining_players = participants;
-    let mut rounds = Vec::new();
-
-    while remaining_players > 1 {
-        let games = remaining_players / 2;
-        rounds.push(games);
-        remaining_players -= games;
+    let num_rounds = number_of_rounds(participants);
+    let mut rounds = Vec::with_capacity(num_rounds);
+    let next_pot = 1usize << (num_rounds - 1);
+    rounds.push(participants - next_pot);
+    let mut remaining = next_pot;
+    while remaining > 1 {
+        rounds.push(remaining / 2);
+        remaining /= 2;
     }
-
     rounds
 }
 
 fn get_round_lines(
     round_idx: usize,
     round_description: Vec<TournamentDescription>,
-    odd_participants: bool,
+    bracket_positions: &[usize],
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = (0..ROUND_LINES_LEN).map(|_| Line::default()).collect_vec();
 
@@ -178,11 +187,7 @@ fn get_round_lines(
         },
     ) in round_description.into_iter().enumerate()
     {
-        let bracket_idx = if odd_participants && round_idx == 0 {
-            idx + 1
-        } else {
-            idx
-        };
+        let bracket_idx = bracket_positions[idx];
         let stride = (BLOCK_HEIGHT + GAP) * (1 << round_idx);
         let central_line_index = bracket_idx * stride + stride / 2 - GAP / 2;
         let l = COL_WIDTH.saturating_sub(home_team_name.len()) / 2;
@@ -279,12 +284,12 @@ pub fn get_bracket_lines(
     // We start filling in the descriptions using the past_game_summaries (older active_games).
     let all_games_len = past_game_summaries.len() + active_games.len();
     let mut idx = 0;
-    let mut lines = Vec::with_capacity(round_sizes.len());
+    let mut round_descriptions: Vec<Vec<TournamentDescription>> = Vec::with_capacity(num_round);
 
-    'outer: for (round_idx, round_size) in round_sizes.into_iter().enumerate() {
+    for (_round_idx, round_size) in round_sizes.iter().copied().enumerate() {
         let mut round_description = vec![];
 
-        for _ in (0..round_size).rev() {
+        for _ in 0..round_size {
             let description = if idx < past_game_summaries.len() {
                 let game = past_game_summaries[idx];
                 game.tournament_description(own_team_id, timestamp)
@@ -292,17 +297,166 @@ pub fn get_bracket_lines(
                 let game = active_games[idx - past_game_summaries.len()];
                 game.tournament_description(own_team_id, timestamp)
             } else {
-                break 'outer;
+                break;
             };
             round_description.push(description);
             idx += 1;
         }
 
-        lines.push(get_round_lines(
-            round_idx,
-            round_description,
-            !num_participants.is_multiple_of(2),
-        ));
+        if round_description.is_empty() {
+            break;
+        }
+        round_descriptions.push(round_description);
+    }
+
+    // Backward pass: reorder game blocks within each round so that winners flow
+    // correctly into the next round's bracket positions.
+    // In a binary bracket, round R positions 2*p and 2*p+1 feed into round R+1 position p.
+    // The winner at position 2*p becomes the home (top) team, 2*p+1 becomes away (bottom).
+    for r in (0..round_descriptions.len().saturating_sub(1)).rev() {
+        let next_round_teams: Vec<(String, String)> = round_descriptions[r + 1]
+            .iter()
+            .map(|d| (d.home_team_name.clone(), d.away_team_name.clone()))
+            .collect();
+
+        let current = &mut round_descriptions[r];
+        let len = current.len();
+        let mut target: Vec<Option<usize>> = vec![None; len];
+        let mut used = vec![false; len];
+
+        for (p, (home_name, away_name)) in next_round_teams.iter().enumerate() {
+            let top_pos = 2 * p;
+            let bot_pos = 2 * p + 1;
+
+            if top_pos < len {
+                if let Some(i) = current
+                    .iter()
+                    .enumerate()
+                    .position(|(i, g)| !used[i] && g.winner_name() == Some(home_name.as_str()))
+                {
+                    target[top_pos] = Some(i);
+                    used[i] = true;
+                }
+            }
+
+            if bot_pos < len {
+                if let Some(i) = current
+                    .iter()
+                    .enumerate()
+                    .position(|(i, g)| !used[i] && g.winner_name() == Some(away_name.as_str()))
+                {
+                    target[bot_pos] = Some(i);
+                    used[i] = true;
+                }
+            }
+        }
+
+        // Fill remaining positions with unplaced games (preserving original order).
+        let mut unplaced: Vec<usize> = (0..len).filter(|i| !used[*i]).collect();
+        for pos in 0..len {
+            if target[pos].is_none() {
+                if let Some(i) = unplaced.pop() {
+                    target[pos] = Some(i);
+                }
+            }
+        }
+
+        // Apply the reordering.
+        let mut old: Vec<Option<TournamentDescription>> =
+            std::mem::take(current).into_iter().map(Some).collect();
+        *current = target
+            .into_iter()
+            .filter_map(|opt| old.get_mut(opt?).and_then(|slot| slot.take()))
+            .collect();
+    }
+
+    // Compute bracket positions for each round.
+    // For the play-in round (round 0 when it has fewer games than the expected next round),
+    // we compute positions by matching each game's winner to the next round's teams.
+    // For full rounds, positions are sequential 0..n.
+    let mut all_bracket_positions: Vec<Vec<usize>> = Vec::with_capacity(round_descriptions.len());
+    for (round_idx, round_desc) in round_descriptions.iter().enumerate() {
+        // Use the expected next round size from round_sizes, not the actual (possibly partial) size.
+        let expected_next_size = round_sizes.get(round_idx + 1).copied().unwrap_or(0);
+        let full_size = expected_next_size * 2;
+
+        if round_idx == 0
+            && round_idx + 1 < round_descriptions.len()
+            && round_desc.len() < full_size
+        {
+            // Play-in round with gaps: match each game to its next-round position.
+            let next_round = &round_descriptions[round_idx + 1];
+            let mut positions = Vec::with_capacity(round_desc.len());
+            let mut used_positions = vec![false; full_size];
+
+            for desc in round_desc.iter() {
+                let mut found = false;
+
+                // Try matching winner name to next round's home/away teams.
+                if let Some(winner) = desc.winner_name() {
+                    for (p, next_desc) in next_round.iter().enumerate() {
+                        if !used_positions[2 * p] && next_desc.home_team_name == winner {
+                            used_positions[2 * p] = true;
+                            positions.push(2 * p);
+                            found = true;
+                            break;
+                        }
+                        if !used_positions[2 * p + 1] && next_desc.away_team_name == winner {
+                            used_positions[2 * p + 1] = true;
+                            positions.push(2 * p + 1);
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+
+                // For in-progress games, try matching team names.
+                if !found {
+                    for (p, next_desc) in next_round.iter().enumerate() {
+                        if !used_positions[2 * p]
+                            && (next_desc.home_team_name == desc.home_team_name
+                                || next_desc.home_team_name == desc.away_team_name)
+                        {
+                            used_positions[2 * p] = true;
+                            positions.push(2 * p);
+                            found = true;
+                            break;
+                        }
+                        if !used_positions[2 * p + 1]
+                            && (next_desc.away_team_name == desc.home_team_name
+                                || next_desc.away_team_name == desc.away_team_name)
+                        {
+                            used_positions[2 * p + 1] = true;
+                            positions.push(2 * p + 1);
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+
+                // Fallback: place at a position feeding into an unoccupied next-round slot.
+                // Prefer slots beyond existing next-round games (those games are independent).
+                if !found {
+                    let pos = (0..full_size)
+                        .rev()
+                        .find(|p| !used_positions[*p])
+                        .unwrap_or(0);
+                    used_positions[pos] = true;
+                    positions.push(pos);
+                }
+            }
+
+            all_bracket_positions.push(positions);
+        } else {
+            all_bracket_positions.push((0..round_desc.len()).collect());
+        }
+    }
+
+    // Render each round.
+    let mut lines = Vec::with_capacity(round_descriptions.len());
+    for (round_idx, round_description) in round_descriptions.into_iter().enumerate() {
+        let positions = &all_bracket_positions[round_idx];
+        lines.push(get_round_lines(round_idx, round_description, positions));
     }
 
     if let Some(winner) = winner_team_name {
@@ -331,8 +485,8 @@ mod tests {
         game_engine::Tournament,
         types::{AppResult, GameMap, GameSummaryMap, SystemTimeTick, TeamId, Tick},
     };
-    use ratatui::crossterm::event::{self, Event};
     use itertools::Itertools;
+    use ratatui::crossterm::event::{self, Event};
     use ratatui::{
         layout::{Constraint, Layout},
         widgets::Paragraph,
@@ -349,10 +503,7 @@ mod tests {
     ) {
         let num_participants = tournament.participants.len();
         let number_of_rounds = number_of_rounds(num_participants);
-        let current_round = current_round(
-            num_participants,
-            past_game_summaries.len() + active_games.len(),
-        ) + 1;
+        let current_round = current_round(num_participants, past_game_summaries.len()) + 1;
 
         let split =
             Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(frame.area());
@@ -396,7 +547,7 @@ mod tests {
     #[ignore]
     fn test_rendering_live_tournament() -> AppResult<()> {
         fn run(mut terminal: DefaultTerminal) -> AppResult<()> {
-            let mut tournament = Tournament::test(6, 8);
+            let mut tournament = Tournament::test(11, 16);
             let mut games = GameMap::new();
             let mut past_games = GameSummaryMap::new();
 
@@ -411,7 +562,8 @@ mod tests {
                     game.tick(current_tick);
                 }
 
-                let new_games = tournament.generate_next_games(current_tick, &games)?;
+                let new_games =
+                    tournament.generate_next_games(current_tick, &games, &past_games)?;
                 let own_team_id = tournament.participants.keys().collect_vec()[0].clone();
 
                 let active_games = tournament.active_games(&games);
@@ -466,7 +618,7 @@ mod tests {
     #[ignore]
     fn test_rendering_ended_tournament() -> AppResult<()> {
         fn run() -> AppResult<()> {
-            let mut tournament = Tournament::test(5, 16);
+            let mut tournament = Tournament::test(7, 16);
             let own_team_id = tournament.participants.keys().collect_vec()[0].clone();
             let mut games = GameMap::new();
             let mut past_games = GameSummaryMap::new();
@@ -482,7 +634,8 @@ mod tests {
                     game.tick(current_tick);
                 }
 
-                let new_games = tournament.generate_next_games(current_tick, &games)?;
+                let new_games =
+                    tournament.generate_next_games(current_tick, &games, &past_games)?;
 
                 for game in games.values().filter(|g| g.has_ended()) {
                     past_games.insert(game.id, GameSummary::from_game(game));
@@ -543,16 +696,16 @@ mod tests {
         assert_eq!(compute_round_sizes(2), vec![1]);
         assert_eq!(compute_round_sizes(3), vec![1, 1]);
         assert_eq!(compute_round_sizes(4), vec![2, 1]);
-        assert_eq!(compute_round_sizes(5), vec![2, 1, 1]);
-        assert_eq!(compute_round_sizes(6), vec![3, 1, 1]);
+        assert_eq!(compute_round_sizes(5), vec![1, 2, 1]);
+        assert_eq!(compute_round_sizes(6), vec![2, 2, 1]);
         assert_eq!(compute_round_sizes(7), vec![3, 2, 1]);
         assert_eq!(compute_round_sizes(8), vec![4, 2, 1]);
-        assert_eq!(compute_round_sizes(9), vec![4, 2, 1, 1]);
-        assert_eq!(compute_round_sizes(10), vec![5, 2, 1, 1]);
-        assert_eq!(compute_round_sizes(11), vec![5, 3, 1, 1]);
-        assert_eq!(compute_round_sizes(12), vec![6, 3, 1, 1]);
-        assert_eq!(compute_round_sizes(13), vec![6, 3, 2, 1]);
-        assert_eq!(compute_round_sizes(14), vec![7, 3, 2, 1]);
+        assert_eq!(compute_round_sizes(9), vec![1, 4, 2, 1]);
+        assert_eq!(compute_round_sizes(10), vec![2, 4, 2, 1]);
+        assert_eq!(compute_round_sizes(11), vec![3, 4, 2, 1]);
+        assert_eq!(compute_round_sizes(12), vec![4, 4, 2, 1]);
+        assert_eq!(compute_round_sizes(13), vec![5, 4, 2, 1]);
+        assert_eq!(compute_round_sizes(14), vec![6, 4, 2, 1]);
         assert_eq!(compute_round_sizes(15), vec![7, 4, 2, 1]);
         assert_eq!(compute_round_sizes(16), vec![8, 4, 2, 1]);
     }
@@ -571,23 +724,24 @@ mod tests {
     #[test]
     fn test_current_round_progression_4_participants() {
         // 4 participants -> round sizes [2, 1]
-        // games_played: 0..=3
+        // games_completed: 0..=3
 
-        assert_eq!(current_round(4, 0), 0);
-        assert_eq!(current_round(4, 1), 0);
-        assert_eq!(current_round(4, 2), 0); // first round complete
-        assert_eq!(current_round(4, 3), 1); // final
+        assert_eq!(current_round(4, 0), 0); // no games done, in round 0
+        assert_eq!(current_round(4, 1), 0); // 1 of 2 round-0 games done
+        assert_eq!(current_round(4, 2), 1); // round 0 complete, in round 1
+        assert_eq!(current_round(4, 3), 1); // all done, last round
     }
 
     #[test]
     fn test_current_round_progression_5_participants() {
-        assert_eq!(current_round(5, 0), 0);
-        assert_eq!(current_round(5, 1), 0);
+        // 5 participants -> round sizes [1, 2, 1]
+        assert_eq!(current_round(5, 0), 0); // no games done, in play-in
+        assert_eq!(current_round(5, 1), 1); // play-in complete, in semis
 
-        assert_eq!(current_round(5, 2), 0);
-        assert_eq!(current_round(5, 3), 1);
+        assert_eq!(current_round(5, 2), 1); // 1 of 2 semis done
+        assert_eq!(current_round(5, 3), 2); // semis complete, in final
 
-        assert_eq!(current_round(5, 4), 2);
+        assert_eq!(current_round(5, 4), 2); // all done, last round
     }
 
     #[test]
@@ -609,5 +763,89 @@ mod tests {
                 number_of_rounds(participants)
             );
         }
+    }
+
+    #[test]
+    fn test_get_bracket_lines_all_sizes() -> AppResult<()> {
+        for n in 2..=8usize {
+            let mut tournament = Tournament::test(n, 8);
+            let mut games = GameMap::new();
+            let mut past_games = GameSummaryMap::new();
+
+            for game in tournament.initialize() {
+                games.insert(game.id, game);
+            }
+
+            let mut current_tick = tournament.registrations_closing_at;
+
+            while !tournament.has_ended() {
+                for game in games.values_mut() {
+                    game.tick(current_tick);
+                }
+
+                let new_games =
+                    tournament.generate_next_games(current_tick, &games, &past_games)?;
+
+                for game in games.values().filter(|g| g.has_ended()) {
+                    past_games.insert(game.id, GameSummary::from_game(game));
+                }
+
+                games.retain(|_, g| !g.has_ended());
+
+                for game in new_games {
+                    games.insert(game.id, game);
+                }
+
+                current_tick += TickInterval::SHORT;
+            }
+
+            let own_team_id = tournament.participants.keys().next().unwrap().clone();
+            let active_games = tournament.active_games(&games);
+            let past_game_summaries = tournament.past_game_summaries(&past_games);
+
+            let total_rendered_games = past_game_summaries.len() + active_games.len();
+
+            let brackets = get_bracket_lines(
+                tournament.winner.map(|id| {
+                    tournament
+                        .participants
+                        .get(&id)
+                        .expect("Winner should be a participant")
+                        .name
+                        .as_str()
+                }),
+                n,
+                &active_games,
+                &past_game_summaries,
+                own_team_id,
+                current_tick,
+            );
+
+            let expected_columns = number_of_rounds(n) + 1;
+            assert_eq!(
+                brackets.len(),
+                expected_columns,
+                "N={n}: expected {expected_columns} bracket columns, got {}",
+                brackets.len()
+            );
+
+            for (round_idx, round_lines) in brackets.iter().enumerate() {
+                assert_eq!(
+                    round_lines.len(),
+                    ROUND_LINES_LEN,
+                    "N={n}, round {round_idx}: expected {ROUND_LINES_LEN} lines, got {}",
+                    round_lines.len()
+                );
+            }
+
+            assert_eq!(
+                total_rendered_games,
+                n - 1,
+                "N={n}: expected {} total games, got {total_rendered_games}",
+                n - 1
+            );
+        }
+
+        Ok(())
     }
 }

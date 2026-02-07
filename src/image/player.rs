@@ -604,8 +604,9 @@ mod tests {
             player::{InfoStats, Player},
             role::CrewRole,
             types::Population,
+            JerseyStyle,
         },
-        image::{player::PlayerImage, utils::ExtraImageUtils},
+        image::{color_map::ColorMap, player::PlayerImage, utils::ExtraImageUtils},
         types::AppResult,
     };
     use image::{self, RgbaImage};
@@ -658,6 +659,13 @@ mod tests {
     fn test_generate_jerseyed_player_image() -> AppResult<()> {
         let rng = &mut ChaCha8Rng::seed_from_u64(0);
         let n = 5;
+        let styles = [
+            JerseyStyle::Classic,
+            JerseyStyle::Stripe,
+            JerseyStyle::Fancy,
+            JerseyStyle::Gilet,
+            JerseyStyle::Horizontal,
+        ];
         for population in Population::iter() {
             let mut base = RgbaImage::new(PLAYER_IMAGE_WIDTH * n, PLAYER_IMAGE_HEIGHT);
             for i in 0..n {
@@ -673,7 +681,11 @@ mod tests {
                     _ => CrewRole::Mozzo,
                 };
                 player.info.crew_role = crew_role;
-                player.set_jersey(&Jersey::random(rng));
+                let jersey = Jersey {
+                    color: ColorMap::random(rng),
+                    style: styles[i as usize % styles.len()],
+                };
+                player.set_jersey(&jersey);
 
                 let player_image = player.compose_image()?;
                 base.copy_non_trasparent_from(

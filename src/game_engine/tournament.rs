@@ -1,8 +1,11 @@
 use crate::{
     app_version,
-    core::{utils::is_default, Planet, Rated, Skill, Team, MINUTES, MIN_SKILL, SECONDS},
+    core::{
+        utils::is_default, Planet, Rated, Skill, Team, TickInterval, MINUTES, MIN_SKILL, SECONDS,
+    },
     game_engine::{
         game::{Game, GameSummary},
+        timer,
         types::TeamInGame,
     },
     types::{
@@ -407,6 +410,7 @@ impl Tournament {
         &mut self,
         current_tick: Tick,
         games: &GameMap,
+        past_games: &GameSummaryMap,
     ) -> AppResult<Vec<Game>> {
         if !self.is_initialized() {
             return Err(anyhow!("Tournament should have been initialized."));
@@ -433,7 +437,14 @@ impl Tournament {
         for game in self.games.iter() {
             if let Some(world_game) = games.get(&game.id) {
                 tournament_games.push(world_game);
+            } else if past_games.contains_key(&game.id) {
+                // Game completed and was cleaned up - this is expected
+                generated_past_games += 1;
             } else {
+                log::warn!(
+                    "Tournament game {} not found in games or past_games",
+                    game.id
+                );
                 generated_past_games += 1;
             }
         }
@@ -492,12 +503,13 @@ impl Tournament {
                     .get(&winner_team_id)
                     .expect("Team should be a participant");
 
-                // FIXME: during simulation new games are created at the wrong time.
                 let new_game = self.new_game(
                     rng,
                     home_team_in_game.clone(),
                     away_team_in_game.clone(),
-                    game.ended_at.expect("Ended at should be set") + self.game_time_interval,
+                    game.starting_at
+                        + timer::MAX_TIME as Tick * TickInterval::SHORT
+                        + self.game_time_interval,
                 );
                 self.games.push(new_game.clone());
                 new_games.push(new_game);
@@ -551,8 +563,11 @@ impl Rated for Tournament {
 mod tests {
 
     use crate::core::{Player, Team, TeamLocation, TickInterval, MAX_PLAYERS_PER_GAME, SECONDS};
-    use crate::game_engine::{Tournament, TournamentType};
-    use crate::types::{AppResult, GameMap, PlanetId, PlayerMap, SystemTimeTick, TeamId, Tick};
+    use crate::game_engine::game::GameSummary;
+    use crate::game_engine::{Tournament, TournamentState, TournamentType};
+    use crate::types::{
+        AppResult, GameMap, GameSummaryMap, PlanetId, PlayerMap, SystemTimeTick, TeamId, Tick,
+    };
     use itertools::Itertools;
     use libp2p::PeerId;
 
@@ -564,6 +579,7 @@ mod tests {
 
         fn process_tournament(tournament: &mut Tournament) -> AppResult<()> {
             let mut games = GameMap::new();
+            let mut past_games = GameSummaryMap::new();
 
             for game in tournament.initialize() {
                 games.insert(game.id, game);
@@ -578,7 +594,12 @@ mod tests {
                     }
                 }
 
-                let new_games = tournament.generate_next_games(current_tick, &games)?;
+                let new_games =
+                    tournament.generate_next_games(current_tick, &games, &past_games)?;
+
+                for game in games.values().filter(|g| g.has_ended()) {
+                    past_games.insert(game.id, GameSummary::from_game(game));
+                }
 
                 games.retain(|_, g| !g.has_ended());
 
@@ -608,6 +629,7 @@ mod tests {
             tournament.get_rng_seed(tournament.starting_at() as u64)
         );
         let mut games = GameMap::new();
+        let mut past_game_summaries = GameSummaryMap::new();
         let mut past_games = GameMap::new();
 
         for game in tournament.initialize() {
@@ -620,9 +642,11 @@ mod tests {
                 game.tick(current_tick);
             }
 
-            let new_games = tournament.generate_next_games(current_tick, &games)?;
+            let new_games =
+                tournament.generate_next_games(current_tick, &games, &past_game_summaries)?;
 
             for game in games.values().filter(|g| g.has_ended()) {
+                past_game_summaries.insert(game.id, GameSummary::from_game(game));
                 past_games.insert(game.id, game.clone());
             }
 
@@ -736,5 +760,328 @@ mod tests {
             Err(e) if e.to_string() == "Team is not at the tournament location."
         ));
         Ok(())
+    }
+
+    #[test]
+    fn test_cancellation_resets_state() -> AppResult<()> {
+        let mut tournament = Tournament::test(4, 4);
+        assert!(!tournament.is_canceled());
+        assert_eq!(tournament.state(Tick::now()), TournamentState::Registration);
+
+        tournament.cancel();
+
+        assert!(tournament.is_canceled());
+        assert_eq!(tournament.state(Tick::now()), TournamentState::Canceled);
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_next_games_with_past_games_fallback() -> AppResult<()> {
+        // This test verifies that generate_next_games works correctly when
+        // some completed games have been moved from `games` to `past_games`.
+        // The flow is: generate_next_games processes ended games in `games` first,
+        // then ended games are moved to past_games. On subsequent ticks, those games
+        // are only in past_games but should still be correctly counted.
+        let mut tournament = Tournament::test(6, 8);
+        tournament.registrations_closing_at = 0;
+        let mut games = GameMap::new();
+        let mut past_game_summaries = GameSummaryMap::new();
+
+        for game in tournament.initialize() {
+            games.insert(game.id, game);
+        }
+
+        let mut current_tick: Tick = 0;
+        let mut moved_to_past = false;
+
+        while !tournament.has_ended() {
+            for game in games.values_mut() {
+                game.tick(current_tick);
+            }
+
+            // Call generate_next_games with current games + past_games
+            let new_games =
+                tournament.generate_next_games(current_tick, &games, &past_game_summaries)?;
+
+            // Move ended games to past_game_summaries (simulating world cleanup)
+            let ended_ids: Vec<_> = games
+                .values()
+                .filter(|g| g.has_ended())
+                .map(|g| g.id)
+                .collect();
+
+            for id in &ended_ids {
+                if let Some(game) = games.get(id) {
+                    past_game_summaries.insert(*id, GameSummary::from_game(game));
+                    if !moved_to_past {
+                        moved_to_past = true;
+                    }
+                }
+            }
+
+            games.retain(|_, g| !g.has_ended());
+
+            for game in new_games {
+                games.insert(game.id, game);
+            }
+
+            current_tick += TickInterval::SHORT;
+        }
+
+        assert!(moved_to_past, "Should have moved at least one game to past_games");
+        assert!(tournament.winner.is_some());
+        // All tournament games should be accounted for in past_game_summaries
+        assert_eq!(
+            past_game_summaries.len(),
+            tournament.participants.len() - 1,
+            "All tournament games should be in past_game_summaries"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_game_scheduling_uses_starting_at_plus_max_time() -> AppResult<()> {
+        use crate::game_engine::timer;
+
+        let mut tournament = Tournament::test(4, 4);
+        tournament.registrations_closing_at = 0;
+        let mut games = GameMap::new();
+        let mut past_game_summaries = GameSummaryMap::new();
+
+        for game in tournament.initialize() {
+            games.insert(game.id, game);
+        }
+
+        let mut current_tick: Tick = 0;
+        let mut found_new_game = false;
+
+        while !tournament.has_ended() && !found_new_game {
+            for game in games.values_mut() {
+                game.tick(current_tick);
+            }
+
+            // Collect starting_at for games that just ended (before generate_next_games consumes them)
+            let ended_starting_ats: Vec<Tick> = games
+                .values()
+                .filter(|g| g.has_ended())
+                .map(|g| g.starting_at)
+                .collect();
+
+            let new_games =
+                tournament.generate_next_games(current_tick, &games, &past_game_summaries)?;
+
+            for game in games.values().filter(|g| g.has_ended()) {
+                past_game_summaries.insert(game.id, GameSummary::from_game(game));
+            }
+
+            games.retain(|_, g| !g.has_ended());
+
+            for game in &new_games {
+                // The new game should be scheduled at:
+                // ended_game.starting_at + MAX_TIME (as Tick) + game_time_interval
+                let game_time_interval = 30 * crate::core::MINUTES;
+                let matches_any = ended_starting_ats.iter().any(|&ended_start| {
+                    let expected = ended_start
+                        + timer::MAX_TIME as Tick * TickInterval::SHORT
+                        + game_time_interval;
+                    game.starting_at == expected
+                });
+                assert!(
+                    matches_any,
+                    "New game starting_at {} should be based on an ended game's starting_at + MAX_TIME + interval",
+                    game.starting_at
+                );
+                found_new_game = true;
+            }
+
+            for game in new_games {
+                games.insert(game.id, game);
+            }
+
+            current_tick += TickInterval::SHORT;
+        }
+
+        assert!(found_new_game, "Should have found at least one new game");
+        Ok(())
+    }
+
+    #[test]
+    fn test_tournament_with_2_participants() -> AppResult<()> {
+        let mut tournament = Tournament::test(2, 4);
+        tournament.registrations_closing_at = 0;
+        let mut games = GameMap::new();
+        let mut past_game_summaries = GameSummaryMap::new();
+
+        let initial_games = tournament.initialize();
+        assert_eq!(initial_games.len(), 1, "2 participants should produce 1 initial game");
+
+        for game in initial_games {
+            games.insert(game.id, game);
+        }
+
+        let mut current_tick: Tick = 0;
+        while !tournament.has_ended() {
+            for game in games.values_mut() {
+                game.tick(current_tick);
+            }
+
+            let new_games =
+                tournament.generate_next_games(current_tick, &games, &past_game_summaries)?;
+
+            for game in games.values().filter(|g| g.has_ended()) {
+                past_game_summaries.insert(game.id, GameSummary::from_game(game));
+            }
+
+            games.retain(|_, g| !g.has_ended());
+
+            for game in new_games {
+                games.insert(game.id, game);
+            }
+
+            current_tick += TickInterval::SHORT;
+        }
+
+        assert!(tournament.winner.is_some());
+        assert_eq!(tournament.games.len(), 1, "2 participants = 1 total game");
+        Ok(())
+    }
+
+    #[test]
+    fn test_tournament_odd_participants_bye_handling() -> AppResult<()> {
+        for num_participants in [3, 5, 7] {
+            let mut tournament = Tournament::test(num_participants, 8);
+            tournament.registrations_closing_at = 0;
+            let mut games = GameMap::new();
+            let mut past_game_summaries = GameSummaryMap::new();
+
+            for game in tournament.initialize() {
+                games.insert(game.id, game);
+            }
+
+            let mut current_tick: Tick = 0;
+            while !tournament.has_ended() {
+                for game in games.values_mut() {
+                    game.tick(current_tick);
+                }
+
+                let new_games =
+                    tournament.generate_next_games(current_tick, &games, &past_game_summaries)?;
+
+                for game in games.values().filter(|g| g.has_ended()) {
+                    past_game_summaries.insert(game.id, GameSummary::from_game(game));
+                }
+
+                games.retain(|_, g| !g.has_ended());
+
+                for game in new_games {
+                    games.insert(game.id, game);
+                }
+
+                current_tick += TickInterval::SHORT;
+            }
+
+            assert!(
+                tournament.winner.is_some(),
+                "Tournament with {num_participants} participants should have a winner"
+            );
+            assert_eq!(
+                tournament.games.len(),
+                num_participants - 1,
+                "Tournament with {num_participants} participants should have {} total games",
+                num_participants - 1
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_tournament_max_participants_cup() -> AppResult<()> {
+        let max = TournamentType::Cup.max_participants(); // 4
+        let mut tournament = Tournament::test(max, max);
+        tournament.registrations_closing_at = 0;
+        let mut games = GameMap::new();
+        let mut past_game_summaries = GameSummaryMap::new();
+
+        for game in tournament.initialize() {
+            games.insert(game.id, game);
+        }
+
+        let mut current_tick: Tick = 0;
+        while !tournament.has_ended() {
+            for game in games.values_mut() {
+                game.tick(current_tick);
+            }
+
+            let new_games =
+                tournament.generate_next_games(current_tick, &games, &past_game_summaries)?;
+
+            for game in games.values().filter(|g| g.has_ended()) {
+                past_game_summaries.insert(game.id, GameSummary::from_game(game));
+            }
+
+            games.retain(|_, g| !g.has_ended());
+
+            for game in new_games {
+                games.insert(game.id, game);
+            }
+
+            current_tick += TickInterval::SHORT;
+        }
+
+        assert!(tournament.winner.is_some());
+        assert_eq!(tournament.games.len(), max - 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_tournament_max_participants_supercup() -> AppResult<()> {
+        let max = TournamentType::Supercup.max_participants(); // 8
+        let mut tournament = Tournament::test(max, max);
+        tournament.registrations_closing_at = 0;
+        let mut games = GameMap::new();
+        let mut past_game_summaries = GameSummaryMap::new();
+
+        for game in tournament.initialize() {
+            games.insert(game.id, game);
+        }
+
+        let mut current_tick: Tick = 0;
+        while !tournament.has_ended() {
+            for game in games.values_mut() {
+                game.tick(current_tick);
+            }
+
+            let new_games =
+                tournament.generate_next_games(current_tick, &games, &past_game_summaries)?;
+
+            for game in games.values().filter(|g| g.has_ended()) {
+                past_game_summaries.insert(game.id, GameSummary::from_game(game));
+            }
+
+            games.retain(|_, g| !g.has_ended());
+
+            for game in new_games {
+                games.insert(game.id, game);
+            }
+
+            current_tick += TickInterval::SHORT;
+        }
+
+        assert!(tournament.winner.is_some());
+        assert_eq!(tournament.games.len(), max - 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_canceled_tournament_state() {
+        let mut tournament = Tournament::test(4, 4);
+        assert!(!tournament.is_canceled());
+
+        tournament.cancel();
+
+        assert!(tournament.is_canceled());
+        assert_eq!(tournament.state(Tick::now()), TournamentState::Canceled);
+        // Canceled tournament should have no games generated
+        assert!(tournament.games.is_empty());
     }
 }

@@ -16,6 +16,10 @@ pub const NO_TO_DIALOG: KeyCode = KeyCode::Backspace;
 
 pub const GO_TO_CHAT: KeyCode = KeyCode::Char('C');
 pub const GO_TO_CHALLENGES: KeyCode = KeyCode::Char('C');
+pub const GO_TO_MARKET: KeyCode = KeyCode::Char('M');
+pub const GO_TO_SPACE_ADVENTURE: KeyCode = KeyCode::Char('A');
+pub const GO_TO_SHIPYARD: KeyCode = KeyCode::Char('S');
+pub const GO_TO_FREE_PIRATES: KeyCode = KeyCode::Char('F');
 
 pub const CREATE_TRADE: KeyCode = KeyCode::Char('P');
 pub const ACCEPT_TRADE: KeyCode = KeyCode::Char('A');

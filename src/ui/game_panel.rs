@@ -607,7 +607,7 @@ impl GamePanel {
     }
 
     fn build_bottom_panel(&self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
-        let split = Layout::horizontal([Constraint::Min(8), Constraint::Length(73)]).split(area);
+        let split = Layout::horizontal([Constraint::Fill(1), Constraint::Length(73)]).split(area);
 
         let game = if let Some(game) = Self::selected_game(
             world,
@@ -999,12 +999,8 @@ impl GamePanel {
         let box_area = Layout::vertical([
             Constraint::Ratio(1, 2),
             Constraint::Ratio(1, 2),
-            Constraint::Min(0),
         ])
-        .split(area.inner(Margin {
-            horizontal: 1,
-            vertical: 0,
-        }));
+        .split(area);
 
         let home_box_split = Layout::vertical([Constraint::Min(0), Constraint::Length(1)])
             .split(box_area[0].inner(Margin::new(1, 1)));
@@ -1088,7 +1084,7 @@ impl GamePanel {
             Constraint::Length(3),                          //blocks
             Constraint::Length(3),                          //brawls
             Constraint::Length(3),                          //plus minus
-            Constraint::Min(0),
+            Constraint::Fill(1),
         ];
 
         let home_table = Self::build_stats_table(&game.home_team_in_game.stats, home_players)
@@ -1110,12 +1106,8 @@ impl GamePanel {
         let box_area = Layout::vertical([
             Constraint::Ratio(1, 2),
             Constraint::Ratio(1, 2),
-            Constraint::Min(0),
         ])
-        .split(area.inner(Margin {
-            horizontal: 1,
-            vertical: 0,
-        }));
+        .split(area);
 
         frame.render_widget(home_table.block(default_block()), box_area[0]);
         frame.render_widget(away_table.block(default_block()), box_area[1]);

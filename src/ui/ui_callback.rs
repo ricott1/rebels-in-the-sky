@@ -89,6 +89,10 @@ pub enum UiCallback {
     },
     TutorialGoToChat,
     TutorialGoToChallenges,
+    TutorialGoToMarket,
+    TutorialGoToShipyard,
+    TutorialGoToFreePirates,
+    TutorialGoToSpaceAdventure,
     ChallengeTeam {
         team_id: TeamId,
     },
@@ -1288,6 +1292,34 @@ impl UiCallback {
 
                 Ok(None)
             }
+            Self::TutorialGoToMarket => {
+                app.ui.my_team_panel.update(&app.world)?;
+                app.ui.my_team_panel.set_view(MyTeamView::Market);
+                app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
+
+                Ok(None)
+            }
+            Self::TutorialGoToShipyard => {
+                app.ui.my_team_panel.update(&app.world)?;
+                app.ui.my_team_panel.set_view(MyTeamView::Shipyard);
+                app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
+
+                Ok(None)
+            }
+            Self::TutorialGoToFreePirates => {
+                app.ui.player_panel.update(&app.world)?;
+                app.ui.player_panel.set_view(PlayerView::FreePirates);
+                app.ui.switch_to(super::ui_screen::UiTab::Pirates);
+
+                Ok(None)
+            }
+            Self::TutorialGoToSpaceAdventure => {
+                app.ui.my_team_panel.update(&app.world)?;
+                app.ui.my_team_panel.set_view(MyTeamView::Info);
+                app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
+
+                Ok(None)
+            }
             Self::GoToPlayer { player_id } => Self::go_to_player(*player_id)(app),
             Self::GoToPlayerTeam { player_id } => Self::go_to_player_team(*player_id)(app),
             Self::GoToLoadedGame { game } => Self::go_to_loaded_game(game.clone())(app),
@@ -1706,6 +1738,8 @@ impl UiCallback {
                         log::Level::Warn,
                     );
                 }
+
+                app.world.dirty_network = true;
 
                 Ok(None)
             }

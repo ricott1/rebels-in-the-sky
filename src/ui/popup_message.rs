@@ -92,7 +92,7 @@ pub enum PopupMessage {
 }
 
 impl PopupMessage {
-    const MAX_TUTORIAL_PAGE: usize = 6;
+    const MAX_TUTORIAL_PAGE: usize = 7;
     fn rect(&self, area: Rect) -> Rect {
         let (width, height) = match self {
             Self::AsteroidNameDialog { .. } => (54, 28),
@@ -212,15 +212,38 @@ impl PopupMessage {
                 }
             }
 
-            Self::Tutorial { index, .. } => {
-                if key_event.code == ui_key::YES_TO_DIALOG && *index == Self::MAX_TUTORIAL_PAGE {
-                    return Some(UiCallback::CloseUiPopup);
-                } else if key_event.code == ui_key::YES_TO_DIALOG {
+            Self::Tutorial { index, .. } => match key_event.code {
+                ui_key::YES_TO_DIALOG => {
+                    if *index == Self::MAX_TUTORIAL_PAGE {
+                        return Some(UiCallback::CloseUiPopup);
+                    }
                     return Some(UiCallback::PushTutorialPage { index: index + 1 });
-                } else if key_event.code == ui_key::NO_TO_DIALOG {
+                }
+
+                ui_key::NO_TO_DIALOG => {
                     return Some(UiCallback::CloseUiPopup);
                 }
-            }
+
+                code => match index {
+                    2 if code == ui_key::GO_TO_CHALLENGES => {
+                        return Some(UiCallback::TutorialGoToChallenges)
+                    }
+                    3 if code == ui_key::GO_TO_MARKET => {
+                        return Some(UiCallback::TutorialGoToMarket)
+                    }
+                    4 if code == ui_key::GO_TO_SHIPYARD => {
+                        return Some(UiCallback::TutorialGoToShipyard)
+                    }
+                    5 if code == ui_key::GO_TO_FREE_PIRATES => {
+                        return Some(UiCallback::TutorialGoToFreePirates)
+                    }
+                    6 if code == ui_key::GO_TO_SPACE_ADVENTURE => {
+                        return Some(UiCallback::TutorialGoToSpaceAdventure)
+                    }
+                    7 if code == ui_key::GO_TO_CHAT => return Some(UiCallback::TutorialGoToChat),
+                    _ => {}
+                },
+            },
             _ => {
                 if key_event.code == ui_key::YES_TO_DIALOG || key_event.code == ui_key::NO_TO_DIALOG
                 {
@@ -922,11 +945,13 @@ impl PopupMessage {
                 );
 
                 let messages = [
-                     "Hello pirate! This is your team page.\nHere you can check your pirates, upgrade your spaceship and trade resources on the market.",
-                     "You can navigate around by clicking on the tabs at the top\nor using the arrow keys.",
+                     "Hello pirate! This is a brief tutorial to get you started. Check the wiki at wiki.rebels.frittura.org",
+                     "You can navigate around by clicking on the tabs at the top or using the arrow keys.",
                      "To start, you can try to challenge another team to a game.",
-                     "You can also explore around your planet to gather resources.",
-                     "Ultimately, the key is to gather together a great crew and mess around.\n",
+                     "You can also explore around your planet to gather resources which you can then sell at the market.",
+                     "Once you have enough resources, you can upgrade your spaceship in the Shipyard.",
+                     "You can hire free pirates from the Pirates panel in exchange for satoshi.",
+                     "You can find an asteroid to claim for your crew by surviving long enough in a Space Adventure.",
                      "Be sure to check out the Chat in the Swarm panel from time to time.\nHave fun!"
                 ];
 
@@ -970,14 +995,61 @@ impl PopupMessage {
                         frame.render_interactive_widget(next_button, buttons_split[0]);
                         frame.render_interactive_widget(close_button, buttons_split[1]);
                     }
+                    3 => {
+                        let market_button = Button::new("Market", UiCallback::TutorialGoToMarket)
+                            .set_hover_text("Go to market")
+                            .set_hotkey(ui_key::GO_TO_MARKET)
+                            .block(default_block())
+                            .set_layer(1);
+                        frame.render_interactive_widget(market_button, central_split[1]);
+
+                        frame.render_interactive_widget(next_button, buttons_split[0]);
+                        frame.render_interactive_widget(close_button, buttons_split[1]);
+                    }
                     4 => {
+                        let market_button =
+                            Button::new("Shipyard", UiCallback::TutorialGoToShipyard)
+                                .set_hover_text("Go to shipyard")
+                                .set_hotkey(ui_key::GO_TO_SHIPYARD)
+                                .block(default_block())
+                                .set_layer(1);
+                        frame.render_interactive_widget(market_button, central_split[1]);
+
+                        frame.render_interactive_widget(next_button, buttons_split[0]);
+                        frame.render_interactive_widget(close_button, buttons_split[1]);
+                    }
+                    5 => {
+                        let market_button =
+                            Button::new("Free Pirates", UiCallback::TutorialGoToFreePirates)
+                                .set_hover_text("Go to free pirates")
+                                .set_hotkey(ui_key::GO_TO_FREE_PIRATES)
+                                .block(default_block())
+                                .set_layer(1);
+                        frame.render_interactive_widget(market_button, central_split[1]);
+
+                        frame.render_interactive_widget(next_button, buttons_split[0]);
+                        frame.render_interactive_widget(close_button, buttons_split[1]);
+                    }
+                    6 => {
+                        let market_button =
+                            Button::new("Space Adventure", UiCallback::TutorialGoToSpaceAdventure)
+                                .set_hover_text("Go to space adventure")
+                                .set_hotkey(ui_key::GO_TO_SPACE_ADVENTURE)
+                                .block(default_block())
+                                .set_layer(1);
+                        frame.render_interactive_widget(market_button, central_split[1]);
+
+                        frame.render_interactive_widget(next_button, buttons_split[0]);
+                        frame.render_interactive_widget(close_button, buttons_split[1]);
+                    }
+                    7 => {
                         let chat_button = Button::new("Chat", UiCallback::TutorialGoToChat)
                             .set_hover_text("Go to Chat")
                             .set_hotkey(ui_key::GO_TO_CHAT)
                             .block(default_block().border_style(UiStyle::NETWORK))
                             .set_layer(1);
-                        frame.render_interactive_widget(chat_button, buttons_split[0]);
-                        frame.render_interactive_widget(close_button, buttons_split[1]);
+                        frame.render_interactive_widget(chat_button, central_split[1]);
+                        frame.render_interactive_widget(close_button, split[2]);
                     }
 
                     _ => {

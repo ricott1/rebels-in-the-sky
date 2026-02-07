@@ -23,11 +23,11 @@ use crate::{
 };
 use core::fmt::Debug;
 use core::panic;
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use itertools::Itertools;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::style::Styled;
 use ratatui::text::Line;
 use ratatui::{
@@ -40,12 +40,19 @@ use std::cmp::min;
 use std::collections::HashMap;
 use strum::IntoEnumIterator;
 use tui_textarea::{CursorMove, TextArea};
+use uuid::uuid;
 
 const INITIAL_TEAM_SIZE: usize = 5;
 const SPACESHIP_MODELS: [SpaceshipPrefab; 3] = [
     SpaceshipPrefab::Bresci,
     SpaceshipPrefab::Orwell,
     SpaceshipPrefab::Ibarruri,
+];
+const INITIAL_PLANET_IDS: [PlanetId; 4] = [
+    uuid!("71a43700-0000-0000-0002-000000000000"), //Earth
+    uuid!("71a43700-0000-0000-0003-000000000000"), //Moon
+    uuid!("71a43700-0000-0000-0003-000000000004"), //Mizu
+    uuid!("71a43700-0000-0000-0003-000000000003"), //Frittura
 ];
 
 #[derive(Debug, Default, PartialOrd, PartialEq)]
@@ -772,15 +779,11 @@ impl Screen for NewTeamScreen {
             self.planet_ids = world
                 .planets
                 .keys()
-                .filter(|&planet_id| {
-                    if let Some(planet) = world.planets.get(planet_id) {
-                        return planet.total_population() > 0;
-                    }
-                    false
-                })
+                .filter(|planet_id| INITIAL_PLANET_IDS.contains(planet_id))
                 .sorted_by(|a, b| a.cmp(b))
                 .copied()
                 .collect_vec();
+
             for player in world.players.values() {
                 if player.team.is_none() {
                     let planet_players = self

@@ -165,8 +165,13 @@ impl SwarmPanel {
             (":gg:", "🤝"),
         ];
 
+        let log_message_list = ClickableList::new(vec![]).block(default_block().title("Log"));
+        let chat_message_list = ClickableList::new(vec![]).block(default_block().title("Chat"));
+
         Self {
             emojies_substutions,
+            log_message_list,
+            chat_message_list,
             ..Default::default()
         }
     }
@@ -216,18 +221,11 @@ impl SwarmPanel {
             }
         }
 
-        let previous_length = self.log_events.len();
         self.log_events.push(event);
-        self.log_events.sort_by_key(|a| a.timestamp);
-        self.log_events.dedup();
-        let new_length = self.log_events.len();
 
-        if new_length > previous_length {
-            self.log_message_index = self
-                .log_message_index
-                .map_or(Some(0), |index| Some(index + 1));
-        }
-        self.should_update_message_list = Some(SwarmView::Log);
+        self.log_message_index = self
+            .log_message_index
+            .map_or(Some(0), |index| Some(index + 1));
     }
 
     pub fn push_chat_event(

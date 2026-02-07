@@ -1757,14 +1757,14 @@ impl World {
                     if tournament.is_team_participating(&self.own_team_id) {
                         // If team is participating, it should have all the necessary games stored.
                         new_games.append(
-                            &mut tournament.generate_next_games(current_tick, &self.games)?,
+                            &mut tournament.generate_next_games(current_tick, &self.games, &self.past_games)?,
                         );
                     }
                     // If we receive a valid initialized tournament from the network where the team is not participating,
                     // the next games cannot be generated correctly as the world does not contain the games.
                     // In this case, we just accept the error.
                     else {
-                        match tournament.generate_next_games(current_tick, &self.games) {
+                        match tournament.generate_next_games(current_tick, &self.games, &self.past_games) {
                             Ok(mut t_games) => new_games.append(&mut t_games),
                             Err(err) => {
                                 log::warn!("Error while simulating network tournament: {err}.");

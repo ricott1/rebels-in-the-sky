@@ -7,7 +7,6 @@ use anyhow::{anyhow, Result};
 use russh::server::{Handle, Session};
 use russh::{ChannelId, CryptoVec};
 use std::fmt::Debug;
-use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task;
 use tokio_util::sync::CancellationToken;

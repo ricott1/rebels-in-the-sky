@@ -8,7 +8,7 @@ const MINUTES_PER_BREAK: u16 = 2;
 // const HALFTIME_BREAK_DURATION: u16 = 10;
 // const QUARTERS: u16 = 4;
 const SECONDS_PER_MINUTE: u16 = 60;
-const MAX_TIME: u16 = SECONDS_PER_MINUTE * (MINUTES_PER_QUARTER * 4 + MINUTES_PER_BREAK * 3);
+pub const MAX_TIME: u16 = SECONDS_PER_MINUTE * (MINUTES_PER_QUARTER * 4 + MINUTES_PER_BREAK * 3);
 
 #[derive(
     Debug, Display, Default, PartialEq, PartialOrd, Clone, Copy, Serialize_repr, Deserialize_repr,

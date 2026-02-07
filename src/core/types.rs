@@ -510,7 +510,7 @@ impl TeamBonus {
             TeamBonus::Exploration => {
                 0.15 * player.athletics.stamina
                     + 0.15 * player.defense.steal
-                    + 0.6 * player.mental.vision
+                    + 0.7 * player.mental.vision
             }
             TeamBonus::Reputation => {
                 let mut bonus = 0.75 * player.mental.charisma
@@ -650,7 +650,7 @@ mod tests {
         player.athletics.stamina = 10.0;
         player.defense.steal = 6.0;
         player.mental.vision = 2.0;
-        assert!(TeamBonus::Exploration.as_skill(&player) == 0.15 * 10.0 + 0.15 * 6.0 + 0.6 * 2.0);
+        assert!(TeamBonus::Exploration.as_skill(&player) == 0.15 * 10.0 + 0.15 * 6.0 + 0.7 * 2.0);
 
         assert!(TeamBonus::Weapons.as_skill(&player) == 0.0);
         player.technical.ball_handling = 8.5;
