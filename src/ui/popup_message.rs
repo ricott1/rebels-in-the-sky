@@ -6,6 +6,7 @@ use super::ui_frame::UiFrame;
 use super::utils::{img_to_lines, input_from_key_event, validate_textarea_input};
 use super::widgets::{default_block, thick_block};
 use crate::core::planet::PlanetType;
+use crate::core::MAX_SKILL;
 use crate::core::{player::Player, resources::Resource, skill::Rated};
 use crate::image::utils::open_gif;
 use crate::types::*;
@@ -32,62 +33,67 @@ const TREASURE_GIF_ANIMATION_DELAY: Tick = 450;
 pub enum PopupMessage {
     Error {
         message: String,
-        tick: Tick,
+        timestamp: Tick,
     },
     Warning {
         message: String,
-        tick: Tick,
+        timestamp: Tick,
     },
     Ok {
         message: String,
         is_skippable: bool,
-        tick: Tick,
+        timestamp: Tick,
     },
     PromptQuit {
         during_space_adventure: bool,
-        tick: Tick,
+        timestamp: Tick,
     },
     ReleasePlayer {
         player_name: String,
         player_id: PlayerId,
         not_enough_players_for_game: bool,
-        tick: Tick,
+        timestamp: Tick,
+    },
+    ConfirmSpaceAdventure {
+        has_shooter: bool,
+        average_tiredness: f32,
+        timestamp: Tick,
     },
     AbandonAsteroid {
         asteroid_name: String,
         asteroid_id: PlanetId,
-        tick: Tick,
+        timestamp: Tick,
     },
     AsteroidNameDialog {
-        tick: Tick,
+        timestamp: Tick,
         asteroid_type: usize,
     },
     BuildSpaceCove {
         asteroid_name: String,
         asteroid_id: PlanetId,
-        tick: Tick,
+        timestamp: Tick,
     },
     PortalFound {
         player_name: String,
         portal_target: String,
-        tick: Tick,
+        timestamp: Tick,
     },
     ExplorationResult {
         planet_name: String,
         resources: ResourceMap,
         players: Vec<Player>,
-        tick: Tick,
+        timestamp: Tick,
     },
     TeamLanded {
         team_name: String,
         planet_name: String,
         planet_filename: String,
         planet_type: PlanetType,
-        tick: Tick,
+        timestamp: Tick,
     },
     Tutorial {
         index: usize,
-        tick: Tick,
+        timestamp: Tick,
     },
 }
 
@@ -151,7 +157,7 @@ impl PopupMessage {
         key_event: crossterm::event::KeyEvent,
     ) -> Option<UiCallback> {
         match self {
-            Self::AsteroidNameDialog { tick, .. } => {
+            Self::AsteroidNameDialog { timestamp, .. } => {
                 if key_event.code == ui_key::YES_TO_DIALOG {
                     let mut name = popup_input.lines()[0].clone();
                     name = name
@@ -161,7 +167,7 @@ impl PopupMessage {
                         .take(MAX_NAME_LENGTH)
                         .collect();
                     if validate_textarea_input(popup_input, "Asteroid name") {
-                        let filename = format!("asteroid{}", tick % 30);
+                        let filename = format!("asteroid{}", timestamp % 30);
                         return Some(UiCallback::NameAndAcceptAsteroid { name, filename });
                     }
                 } else if key_event.code == ui_key::NO_TO_DIALOG {
@@ -179,6 +185,14 @@ impl PopupMessage {
                     return Some(UiCallback::ReleasePlayer {
                         player_id: *player_id,
                     });
+                } else if key_event.code == ui_key::NO_TO_DIALOG {
+                    return Some(UiCallback::CloseUiPopup);
+                }
+            }
+
+            Self::ConfirmSpaceAdventure { .. } => {
+                if key_event.code == ui_key::YES_TO_DIALOG {
+                    return Some(UiCallback::StartSpaceAdventure);
                 } else if key_event.code == ui_key::NO_TO_DIALOG {
                     return Some(UiCallback::CloseUiPopup);
                 }
@@ -274,12 +288,14 @@ impl PopupMessage {
         frame.render_widget(Clear, rect);
         frame.render_widget(thick_block(), rect);
         match self {
-            Self::Ok { message, tick, .. } => {
+            Self::Ok {
+                message, timestamp, ..
+            } => {
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Message: {} {}",
-                        tick.formatted_as_date(),
-                        tick.formatted_as_time()
+                        timestamp.formatted_as_date(),
+                        timestamp.formatted_as_time()
                     ))
                     .bold()
                     .block(default_block().border_style(UiStyle::OK))
@@ -310,12 +326,12 @@ impl PopupMessage {
                 );
             }
 
-            Self::Error { message, tick } => {
+            Self::Error { message, timestamp } => {
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Error: {} {}",
-                        tick.formatted_as_date(),
-                        tick.formatted_as_time()
+                        timestamp.formatted_as_date(),
+                        timestamp.formatted_as_time()
                     ))
                     .bold()
                     .block(default_block().border_style(UiStyle::ERROR))
@@ -346,12 +362,12 @@ impl PopupMessage {
                 );
             }
 
-            Self::Warning { message, tick } => {
+            Self::Warning { message, timestamp } => {
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Warning: {} {}",
-                        tick.formatted_as_date(),
-                        tick.formatted_as_time()
+                        timestamp.formatted_as_date(),
+                        timestamp.formatted_as_time()
                     ))
                     .bold()
                     .block(default_block().border_style(UiStyle::WARNING))
@@ -391,21 +407,18 @@ impl PopupMessage {
                 frame.render_widget(
                     Paragraph::new("Attention!")
                         .bold()
-                        .block(default_block().border_style(UiStyle::HIGHLIGHT))
+                        .block(default_block().border_style(UiStyle::WARNING))
                         .centered(),
                     split[0],
                 );
-                let extra_warning = if *not_enough_players_for_game {
-                    "\n\nThere will be not enough players for games!"
-                } else {
-                    ""
-                };
+
+                let mut text =
+                    format!("Are you sure you want to release {player_name} from the crew?");
+                if *not_enough_players_for_game {
+                    text.push_str("\nThere will be not enough players for games!");
+                }
                 frame.render_widget(
-                    Paragraph::new(format!(
-                        "Are you sure you want to release {player_name} from the crew?{extra_warning}"
-                    ))
-                    .centered()
-                    .wrap(Wrap { trim: true }),
+                    Paragraph::new(text).centered().wrap(Wrap { trim: true }),
                     split[1].inner(Margin {
                         horizontal: 1,
                         vertical: 1,
@@ -438,6 +451,59 @@ impl PopupMessage {
                 frame.render_interactive_widget(no_button, buttons_split[1]);
             }
 
+            Self::ConfirmSpaceAdventure {
+                has_shooter,
+                average_tiredness,
+                ..
+            } => {
+                frame.render_widget(
+                    Paragraph::new("Attention!")
+                        .bold()
+                        .block(default_block().border_style(UiStyle::WARNING))
+                        .centered(),
+                    split[0],
+                );
+
+                let mut text = format!(
+                    "Go on a Space Adventure? It will spend 25% of your pirates' energy{}.",
+                    if *average_tiredness > MAX_SKILL / 2.0 {
+                        " and they are already quite tired"
+                    } else {
+                        ""
+                    }
+                );
+                if !has_shooter {
+                    text.push_str("Your spaceship has no shooters, it will be very dangerous!");
+                };
+                frame.render_widget(
+                    Paragraph::new(text).centered().wrap(Wrap { trim: true }),
+                    split[1].inner(Margin {
+                        horizontal: 1,
+                        vertical: 1,
+                    }),
+                );
+
+                let buttons_split =
+                    Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                        .split(split[2]);
+
+                let confirm_button = Button::new(UiText::YES, UiCallback::StartSpaceAdventure)
+                    .set_hover_text("Start space adventure")
+                    .set_hotkey(ui_key::YES_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::OK))
+                    .set_layer(1);
+
+                frame.render_interactive_widget(confirm_button, buttons_split[0]);
+
+                let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
+                    .set_hover_text("Don't start space adventure")
+                    .set_hotkey(ui_key::NO_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::ERROR))
+                    .set_layer(1);
+
+                frame.render_interactive_widget(no_button, buttons_split[1]);
+            }
+
             Self::AbandonAsteroid {
                 asteroid_name,
                 asteroid_id,
@@ -446,7 +512,7 @@ impl PopupMessage {
                 frame.render_widget(
                     Paragraph::new("Attention!")
                         .bold()
-                        .block(default_block().border_style(UiStyle::HIGHLIGHT))
+                        .block(default_block().border_style(UiStyle::WARNING))
                         .centered(),
                     split[0],
                 );
@@ -496,7 +562,7 @@ impl PopupMessage {
                 frame.render_widget(
                     Paragraph::new("Attention!")
                         .bold()
-                        .block(default_block().border_style(UiStyle::HIGHLIGHT))
+                        .block(default_block().border_style(UiStyle::WARNING))
                         .centered(),
                     split[0],
                 );
@@ -545,7 +611,7 @@ impl PopupMessage {
                 frame.render_widget(
                     Paragraph::new("Attention!")
                         .bold()
-                        .block(default_block().border_style(UiStyle::HIGHLIGHT))
+                        .block(default_block().border_style(UiStyle::WARNING))
                         .centered(),
                     split[0],
                 );
@@ -588,14 +654,14 @@ impl PopupMessage {
             }
 
             Self::AsteroidNameDialog {
-                tick,
+                timestamp,
                 asteroid_type,
             } => {
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Asteroid discovered: {} {}",
-                        tick.formatted_as_date(),
-                        tick.formatted_as_time()
+                        timestamp.formatted_as_date(),
+                        timestamp.formatted_as_time()
                     ))
                     .bold()
                     .block(default_block().border_style(UiStyle::HIGHLIGHT))
@@ -685,13 +751,13 @@ impl PopupMessage {
             Self::PortalFound {
                 player_name,
                 portal_target,
-                tick,
+                timestamp,
             } => {
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Portal: {} {}",
-                        tick.formatted_as_date(),
-                        tick.formatted_as_time()
+                        timestamp.formatted_as_date(),
+                        timestamp.formatted_as_time()
                     ))
                     .bold()
                     .block(default_block().border_style(UiStyle::HIGHLIGHT))
@@ -700,7 +766,7 @@ impl PopupMessage {
                 );
 
                 // Select a portal pseudorandomly.
-                let portal = &PORTAL_GIFS[*tick as usize % PORTAL_GIFS.len()];
+                let portal = &PORTAL_GIFS[*timestamp as usize % PORTAL_GIFS.len()];
 
                 if portal.is_empty() {
                     return Err(anyhow!("Invalid portal gif"));
@@ -729,7 +795,7 @@ impl PopupMessage {
                 // Tick::now() returns time as milliseconds. To implement the wanted framerate,
                 // we need to divide by the frame duration in milliseconds
                 let current_frame =
-                    ((Tick::now() - tick) / FRAME_DURATION_MILLIS) as usize % portal.len();
+                    ((Tick::now() - timestamp) / FRAME_DURATION_MILLIS) as usize % portal.len();
 
                 frame.render_widget(
                     Paragraph::new(portal[current_frame].clone()).centered(),
@@ -755,13 +821,13 @@ impl PopupMessage {
                 planet_name,
                 resources,
                 players,
-                tick,
+                timestamp,
             } => {
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Exploration result: {} {}",
-                        tick.formatted_as_date(),
-                        tick.formatted_as_time()
+                        timestamp.formatted_as_date(),
+                        timestamp.formatted_as_time()
                     ))
                     .bold()
                     .block(default_block().border_style(UiStyle::HIGHLIGHT))
@@ -828,8 +894,8 @@ impl PopupMessage {
                     // Tick::now() returns time as milliseconds. To implement the wanted framerate,
                     // we need to divide by the frame duration in milliseconds. After the last frame,
                     // we just leave the treasure open rather than looping.
-                    let current_frame = if Tick::now() - tick > TREASURE_GIF_ANIMATION_DELAY {
-                        (((Tick::now() - tick - TREASURE_GIF_ANIMATION_DELAY)
+                    let current_frame = if Tick::now() - timestamp > TREASURE_GIF_ANIMATION_DELAY {
+                        (((Tick::now() - timestamp - TREASURE_GIF_ANIMATION_DELAY)
                             / FRAME_DURATION_MILLIS) as usize)
                             .min(treasure.len() - 1)
                     } else {
@@ -862,13 +928,13 @@ impl PopupMessage {
                 planet_name,
                 planet_filename,
                 planet_type,
-                tick,
+                timestamp,
             } => {
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Team landed: {} {}",
-                        tick.formatted_as_date(),
-                        tick.formatted_as_time()
+                        timestamp.formatted_as_date(),
+                        timestamp.formatted_as_time()
                     ))
                     .bold()
                     .block(default_block().border_style(UiStyle::HIGHLIGHT))
@@ -909,7 +975,7 @@ impl PopupMessage {
                 // Tick::now() returns time as milliseconds. To implement the wanted framerate,
                 // we need to divide by the frame duration in milliseconds
                 let current_frame =
-                    ((Tick::now() - tick) / FRAME_DURATION_MILLIS) as usize % planet_gif.len();
+                    ((Tick::now() - timestamp) / FRAME_DURATION_MILLIS) as usize % planet_gif.len();
 
                 frame.render_widget(
                     Paragraph::new(planet_gif_lines[current_frame].clone()).centered(),
@@ -951,7 +1017,7 @@ impl PopupMessage {
                      "You can also explore around your planet to gather resources which you can then sell at the market.",
                      "Once you have enough resources, you can upgrade your spaceship in the Shipyard.",
                      "You can hire free pirates from the Pirates panel in exchange for satoshi.",
-                     "You can find an asteroid to claim for your crew by surviving long enough in a Space Adventure.",
+                     "After you add shooters to your spaceship, you can go in a Space Adventure and try to find Asteroids.",
                      "Be sure to check out the Chat in the Swarm panel from time to time.\nHave fun!"
                 ];
 

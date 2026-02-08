@@ -97,7 +97,10 @@ impl App {
 
             self.ui
             .push_popup(PopupMessage::Ok{
-               message: "The game was closed during a space adventure.\nAll the cargo and fuel have been lost.\nNext time go back to the base first!".to_string(), is_skippable:false,tick: Tick::now()});
+               message: "The game was closed during a space adventure.\nAll the cargo and fuel have been lost.\nNext time go back to the base first!".to_string(), 
+               is_skippable:false,
+               timestamp: Tick::now()
+            });
         }
 
         const SIMULATION_UPDATE_INTERVAL: Tick = 250 * MILLISECONDS;
@@ -139,7 +142,7 @@ impl App {
                     self.ui.push_popup(PopupMessage::Ok {
                         message,
                         is_skippable: true,
-                        tick: Tick::now(),
+                        timestamp: Tick::now(),
                     });
                 }
                 Ok(None) => {}
@@ -338,7 +341,7 @@ impl App {
                         MusicPlayerEvent::StreamErr { error_message } => {
                             self.ui.push_popup(PopupMessage::Error {
                                 message: format!("Music player error: {error_message}"),
-                                tick: Tick::now(),
+                                timestamp: Tick::now(),
                             });
                         }
                     },
@@ -367,7 +370,7 @@ impl App {
                 self.ui.push_popup(PopupMessage::Ok {
                     message,
                     is_skippable: false,
-                    tick: Tick::now(),
+                    timestamp: Tick::now(),
                 });
                 self.new_version_notified = true;
             }
@@ -452,14 +455,14 @@ impl App {
                             self.ui.push_popup(PopupMessage::Ok {
                                 message,
                                 is_skippable: true,
-                                tick: Tick::now(),
+                                timestamp: Tick::now(),
                             });
                         }
                         Ok(None) => {}
                         Err(e) => {
                             self.ui.push_popup(PopupMessage::Error {
                                 message: e.to_string(),
-                                tick: Tick::now(),
+                                timestamp: Tick::now(),
                             });
                         }
                     }
@@ -468,7 +471,7 @@ impl App {
             Err(e) => {
                 self.ui.push_popup(PopupMessage::Error {
                     message: format!("Tick error\n{e}"),
-                    tick: Tick::now(),
+                    timestamp: Tick::now(),
                 });
             }
         }
@@ -487,14 +490,14 @@ impl App {
                             self.ui.push_popup(PopupMessage::Ok {
                                 message,
                                 is_skippable: true,
-                                tick: Tick::now(),
+                                timestamp: Tick::now(),
                             });
                         }
                         Ok(None) => {}
                         Err(e) => {
                             self.ui.push_popup(PopupMessage::Error {
                                 message: e.to_string(),
-                                tick: Tick::now(),
+                                timestamp: Tick::now(),
                             });
                         }
                     }
@@ -503,7 +506,7 @@ impl App {
             Err(e) => {
                 self.ui.push_popup(PopupMessage::Error {
                     message: format!("Tick error\n{e}"),
-                    tick: Tick::now(),
+                    timestamp: Tick::now(),
                 });
             }
         }
@@ -610,14 +613,14 @@ impl App {
                             self.ui.push_popup(PopupMessage::Ok {
                                 message,
                                 is_skippable: true,
-                                tick: Tick::now(),
+                                timestamp: Tick::now(),
                             });
                         }
                         Ok(None) => {}
                         Err(e) => {
                             self.ui.push_popup(PopupMessage::Error {
                                 message: e.to_string(),
-                                tick: Tick::now(),
+                                timestamp: Tick::now(),
                             });
                         }
                     }
@@ -643,14 +646,14 @@ impl App {
                     self.ui.push_popup(PopupMessage::Ok {
                         message,
                         is_skippable: true,
-                        tick: Tick::now(),
+                        timestamp: Tick::now(),
                     });
                 }
                 Ok(None) => {}
                 Err(e) => {
                     self.ui.push_popup(PopupMessage::Error {
                         message: e.to_string(),
-                        tick: Tick::now(),
+                        timestamp: Tick::now(),
                     });
                 }
             }
@@ -669,7 +672,7 @@ impl App {
                     self.ui.push_popup(PopupMessage::Ok {
                         message,
                         is_skippable: true,
-                        tick: Tick::now(),
+                        timestamp: Tick::now(),
                     });
                 }
                 Ok(None) => {}

@@ -47,7 +47,7 @@ enum SpaceAdventureState {
 }
 
 impl SpaceAdventureState {
-    pub const STARTING_DURATION: Duration = Duration::from_millis(3500);
+    pub const STARTING_DURATION: Duration = Duration::from_millis(2500);
     pub const ENDING_DURATION: Duration = Duration::from_millis(2500);
 }
 
@@ -208,7 +208,7 @@ impl SpaceAdventure {
             color_map.blue.0[2] / 6,
         ]);
         let spaceship = SpaceshipPrefab::iter()
-            .filter(|s| s.spaceship().shooting_points() > 0)
+            .filter(|s| s.spaceship().has_shooters())
             .choose(&mut rand::rng())
             .ok_or_else(|| anyhow!("There should be one spaceship available"))?
             .spaceship()
@@ -440,7 +440,7 @@ impl SpaceAdventure {
                             UiCallback::PushUiPopup { popup_message:
                                 PopupMessage::Ok {
                                     message: "Danger! There's a breach in the hull.\nAll the resources in the stiva have been lost,\nyou need to go back to the base...".to_string(),
-                                    is_skippable:true, tick:Tick::now()}
+                                    is_skippable:true, timestamp:Tick::now()}
                                 }
                         ]);
                     }
@@ -523,7 +523,7 @@ impl SpaceAdventure {
                     ui_callbacks.push(UiCallback::PushUiPopup { popup_message:
                         PopupMessage::Ok {
                         message: "You've found an asteroid! Bring the spaceship in touch with it to claim it.".to_string(),
-                            is_skippable:true, tick:Tick::now()}
+                            is_skippable:true, timestamp:Tick::now()}
                         });
                 }
             }

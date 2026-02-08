@@ -1,6 +1,6 @@
 [package]
 name = "rebels"
-version = "1.5.9"
+version = "1.5.10"
 edition = "2021"
 authors = ["Alessandro Ricottone <ricott2@gmail.com>"]
 license = "GPL-3.0-or-later"

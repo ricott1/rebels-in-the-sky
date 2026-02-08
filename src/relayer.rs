@@ -1,7 +1,7 @@
 use crate::app::AppEvent;
 use crate::core::DAYS;
 use crate::network::constants::{DEFAULT_SEED_PORT, TOPIC};
-use crate::network::types::{NetworkData, PlayerRanking, TeamRanking};
+use crate::network::types::{ChatHistoryEntry, NetworkData, PlayerRanking, TeamRanking};
 use crate::network::{handler::NetworkHandler, types::SeedInfo};
 use crate::store::*;
 use crate::types::{AppResult, PlayerId, SystemTimeTick, TeamId, Tick};
@@ -24,7 +24,7 @@ pub struct Relayer {
     player_ranking: HashMap<PlayerId, PlayerRanking>,
     top_player_ranking: Vec<(PlayerId, PlayerRanking)>,
     relayer_messages: Vec<String>,
-    chat_messages: HashMap<u64, Vec<NetworkData>>, // timestamp to message data
+    chat_history: Vec<ChatHistoryEntry>,
     last_message_sent_to_team: HashMap<TeamId, usize>,
 }
 
@@ -108,6 +108,16 @@ impl Relayer {
             .map(|(id, ranking)| (*id, ranking.clone()))
             .collect();
 
+        let chat_history = match load_chat_history() {
+            Ok(chat_history) => chat_history,
+            Err(err) => {
+                println!("Error while loading chat history: {err}");
+                Vec::new()
+            }
+        };
+
+        println!("Chat history has {} entries.", chat_history.len());
+
         Self {
             running: true,
             network_handler: NetworkHandler::new(None)
@@ -117,7 +127,7 @@ impl Relayer {
             player_ranking,
             top_player_ranking,
             relayer_messages: Vec::new(),
-            chat_messages: HashMap::new(),
+            chat_history,
             last_message_sent_to_team: HashMap::new(),
         }
     }
@@ -143,6 +153,9 @@ impl Relayer {
             }
         }
 
+        if let Err(err) = save_chat_history(&self.chat_history) {
+            println!("Error while saving chat history: {err}");
+        }
         cancellation_token.cancel();
         Ok(())
     }
@@ -157,40 +170,41 @@ impl Relayer {
                 if topic == IdentTopic::new(TOPIC).hash() {
                     println!("Sending info to {peer_id}");
 
+                    let now = Tick::now();
+                    self.chat_history.retain(|entry| {
+                        now.saturating_sub(entry.timestamp) <= CHAT_RETENTION_DURATION
+                    });
+
+                    const MAX_CHAT_HISTORY: usize = 200;
+                    let chat_history: Vec<ChatHistoryEntry> = self
+                        .chat_history
+                        .iter()
+                        .sorted_by_key(|e| e.timestamp)
+                        .rev()
+                        .take(MAX_CHAT_HISTORY)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .cloned()
+                        .collect();
+
+                    println!(
+                        "Bundling {} chat history entries into SeedInfo for {}",
+                        chat_history.len(),
+                        peer_id
+                    );
+
+                    if let Err(err) = save_chat_history(&self.chat_history) {
+                        println!("Error while saving chat history: {err}");
+                    }
+
                     self.network_handler.send_seed_info(SeedInfo::new(
                         self.network_handler.connected_peers_count,
                         None,
                         self.top_team_ranking.clone(),
                         self.top_player_ranking.clone(),
+                        chat_history,
                     )?)?;
-
-                    println!(
-                        "Resending {} past chat messages to {}",
-                        self.chat_messages.len(),
-                        peer_id
-                    );
-                    for entry in self.chat_messages.values() {
-                        for data in entry.iter() {
-                            if let NetworkData::Message {
-                                timestamp,
-                                from_peer_id,
-                                author,
-                                message,
-                            } = data
-                            {
-                                self.network_handler.send_message(
-                                    *timestamp,
-                                    *from_peer_id,
-                                    author.clone(),
-                                    message.clone(),
-                                )?;
-                            } else {
-                                println!(
-                                    "Relayer error: chat message entry should be NetworkData::Message."
-                                )
-                            }
-                        }
-                    }
                 }
             }
 
@@ -215,6 +229,7 @@ impl Relayer {
                             )),
                             self.top_team_ranking.clone(),
                             self.top_player_ranking.clone(),
+                            vec![],
                         )?)?;
                     }
 
@@ -277,19 +292,21 @@ impl Relayer {
 
                     self.last_message_sent_to_team
                         .insert(network_team.team.id, self.relayer_messages.len());
-                } else if let NetworkData::Message { timestamp, .. } = network_data {
-                    let now = Tick::now();
-                    self.chat_messages.retain(|&timestamp, _| {
-                        now.saturating_sub(timestamp) <= CHAT_RETENTION_DURATION
-                    });
-
-                    println!("Chat message stored: {network_data:#?}");
-                    self.chat_messages
-                        .entry(timestamp)
-                        .and_modify(|e| {
-                            e.push(network_data.clone());
-                        })
-                        .or_insert(vec![network_data]);
+                } else if let NetworkData::Message {
+                    timestamp,
+                    from_peer_id,
+                    author,
+                    message,
+                } = network_data
+                {
+                    let entry = ChatHistoryEntry {
+                        timestamp,
+                        from_peer_id,
+                        author,
+                        message,
+                    };
+                    println!("Chat message stored: {entry:#?}");
+                    self.chat_history.push(entry);
                 }
             }
             _ => {}

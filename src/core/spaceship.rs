@@ -196,6 +196,10 @@ impl Spaceship {
         self.shooter.shooting_points()
     }
 
+    pub fn has_shooters(&self) -> bool {
+        self.shooter.shooting_points() > 0
+    }
+
     pub fn storage_capacity(&self) -> u32 {
         self.hull.storage_capacity()
             + self.charge_unit.storage_capacity()

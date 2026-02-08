@@ -249,12 +249,22 @@ impl PlayerRanking {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChatHistoryEntry {
+    pub timestamp: Tick,
+    pub from_peer_id: PeerId,
+    pub author: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SeedInfo {
     pub connected_peers_count: usize,
     pub version: [usize; 3],
     pub message: Option<String>,
     pub team_ranking: Vec<(TeamId, TeamRanking)>,
     pub player_ranking: Vec<(PlayerId, PlayerRanking)>,
+    #[serde(default)]
+    pub chat_history: Vec<ChatHistoryEntry>,
 }
 
 impl SeedInfo {
@@ -263,6 +273,7 @@ impl SeedInfo {
         message: Option<String>,
         team_ranking: Vec<(TeamId, TeamRanking)>,
         player_ranking: Vec<(PlayerId, PlayerRanking)>,
+        chat_history: Vec<ChatHistoryEntry>,
     ) -> AppResult<Self> {
         Ok(Self {
             connected_peers_count,
@@ -274,6 +285,7 @@ impl SeedInfo {
             message,
             team_ranking,
             player_ranking,
+            chat_history,
         })
     }
 }

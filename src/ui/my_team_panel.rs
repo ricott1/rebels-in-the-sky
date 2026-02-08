@@ -1705,7 +1705,7 @@ impl MyTeamPanel {
         let popup_message = PopupMessage::AbandonAsteroid {
             asteroid_name: asteroid.name.clone(),
             asteroid_id,
-            tick: Tick::now(),
+            timestamp: Tick::now(),
         };
 
         let abandon_asteroid_button =
@@ -1852,7 +1852,7 @@ impl MyTeamPanel {
             player_name: player.info.full_name(),
             player_id,
             not_enough_players_for_game: own_team.player_ids.len() - 1 < MIN_PLAYERS_PER_GAME,
-            tick: Tick::now(),
+            timestamp: Tick::now(),
         };
         let mut release_button = Button::new(
             format!("Fire {}", player.info.short_name()),
@@ -2205,8 +2205,8 @@ impl MyTeamPanel {
 
         let explore_split =
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(split[1]);
-        if let Ok(explore_button) = space_adventure_button(world, own_team) {
-            frame.render_interactive_widget(explore_button, explore_split[0]);
+        if let Ok(space_adventure_button) = space_adventure_button(world, own_team) {
+            frame.render_interactive_widget(space_adventure_button, explore_split[0]);
         }
         if let Ok(explore_button) = explore_button(world, own_team) {
             frame.render_interactive_widget(explore_button, explore_split[1]);

@@ -310,25 +310,25 @@ impl UpgradeableElement for Shooter {
     fn upgrade_cost(&self) -> Vec<(Resource, u32)> {
         let satoshi_cost = match self {
             Self::ShuttleNone => 0,
-            Self::ShuttleSingle => 5_000,
+            Self::ShuttleSingle => 4_000,
             Self::ShuttleTriple => 13_000,
             Self::PincherNone => 0,
-            Self::PincherDouble => 11_000,
+            Self::PincherDouble => 6_000,
             Self::PincherQuadruple => 15_000,
             Self::JesterNone => 0,
-            Self::JesterDouble => 12_000,
+            Self::JesterDouble => 7_000,
             Self::JesterQuadruple => 18_000,
         };
 
         let scraps_cost = match self {
             Self::ShuttleNone => 0,
-            Self::ShuttleSingle => 120,
+            Self::ShuttleSingle => 90,
             Self::ShuttleTriple => 190,
             Self::PincherNone => 0,
-            Self::PincherDouble => 150,
+            Self::PincherDouble => 110,
             Self::PincherQuadruple => 240,
             Self::JesterNone => 0,
-            Self::JesterDouble => 155,
+            Self::JesterDouble => 125,
             Self::JesterQuadruple => 260,
         };
 

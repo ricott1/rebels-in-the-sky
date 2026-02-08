@@ -31,7 +31,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{List, ListItem},
 };
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use strum_macros::Display;
 use tui_textarea::{CursorMove, TextArea};
 
@@ -82,7 +82,7 @@ impl LogEvent {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 struct ChatEvent {
     timestamp: Tick,
     peer_id: PeerId,
@@ -101,6 +101,31 @@ impl ChatEvent {
     }
 }
 
+impl PartialEq for ChatEvent {
+    fn eq(&self, other: &Self) -> bool {
+        self.timestamp == other.timestamp
+            && self.peer_id == other.peer_id
+            && self.text == other.text
+    }
+}
+
+impl Eq for ChatEvent {}
+
+impl PartialOrd for ChatEvent {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ChatEvent {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.timestamp
+            .cmp(&other.timestamp)
+            .then_with(|| self.peer_id.cmp(&other.peer_id))
+            .then_with(|| self.text.cmp(&other.text))
+    }
+}
+
 #[derive(Debug, Display, Default, PartialEq)]
 enum PanelList {
     #[default]
@@ -111,7 +136,7 @@ enum PanelList {
 #[derive(Debug, Default)]
 pub struct SwarmPanel {
     tick: usize,
-    chat_events: Vec<ChatEvent>,
+    chat_events: BTreeSet<ChatEvent>,
     log_events: Vec<LogEvent>,
     view: SwarmView,
     textarea: TextArea<'static>,
@@ -226,6 +251,8 @@ impl SwarmPanel {
         self.log_message_index = self
             .log_message_index
             .map_or(Some(0), |index| Some(index + 1));
+
+        self.should_update_message_list = Some(SwarmView::Log);
     }
 
     pub fn push_chat_event(
@@ -237,20 +264,33 @@ impl SwarmPanel {
     ) {
         let event = ChatEvent::new(timestamp, peer_id, author, message);
 
-        let previous_length = self.chat_events.len();
-        self.chat_events.push(event);
-        self.chat_events.sort_by_key(|a| a.timestamp);
-        // FIXME: this is very inefficient (N^2). We should find a better way to dedup.
-        self.chat_events.dedup();
-        let new_length = self.chat_events.len();
-
-        if new_length > previous_length {
+        if self.chat_events.insert(event) {
             self.unread_chat_messages += 1;
             self.chat_message_index = self
                 .chat_message_index
                 .map_or(Some(0), |index| Some(index + 1));
         }
         self.should_update_message_list = Some(SwarmView::Chat);
+    }
+
+    pub fn push_chat_history(&mut self, entries: Vec<(Tick, PeerId, String, String)>) {
+        let mut any_new = false;
+        for (timestamp, peer_id, author, message) in entries {
+            let event = ChatEvent::new(timestamp, peer_id, author, message);
+            if self.chat_events.insert(event) {
+                any_new = true;
+                self.unread_chat_messages += 1;
+            }
+        }
+
+        if any_new {
+            self.chat_message_index = self
+                .chat_message_index
+                .map_or(Some(self.unread_chat_messages), |index| {
+                    Some(index + self.unread_chat_messages)
+                });
+            self.should_update_message_list = Some(SwarmView::Chat);
+        }
     }
 
     pub fn add_peer_id(&mut self, peer_id: PeerId, team_id: TeamId) {

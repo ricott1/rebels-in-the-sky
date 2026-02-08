@@ -1,5 +1,5 @@
 #[cfg(feature = "relayer")]
-use crate::network::types::{PlayerRanking, TeamRanking};
+use crate::network::types::{ChatHistoryEntry, PlayerRanking, TeamRanking};
 use crate::{
     core::world::World,
     game_engine::{game::Game, Tournament, TournamentId},
@@ -31,6 +31,8 @@ static LEGACY_PERSISTED_GAMES_PREFIX: &str = "game_";
 static PERSISTED_TEAM_RANKING_FILENAME: &str = "relayer/team_ranking";
 #[cfg(feature = "relayer")]
 static PERSISTED_PLAYER_RANKING_FILENAME: &str = "relayer/player_ranking";
+#[cfg(feature = "relayer")]
+static PERSISTED_CHAT_HISTORY_FILENAME: &str = "relayer/chat_history";
 const COMPRESSION_LEVEL: u32 = 5;
 
 fn prefixed_world_filename(store_prefix: &str) -> String {
@@ -248,6 +250,17 @@ pub fn save_player_ranking(
 #[cfg(feature = "relayer")]
 pub fn load_player_ranking() -> AppResult<HashMap<PlayerId, PlayerRanking>> {
     load_from_json::<HashMap<PlayerId, PlayerRanking>>(PERSISTED_PLAYER_RANKING_FILENAME)
+}
+
+#[cfg(feature = "relayer")]
+pub fn save_chat_history(history: &[ChatHistoryEntry]) -> AppResult<()> {
+    save_to_json(PERSISTED_CHAT_HISTORY_FILENAME, &history)?;
+    Ok(())
+}
+
+#[cfg(feature = "relayer")]
+pub fn load_chat_history() -> AppResult<Vec<ChatHistoryEntry>> {
+    load_from_json::<Vec<ChatHistoryEntry>>(PERSISTED_CHAT_HISTORY_FILENAME)
 }
 
 pub fn get_world_size(store_prefix: &str) -> AppResult<u64> {

@@ -150,6 +150,10 @@ impl UiScreen {
             .push_chat_event(timestamp, peer_id, author, message);
     }
 
+    pub fn push_chat_history(&mut self, entries: Vec<(Tick, PeerId, String, String)>) {
+        self.swarm_panel.push_chat_history(entries);
+    }
+
     pub fn push_popup(&mut self, popup_message: PopupMessage) {
         // Avoid pushing twice the same popup
         if let Some(last_popup) = self.popup_messages.last().as_ref() {
@@ -300,7 +304,7 @@ impl UiScreen {
                 Some(UiCallback::PushUiPopup {
                     popup_message: PopupMessage::PromptQuit {
                         during_space_adventure,
-                        tick: Tick::now(),
+                        timestamp: Tick::now(),
                     },
                 })
             }

@@ -180,6 +180,13 @@ impl Screen for SpaceScreen {
     }
 
     fn footer_spans(&self) -> Vec<String> {
-        vec![format!(" Entity count {:<4} ", self.entity_count)]
+        vec![
+            format!(" Autofire {} ", ui_key::space::AUTOFIRE),
+            format!(" Shoot {} ", ui_key::space::SHOOT),
+            format!(" Toggle shield  {} ", ui_key::space::TOGGLE_SHIELD),
+            format!(" Release scraps {} ", ui_key::space::RELEASE_SCRAPS),
+            format!(" Return home  {} ", ui_key::space::BACK_TO_BASE),
+            format!(" Entity count {:<4} ", self.entity_count),
+        ]
     }
 }

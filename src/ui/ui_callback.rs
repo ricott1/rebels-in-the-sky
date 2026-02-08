@@ -663,7 +663,7 @@ impl UiCallback {
             app.ui.set_state(UiState::Main);
             app.ui.push_popup(PopupMessage::Tutorial {
                 index: 0,
-                tick: Tick::now(),
+                timestamp: Tick::now(),
             });
             Ok(None)
         })
@@ -705,7 +705,7 @@ impl UiCallback {
                     tournament.max_participants
                 ),
                 is_skippable: true,
-                tick: Tick::now(),
+                timestamp: Tick::now(),
             });
 
             if let Err(err) = app.network_handler.send_tournament(tournament) {
@@ -946,7 +946,7 @@ impl UiCallback {
     fn name_and_accept_asteroid(name: String, filename: String) -> AppCallback {
         Box::new(move |app: &mut App| {
             let mut own_team = app.world.get_own_team()?.clone();
-            if own_team.asteroid_ids.len() > MAX_NUM_ASTEROID_PER_TEAM {
+            if own_team.asteroid_ids.len() >= MAX_NUM_ASTEROID_PER_TEAM {
                 return Err(anyhow!("Team has reached max number of asteroids."));
             }
 
@@ -1037,7 +1037,7 @@ impl UiCallback {
             app.ui.push_popup(PopupMessage::Ok {
                 message,
                 is_skippable: true,
-                tick: Tick::now(),
+                timestamp: Tick::now(),
             });
 
             app.world.dirty = true;
@@ -1058,7 +1058,7 @@ impl UiCallback {
             } else {
                 app.ui.push_popup(PopupMessage::Error {
                     message: format!("Cannot find asteroid {asteroid_id}"),
-                    tick: Tick::now(),
+                    timestamp: Tick::now(),
                 });
                 return Ok(None);
             };
@@ -1067,7 +1067,7 @@ impl UiCallback {
             } else {
                 app.ui.push_popup(PopupMessage::Error {
                     message: format!("Cannot find own team {}", app.world.own_team_id),
-                    tick: Tick::now(),
+                    timestamp: Tick::now(),
                 });
                 return Ok(None);
             };
@@ -1103,7 +1103,7 @@ impl UiCallback {
             } else {
                 app.ui.push_popup(PopupMessage::Error {
                     message: format!("Cannot find asteroid {asteroid_id}"),
-                    tick: Tick::now(),
+                    timestamp: Tick::now(),
                 });
                 return Ok(None);
             };
@@ -1158,7 +1158,7 @@ impl UiCallback {
             app.ui.push_popup(PopupMessage::Ok {
                 message,
                 is_skippable: true,
-                tick: Tick::now(),
+                timestamp: Tick::now(),
             });
             app.world.dirty = true;
             app.world.dirty_ui = true;
@@ -1242,7 +1242,7 @@ impl UiCallback {
 
             if let Some(asteroid_type) = space.asteroid_planet_found() {
                 app.ui.push_popup(PopupMessage::AsteroidNameDialog {
-                    tick: Tick::now(),
+                    timestamp: Tick::now(),
                     asteroid_type,
                 });
             }
@@ -1262,7 +1262,7 @@ impl UiCallback {
                 app.ui.close_popup();
                 app.ui.push_popup_to_top(PopupMessage::Tutorial {
                     index: *index,
-                    tick: Tick::now(),
+                    timestamp: Tick::now(),
                 });
                 Ok(None)
             }
@@ -1461,7 +1461,7 @@ impl UiCallback {
                     if let Err(err) = player.toggle_state(app_sender) {
                         app.ui.push_popup_to_top(PopupMessage::Error {
                             message: format!("Cannot toggle audio: {err}"),
-                            tick: Tick::now(),
+                            timestamp: Tick::now(),
                         });
                     }
                 } else {
@@ -1477,7 +1477,7 @@ impl UiCallback {
                     if let Err(err) = player.previous_radio_stream(app_sender) {
                         app.ui.push_popup_to_top(PopupMessage::Error {
                             message: format!("Cannot toggle audio: {err}"),
-                            tick: Tick::now(),
+                            timestamp: Tick::now(),
                         });
                     }
                 } else {
@@ -1492,7 +1492,7 @@ impl UiCallback {
                     if let Err(err) = player.next_radio_stream(app_sender) {
                         app.ui.push_popup_to_top(PopupMessage::Error {
                             message: format!("Cannot toggle audio: {err}"),
-                            tick: Tick::now(),
+                            timestamp: Tick::now(),
                         });
                     }
                 } else {
@@ -1656,7 +1656,7 @@ impl UiCallback {
                         app.ui.push_popup(PopupMessage::PortalFound {
                             player_name: player.info.short_name(),
                             portal_target: portal_target.name.to_string(),
-                            tick: Tick::now(),
+                            timestamp: Tick::now(),
                         });
                     }
                 }
@@ -1722,7 +1722,7 @@ impl UiCallback {
                         own_team.tournament_registration_state = TournamentRegistrationState::None;
                         app.ui.push_popup(PopupMessage::Ok {
                             message: format!("{} tournament got cancelled.", tournament.name()),
-                            tick: Tick::now(),
+                            timestamp: Tick::now(),
                             is_skippable: true,
                         });
                     }
@@ -1905,7 +1905,8 @@ impl UiCallback {
             Self::StartSpaceAdventure => {
                 app.ui.set_state(UiState::SpaceAdventure);
                 let mut own_team = app.world.get_own_team()?.clone();
-                own_team.can_start_space_adventure()?;
+                let average_tiredness = own_team.average_tiredness(&app.world);
+                own_team.can_start_space_adventure(average_tiredness)?;
 
                 let should_spawn_asteroid = match own_team.current_location {
                     TeamLocation::OnPlanet { planet_id } => {
@@ -1951,8 +1952,18 @@ impl UiCallback {
                         ));
                     }
                 }
+
+                // Apply tiredness cost to crew.
+                for player_id in own_team.player_ids.iter() {
+                    let player = app.world.players.get_mut_or_err(player_id)?;
+                    player.add_tiredness(SPACE_ADVENTURE_TIREDNESS_COST);
+                }
+
+                app.ui.close_popup();
                 app.world.teams.insert(own_team.id, own_team);
                 app.world.space_adventure = Some(space);
+                app.world.dirty_network = true;
+
                 Ok(None)
             }
 

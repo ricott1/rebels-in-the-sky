@@ -67,7 +67,7 @@ impl Honour {
                             })
                             .unique()
                             .count()
-                            == MAX_NUM_ASTEROID_PER_TEAM
+                            >= MAX_NUM_ASTEROID_PER_TEAM
                     })
                     .unwrap_or_default()
             }

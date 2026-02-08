@@ -760,7 +760,7 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_start_space_adventure(&self) -> AppResult<()> {
+    pub fn can_start_space_adventure(&self, average_tiredness: Skill) -> AppResult<()> {
         if self.player_ids.is_empty() {
             return Err(anyhow!("No pirate to explore"));
         }
@@ -789,6 +789,10 @@ impl Team {
             return Err(anyhow!("Not enough fuel"));
         }
 
+        if average_tiredness > MAX_AVG_TIREDNESS_PER_SPACE_ADVENTURE {
+            return Err(anyhow!("Crew is too tired"));
+        }
+
         Ok(())
     }
 
@@ -797,7 +801,9 @@ impl Team {
         planet: &Planet,
         exploration_time: Tick,
     ) -> AppResult<()> {
-        if let Err(err) = self.can_start_space_adventure() {
+        // Exploration does not cost tiredness, so we can pretend the crew is at full energy for the check.
+        let averate_tiredness_for_exploration = 0.0;
+        if let Err(err) = self.can_start_space_adventure(averate_tiredness_for_exploration) {
             return Err(anyhow!(err));
         }
 
@@ -806,15 +812,11 @@ impl Team {
         }
 
         // If we can't get there with full tank, than the planet is too far.
-        let max_fuel = self.fuel_capacity();
         let fuel_consumption = (exploration_time as f64
             * self.spaceship_fuel_consumption_per_tick() as f64)
             .ceil() as u32;
-        if fuel_consumption > max_fuel {
-            return Err(anyhow!("This planet is too far"));
-        }
 
-        // Else we check that we can go there with the current fuel.
+        // We check that we can go there with the current fuel.
         let current_fuel = self.fuel();
         if fuel_consumption > current_fuel {
             return Err(anyhow!("Not enough fuel"));

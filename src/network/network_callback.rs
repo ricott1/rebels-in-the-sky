@@ -159,7 +159,7 @@ impl NetworkCallback {
                 app.ui.push_popup(PopupMessage::Ok {
                     message: message.clone(),
                     is_skippable: false,
-                    tick: timestamp,
+                    timestamp,
                 });
             }
 
@@ -321,21 +321,20 @@ impl NetworkCallback {
                         }
                     }
 
-                    TournamentState::Confirmation => {
-                        match &request_state {
-                            TournamentRequestState::ConfirmationDeclined { reason } => {
-                                app.ui.push_log_event(
+                    TournamentState::Confirmation => match &request_state {
+                        TournamentRequestState::ConfirmationDeclined { reason } => {
+                            app.ui.push_log_event(
                                     Tick::now(),
                                     None,
                                     format!("Team {team_id} did not confirm registration to tournament: {reason}."),
                                     log::Level::Warn,
                                 );
-                            }
-                            TournamentRequestState::ParticipationRequest => {
-                                let (team, players) = if let Some(data) = team_data.as_ref() {
-                                    data
-                                } else {
-                                    send_and_log(
+                        }
+                        TournamentRequestState::ParticipationRequest => {
+                            let (team, players) = if let Some(data) = team_data.as_ref() {
+                                data
+                            } else {
+                                send_and_log(
                                         &mut app.network_handler,
                                         &mut app.ui,
                                         tournament_id,
@@ -346,15 +345,15 @@ impl NetworkCallback {
                                         format!("Participation to tournament {tournament_id} declined for team {team_id}: missing team data."),
                                         log::Level::Warn,
                                     )?;
-                                    return Ok(None);
-                                };
-                                match tournament.confirm_team_registration(
-                                    team,
-                                    players.clone(),
-                                    Tick::now(),
-                                ) {
-                                    Ok(()) => {
-                                        send_and_log(
+                                return Ok(None);
+                            };
+                            match tournament.confirm_team_registration(
+                                team,
+                                players.clone(),
+                                Tick::now(),
+                            ) {
+                                Ok(()) => {
+                                    send_and_log(
                                             &mut app.network_handler,
                                             &mut app.ui,
                                             tournament_id,
@@ -363,9 +362,9 @@ impl NetworkCallback {
                                             format!("Participation to tournament {tournament_id} confirmed for team {team_id}."),
                                             log::Level::Info,
                                         )?;
-                                    }
-                                    Err(err) => {
-                                        send_and_log(
+                                }
+                                Err(err) => {
+                                    send_and_log(
                                             &mut app.network_handler,
                                             &mut app.ui,
                                             tournament_id,
@@ -376,16 +375,15 @@ impl NetworkCallback {
                                             format!("Participation to tournament {tournament_id} declined for team {team_id}: {err}."),
                                             log::Level::Warn,
                                         )?;
-                                    }
                                 }
                             }
-                            _ => discard_request_log_event(
-                                &mut app.ui,
-                                &request_state,
-                                &tournament.state(timestamp),
-                            ),
                         }
-                    }
+                        _ => discard_request_log_event(
+                            &mut app.ui,
+                            &request_state,
+                            &tournament.state(timestamp),
+                        ),
+                    },
 
                     _ => discard_request_log_event(
                         &mut app.ui,
@@ -412,7 +410,7 @@ impl NetworkCallback {
                             tournament.name(),
                             reason
                         ),
-                        tick: Tick::now(),
+                        timestamp: Tick::now(),
                         is_skippable: true,
                     });
                     app.ui.push_log_event(
@@ -596,7 +594,7 @@ impl NetworkCallback {
                         (tournament.starting_at() - Tick::now()).formatted_as_time()
                     ),
                     is_skippable: true,
-                    tick: Tick::now(),
+                    timestamp: Tick::now(),
                 });
             }
 
@@ -679,7 +677,7 @@ impl NetworkCallback {
                 app.ui.push_popup(PopupMessage::Ok {
                     message,
                     is_skippable: false,
-                    tick: timestamp,
+                    timestamp,
                 });
             }
 
@@ -693,6 +691,22 @@ impl NetworkCallback {
             app.ui
                 .swarm_panel
                 .update_player_ranking(&seed_info.player_ranking);
+
+            if !seed_info.chat_history.is_empty() {
+                let entries: Vec<_> = seed_info
+                    .chat_history
+                    .iter()
+                    .map(|e| {
+                        (
+                            e.timestamp,
+                            e.from_peer_id,
+                            e.author.clone(),
+                            e.message.clone(),
+                        )
+                    })
+                    .collect();
+                app.ui.push_chat_history(entries);
+            }
 
             app.world.dirty_network = true;
             Ok(None)
@@ -784,7 +798,7 @@ impl NetworkCallback {
                         app.ui.push_popup(PopupMessage::Ok {
                             message: "Trade accepted, players swapped.".to_string(),
                             is_skippable: false,
-                            tick: Tick::now(),
+                            timestamp: Tick::now(),
                         });
                         trade.state = NetworkRequestState::Ack;
                         app.network_handler.send_trade(trade)?;
@@ -871,7 +885,7 @@ impl NetworkCallback {
                         app.ui.push_popup(PopupMessage::Ok {
                             message: "Trade accepted, players swapped.".to_string(),
                             is_skippable: false,
-                            tick: Tick::now(),
+                            timestamp: Tick::now(),
                         });
                         Ok(())
                     };
@@ -898,7 +912,7 @@ impl NetworkCallback {
 
                     app.ui.push_popup(PopupMessage::Error {
                         message: format!("Trade failed: {error_message}"),
-                        tick: Tick::now(),
+                        timestamp: Tick::now(),
                     });
 
                     return Err(anyhow!(format!("Trade failed: {error_message}")))?;
@@ -1036,7 +1050,7 @@ impl NetworkCallback {
                         app.ui.push_popup(PopupMessage::Ok {
                             message: "Challenge accepted, game is starting.".to_string(),
                             is_skippable: false,
-                            tick: Tick::now(),
+                            timestamp: Tick::now(),
                         });
 
                         app.network_handler.send_challenge(challenge)?;
@@ -1114,7 +1128,7 @@ impl NetworkCallback {
                         app.ui.push_popup(PopupMessage::Ok {
                             message: "Challenge accepted, game is starting.".to_string(),
                             is_skippable: false,
-                            tick: Tick::now(),
+                            timestamp: Tick::now(),
                         });
                         Ok(())
                     };
@@ -1127,7 +1141,7 @@ impl NetworkCallback {
                         app.network_handler.send_challenge(challenge)?;
                         app.ui.push_popup(PopupMessage::Error {
                             message: format!("Challenge failed: {err}"),
-                            tick: Tick::now(),
+                            timestamp: Tick::now(),
                         });
 
                         return Err(anyhow!(err.to_string()));
@@ -1149,7 +1163,7 @@ impl NetworkCallback {
 
                     app.ui.push_popup(PopupMessage::Error {
                         message: format!("Challenge failed: {error_message}"),
-                        tick: Tick::now(),
+                        timestamp: Tick::now(),
                     });
 
                     return Err(anyhow!("Challenge failed: {error_message}"))?;

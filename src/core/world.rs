@@ -1507,7 +1507,7 @@ impl World {
                             game.away_team_in_game.name,
                         ),
                         is_skippable: false,
-                        tick: current_tick,
+                        timestamp: current_tick,
                     },
                 });
             }
@@ -1756,15 +1756,21 @@ impl World {
                     // tournament games when storing, otherwise the hashmap would be incorrect.
                     if tournament.is_team_participating(&self.own_team_id) {
                         // If team is participating, it should have all the necessary games stored.
-                        new_games.append(
-                            &mut tournament.generate_next_games(current_tick, &self.games, &self.past_games)?,
-                        );
+                        new_games.append(&mut tournament.generate_next_games(
+                            current_tick,
+                            &self.games,
+                            &self.past_games,
+                        )?);
                     }
                     // If we receive a valid initialized tournament from the network where the team is not participating,
                     // the next games cannot be generated correctly as the world does not contain the games.
                     // In this case, we just accept the error.
                     else {
-                        match tournament.generate_next_games(current_tick, &self.games, &self.past_games) {
+                        match tournament.generate_next_games(
+                            current_tick,
+                            &self.games,
+                            &self.past_games,
+                        ) {
                             Ok(mut t_games) => new_games.append(&mut t_games),
                             Err(err) => {
                                 log::warn!("Error while simulating network tournament: {err}.");
@@ -1791,7 +1797,7 @@ impl World {
                             popup_message: PopupMessage::Ok {
                                 message,
                                 is_skippable: false,
-                                tick: current_tick,
+                                timestamp: current_tick,
                             },
                         };
                         callbacks.push(callback);
@@ -1936,7 +1942,7 @@ impl World {
                             planet_name,
                             planet_filename,
                             planet_type,
-                            tick: current_tick,
+                            timestamp: current_tick,
                         },
                     }]);
                 }
@@ -1977,7 +1983,7 @@ impl World {
                         // until the asteroid is accepted and generated.
                         callbacks.push(UiCallback::PushUiPopup {
                             popup_message: PopupMessage::AsteroidNameDialog {
-                                tick: current_tick,
+                                timestamp: current_tick,
                                 asteroid_type: rng.random_range(0..30),
                             },
                         });
@@ -2028,7 +2034,7 @@ impl World {
                             planet_name: around_planet.name.clone(),
                             resources: collected_resources,
                             players: found_pirates,
-                            tick: current_tick,
+                            timestamp: current_tick,
                         },
                     });
 
@@ -2145,7 +2151,7 @@ impl World {
             popup_message: PopupMessage::Ok {
                 message: "Free pirates refreshed".into(),
                 is_skippable: false,
-                tick: current_tick,
+                timestamp: current_tick,
             },
         })
     }
@@ -2379,7 +2385,7 @@ impl World {
                                 player.info.pronouns.as_possessive()
                             ),
                             is_skippable: false,
-                            tick: current_tick,
+                            timestamp: current_tick,
                         },
                     })
                 }
@@ -2439,7 +2445,7 @@ impl World {
                                     player.info.pronouns.to_have(),
                                 ),
                                 is_skippable:false,
-                                tick:current_tick
+                                timestamp:current_tick
                             },
                         })
                     }

@@ -37,6 +37,7 @@ use crate::{
     types::*,
 };
 use anyhow::anyhow;
+use itertools::Itertools;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::{
     prelude::*,
@@ -441,20 +442,16 @@ pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
 }
 
 pub fn space_adventure_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
-    let has_shooter = team.spaceship.shooting_points() > 0;
+    let average_tiredness = team.average_tiredness(world);
 
-    let on_click = if has_shooter {
-        UiCallback::StartSpaceAdventure
-    } else {
-        let popup_message = PopupMessage::Warning {
-            message:
-                "Your spaceship has no shooters, are you sure you want to go on a space adventure?"
-                    .to_string(),
-            tick: Tick::now(),
-        };
-        UiCallback::PushUiPopup { popup_message }
+    let popup_message = PopupMessage::ConfirmSpaceAdventure {
+        has_shooter: team.spaceship.has_shooters(),
+        average_tiredness,
+        timestamp: Tick::now(),
     };
-    let mut button = Button::new("Space Adventure", on_click).set_hotkey(ui_key::SPACE_ADVENTURE);
+    let mut button = Button::new("Space Adventure", UiCallback::PushUiPopup { popup_message })
+        .set_hotkey(ui_key::SPACE_ADVENTURE)
+        .block(default_block().border_style(UiStyle::WARNING));
 
     match team.current_location {
         TeamLocation::OnPlanet { planet_id } => {
@@ -464,7 +461,7 @@ pub fn space_adventure_button<'a>(world: &World, team: &Team) -> AppResult<Butto
                 planet.name,
             ));
 
-            if let Err(msg) = team.can_start_space_adventure() {
+            if let Err(msg) = team.can_start_space_adventure(average_tiredness) {
                 button.disable(Some(msg.to_string()));
             }
         }
@@ -916,7 +913,7 @@ fn honour_lines<'a>(team_honours: &HashSet<Honour>) -> Vec<HoverTextLine<'a>> {
     spans.push(HoverTextSpan::new(Span::raw(title), ""));
     btm_spans.push(HoverTextSpan::new(Span::raw(" ".repeat(title.len())), ""));
 
-    for &honour in team_honours {
+    for &honour in team_honours.iter().sorted_by_key(|h| h.to_string()) {
         let (fg, bg) = honour_color(honour);
         top_spans.push(HoverTextSpan::new(
             Span::styled("▄ ▄", Style::default().fg(bg)),
@@ -1044,7 +1041,7 @@ pub fn render_build_asteroid_upgrade_button(
                 popup_message: PopupMessage::BuildSpaceCove {
                     asteroid_name: asteroid.name.clone(),
                     asteroid_id: asteroid.id,
-                    tick: Tick::now(),
+                    timestamp: Tick::now(),
                 },
             }
         } else {
