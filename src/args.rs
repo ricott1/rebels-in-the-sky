@@ -32,11 +32,11 @@ pub struct AppArgs {
     #[cfg(feature = "ssh")]
     #[clap(long, short='j', action=ArgAction::SetTrue, help = "Run SSH server")]
     ssh_server: bool,
-    #[clap(long, short = 'i', action=ArgAction::Set, help = "Set ip of seed node")]
+    #[clap(long, short = 's', action=ArgAction::Set, help = "Set ip of seed node")]
     pub seed_node_ip: Option<String>,
     #[clap(long, short = 'p', action=ArgAction::Set, help = "Set network port")]
     network_port: Option<u16>,
-    #[clap(long, short = 'v', action=ArgAction::SetTrue, help = "Use ipv6 instead of ipv4")]
+    #[clap(long, short = 'i', action=ArgAction::SetTrue, help = "Use ipv6 instead of ipv4")]
     use_ipv6: bool,
     #[clap(long, action=ArgAction::Set, help = "Set store prefix")]
     store_prefix: Option<String>,

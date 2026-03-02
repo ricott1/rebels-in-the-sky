@@ -235,7 +235,6 @@ pub enum UiCallback {
         zoom_level: ZoomLevel,
     },
     Ping,
-    Sync,
     SendMessage {
         timestamp: Tick,
         message: String,
@@ -919,14 +918,11 @@ impl UiCallback {
 
     fn ping() -> AppCallback {
         Box::new(move |app: &mut App| {
+            app.network_handler.send_sync_request()?;
+            app.ui
+                .push_log_event(Tick::now(), None, "Pinging...", log::Level::Info);
             app.world.dirty_network = true;
-            Ok(None)
-        })
-    }
 
-    fn sync() -> AppCallback {
-        Box::new(move |app: &mut App| {
-            app.world.dirty_network = true;
             Ok(None)
         })
     }
@@ -936,8 +932,19 @@ impl UiCallback {
             let from_peer_id = *app.network_handler.own_peer_id();
             let own_team = app.world.get_own_team()?;
             let author = own_team.name.clone();
-            app.network_handler
-                .send_message(timestamp, from_peer_id, author, message.clone())?;
+            if let Err(err) =
+                app.network_handler
+                    .send_message(timestamp, from_peer_id, author, message.clone())
+            {
+                app.ui.push_chat_error_event(timestamp, err);
+            } else {
+                app.ui.push_chat_event(
+                    timestamp,
+                    from_peer_id,
+                    own_team.name.clone(),
+                    message.clone(),
+                );
+            }
 
             Ok(None)
         })
@@ -1694,6 +1701,20 @@ impl UiCallback {
                 error_message,
             } => {
                 if let Some(tournament) = app.world.tournaments.get_mut(tournament_id) {
+                    if tournament.is_canceled() {
+                        app.ui.push_log_event(
+                            Tick::now(),
+                            None,
+                            format!(
+                                "{} tournament already cancelled, will be removed in next tick: {}",
+                                tournament.name(),
+                                error_message
+                            ),
+                            log::Level::Warn,
+                        );
+                        return Ok(None);
+                    }
+
                     tournament.cancel();
 
                     if app.world.own_team_id == tournament.organizer_id {
@@ -1876,7 +1897,6 @@ impl UiCallback {
                 zoom_level,
             } => Self::zoom_to_planet(*planet_id, *zoom_level)(app),
             Self::Ping => Self::ping()(app),
-            Self::Sync => Self::sync()(app),
             Self::SendMessage { timestamp, message } => {
                 Self::send_message(*timestamp, message.clone())(app)
             }

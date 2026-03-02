@@ -464,10 +464,7 @@ impl TournamentPanel {
 
         let num_participants = tournament.participants.len();
         let number_of_rounds = number_of_rounds(num_participants);
-        let current_round = current_round(
-            num_participants,
-            past_game_summaries.len(),
-        ) + 1;
+        let current_round = current_round(num_participants, past_game_summaries.len()) + 1;
 
         frame.render_widget(
             Paragraph::new(format!(
@@ -534,11 +531,6 @@ impl TournamentPanel {
             .collect::<Vec<&GameSummary>>();
 
         let num_participants = tournament_summary.participant_ids.len();
-        let number_of_rounds = number_of_rounds(num_participants);
-
-        let brackets_split =
-            Layout::horizontal([Constraint::Length(24)].repeat(number_of_rounds + 1))
-                .split(t_split[1]);
 
         let brackets = tournament_brackets_lines::get_bracket_lines(
             Some(tournament_summary.winner_name.as_str()),
@@ -548,6 +540,9 @@ impl TournamentPanel {
             world.own_team_id,
             Tick::now(),
         );
+
+        let brackets_split =
+            Layout::horizontal([Constraint::Length(24)].repeat(brackets.len())).split(t_split[1]);
         for (round_idx, lines) in brackets.iter().enumerate() {
             frame.render_widget(Paragraph::new(lines.clone()), brackets_split[round_idx]);
         }

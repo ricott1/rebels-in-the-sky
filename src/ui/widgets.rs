@@ -125,7 +125,7 @@ pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Butt
     ))
     .set_hotkey(ui_key::TRAVEL);
 
-    if let Err(e) = own_team.can_travel_to_planet(planet, 0) {
+    if let Err(e) = own_team.can_travel_to_planet(planet, TELEPORT_TRAVEL_DURATION) {
         teleport_button.disable(Some(e.to_string()));
     }
 
@@ -1724,11 +1724,16 @@ fn format_player_stats(player: &'_ Player) -> Vec<Line<'_>> {
         UiStyle::HEADER.bold(),
     )));
 
+    let seconds_played = stats.seconds_played as Tick * SECONDS;
     text.push(Line::from(format!(
         "{:<12} {:>9} {:>9}",
         "Play time",
-        (stats.seconds_played as Tick * SECONDS).formatted(),
-        ((stats.seconds_played as f32 * SECONDS as f32 / games_played) as Tick).formatted()
+        if seconds_played >= 1 * DAYS {
+            seconds_played.formatted_up_to_hours()
+        } else {
+            seconds_played.formatted()
+        },
+        ((seconds_played as f32 / games_played) as Tick).formatted()
     )));
 
     text.push(Line::from(format!(

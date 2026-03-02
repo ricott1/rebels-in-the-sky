@@ -123,6 +123,7 @@ impl TirednessCost {
 
 pub struct MoraleModifier;
 impl MoraleModifier {
+    pub const CRITICAL_MALUS: f32 = -10.0;
     pub const SEVERE_MALUS: f32 = -5.0;
     pub const HIGH_MALUS: f32 = -2.5;
     pub const MEDIUM_MALUS: f32 = -1.0;
@@ -132,6 +133,7 @@ impl MoraleModifier {
     pub const MEDIUM_BONUS: f32 = 1.0;
     pub const HIGH_BONUS: f32 = 2.5;
     pub const SEVERE_BONUS: f32 = 5.0;
+    pub const CRITICAL_BONUS: f32 = 10.0;
 }
 
 pub struct ReputationModifier;
@@ -157,8 +159,8 @@ pub const LEAVING_PROBABILITY_MORALE_MODIFIER: f64 =
     0.015 * (1.0 / MORALE_THRESHOLD_FOR_LEAVING) as f64;
 pub const MORALE_DEMOTION_MALUS: f32 = MoraleModifier::MEDIUM_MALUS;
 pub const MORALE_GAME_POPULATION_MODIFIER: f32 = 0.5;
-pub const MORALE_DRINK_BONUS: f32 = MoraleModifier::SEVERE_BONUS;
-pub const MORALE_HIRE_BONUS: f32 = MoraleModifier::SEVERE_BONUS;
+pub const MORALE_DRINK_BONUS: f32 = MoraleModifier::CRITICAL_BONUS;
+pub const MORALE_HIRE_BONUS: f32 = MoraleModifier::CRITICAL_BONUS;
 pub const TIREDNESS_DRINK_MALUS: f32 = TirednessCost::SEVERE;
 pub const TIREDNESS_DRINK_MALUS_SPUGNA: f32 = TirednessCost::HIGH;
 pub const TIREDNESS_DECREASE_AFTER_TOURNAMENT_GAME: f32 = 2.0 * TirednessCost::CRITICAL;

@@ -218,6 +218,7 @@ pub trait SystemTimeTick {
     fn formatted_as_time(&self) -> String;
     fn formatted_as_date(&self) -> String;
     fn formatted(&self) -> String;
+    fn formatted_up_to_hours(&self) -> String;
 }
 
 impl SystemTimeTick for Tick {
@@ -280,6 +281,14 @@ impl SystemTimeTick for Tick {
         } else {
             format!("{hours:02}:{minutes:02}:{seconds:02}")
         }
+    }
+
+    fn formatted_up_to_hours(&self) -> String {
+        let seconds = self.as_secs() % 60;
+        let minutes = self.as_minutes() % 60;
+        let hours = self.as_hours();
+
+        format!("{hours}:{minutes:02}:{seconds:02}")
     }
 }
 

@@ -23,6 +23,7 @@ use crate::types::{AppResult, SystemTimeTick};
 use crate::ui::space_cove_panel::SpaceCovePanel;
 #[cfg(feature = "audio")]
 use crate::AudioPlayerState;
+use anyhow::Error;
 use core::fmt::Debug;
 use itertools::Itertools;
 use libp2p::PeerId;
@@ -143,11 +144,15 @@ impl UiScreen {
         &mut self,
         timestamp: Tick,
         peer_id: PeerId,
-        author: String,
-        message: String,
+        author: impl Into<String>,
+        message: impl Into<String>,
     ) {
         self.swarm_panel
-            .push_chat_event(timestamp, peer_id, author, message);
+            .push_chat_event(timestamp, peer_id, author.into(), message.into());
+    }
+
+    pub fn push_chat_error_event(&mut self, timestamp: Tick, error: Error) {
+        self.swarm_panel.push_chat_error_event(timestamp, error);
     }
 
     pub fn push_chat_history(&mut self, entries: Vec<(Tick, PeerId, String, String)>) {
@@ -211,11 +216,11 @@ impl UiScreen {
         &mut self,
         timestamp: Tick,
         peer_id: Option<PeerId>,
-        text: String,
+        text: impl Into<String>,
         level: log::Level,
     ) {
         self.swarm_panel
-            .push_log_event(timestamp, peer_id, text, level);
+            .push_log_event(timestamp, peer_id, text.into(), level);
     }
 
     pub const fn set_state(&mut self, state: UiState) {

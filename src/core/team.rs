@@ -339,7 +339,11 @@ impl Team {
             return Err(anyhow!("Cannot use teleportation pad on {}", to.name));
         }
 
-        let rum_required = self.player_ids.len() as u32;
+        let rum_required = if self.home_planet_id == to.id {
+            0
+        } else {
+            self.player_ids.len() as u32
+        };
         let has_rum = self.resources.value(&Resource::RUM) >= rum_required;
 
         if !has_rum {
@@ -503,20 +507,18 @@ impl Team {
 
         match self.space_cove.as_ref() {
             None => {
-                return Err(anyhow!(
-                    "Cannot organize a tournament without a space cove."
-                ));
+                return Err(anyhow!("Cannot organize a tournament without a space cove"));
             }
             Some(cove) => match cove.state {
                 SpaceCoveState::UnderConstruction => {
                     return Err(anyhow!(
-                        "Cannot organize a tournament if space cove is not ready."
+                        "Cannot organize a tournament if space cove is not ready"
                     ))
                 }
                 SpaceCoveState::Ready => {
                     if !matches!(self.is_on_planet(), Some(id) if id == cove.planet_id) {
                         return Err(anyhow!(
-                            "Cannot organize a tournament while not at your space cove planet."
+                            "Cannot organize a tournament while not at your space cove"
                         ));
                     }
                 }

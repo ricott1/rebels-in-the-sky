@@ -142,6 +142,10 @@ impl Planet {
         self.populations.values().sum()
     }
 
+    pub fn has_market(&self) -> bool {
+        self.total_population() > 0 || self.upgrades.contains(&AsteroidUpgradeTarget::Market)
+    }
+
     pub fn random_population(&self, rng: &mut ChaCha8Rng) -> Option<Population> {
         let weights = self
             .populations

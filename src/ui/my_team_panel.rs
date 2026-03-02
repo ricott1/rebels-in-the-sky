@@ -326,7 +326,7 @@ impl MyTeamPanel {
             default_block().title(format!("Planet {} Market", planet.name)),
             area,
         );
-        if planet.total_population() == 0 {
+        if !planet.has_market() {
             frame.render_widget(
                 Paragraph::new(vec![
                     Line::from("There is no market available on this planet."),
@@ -1592,6 +1592,12 @@ impl MyTeamPanel {
                 // Build space cove button
                 let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
                 Some(Upgrade::new(AsteroidUpgradeTarget::SpaceCove, bonus))
+            } else if matches!(own_team.has_space_cove_on(), Some(id) if id == asteroid.id)
+                && !asteroid.upgrades.contains(&AsteroidUpgradeTarget::Market)
+            {
+                // Build market button
+                let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
+                Some(Upgrade::new(AsteroidUpgradeTarget::Market, bonus))
             } else {
                 None
             };
@@ -2393,7 +2399,7 @@ impl Screen for MyTeamPanel {
             self.planet_markets = world
                 .planets
                 .iter()
-                .filter(|(_, planet)| planet.total_population() > 0)
+                .filter(|(_, planet)| planet.has_market())
                 .sorted_by(|(_, a), (_, b)| a.name.cmp(&b.name))
                 .map(|(id, _)| *id)
                 .collect::<Vec<PlanetId>>();

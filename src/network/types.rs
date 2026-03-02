@@ -14,7 +14,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use itertools::Itertools;
-use libp2p::PeerId;
+use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -65,8 +65,9 @@ pub enum NetworkData {
     RelayerMessageToTeam {
         timestamp: Tick,
         message: String,
-        team_id: TeamId,
+        team_id: Option<TeamId>,
     },
+    SyncRequest,
     TournamentRegistrationRequest {
         timestamp: Tick,
         tournament_id: TournamentId,
@@ -77,6 +78,9 @@ pub enum NetworkData {
     Tournament {
         timestamp: Tick,
         tournament: Tournament,
+    },
+    PortInfo {
+        port: u16,
     },
 }
 
@@ -260,9 +264,10 @@ pub struct ChatHistoryEntry {
 pub struct SeedInfo {
     pub connected_peers_count: usize,
     pub version: [usize; 3],
-    pub message: Option<String>,
     pub team_ranking: Vec<(TeamId, TeamRanking)>,
     pub player_ranking: Vec<(PlayerId, PlayerRanking)>,
+    #[serde(default)]
+    pub peer_addresses: Vec<(PeerId, Multiaddr)>,
     #[serde(default)]
     pub chat_history: Vec<ChatHistoryEntry>,
 }
@@ -270,9 +275,9 @@ pub struct SeedInfo {
 impl SeedInfo {
     pub fn new(
         connected_peers_count: usize,
-        message: Option<String>,
         team_ranking: Vec<(TeamId, TeamRanking)>,
         player_ranking: Vec<(PlayerId, PlayerRanking)>,
+        peer_addresses: Vec<(PeerId, Multiaddr)>,
         chat_history: Vec<ChatHistoryEntry>,
     ) -> AppResult<Self> {
         Ok(Self {
@@ -282,9 +287,9 @@ impl SeedInfo {
                 env!("CARGO_PKG_VERSION_MINOR").parse()?,
                 env!("CARGO_PKG_VERSION_PATCH").parse()?,
             ],
-            message,
             team_ranking,
             player_ranking,
+            peer_addresses,
             chat_history,
         })
     }

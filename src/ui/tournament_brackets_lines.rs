@@ -153,7 +153,7 @@ pub fn current_round(num_participants: usize, games_completed: usize) -> usize {
     round_sizes.len() - 1
 }
 
-pub fn compute_round_sizes(participants: usize) -> Vec<usize> {
+fn compute_round_sizes(participants: usize) -> Vec<usize> {
     let num_rounds = number_of_rounds(participants);
     let mut rounds = Vec::with_capacity(num_rounds);
     let next_pot = 1usize << (num_rounds - 1);

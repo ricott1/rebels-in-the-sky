@@ -21,6 +21,7 @@ use crate::game_engine::{
     TournamentId, TournamentState, TournamentSummary, RECOVERING_TIREDNESS_PER_SHORT_TICK,
 };
 use crate::image::color_map::ColorMap;
+use crate::network::network_store_data::NetworkStoreData;
 use crate::network::types::{NetworkGame, NetworkTeam};
 use crate::space_adventure::SpaceAdventure;
 use crate::store::{save_game, save_tournament};
@@ -85,15 +86,15 @@ pub struct World {
     pub space_adventure: Option<SpaceAdventure>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub network_keypair: Option<Vec<u8>>, // Allows to re-establish the same PeerId across sessions.
-    #[serde(skip_serializing_if = "is_default")]
-    #[serde(default)]
     pub tournaments: TournamentMap,
     #[serde(skip)]
     pub recently_finished_tournaments: TournamentMap, // Holds finished tournaments for the session, but are not persisted.
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub past_tournaments: TournamentSummaryMap, // Holds summary of finished tournaments, persisted.
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub network_store_data: NetworkStoreData,
 }
 
 impl World {
@@ -1512,6 +1513,22 @@ impl World {
                 });
             }
 
+            // Update tournament's copy of the game with the ended version,
+            // so that network sync and generate_next_games see the correct state.
+            if let Some(tournament_id) = game.part_of_tournament {
+                if let Some(tournament) = self.tournaments.get_mut(&tournament_id) {
+                    if let Some(t_game) = tournament.games.iter_mut().find(|g| g.id == game.id) {
+                        *t_game = game.clone();
+                    } else {
+                        log::error!(
+                            "Game {} should be in tournament {} games",
+                            game.id,
+                            tournament_id
+                        );
+                    }
+                }
+            }
+
             // Teams get money depending on game attendance.
             // Home team gets a bonus for playing at home.
             // If a team is knocked out, money goes to the other team.
@@ -1680,6 +1697,13 @@ impl World {
     }
 
     fn tick_games(&mut self, current_tick: Tick) -> AppResult<()> {
+        // Fallback to ensure we don't add games with no corresponding tournament
+        self.games.retain(|_, game| {
+            if let Some(id) = game.part_of_tournament {
+                return self.tournaments.contains_key(&id);
+            }
+            true
+        });
         // NOTE!!: we do not set the world to dirty so we don't save on every tick.
         //         the idea is that the game is completely determined at the beginning,
         //         so we can similuate it through.
@@ -1695,6 +1719,13 @@ impl World {
         let mut callbacks = vec![];
         let mut new_games = vec![];
         for (&tournament_id, tournament) in self.tournaments.iter_mut() {
+            // Failsafe condition: if current tick is larger than max_ending_time, the tournament should definetely have been canceled
+            if current_tick > tournament.max_ending_time() {
+                let error_message = "Tournament is beyond max time.".to_string();
+                log::warn!("Tournament {tournament_id}: {error_message}");
+                continue;
+            }
+
             match tournament.state(current_tick) {
                 TournamentState::Canceled => {}
                 TournamentState::Registration => {}
@@ -1756,11 +1787,24 @@ impl World {
                     // tournament games when storing, otherwise the hashmap would be incorrect.
                     if tournament.is_team_participating(&self.own_team_id) {
                         // If team is participating, it should have all the necessary games stored.
-                        new_games.append(&mut tournament.generate_next_games(
+
+                        match tournament.generate_next_games(
                             current_tick,
                             &self.games,
                             &self.past_games,
-                        )?);
+                        ) {
+                            Ok(mut t_games) => new_games.append(&mut t_games),
+                            Err(err) => {
+                                let error_message =
+                                    format!("Error while simulating tournament: {err}.");
+                                log::warn!("{error_message}");
+                                callbacks.push(UiCallback::CancelTournament {
+                                    tournament_id,
+                                    error_message,
+                                });
+                                continue;
+                            }
+                        }
                     }
                     // If we receive a valid initialized tournament from the network where the team is not participating,
                     // the next games cannot be generated correctly as the world does not contain the games.
@@ -1773,7 +1817,13 @@ impl World {
                         ) {
                             Ok(mut t_games) => new_games.append(&mut t_games),
                             Err(err) => {
-                                log::warn!("Error while simulating network tournament: {err}.");
+                                let error_message =
+                                    format!("Error while simulating network tournament: {err}.");
+                                log::warn!("{error_message}");
+                                callbacks.push(UiCallback::CancelTournament {
+                                    tournament_id,
+                                    error_message,
+                                });
                                 continue;
                             }
                         }
@@ -1833,7 +1883,11 @@ impl World {
         }
 
         for tournament in self.tournaments.values() {
-            if tournament.state(current_tick) == TournamentState::Ended {
+            if tournament.is_canceled() {
+                continue;
+            }
+
+            if tournament.has_ended() {
                 if tournament.is_team_participating(&self.own_team_id) {
                     let summary = TournamentSummary::from_tournament(tournament);
                     self.past_tournaments.insert(summary.id, summary);
@@ -2755,7 +2809,7 @@ impl World {
             past_games: self.past_games.clone(),
             past_tournaments: self.past_tournaments.clone(),
             serialized_size: self.serialized_size,
-            network_keypair: self.network_keypair.clone(),
+            network_store_data: self.network_store_data.to_store(),
             ..Default::default()
         };
         w.filter_peer_data(None)?;

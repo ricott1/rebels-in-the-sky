@@ -8,7 +8,8 @@ const MINUTES_PER_BREAK: u16 = 2;
 // const HALFTIME_BREAK_DURATION: u16 = 10;
 // const QUARTERS: u16 = 4;
 const SECONDS_PER_MINUTE: u16 = 60;
-pub const MAX_TIME: u16 = SECONDS_PER_MINUTE * (MINUTES_PER_QUARTER * 4 + MINUTES_PER_BREAK * 3);
+pub const MAX_TIME_IN_SECONDS: u16 =
+    SECONDS_PER_MINUTE * (MINUTES_PER_QUARTER * 4 + MINUTES_PER_BREAK * 3);
 
 #[derive(
     Debug, Display, Default, PartialEq, PartialOrd, Clone, Copy, Serialize_repr, Deserialize_repr,
@@ -77,7 +78,7 @@ impl Period {
             Self::B1 | Self::B2 | Self::B3 => {
                 self.previous().end() + SECONDS_PER_MINUTE * MINUTES_PER_BREAK
             }
-            Self::B4 => MAX_TIME,
+            Self::B4 => MAX_TIME_IN_SECONDS,
         }
     }
 }
@@ -123,10 +124,10 @@ impl Timer {
     }
 
     pub fn seconds(&self) -> u16 {
-        if self.value > MAX_TIME {
+        if self.value > MAX_TIME_IN_SECONDS {
             return 0;
         }
-        (MAX_TIME - self.value) % SECONDS_PER_MINUTE
+        (MAX_TIME_IN_SECONDS - self.value) % SECONDS_PER_MINUTE
     }
 
     pub fn is_break(&self) -> bool {

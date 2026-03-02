@@ -3,8 +3,8 @@ use super::{
     widgets::default_block,
 };
 use crate::core::{AU, LIGHT_YEAR, SATOSHI_PER_BITCOIN};
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use image::RgbaImage;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
@@ -173,11 +173,41 @@ pub fn wrap_text<T: AsRef<str>>(text: T, line_width: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = String::new();
 
-    for ch in text.chars() {
-        current.push(ch);
-        if current.chars().count() == line_width {
+    for word in text.split_whitespace() {
+        let word_len = word.chars().count();
+        let current_len = current.chars().count();
+
+        if current.is_empty() {
+            // Word longer than line_width: force-split it
+            if word_len > line_width {
+                for ch in word.chars() {
+                    current.push(ch);
+                    if current.chars().count() == line_width {
+                        lines.push(current);
+                        current = String::new();
+                    }
+                }
+            } else {
+                current = word.to_string();
+            }
+        } else if current_len + 1 + word_len <= line_width {
+            current.push(' ');
+            current.push_str(word);
+        } else {
             lines.push(current);
-            current = String::new();
+            // Word longer than line_width: force-split it
+            if word_len > line_width {
+                current = String::new();
+                for ch in word.chars() {
+                    current.push(ch);
+                    if current.chars().count() == line_width {
+                        lines.push(current);
+                        current = String::new();
+                    }
+                }
+            } else {
+                current = word.to_string();
+            }
         }
     }
 
@@ -207,14 +237,29 @@ mod test {
     }
 
     #[test]
-    fn wraps_ascii_text() {
+    fn test_wraps_ascii_text() {
         let result = wrap_text("HelloWorld", 5);
         assert_eq!(result, vec!["Hello", "World"]);
     }
 
     #[test]
-    fn short_text_is_unchanged() {
+    fn test_short_text_is_unchanged() {
         let result = wrap_text("Hi", 10);
         assert_eq!(result, vec!["Hi"]);
+    }
+
+    #[test]
+    fn test_wraps_on_word_boundaries() {
+        let result = wrap_text("the quick brown fox jumps", 10);
+        assert_eq!(result, vec!["the quick", "brown fox", "jumps"]);
+    }
+
+    #[test]
+    fn test_wraps_long_word_is_force_split() {
+        let result = wrap_text("the quick brown fox jumpverylongindeed", 10);
+        assert_eq!(
+            result,
+            vec!["the quick", "brown fox", "jumpverylo", "ngindeed"]
+        );
     }
 }

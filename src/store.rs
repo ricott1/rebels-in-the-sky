@@ -1,5 +1,5 @@
 #[cfg(feature = "relayer")]
-use crate::network::types::{ChatHistoryEntry, PlayerRanking, TeamRanking};
+use crate::network::network_store_data::NetworkStoreData;
 use crate::{
     core::world::World,
     game_engine::{game::Game, Tournament, TournamentId},
@@ -14,9 +14,6 @@ use flate2::{
 };
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
-
-#[cfg(feature = "relayer")]
-use std::collections::HashMap;
 use std::{
     io::{Read, Write},
     path::PathBuf,
@@ -28,11 +25,7 @@ static PERSISTED_GAMES_PREFIX: &str = "games/game_";
 static PERSISTED_TOURNAMENTS_PREFIX: &str = "tournaments/tournament_";
 static LEGACY_PERSISTED_GAMES_PREFIX: &str = "game_";
 #[cfg(feature = "relayer")]
-static PERSISTED_TEAM_RANKING_FILENAME: &str = "relayer/team_ranking";
-#[cfg(feature = "relayer")]
-static PERSISTED_PLAYER_RANKING_FILENAME: &str = "relayer/player_ranking";
-#[cfg(feature = "relayer")]
-static PERSISTED_CHAT_HISTORY_FILENAME: &str = "relayer/chat_history";
+static PERSISTED_RELAYER_NETWORK_STORE_DATA_FILENAME: &str = "relayer/network_store_data";
 const COMPRESSION_LEVEL: u32 = 5;
 
 fn prefixed_world_filename(store_prefix: &str) -> String {
@@ -217,50 +210,24 @@ pub fn load_relayer_messages() -> AppResult<Vec<String>> {
 }
 
 #[cfg(feature = "relayer")]
-pub fn save_team_ranking(
-    team_ranking: &HashMap<TeamId, TeamRanking>,
+pub fn save_relayer_network_store_data(
+    network_store_data: &NetworkStoreData,
     with_backup: bool,
 ) -> AppResult<()> {
-    save_to_json(PERSISTED_TEAM_RANKING_FILENAME, &team_ranking)?;
+    save_to_json(
+        PERSISTED_RELAYER_NETWORK_STORE_DATA_FILENAME,
+        &network_store_data,
+    )?;
     if with_backup {
-        let backup_filename = format!("{PERSISTED_TEAM_RANKING_FILENAME}.back");
-        save_to_json(&backup_filename, &team_ranking)?;
+        let backup_filename = format!("{PERSISTED_RELAYER_NETWORK_STORE_DATA_FILENAME}.back");
+        save_to_json(&backup_filename, &network_store_data)?;
     }
     Ok(())
 }
 
 #[cfg(feature = "relayer")]
-pub fn load_team_ranking() -> AppResult<HashMap<TeamId, TeamRanking>> {
-    load_from_json::<HashMap<TeamId, TeamRanking>>(PERSISTED_TEAM_RANKING_FILENAME)
-}
-
-#[cfg(feature = "relayer")]
-pub fn save_player_ranking(
-    player_ranking: &HashMap<PlayerId, PlayerRanking>,
-    with_backup: bool,
-) -> AppResult<()> {
-    save_to_json(PERSISTED_PLAYER_RANKING_FILENAME, &player_ranking)?;
-    if with_backup {
-        let backup_filename = format!("{PERSISTED_PLAYER_RANKING_FILENAME}.back");
-        save_to_json(&backup_filename, &player_ranking)?;
-    }
-    Ok(())
-}
-
-#[cfg(feature = "relayer")]
-pub fn load_player_ranking() -> AppResult<HashMap<PlayerId, PlayerRanking>> {
-    load_from_json::<HashMap<PlayerId, PlayerRanking>>(PERSISTED_PLAYER_RANKING_FILENAME)
-}
-
-#[cfg(feature = "relayer")]
-pub fn save_chat_history(history: &[ChatHistoryEntry]) -> AppResult<()> {
-    save_to_json(PERSISTED_CHAT_HISTORY_FILENAME, &history)?;
-    Ok(())
-}
-
-#[cfg(feature = "relayer")]
-pub fn load_chat_history() -> AppResult<Vec<ChatHistoryEntry>> {
-    load_from_json::<Vec<ChatHistoryEntry>>(PERSISTED_CHAT_HISTORY_FILENAME)
+pub fn load_relayer_network_store_data() -> AppResult<NetworkStoreData> {
+    load_from_json::<NetworkStoreData>(PERSISTED_RELAYER_NETWORK_STORE_DATA_FILENAME)
 }
 
 pub fn get_world_size(store_prefix: &str) -> AppResult<u64> {

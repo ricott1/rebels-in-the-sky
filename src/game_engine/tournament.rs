@@ -1,8 +1,6 @@
 use crate::{
     app_version,
-    core::{
-        utils::is_default, Planet, Rated, Skill, Team, TickInterval, MINUTES, MIN_SKILL, SECONDS,
-    },
+    core::{utils::is_default, Planet, Rated, Skill, Team, MINUTES, MIN_SKILL, SECONDS},
     game_engine::{
         game::{Game, GameSummary},
         timer,
@@ -239,6 +237,14 @@ impl Tournament {
         self.registrations_closing_at
             + Self::CONFIRMATION_STATE_DURATION
             + Self::SYNCING_STATE_DURATION
+    }
+
+    pub fn max_ending_time(&self) -> Tick {
+        let n = self.max_participants;
+        let game_duration = timer::MAX_TIME_IN_SECONDS as Tick * SECONDS;
+        let rounds = (n as u32 - 1).ilog2() as Tick + 1; // ceil(log2(n))
+        let interval_rounds = (n as u32).ilog2() as Tick; // floor(log2(n))
+        self.starting_at() + rounds * game_duration + interval_rounds * self.game_time_interval
     }
 
     pub fn new(organizer: &Team, tournament_type: TournamentType) -> AppResult<Self> {
@@ -508,7 +514,7 @@ impl Tournament {
                     home_team_in_game.clone(),
                     away_team_in_game.clone(),
                     game.starting_at
-                        + timer::MAX_TIME as Tick * TickInterval::SHORT
+                        + timer::MAX_TIME_IN_SECONDS as Tick * SECONDS
                         + self.game_time_interval,
                 );
                 self.games.push(new_game.clone());
@@ -529,6 +535,7 @@ impl Tournament {
             .filter_map(|game| games.get(&game.id))
             .collect::<Vec<&Game>>()
     }
+
     pub fn past_game_summaries<'a>(
         &'a self,
         past_games: &'a GameSummaryMap,
@@ -828,7 +835,10 @@ mod tests {
             current_tick += TickInterval::SHORT;
         }
 
-        assert!(moved_to_past, "Should have moved at least one game to past_games");
+        assert!(
+            moved_to_past,
+            "Should have moved at least one game to past_games"
+        );
         assert!(tournament.winner.is_some());
         // All tournament games should be accounted for in past_game_summaries
         assert_eq!(
@@ -878,17 +888,17 @@ mod tests {
 
             for game in &new_games {
                 // The new game should be scheduled at:
-                // ended_game.starting_at + MAX_TIME (as Tick) + game_time_interval
+                // ended_game.starting_at + MAX_TIME_IN_SECONDS (as Tick) + game_time_interval
                 let game_time_interval = 30 * crate::core::MINUTES;
                 let matches_any = ended_starting_ats.iter().any(|&ended_start| {
                     let expected = ended_start
-                        + timer::MAX_TIME as Tick * TickInterval::SHORT
+                        + timer::MAX_TIME_IN_SECONDS as Tick * SECONDS
                         + game_time_interval;
                     game.starting_at == expected
                 });
                 assert!(
                     matches_any,
-                    "New game starting_at {} should be based on an ended game's starting_at + MAX_TIME + interval",
+                    "New game starting_at {} should be based on an ended game's starting_at + MAX_TIME_IN_SECONDS + interval",
                     game.starting_at
                 );
                 found_new_game = true;
@@ -913,7 +923,11 @@ mod tests {
         let mut past_game_summaries = GameSummaryMap::new();
 
         let initial_games = tournament.initialize();
-        assert_eq!(initial_games.len(), 1, "2 participants should produce 1 initial game");
+        assert_eq!(
+            initial_games.len(),
+            1,
+            "2 participants should produce 1 initial game"
+        );
 
         for game in initial_games {
             games.insert(game.id, game);

@@ -257,7 +257,7 @@ impl PlayerListPanel {
         let button_split = Layout::horizontal([
             Constraint::Length(60),
             Constraint::Length(60),
-            Constraint::Min(1),
+            Constraint::Fill(1),
         ])
         .split(v_split[1]);
 

@@ -19,6 +19,7 @@ use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamI
 use crate::ui::clickable_list::{ClickableList, ClickableListItem};
 use crate::ui::ui_key;
 use crate::ui::utils::wrap_text;
+use anyhow::Error;
 use core::fmt::Debug;
 use itertools::Itertools;
 use libp2p::PeerId;
@@ -85,18 +86,30 @@ impl LogEvent {
 #[derive(Debug)]
 struct ChatEvent {
     timestamp: Tick,
-    peer_id: PeerId,
+    peer_id: Option<PeerId>,
     author: String,
     text: String,
+    is_error: bool,
 }
 
 impl ChatEvent {
     pub const fn new(timestamp: Tick, peer_id: PeerId, author: String, text: String) -> Self {
         Self {
             timestamp,
-            peer_id,
+            peer_id: Some(peer_id),
             author,
             text,
+            is_error: false,
+        }
+    }
+
+    pub fn error(timestamp: Tick, text: String) -> Self {
+        Self {
+            timestamp,
+            peer_id: None,
+            author: "".to_string(),
+            text,
+            is_error: true,
         }
     }
 }
@@ -156,6 +169,7 @@ pub struct SwarmPanel {
     log_message_list: ClickableList<'static>,
     should_update_message_list: Option<SwarmView>,
     emojies_substutions: Vec<(&'static str, &'static str)>,
+    chat_history_received: bool,
 }
 
 impl SwarmPanel {
@@ -232,19 +246,21 @@ impl SwarmPanel {
         text: String,
         level: log::Level,
     ) {
-        let event = LogEvent::new(timestamp, peer_id, text, level);
-
         if let Some(last_event) = self.log_events.last_mut() {
             // If we recently pushed the same event, don't push it again,
             // but update the timestamp
-            if last_event.peer_id == event.peer_id
-                && last_event.text == event.text
-                && event.timestamp.saturating_sub(last_event.timestamp) <= EVENT_DUPLICATE_DELAY
+            if last_event.peer_id == peer_id
+                && last_event.text == text
+                && timestamp.saturating_sub(last_event.timestamp) <= EVENT_DUPLICATE_DELAY
             {
-                last_event.timestamp = event.timestamp;
+                last_event.timestamp = timestamp;
+                self.should_update_message_list = Some(SwarmView::Log);
+
                 return;
             }
         }
+
+        let event = LogEvent::new(timestamp, peer_id, text, level);
 
         self.log_events.push(event);
 
@@ -273,7 +289,22 @@ impl SwarmPanel {
         self.should_update_message_list = Some(SwarmView::Chat);
     }
 
+    pub fn push_chat_error_event(&mut self, timestamp: Tick, error: Error) {
+        let event = ChatEvent::error(timestamp, error.to_string());
+
+        if self.chat_events.insert(event) {
+            self.unread_chat_messages += 1;
+            self.chat_message_index = self
+                .chat_message_index
+                .map_or(Some(0), |index| Some(index + 1));
+        }
+        self.should_update_message_list = Some(SwarmView::Chat);
+    }
+
     pub fn push_chat_history(&mut self, entries: Vec<(Tick, PeerId, String, String)>) {
+        if self.chat_history_received {
+            return;
+        }
         let mut any_new = false;
         for (timestamp, peer_id, author, message) in entries {
             let event = ChatEvent::new(timestamp, peer_id, author, message);
@@ -291,6 +322,7 @@ impl SwarmPanel {
                 });
             self.should_update_message_list = Some(SwarmView::Chat);
         }
+        self.chat_history_received = true;
     }
 
     pub fn add_peer_id(&mut self, peer_id: PeerId, team_id: TeamId) {
@@ -852,17 +884,25 @@ impl SwarmPanel {
                 UiStyle::HIGHLIGHT,
             );
 
-            let author = if matches!(self.peer_id_to_team_id.get(&event.peer_id), Some(&id) if id == world.own_team_id)
+            let author = if event.is_error {
+                "[Error]"
+            } else if matches!(self.peer_id_to_team_id.get(&event.peer_id.expect("Non error chat event should have a PeerId")), Some(&id) if id == world.own_team_id)
             {
                 "You"
             } else {
                 event.author.as_str()
             };
 
-            let style = if matches!(self.peer_id_to_team_id.get(&event.peer_id), Some(&id) if id == world.own_team_id)
+            let style = if event.is_error {
+                UiStyle::ERROR
+            } else if matches!(self.peer_id_to_team_id.get(&event.peer_id.expect("Non error chat event should have a PeerId")), Some(&id) if id == world.own_team_id)
             {
                 UiStyle::OWN_TEAM
-            } else if self.is_peer_connected(&event.peer_id) {
+            } else if self.is_peer_connected(
+                &event
+                    .peer_id
+                    .expect("Non error chat event should have a PeerId"),
+            ) {
                 UiStyle::NETWORK
             } else {
                 UiStyle::DISCONNECTED
@@ -978,17 +1018,24 @@ impl Screen for SwarmPanel {
                 SwarmView::Requests => {}
             }
         }
+        // If chat index is at the bottom, reset unread chat messages.
+        else if self.view == SwarmView::Chat
+            && matches!(self.index(), Some(idx) if idx == self.max_index() - 1)
+        {
+            self.unread_chat_messages = 0;
+        }
 
         match self.should_update_message_list {
             Some(SwarmView::Chat) => {
                 self.update_chat_event_list(world);
+                self.should_update_message_list = None;
             }
             Some(SwarmView::Log) => {
                 self.update_log_event_list();
+                self.should_update_message_list = None;
             }
             _ => {}
         }
-        self.should_update_message_list = None;
 
         Ok(())
     }
@@ -1008,7 +1055,7 @@ impl Screen for SwarmPanel {
         Ok(())
     }
 
-    fn handle_key_events(&mut self, key_event: KeyEvent, world: &World) -> Option<UiCallback> {
+    fn handle_key_events(&mut self, key_event: KeyEvent, _world: &World) -> Option<UiCallback> {
         match key_event.code {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
@@ -1049,19 +1096,7 @@ impl Screen for SwarmPanel {
                 self.textarea.move_cursor(CursorMove::End);
                 self.textarea.delete_line_by_head();
 
-                let own_peer_id = self
-                    .team_id_to_peer_id
-                    .get(&world.own_team_id)
-                    .copied()
-                    .expect("There should be an own peer id.");
-                let own_team = world.get_own_team().expect("There should be an own team.");
                 let timestamp = Tick::now();
-                self.push_chat_event(
-                    timestamp,
-                    own_peer_id,
-                    own_team.name.clone(),
-                    message.clone(),
-                );
                 return Some(UiCallback::SendMessage { timestamp, message });
             }
             _ => {

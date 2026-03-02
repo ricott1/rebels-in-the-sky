@@ -15,8 +15,8 @@ use crate::{
     types::{PlanetId, PlanetMap},
 };
 use core::fmt::Debug;
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use itertools::Itertools;
+use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Margin};
 use ratatui::style::Stylize;
 use ratatui::widgets::{block, Borders, List, ListItem};
@@ -321,15 +321,16 @@ impl GalaxyPanel {
                     .set_hotkey(ui_key::TRAVEL)
                     .set_hover_text(hover_text);
 
+                    let is_teleporting = duration == TELEPORT_TRAVEL_DURATION;
                     if let Err(e) = own_team.can_travel_to_planet(planet, duration) {
                         travel_to_planet_button.disable(Some(e.to_string()));
-                    } else if duration > 0 {
-                        travel_to_planet_button
-                            .set_text(format!("Travel ({})", duration.formatted()));
-                    } else {
+                    } else if is_teleporting {
                         travel_to_planet_button.set_text("Teleport".to_string());
                         travel_to_planet_button = travel_to_planet_button
                             .set_hover_text(format!("Travel instantaneously to {}", planet.name));
+                    } else {
+                        travel_to_planet_button
+                            .set_text(format!("Travel ({})", duration.formatted()));
                     }
                     buttons.push(travel_to_planet_button);
                 }

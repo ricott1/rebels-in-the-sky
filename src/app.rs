@@ -9,7 +9,7 @@ use crate::{
     store::{get_world_size, load_world, reset_store, save_world, world_file_data},
     tick_event_handler,
     tui::{TerminalEvent, Tui, WriterProxy},
-    types::{AppResult, ResourceMap, StorableResourceMap, SystemTimeTick, Tick},
+    types::{AppResult, SystemTimeTick, Tick},
     ui::{
         PopupMessage, {UiScreen, UiState},
     },
@@ -86,18 +86,12 @@ impl App {
                 .world
                 .get_own_team_mut()
                 .expect("There should be an own team when simulating.");
-            // The team loses all resources but satoshis, we told you so!
-            let current_treasury = own_team.resources.value(&Resource::SATOSHI);
-            own_team.resources = ResourceMap::default();
-            own_team
-                .add_resource(Resource::SATOSHI, current_treasury)
-                .expect("It should always be possible to add satoshis");
-            own_team.spaceship.set_current_durability(0);
+
             own_team.current_location = TeamLocation::OnPlanet { planet_id: around };
 
             self.ui
             .push_popup(PopupMessage::Ok{
-               message: "The game was closed during a space adventure.\nAll the cargo and fuel have been lost.\nNext time go back to the base first!".to_string(), 
+               message: "The game was closed during a space adventure.\nNext time go back to the base first!".to_string(), 
                is_skippable:false,
                timestamp: Tick::now()
             });
@@ -267,7 +261,7 @@ impl App {
             if !network_started && self.world.has_own_team() {
                 if let Some(tcp_port) = self.args.network_port() {
                     // If world keypair bytes are set --> restore the network handler keypair
-                    if let Some(bytes) = self.world.network_keypair.as_ref() {
+                    if let Some(bytes) = self.world.network_store_data.keypair.as_ref() {
                         if let Ok(keypair) = Keypair::from_protobuf_encoding(bytes) {
                             self.network_handler.set_keypair(keypair);
                             log::info!("Network keypair restored.")
@@ -277,7 +271,9 @@ impl App {
                     }
                     // Else do the opposite: store the new random keypair in the world
                     else {
-                        self.world.network_keypair = Some(self.network_handler.keypair_bytes()?);
+                        self.world
+                            .network_store_data
+                            .set_keypair(self.network_handler.keypair_bytes()?);
                         log::info!("Network keypair persisted.")
                     }
                     self.network_handler.start_polling_events(
@@ -354,7 +350,7 @@ impl App {
         Ok(())
     }
 
-    pub fn notify_seed_version(&mut self, seed_version: [usize; 3]) -> AppResult<()> {
+    pub fn notify_seed_version(&mut self, seed_version: [usize; 3]) {
         if !self.new_version_notified {
             let [own_version_major, own_version_minor, own_version_patch] = app_version();
             let [version_major, version_minor, version_patch] = seed_version;
@@ -375,7 +371,6 @@ impl App {
                 self.new_version_notified = true;
             }
         }
-        Ok(())
     }
 
     pub fn new_world(&mut self) {
