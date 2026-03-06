@@ -71,7 +71,7 @@ impl SpaceCovePanel {
     }
 
     fn get_cove_images(
-        teams: &Vec<&Team>,
+        teams: &[&Team],
         is_blinking_left: bool,
         is_blinking_right: bool,
     ) -> AppResult<RgbaImage> {
@@ -128,7 +128,7 @@ impl SpaceCovePanel {
     }
 
     fn get_cove_image_widgets<'a>(
-        teams: &Vec<&Team>,
+        teams: &[&Team],
         is_blinking_left: bool,
         is_blinking_right: bool,
     ) -> AppResult<Paragraph<'a>> {

@@ -4,16 +4,16 @@ use crate::{
     types::*,
 };
 use itertools::Itertools;
-use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
+use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::net::IpAddr;
+use std::collections::{HashMap, HashSet};
 
 const CHAT_RETENTION_DURATION: Tick = 7 * DAYS;
 const PEERS_RETENTION_DURATION: Tick = 30 * DAYS;
 const TOP_PLAYER_RANKING_LENGTH: usize = 20;
 const TOP_TEAM_RANKING_LENGTH: usize = 10;
 const RANDOM_PEER_ADDRESSES_LENGTH: usize = 10;
+const MAX_CHAT_HISTORY: usize = 200;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NetworkStoreData {
@@ -22,12 +22,47 @@ pub struct NetworkStoreData {
     pub player_ranking: HashMap<PlayerId, PlayerRanking>,
     pub peer_addresses: HashMap<PeerId, Multiaddr>,
     pub peer_last_connection: HashMap<PeerId, Tick>,
-    #[serde(default)]
-    pub peer_ip: HashMap<PeerId, IpAddr>,
-    pub chat_history: Vec<ChatHistoryEntry>,
+    pub chat_history: HashSet<ChatHistoryEntry>,
 }
 
 impl NetworkStoreData {
+    pub fn to_seed_info(&self) -> Self {
+        Self {
+            team_ranking: self.get_top_team_ranking().into_iter().collect(),
+            player_ranking: self.get_top_player_ranking().into_iter().collect(),
+            peer_addresses: self.get_random_peer_addresses().into_iter().collect(),
+            chat_history: self.get_recent_chat_history().into_iter().collect(),
+            ..Default::default()
+        }
+    }
+
+    pub fn update(&mut self, other: &Self) {
+        for (id, team) in other.team_ranking.iter() {
+            if !self.team_ranking.contains_key(id) {
+                self.team_ranking.insert(*id, team.clone());
+            }
+        }
+
+        for (id, player) in other.player_ranking.iter() {
+            if !self.player_ranking.contains_key(id) {
+                self.player_ranking.insert(*id, player.clone());
+            }
+        }
+
+        for entry in other.chat_history.iter() {
+            if !self.chat_history.contains(entry) {
+                self.chat_history.insert(entry.clone());
+            }
+        }
+
+        // Peers are not updated here, as they are only added if the connection is succesfull
+    }
+
+    pub fn reset_peers(&mut self) {
+        self.peer_addresses.clear();
+        self.peer_last_connection.clear();
+    }
+
     pub fn to_store(&self) -> Self {
         let mut self_store = self.clone();
         let now = Tick::now();
@@ -59,34 +94,6 @@ impl NetworkStoreData {
     pub fn update_peer_addresses(&mut self, peer_id: PeerId, address: Multiaddr) {
         self.peer_addresses.insert(peer_id, address);
         self.peer_last_connection.insert(peer_id, Tick::now());
-    }
-
-    pub fn extract_and_store_peer_ip(&mut self, peer_id: PeerId, address: &Multiaddr) {
-        for proto in address.iter() {
-            match proto {
-                Protocol::Ip4(ip) => {
-                    self.peer_ip.insert(peer_id, IpAddr::V4(ip));
-                    return;
-                }
-                Protocol::Ip6(ip) => {
-                    self.peer_ip.insert(peer_id, IpAddr::V6(ip));
-                    return;
-                }
-                _ => {}
-            }
-        }
-    }
-
-    pub fn build_peer_address_from_port(&mut self, peer_id: PeerId, port: u16) {
-        if let Some(ip) = self.peer_ip.get(&peer_id) {
-            let address: Multiaddr = match ip {
-                IpAddr::V4(ip) => format!("/ip4/{ip}/tcp/{port}"),
-                IpAddr::V6(ip) => format!("/ip6/{ip}/tcp/{port}"),
-            }
-            .parse()
-            .expect("Valid multiaddr");
-            self.update_peer_addresses(peer_id, address);
-        }
     }
 
     pub fn update_rankings(&mut self, timestamp: Tick, network_team: &NetworkTeam) {
@@ -136,6 +143,11 @@ impl NetworkStoreData {
     pub fn get_random_peer_addresses(&self) -> Vec<(PeerId, Multiaddr)> {
         self.peer_addresses
             .iter()
+            .sorted_by(|(a, _), (b, _)| {
+                let a_timestamp = self.peer_last_connection.get(a).unwrap_or(&0);
+                let b_timestamp = self.peer_last_connection.get(b).unwrap_or(&0);
+                b_timestamp.cmp(a_timestamp)
+            })
             .take(RANDOM_PEER_ADDRESSES_LENGTH)
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect_vec()
@@ -152,6 +164,19 @@ impl NetworkStoreData {
             })
             .take(TOP_TEAM_RANKING_LENGTH)
             .map(|(id, ranking)| (*id, ranking.clone()))
+            .collect()
+    }
+
+    pub fn get_recent_chat_history(&self) -> Vec<ChatHistoryEntry> {
+        self.chat_history
+            .iter()
+            .sorted_by_key(|e| e.timestamp)
+            .rev()
+            .take(MAX_CHAT_HISTORY)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .cloned()
             .collect()
     }
 }

@@ -66,7 +66,7 @@ mod tests {
         let mut proposer_player = app.world.players.get(&proposer_player_id).unwrap().clone();
         assert!(proposer_player.team == Some(own_team.id));
 
-        // Increase player stats to increase bare value and make the trade accepted
+        // Max all skills to guarantee bare_hiring_value exceeds any target player
         proposer_player.info.age = proposer_player.info.population.min_age();
         proposer_player.special_trait = Some(crate::core::player::Trait::Killer);
         proposer_player.athletics.quickness = MAX_SKILL;
@@ -77,18 +77,29 @@ mod tests {
         proposer_player.offense.close_range = MAX_SKILL;
         proposer_player.offense.medium_range = MAX_SKILL;
         proposer_player.offense.long_range = MAX_SKILL;
+        proposer_player.defense.steal = MAX_SKILL;
+        proposer_player.defense.block = MAX_SKILL;
+        proposer_player.defense.perimeter_defense = MAX_SKILL;
+        proposer_player.defense.interior_defense = MAX_SKILL;
+        proposer_player.technical.passing = MAX_SKILL;
+        proposer_player.technical.ball_handling = MAX_SKILL;
+        proposer_player.technical.post_moves = MAX_SKILL;
+        proposer_player.technical.rebounds = MAX_SKILL;
+        proposer_player.mental.vision = MAX_SKILL;
+        proposer_player.mental.aggression = MAX_SKILL;
+        proposer_player.mental.intuition = MAX_SKILL;
+        proposer_player.mental.charisma = MAX_SKILL;
 
         app.world
             .players
             .insert(proposer_player.id, proposer_player);
 
-        // FIXME: This fails if there is only one team
         let mut target_team = app
             .world
             .teams
             .values()
             .filter(|team| team.id != own_team.id)
-            .choose(&mut rand::rng())
+            .choose(&mut ChaCha8Rng::from_os_rng())
             .expect("There should be one other team")
             .clone();
         target_team.current_location = own_team.current_location;
@@ -106,7 +117,6 @@ mod tests {
         assert!(cb.call(&mut app).is_ok());
 
         let proposer_player = app.world.players.get_or_err(&proposer_player_id)?;
-        // FIXME: this is flaky and fails sometimes.
         assert!(proposer_player.team == Some(target_team_id));
 
         let target_player = app.world.players.get_or_err(&target_player_id)?;

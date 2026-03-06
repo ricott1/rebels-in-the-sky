@@ -14,7 +14,7 @@ use super::{
 };
 use crate::core::constants::{MINUTES, MIN_PLAYERS_PER_GAME};
 use crate::core::{skill::Rated, world::World};
-use crate::network::types::{PlayerRanking, TeamRanking};
+use crate::network::types::{ChatHistoryEntry, PlayerRanking, TeamRanking};
 use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId, Tick};
 use crate::ui::clickable_list::{ClickableList, ClickableListItem};
 use crate::ui::ui_key;
@@ -301,13 +301,19 @@ impl SwarmPanel {
         self.should_update_message_list = Some(SwarmView::Chat);
     }
 
-    pub fn push_chat_history(&mut self, entries: Vec<(Tick, PeerId, String, String)>) {
+    pub fn push_chat_history(&mut self, chat_history: &[ChatHistoryEntry]) {
         if self.chat_history_received {
             return;
         }
+
         let mut any_new = false;
-        for (timestamp, peer_id, author, message) in entries {
-            let event = ChatEvent::new(timestamp, peer_id, author, message);
+        for e in chat_history {
+            let event = ChatEvent::new(
+                e.timestamp,
+                e.from_peer_id,
+                e.author.clone(),
+                e.message.clone(),
+            );
             if self.chat_events.insert(event) {
                 any_new = true;
                 self.unread_chat_messages += 1;

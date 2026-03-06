@@ -44,6 +44,8 @@ pub struct AppArgs {
     pub store_uncompressed: bool,
     #[clap(long, short = 'q', action=ArgAction::Set, help = "Set auto quit after value in seconds")]
     pub auto_quit_after: Option<u64>,
+    #[clap(long, action=ArgAction::SetTrue, help = "Reset p2p netowrk data")]
+    pub reset_network_peers: bool,
 }
 
 impl AppArgs {
@@ -70,6 +72,7 @@ impl AppArgs {
             store_prefix,
             store_uncompressed: false,
             auto_quit_after,
+            reset_network_peers: false,
         }
     }
     pub fn test() -> Self {
@@ -91,6 +94,7 @@ impl AppArgs {
             store_prefix: None,
             store_uncompressed: false,
             auto_quit_after: None,
+            reset_network_peers: false,
         }
     }
 

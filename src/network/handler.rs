@@ -9,7 +9,8 @@ use crate::core::world::World;
 use crate::core::Team;
 use crate::game_engine::types::TeamInGame;
 use crate::game_engine::{Tournament, TournamentId};
-use crate::network::types::{ChatHistoryEntry, PlayerRanking, TeamRanking, TournamentRequestState};
+use crate::network::network_store_data::NetworkStoreData;
+use crate::network::types::TournamentRequestState;
 use crate::store::serialize;
 use crate::types::{AppResult, GameId, HashMapWithResult, PlayerMap};
 use crate::types::{PlayerId, TeamId};
@@ -19,8 +20,9 @@ use futures::StreamExt;
 use itertools::Itertools;
 use libp2p::gossipsub::{self, IdentTopic};
 use libp2p::identity::Keypair;
-use libp2p::swarm::{DialError, SwarmEvent};
-use libp2p::{identity, noise, tcp, yamux, PeerId, TransportError};
+use libp2p::multiaddr::Protocol;
+use libp2p::swarm::{DialError, NetworkBehaviour, SwarmEvent};
+use libp2p::{identify, identity, kad, noise, tcp, yamux, PeerId, StreamProtocol, TransportError};
 use libp2p::{Multiaddr, Swarm};
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::Debug;
@@ -29,6 +31,53 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+
+/// Strip /p2p/ suffixes and filter out non-routable addresses from identify listen_addrs.
+pub(crate) fn sanitize_listen_addrs(addrs: &[Multiaddr]) -> Vec<Multiaddr> {
+    addrs
+        .iter()
+        .filter_map(|addr| {
+            let clean: Multiaddr = addr
+                .iter()
+                .filter(|p| !matches!(p, Protocol::P2p(_)))
+                .collect();
+            if is_routable(&clean) {
+                Some(clean)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn is_routable(addr: &Multiaddr) -> bool {
+    for proto in addr.iter() {
+        match proto {
+            Protocol::Ip4(ip) => {
+                if ip.is_unspecified() || ip.is_loopback() || ip.is_private() || ip.is_link_local()
+                {
+                    return false;
+                }
+            }
+            Protocol::Ip6(ip) => {
+                // fe80::/10 are IPv6 link-local addresses, not routable beyond the local link
+                if ip.is_unspecified() || ip.is_loopback() || (ip.segments()[0] & 0xffc0) == 0xfe80
+                {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    true
+}
+
+#[derive(NetworkBehaviour)]
+pub struct Behaviour {
+    pub gossipsub: gossipsub::Behaviour,
+    pub identify: identify::Behaviour,
+    pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
+}
 
 #[derive(Debug, Default)]
 enum SwarmStatus {
@@ -52,7 +101,6 @@ pub struct NetworkHandler {
     own_peer_id: PeerId,
     pub seed_addresses: Vec<Multiaddr>,
     swarm_status: SwarmStatus,
-    tcp_port: u16,
 }
 
 impl NetworkHandler {
@@ -61,7 +109,7 @@ impl NetworkHandler {
         tcp_port: u16,
         use_ipv4: bool,
         use_ipv6: bool,
-    ) -> AppResult<Swarm<gossipsub::Behaviour>> {
+    ) -> AppResult<Swarm<Behaviour>> {
         // To content-address message, we can take the hash of message and use it as an ID.
         let message_id_fn = |message: &gossipsub::Message| {
             let mut s = DefaultHasher::new();
@@ -71,13 +119,12 @@ impl NetworkHandler {
 
         // Set a custom gossipsub configuration
         let gossipsub_config = gossipsub::ConfigBuilder::default()
-            .heartbeat_interval(Duration::from_secs(1)) // This is set to aid debugging by not cluttering the log space
-            .validation_mode(gossipsub::ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
-            .message_id_fn(message_id_fn) // content-address messages. No two messages of the same content will be propagated.
+            .heartbeat_interval(Duration::from_secs(1))
+            .validation_mode(gossipsub::ValidationMode::Strict)
+            .message_id_fn(message_id_fn)
             .build()
             .expect("Valid config");
 
-        // build a gossipsub network behaviour
         let mut gossipsub = gossipsub::Behaviour::new(
             gossipsub::MessageAuthenticity::Signed(keypair.clone()),
             gossipsub_config,
@@ -85,6 +132,25 @@ impl NetworkHandler {
         .expect("Correct configuration");
 
         gossipsub.subscribe(&IdentTopic::new(TOPIC))?;
+
+        let peer_id = keypair.public().to_peer_id();
+
+        let identify = identify::Behaviour::new(
+            identify::Config::new("/rebels/1.0.0".to_string(), keypair.public())
+                .with_push_listen_addr_updates(true),
+        );
+
+        let mut kad_config = kad::Config::new(StreamProtocol::new("/rebels/kad/1.0.0"));
+        kad_config.set_query_timeout(Duration::from_secs(60));
+        let store = kad::store::MemoryStore::new(peer_id);
+        let kademlia = kad::Behaviour::with_config(peer_id, store, kad_config);
+
+        let behaviour = Behaviour {
+            gossipsub,
+            identify,
+            kademlia,
+        };
+
         let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
             .with_tokio()
             .with_tcp(
@@ -93,7 +159,7 @@ impl NetworkHandler {
                 yamux::Config::default,
             )?
             .with_dns()?
-            .with_behaviour(|_| gossipsub)?
+            .with_behaviour(|_| behaviour)?
             .with_swarm_config(|cfg| {
                 cfg.with_idle_connection_timeout(Duration::from_secs(u64::MAX))
             })
@@ -134,7 +200,6 @@ impl NetworkHandler {
             own_peer_id,
             seed_addresses: vec![],
             swarm_status: SwarmStatus::Uninitialized,
-            tcp_port: 0,
         }
     }
 
@@ -170,7 +235,6 @@ impl NetworkHandler {
             own_peer_id,
             seed_addresses,
             swarm_status: SwarmStatus::Uninitialized,
-            tcp_port: 0,
         })
     }
 
@@ -203,7 +267,6 @@ impl NetworkHandler {
         use_ipv4: bool,
         use_ipv6: bool,
     ) -> JoinHandle<()> {
-        self.tcp_port = tcp_port;
         let local_keypair = self.local_keypair.clone();
         let own_peer_id = *self.own_peer_id();
 
@@ -219,12 +282,13 @@ impl NetworkHandler {
                 };
 
             assert_eq!(own_peer_id, *swarm.local_peer_id());
+            let mut kad_bootstrapped = false;
 
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
                         log::info!("NetworkHandler background task shutting down.");
-                        if !swarm.behaviour_mut().unsubscribe(&IdentTopic::new(TOPIC)) {
+                        if !swarm.behaviour_mut().gossipsub.unsubscribe(&IdentTopic::new(TOPIC)) {
                             log::error!("Cannot unsubscribe from events");
                         }
 
@@ -239,10 +303,38 @@ impl NetworkHandler {
                     }
 
                     event = swarm.select_next_some() => {
-                        if event_sender.send(AppEvent::NetworkEvent(event)).await.is_err() {
-                                log::warn!("App receiver dropped; stopping network loop");
-                                break;
+                        // Handle identify/kad events inside the swarm task
+                        // where we have direct access to the swarm.
+                        match &event {
+                            SwarmEvent::Behaviour(BehaviourEvent::Identify(
+                                identify::Event::Received { peer_id, info, .. }
+                            )) => {
+                                let clean_addrs = sanitize_listen_addrs(&info.listen_addrs);
+                                log::debug!(
+                                    "Identify from {peer_id}: adding {} routable addrs to Kademlia (from {} total)",
+                                    clean_addrs.len(),
+                                    info.listen_addrs.len()
+                                );
+                                for addr in &clean_addrs {
+                                    swarm.behaviour_mut().kademlia.add_address(peer_id, addr.clone());
+                                }
+                                swarm.add_external_address(info.observed_addr.clone());
                             }
+                            SwarmEvent::ConnectionEstablished { .. } => {
+                                if !kad_bootstrapped {
+                                    if let Ok(_) = swarm.behaviour_mut().kademlia.bootstrap() {
+                                        kad_bootstrapped = true;
+                                        log::info!("Kademlia bootstrap initiated");
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+
+                        if event_sender.send(AppEvent::NetworkEvent(event)).await.is_err() {
+                            log::warn!("App receiver dropped; stopping network loop");
+                            break;
+                        }
                     }
 
                     Some(command) = receiver.recv() => {
@@ -250,14 +342,16 @@ impl NetworkHandler {
                             SwarmCommand::Send { topic, data } => {
                                 if let Err(e) = swarm
                                     .behaviour_mut()
+                                    .gossipsub
                                     .publish(topic, data) {
                                         log::error!("Swarm send error: {e}");
                                     }
                             }
-                            SwarmCommand::Dial {address} => {
-                                 if let Err(e) = swarm.dial(address){
-                                        log::error!("Swarm dial error: {e}");
-                                    }
+                            SwarmCommand::Dial { address } => {
+                                log::debug!("Dialing address: {address}");
+                                if let Err(e) = swarm.dial(address.clone()) {
+                                    log::error!("Swarm dial error for {address}: {e}");
+                                }
                             }
                         }
                     }
@@ -340,42 +434,12 @@ impl NetworkHandler {
         })
     }
 
-    pub fn send_seed_info(
-        &mut self,
-        top_team_ranking: Vec<(TeamId, TeamRanking)>,
-        top_player_ranking: Vec<(PlayerId, PlayerRanking)>,
-        peer_addresses: Vec<(PeerId, Multiaddr)>,
-        chat_history: &Vec<ChatHistoryEntry>,
-    ) -> AppResult<()> {
-        const MAX_CHAT_HISTORY: usize = 200;
-        let chat_history: Vec<ChatHistoryEntry> = chat_history
-            .iter()
-            .sorted_by_key(|e| e.timestamp)
-            .rev()
-            .take(MAX_CHAT_HISTORY)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .cloned()
-            .collect();
-
-        let seed_info = SeedInfo::new(
-            self.connected_peers_count,
-            top_team_ranking,
-            top_player_ranking,
-            peer_addresses,
-            chat_history,
-        )?;
+    pub fn send_seed_info(&mut self, network_store_data: NetworkStoreData) -> AppResult<()> {
+        let seed_info = SeedInfo::new(network_store_data)?;
 
         self._send(&NetworkData::SeedInfo {
             timestamp: Tick::now(),
             seed_info,
-        })
-    }
-
-    pub fn send_port_info(&self) -> AppResult<()> {
-        self._send(&NetworkData::PortInfo {
-            port: self.tcp_port,
         })
     }
 
@@ -635,30 +699,47 @@ impl NetworkHandler {
 
     pub fn handle_network_events(
         &mut self,
-        event: SwarmEvent<gossipsub::Event>,
+        event: SwarmEvent<BehaviourEvent>,
     ) -> Option<NetworkCallback> {
         match event {
             SwarmEvent::NewListenAddr { address, .. } => {
                 Some(NetworkCallback::BindAddress { address })
             }
-            SwarmEvent::Behaviour(gossipsub::Event::Message {
+            SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(gossipsub::Event::Message {
                 propagation_source: _,
                 message_id: _,
                 message,
-            }) => {
+            })) => {
                 assert!(message.topic == IdentTopic::new(TOPIC).hash());
                 Some(NetworkCallback::HandleMessage { message })
             }
-            SwarmEvent::Behaviour(gossipsub::Event::Subscribed { peer_id, topic }) => {
+            SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(gossipsub::Event::Subscribed {
+                peer_id,
+                topic,
+            })) => {
                 assert!(topic == IdentTopic::new(TOPIC).hash());
-
                 Some(NetworkCallback::Subscribe { peer_id, topic })
             }
-
-            SwarmEvent::Behaviour(gossipsub::Event::Unsubscribed { peer_id, topic }) => {
+            SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(gossipsub::Event::Unsubscribed {
+                peer_id,
+                topic,
+            })) => {
                 assert!(topic == IdentTopic::new(TOPIC).hash());
                 Some(NetworkCallback::Unsubscribe { peer_id, topic })
             }
+            SwarmEvent::Behaviour(BehaviourEvent::Identify(identify::Event::Received {
+                peer_id,
+                info,
+                ..
+            })) => {
+                let listen_addrs = sanitize_listen_addrs(&info.listen_addrs);
+                Some(NetworkCallback::PeerIdentified {
+                    peer_id,
+                    listen_addrs,
+                })
+            }
+            SwarmEvent::Behaviour(BehaviourEvent::Identify(_)) => None,
+            SwarmEvent::Behaviour(BehaviourEvent::Kademlia(_)) => None,
             SwarmEvent::ExpiredListenAddr {
                 listener_id: _,
                 address,
@@ -678,35 +759,30 @@ impl NetworkHandler {
                 self.connected_peers_count -= 1;
                 Some(NetworkCallback::CloseConnection { peer_id })
             }
-            SwarmEvent::OutgoingConnectionError { error, .. } => {
+            SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                let peer_info = peer_id.map_or("unknown".to_string(), |p| p.to_string());
                 let text = match error {
-                    // Special handling for DialError::Transport -> TransportError::Other as it is not displayed nicely :(
                     DialError::Transport(errors) => {
                         let error_text = errors
                             .iter()
-                            .map(|(_, error)| match error {
-                                TransportError::Other(err) => err.to_string(),
-                                _ => error.to_string(),
+                            .map(|(addr, error)| match error {
+                                TransportError::Other(err) => format!("{addr} -> {err}"),
+                                _ => format!("{addr} -> {error}"),
                             })
-                            .unique()
-                            .join(" + ");
-                        format!("Outgoing connection error: {error_text}")
+                            .join(", ");
+                        format!("Dial failed for peer {peer_info}: {error_text}")
                     }
-                    _ => format!("Outgoing connection error: {error}"),
+                    _ => format!("Dial failed for peer {peer_info}: {error}"),
                 };
+                log::warn!("{}", text);
                 Some(NetworkCallback::PushSwarmPanelLog {
                     timestamp: Tick::now(),
                     peer_id: None,
                     text,
-                    level: log::Level::Error,
+                    level: log::Level::Warn,
                 })
             }
-            _ => Some(NetworkCallback::PushSwarmPanelLog {
-                timestamp: Tick::now(),
-                peer_id: None,
-                text: format!("Unhandled event: {event:?}"),
-                level: log::Level::Warn,
-            }),
+            _ => None,
         }
     }
 }

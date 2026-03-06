@@ -1,5 +1,5 @@
 use super::challenge::Challenge;
-use super::handler::NetworkHandler;
+use super::handler::{sanitize_listen_addrs, NetworkHandler};
 use super::trade::Trade;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::app_version;
@@ -51,6 +51,10 @@ pub enum NetworkCallback {
     HandleMessage {
         message: Message,
     },
+    PeerIdentified {
+        peer_id: PeerId,
+        listen_addrs: Vec<Multiaddr>,
+    },
 }
 impl NetworkCallback {
     fn bind_address(address: Multiaddr) -> AppCallback {
@@ -68,11 +72,16 @@ impl NetworkCallback {
                 if *peer_id == own_peer_id {
                     continue;
                 }
-                if let Err(e) = app.network_handler.dial_address(peer_address.clone()) {
+                let clean = sanitize_listen_addrs(&[peer_address.clone()]);
+                let Some(clean_addr) = clean.into_iter().next() else {
+                    continue;
+                };
+                log::debug!("bind_address: dialing stored peer {peer_id} at {clean_addr}");
+                if let Err(e) = app.network_handler.dial_address(clean_addr.clone()) {
                     app.ui.push_log_event(
                         Tick::now(),
                         None,
-                        format!("Failed to dial stored peer {peer_address}: {e}"),
+                        format!("bind_address: failed to dial stored peer {peer_id} at {clean_addr}: {e}"),
                         log::Level::Warn,
                     );
                 }
@@ -96,13 +105,8 @@ impl NetworkCallback {
 
     fn handle_sync_request() -> AppCallback {
         Box::new(move |app: &mut App| {
-            let data = &app.world.network_store_data;
-            app.network_handler.send_seed_info(
-                data.get_top_team_ranking(),
-                data.get_top_player_ranking(),
-                data.get_random_peer_addresses(),
-                &data.chat_history,
-            )?;
+            app.network_handler
+                .send_seed_info(app.world.network_store_data.to_seed_info())?;
             app.world.dirty_network = true;
             Ok(None)
         })
@@ -193,7 +197,7 @@ impl NetworkCallback {
                 author: author.clone(),
                 message: message.clone(),
             };
-            app.world.network_store_data.chat_history.push(entry);
+            app.world.network_store_data.chat_history.insert(entry);
             Ok(None)
         })
     }
@@ -718,63 +722,58 @@ impl NetworkCallback {
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
             log::info!("Got seed info");
-            app.ui.push_log_event(
-                timestamp,
-                peer_id,
-                format!("Total peers: {}", seed_info.connected_peers_count),
-                log::Level::Debug,
-            );
 
             // Notify about new version (only once).
             app.notify_seed_version(seed_info.version);
 
-            app.ui
-                .swarm_panel
-                .update_team_ranking(&seed_info.team_ranking);
+            let data = &mut app.world.network_store_data;
+
+            data.update(&seed_info.network_store_data);
 
             app.ui
                 .swarm_panel
-                .update_player_ranking(&seed_info.player_ranking);
+                .update_team_ranking(&data.get_top_team_ranking());
 
-            if !seed_info.chat_history.is_empty() {
-                let entries: Vec<_> = seed_info
-                    .chat_history
-                    .iter()
-                    .map(|e| {
-                        (
-                            e.timestamp,
-                            e.from_peer_id,
-                            e.author.clone(),
-                            e.message.clone(),
-                        )
-                    })
-                    .collect();
-                app.ui.push_chat_history(entries);
-                app.ui.push_log_event(
-                    timestamp,
-                    peer_id,
-                    format!(
-                        "Got {} messages from chat history",
-                        seed_info.chat_history.len()
-                    ),
-                    log::Level::Debug,
-                );
-            }
+            app.ui
+                .swarm_panel
+                .update_player_ranking(&data.get_top_player_ranking());
+
+            app.ui.push_chat_history(&data.get_recent_chat_history());
+            app.ui.push_log_event(
+                timestamp,
+                peer_id,
+                format!(
+                    "Got {} messages from chat history",
+                    seed_info.network_store_data.chat_history.len()
+                ),
+                log::Level::Debug,
+            );
+
             let self_peer_id = *app.network_handler.own_peer_id();
-            for (peer_id, address) in seed_info.peer_addresses.iter() {
+            for (peer_id, address) in seed_info.network_store_data.peer_addresses.iter() {
                 if *peer_id == self_peer_id {
                     continue;
                 }
-                app.world
-                    .network_store_data
-                    .update_peer_addresses(peer_id.clone(), address.clone());
-                if let Err(e) = app.network_handler.dial_address(address.clone()) {
+                let clean = sanitize_listen_addrs(&[address.clone()]);
+                let Some(clean_addr) = clean.into_iter().next() else {
+                    log::debug!("handle_seed_topic: skipping non-routable address {address} for peer {peer_id}");
+                    continue;
+                };
+
+                log::debug!("handle_seed_topic: dialing peer {peer_id} at {clean_addr}");
+                if let Err(e) = app.network_handler.dial_address(clean_addr.clone()) {
                     app.ui.push_log_event(
                         Tick::now(),
                         Some(*peer_id),
-                        format!("Failed to dial peer {address}: {e}"),
+                        format!(
+                            "handle_seed_topic: failed to dial peer {peer_id} at {clean_addr}: {e}"
+                        ),
                         log::Level::Warn,
                     );
+                } else {
+                    app.world
+                        .network_store_data
+                        .update_peer_addresses(*peer_id, clean_addr.clone());
                 }
             }
             app.world.dirty_network = true;
@@ -1269,7 +1268,7 @@ impl NetworkCallback {
             }
             Self::Unsubscribe { peer_id, topic } => Self::unsubscribe(*peer_id, topic.clone())(app),
             Self::CloseConnection { peer_id } => Self::close_connection(*peer_id)(app),
-            Self::HandleConnectionEstablished { peer_id, endpoint } => {
+            Self::HandleConnectionEstablished { peer_id, .. } => {
                 app.network_handler.send_own_team(&app.world)?;
                 app.ui
                     .swarm_panel
@@ -1281,12 +1280,6 @@ impl NetworkCallback {
                     format!("Connected to peer: {peer_id}"),
                     log::Level::Debug,
                 );
-
-                app.world
-                    .network_store_data
-                    .extract_and_store_peer_ip(*peer_id, endpoint.get_remote_address());
-
-                app.network_handler.send_port_info()?;
 
                 Ok(None)
             }
@@ -1341,17 +1334,20 @@ impl NetworkCallback {
                     NetworkData::Tournament { tournament, .. } => {
                         Self::handle_tournament_topic(tournament)(app)
                     }
-                    NetworkData::PortInfo { port } => {
-                        if let Some(peer_id) = peer_id {
-                            if peer_id != *app.network_handler.own_peer_id() {
-                                app.world
-                                    .network_store_data
-                                    .build_peer_address_from_port(peer_id, port);
-                            }
-                        }
-                        Ok(None)
+                }
+            }
+            Self::PeerIdentified {
+                peer_id,
+                listen_addrs,
+            } => {
+                if *peer_id != *app.network_handler.own_peer_id() {
+                    if let Some(addr) = listen_addrs.iter().next() {
+                        app.world
+                            .network_store_data
+                            .update_peer_addresses(*peer_id, addr.clone());
                     }
                 }
+                Ok(None)
             }
         }
     }

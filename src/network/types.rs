@@ -6,7 +6,8 @@ use crate::core::skill::Skill;
 use crate::game_engine::timer::Timer;
 use crate::game_engine::types::GameStats;
 use crate::game_engine::{Tournament, TournamentId};
-use crate::types::{HashMapWithResult, PlanetId, PlayerId, PlayerMap, Tick};
+use crate::network::network_store_data::NetworkStoreData;
+use crate::types::{HashMapWithResult, PlanetId, PlayerMap, Tick};
 use crate::{
     core::{player::Player, team::Team, world::World},
     game_engine::types::TeamInGame,
@@ -14,7 +15,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use itertools::Itertools;
-use libp2p::{Multiaddr, PeerId};
+use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -78,9 +79,6 @@ pub enum NetworkData {
     Tournament {
         timestamp: Tick,
         tournament: Tournament,
-    },
-    PortInfo {
-        port: u16,
     },
 }
 
@@ -252,7 +250,7 @@ impl PlayerRanking {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ChatHistoryEntry {
     pub timestamp: Tick,
     pub from_peer_id: PeerId,
@@ -262,35 +260,20 @@ pub struct ChatHistoryEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SeedInfo {
-    pub connected_peers_count: usize,
     pub version: [usize; 3],
-    pub team_ranking: Vec<(TeamId, TeamRanking)>,
-    pub player_ranking: Vec<(PlayerId, PlayerRanking)>,
     #[serde(default)]
-    pub peer_addresses: Vec<(PeerId, Multiaddr)>,
-    #[serde(default)]
-    pub chat_history: Vec<ChatHistoryEntry>,
+    pub network_store_data: NetworkStoreData,
 }
 
 impl SeedInfo {
-    pub fn new(
-        connected_peers_count: usize,
-        team_ranking: Vec<(TeamId, TeamRanking)>,
-        player_ranking: Vec<(PlayerId, PlayerRanking)>,
-        peer_addresses: Vec<(PeerId, Multiaddr)>,
-        chat_history: Vec<ChatHistoryEntry>,
-    ) -> AppResult<Self> {
+    pub fn new(network_store_data: NetworkStoreData) -> AppResult<Self> {
         Ok(Self {
-            connected_peers_count,
             version: [
                 env!("CARGO_PKG_VERSION_MAJOR").parse()?,
                 env!("CARGO_PKG_VERSION_MINOR").parse()?,
                 env!("CARGO_PKG_VERSION_PATCH").parse()?,
             ],
-            team_ranking,
-            player_ranking,
-            peer_addresses,
-            chat_history,
+            network_store_data,
         })
     }
 }

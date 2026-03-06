@@ -2,6 +2,7 @@ use crate::app_version;
 use crate::args::AppArgs;
 #[cfg(feature = "audio")]
 use crate::audio::music_player::{MusicPlayer, MusicPlayerEvent};
+use crate::network::handler::BehaviourEvent;
 use crate::network::handler::NetworkHandler;
 use crate::{
     core::*,
@@ -15,7 +16,7 @@ use crate::{
     },
 };
 use libp2p::identity::Keypair;
-use libp2p::{gossipsub, swarm::SwarmEvent};
+use libp2p::swarm::SwarmEvent;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use ratatui::crossterm;
@@ -36,7 +37,7 @@ pub enum AppEvent {
     SlowTick(Tick),
     FastTick(Tick),
     TerminalEvent(TerminalEvent),
-    NetworkEvent(SwarmEvent<gossipsub::Event>),
+    NetworkEvent(SwarmEvent<BehaviourEvent>),
     #[cfg(feature = "audio")]
     AudioEvent(MusicPlayerEvent),
 }
@@ -386,6 +387,10 @@ impl App {
                 w.dirty_network = true;
                 w.dirty_ui = true;
                 self.world = w;
+
+                if self.args.reset_network_peers {
+                    self.world.reset_network_store_peers();
+                }
             }
             Err(e) => panic!("Failed to load world: {e}"),
         }
@@ -657,10 +662,7 @@ impl App {
         Ok(should_draw)
     }
 
-    fn handle_network_events(
-        &mut self,
-        swarm_event: SwarmEvent<gossipsub::Event>,
-    ) -> AppResult<()> {
+    fn handle_network_events(&mut self, swarm_event: SwarmEvent<BehaviourEvent>) -> AppResult<()> {
         if let Some(callback) = self.network_handler.handle_network_events(swarm_event) {
             match callback.call(self) {
                 Ok(Some(message)) => {

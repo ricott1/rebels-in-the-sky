@@ -18,6 +18,7 @@ use super::{
 use crate::audio::music_player::MusicPlayer;
 use crate::core::world::World;
 use crate::core::SpaceCoveState;
+use crate::network::types::ChatHistoryEntry;
 use crate::types::Tick;
 use crate::types::{AppResult, SystemTimeTick};
 use crate::ui::space_cove_panel::SpaceCovePanel;
@@ -155,8 +156,8 @@ impl UiScreen {
         self.swarm_panel.push_chat_error_event(timestamp, error);
     }
 
-    pub fn push_chat_history(&mut self, entries: Vec<(Tick, PeerId, String, String)>) {
-        self.swarm_panel.push_chat_history(entries);
+    pub fn push_chat_history(&mut self, chat_history: &[ChatHistoryEntry]) {
+        self.swarm_panel.push_chat_history(chat_history);
     }
 
     pub fn push_popup(&mut self, popup_message: PopupMessage) {

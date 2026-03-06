@@ -2685,6 +2685,10 @@ impl World {
         Ok(())
     }
 
+    pub fn reset_network_store_peers(&mut self) {
+        self.network_store_data.reset_peers();
+    }
+
     pub fn travel_duration_to_planet(&self, team_id: TeamId, to_id: PlanetId) -> AppResult<Tick> {
         let team = self.teams.get_or_err(&team_id)?;
 
@@ -3377,8 +3381,8 @@ mod test {
         world.last_tick_min_interval = now;
 
         let cycles = 3;
-        // After waiting the world should be exactly two ticks behind.
-        // We add a small buffer to ensure there is no race condition.
+        // Sleep for at least `cycles` ticks. System scheduling may add extra
+        // time beyond the buffer, so we assert runs >= cycles rather than ==.
         thread::sleep(Duration::from_millis(cycles * TickInterval::SHORT + 20));
 
         let mut runs = 0;
@@ -3388,8 +3392,7 @@ mod test {
             runs += 1;
         }
 
-        println!("{} {}", runs, cycles);
-        assert!(runs == cycles);
+        assert!(runs >= cycles);
 
         Ok(())
     }

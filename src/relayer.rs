@@ -1,12 +1,12 @@
 use crate::app::AppEvent;
 use crate::network::constants::{DEFAULT_SEED_PORT, TOPIC};
-use crate::network::handler::NetworkHandler;
+use crate::network::handler::{self, BehaviourEvent, NetworkHandler};
 use crate::network::network_store_data::NetworkStoreData;
 use crate::network::types::{ChatHistoryEntry, NetworkData};
 use crate::store::*;
 use crate::types::{AppResult, TeamId};
 use libp2p::gossipsub::IdentTopic;
-use libp2p::{gossipsub, swarm::SwarmEvent};
+use libp2p::{gossipsub, identify, swarm::SwarmEvent};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -65,23 +65,25 @@ impl Relayer {
 
     pub fn handle_network_events(
         &mut self,
-        network_event: SwarmEvent<gossipsub::Event>,
+        network_event: SwarmEvent<BehaviourEvent>,
     ) -> AppResult<()> {
         println!("Received network event: {network_event:?}");
         match network_event {
-            SwarmEvent::Behaviour(gossipsub::Event::Subscribed { peer_id, topic }) => {
+            SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(gossipsub::Event::Subscribed {
+                peer_id,
+                topic,
+            })) => {
                 if topic == IdentTopic::new(TOPIC).hash() {
                     println!("Sending info to {peer_id}");
-                    self.network_handler.send_seed_info(
-                        self.network_store_data.get_top_team_ranking(),
-                        self.network_store_data.get_top_player_ranking(),
-                        self.network_store_data.get_random_peer_addresses(),
-                        &self.network_store_data.chat_history,
-                    )?;
+                    self.network_handler
+                        .send_seed_info(self.network_store_data.to_seed_info())?;
                 }
             }
 
-            SwarmEvent::Behaviour(gossipsub::Event::Message { message, .. }) => {
+            SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(gossipsub::Event::Message {
+                message,
+                ..
+            })) => {
                 assert!(message.topic == IdentTopic::new(TOPIC).hash());
                 let network_data = deserialize::<NetworkData>(&message.data)?;
                 if let NetworkData::Team {
@@ -98,12 +100,8 @@ impl Relayer {
                             return Ok(());
                         }
                     } else {
-                        self.network_handler.send_seed_info(
-                            self.network_store_data.get_top_team_ranking(),
-                            self.network_store_data.get_top_player_ranking(),
-                            self.network_store_data.get_random_peer_addresses(),
-                            &self.network_store_data.chat_history,
-                        )?;
+                        self.network_handler
+                            .send_seed_info(self.network_store_data.to_seed_info())?;
                         self.network_handler.send_relayer_message_to_team(
                             format!(
                                 "A new crew has started roaming the galaxy: {}",
@@ -154,28 +152,26 @@ impl Relayer {
                         message,
                     };
                     println!("Chat message stored: {entry:#?}");
-                    self.network_store_data.chat_history.push(entry);
+                    self.network_store_data.chat_history.insert(entry);
                 } else if let NetworkData::SyncRequest = network_data {
-                    self.network_handler.send_seed_info(
-                        self.network_store_data.get_top_team_ranking(),
-                        self.network_store_data.get_top_player_ranking(),
-                        self.network_store_data.get_random_peer_addresses(),
-                        &self.network_store_data.chat_history,
-                    )?;
-                } else if let NetworkData::PortInfo { port } = network_data {
-                    if let Some(peer_id) = message.source {
-                        self.network_store_data
-                            .build_peer_address_from_port(peer_id, port);
-                        save_relayer_network_store_data(&self.network_store_data, false)?;
-                    }
+                    self.network_handler
+                        .send_seed_info(self.network_store_data.to_seed_info())?;
                 }
             }
-            SwarmEvent::ConnectionEstablished {
-                peer_id, endpoint, ..
-            } => {
-                self.network_store_data
-                    .extract_and_store_peer_ip(peer_id, endpoint.get_remote_address());
+
+            SwarmEvent::Behaviour(BehaviourEvent::Identify(identify::Event::Received {
+                peer_id,
+                info,
+                ..
+            })) => {
+                // Store the first routable listen address for this peer
+                let clean_addrs = handler::sanitize_listen_addrs(&info.listen_addrs);
+                if let Some(addr) = clean_addrs.into_iter().next() {
+                    self.network_store_data.update_peer_addresses(peer_id, addr);
+                    save_relayer_network_store_data(&self.network_store_data, false)?;
+                }
             }
+
             _ => {}
         }
         Ok(())
