@@ -284,6 +284,10 @@ impl App {
                         self.args.use_ipv4(),
                         self.args.use_ipv6(),
                     );
+
+                    self.ui
+                        .swarm_panel
+                        .add_peer_id(*self.network_handler.own_peer_id(), self.world.own_team_id);
                 }
                 network_started = true;
             }
@@ -390,6 +394,17 @@ impl App {
 
                 if self.args.reset_network_peers {
                     self.world.reset_network_store_peers();
+                } else {
+                    let data = &self.world.network_store_data;
+                    self.ui
+                        .swarm_panel
+                        .update_team_ranking(&data.get_top_team_ranking());
+
+                    self.ui
+                        .swarm_panel
+                        .update_player_ranking(&data.get_top_player_ranking());
+
+                    self.ui.push_chat_history(&data.get_recent_chat_history());
                 }
             }
             Err(e) => panic!("Failed to load world: {e}"),

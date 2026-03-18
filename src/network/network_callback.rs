@@ -1,5 +1,5 @@
 use super::challenge::Challenge;
-use super::handler::{sanitize_listen_addrs, NetworkHandler};
+use super::handler::{sanitize_addr, NetworkHandler};
 use super::trade::Trade;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::app_version;
@@ -72,8 +72,7 @@ impl NetworkCallback {
                 if *peer_id == own_peer_id {
                     continue;
                 }
-                let clean = sanitize_listen_addrs(&[peer_address.clone()]);
-                let Some(clean_addr) = clean.into_iter().next() else {
+                let Some(clean_addr) = sanitize_addr(peer_address) else {
                     continue;
                 };
                 log::debug!("bind_address: dialing stored peer {peer_id} at {clean_addr}");
@@ -106,7 +105,7 @@ impl NetworkCallback {
     fn handle_sync_request() -> AppCallback {
         Box::new(move |app: &mut App| {
             app.network_handler
-                .send_seed_info(app.world.network_store_data.to_seed_info())?;
+                .send_seed_info(app.world.network_store_data.to_broadcast_snapshot())?;
             app.world.dirty_network = true;
             Ok(None)
         })
@@ -754,8 +753,7 @@ impl NetworkCallback {
                 if *peer_id == self_peer_id {
                     continue;
                 }
-                let clean = sanitize_listen_addrs(&[address.clone()]);
-                let Some(clean_addr) = clean.into_iter().next() else {
+                let Some(clean_addr) = sanitize_addr(address) else {
                     log::debug!("handle_seed_topic: skipping non-routable address {address} for peer {peer_id}");
                     continue;
                 };
@@ -1270,9 +1268,6 @@ impl NetworkCallback {
             Self::CloseConnection { peer_id } => Self::close_connection(*peer_id)(app),
             Self::HandleConnectionEstablished { peer_id, .. } => {
                 app.network_handler.send_own_team(&app.world)?;
-                app.ui
-                    .swarm_panel
-                    .add_peer_id(*app.network_handler.own_peer_id(), app.world.own_team_id);
 
                 app.ui.push_log_event(
                     Tick::now(),

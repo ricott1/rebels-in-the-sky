@@ -1,6 +1,6 @@
 [package]
 name = "rebels"
-version = "1.5.12"
+version = "1.5.13"
 edition = "2021"
 authors = ["Alessandro Ricottone <ricott2@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -35,7 +35,7 @@ flate2 = { version = "1.1.9", features = ["zlib-ng"], default-features = false }
 futures = "0.3.32"
 gif = "0.14.1"
 glam = "0.32.1"
-image = "0.25.9"
+image = "0.25.10"
 imageproc = "0.26.1"
 include_dir = "0.7.4"
 itertools = "0.14.0"

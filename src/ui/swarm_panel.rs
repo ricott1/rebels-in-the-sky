@@ -169,7 +169,7 @@ pub struct SwarmPanel {
     log_message_list: ClickableList<'static>,
     should_update_message_list: Option<SwarmView>,
     emojies_substutions: Vec<(&'static str, &'static str)>,
-    chat_history_received: bool,
+    chat_history_received_len: usize,
 }
 
 impl SwarmPanel {
@@ -302,7 +302,7 @@ impl SwarmPanel {
     }
 
     pub fn push_chat_history(&mut self, chat_history: &[ChatHistoryEntry]) {
-        if self.chat_history_received {
+        if self.chat_history_received_len >= chat_history.len() {
             return;
         }
 
@@ -328,7 +328,7 @@ impl SwarmPanel {
                 });
             self.should_update_message_list = Some(SwarmView::Chat);
         }
-        self.chat_history_received = true;
+        self.chat_history_received_len = chat_history.len();
     }
 
     pub fn add_peer_id(&mut self, peer_id: PeerId, team_id: TeamId) {

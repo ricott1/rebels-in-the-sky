@@ -473,11 +473,9 @@ impl Team {
 
         if self.is_on_planet() != team.is_on_planet() {
             return Err(anyhow!(
-                "{} and {} not on the same planet: {:#?} and {:#?}",
+                "{} and {} not on the same planet",
                 self.name,
                 team.name,
-                self.is_on_planet(),
-                team.is_on_planet()
             ));
         }
 

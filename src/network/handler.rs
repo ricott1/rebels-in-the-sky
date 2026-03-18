@@ -32,22 +32,47 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+/// Strip /p2p/ suffix and filter out non-routable address.
+pub(crate) fn sanitize_addr(addr: &Multiaddr) -> Option<Multiaddr> {
+    let clean: Multiaddr = addr
+        .iter()
+        .filter(|p| !matches!(p, Protocol::P2p(_)))
+        .collect();
+    if is_routable(&clean) {
+        Some(clean)
+    } else {
+        None
+    }
+}
+
 /// Strip /p2p/ suffixes and filter out non-routable addresses from identify listen_addrs.
 pub(crate) fn sanitize_listen_addrs(addrs: &[Multiaddr]) -> Vec<Multiaddr> {
-    addrs
-        .iter()
-        .filter_map(|addr| {
-            let clean: Multiaddr = addr
-                .iter()
-                .filter(|p| !matches!(p, Protocol::P2p(_)))
-                .collect();
-            if is_routable(&clean) {
-                Some(clean)
-            } else {
-                None
+    addrs.iter().filter_map(sanitize_addr).collect()
+}
+
+/// Extract the IP from an observed address and combine it with our actual listen port.
+/// The observed_addr from identify contains the correct public IP but the wrong
+/// (ephemeral) port from the outbound connection.
+fn build_external_addr_from_observed(observed_addr: &Multiaddr, listen_port: u16) -> Option<Multiaddr> {
+    let mut ip_proto = None;
+    for proto in observed_addr.iter() {
+        match proto {
+            Protocol::Ip4(ip) if !ip.is_unspecified() && !ip.is_loopback() => {
+                ip_proto = Some(Protocol::Ip4(ip));
+                break;
             }
-        })
-        .collect()
+            Protocol::Ip6(ip) if !ip.is_unspecified() && !ip.is_loopback() => {
+                ip_proto = Some(Protocol::Ip6(ip));
+                break;
+            }
+            _ => {}
+        }
+    }
+    let ip = ip_proto?;
+    let mut addr = Multiaddr::empty();
+    addr.push(ip);
+    addr.push(Protocol::Tcp(listen_port));
+    Some(addr)
 }
 
 fn is_routable(addr: &Multiaddr) -> bool {
@@ -318,14 +343,28 @@ impl NetworkHandler {
                                 for addr in &clean_addrs {
                                     swarm.behaviour_mut().kademlia.add_address(peer_id, addr.clone());
                                 }
-                                swarm.add_external_address(info.observed_addr.clone());
+
+                                // Build a proper external address from the observed IP
+                                // and our actual listen port. The observed_addr contains our
+                                // public IP as seen by the remote peer, but with an ephemeral
+                                // source port — not our listen port. Using it as-is would
+                                // advertise unreachable addresses.
+                                if let Some(ext_addr) = build_external_addr_from_observed(&info.observed_addr, tcp_port) {
+                                    log::debug!("Adding external address from observed: {ext_addr}");
+                                    swarm.add_external_address(ext_addr);
+                                }
+                            }
+                            SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
+                                if let Some(clean) = sanitize_addr(&address) {
+                                    swarm.behaviour_mut().kademlia.add_address(peer_id, clean);
+                                }
                             }
                             SwarmEvent::ConnectionEstablished { .. } => {
-                                if !kad_bootstrapped {
-                                    if let Ok(_) = swarm.behaviour_mut().kademlia.bootstrap() {
-                                        kad_bootstrapped = true;
-                                        log::info!("Kademlia bootstrap initiated");
-                                    }
+                                if !kad_bootstrapped
+                                    && swarm.behaviour_mut().kademlia.bootstrap().is_ok()
+                                {
+                                    kad_bootstrapped = true;
+                                    log::info!("Kademlia bootstrap initiated");
                                 }
                             }
                             _ => {}
@@ -740,6 +779,16 @@ impl NetworkHandler {
             }
             SwarmEvent::Behaviour(BehaviourEvent::Identify(_)) => None,
             SwarmEvent::Behaviour(BehaviourEvent::Kademlia(_)) => None,
+            SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
+                if let Some(clean) = sanitize_addr(&address) {
+                    Some(NetworkCallback::PeerIdentified {
+                        peer_id,
+                        listen_addrs: vec![clean],
+                    })
+                } else {
+                    None
+                }
+            }
             SwarmEvent::ExpiredListenAddr {
                 listener_id: _,
                 address,

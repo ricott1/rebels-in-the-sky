@@ -26,7 +26,7 @@ pub struct NetworkStoreData {
 }
 
 impl NetworkStoreData {
-    pub fn to_seed_info(&self) -> Self {
+    pub fn to_broadcast_snapshot(&self) -> Self {
         Self {
             team_ranking: self.get_top_team_ranking().into_iter().collect(),
             player_ranking: self.get_top_player_ranking().into_iter().collect(),
@@ -50,9 +50,7 @@ impl NetworkStoreData {
         }
 
         for entry in other.chat_history.iter() {
-            if !self.chat_history.contains(entry) {
-                self.chat_history.insert(entry.clone());
-            }
+            self.chat_history.insert(entry.clone());
         }
 
         // Peers are not updated here, as they are only added if the connection is succesfull

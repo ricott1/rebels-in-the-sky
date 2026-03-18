@@ -355,7 +355,7 @@ impl GamePanel {
                 } else {
                     "Playing"
                 },
-                world.planets.get_or_err(&game.location)?.name,
+                game.planet_name,
                 if let Some(timestamp) = game.ended_at {
                     format!(" on {}", timestamp.formatted_as_date())
                 } else {
@@ -521,12 +521,15 @@ impl GamePanel {
     ) -> AppResult<()> {
         frame.render_widget(default_block().title("Shots map"), area);
 
-        let planet = world.planets.get_or_err(&game.location)?;
-        let pitch_style = match planet.planet_type {
-            PlanetType::Earth => PitchImage::PitchFancy,
-            PlanetType::Ring | PlanetType::Rocky => PitchImage::PitchBall,
-            PlanetType::Asteroid => PitchImage::PitchPlanet,
-            _ => PitchImage::PitchClassic,
+        let pitch_style = if let Ok(planet) = world.planets.get_or_err(&game.location) {
+            match planet.planet_type {
+                PlanetType::Earth => PitchImage::PitchFancy,
+                PlanetType::Ring | PlanetType::Rocky => PitchImage::PitchBall,
+                PlanetType::Asteroid => PitchImage::PitchPlanet,
+                _ => PitchImage::PitchClassic,
+            }
+        } else {
+            PitchImage::PitchClassic
         };
 
         let max_index = self.action_results_len - self.commentary_index;
@@ -996,11 +999,8 @@ impl GamePanel {
                 )
                 .widths(constraint);
 
-        let box_area = Layout::vertical([
-            Constraint::Ratio(1, 2),
-            Constraint::Ratio(1, 2),
-        ])
-        .split(area);
+        let box_area =
+            Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(area);
 
         let home_box_split = Layout::vertical([Constraint::Min(0), Constraint::Length(1)])
             .split(box_area[0].inner(Margin::new(1, 1)));
@@ -1103,11 +1103,8 @@ impl GamePanel {
             )
             .widths(constraint);
 
-        let box_area = Layout::vertical([
-            Constraint::Ratio(1, 2),
-            Constraint::Ratio(1, 2),
-        ])
-        .split(area);
+        let box_area =
+            Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(area);
 
         frame.render_widget(home_table.block(default_block()), box_area[0]);
         frame.render_widget(away_table.block(default_block()), box_area[1]);

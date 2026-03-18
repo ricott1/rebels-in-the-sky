@@ -76,7 +76,7 @@ impl Relayer {
                 if topic == IdentTopic::new(TOPIC).hash() {
                     println!("Sending info to {peer_id}");
                     self.network_handler
-                        .send_seed_info(self.network_store_data.to_seed_info())?;
+                        .send_seed_info(self.network_store_data.to_broadcast_snapshot())?;
                 }
             }
 
@@ -101,7 +101,7 @@ impl Relayer {
                         }
                     } else {
                         self.network_handler
-                            .send_seed_info(self.network_store_data.to_seed_info())?;
+                            .send_seed_info(self.network_store_data.to_broadcast_snapshot())?;
                         self.network_handler.send_relayer_message_to_team(
                             format!(
                                 "A new crew has started roaming the galaxy: {}",
@@ -155,7 +155,7 @@ impl Relayer {
                     self.network_store_data.chat_history.insert(entry);
                 } else if let NetworkData::SyncRequest = network_data {
                     self.network_handler
-                        .send_seed_info(self.network_store_data.to_seed_info())?;
+                        .send_seed_info(self.network_store_data.to_broadcast_snapshot())?;
                 }
             }
 
@@ -165,9 +165,16 @@ impl Relayer {
                 ..
             })) => {
                 // Store the first routable listen address for this peer
-                let clean_addrs = handler::sanitize_listen_addrs(&info.listen_addrs);
-                if let Some(addr) = clean_addrs.into_iter().next() {
+                if let Some(addr) = info.listen_addrs.iter().find_map(handler::sanitize_addr) {
                     self.network_store_data.update_peer_addresses(peer_id, addr);
+                    save_relayer_network_store_data(&self.network_store_data, false)?;
+                }
+            }
+
+            SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
+                if let Some(clean) = handler::sanitize_addr(&address) {
+                    self.network_store_data
+                        .update_peer_addresses(peer_id, clean);
                     save_relayer_network_store_data(&self.network_store_data, false)?;
                 }
             }
