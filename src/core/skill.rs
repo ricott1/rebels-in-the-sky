@@ -209,7 +209,7 @@ impl Defense {
         let steal = (level + WEIGHT_MOD * weights[8]).normal_sample(rng);
         let block = (level + WEIGHT_MOD * weights[9]).normal_sample(rng);
         let perimeter_defense = (level + WEIGHT_MOD * weights[10]).normal_sample(rng);
-        let interior_defense = (level + WEIGHT_MOD * weights[12]).normal_sample(rng);
+        let interior_defense = (level + WEIGHT_MOD * weights[11]).normal_sample(rng);
         Self {
             steal,
             block,

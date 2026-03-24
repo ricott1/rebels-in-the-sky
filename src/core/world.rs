@@ -11,9 +11,10 @@ use super::team::Team;
 use super::types::{PlayerLocation, TeamBonus, TeamLocation};
 use super::utils::{is_default, PLANET_DATA, TEAM_DATA};
 use crate::core::{
-    AutonomousStrategy, GameResult, Honour, Rated, RatedPlayers, Skill,
+    AsteroidUpgradeTarget, AutonomousStrategy, GameResult, Honour, Rated, RatedPlayers, Skill,
     TournamentRegistrationState, Upgrade, MIN_SKILL,
 };
+use crate::space_adventure::ControllableSpaceship;
 use crate::game_engine::game::{Game, GameSummary};
 use crate::game_engine::tactic::Tactic;
 use crate::game_engine::types::{Possession, TeamInGame};
@@ -713,6 +714,7 @@ impl World {
         }
 
         self.dirty = true;
+        self.dirty_network = true;
         self.dirty_ui = true;
         Ok(())
     }
@@ -852,6 +854,185 @@ impl World {
         self.teams.insert(team.id, team);
 
         Ok(())
+    }
+
+    pub fn abandon_asteroid(&mut self, asteroid_id: PlanetId) -> AppResult<()> {
+        let own_team = self.get_own_team_mut()?;
+        own_team.asteroid_ids.retain(|&id| id != asteroid_id);
+
+        if matches!(own_team.has_space_cove_on(), Some(id) if id == asteroid_id) {
+            own_team.space_cove = None;
+        }
+
+        self.dirty = true;
+        self.dirty_network = true;
+        self.dirty_ui = true;
+        Ok(())
+    }
+
+    pub fn upgrade_asteroid(
+        &mut self,
+        asteroid_id: PlanetId,
+        upgrade: Upgrade<AsteroidUpgradeTarget>,
+    ) -> AppResult<String> {
+        // Validate asteroid exists
+        self.planets.get_or_err(&asteroid_id)?;
+
+        if upgrade.target == AsteroidUpgradeTarget::SpaceCove {
+            let own_team = self.teams.get_mut_or_err(&self.own_team_id)?;
+            if let Some(cove) = own_team.space_cove.as_mut() {
+                if cove.planet_id != asteroid_id {
+                    return Err(anyhow!(
+                        "Cannot finalize space cove upgrade: mismatching planet id."
+                    ));
+                }
+                cove.finish_contruction();
+                own_team.version += 1;
+            } else {
+                return Err(anyhow!(
+                    "Cannot finalize space cove upgrade: no space cove under construction."
+                ));
+            }
+        }
+
+        let asteroid = self.planets.get_mut_or_err(&asteroid_id)?;
+        asteroid.pending_upgrade = None;
+        asteroid.version += 1;
+        asteroid.upgrades.insert(upgrade.target);
+
+        let message = format!(
+            "{} construction on {} completed!",
+            upgrade.target, asteroid.name
+        );
+
+        self.dirty = true;
+        self.dirty_network = true;
+        self.dirty_ui = true;
+        Ok(message)
+    }
+
+    pub fn start_space_adventure(&mut self) -> AppResult<()> {
+        let mut own_team = self.get_own_team()?.clone();
+        let average_tiredness = own_team.average_tiredness(self);
+        own_team.can_start_space_adventure(average_tiredness)?;
+
+        let planet_id = own_team
+            .is_on_planet()
+            .ok_or_else(|| anyhow!("Team should be on a planet to start a space adventure."))?;
+
+        let current_planet = self.planets.get_or_err(&planet_id)?;
+        let should_spawn_asteroid = current_planet.asteroid_probability > 0.0
+            && own_team.asteroid_ids.len() < MAX_NUM_ASTEROID_PER_TEAM;
+        let gold_fragment_probability = 0.001
+            + 0.075 * (current_planet.resources.value(&Resource::GOLD) as f64)
+                / MAX_SKILL as f64;
+
+        let speed_bonus = TeamBonus::SpaceshipSpeed.current_team_bonus(self, &own_team.id)?;
+        let weapons_bonus = TeamBonus::Weapons.current_team_bonus(self, &own_team.id)?;
+
+        let space = SpaceAdventure::new(should_spawn_asteroid, gold_fragment_probability)?
+            .with_player(
+                &own_team.spaceship,
+                own_team.resources.clone(),
+                speed_bonus,
+                weapons_bonus,
+                own_team.fuel(),
+            )?;
+
+        own_team.current_location = TeamLocation::OnSpaceAdventure { around: planet_id };
+
+        for player_id in own_team.player_ids.iter() {
+            let player = self.players.get_mut_or_err(player_id)?;
+            player.add_tiredness(SPACE_ADVENTURE_TIREDNESS_COST);
+        }
+
+        self.teams.insert(own_team.id, own_team);
+        self.space_adventure = Some(space);
+        self.dirty = true;
+        self.dirty_network = true;
+        self.dirty_ui = true;
+        Ok(())
+    }
+
+    pub fn return_from_space_adventure(
+        &mut self,
+    ) -> AppResult<(String, Option<usize>)> {
+        let mut own_team = self.get_own_team()?.clone();
+
+        let space = self
+            .space_adventure
+            .take()
+            .ok_or_else(|| anyhow!("World should have a space adventure"))?;
+
+        let player = space
+            .get_player()
+            .ok_or_else(|| anyhow!("Space adventure should have a player entity."))?;
+
+        own_team.number_of_space_adventures += 1;
+
+        let mut resources_gathered = vec![];
+        let mut resources_lost = vec![];
+        for resource in Resource::iter() {
+            let old_amount = own_team.resources.value(&resource);
+            let new_amount = player.resources().value(&resource);
+            if old_amount < new_amount {
+                resources_gathered.push((resource, new_amount - old_amount));
+            } else if old_amount > new_amount && resource != Resource::FUEL {
+                resources_lost.push((resource, old_amount - new_amount));
+            }
+        }
+
+        let resources_gathered_text = if resources_gathered.is_empty() {
+            "No resources collected!".to_string()
+        } else {
+            format!(
+                "{} collected.",
+                resources_gathered
+                    .iter()
+                    .map(|(res, amount)| format!("{amount} {res}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+
+        let resources_lost_text = if !resources_lost.is_empty() {
+            format!(
+                "{} lost.",
+                resources_lost
+                    .iter()
+                    .map(|(res, amount)| format!("{amount} {res}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        } else {
+            String::new()
+        };
+
+        own_team.resources = player.resources().clone();
+        own_team
+            .spaceship
+            .set_current_durability(player.current_durability());
+
+        match own_team.current_location {
+            TeamLocation::OnSpaceAdventure { around } => {
+                own_team.current_location = TeamLocation::OnPlanet { planet_id: around }
+            }
+            _ => {
+                return Err(anyhow!("Team should be on a space adventure."));
+            }
+        }
+
+        let asteroid_type = space.asteroid_planet_found();
+
+        self.teams.insert(own_team.id, own_team);
+        self.dirty = true;
+        self.dirty_network = true;
+        self.dirty_ui = true;
+
+        let message = format!(
+            "Team returned from space adventure:\n{resources_gathered_text}\n{resources_lost_text}"
+        );
+        Ok((message, asteroid_type))
     }
 
     fn generate_game_no_checks(

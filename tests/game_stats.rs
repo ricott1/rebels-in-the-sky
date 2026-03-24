@@ -667,9 +667,9 @@ mod tests {
     #[ignore]
     #[test]
     fn test_multiple_games() -> AppResult<()> {
-        const N: usize = 6_000;
+        const N: usize = 10_000;
         const BIN_SIZE: f32 = 1.0;
-        let max_delta_rating: f32 = 3.0;
+        let max_delta_rating: f32 = 2.0;
         let with_fixed_stamina = None; //Some(10.0);
 
         let tactic_pairs = Tactic::iter()

@@ -312,6 +312,9 @@ impl Team {
             });
 
         let n = tiredness_iter.len();
+        if n == 0 {
+            return 0.0;
+        }
         (tiredness_iter.sum::<f32>() / n as f32).bound()
     }
 
@@ -825,12 +828,24 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_change_training_focus(&self) -> AppResult<()> {
+    fn can_change_team_settings(&self) -> AppResult<()> {
         if self.current_game.is_some() {
             return Err(anyhow!("{} is playing", self.name));
         }
 
+        if self.playing_in_tournament().is_some() {
+            return Err(anyhow!("{} is in a tournament", self.name));
+        }
+
         Ok(())
+    }
+
+    pub fn can_change_tactic(&self) -> AppResult<()> {
+        self.can_change_team_settings()
+    }
+
+    pub fn can_change_training_focus(&self) -> AppResult<()> {
+        self.can_change_team_settings()
     }
 
     pub fn can_trade_resource(

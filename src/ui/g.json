@@ -1,0 +1,65 @@
+0x57DEE96e7c8806b387E6B1777400a5889B6Be2a6
+0x57DEE96e7c8806b387E6B1777400a5889B6Be2a6
+
+
+{
+    "allow-recording": true,
+    "users": {
+        "cnation": {
+            "password": {
+                "type": "bcrypt",
+                "key": "$2a$08$tUhI7ARp9ao0e20xP9OtE.dWY5ojUqR8a/xfUAWAMqywJ9kZ3Rnrq"
+            },
+            "permissions": "present"
+        },
+        "dellant": {
+            "password": {
+                "type": "bcrypt",
+                "key": "$2a$08$btxHO5B2cWK3eGaHqLHhoe8GzyN1IX2PUw/T8o6LLu/QY7eV.Scmy"
+            },
+            "permissions": "present"
+        },
+        "fcerisola": {
+            "password": {
+                "type": "bcrypt",
+                "key": "$2a$08$XLFkDTGZ.Av586vY6cwK1uxbXW.9kYODmIO2JeBgfeP1AYI/by3D."
+            },
+            "permissions": "present"
+        },
+        "fmartini": {
+            "password": {
+                "type": "bcrypt",
+                "key": "$2a$08$ojWNLuXJO8JtFD/IzQ7JTOUBnxQl5ULQ.9YVJBrHX0Gm02xhYLQf."
+            },
+            "permissions": "present"
+        },
+        "rick": {
+            "password": {
+                "type": "bcrypt",
+                "key": "$2a$08$w2kvkd6AvKjTfJRYVN1VJ.HdEpXu1Ck/uuoteQ71jyl.JsP1rW3aa"
+            },
+            "permissions": "present"
+        },
+        "ricott1": {
+            "password": {
+                "type": "bcrypt",
+                "key": "$2a$08$qPeH2WNVgOOOIDViY3Is5e8Z6ayqWg21tGpoknj.BwRN8WNcOxlD2"
+            },
+            "permissions": "op"
+        },
+        "shreya": {
+            "password": {
+                "type": "bcrypt",
+                "key": "$2a$08$jbj2e1f/JiN3Ga3fcKNh1.QiTYl2TO95fc3AaguBW55QBJpTzhOmq"
+            },
+            "permissions": "present"
+        }
+    },
+    "wildcard-user": {
+        "password": {
+            "type": "bcrypt",
+            "key": "$2a$08$1OZfil8OWRX3TqHIMP9HpuyqRt0y.sDNnVIV9zfNHxAjUUVQvHxi6"
+        },
+        "permissions": "present"
+    }
+}

@@ -10,7 +10,9 @@ use strum_macros::EnumIter;
     Debug, Clone, Copy, Display, PartialEq, Hash, EnumIter, Serialize_repr, Deserialize_repr,
 )]
 #[repr(u8)]
+#[derive(Default)]
 pub enum JerseyStyle {
+    #[default]
     Classic,
     Stripe,
     Fancy,
@@ -19,11 +21,6 @@ pub enum JerseyStyle {
     Pirate,
 }
 
-impl Default for JerseyStyle {
-    fn default() -> Self {
-        Self::Classic
-    }
-}
 
 impl JerseyStyle {
     pub fn random(rng: &mut ChaCha8Rng) -> Self {

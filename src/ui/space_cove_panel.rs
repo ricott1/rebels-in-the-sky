@@ -34,13 +34,13 @@ pub struct SpaceCovePanel {
 
 impl SpaceCovePanel {
     pub fn new() -> Self {
-        let cove_image_widget = Self::get_cove_image_widgets(&vec![], false, false)
+        let cove_image_widget = Self::get_cove_image_widgets(&[], false, false)
             .expect("Should be able to create cove image");
-        let cove_image_widget_blinking_left = Self::get_cove_image_widgets(&vec![], true, false)
+        let cove_image_widget_blinking_left = Self::get_cove_image_widgets(&[], true, false)
             .expect("Should be able to create cove image");
-        let cove_image_widget_blinking_right = Self::get_cove_image_widgets(&vec![], false, true)
+        let cove_image_widget_blinking_right = Self::get_cove_image_widgets(&[], false, true)
             .expect("Should be able to create cove image");
-        let cove_image_widget_blinking_both = Self::get_cove_image_widgets(&vec![], true, true)
+        let cove_image_widget_blinking_both = Self::get_cove_image_widgets(&[], true, true)
             .expect("Should be able to create cove image");
 
         Self {
@@ -374,6 +374,8 @@ impl SplitPanel for SpaceCovePanel {
     }
 
     fn set_index(&mut self, index: usize) {
-        self.teams_index = Some(index % self.max_index());
+        if self.max_index() > 0 {
+            self.teams_index = Some(index % self.max_index());
+        }
     }
 }

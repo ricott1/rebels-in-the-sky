@@ -7,7 +7,7 @@ use crate::{
     core::{utils::is_default, GamePosition, Player, MAX_GAME_POSITION},
     game_engine::{
         brawl, end_of_quarter, fastbreak, isolation, jump_ball, off_the_screen, pick_and_roll,
-        post, rebound, shot, start_of_quarter,
+        post, rebound, shot, start_of_quarter, total_brawl,
     },
 };
 use core::fmt::Debug;
@@ -44,6 +44,7 @@ pub enum ActionSituation {
     MediumShot,
     LongShot,
     Fastbreak,
+    Dunk,
     ForcedOffTheScreenAction, // FIXME: would be better to use an interal enum property action: Action
 }
 
@@ -108,7 +109,9 @@ pub enum Action {
     CloseShot,
     MediumShot,
     LongShot,
+    Dunk,
     Fastbreak,
+    TotalBrawl,
 }
 
 impl Action {
@@ -139,8 +142,10 @@ impl Action {
                 shot::execute_medium_shot(input, game, action_rng, description_rng)
             }
             Action::LongShot => shot::execute_long_shot(input, game, action_rng, description_rng),
+            Action::Dunk => shot::execute_dunk(input, game, action_rng, description_rng),
             Action::Brawl => brawl::execute(input, game, action_rng, description_rng),
             Action::Fastbreak => fastbreak::execute(input, game, action_rng, description_rng),
+            Action::TotalBrawl => total_brawl::execute(input, game, action_rng, description_rng),
         };
         output.random_seed = action_rng.get_seed();
         output

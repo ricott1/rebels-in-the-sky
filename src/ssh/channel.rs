@@ -5,7 +5,7 @@ use crate::tui::{Tui, WriterProxy};
 use crate::types::AppResult;
 use anyhow::{anyhow, Result};
 use russh::server::{Handle, Session};
-use russh::{ChannelId, CryptoVec};
+use russh::ChannelId;
 use std::fmt::Debug;
 use tokio::sync::mpsc;
 use tokio::task;
@@ -49,9 +49,12 @@ impl WriterProxy for SSHWriterProxy {
             return Ok(0);
         }
 
-        let data: CryptoVec = self.sink.clone().into();
         let data_length = self.sink.len();
-        if let Err(e) = self.handle.data(self.channel_id, data).await {
+        if let Err(e) = self
+            .handle
+            .data(self.channel_id, std::mem::take(&mut self.sink))
+            .await
+        {
             log::error!("Flushing error: {:#?}", e.to_ascii_lowercase());
             let _ = self.handle.close(self.channel_id).await;
         }

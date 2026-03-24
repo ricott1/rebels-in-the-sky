@@ -1,0 +1,34 @@
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 87 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+Result for Arrembaggio vs Arrembaggio
+Δrating=+0 (6000 samples)
+  Win% = 50.8 ± 0.6 (3045/6000)
+  Loss% = 49.2 ± 0.6 (2955/6000)
+  Draw% = 0.0 ± 0.0 (0/6000)
+  points = 64.6 ± 8.7 vs 64.5 ± 8.8
+  2pt = 27.3/55.0 ± 4.1/4.6 vs 27.3/55.0 ± 4.1/4.5
+  3pt = 3.3/8.5 ± 1.8/2.8 vs 3.3/8.4 ± 1.8/2.7
+  Def/Off Rebounds = 23.9/8.6 ± 4.2/3.0 vs 23.9/8.6 ± 4.2/2.9
+  Assists/Turnovers = 10.7/19.0 ± 3.0/4.3 vs 10.7/19.0 ± 3.0/4.4
+  Steals/Blocks = 9.2/9.0 ± 3.2/2.9 vs 9.3/9.0 ± 3.1/2.9
+  Brawls = 10.2 ± 3.1 vs 10.2 ± 3.2
+  Fastbreaks = 7.8 ± 2.9 vs 7.8 ± 2.9
+  Substitutions = 19.3 ± 4.7 vs 19.3 ± 4.7
+  Tiredness = 14.4 ± 1.6 vs 14.4 ± 1.6
+  Morale = 9.5 ± 3.7 vs 9.5 ± 3.8
+  Advantage = 24.3/136.8/42.9 vs 24.2/134.8/43.1
+
+test tests::test_multiple_games ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 27.00s
+

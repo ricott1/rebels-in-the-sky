@@ -1728,7 +1728,7 @@ fn format_player_stats(player: &'_ Player) -> Vec<Line<'_>> {
     text.push(Line::from(format!(
         "{:<12} {:>9} {:>9}",
         "Play time",
-        if seconds_played >= 1 * DAYS {
+        if seconds_played >= DAYS {
             seconds_played.formatted_up_to_hours()
         } else {
             seconds_played.formatted()

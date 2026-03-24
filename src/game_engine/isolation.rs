@@ -1,4 +1,4 @@
-use super::{action::*, constants::*, game::Game, types::*};
+use super::{action::*, constants::*, game::Game, shot, types::*};
 use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     skill::GameSkill,
@@ -76,7 +76,7 @@ pub(crate) fn execute(
                 advantage: Advantage::Attack,
                 attackers: vec![iso_idx],
                 defenders: vec![iso_idx],
-                situation: ActionSituation::CloseShot,
+                situation: shot::dunk_or_close_shot(iso, action_rng),
                 description: [
                     format!(
                         "{} breaks {}'s ankles and is now alone at the basket.",
@@ -191,64 +191,108 @@ pub(crate) fn execute(
                 away_score: input.away_score,
                 ..Default::default()
             },
-            x if x > ADV_DEFENSE_LIMIT => ActionOutput {
-                possession: input.possession,
-                advantage: Advantage::Defense,
-                attackers: vec![iso_idx],
-                defenders: vec![iso_idx], //no switch
-                situation: ActionSituation::MediumShot,
-                description:  [
-                    format!(
-                        "{} tries to dribble past {} but {} is all over {}.",
-                        iso.info.short_name(),
-                        defender.info.short_name(),
-                        defender.info.short_name(),
-                        iso.info.pronouns.as_object()
-                    ),
-                    format!(
-                        "{} attempts a quick crossover on {}, but {} anticipates the move perfectly.",
-                        iso.info.short_name(),
-                        defender.info.short_name(),
-                        defender.info.short_name()
-                    ),
-                    format!(
-                        "{} goes for a step-back jumper against {}, but {} contests the shot heavily.",
-                        iso.info.short_name(),
-                        defender.info.short_name(),
-                        defender.info.short_name()
-                    ),
-                    format!(
-                        "{} spins into the lane trying to shake {}, but {} holds {} ground.",
-                        iso.info.short_name(),
-                        defender.info.short_name(),
-                        defender.info.short_name(),
-                        defender.info.pronouns.as_possessive()
-                    ),
-                    format!(
-                        "{} executes a behind-the-back dribble to beat {}, but {} recovers quickly.",
-                        iso.info.short_name(),
-                        defender.info.short_name(),
-                        defender.info.short_name()
-                    ),
-                    format!(
-                        "{} pulls up for a mid-range shot over {}, but {} contests it fiercely.",
-                        iso.info.short_name(),
-                        defender.info.short_name(),
-                        defender.info.short_name()
-                    ),
-                    format!(
-                        "{} drives baseline against {}, but {} cuts off the angle superbly.",
-                        iso.info.short_name(),
-                        defender.info.short_name(),
-                        defender.info.short_name()
-                    ),
-                ].choose(description_rng).expect("There should be one option").clone(),
-                start_at: input.end_at,
-                end_at: input.end_at.plus(timer_increase),
-                home_score: input.home_score,
-                away_score: input.away_score,
-                ..Default::default()
-            },
+            x if x > ADV_DEFENSE_LIMIT => {
+                // Check if driver can kick out to an open teammate
+                let num_ok_players = attacking_players_array
+                    .iter().filter(|p| !p.is_knocked_out()).count();
+                if num_ok_players > 1
+                    && (0.5 * iso.mental.vision + 0.5 * iso.technical.passing).game_value() + x
+                        > ADV_NEUTRAL_LIMIT
+                {
+                    let mut weights = [3, 3, 3, 3, 1];
+                    weights[iso_idx] = 0;
+                    let off_screen_idx = sample_player_index(action_rng, weights, attacking_players_array)
+                        .expect("There should be another ok player");
+                    let target = attacking_players_array[off_screen_idx];
+                    ActionOutput {
+                        possession: input.possession,
+                        advantage: Advantage::Neutral,
+                        attackers: vec![iso_idx, off_screen_idx],
+                        defenders: vec![],
+                        situation: ActionSituation::ForcedOffTheScreenAction,
+                        description: [
+                            format!(
+                                "{} drives in but {} cuts off the lane. {} spots {} open and kicks the ball out.",
+                                iso.info.short_name(), defender.info.short_name(),
+                                iso.info.short_name(), target.info.short_name()
+                            ),
+                            format!(
+                                "{} can't get past {}, but finds {} open on the perimeter.",
+                                iso.info.short_name(), defender.info.short_name(),
+                                target.info.short_name()
+                            ),
+                            format!(
+                                "{} draws the defense and dishes to {} on the wing.",
+                                iso.info.short_name(), target.info.short_name()
+                            ),
+                        ].choose(description_rng).expect("There should be one option").clone(),
+                        start_at: input.end_at,
+                        end_at: input.end_at.plus(1 + action_rng.random_range(0..=2)),
+                        home_score: input.home_score,
+                        away_score: input.away_score,
+                        ..Default::default()
+                    }
+                } else {
+                    ActionOutput {
+                        possession: input.possession,
+                        advantage: Advantage::Defense,
+                        attackers: vec![iso_idx],
+                        defenders: vec![iso_idx],
+                        situation: ActionSituation::MediumShot,
+                        description: [
+                            format!(
+                                "{} tries to dribble past {} but {} is all over {}.",
+                                iso.info.short_name(),
+                                defender.info.short_name(),
+                                defender.info.short_name(),
+                                iso.info.pronouns.as_object()
+                            ),
+                            format!(
+                                "{} attempts a quick crossover on {}, but {} anticipates the move perfectly.",
+                                iso.info.short_name(),
+                                defender.info.short_name(),
+                                defender.info.short_name()
+                            ),
+                            format!(
+                                "{} goes for a step-back jumper against {}, but {} contests the shot heavily.",
+                                iso.info.short_name(),
+                                defender.info.short_name(),
+                                defender.info.short_name()
+                            ),
+                            format!(
+                                "{} spins into the lane trying to shake {}, but {} holds {} ground.",
+                                iso.info.short_name(),
+                                defender.info.short_name(),
+                                defender.info.short_name(),
+                                defender.info.pronouns.as_possessive()
+                            ),
+                            format!(
+                                "{} executes a behind-the-back dribble to beat {}, but {} recovers quickly.",
+                                iso.info.short_name(),
+                                defender.info.short_name(),
+                                defender.info.short_name()
+                            ),
+                            format!(
+                                "{} pulls up for a mid-range shot over {}, but {} contests it fiercely.",
+                                iso.info.short_name(),
+                                defender.info.short_name(),
+                                defender.info.short_name()
+                            ),
+                            format!(
+                                "{} drives baseline against {}, but {} cuts off the angle superbly.",
+                                iso.info.short_name(),
+                                defender.info.short_name(),
+                                defender.info.short_name()
+                            ),
+                        ].choose(description_rng).expect("There should be one option").clone(),
+                        start_at: input.end_at,
+                        end_at: input.end_at.plus(timer_increase),
+                        home_score: input.home_score,
+                        away_score: input.away_score,
+                        ..Default::default()
+                    }
+                }
+            }
             _ => {
                 iso_update.turnovers = 1;
                 iso_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
@@ -270,6 +314,8 @@ pub(crate) fn execute(
                 ActionSituation::Turnover
             };
 
+            // After possession flips, the defender who stole is at the same index
+            // as the attacker they were guarding (players are mirrored by position).
             let attackers = if with_steal {
                 vec![iso_idx]
             } else {vec![]};

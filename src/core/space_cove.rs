@@ -108,8 +108,8 @@ impl UpgradeableElement for SpaceCoveUpgradeTarget {
 
     fn upgrade_duration(&self) -> Tick {
         match self {
-            Self::QuantumComputer => 1 * WEEKS,
-            Self::Skull => 1 * WEEKS,
+            Self::QuantumComputer => WEEKS,
+            Self::Skull => WEEKS,
         }
     }
 

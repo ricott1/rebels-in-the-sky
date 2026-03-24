@@ -403,10 +403,26 @@ impl Game {
         let situation = self.action_results[self.action_results.len() - 1].situation;
         let action = match situation {
             ActionSituation::JumpBall => Action::JumpBall,
-            ActionSituation::AfterOffensiveRebound => Action::CloseShot,
+            ActionSituation::AfterOffensiveRebound => {
+                let is_dunk = self
+                    .action_results
+                    .last()
+                    .and_then(|last| last.attackers.first().copied())
+                    .map(|idx| {
+                        let rebounder = self.attacking_players_array()[idx];
+                        super::shot::should_dunk(rebounder, action_rng)
+                    })
+                    .unwrap_or(false);
+                if is_dunk {
+                    Action::Dunk
+                } else {
+                    Action::CloseShot
+                }
+            }
             ActionSituation::CloseShot => Action::CloseShot,
             ActionSituation::MediumShot => Action::MediumShot,
             ActionSituation::LongShot => Action::LongShot,
+            ActionSituation::Dunk => Action::Dunk,
             ActionSituation::ForcedOffTheScreenAction => Action::OffTheScreen,
             ActionSituation::Fastbreak => Action::Fastbreak,
             ActionSituation::MissedShot => Action::Rebound,
@@ -686,23 +702,13 @@ impl Game {
             }
 
             None => {
-                if self.part_of_tournament.is_some() {
-                    format!(
-                        "It's a tie! The final score is {} {}-{} {}, but this is a tournament and there will be a winner, chosen randomly.",
-                        self.home_team_in_game.name,
-                        home_score,
-                        away_score,
-                        self.away_team_in_game.name
-                    )
-                } else {
-                    format!(
-                        "It's a tie! The final score is {} {}-{} {}.",
-                        self.home_team_in_game.name,
-                        home_score,
-                        away_score,
-                        self.away_team_in_game.name
-                    )
-                }
+                format!(
+                    "It's a tie! The final score is {} {}-{} {}.",
+                    self.home_team_in_game.name,
+                    home_score,
+                    away_score,
+                    self.away_team_in_game.name
+                )
             }
         }
     }
@@ -721,6 +727,11 @@ impl Game {
         }
 
         self.timer.tick();
+        let mut seed = self.get_rng_seed();
+        let action_rng = &mut ChaCha8Rng::from_seed(seed);
+        // Reverse seed just to get a different rng generator.
+        seed.reverse();
+        let description_rng = &mut ChaCha8Rng::from_seed(seed);
 
         if self.timer.has_ended() {
             self.ended_at = Some(current_tick);
@@ -737,17 +748,7 @@ impl Game {
                     self.game_end_description(Some(Possession::Away))
                 }
                 _ => {
-                    if self.part_of_tournament.is_some() {
-                        let seed = self.get_rng_seed();
-                        let action_rng = &mut ChaCha8Rng::from_seed(seed);
-                        if action_rng.random_bool(0.5) {
-                            self.winner = Some(self.home_team_in_game.team_id);
-                        } else {
-                            self.winner = Some(self.away_team_in_game.team_id);
-                        }
-                    } else {
-                        self.winner = None;
-                    }
+                    self.winner = None;
                     self.game_end_description(None)
                 }
             };
@@ -758,8 +759,37 @@ impl Game {
                 end_at: self.timer,
                 home_score: self.get_score().0,
                 away_score: self.get_score().1,
+                situation: ActionSituation::EndOfQuarter,
                 ..Default::default()
             });
+
+            if self.winner.is_none() {
+                // It's a draw. In this case we have a final total brawl to determine the winner.
+                // The team who has possession after the brawl is the winner.
+                let action_input = self.action_results[self.action_results.len() - 1].clone();
+                assert!(action_input.situation == ActionSituation::EndOfQuarter);
+                let result =
+                    Action::TotalBrawl.execute(&action_input, self, action_rng, description_rng);
+
+                self.apply_game_stats_update(
+                    result.attack_stats_update.as_ref(),
+                    result.defense_stats_update.as_ref(),
+                    result.score_change,
+                );
+
+                let winner = result.possession;
+                self.action_results.push(result);
+
+                match winner {
+                    Possession::Home => {
+                        self.winner = Some(self.home_team_in_game.team_id);
+                    }
+
+                    Possession::Away => {
+                        self.winner = Some(self.away_team_in_game.team_id);
+                    }
+                }
+            }
 
             return;
         }
@@ -770,12 +800,6 @@ impl Game {
             return;
         }
 
-        let mut seed = self.get_rng_seed();
-        let action_rng = &mut ChaCha8Rng::from_seed(seed);
-
-        // Reverse seed just to get a different rng generator.
-        seed.reverse();
-        let description_rng = &mut ChaCha8Rng::from_seed(seed);
         let action_input = self.action_results[self.action_results.len() - 1].clone();
 
         // If next tick is at a break, we are at the end of the quarter and should stop.
@@ -922,16 +946,13 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use super::Game;
-    use crate::core::constants::DEFAULT_PLANET_ID;
     use crate::core::world::World;
-    use crate::core::TickInterval;
+    use crate::core::{Rated, TickInterval};
     use crate::game_engine::action::{ActionSituation, Advantage};
     use crate::game_engine::game::GameSummary;
     use crate::game_engine::types::{GameStatsMap, Possession, TeamInGame};
     use crate::types::AppResult;
     use crate::types::{SystemTimeTick, Tick};
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
 
     #[test]
     fn test_game_consistency() -> AppResult<()> {
@@ -970,27 +991,12 @@ mod tests {
     #[test]
     fn test_game_in_world() -> AppResult<()> {
         let mut world = World::new(None);
-        let action_rng = &mut ChaCha8Rng::seed_from_u64(world.seed);
-        let id0 = world.generate_random_team(
-            action_rng,
-            DEFAULT_PLANET_ID.clone(),
-            "Testen".to_string(),
-            "Tosten".to_string(),
-            Some(0.0),
-        )?;
-        let id1 = world.generate_random_team(
-            action_rng,
-            DEFAULT_PLANET_ID.clone(),
-            "Holalo".to_string(),
-            "Halley".to_string(),
-            Some(0.0),
-        )?;
 
-        let home_team_in_game = TeamInGame::from_team_id(&id0, &world.teams, &world.players)?;
-        let away_team_in_game = TeamInGame::from_team_id(&id1, &world.teams, &world.players)?;
+        let home_team_in_game = TeamInGame::test();
+        let away_team_in_game = TeamInGame::test();
 
-        let home_rating = world.team_rating(&id0).unwrap_or_default();
-        let away_rating = world.team_rating(&id1).unwrap_or_default();
+        let home_rating = home_team_in_game.rating();
+        let away_rating = away_team_in_game.rating();
 
         let game = Game::test(home_team_in_game, away_team_in_game);
 
@@ -1053,6 +1059,7 @@ mod tests {
 
         for advantage in [Advantage::Attack, Advantage::Neutral, Advantage::Defense] {
             for situation in [
+                ActionSituation::Dunk,
                 ActionSituation::CloseShot,
                 ActionSituation::MediumShot,
                 ActionSituation::LongShot,

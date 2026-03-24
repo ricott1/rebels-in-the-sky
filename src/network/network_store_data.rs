@@ -147,7 +147,7 @@ impl NetworkStoreData {
                 b_timestamp.cmp(a_timestamp)
             })
             .take(RANDOM_PEER_ADDRESSES_LENGTH)
-            .map(|(k, v)| (k.clone(), v.clone()))
+            .map(|(k, v)| (*k, v.clone()))
             .collect_vec()
     }
 

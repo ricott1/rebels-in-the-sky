@@ -18,6 +18,7 @@ pub(crate) const NUMBER_OF_ROLLS: usize = 9;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ShotDifficulty {
+    Dunk = NUMBER_OF_ROLLS as isize / 2,
     Close = NUMBER_OF_ROLLS as isize,
     Medium = 4 + 2 * NUMBER_OF_ROLLS as isize,
     Long = 16 + 2 * NUMBER_OF_ROLLS as isize,

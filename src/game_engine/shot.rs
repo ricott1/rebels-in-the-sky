@@ -59,55 +59,122 @@ pub(crate) fn execute_long_shot(
     )
 }
 
+pub(crate) fn execute_dunk(
+    input: &ActionOutput,
+    game: &Game,
+    action_rng: &mut ChaCha8Rng,
+    description_rng: &mut ChaCha8Rng,
+) -> ActionOutput {
+    execute_shot(
+        input,
+        game,
+        action_rng,
+        description_rng,
+        ShotDifficulty::Dunk,
+    )
+}
+
+/// Whether a player attempts a dunk instead of a layup.
+/// Based on vertical leap, height, and the Showpirate trait.
+pub(crate) fn should_dunk(shooter: &Player, action_rng: &mut ChaCha8Rng) -> bool {
+    action_rng.random_bool(
+        (DUNK_PROBABILITY
+            * if matches!(shooter.special_trait, Some(Trait::Showpirate)) {
+                2.0
+            } else {
+                1.0
+            }
+            * ((0.25 * (shooter.info.height - 150.0)).bound() / MAX_SKILL) as f64
+            * (shooter.athletics.vertical / MAX_SKILL) as f64)
+            .clamp(0.0, 1.0),
+    )
+}
+
+/// Returns Dunk or CloseShot situation based on the player's dunk probability.
+pub(crate) fn dunk_or_close_shot(shooter: &Player, action_rng: &mut ChaCha8Rng) -> ActionSituation {
+    if should_dunk(shooter, action_rng) {
+        ActionSituation::Dunk
+    } else {
+        ActionSituation::CloseShot
+    }
+}
+
 fn description(
     description_rng: &mut ChaCha8Rng,
     shooter: &Player,
     assist_by: Option<&Player>,
     blocked_by: Option<&Player>,
-    with_dunk: bool,
     defenders: Vec<&Player>,
     shot_difficulty: ShotDifficulty,
     advantage: Advantage,
     success: bool,
 ) -> String {
     let text = match (shot_difficulty, advantage, success) {
-        (ShotDifficulty::Close, Advantage::Attack, true) => {
-            if with_dunk {
+        // Dunk descriptions
+        (ShotDifficulty::Dunk, _, true) => vec![
+            format!(
+                "{} slams the ball in the basket! What a move!",
+                shooter.info.short_name()
+            ),
+            format!("{} dunks it with two hands!", shooter.info.short_name()),
+            format!(
+                "{} slams the ball with a spectacular jump.",
+                shooter.info.short_name()
+            ),
+            format!(
+                "Reverse dunk from {}! Everyone is on their feet!",
+                shooter.info.short_name()
+            ),
+            format!(
+                "{} glides through the air and slams it with one hand!",
+                shooter.info.short_name()
+            ),
+        ],
+        (ShotDifficulty::Dunk, _, false) => {
+            if let Some(p) = blocked_by {
                 vec![
                     format!(
-                        "{} slams the ball in the basket! What a move!",
-                        shooter.info.short_name()
-                    ),
-                    format!("{} dunks it with two hands", shooter.info.short_name()),
-                    format!(
-                        "{} slams the ball with a spectacular jump.",
-                        shooter.info.short_name()
+                        "{} goes for the slam but {} rejects it at the rim!",
+                        shooter.info.short_name(),
+                        p.info.short_name()
                     ),
                     format!(
-                        "Reverse dunk from {}! Everyone is on their feet!",
-                        shooter.info.short_name()
-                    ),
-                    format!(
-                        "{} glides through the air and slams it with one hand!",
-                        shooter.info.short_name()
+                        "{} tries to dunk but {} sends it back! What a block!",
+                        shooter.info.short_name(),
+                        p.info.short_name()
                     ),
                 ]
             } else {
                 vec![
-                    format!("{} scores an easy layup.", shooter.info.short_name()),
                     format!(
-                        "{} would never miss in this situation.",
+                        "{} goes up for the dunk but can't finish!",
                         shooter.info.short_name()
                     ),
-                    format!("{} scores with ease.", shooter.info.short_name()),
-                    format!("{} scores the easy layup.", shooter.info.short_name()),
                     format!(
-                        "{} glides to the rim for an effortless finish.",
+                        "{} misses the dunk attempt! The rim says no!",
+                        shooter.info.short_name()
+                    ),
+                    format!(
+                        "{} tries to throw it down but loses the handle.",
                         shooter.info.short_name()
                     ),
                 ]
             }
         }
+
+        (ShotDifficulty::Close, Advantage::Attack, true) => vec![
+            format!("{} scores an easy layup.", shooter.info.short_name()),
+            format!(
+                "{} would never miss in this situation.",
+                shooter.info.short_name()
+            ),
+            format!("{} scores with ease.", shooter.info.short_name()),
+            format!("{} scores the easy layup.", shooter.info.short_name()),
+            format!(
+                "{} glides to the rim for an effortless finish.",
+                shooter.info.short_name()
+            ),
+        ],
 
         (ShotDifficulty::Close, Advantage::Neutral, true) => vec![
             format!("{} scores.", shooter.info.short_name()),
@@ -396,39 +463,60 @@ fn description(
         .choose(description_rng)
         .expect("There should be a description")
         .to_string();
+
+    // NOTE: assyst_by can be some only if success == true.
     if let Some(passer) = assist_by {
-        let options = match advantage {
-            Advantage::Attack => [
-                format!(" Nice assist from {}.", passer.info.short_name()),
-                format!(" Good pass from {}.", passer.info.short_name()),
+        let assist_description = if shot_difficulty == ShotDifficulty::Dunk {
+            [
                 format!(
-                    " {} deserves at least half the praise.",
+                    " Alley-oop from {}! What a connection!",
                     passer.info.short_name()
                 ),
-            ],
-            Advantage::Neutral => [
-                format!(" Assist from {}.", passer.info.short_name()),
-                format!(" Nice assist from {}.", passer.info.short_name()),
-                format!(" Good pass from {}.", passer.info.short_name()),
-            ],
-            Advantage::Defense => [
-                format!(" Assist from {}.", passer.info.short_name()),
                 format!(
-                    " The pass from {} was not perfect, but {} managed to convert it.",
+                    " {} threw the lob and {} finished it! Alley-oop!",
                     passer.info.short_name(),
-                    shooter.info.pronouns.as_subject().to_lowercase()
+                    shooter.info.short_name()
                 ),
                 format!(
-                    " {} managed to covert {}'s pass.",
-                    shooter.info.pronouns.as_subject(),
+                    " Perfect lob from {} for the alley-oop!",
                     passer.info.short_name()
                 ),
-            ],
+            ]
+        } else {
+            match advantage {
+                Advantage::Attack => [
+                    format!(" Nice assist from {}.", passer.info.short_name()),
+                    format!(" Good pass from {}.", passer.info.short_name()),
+                    format!(
+                        " {} deserves at least half the praise.",
+                        passer.info.short_name()
+                    ),
+                ],
+                Advantage::Neutral => [
+                    format!(" Assist from {}.", passer.info.short_name()),
+                    format!(" Nice assist from {}.", passer.info.short_name()),
+                    format!(" Good pass from {}.", passer.info.short_name()),
+                ],
+                Advantage::Defense => [
+                    format!(" Assist from {}.", passer.info.short_name()),
+                    format!(
+                        " The pass from {} was not perfect, but {} managed to convert it.",
+                        passer.info.short_name(),
+                        shooter.info.pronouns.as_subject().to_lowercase()
+                    ),
+                    format!(
+                        " {} managed to covert {}'s pass.",
+                        shooter.info.pronouns.as_subject(),
+                        passer.info.short_name()
+                    ),
+                ],
+            }
         };
-        let assist_description = options
-            .choose(description_rng)
-            .expect("There should be a description");
-        description.push_str(assist_description);
+        description.push_str(
+            assist_description
+                .choose(description_rng)
+                .expect("There should be a description"),
+        );
     };
     description
 }
@@ -459,6 +547,9 @@ fn execute_shot(
         .collect::<Vec<&Player>>();
 
     let atk_skill = match shot_difficulty {
+        ShotDifficulty::Dunk => {
+            (0.5 * shooter.athletics.vertical + 0.5 * shooter.athletics.strength).game_value()
+        }
         ShotDifficulty::Close => shooter.offense.close_range.game_value(),
         ShotDifficulty::Medium => shooter.offense.medium_range.game_value(),
         ShotDifficulty::Long => shooter.offense.long_range.game_value(),
@@ -497,21 +588,6 @@ fn execute_shot(
             None
         };
 
-    let with_dunk = success
-        && input.advantage == Advantage::Attack
-        && shot_difficulty == ShotDifficulty::Close
-        && action_rng.random_bool(
-            (DUNK_PROBABILITY
-                * if matches!(shooter.special_trait, Some(Trait::Showpirate)) {
-                    2.0
-                } else {
-                    1.0
-                }
-                * ((0.25 * (shooter.info.height - 150.0)).bound() / MAX_SKILL) as f64
-                * (shooter.athletics.vertical / MAX_SKILL) as f64)
-                .clamp(0.0, 1.0),
-        );
-
     let assist_by = if success {
         input.assist_from.map(|idx| attacking_players_array[idx])
     } else {
@@ -523,7 +599,6 @@ fn execute_shot(
         shooter,
         assist_by,
         blocked_by,
-        with_dunk,
         defenders.clone(),
         shot_difficulty,
         input.advantage,
@@ -553,7 +628,7 @@ fn execute_shot(
         }
         true => {
             let score_change = match shot_difficulty {
-                ShotDifficulty::Close | ShotDifficulty::Medium => 2,
+                ShotDifficulty::Dunk | ShotDifficulty::Close | ShotDifficulty::Medium => 2,
                 ShotDifficulty::Long => 3,
             };
             ActionOutput {
@@ -587,7 +662,7 @@ fn execute_shot(
     };
 
     match shot_difficulty {
-        ShotDifficulty::Close => {
+        ShotDifficulty::Dunk | ShotDifficulty::Close => {
             shooter_update.attempted_2pt = 1;
             shooter_update.last_action_shot = match game.possession {
                 Possession::Home => {
@@ -665,7 +740,9 @@ fn execute_shot(
         };
 
         match shot_difficulty {
-            ShotDifficulty::Close | ShotDifficulty::Medium => shooter_update.made_2pt = 1,
+            ShotDifficulty::Dunk | ShotDifficulty::Close | ShotDifficulty::Medium => {
+                shooter_update.made_2pt = 1
+            }
             ShotDifficulty::Long => shooter_update.made_3pt = 1,
         };
         if let Some(passer_index) = input.assist_from {
@@ -743,7 +820,7 @@ fn execute_shot(
         }
 
         for player in game.all_defending_players().values() {
-            let extra_morale = if with_dunk {
+            let extra_morale = if shot_difficulty == ShotDifficulty::Dunk {
                 MoraleModifier::HIGH_MALUS
             } else {
                 MoraleModifier::SMALL_MALUS

@@ -355,7 +355,7 @@ impl NetworkHandler {
                                 }
                             }
                             SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
-                                if let Some(clean) = sanitize_addr(&address) {
+                                if let Some(clean) = sanitize_addr(address) {
                                     swarm.behaviour_mut().kademlia.add_address(peer_id, clean);
                                 }
                             }
@@ -780,14 +780,10 @@ impl NetworkHandler {
             SwarmEvent::Behaviour(BehaviourEvent::Identify(_)) => None,
             SwarmEvent::Behaviour(BehaviourEvent::Kademlia(_)) => None,
             SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
-                if let Some(clean) = sanitize_addr(&address) {
-                    Some(NetworkCallback::PeerIdentified {
+                sanitize_addr(&address).map(|clean| NetworkCallback::PeerIdentified {
                         peer_id,
                         listen_addrs: vec![clean],
                     })
-                } else {
-                    None
-                }
             }
             SwarmEvent::ExpiredListenAddr {
                 listener_id: _,

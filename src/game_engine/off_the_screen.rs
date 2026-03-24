@@ -287,6 +287,8 @@ pub(crate) fn execute(
                     ActionSituation::Turnover
                 };
 
+                // After possession flips, the defender who stole is at the same index
+                // as the attacker they were guarding (players are mirrored by position).
                 let attackers = if with_steal {
                     vec![target_idx]
                 } else {vec![]};

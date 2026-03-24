@@ -394,7 +394,7 @@ impl Tournament {
                     pending_team.clone(),
                     team_in_game.clone(),
                     self.starting_at()
-                        + self.game_time_interval * ((idx + 1) / pairings.len()) as u64,
+                        + self.game_time_interval * (idx + 1) as u64 / pairings.len() as u64,
                 );
                 self.games.push(game.clone());
                 new_games.push(game);

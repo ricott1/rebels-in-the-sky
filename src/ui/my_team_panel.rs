@@ -658,7 +658,7 @@ impl MyTeamPanel {
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
                 .split(btm_split[0]);
 
-        let tactic_button = Button::new(
+        let mut tactic_button = Button::new(
             format!("tactic: {}", own_team.game_tactic),
             UiCallback::SetTeamTactic {
                 tactic: own_team.game_tactic.next(),
@@ -670,6 +670,12 @@ impl MyTeamPanel {
             own_team.game_tactic.description()
         ))
         .set_hotkey(ui_key::team::SET_TACTIC);
+
+        let can_change_tactic = own_team.can_change_tactic();
+        if let Err(err) = can_change_tactic {
+            tactic_button.disable(Some(err.to_string()));
+        }
+
         frame.render_interactive_widget(tactic_button, top_button_split[0]);
 
         let can_change_training_focus = own_team.can_change_training_focus();

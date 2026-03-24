@@ -651,7 +651,7 @@ impl NetworkCallback {
             }
 
             let received_tournament_is_latest =
-                if app.world.past_tournaments.get(&tournament.id).is_some() {
+                if app.world.past_tournaments.contains_key(&tournament.id) {
                     false
                 } else if let Some(previous_t) = app.world.tournaments.get(&tournament.id) {
                     // Try to keep most recent tournament. This is important to avoid recreating same games twice.

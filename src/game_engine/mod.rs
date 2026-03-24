@@ -15,6 +15,7 @@ mod start_of_quarter;
 mod substitution;
 pub mod tactic;
 pub mod timer;
+mod total_brawl;
 mod tournament;
 pub mod types;
 

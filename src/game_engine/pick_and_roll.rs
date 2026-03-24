@@ -1,4 +1,4 @@
-use super::{action::*, constants::*, game::Game, types::*};
+use super::{action::*, constants::*, game::Game, shot, types::*};
 use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     skill::GameSkill,
@@ -357,6 +357,8 @@ fn playmaker_uses_the_screen(
                         ActionSituation::Turnover
                     };
 
+                    // After possession flips, the defender who stole is at the same index
+                    // as the attacker they were guarding (players are mirrored by position).
                     let attackers = if with_steal {
                         vec![play_idx]
                     } else {vec![]};
@@ -493,7 +495,7 @@ fn playmaker_passes_to_target(
                 advantage: Advantage::Attack,
                 attackers: vec![target_idx],
                 defenders: vec![play_idx],
-                situation: ActionSituation::CloseShot,
+                situation: shot::dunk_or_close_shot(target, action_rng),
                 description: [
                     format!(
                         "{} gives the ball to {} using the pick'n'roll perfectly! {} is now open for the shot.",

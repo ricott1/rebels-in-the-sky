@@ -1,4 +1,4 @@
-use super::{action::*, constants::*, game::Game, types::*};
+use super::{action::*, constants::*, game::Game, shot, types::*};
 use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     skill::GameSkill,
@@ -67,7 +67,7 @@ pub(crate) fn execute(
         x if x >= ADV_ATTACK_LIMIT => {
             result.advantage = Advantage::Attack;
             result.attackers = vec![play_idx];
-            result.situation = ActionSituation::CloseShot;
+            result.situation = shot::dunk_or_close_shot(playmaker, action_rng);
             result.description = format!(
                 "{} quickly brings the ball to the other side: {} {} all alone at the basket.",
                 playmaker.info.short_name(),
@@ -85,13 +85,15 @@ pub(crate) fn execute(
             );
         }
         x if x > ADV_DEFENSE_LIMIT => {
-            // Playmaker could pass to target to avoid disadvantage
+            // Playmaker could pass to a teammate to avoid disadvantage
             let playmaker_defender_update = GameStats {
                 extra_tiredness: TirednessCost::MEDIUM,
                 ..Default::default()
             };
             defense_stats_update.insert(playmaker_defender.id, playmaker_defender_update);
-            if playmaker.mental.intuition.game_value() + x > ADV_NEUTRAL_LIMIT {
+
+            // Smart read: if playmaker has good intuition, look for an open teammate
+            let found_pass = if playmaker.mental.intuition.game_value() + x > ADV_NEUTRAL_LIMIT {
                 let target_idx = {
                     let mut weights = [3, 3, 2, 2, 1];
                     weights[play_idx] = 0;
@@ -112,20 +114,27 @@ pub(crate) fn execute(
                         playmaker.info.pronouns.as_subject().to_lowercase(),
                         if playmaker.info.pronouns == Pronoun::They {""} else {"s"},
                         target.info.short_name()
-
                     );
+                    true
+                } else {
+                    false
                 }
-            }
+            } else {
+                false
+            };
 
-            result.advantage = Advantage::Defense;
-            result.attackers = vec![play_idx];
-            result.defenders = vec![play_idx];
-            result.situation = ActionSituation::MediumShot;
-            result.description = format!(
-                "{} tries to bring the ball to the other side as fast as possible, but {} catches up.",
-                playmaker.info.short_name(),
-                playmaker_defender.info.short_name()
-            );
+            // Fallback: no pass found, forced contested shot
+            if !found_pass {
+                result.advantage = Advantage::Defense;
+                result.attackers = vec![play_idx];
+                result.defenders = vec![play_idx];
+                result.situation = ActionSituation::MediumShot;
+                result.description = format!(
+                    "{} tries to bring the ball to the other side as fast as possible, but {} catches up.",
+                    playmaker.info.short_name(),
+                    playmaker_defender.info.short_name()
+                );
+            }
         }
         _ => {
             playmaker_update.turnovers = 1;

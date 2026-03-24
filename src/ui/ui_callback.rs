@@ -23,9 +23,9 @@ use crate::{
     core::*,
     game_engine::{tactic::Tactic, types::TeamInGame},
     image::color_map::{ColorMap, ColorPreset},
-    space_adventure::{ControllableSpaceship, PlayerInput, SpaceAdventure},
+    space_adventure::PlayerInput,
     types::{
-        AppCallback, AppResult, GameId, PlanetId, PlayerId, StorableResourceMap, SystemTimeTick,
+        AppCallback, AppResult, GameId, PlanetId, PlayerId, SystemTimeTick,
         TeamId, Tick,
     },
 };
@@ -35,7 +35,6 @@ use rand_chacha::ChaCha8Rng;
 use ratatui::crossterm::event::{KeyCode, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use std::collections::HashMap;
-use strum::IntoEnumIterator;
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum UiCallback {
@@ -465,7 +464,9 @@ impl UiCallback {
                     app.ui.switch_to(super::ui_screen::UiTab::Galaxy);
                 }
                 PlayerLocation::WithTeam => {
-                    return Self::go_to_current_team_planet(player.team.unwrap())(app);
+                    return Self::go_to_current_team_planet(
+                        player.team.ok_or_else(|| anyhow!("Player has no team"))?,
+                    )(app);
                 }
             };
 
@@ -1105,71 +1106,12 @@ impl UiCallback {
         upgrade: Upgrade<AsteroidUpgradeTarget>,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let asteroid = if let Some(asteroid) = app.world.planets.get_mut(&asteroid_id) {
-                asteroid
-            } else {
-                app.ui.push_popup(PopupMessage::Error {
-                    message: format!("Cannot find asteroid {asteroid_id}"),
-                    timestamp: Tick::now(),
-                });
-                return Ok(None);
-            };
-
-            // Special handling for space cove
-            if upgrade.target == AsteroidUpgradeTarget::SpaceCove {
-                let own_team = if let Some(team) = app.world.teams.get_mut(&app.world.own_team_id) {
-                    team
-                } else {
-                    app.ui.push_log_event(
-                        Tick::now(),
-                        None,
-                        format!("Cannot find own team {}", app.world.own_team_id),
-                        log::Level::Error,
-                    );
-                    return Ok(None);
-                };
-                if let Some(cove) = own_team.space_cove.as_mut() {
-                    if cove.planet_id != asteroid_id {
-                        app.ui.push_log_event(
-                            Tick::now(),
-                            None,
-                            "Cannot finalize space cove upgrade: mismatching planet id."
-                                .to_string(),
-                            log::Level::Error,
-                        );
-                        return Ok(None);
-                    }
-
-                    cove.finish_contruction();
-                    own_team.version += 1;
-                } else {
-                    app.ui.push_log_event(
-                        Tick::now(),
-                        None,
-                        "Cannot finalize space cove upgrade: no space cove under construction."
-                            .to_string(),
-                        log::Level::Error,
-                    );
-                    return Ok(None);
-                }
-            }
-
-            asteroid.pending_upgrade = None;
-            asteroid.version += 1;
-            asteroid.upgrades.insert(upgrade.target);
-
-            let message = format!(
-                "{} construction on {} completed!",
-                upgrade.target, asteroid.name
-            );
+            let message = app.world.upgrade_asteroid(asteroid_id, upgrade)?;
             app.ui.push_popup(PopupMessage::Ok {
                 message,
                 is_skippable: true,
                 timestamp: Tick::now(),
             });
-            app.world.dirty = true;
-            app.world.dirty_ui = true;
-
             Ok(None)
         })
     }
@@ -1177,88 +1119,16 @@ impl UiCallback {
     fn return_from_space_adventure() -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.set_state(UiState::Main);
-            let mut own_team = app.world.get_own_team()?.clone();
+            let (message, asteroid_type) = app.world.return_from_space_adventure()?;
 
-            let space = app
-                .world
-                .space_adventure
-                .take()
-                .ok_or_else(|| anyhow!("World should have a space adventure"))?;
-
-            let player = space
-                .get_player()
-                .ok_or_else(|| anyhow!("Space adventure should have a player entity."))?;
-
-            // Update team space adventure data
-
-            own_team.number_of_space_adventures += 1;
-            // At the beginning of the space adventure, we cloned the team resources
-            // so that what is now in possess of the spaceship are the updated team resources,
-            // including potentially resources lost.
-            let mut resources_gathered = vec![];
-            let mut resources_lost = vec![];
-            for resource in Resource::iter() {
-                let old_amount = own_team.resources.value(&resource);
-                let new_amount = player.resources().value(&resource);
-                if old_amount < new_amount {
-                    resources_gathered.push((resource, new_amount - old_amount));
-                } else if old_amount > new_amount && resource != Resource::FUEL {
-                    resources_lost.push((resource, old_amount - new_amount));
-                }
-            }
-
-            let resources_gathered_text = if resources_gathered.is_empty() {
-                "No resources collected!".to_string()
-            } else {
-                format!(
-                    "{} collected.",
-                    resources_gathered
-                        .iter()
-                        .map(|(res, amount)| format!("{amount} {res}"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            };
-
-            let resources_lost_text = if !resources_lost.is_empty() {
-                format!(
-                    "{} lost.",
-                    resources_lost
-                        .iter()
-                        .map(|(res, amount)| format!("{amount} {res}"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            } else {
-                "".to_string()
-            };
-
-            own_team.resources = player.resources().clone();
-            own_team
-                .spaceship
-                .set_current_durability(player.current_durability());
-
-            match own_team.current_location {
-                TeamLocation::OnSpaceAdventure { around } => {
-                    own_team.current_location = TeamLocation::OnPlanet { planet_id: around }
-                }
-                _ => {
-                    return Err(anyhow!("Team should be on a space adventure."));
-                }
-            }
-
-            if let Some(asteroid_type) = space.asteroid_planet_found() {
+            if let Some(asteroid_type) = asteroid_type {
                 app.ui.push_popup(PopupMessage::AsteroidNameDialog {
                     timestamp: Tick::now(),
                     asteroid_type,
                 });
             }
 
-            app.world.teams.insert(own_team.id, own_team);
-
-            Ok(Some(format!(
-                "Team returned from space adventure:\n{resources_gathered_text}\n{resources_lost_text}"
-            )))
+            Ok(Some(message))
         })
     }
 
@@ -1404,6 +1274,9 @@ impl UiCallback {
                     challenge.away_team_in_game.team_id,
                 );
 
+                app.world.dirty = true;
+                app.world.dirty_network = true;
+                app.world.dirty_ui = true;
                 Ok(None)
             }
             Self::DeclineChallenge { challenge } => {
@@ -1413,6 +1286,9 @@ impl UiCallback {
                     challenge.home_team_in_game.team_id,
                     challenge.away_team_in_game.team_id,
                 );
+                app.world.dirty = true;
+                app.world.dirty_network = true;
+                app.world.dirty_ui = true;
                 Ok(None)
             }
             Self::CreateTradeProposal {
@@ -1428,12 +1304,18 @@ impl UiCallback {
 
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
+                app.world.dirty = true;
+                app.world.dirty_network = true;
+                app.world.dirty_ui = true;
                 Ok(None)
             }
             Self::DeclineTrade { trade } => {
                 app.network_handler.decline_trade(trade.clone())?;
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
+                app.world.dirty = true;
+                app.world.dirty_network = true;
+                app.world.dirty_ui = true;
                 Ok(None)
             }
             Self::GoToTrade { trade } => Self::go_to_trade(trade.clone())(app),
@@ -1528,13 +1410,7 @@ impl UiCallback {
                 Ok(None)
             }
             Self::AbandonAsteroid { asteroid_id } => {
-                let own_team = app.world.get_own_team_mut()?;
-                own_team.asteroid_ids.retain(|&id| id != *asteroid_id);
-
-                // Remove space cove if it was on the abandoned asteroid
-                if matches!(own_team.has_space_cove_on(), Some(id) if id == *asteroid_id) {
-                    own_team.space_cove = None;
-                }
+                app.world.abandon_asteroid(*asteroid_id)?;
                 app.ui.close_popup();
                 Ok(None)
             }
@@ -1549,7 +1425,6 @@ impl UiCallback {
             Self::HirePlayer { player_id } => {
                 let own_team_id = app.world.own_team_id;
                 app.world.hire_player_for_team(player_id, &own_team_id)?;
-
                 Ok(None)
             }
             Self::ReleasePlayer { player_id } => {
@@ -1760,7 +1635,9 @@ impl UiCallback {
                     );
                 }
 
+                app.world.dirty = true;
                 app.world.dirty_network = true;
+                app.world.dirty_ui = true;
 
                 Ok(None)
             }
@@ -1824,6 +1701,9 @@ impl UiCallback {
                     );
                 }
 
+                app.world.dirty = true;
+                app.world.dirty_network = true;
+                app.world.dirty_ui = true;
                 Ok(None)
             }
 
@@ -1880,6 +1760,9 @@ impl UiCallback {
                     };
                 }
 
+                app.world.dirty = true;
+                app.world.dirty_network = true;
+                app.world.dirty_ui = true;
                 Ok(None)
             }
 
@@ -1923,67 +1806,9 @@ impl UiCallback {
             } => Self::upgrade_asteroid(*asteroid_id, *upgrade)(app),
 
             Self::StartSpaceAdventure => {
+                app.world.start_space_adventure()?;
                 app.ui.set_state(UiState::SpaceAdventure);
-                let mut own_team = app.world.get_own_team()?.clone();
-                let average_tiredness = own_team.average_tiredness(&app.world);
-                own_team.can_start_space_adventure(average_tiredness)?;
-
-                let should_spawn_asteroid = match own_team.current_location {
-                    TeamLocation::OnPlanet { planet_id } => {
-                        let current_planet = app.world.planets.get_or_err(&planet_id)?;
-                        current_planet.asteroid_probability > 0.0
-                            && own_team.asteroid_ids.len() < MAX_NUM_ASTEROID_PER_TEAM
-                    }
-                    _ => unreachable!(),
-                };
-
-                let speed_bonus =
-                    TeamBonus::SpaceshipSpeed.current_team_bonus(&app.world, &own_team.id)?;
-                let weapons_bonus =
-                    TeamBonus::Weapons.current_team_bonus(&app.world, &own_team.id)?;
-
-                let gold_fragment_probability = match own_team.current_location {
-                    TeamLocation::OnPlanet { planet_id } => {
-                        let current_planet = app.world.planets.get_or_err(&planet_id)?;
-                        0.001
-                            + 0.075 * (current_planet.resources.value(&Resource::GOLD) as f64)
-                                / MAX_SKILL as f64
-                    }
-                    _ => unreachable!(),
-                };
-
-                let space = SpaceAdventure::new(should_spawn_asteroid, gold_fragment_probability)?
-                    .with_player(
-                        &own_team.spaceship,
-                        own_team.resources.clone(),
-                        speed_bonus,
-                        weapons_bonus,
-                        own_team.fuel(),
-                    )?;
-
-                match own_team.current_location {
-                    TeamLocation::OnPlanet { planet_id } => {
-                        own_team.current_location =
-                            TeamLocation::OnSpaceAdventure { around: planet_id }
-                    }
-                    _ => {
-                        return Err(anyhow!(
-                            "Team should be on a planet to start a space adventure."
-                        ));
-                    }
-                }
-
-                // Apply tiredness cost to crew.
-                for player_id in own_team.player_ids.iter() {
-                    let player = app.world.players.get_mut_or_err(player_id)?;
-                    player.add_tiredness(SPACE_ADVENTURE_TIREDNESS_COST);
-                }
-
                 app.ui.close_popup();
-                app.world.teams.insert(own_team.id, own_team);
-                app.world.space_adventure = Some(space);
-                app.world.dirty_network = true;
-
                 Ok(None)
             }
 

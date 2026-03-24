@@ -286,7 +286,7 @@ pub fn get_bracket_lines(
     let mut idx = 0;
     let mut round_descriptions: Vec<Vec<TournamentDescription>> = Vec::with_capacity(num_round);
 
-    for (_round_idx, round_size) in round_sizes.iter().copied().enumerate() {
+    for round_size in round_sizes.iter().copied() {
         let mut round_description = vec![];
 
         for _ in 0..round_size {
