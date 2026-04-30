@@ -816,13 +816,11 @@ impl World {
         team.can_release_player(&player)?;
 
         team.player_ids.retain(|&p| p != player.id);
-        team.player_ids = Team::best_position_assignment(
-            team.player_ids
-                .iter()
-                .map(|&id| self.players.get(&id).unwrap())
-                .collect(),
-        );
-        team.version += 1;
+
+        if let Ok(pirates) = Self::get_team_pirates(&self.players, &team) {
+            team.player_ids = Team::best_position_assignment(pirates);
+            team.version += 1;
+        }
 
         player.team = None;
         match player.info.crew_role {
@@ -2361,12 +2359,9 @@ impl World {
                 continue;
             }
 
-            team.player_ids = Team::best_position_assignment(
-                team.player_ids
-                    .iter()
-                    .map(|&id| self.players.get(&id).unwrap())
-                    .collect(),
-            );
+            if let Ok(pirates) = Self::get_team_pirates(&self.players, &team) {
+                team.player_ids = Team::best_position_assignment(pirates);
+            }
 
             let rng = &mut ChaCha8Rng::from_os_rng();
             team.game_tactic = Tactic::random(rng);
@@ -2444,19 +2439,17 @@ impl World {
                 assert!(candidates.len() <= 1);
                 // Check if weakest pirate is worse than best free pirate.
                 // If not, continue.
-                let worst_pirate = *team
-                    .player_ids
-                    .iter()
-                    .map(|id| self.players.get(id).unwrap())
-                    .collect_vec()
-                    .sort_by_rating()
-                    .last()
-                    .expect("There should be at least one pirate in the crew.");
-                let best_pirate = candidates[0];
-                if worst_pirate.rating() >= best_pirate.rating() {
-                    continue;
+                if let Ok(pirates) = Self::get_team_pirates(&self.players, &team) {
+                    let worst_pirate = *pirates
+                        .sort_by_rating()
+                        .last()
+                        .expect("There should be at least one pirate in the crew.");
+                    let best_pirate = candidates[0];
+                    if worst_pirate.rating() >= best_pirate.rating() {
+                        continue;
+                    }
+                    released_player_ids.push(worst_pirate.id);
                 }
-                released_player_ids.push(worst_pirate.id);
             }
 
             for player in candidates {
@@ -3000,6 +2993,23 @@ impl World {
         w.filter_peer_data(None)?;
 
         Ok(w)
+    }
+
+    fn get_team_pirates<'a>(players: &'a PlayerMap, team: &'a Team) -> AppResult<Vec<&'a Player>>
+    {
+        let pirates = match team
+            .player_ids
+            .iter()
+            .map(|id| players.get_or_err(id))
+            .collect::<AppResult<Vec<_>>>()
+            {
+                Ok(pirates) => pirates,
+                Err(err) => {
+                    log::error!("Error while collecting team pirates: {err}");
+                    return Err(anyhow!("Error while collecting team pirates: {err}"))
+                }
+            };
+        Ok(pirates)
     }
 }
 
