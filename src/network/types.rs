@@ -111,7 +111,7 @@ impl NetworkTeam {
 
     pub fn from_team_id(world: &World, team_id: &TeamId, peer_id: PeerId) -> AppResult<Self> {
         let mut team = world.teams.get_or_err(team_id)?.clone();
-        let mut players = World::get_players_by_team(&world.players, &team)?;
+        let mut players = World::get_team_players(&world.players, &team)?;
         let asteroids = team
             .asteroid_ids
             .iter()
@@ -126,14 +126,19 @@ impl NetworkTeam {
             })
             .collect_vec();
 
-        // Set the peer_id for team we are sending out
-        // This means that the team can be challenged online and it will not be stored.
-        team.peer_id = Some(peer_id);
-        for player in players.values_mut() {
-            player.peer_id = Some(peer_id);
+            // Set the peer_id on players and convert the Vec<&Player> into a PlayerMap
+        let mut team_players = PlayerMap::new();
+        for player in players.iter_mut() {
+            let mut team_player = player.clone();
+            team_player.peer_id = Some(peer_id);
+            team_players.insert(player.id, team_player);
         }
 
-        Ok(Self::new(team, players, asteroids))
+        // Set the peer_id for team we are sending out
+        // This means that the team can be challenged online and it will not be stored.
+        team.peer_id = Some(peer_id);        
+
+        Ok(Self::new(team, team_players, asteroids))
     }
 }
 
