@@ -816,13 +816,11 @@ impl World {
         team.can_release_player(&player)?;
 
         team.player_ids.retain(|&p| p != player.id);
-        team.player_ids = Team::best_position_assignment(
-            team.player_ids
-                .iter()
-                .map(|&id| self.players.get(&id).unwrap())
-                .collect(),
-        );
-        team.version += 1;
+
+        if let Ok(pirates) = Self::get_team_players(&self.players, &team) {
+            team.player_ids = Team::best_position_assignment(pirates);
+            team.version += 1;
+        }
 
         player.team = None;
         match player.info.crew_role {
@@ -1344,19 +1342,6 @@ impl World {
 
     pub fn get_own_team_mut(&mut self) -> AppResult<&mut Team> {
         self.teams.get_mut_or_err(&self.own_team_id)
-    }
-
-    pub fn get_players_by_team(players: &PlayerMap, team: &Team) -> AppResult<PlayerMap> {
-        let mut team_players = PlayerMap::new();
-        for player_id in team.player_ids.iter() {
-            let mut player = players
-                .get(player_id)
-                .ok_or_else(|| anyhow!("Player {player_id} not found."))?
-                .clone();
-            player.peer_id = team.peer_id;
-            team_players.insert(player.id, player);
-        }
-        Ok(team_players)
     }
 
     pub fn get_game_players_by_team(players: &PlayerMap, team: &Team) -> AppResult<PlayerMap> {
@@ -2361,12 +2346,9 @@ impl World {
                 continue;
             }
 
-            team.player_ids = Team::best_position_assignment(
-                team.player_ids
-                    .iter()
-                    .map(|&id| self.players.get(&id).unwrap())
-                    .collect(),
-            );
+            if let Ok(pirates) = Self::get_team_players(&self.players, &team) {
+                team.player_ids = Team::best_position_assignment(pirates);
+            }
 
             let rng = &mut ChaCha8Rng::from_os_rng();
             team.game_tactic = Tactic::random(rng);
@@ -2444,19 +2426,17 @@ impl World {
                 assert!(candidates.len() <= 1);
                 // Check if weakest pirate is worse than best free pirate.
                 // If not, continue.
-                let worst_pirate = *team
-                    .player_ids
-                    .iter()
-                    .map(|id| self.players.get(id).unwrap())
-                    .collect_vec()
-                    .sort_by_rating()
-                    .last()
-                    .expect("There should be at least one pirate in the crew.");
-                let best_pirate = candidates[0];
-                if worst_pirate.rating() >= best_pirate.rating() {
-                    continue;
+                if let Ok(pirates) = Self::get_team_players(&self.players, &team) {
+                    let worst_pirate = *pirates
+                        .sort_by_rating()
+                        .last()
+                        .expect("There should be at least one pirate in the crew.");
+                    let best_pirate = candidates[0];
+                    if worst_pirate.rating() >= best_pirate.rating() {
+                        continue;
+                    }
+                    released_player_ids.push(worst_pirate.id);
                 }
-                released_player_ids.push(worst_pirate.id);
             }
 
             for player in candidates {
@@ -3000,6 +2980,23 @@ impl World {
         w.filter_peer_data(None)?;
 
         Ok(w)
+    }
+
+    pub fn get_team_players<'a>(players: &'a PlayerMap, team: &'a Team) -> AppResult<Vec<&'a Player>>
+    {
+        let team_players = match team
+            .player_ids
+            .iter()
+            .map(|id| players.get_or_err(id))
+            .collect::<AppResult<Vec<_>>>()
+            {
+                Ok(players) => players,
+                Err(err) => {
+                    log::error!("Error while collecting team players: {err}");
+                    return Err(anyhow!("Error while collecting team players: {err}"))
+                }
+            };
+        Ok(team_players)
     }
 }
 
