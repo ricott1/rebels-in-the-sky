@@ -10,7 +10,7 @@ use super::{
 };
 use glam::{I16Vec2, Vec2};
 use image::Rgba;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 #[derive(Debug, Clone, Copy)]
@@ -239,7 +239,7 @@ impl SpaceCallback {
                     }
 
                     let y_distance = (target_position.y - entity_position.y).abs();
-                    let rng = &mut ChaCha8Rng::from_os_rng();
+                    let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
 
                     if let Ok(spaceship) = entity.as_spaceship_mut() {
                         if y_distance > 4 {

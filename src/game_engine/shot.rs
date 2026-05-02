@@ -10,7 +10,7 @@ use crate::core::{
     skill::GameSkill,
     CrewRole, TeamBonus, Trait, MAX_SKILL,
 };
-use rand::{seq::IndexedRandom, Rng};
+use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
@@ -889,8 +889,8 @@ mod tests {
         let away_team_in_game = generate_team_in_game(shoot_skill, block_skill);
         let game = &Game::test(home_team_in_game, away_team_in_game);
 
-        let action_rng = &mut ChaCha8Rng::from_os_rng();
-        let description_rng = &mut ChaCha8Rng::from_os_rng();
+        let action_rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
+        let description_rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
 
         for situation in [
             ActionSituation::CloseShot,

@@ -12,7 +12,7 @@ use image::imageops::{rotate180, rotate270, rotate90};
 use image::{Pixel, Rgba, RgbaImage};
 use std::sync::LazyLock;
 use rand::seq::IteratorRandom;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::HashMap;
@@ -261,7 +261,7 @@ impl GameEntity for AsteroidEntity {
                     || self.position.y < 0.0
                     || self.position.y > MAX_ENTITY_POSITION.y as f32);
 
-                let rng = &mut ChaCha8Rng::from_os_rng();
+                let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
                 let mut callbacks = vec![];
                 let position = self.position;
 
@@ -445,7 +445,7 @@ impl AsteroidEntity {
         size: AsteroidSize,
         gold_fragment_probability: f64,
     ) -> Entity {
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
 
         let rotation_speed = if size == AsteroidSize::Planet {
             0.0
@@ -467,7 +467,7 @@ impl AsteroidEntity {
     }
 
     pub fn new_at_screen_edge(gold_fragment_probability: f64) -> Entity {
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
 
         let &size = [AsteroidSize::Small, AsteroidSize::Big, AsteroidSize::Huge]
             .iter()
@@ -512,7 +512,7 @@ impl AsteroidEntity {
     }
 
     pub fn planet() -> Entity {
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
 
         let x = MAX_ENTITY_POSITION.x as f32;
         let y = rng.random_range(0.25..0.45) * MAX_ENTITY_POSITION.y as f32;

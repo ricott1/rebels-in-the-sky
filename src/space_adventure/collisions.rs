@@ -6,7 +6,7 @@ use super::{
 use crate::types::AppResult;
 use glam::{I16Vec2, Vec2};
 use image::{Pixel, Rgba};
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::{
     collections::{
@@ -266,7 +266,7 @@ fn get_collision_callbacks(
             get_collision_callbacks(other, one, collision_point, deltatime)?
         }
         (ColliderType::Projectile { .. }, ColliderType::Asteroid) => {
-            let rng = &mut ChaCha8Rng::from_os_rng();
+            let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
             let particle_velocity = one.velocity().as_vec2() * rng.random_range(0.1..=0.15)
                 + Vec2::Y * rng.random_range(-1.0..=1.0) * 12.0;
             vec![
@@ -296,7 +296,7 @@ fn get_collision_callbacks(
         }
         (ColliderType::Projectile { shot_by, .. }, ColliderType::Spaceship) => {
             if shot_by != other.id() {
-                let rng = &mut ChaCha8Rng::from_os_rng();
+                let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
                 vec![
                     SpaceCallback::DestroyEntity { id: one.id() },
                     SpaceCallback::GenerateParticle {
@@ -332,7 +332,7 @@ fn get_collision_callbacks(
             if matches!(filter_shield_id, Some(id) if id == other.id()) || !shield.is_active() {
                 vec![]
             } else {
-                let rng = &mut ChaCha8Rng::from_os_rng();
+                let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
                 vec![
                     SpaceCallback::DestroyEntity { id: one.id() },
                     SpaceCallback::GenerateParticle {

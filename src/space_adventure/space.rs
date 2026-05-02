@@ -31,7 +31,7 @@ use glam::Vec2;
 use image::{imageops::crop_imm, Rgb};
 use image::{Rgba, RgbaImage};
 use itertools::Itertools;
-use rand::{seq::IteratorRandom, Rng, SeedableRng};
+use rand::{seq::IteratorRandom, RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::{
     collections::HashMap,
@@ -199,7 +199,7 @@ impl SpaceAdventure {
     }
 
     fn generate_enemy_spaceship(&mut self) -> AppResult<usize> {
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
 
         let mut color_map = ColorMap::random(rng);
         color_map.blue = Rgb([
@@ -317,7 +317,7 @@ impl SpaceAdventure {
 
         Ok(Self {
             id: 0,
-            rng: ChaCha8Rng::from_os_rng(),
+            rng: ChaCha8Rng::from_rng(&mut rand::rng()),
             state: SpaceAdventureState::Starting {
                 time: Instant::now(),
             },

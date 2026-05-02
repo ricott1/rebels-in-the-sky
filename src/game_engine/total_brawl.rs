@@ -1,6 +1,6 @@
 use super::{action::*, game::Game, types::*};
 use crate::core::{constants::TirednessCost, player::Trait, Skill};
-use rand::{seq::IndexedRandom, Rng};
+use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 

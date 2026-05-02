@@ -4,7 +4,7 @@ use crate::core::{
     player::Player,
     skill::GameSkill,
 };
-use rand::{seq::IndexedRandom, Rng};
+use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 

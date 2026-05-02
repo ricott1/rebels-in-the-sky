@@ -7,7 +7,7 @@ use crate::{
     },
     game_engine::constants::ADV_NEUTRAL_LIMIT,
 };
-use rand::{seq::IndexedRandom, Rng};
+use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 

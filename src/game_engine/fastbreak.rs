@@ -4,7 +4,7 @@ use crate::core::{
     skill::GameSkill,
     Pronoun,
 };
-use rand::Rng;
+use rand::{RngExt};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 

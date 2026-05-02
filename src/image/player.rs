@@ -9,7 +9,7 @@ use crate::image::utils::{Gif, LightMaskStyle};
 use crate::types::AppResult;
 use image::RgbaImage;
 use rand::seq::IteratorRandom;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde;
 use serde::{Deserialize, Serialize};
@@ -169,7 +169,7 @@ impl PlayerImage {
         };
 
         // set two random bits to 1
-        let bits = (0..8).choose_multiple(rng, 2);
+        let bits = (0..8).sample(rng, 2);
         let blinking_bitmap = (1 << bits[0]) | (1 << bits[1]);
 
         Self {

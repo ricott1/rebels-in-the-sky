@@ -1,5 +1,5 @@
 use crate::image::color_map::ColorMap;
-use rand::Rng;
+use rand::{RngExt};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};

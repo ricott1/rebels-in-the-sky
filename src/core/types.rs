@@ -127,7 +127,7 @@ impl Display for Population {
 
 impl Population {
     pub fn random() -> Self {
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         Self::iter()
             .choose(rng)
             .expect("There should be at lease one Population to choose from.")

@@ -19,7 +19,7 @@ use itertools::Itertools;
 
 use libp2p::PeerId;
 use std::sync::LazyLock;
-use rand::Rng;
+use rand::{RngExt};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -406,7 +406,7 @@ fn test_roll() {
             assert!(player.min_roll() <= roll);
         }
     }
-    let rng = &mut ChaCha8Rng::from_os_rng();
+    let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
     let mut player = Player::default().randomize(Some(rng));
 
     print_player_rolls(&player, rng);
