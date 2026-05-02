@@ -3,7 +3,7 @@ use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     skill::GameSkill,
 };
-use rand::{seq::IndexedRandom, Rng};
+use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
@@ -241,10 +241,11 @@ pub(crate) fn execute(
                         situation: ActionSituation::MediumShot,
                         description: [
                             format!(
-                                "{} tries to dribble past {} but {} is all over {}.",
+                                "{} tries to dribble past {} but {} {} all over {}.",
                                 iso.info.short_name(),
                                 defender.info.short_name(),
                                 defender.info.short_name(),
+                                defender.info.pronouns.to_be(),
                                 iso.info.pronouns.as_object()
                             ),
                             format!(

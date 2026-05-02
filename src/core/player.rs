@@ -20,7 +20,7 @@ use anyhow::anyhow;
 use libp2p::PeerId;
 use rand::{
     seq::{IndexedRandom, IteratorRandom},
-    Rng, SeedableRng,
+    RngExt, SeedableRng,
 };
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
@@ -47,7 +47,7 @@ pub struct Player {
     pub info: InfoStats,
     pub team: Option<TeamId>,
     pub special_trait: Option<Trait>,
-    pub reputation: f32,
+    pub reputation: Skill,
     pub potential: Skill,
     pub athletics: Athletics,
     pub offense: Offense,
@@ -56,11 +56,11 @@ pub struct Player {
     pub mental: Mental,
     pub image: PlayerImage,
     pub current_location: PlayerLocation,
-    pub skills_training: [f32; 20],
+    pub skills_training: [Skill; 20],
     pub previous_skills: [Skill; 20], // This is for displaying purposes to show the skills that were recently modified
     // pub skills_potential: [Skill; 20], // Each skill has a separate potential. For retrocompatibility reasons, we allow this array to be all zeros, in which case we initialize it during deserialization.
-    pub tiredness: f32,
-    pub morale: f32,
+    pub tiredness: Skill,
+    pub morale: Skill,
     pub historical_stats: GameStats,
     build_data: PlayerBuildData, // Intermediate state used to build the random player. Not serialized
 }
@@ -99,7 +99,7 @@ impl Serialize for Player {
         // and serialize them in a vector which is then deserialized
         // into the corresponding fields
         let compact_skills = self.current_skill_array().to_vec();
-        let mut state = serializer.serialize_struct("Player", 14)?;
+        let mut state = serializer.serialize_struct("Player", 17)?;
         state.serialize_field("id", &self.id)?;
 
         state.serialize_field("peer_id", &self.peer_id)?;
@@ -519,7 +519,7 @@ impl<'de> Deserialize<'de> for Player {
             "version",
             "info",
             "team",
-            "jersey_number",
+            "special_trait",
             "reputation",
             "potential",
             "image",
@@ -529,6 +529,7 @@ impl<'de> Deserialize<'de> for Player {
             "tiredness",
             "morale",
             "compact_skills",
+            "historical_stats",
         ];
         deserializer.deserialize_struct("Player", FIELDS, PlayerVisitor)
     }
@@ -539,7 +540,7 @@ impl Player {
         let rng = if let Some(r) = rng {
             r
         } else {
-            &mut ChaCha8Rng::from_os_rng()
+            &mut ChaCha8Rng::from_rng(&mut rand::rng())
         };
 
         if self.info.home_planet_id == PlanetId::default() {
@@ -670,7 +671,7 @@ impl Player {
         let rng = if let Some(r) = rng {
             r
         } else {
-            &mut ChaCha8Rng::from_os_rng()
+            &mut ChaCha8Rng::from_rng(&mut rand::rng())
         };
 
         let population = home_planet.random_population(rng).unwrap_or_default();
@@ -776,13 +777,14 @@ impl Player {
     }
 
     pub fn bare_hiring_value(&self) -> f32 {
-        // Age modifier decrease linearly from (0,1.5) to (PEAK_PERFORMANCE_RELATIVE_AGE, 1.0),
-        // then decreases linearly from (PEAK_PERFORMANCE_RELATIVE_AGE, 1.0) to (1.0, 0.5).
-        let age_modifier = if PEAK_PERFORMANCE_RELATIVE_AGE >= self.info.relative_age() {
-            1.5 - self.info.relative_age() / (2.0 * PEAK_PERFORMANCE_RELATIVE_AGE)
+        // Age modifier: linear 1.5 at birth, 1.0 at peak, 0.5 at retirement.
+        let relative_age = self.info.relative_age();
+        let age_modifier = if relative_age <= PEAK_PERFORMANCE_RELATIVE_AGE {
+            1.5 - 0.5 * (relative_age / PEAK_PERFORMANCE_RELATIVE_AGE)
         } else {
-            (1.0 - 0.5 * (self.info.relative_age() + PEAK_PERFORMANCE_RELATIVE_AGE))
-                / (1.0 - PEAK_PERFORMANCE_RELATIVE_AGE)
+            let progress = (relative_age - PEAK_PERFORMANCE_RELATIVE_AGE)
+                / (1.0 - PEAK_PERFORMANCE_RELATIVE_AGE);
+            1.0 - 0.5 * progress
         };
 
         let special_trait_extra = if self.special_trait.is_some() {
@@ -1065,7 +1067,9 @@ impl Player {
         // potential_modifier has a value ranging from 0.0 to 2.0.
         // Players with skills below their potential improve faster, above their potential improve slower.
         let potential_modifier = if self.average_skill() > self.potential {
-            (1.0 + (self.potential - self.average_skill()) / MAX_SKILL).powf(30.0)
+            (1.0 + (self.potential - self.average_skill()) / MAX_SKILL)
+                .max(0.0)
+                .powf(30.0)
         } else {
             1.0 + (self.potential - self.average_skill()) / MAX_SKILL
         };
