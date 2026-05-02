@@ -39,6 +39,21 @@ pub trait Screen {
     fn footer_spans(&self) -> Vec<String> {
         vec![]
     }
+
+    fn render_help_widget(
+        &self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+        debug_view: bool,
+    ) -> AppResult<()>;
+
+    /// Returns true when the panel currently has an active text input that
+    /// should receive raw character keys. Suppresses global character-key
+    /// shortcuts (currently '?' for help) so the user can type those characters.
+    fn is_capturing_text(&self) -> bool {
+        false
+    }
 }
 
 pub trait SplitPanel {

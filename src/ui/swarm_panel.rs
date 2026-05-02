@@ -7,6 +7,7 @@ use super::ui_frame::UiFrame;
 use super::widgets::{
     render_player_description, render_spaceship_description, selectable_list, PlayerWidgetView,
 };
+use super::ui_screen::{render_help_block, UiTab};
 use super::{
     traits::{Screen, SplitPanel},
     utils::input_from_key_event,
@@ -1117,6 +1118,64 @@ impl Screen for SwarmPanel {
             format!(" {} ", ui_key::CYCLE_VIEW.to_string()),
             " Next tab ".to_string(),
         ]
+    }
+
+    fn is_capturing_text(&self) -> bool {
+        self.view == SwarmView::Chat
+    }
+
+    fn render_help_widget(
+        &self,
+        frame: &mut UiFrame,
+        _world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
+        render_help_block(
+            frame,
+            area,
+            vec![
+                Line::from(" Talk to other captains over the peer-to-peer swarm: chat,"),
+                Line::from(" review trade and challenge requests, browse the global player"),
+                Line::from(" and team rankings, and watch the network log."),
+            ],
+            vec![
+                (
+                    " Accept a challenge here, then play it from ",
+                    "Games",
+                    UiTab::Games,
+                    ".",
+                ),
+                (
+                    " Inspect rivals before accepting via ",
+                    "Crews",
+                    UiTab::Crews,
+                    ".",
+                ),
+                (
+                    " Browse traded players in ",
+                    "Pirates",
+                    UiTab::Pirates,
+                    ".",
+                ),
+            ],
+            vec![
+                Line::from(" Controls:"),
+                Line::from(format!(
+                    "   {}        Cycle view (Chat / Requests / Log / Ranking)",
+                    ui_key::CYCLE_VIEW
+                )),
+                Line::from("   ↑/↓        Scroll the active list"),
+                Line::from("   Enter      Send a chat message in Chat view"),
+                Line::from("   Type       Compose your chat message at the input bar"),
+                Line::from(format!(
+                    "   {} / {}      Accept / decline highlighted trade",
+                    ui_key::ACCEPT_TRADE,
+                    ui_key::DECLINE_TRADE
+                )),
+            ],
+        );
+        Ok(())
     }
 }
 

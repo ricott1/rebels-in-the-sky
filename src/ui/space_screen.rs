@@ -189,4 +189,41 @@ impl Screen for SpaceScreen {
             format!(" Entity count {:<4} ", self.entity_count),
         ]
     }
+
+    fn render_help_widget(
+        &self,
+        frame: &mut UiFrame,
+        _world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
+        let lines = vec![
+            Line::from(""),
+            Line::from(" Pilot your spaceship through asteroids and hostile traffic."),
+            Line::from(" Mine, fight, and head home alive. The HUD on the bottom"),
+            Line::from(" shows hull, shield, fuel, and cargo bars."),
+            Line::from(""),
+            Line::from(" Controls:"),
+            Line::from("   ↑/↓/←/→     Thrust your spaceship"),
+            Line::from(format!(
+                "   {}           Toggle autofire",
+                ui_key::space::AUTOFIRE
+            )),
+            Line::from(format!("   {}           Shoot", ui_key::space::SHOOT)),
+            Line::from(format!(
+                "   {}           Toggle shield (drains charge)",
+                ui_key::space::TOGGLE_SHIELD
+            )),
+            Line::from(format!(
+                "   {}           Release scraps as decoys",
+                ui_key::space::RELEASE_SCRAPS
+            )),
+            Line::from(format!(
+                "   {}           Return home, ending the adventure",
+                ui_key::space::BACK_TO_BASE
+            )),
+        ];
+        frame.render_widget(Paragraph::new(lines), area);
+        Ok(())
+    }
 }

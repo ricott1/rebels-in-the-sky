@@ -32,6 +32,9 @@ impl UiStyle {
     pub const OK: Style = Self::DEFAULT.fg(Color::Green);
     pub const WARNING: Style = Self::DEFAULT.fg(Color::Yellow);
     pub const SHIELD: Style = Self::DEFAULT.fg(Color::LightMagenta);
+    pub const HELP_LINK: Style = Self::DEFAULT
+        .fg(Color::Rgb(255, 165, 0))
+        .add_modifier(Modifier::UNDERLINED);
 }
 
 pub struct UiText;

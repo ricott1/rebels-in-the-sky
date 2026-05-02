@@ -8,8 +8,11 @@ use super::{
     big_numbers::{hyphen, BigNumberFont},
     constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
     traits::{Screen, SplitPanel},
+    ui_screen::UiTab,
     utils::img_to_lines,
-    widgets::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
+    widgets::{
+        default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN,
+    },
 };
 use crate::store::load_game;
 use crate::types::HashMapWithResult;
@@ -1259,6 +1262,63 @@ impl Screen for GamePanel {
             ])
         };
         v
+    }
+
+    fn render_help_widget(
+        &self,
+        frame: &mut UiFrame,
+        _world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
+        super::ui_screen::render_help_block(
+            frame,
+            area,
+            vec![
+                Line::from(" Browse upcoming, ongoing and recently finished games. Pick"),
+                Line::from(" one to follow live play-by-play commentary, the box score and"),
+                Line::from(" the pitch view."),
+            ],
+            vec![
+                (
+                    " Pick your starting roster and tactics in ",
+                    "My Team",
+                    UiTab::MyTeam,
+                    ".",
+                ),
+                (
+                    " Find a side to challenge from the ",
+                    "Crews",
+                    UiTab::Crews,
+                    " list.",
+                ),
+                (
+                    " Track tournament brackets in ",
+                    "Tournaments",
+                    UiTab::Tournaments,
+                    ".",
+                ),
+            ],
+            vec![
+                Line::from(" Controls:"),
+                Line::from("   ↑/↓        Move highlight in the game list"),
+                Line::from(format!(
+                    "   {}          Toggle play-by-play vs. pitch view",
+                    ui_key::game::PITCH_VIEW
+                )),
+                Line::from(format!(
+                    "   {}/{}        Scroll commentary  /  Enter scrolls to top",
+                    ui_key::PREVIOUS_SELECTION, ui_key::NEXT_SELECTION
+                )),
+                Line::from("   0-4        Filter pitch view by quarter"),
+                Line::from(format!(
+                    "   {} / {}      Challenge highlighted team / open its team page",
+                    ui_key::game::CHALLENGE_TEAM,
+                    ui_key::GO_TO_TEAM_ALT
+                )),
+            ],
+        );
+        Ok(())
     }
 }
 

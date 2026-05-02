@@ -1,4 +1,5 @@
 use super::button::Button;
+use super::constants::UiStyle;
 use super::galaxy_panel::GalaxyPanel;
 use super::popup_message::PopupMessage;
 use super::space_screen::SpaceScreen;
@@ -8,7 +9,7 @@ use super::traits::SplitPanel;
 use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::ui_frame::UiFrame;
 use super::ui_key;
-use super::widgets::default_block;
+use super::widgets::{default_block, thick_block};
 use super::{
     game_panel::GamePanel, my_team_panel::MyTeamPanel, new_team_screen::NewTeamScreen,
     player_panel::PlayerListPanel, team_panel::TeamListPanel, tournament_panel::TournamentPanel,
@@ -29,12 +30,10 @@ use core::fmt::Debug;
 use itertools::Itertools;
 use libp2p::PeerId;
 use ratatui::crossterm;
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::layout::{Margin, Rect};
+use ratatui::style::{Color, Style, Styled, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Clear;
-#[cfg(feature = "audio")]
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Clear, Paragraph};
 use ratatui::{
     layout::{Constraint, Layout},
     Frame,
@@ -46,23 +45,104 @@ use tui_textarea::{CursorMove, TextArea};
 
 const MAX_POPUP_MESSAGES: usize = 8;
 
+/// Returns a centered rect ~60% wide / 80% tall, used for the help popup.
+/// Falls back to the full screen if it would otherwise be smaller than the
+/// preferred minimum (50x20). `clamp(min, max)` would panic when min > max.
+fn help_popup_rect(screen_area: Rect) -> Rect {
+    let width = (screen_area.width * 60 / 100)
+        .max(50)
+        .min(screen_area.width);
+    let height = (screen_area.height * 80 / 100)
+        .max(20)
+        .min(screen_area.height);
+    let x = screen_area.x + screen_area.width.saturating_sub(width) / 2;
+    let y = screen_area.y + screen_area.height.saturating_sub(height) / 2;
+    Rect::new(x, y, width, height)
+}
+
+/// Renders the standard help body: a description paragraph, a stack of
+/// inline-link rows pointing to other tabs, and a controls paragraph.
+/// Used by the main-tab panels' `render_help_widget` to avoid layout boilerplate.
+pub fn render_help_block(
+    frame: &mut UiFrame,
+    area: Rect,
+    description: Vec<Line<'static>>,
+    links: Vec<(&'static str, &'static str, UiTab, &'static str)>,
+    controls: Vec<Line<'static>>,
+) {
+    let desc_h = description.len().max(1) as u16;
+    let n_links = links.len() as u16;
+    let split = Layout::vertical([
+        Constraint::Length(desc_h),
+        Constraint::Length(1),       // gap
+        Constraint::Length(n_links), // link rows
+        Constraint::Length(1),       // gap
+        Constraint::Min(5),          // controls
+    ])
+    .split(area);
+
+    frame.render_widget(Paragraph::new(description), split[0]);
+
+    if n_links > 0 {
+        let link_areas =
+            Layout::vertical(vec![Constraint::Length(1); links.len()]).split(split[2]);
+        for (i, (prefix, label, ui_tab, suffix)) in links.into_iter().enumerate() {
+            render_help_link_line(frame, link_areas[i], prefix, label, ui_tab, suffix);
+        }
+    }
+
+    frame.render_widget(Paragraph::new(controls), split[4]);
+}
+
+/// Renders one help line as `prefix [link] suffix` where `link` is a clickable
+/// inline button that switches to the target tab. Designed for help overlays.
+pub fn render_help_link_line<'a>(
+    frame: &mut UiFrame,
+    area: Rect,
+    prefix: &'a str,
+    label: &'a str,
+    ui_tab: UiTab,
+    suffix: &'a str,
+) {
+    let prefix_w = prefix.chars().count() as u16;
+    let label_w = label.chars().count() as u16;
+    let suffix_w = suffix.chars().count() as u16;
+    let split = Layout::horizontal([
+        Constraint::Length(prefix_w),
+        Constraint::Length(label_w),
+        Constraint::Length(suffix_w),
+        Constraint::Min(0),
+    ])
+    .split(area);
+    frame.render_widget(Paragraph::new(prefix), split[0]);
+    let button = Button::no_box(label, UiCallback::SetUiTab { ui_tab })
+        .set_style(UiStyle::HELP_LINK)
+        .set_layer(1);
+    frame.render_interactive_widget(button, split[1]);
+    frame.render_widget(Paragraph::new(suffix), split[2]);
+}
+
 #[derive(Debug, Default, Display, PartialEq)]
 pub enum UiState {
     #[default]
     Splash,
+    #[strum(to_string = "New Team")]
     NewTeam,
     Main,
+    #[strum(to_string = "Space Adventure")]
     SpaceAdventure,
 }
 
 #[derive(Debug, Clone, Copy, Hash, Display, PartialEq)]
 pub enum UiTab {
+    #[strum(to_string = "My Team")]
     MyTeam,
     Crews,
     Pirates,
     Galaxy,
     Games,
     Tournaments,
+    #[strum(to_string = "Space Cove")]
     SpaceCove,
     Swarm,
 }
@@ -73,6 +153,7 @@ pub struct UiScreen {
     ui_tabs: Vec<UiTab>,
     tab_index: usize,
     debug_view: bool,
+    show_help: bool,
     last_render: Instant,
     pub splash_screen: SplashScreen,
     pub new_team_screen: NewTeamScreen,
@@ -123,6 +204,7 @@ impl UiScreen {
             ui_tabs,
             tab_index: 0,
             debug_view: false,
+            show_help: false,
             last_render: Instant::now(),
             splash_screen,
             new_team_screen,
@@ -213,6 +295,10 @@ impl UiScreen {
         }
     }
 
+    pub const fn close_help(&mut self) {
+        self.show_help = false;
+    }
+
     pub fn push_log_event(
         &mut self,
         timestamp: Tick,
@@ -235,6 +321,9 @@ impl UiScreen {
     pub fn switch_to(&mut self, tab: UiTab) {
         for i in 0..self.ui_tabs.len() {
             if self.ui_tabs[i] == tab {
+                if self.tab_index != i {
+                    self.show_help = false;
+                }
                 self.tab_index = i;
                 return;
             }
@@ -300,6 +389,10 @@ impl UiScreen {
         world: &World,
     ) -> Option<UiCallback> {
         match key_event.code {
+            ui_key::ESC if self.show_help => {
+                self.show_help = false;
+                None
+            }
             ui_key::ESC => {
                 if self.state == UiState::Splash || self.state == UiState::NewTeam {
                     return Some(UiCallback::QuitGame);
@@ -315,9 +408,25 @@ impl UiScreen {
                 })
             }
 
-            ui_key::UI_DEBUG_MODE => Some(UiCallback::ToggleUiDebugMode),
+            ui_key::UI_DEBUG_MODE if !self.get_active_screen().is_capturing_text() => {
+                Some(UiCallback::ToggleUiDebugMode)
+            }
+
+            ui_key::HELP
+                if self.popup_messages.is_empty()
+                    && !self.get_active_screen().is_capturing_text() =>
+            {
+                self.show_help = !self.show_help;
+                None
+            }
+
+            ui_key::YES_TO_DIALOG if self.show_help => {
+                self.show_help = false;
+                None
+            }
 
             ui_key::NEXT_TAB if self.state == UiState::Main && self.popup_messages.is_empty() => {
+                self.show_help = false;
                 self.next_tab();
                 None
             }
@@ -325,6 +434,7 @@ impl UiScreen {
             ui_key::PREVIOUS_TAB
                 if self.state == UiState::Main && self.popup_messages.is_empty() =>
             {
+                self.show_help = false;
                 self.previous_tab();
                 None
             }
@@ -341,6 +451,12 @@ impl UiScreen {
                 }
                 self.popup_input.move_cursor(CursorMove::End);
                 self.popup_input.delete_line_by_head();
+
+                // While help is shown, swallow keyboard events targeted at the panel:
+                // closing requires '?' or navigating away, both handled above.
+                if self.show_help {
+                    return None;
+                }
 
                 if let Some(callback) = self
                     .get_active_screen_mut()
@@ -447,7 +563,7 @@ impl UiScreen {
     ) {
         let mut ui_frame = UiFrame::new(frame);
         ui_frame.set_hovering(self.inner_registry.hovering());
-        if !self.popup_messages.is_empty() {
+        if !self.popup_messages.is_empty() || self.show_help {
             ui_frame.set_active_layer(1);
         } else {
             ui_frame.set_active_layer(0);
@@ -515,13 +631,11 @@ impl UiScreen {
                                 "".to_string()
                             }
                         )
-                    } else if tab == UiTab::SpaceCove {
-                        "Space Cove".to_string()
                     } else {
                         tab.to_string()
                     };
 
-                    let button = if idx == self.tab_index {
+                    let mut button = if idx == self.tab_index {
                         Button::new(
                             tab_name,
                             UiCallback::SetUiTab {
@@ -537,6 +651,12 @@ impl UiScreen {
                             },
                         )
                     };
+
+                    // Keep tab navigation clickable while the help overlay is active
+                    // (clicking a tab closes help and switches panel).
+                    if self.show_help && self.popup_messages.is_empty() {
+                        button = button.set_layer(1);
+                    }
 
                     ui_frame.render_interactive_widget(button, tab_split[idx]);
                 }
@@ -556,6 +676,62 @@ impl UiScreen {
                 format!("Render error\n{err}"),
                 log::Level::Error,
             );
+        }
+
+        if self.show_help {
+            let popup_rect = help_popup_rect(screen_area);
+            ui_frame.render_widget(Clear, popup_rect);
+            ui_frame.render_widget(thick_block(), popup_rect);
+
+            let popup_split = Layout::vertical([
+                Constraint::Length(3), // header
+                Constraint::Min(3),    // body
+                Constraint::Length(3), // close button
+            ])
+            .split(popup_rect.inner(Margin {
+                vertical: 1,
+                horizontal: 1,
+            }));
+
+            let title = match &self.state {
+                UiState::Main => self.ui_tabs[self.tab_index].to_string(),
+                state => state.to_string(),
+            };
+            ui_frame.render_widget(
+                Paragraph::new(format!("Help - {title}"))
+                    .bold()
+                    .block(default_block().border_style(UiStyle::HEADER))
+                    .centered(),
+                popup_split[0],
+            );
+
+            let debug_view = self.debug_view;
+            if let Err(err) = self.get_active_screen().render_help_widget(
+                &mut ui_frame,
+                world,
+                popup_split[1],
+                debug_view,
+            ) {
+                self.push_log_event(
+                    Tick::now(),
+                    None,
+                    format!("Help render error\n{err}"),
+                    log::Level::Error,
+                );
+            }
+
+            let button_split = Layout::horizontal([
+                Constraint::Min(0),
+                Constraint::Length(20),
+                Constraint::Min(0),
+            ])
+            .split(popup_split[2]);
+            let close_button = Button::new(super::constants::UiText::YES, UiCallback::CloseHelp)
+                .set_hover_text("Close help")
+                .set_hotkey(ui_key::YES_TO_DIALOG)
+                .block(default_block().border_style(UiStyle::OK))
+                .set_layer(1);
+            ui_frame.render_interactive_widget(close_button, button_split[1]);
         }
 
         // Render footer
@@ -606,7 +782,16 @@ impl UiScreen {
         ])
         .split(area);
 
-        let mut spans = vec![" Esc ".to_string(), " Quit ".to_string()];
+        let mut spans = vec![
+            " Esc ".to_string(),
+            " Quit ".to_string(),
+            " ? ".to_string(),
+            if self.show_help {
+                " Close help ".to_string()
+            } else {
+                " Help ".to_string()
+            },
+        ];
 
         if !self.debug_view && self.state == UiState::Main {
             spans.extend(vec![

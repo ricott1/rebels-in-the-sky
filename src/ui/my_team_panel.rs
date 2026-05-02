@@ -1,4 +1,5 @@
 use super::ui_frame::UiFrame;
+use super::ui_screen::UiTab;
 use super::{
     button::Button,
     clickable_list::ClickableListState,
@@ -2577,6 +2578,76 @@ impl Screen for MyTeamPanel {
             format!(" {} ", ui_key::CYCLE_VIEW.to_string()),
             " Next tab ".to_string(),
         ]
+    }
+
+    fn render_help_widget(
+        &self,
+        frame: &mut UiFrame,
+        _world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
+        super::ui_screen::render_help_block(
+            frame,
+            area,
+            vec![
+                Line::from(" The captain's bridge: manage roster, training, tactics, ships,"),
+                Line::from(" markets, asteroids, and games. Use Tab to cycle the inner view."),
+            ],
+            vec![
+                (
+                    " Recruit new pirates from the ",
+                    "Pirates",
+                    UiTab::Pirates,
+                    " panel.",
+                ),
+                (
+                    " Scout rivals and challenge them from ",
+                    "Crews",
+                    UiTab::Crews,
+                    ".",
+                ),
+                (
+                    " Watch your scheduled or finished games in ",
+                    "Games",
+                    UiTab::Games,
+                    ".",
+                ),
+                (
+                    " Travel between planets via the ",
+                    "Galaxy",
+                    UiTab::Galaxy,
+                    " star map.",
+                ),
+            ],
+            vec![
+                Line::from(" Controls:"),
+                Line::from(format!(
+                    "   {}        Cycle view (Info/Team/Games/Market/Shipyard/Asteroids)",
+                    ui_key::CYCLE_VIEW
+                )),
+                Line::from("   ↑/↓        Move highlight in the active list"),
+                Line::from(format!(
+                    "   {}/{}/{}/{}    Set captain/doctor/engineer/pilot",
+                    ui_key::team::SET_CAPTAIN,
+                    ui_key::team::SET_DOCTOR,
+                    ui_key::team::SET_ENGINEER,
+                    ui_key::team::SET_PILOT
+                )),
+                Line::from("   1-7        Place highlighted player in that game position"),
+                Line::from(format!(
+                    "   {} / {}      Hire / fire highlighted pirate",
+                    ui_key::player::HIRE,
+                    ui_key::player::FIRE
+                )),
+                Line::from(format!(
+                    "   {} / {}      Set training focus / cycle tactic",
+                    ui_key::team::TRAINING_FOCUS,
+                    ui_key::team::SET_TACTIC
+                )),
+            ],
+        );
+        Ok(())
     }
 }
 

@@ -8,10 +8,12 @@ use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::traits::SplitPanel;
 use crate::ui::utils::img_to_lines;
+use crate::ui::ui_screen::{render_help_block, UiTab};
 use crate::ui::widgets::{
     default_block, render_available_upgrades, selectable_list, teleport_button,
 };
 use crate::ui::{constants::*, ui_key};
+use ratatui::text::Line;
 use crate::{core::*, types::AppResult};
 use anyhow::anyhow;
 use core::fmt::Debug;
@@ -361,6 +363,54 @@ impl Screen for SpaceCovePanel {
 
     fn footer_spans(&self) -> Vec<String> {
         vec![]
+    }
+
+    fn render_help_widget(
+        &self,
+        frame: &mut UiFrame,
+        _world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
+        render_help_block(
+            frame,
+            area,
+            vec![
+                Line::from(" Your hidden cove on a captured asteroid. Once built, the"),
+                Line::from(" cove hosts visiting crews and lets you upgrade the asteroid"),
+                Line::from(" itself: housing, hangars, defenses, and more. The cove is"),
+                Line::from(" also where you can teleport home from."),
+            ],
+            vec![
+                (
+                    " Manage the asteroid that hosts the cove from ",
+                    "My Team",
+                    UiTab::MyTeam,
+                    ".",
+                ),
+                (
+                    " Inspect visiting crews directly, or browse all in ",
+                    "Crews",
+                    UiTab::Crews,
+                    ".",
+                ),
+                (
+                    " To find another asteroid candidate, explore the ",
+                    "Galaxy",
+                    UiTab::Galaxy,
+                    ".",
+                ),
+            ],
+            vec![
+                Line::from(" Controls:"),
+                Line::from("   ↑/↓        Move highlight in the visiting teams list"),
+                Line::from(format!(
+                    "   {}          Teleport back to the asteroid (costs Rum)",
+                    ui_key::TRAVEL
+                )),
+            ],
+        );
+        Ok(())
     }
 }
 

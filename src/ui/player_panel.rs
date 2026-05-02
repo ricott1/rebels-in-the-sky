@@ -6,11 +6,13 @@ use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
 use super::utils::format_satoshi;
 use super::widgets::PlayerWidgetView;
+use super::ui_screen::{render_help_block, UiTab};
 use super::{
     constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
     traits::{Screen, SplitPanel},
     widgets::{default_block, render_player_description, selectable_list},
 };
+use ratatui::text::Line;
 
 use crate::network::trade::Trade;
 use crate::types::{AppResult, HashMapWithResult};
@@ -639,6 +641,71 @@ impl Screen for PlayerListPanel {
             format!(" {} ", ui_key::CYCLE_VIEW.to_string()),
             " Next tab ".to_string(),
         ]
+    }
+
+    fn render_help_widget(
+        &self,
+        frame: &mut UiFrame,
+        _world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
+        render_help_block(
+            frame,
+            area,
+            vec![
+                Line::from(" Browse free pirates and players across the galaxy. Inspect"),
+                Line::from(" their skills and stats, lock favorites, and hire those that"),
+                Line::from(" fit your roster and your budget."),
+            ],
+            vec![
+                (
+                    " Once hired, manage them in ",
+                    "My Team",
+                    UiTab::MyTeam,
+                    ".",
+                ),
+                (
+                    " To see who plays for which side, browse ",
+                    "Crews",
+                    UiTab::Crews,
+                    ".",
+                ),
+                (
+                    " Free pirates often hang around their home planet, see ",
+                    "Galaxy",
+                    UiTab::Galaxy,
+                    ".",
+                ),
+            ],
+            vec![
+                Line::from(" Controls:"),
+                Line::from(format!(
+                    "   {}        Cycle view (All / FreePirates / OwnTeam)",
+                    ui_key::CYCLE_VIEW
+                )),
+                Line::from("   ↑/↓        Move highlight in the list"),
+                Line::from(format!(
+                    "   {} / {}      Hire / fire highlighted pirate",
+                    ui_key::player::HIRE,
+                    ui_key::player::FIRE
+                )),
+                Line::from(format!(
+                    "   {} / {}      Lock / unlock pirate (skip refresh)",
+                    ui_key::player::LOCK_PLAYER,
+                    ui_key::player::UNLOCK_PLAYER
+                )),
+                Line::from(format!(
+                    "   {}          Switch between skills view and stats view",
+                    ui_key::player::PLAYER_STATUS_VIEW
+                )),
+                Line::from(format!(
+                    "   {}          Open the home planet of highlighted pirate",
+                    ui_key::ON_PLANET
+                )),
+            ],
+        );
+        Ok(())
     }
 }
 

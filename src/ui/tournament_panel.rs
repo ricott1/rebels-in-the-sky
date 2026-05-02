@@ -2,6 +2,7 @@ use super::button::Button;
 use super::clickable_list::ClickableListState;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
+use super::ui_screen::{render_help_block, UiTab};
 use super::{
     constants::*,
     traits::{Screen, SplitPanel},
@@ -670,6 +671,62 @@ impl Screen for TournamentPanel {
             ),
             " Select player ".to_string(),
         ]
+    }
+
+    fn render_help_widget(
+        &self,
+        frame: &mut UiFrame,
+        _world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
+        render_help_block(
+            frame,
+            area,
+            vec![
+                Line::from(" Track running tournaments, browse past brackets, register"),
+                Line::from(" your team, or organize a new quick or big tournament from"),
+                Line::from(" your home planet."),
+            ],
+            vec![
+                (
+                    " Watch live or finished tournament games in ",
+                    "Games",
+                    UiTab::Games,
+                    ".",
+                ),
+                (
+                    " Tune your roster before registering in ",
+                    "My Team",
+                    UiTab::MyTeam,
+                    ".",
+                ),
+                (" Scout potential opponents in ", "Crews", UiTab::Crews, "."),
+            ],
+            vec![
+                Line::from(" Controls:"),
+                Line::from(format!(
+                    "   {}        Cycle view (All / Active / Past)",
+                    ui_key::CYCLE_VIEW
+                )),
+                Line::from("   ↑/↓        Move highlight in tournament list"),
+                Line::from(format!(
+                    "   {} / {}      Scroll the inner roster preview",
+                    ui_key::PREVIOUS_SELECTION,
+                    ui_key::NEXT_SELECTION
+                )),
+                Line::from(format!(
+                    "   {}          Register your team for the highlighted tournament",
+                    ui_key::REGISTER_TO_TOURNAMENT
+                )),
+                Line::from(format!(
+                    "   {} / {}      Organize a quick / big tournament",
+                    ui_key::ORGANIZE_QUICK_TOURNAMENT,
+                    ui_key::ORGANIZE_BIG_TOURNAMENT
+                )),
+            ],
+        );
+        Ok(())
     }
 }
 
