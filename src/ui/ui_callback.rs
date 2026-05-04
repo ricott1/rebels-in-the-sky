@@ -5,6 +5,7 @@ use super::{
     new_team_screen::CreationState,
     player_panel::PlayerView,
     popup_message::PopupMessage,
+    space_cove_panel::SpaceCoveView,
     team_panel::TeamView,
     traits::{Screen, SplitPanel},
     ui_screen::{UiState, UiTab},
@@ -24,10 +25,7 @@ use crate::{
     game_engine::{tactic::Tactic, types::TeamInGame},
     image::color_map::{ColorMap, ColorPreset},
     space_adventure::PlayerInput,
-    types::{
-        AppCallback, AppResult, GameId, PlanetId, PlayerId, SystemTimeTick,
-        TeamId, Tick,
-    },
+    types::{AppCallback, AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick},
 };
 use anyhow::anyhow;
 use rand::{seq::IteratorRandom, RngExt, SeedableRng};
@@ -153,6 +151,9 @@ pub enum UiCallback {
     },
     SetPlayerPanelView {
         view: PlayerView,
+    },
+    SetSpaceCovePanelView {
+        view: SpaceCoveView,
     },
     SetTeamPanelView {
         view: TeamView,
@@ -409,7 +410,7 @@ impl UiCallback {
     fn go_to_space_cove() -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.space_cove_panel.update(&app.world)?;
-            app.ui.switch_to(super::ui_screen::UiTab::SpaceCove);
+            app.ui.switch_to(super::ui_screen::UiTab::SpaceCoves);
 
             Ok(None)
         })
@@ -548,20 +549,27 @@ impl UiCallback {
                 return Err(anyhow!("{} is too tired", team.name));
             }
             let own_team_id = app.world.own_team_id;
-            let (home_team_in_game, away_team_in_game) = match ChaCha8Rng::from_rng(&mut rand::rng())
-                .random_range(0..=1)
-            {
-                0 => (
-                    TeamInGame::from_team_id(&own_team_id, &app.world.teams, &app.world.players)?,
-                    TeamInGame::from_team_id(&team_id, &app.world.teams, &app.world.players)?,
-                ),
+            let (home_team_in_game, away_team_in_game) =
+                match ChaCha8Rng::from_rng(&mut rand::rng()).random_range(0..=1) {
+                    0 => (
+                        TeamInGame::from_team_id(
+                            &own_team_id,
+                            &app.world.teams,
+                            &app.world.players,
+                        )?,
+                        TeamInGame::from_team_id(&team_id, &app.world.teams, &app.world.players)?,
+                    ),
 
-                1 => (
-                    TeamInGame::from_team_id(&team_id, &app.world.teams, &app.world.players)?,
-                    TeamInGame::from_team_id(&own_team_id, &app.world.teams, &app.world.players)?,
-                ),
-                _ => unreachable!(),
-            };
+                    1 => (
+                        TeamInGame::from_team_id(&team_id, &app.world.teams, &app.world.players)?,
+                        TeamInGame::from_team_id(
+                            &own_team_id,
+                            &app.world.teams,
+                            &app.world.players,
+                        )?,
+                    ),
+                    _ => unreachable!(),
+                };
 
             let game_id = app
                 .world
@@ -1404,6 +1412,10 @@ impl UiCallback {
             }
             Self::SetPlayerPanelView { view } => {
                 app.ui.player_panel.set_view(*view);
+                Ok(None)
+            }
+            Self::SetSpaceCovePanelView { view } => {
+                app.ui.space_cove_panel.set_view(*view);
                 Ok(None)
             }
             Self::SetTeamPanelView { view } => {

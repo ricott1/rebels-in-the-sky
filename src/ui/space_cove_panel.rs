@@ -3,73 +3,74 @@ use super::{traits::Screen, ui_callback::UiCallback};
 use crate::game_engine::TournamentType;
 use crate::image::utils::ExtraImageUtils;
 use crate::image::utils::{open_image, LightMaskStyle};
-use crate::types::{HashMapWithResult, TeamId};
+use crate::types::{PlanetId, SystemTimeTick, TeamId};
 use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::traits::SplitPanel;
 use crate::ui::utils::img_to_lines;
 use crate::ui::ui_screen::{render_help_block, UiTab};
-use crate::ui::widgets::{
-    default_block, render_available_upgrades, selectable_list, teleport_button,
-};
+use crate::ui::widgets::{default_block, selectable_list, teleport_button};
 use crate::ui::{constants::*, ui_key};
 use ratatui::text::Line;
 use crate::{core::*, types::AppResult};
-use anyhow::anyhow;
 use core::fmt::Debug;
 use image::RgbaImage;
 use itertools::Itertools;
-use ratatui::crossterm;
+use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Margin};
 use ratatui::prelude::Rect;
 use ratatui::style::Stylize;
 use ratatui::widgets::Paragraph;
 use std::collections::HashSet;
+use std::fmt::{self, Display};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SpaceCoveView {
+    #[default]
+    OwnCove,
+    AllCoves,
+}
+
+impl SpaceCoveView {
+    pub const fn next(&self) -> Self {
+        match self {
+            Self::OwnCove => Self::AllCoves,
+            Self::AllCoves => Self::OwnCove,
+        }
+    }
+}
+
+impl Display for SpaceCoveView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OwnCove => write!(f, "Space cove"),
+            Self::AllCoves => write!(f, "All coves"),
+        }
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct SpaceCovePanel {
     tick: usize,
-    teams_index: Option<usize>,
-    team_ids: Vec<TeamId>,
+    view: SpaceCoveView,
+    cove_index: Option<usize>,
+    cove_entries: Vec<(TeamId, PlanetId)>,
+    cached_teams_len: usize,
+    visiting_team_ids: Vec<TeamId>,
     cove_image_widgets: [Paragraph<'static>; 4], // no blinking, left, right, both
 }
 
 impl SpaceCovePanel {
     pub fn new() -> Self {
-        let cove_image_widget = Self::get_cove_image_widgets(&[], false, false)
-            .expect("Should be able to create cove image");
-        let cove_image_widget_blinking_left = Self::get_cove_image_widgets(&[], true, false)
-            .expect("Should be able to create cove image");
-        let cove_image_widget_blinking_right = Self::get_cove_image_widgets(&[], false, true)
-            .expect("Should be able to create cove image");
-        let cove_image_widget_blinking_both = Self::get_cove_image_widgets(&[], true, true)
-            .expect("Should be able to create cove image");
-
+        let widgets = Self::build_image_widgets(&[]).expect("Should be able to create cove image");
         Self {
-            cove_image_widgets: [
-                cove_image_widget,
-                cove_image_widget_blinking_left,
-                cove_image_widget_blinking_right,
-                cove_image_widget_blinking_both,
-            ],
+            cove_image_widgets: widgets,
             ..Default::default()
         }
     }
 
-    fn get_asteroid(world: &World) -> AppResult<&Planet> {
-        let own_team = world.get_own_team()?;
-        let asteroid_id = own_team
-            .has_space_cove_on()
-            .ok_or_else(|| anyhow!("Space cove panel should be ready."))?;
-        world.planets.get_or_err(&asteroid_id)
-    }
-
-    fn _get_space_cove(own_team: &Team) -> AppResult<&SpaceCove> {
-        own_team
-            .space_cove
-            .as_ref()
-            .filter(|cove| cove.state == SpaceCoveState::Ready)
-            .ok_or_else(|| anyhow!("Space cove panel should be ready."))
+    pub fn set_view(&mut self, view: SpaceCoveView) {
+        self.view = view;
     }
 
     fn get_cove_images(
@@ -139,15 +140,126 @@ impl SpaceCovePanel {
         Ok(Paragraph::new(cove_image_lines))
     }
 
+    fn build_image_widgets(teams: &[&Team]) -> AppResult<[Paragraph<'static>; 4]> {
+        Ok([
+            Self::get_cove_image_widgets(teams, false, false)?,
+            Self::get_cove_image_widgets(teams, true, false)?,
+            Self::get_cove_image_widgets(teams, false, true)?,
+            Self::get_cove_image_widgets(teams, true, true)?,
+        ])
+    }
+
+    fn render_view_buttons(
+        &self,
+        frame: &mut UiFrame,
+        world: &World,
+        own_cove_area: Rect,
+        other_coves_area: Rect,
+    ) -> AppResult<()> {
+        let own_team = world.get_own_team()?;
+        let own_cove_label = match own_team.has_space_cove_on() {
+            Some(cove_planet) => {
+                let asteroid_name = world
+                    .planets
+                    .get(&cove_planet)
+                    .map(|p| p.name.as_str())
+                    .unwrap_or("???");
+                format!("Space cove on {}", asteroid_name)
+            }
+            None => "No space cove".to_string(),
+        };
+
+        let mut own_button = Button::new(
+            own_cove_label,
+            UiCallback::SetSpaceCovePanelView {
+                view: SpaceCoveView::OwnCove,
+            },
+        )
+        .bold()
+        .set_hotkey(ui_key::CYCLE_VIEW)
+        .set_hover_text("Manage your own space cove.");
+        if own_team.space_cove.is_none() {
+            own_button.disable(Some("You don't have a space cove yet".to_string()));
+        }
+
+        let mut other_button = Button::new(
+            SpaceCoveView::AllCoves.to_string(),
+            UiCallback::SetSpaceCovePanelView {
+                view: SpaceCoveView::AllCoves,
+            },
+        )
+        .bold()
+        .set_hotkey(ui_key::CYCLE_VIEW)
+        .set_hover_text("Browse coves owned by other crews.");
+
+        match self.view {
+            SpaceCoveView::OwnCove => own_button.select(),
+            SpaceCoveView::AllCoves => other_button.select(),
+        }
+
+        frame.render_interactive_widget(own_button, own_cove_area);
+        frame.render_interactive_widget(other_button, other_coves_area);
+        Ok(())
+    }
+
+    fn render_cove_list(
+        &self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
+        if self.cove_entries.is_empty() {
+            frame.render_widget(default_block().title("No known coves"), area);
+            return Ok(());
+        }
+
+        let mut options = vec![];
+        for (team_id, asteroid_id) in self.cove_entries.iter() {
+            let team = match world.teams.get(team_id) {
+                Some(t) => t,
+                None => continue,
+            };
+            let style = if team.id == world.own_team_id {
+                UiStyle::OWN_TEAM
+            } else if team.peer_id.is_some() {
+                UiStyle::NETWORK
+            } else {
+                UiStyle::DEFAULT
+            };
+            let asteroid_name = world
+                .planets
+                .get(asteroid_id)
+                .map(|p| p.name.as_str())
+                .unwrap_or("???");
+            // Pad team-name + parenthesised asteroid so stars align across rows.
+            let label = format!("{} ({})", team.name, asteroid_name);
+            let text = format!(
+                "{:<width$} {}",
+                label,
+                world.team_rating(&team.id).unwrap_or_default().stars(),
+                width = MAX_NAME_LENGTH * 2,
+            );
+            options.push((text, style));
+        }
+
+        let list = selectable_list(options);
+        frame.render_stateful_interactive_widget(
+            list.block(default_block().title("Coves ↓/↑")),
+            area,
+            &mut ClickableListState::default().with_selected(self.cove_index),
+        );
+        Ok(())
+    }
+
     fn render_visiting_teams(
         &self,
         frame: &mut UiFrame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
-        if !self.team_ids.is_empty() {
+        if !self.visiting_team_ids.is_empty() {
             let mut options = vec![];
-            for team_id in self.team_ids.iter() {
+            for team_id in self.visiting_team_ids.iter() {
                 let team = if let Some(team) = world.teams.get(team_id) {
                     team
                 } else {
@@ -169,9 +281,9 @@ impl SpaceCovePanel {
             let list = selectable_list(options);
 
             frame.render_stateful_interactive_widget(
-                list.block(default_block().title("Teams ↓/↑")),
+                list.block(default_block().title("Visiting teams")),
                 area,
-                &mut ClickableListState::default().with_selected(self.teams_index),
+                &mut ClickableListState::default(),
             );
         } else {
             frame.render_widget(default_block().title("No visiting teams"), area);
@@ -180,75 +292,115 @@ impl SpaceCovePanel {
         Ok(())
     }
 
-    fn render_tournament_buttons(
+    fn render_tournament_button(
         &self,
         frame: &mut UiFrame,
-        asteroid: &Planet,
+        own_team: &Team,
+        asteroid: Option<&Planet>,
+        tournament_type: TournamentType,
+        area: Rect,
+    ) {
+        let (label, hotkey, blurb) = match tournament_type {
+            TournamentType::Cup => (
+                "Organize quick tournament",
+                ui_key::ORGANIZE_QUICK_TOURNAMENT,
+                "Registrations close in 5 minutes, max 4 participants.",
+            ),
+            TournamentType::Supercup => (
+                "Organize big tournament",
+                ui_key::ORGANIZE_BIG_TOURNAMENT,
+                "Registrations close in 1 hour, max 8 participants.",
+            ),
+        };
+
+        let hover = match asteroid {
+            Some(asteroid) => format!("Organize on {}. {blurb}", asteroid.name),
+            None => blurb.to_string(),
+        };
+
+        let mut button = Button::new(
+            label,
+            UiCallback::OrganizeNewTournament { tournament_type },
+        )
+        .set_hotkey(hotkey)
+        .set_hover_text(hover);
+
+        if let Err(err) = own_team.can_organize_tournament() {
+            button.disable(Some(err.to_string()));
+        }
+
+        frame.render_interactive_widget(button, area);
+    }
+
+    fn render_travel_or_teleport_slot(
+        &self,
+        frame: &mut UiFrame,
         world: &World,
+        own_team: &Team,
+        asteroid: Option<&Planet>,
         area: Rect,
     ) -> AppResult<()> {
-        let split = Layout::vertical([3, 3]).split(area);
-        let own_team = world.get_own_team()?;
-        let mut tournament_button = Button::new(
-            "Organize quick tournament",
-            UiCallback::OrganizeNewTournament {
-                tournament_type: TournamentType::Cup
-            },
-        )
-        .set_hotkey(ui_key::ORGANIZE_QUICK_TOURNAMENT)
-        .set_hover_text(format!("Organize a quick tournament on {}. Registrations close in 5 minutes, max 4 participants.", asteroid.name));
+        let asteroid = match asteroid {
+            Some(a) => a,
+            None => {
+                let mut button = Button::new("Travel", UiCallback::None)
+                    .set_hover_text("Select a cove first");
+                button.disable(Some("No cove selected".to_string()));
+                frame.render_interactive_widget(button, area);
+                return Ok(());
+            }
+        };
 
-        if let Err(err) = own_team.can_organize_tournament() {
-            tournament_button.disable(Some(err.to_string()));
+        let on_asteroid = matches!(
+            own_team.current_location,
+            TeamLocation::OnPlanet { planet_id } if planet_id == asteroid.id
+        );
+
+        if on_asteroid {
+            let mut button = Button::new(
+                "Travel",
+                UiCallback::TravelToPlanet {
+                    planet_id: asteroid.id,
+                },
+            )
+            .set_hover_text(format!("You are already on {}", asteroid.name));
+            button.disable(Some("Already on this asteroid".to_string()));
+            frame.render_interactive_widget(button, area);
+            return Ok(());
         }
 
-        frame.render_interactive_widget(tournament_button, split[0]);
-
-        let mut tournament_button = Button::new(
-            "Organize big tournament",
-            UiCallback::OrganizeNewTournament {
-                tournament_type: TournamentType::Supercup,
-            },
-        )
-        .set_hotkey(ui_key::ORGANIZE_BIG_TOURNAMENT)
-        .set_hover_text(format!(
-            "Organize a big tournament on {}. Registrations close in 1 hour, max 8 participants.",
-            asteroid.name
-        ));
-
-        if let Err(err) = own_team.can_organize_tournament() {
-            tournament_button.disable(Some(err.to_string()));
+        if own_team.can_teleport_to(asteroid).is_ok() {
+            frame.render_interactive_widget(teleport_button(world, asteroid.id)?, area);
+            return Ok(());
         }
 
-        frame.render_interactive_widget(tournament_button, split[1]);
+        let duration = world
+            .travel_duration_to_planet(own_team.id, asteroid.id)
+            .unwrap_or_default();
+        let mut travel_button = Button::new(
+            "Travel",
+            UiCallback::TravelToPlanet {
+                planet_id: asteroid.id,
+            },
+        )
+        .set_hotkey(ui_key::TRAVEL)
+        .set_hover_text(format!("Travel to {}", asteroid.name));
 
+        if let Err(e) = own_team.can_travel_to_planet(asteroid, duration) {
+            travel_button.disable(Some(e.to_string()));
+        } else if duration > 0 {
+            travel_button.set_text(format!("Travel ({})", duration.formatted()));
+        }
+
+        frame.render_interactive_widget(travel_button, area);
         Ok(())
     }
 
-    fn _render_upgrades(&self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
-        let own_team = world.get_own_team()?;
-        let space_cove = Self::_get_space_cove(own_team)?;
-
-        let split = Layout::vertical([Constraint::Fill(1), Constraint::Length(4)]).split(area);
-
-        let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
-        let possible_upgrade = if !space_cove.upgrades.contains(&SpaceCoveUpgradeTarget::Skull) {
-            Some(Upgrade::new(SpaceCoveUpgradeTarget::Skull, bonus))
-        } else {
-            None
-        };
-
-        frame.render_widget(default_block(), split[0]);
-        render_available_upgrades::<SpaceCoveUpgradeTarget>(
-            space_cove.pending_upgrade,
-            possible_upgrade,
-            world,
-            own_team,
-            frame,
-            split[0].inner(Margin::new(1, 1)),
-        )?;
-
-        Ok(())
+    fn render_raid_placeholder(&self, frame: &mut UiFrame, area: Rect) {
+        let mut button =
+            Button::new("Raid", UiCallback::None).set_hover_text("Raids are coming soon");
+        button.disable(Some("Coming soon".to_string()));
+        frame.render_interactive_widget(button, area);
     }
 }
 
@@ -256,40 +408,90 @@ impl Screen for SpaceCovePanel {
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.tick += 1;
 
-        let asteroid = Self::get_asteroid(world)?;
-        if world.dirty_ui || self.team_ids.len() != asteroid.team_ids.len() {
-            // Update team_ids but maintain team_ids existing order.
-            let new_set: HashSet<TeamId> = asteroid.team_ids.iter().copied().collect();
-            self.team_ids.retain(|id| new_set.contains(id));
-            for id in &asteroid.team_ids {
-                if !self.team_ids.contains(id) {
-                    self.team_ids.push(*id);
+        let own_team_id = world.own_team_id;
+
+        // Rebuild the cove entries only when the team set or contents may have shifted.
+        let mut entries_changed = false;
+        if world.dirty_ui || world.teams.len() != self.cached_teams_len {
+            let mut decorated: Vec<(TeamId, PlanetId, &str)> = world
+                .teams
+                .values()
+                .filter_map(|team| {
+                    team.space_cove
+                        .as_ref()
+                        .filter(|cove| cove.state == SpaceCoveState::Ready)
+                        .map(|cove| (team.id, cove.planet_id, team.name.as_str()))
+                })
+                .collect();
+
+            decorated.sort_by(|a, b| {
+                let a_own = a.0 == own_team_id;
+                let b_own = b.0 == own_team_id;
+                match (a_own, b_own) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => a.2.cmp(b.2),
+                }
+            });
+
+            let new_entries: Vec<(TeamId, PlanetId)> =
+                decorated.into_iter().map(|(t, p, _)| (t, p)).collect();
+
+            entries_changed = new_entries != self.cove_entries;
+            self.cove_entries = new_entries;
+            self.cached_teams_len = world.teams.len();
+        }
+
+        let prev_index = self.cove_index;
+        self.cove_index = if self.cove_entries.is_empty() {
+            None
+        } else {
+            Some(self.cove_index.unwrap_or(0).min(self.cove_entries.len() - 1))
+        };
+        let index_changed = prev_index != self.cove_index;
+
+        let own_team = world.get_own_team()?;
+        let selected_asteroid_id = match self.view {
+            SpaceCoveView::OwnCove => own_team.has_space_cove_on(),
+            SpaceCoveView::AllCoves => self
+                .cove_index
+                .and_then(|i| self.cove_entries.get(i).map(|(_, p)| *p)),
+        };
+
+        match selected_asteroid_id.and_then(|id| world.planets.get(&id)) {
+            Some(asteroid) => {
+                let previous_visitors = std::mem::take(&mut self.visiting_team_ids);
+                let new_set: HashSet<TeamId> = asteroid.team_ids.iter().copied().collect();
+                self.visiting_team_ids = previous_visitors
+                    .iter()
+                    .copied()
+                    .filter(|id| new_set.contains(id))
+                    .collect();
+                for id in &asteroid.team_ids {
+                    if !self.visiting_team_ids.contains(id) {
+                        self.visiting_team_ids.push(*id);
+                    }
+                }
+
+                let visitors_changed = previous_visitors != self.visiting_team_ids;
+                if world.dirty_ui || entries_changed || index_changed || visitors_changed {
+                    let teams = self
+                        .visiting_team_ids
+                        .iter()
+                        .take(4)
+                        .filter(|id| world.teams.contains_key(id))
+                        .map(|id| world.teams.get(id).unwrap())
+                        .collect_vec();
+                    self.cove_image_widgets = Self::build_image_widgets(&teams)?;
                 }
             }
-
-            let teams = self
-                .team_ids
-                .iter()
-                .take(4)
-                .filter(|id| world.teams.contains_key(id))
-                .map(|id| world.teams.get(id).unwrap())
-                .collect_vec();
-
-            let cove_image_widget = Self::get_cove_image_widgets(&teams, false, false)
-                .expect("Should be able to create cove image");
-            let cove_image_widget_blinking_left = Self::get_cove_image_widgets(&teams, true, false)
-                .expect("Should be able to create cove image");
-            let cove_image_widget_blinking_right =
-                Self::get_cove_image_widgets(&teams, false, true)
-                    .expect("Should be able to create cove image");
-            let cove_image_widget_blinking_both = Self::get_cove_image_widgets(&teams, true, true)
-                .expect("Should be able to create cove image");
-            self.cove_image_widgets = [
-                cove_image_widget,
-                cove_image_widget_blinking_left,
-                cove_image_widget_blinking_right,
-                cove_image_widget_blinking_both,
-            ];
+            None => {
+                let was_populated = !self.visiting_team_ids.is_empty();
+                self.visiting_team_ids.clear();
+                if entries_changed || index_changed || was_populated {
+                    self.cove_image_widgets = Self::build_image_widgets(&[])?;
+                }
+            }
         }
 
         Ok(())
@@ -302,67 +504,100 @@ impl Screen for SpaceCovePanel {
         area: Rect,
         _debug_view: bool,
     ) -> AppResult<()> {
-        let asteroid = Self::get_asteroid(world)?;
-
-        let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Fill(1)])
-            .split(area);
+        let split = Layout::horizontal([
+            Constraint::Length(LEFT_PANEL_WIDTH),
+            Constraint::Fill(1),
+        ])
+        .split(area);
 
         frame.render_widget(default_block(), split[1]);
-
         let t = self.tick % 60;
         let left_eye_blinking = [2, 3, 5, 13, 33].contains(&t);
         let right_eye_blinking = [2, 3, 6, 7, 41].contains(&t);
-
-        let widget = if !left_eye_blinking && !right_eye_blinking {
-            &self.cove_image_widgets[0]
-        } else if left_eye_blinking && !right_eye_blinking {
-            &self.cove_image_widgets[1]
-        } else if !left_eye_blinking && right_eye_blinking {
-            &self.cove_image_widgets[2]
-        } else {
-            //if both left_eye_blinking and right_eye_blinking
-            &self.cove_image_widgets[3]
+        let widget = match (left_eye_blinking, right_eye_blinking) {
+            (false, false) => &self.cove_image_widgets[0],
+            (true, false) => &self.cove_image_widgets[1],
+            (false, true) => &self.cove_image_widgets[2],
+            (true, true) => &self.cove_image_widgets[3],
         };
+        frame.render_widget(widget, split[1].inner(Margin::new(1, 1)));
 
-        let area_image = split[1].inner(Margin::new(1, 1));
+        let own_team = world.get_own_team()?;
 
-        frame.render_widget(widget, area_image);
-
-        let side_split = Layout::vertical([
+        let col = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Length(6),
-            Constraint::Length(8),
-            Constraint::Length(11),
             Constraint::Fill(1),
+            Constraint::Fill(1),
+            Constraint::Length(3),
+            Constraint::Length(3),
         ])
         .split(split[0]);
-        frame.render_widget(
-            Paragraph::new(format!("Space Cove on {}", asteroid.name))
-                .centered()
-                .bold()
-                .block(default_block()),
-            side_split[0],
-        );
 
-        frame.render_interactive_widget(teleport_button(world, asteroid.id)?, side_split[1]);
-        self.render_tournament_buttons(frame, asteroid, world, side_split[2])?;
-        self.render_visiting_teams(frame, world, side_split[3])?;
-        // self.render_upgrades(frame, world, side_split[4])?;
+        self.render_view_buttons(frame, world, col[0], col[1])?;
+
+        match self.view {
+            SpaceCoveView::OwnCove => {
+                frame.render_widget(default_block().title("Upgrades"), col[2]);
+                self.render_visiting_teams(frame, world, col[3])?;
+
+                let asteroid = own_team
+                    .has_space_cove_on()
+                    .and_then(|id| world.planets.get(&id));
+                self.render_tournament_button(
+                    frame,
+                    own_team,
+                    asteroid,
+                    TournamentType::Cup,
+                    col[4],
+                );
+                self.render_tournament_button(
+                    frame,
+                    own_team,
+                    asteroid,
+                    TournamentType::Supercup,
+                    col[5],
+                );
+            }
+            SpaceCoveView::AllCoves => {
+                self.render_cove_list(frame, world, col[2])?;
+                self.render_visiting_teams(frame, world, col[3])?;
+
+                let selected_asteroid = self
+                    .cove_index
+                    .and_then(|i| self.cove_entries.get(i).map(|(_, p)| *p))
+                    .and_then(|id| world.planets.get(&id));
+                self.render_travel_or_teleport_slot(frame, world, own_team, selected_asteroid, col[4])?;
+                self.render_raid_placeholder(frame, col[5]);
+            }
+        }
 
         Ok(())
     }
 
     fn handle_key_events(
         &mut self,
-        _key_event: crossterm::event::KeyEvent,
+        key_event: KeyEvent,
         _world: &World,
     ) -> Option<UiCallback> {
+        match key_event.code {
+            KeyCode::Up if self.view == SpaceCoveView::AllCoves => self.next_index(),
+            KeyCode::Down if self.view == SpaceCoveView::AllCoves => self.previous_index(),
+            ui_key::CYCLE_VIEW => {
+                return Some(UiCallback::SetSpaceCovePanelView {
+                    view: self.view.next(),
+                });
+            }
+            _ => {}
+        }
         None
     }
 
     fn footer_spans(&self) -> Vec<String> {
-        vec![]
+        vec![
+            format!(" {} ", ui_key::CYCLE_VIEW),
+            " Cycle view ".to_string(),
+        ]
     }
 
     fn render_help_widget(
@@ -376,14 +611,13 @@ impl Screen for SpaceCovePanel {
             frame,
             area,
             vec![
-                Line::from(" Your hidden cove on a captured asteroid. Once built, the"),
-                Line::from(" cove hosts visiting crews and lets you upgrade the asteroid"),
-                Line::from(" itself: housing, hangars, defenses, and more. The cove is"),
-                Line::from(" also where you can teleport home from."),
+                Line::from(" Manage your own space cove and browse other crews' coves."),
+                Line::from(" Use the two buttons at the top to switch view: yours"),
+                Line::from(" (tournaments + upgrades) or other coves (list + travel)."),
             ],
             vec![
                 (
-                    " Manage the asteroid that hosts the cove from ",
+                    " Manage the asteroid that hosts your cove from ",
                     "My Team",
                     UiTab::MyTeam,
                     ".",
@@ -403,10 +637,22 @@ impl Screen for SpaceCovePanel {
             ],
             vec![
                 Line::from(" Controls:"),
-                Line::from("   ↑/↓        Move highlight in the visiting teams list"),
                 Line::from(format!(
-                    "   {}          Teleport back to the asteroid (costs Rum)",
+                    "   {}        Cycle between Own cove and Other coves view",
+                    ui_key::CYCLE_VIEW
+                )),
+                Line::from("   ↑/↓        Move highlight in the cove list (Other coves view)"),
+                Line::from(format!(
+                    "   {}          Teleport / Travel to the selected cove asteroid",
                     ui_key::TRAVEL
+                )),
+                Line::from(format!(
+                    "   {}          Organize a quick tournament (own cove only)",
+                    ui_key::ORGANIZE_QUICK_TOURNAMENT
+                )),
+                Line::from(format!(
+                    "   {}          Organize a big tournament (own cove only)",
+                    ui_key::ORGANIZE_BIG_TOURNAMENT
                 )),
             ],
         );
@@ -416,16 +662,16 @@ impl Screen for SpaceCovePanel {
 
 impl SplitPanel for SpaceCovePanel {
     fn index(&self) -> Option<usize> {
-        self.teams_index
+        self.cove_index
     }
 
     fn max_index(&self) -> usize {
-        self.team_ids.len()
+        self.cove_entries.len()
     }
 
     fn set_index(&mut self, index: usize) {
         if self.max_index() > 0 {
-            self.teams_index = Some(index % self.max_index());
+            self.cove_index = Some(index % self.max_index());
         }
     }
 }

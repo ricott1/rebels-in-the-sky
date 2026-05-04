@@ -18,7 +18,6 @@ use super::{
 #[cfg(feature = "audio")]
 use crate::audio::music_player::MusicPlayer;
 use crate::core::world::World;
-use crate::core::SpaceCoveState;
 use crate::network::types::ChatHistoryEntry;
 use crate::types::Tick;
 use crate::types::{AppResult, SystemTimeTick};
@@ -84,8 +83,7 @@ pub fn render_help_block(
     frame.render_widget(Paragraph::new(description), split[0]);
 
     if n_links > 0 {
-        let link_areas =
-            Layout::vertical(vec![Constraint::Length(1); links.len()]).split(split[2]);
+        let link_areas = Layout::vertical(vec![Constraint::Length(1); links.len()]).split(split[2]);
         for (i, (prefix, label, ui_tab, suffix)) in links.into_iter().enumerate() {
             render_help_link_line(frame, link_areas[i], prefix, label, ui_tab, suffix);
         }
@@ -142,8 +140,8 @@ pub enum UiTab {
     Galaxy,
     Games,
     Tournaments,
-    #[strum(to_string = "Space Cove")]
-    SpaceCove,
+    #[strum(to_string = "Space Coves")]
+    SpaceCoves,
     Swarm,
 }
 
@@ -188,6 +186,7 @@ impl UiScreen {
             UiTab::MyTeam,
             UiTab::Crews,
             UiTab::Pirates,
+            UiTab::SpaceCoves,
             UiTab::Games,
             UiTab::Tournaments,
             UiTab::Galaxy,
@@ -341,7 +340,7 @@ impl UiScreen {
                 UiTab::Games => &self.game_panel,
                 UiTab::Tournaments => &self.tournament_panel,
                 UiTab::Galaxy => &self.galaxy_panel,
-                UiTab::SpaceCove => &self.space_cove_panel,
+                UiTab::SpaceCoves => &self.space_cove_panel,
                 UiTab::Swarm => &self.swarm_panel,
             },
             UiState::SpaceAdventure => &self.space_screen,
@@ -359,7 +358,7 @@ impl UiScreen {
                 UiTab::Games => Some(&mut self.game_panel),
                 UiTab::Tournaments => Some(&mut self.tournament_panel),
                 UiTab::Galaxy => Some(&mut self.galaxy_panel),
-                UiTab::SpaceCove => Some(&mut self.space_cove_panel),
+                UiTab::SpaceCoves => Some(&mut self.space_cove_panel),
                 UiTab::Swarm => Some(&mut self.swarm_panel),
             },
         }
@@ -376,7 +375,7 @@ impl UiScreen {
                 UiTab::Games => &mut self.game_panel,
                 UiTab::Tournaments => &mut self.tournament_panel,
                 UiTab::Galaxy => &mut self.galaxy_panel,
-                UiTab::SpaceCove => &mut self.space_cove_panel,
+                UiTab::SpaceCoves => &mut self.space_cove_panel,
                 UiTab::Swarm => &mut self.swarm_panel,
             },
             UiState::SpaceAdventure => &mut self.space_screen,
@@ -514,19 +513,6 @@ impl UiScreen {
             }
             UiState::NewTeam => self.new_team_screen.update(world)?,
             UiState::Main => {
-                if world.dirty_ui {
-                    let own_team = world.get_own_team()?;
-                    let has_space_cove = own_team
-                        .space_cove
-                        .as_ref()
-                        .filter(|cove| cove.state == SpaceCoveState::Ready)
-                        .is_some();
-                    if !self.ui_tabs.contains(&UiTab::SpaceCove) && has_space_cove {
-                        self.ui_tabs.insert(1, UiTab::SpaceCove);
-                    } else if self.ui_tabs.contains(&UiTab::SpaceCove) && !has_space_cove {
-                        self.ui_tabs.remove(1);
-                    }
-                }
                 // Update panels. Can we get away updating only the active one?
                 // Links between panels means they need to be updated.
                 // Example: going to a game from the crews panel.
@@ -537,13 +523,9 @@ impl UiScreen {
                 self.team_panel.update(world)?;
                 self.player_panel.update(world)?;
                 self.game_panel.update(world)?;
-                if self.ui_tabs.contains(&UiTab::Tournaments) {
-                    self.tournament_panel.update(world)?;
-                }
+                self.tournament_panel.update(world)?;
                 self.galaxy_panel.update(world)?;
-                if self.ui_tabs.contains(&UiTab::SpaceCove) {
-                    self.space_cove_panel.update(world)?;
-                }
+                self.space_cove_panel.update(world)?;
                 if self.ui_tabs.contains(&UiTab::Swarm) {
                     self.swarm_panel.update(world)?;
                 }
