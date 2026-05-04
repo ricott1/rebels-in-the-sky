@@ -1,6 +1,6 @@
 use super::constants::*;
 use super::jersey::{Jersey, JerseyStyle};
-use super::planet::Planet;
+use super::planet::{Planet, PlanetType};
 use super::player::{Player, Trait};
 use super::position::{GamePosition, MAX_GAME_POSITION};
 use super::resources::Resource;
@@ -861,6 +861,7 @@ impl World {
         if matches!(own_team.has_space_cove_on(), Some(id) if id == asteroid_id) {
             own_team.space_cove = None;
         }
+        own_team.version += 1;
 
         self.dirty = true;
         self.dirty_network = true;
@@ -2858,9 +2859,7 @@ impl World {
             planet
                 .team_ids
                 .retain(|&team_id| self.teams.contains_key(&team_id));
-            planet
-                .satellites
-                .retain(|id| valid_planet_ids.contains(id));
+            planet.satellites.retain(|id| valid_planet_ids.contains(id));
         }
 
         // Set current game to None for teams playing a game not stored in games.
@@ -3008,7 +3007,37 @@ impl World {
             network_store_data: self.network_store_data.to_store(),
             ..Default::default()
         };
+
         w.filter_peer_data(None)?;
+
+        // Drop asteroids that are no longer owned by any team. Asteroid abandonment is
+        // deferred to save time so that an in-progress visit to the asteroid is not broken:
+        // skip asteroids any team is currently located on, and prune dangling satellite ids
+        // from each parent planet afterwards.
+        let owned_asteroids: HashSet<PlanetId> = w
+            .teams
+            .values()
+            .flat_map(|team| team.asteroid_ids.iter().copied())
+            .collect();
+        let occupied_planets: HashSet<PlanetId> = w
+            .teams
+            .values()
+            .filter_map(|team| match team.current_location {
+                TeamLocation::OnPlanet { planet_id } => Some(planet_id),
+                TeamLocation::Exploring { around, .. }
+                | TeamLocation::OnSpaceAdventure { around } => Some(around),
+                TeamLocation::Travelling { to, .. } => Some(to),
+            })
+            .collect();
+        w.planets.retain(|_, planet| {
+            planet.planet_type != PlanetType::Asteroid
+                || owned_asteroids.contains(&planet.id)
+                || occupied_planets.contains(&planet.id)
+        });
+        let valid_planet_ids: HashSet<PlanetId> = w.planets.keys().copied().collect();
+        for planet in w.planets.values_mut() {
+            planet.satellites.retain(|id| valid_planet_ids.contains(id));
+        }
 
         Ok(w)
     }
