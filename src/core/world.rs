@@ -35,7 +35,7 @@ use rand::seq::{IteratorRandom, SliceRandom};
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use strum::IntoEnumIterator;
 
 // const GAME_CLEANUP_TIME: Tick = 10 * SECONDS;
@@ -1279,14 +1279,27 @@ impl World {
 
         let db_team = self.teams.get(&team.id).cloned();
 
-        // When adding a network planet, we do not update the parent planet satellites on purpose,
-        // to avoid complications when cleaning up to store the world.
-        // This means that the network satellite will not appear in the galaxy.
+        // Stitch network asteroids into their parent planet's satellites so they show in the
+        // galaxy. Dangling satellite ids are pruned later in filter_peer_data.
         for asteroid in asteroids {
             if asteroid.peer_id.is_none() {
                 return Err(anyhow!(
                     "Cannot receive planet without peer_id over the network."
                 ));
+            }
+            let satellite_of = asteroid
+                .satellite_of
+                .ok_or_else(|| anyhow!("Asteroid should have a parent planet"))?;
+            if let Some(planet) = self.planets.get_mut(&satellite_of) {
+                // A satellite's parent must be a local planet; refuse to attach to a peer one.
+                if planet.peer_id.is_some() {
+                    return Err(anyhow!(
+                        "Cannot receive asteroid whose parent planet has a peer_id set."
+                    ));
+                }
+                if !planet.satellites.contains(&asteroid.id) {
+                    planet.satellites.push(asteroid.id);
+                }
             }
             self.planets.insert(asteroid.id, asteroid);
         }
@@ -2839,11 +2852,15 @@ impl World {
 
         self.teams.insert(own_team.id, own_team);
 
-        // Remove teams from planet teams vector.
+        // Drop dangling team_ids and satellite ids from each planet.
+        let valid_planet_ids: HashSet<PlanetId> = self.planets.keys().copied().collect();
         for (_, planet) in self.planets.iter_mut() {
             planet
                 .team_ids
                 .retain(|&team_id| self.teams.contains_key(&team_id));
+            planet
+                .satellites
+                .retain(|id| valid_planet_ids.contains(id));
         }
 
         // Set current game to None for teams playing a game not stored in games.
@@ -2996,20 +3013,22 @@ impl World {
         Ok(w)
     }
 
-    pub fn get_team_players<'a>(players: &'a PlayerMap, team: &'a Team) -> AppResult<Vec<&'a Player>>
-    {
+    pub fn get_team_players<'a>(
+        players: &'a PlayerMap,
+        team: &'a Team,
+    ) -> AppResult<Vec<&'a Player>> {
         let team_players = match team
             .player_ids
             .iter()
             .map(|id| players.get_or_err(id))
             .collect::<AppResult<Vec<_>>>()
-            {
-                Ok(players) => players,
-                Err(err) => {
-                    log::error!("Error while collecting team players: {err}");
-                    return Err(anyhow!("Error while collecting team players: {err}"))
-                }
-            };
+        {
+            Ok(players) => players,
+            Err(err) => {
+                log::error!("Error while collecting team players: {err}");
+                return Err(anyhow!("Error while collecting team players: {err}"));
+            }
+        };
         Ok(team_players)
     }
 }
