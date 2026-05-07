@@ -81,10 +81,12 @@ pub const FUEL_CONSUMPTION_PER_UNIT_STORAGE: f32 = 1.0 / 3_000.0; // 3_000 stora
 pub const SPEED_PENALTY_PER_UNIT_STORAGE: f32 = 1.0 / 6_000.0; // 6_000 storage units halves the speed
 
 pub const LANDING_TIME_OVERHEAD: Tick = 10 * MINUTES;
-
 pub const EXPLORATION_DURATION: Tick = 8 * HOURS;
+
 pub const ASTEROID_DISCOVERY_PROBABILITY: f64 = 0.15;
 pub const PORTAL_DISCOVERY_PROBABILITY: f64 = 0.05;
+pub const TRAIT_PROBABILITY: f64 = 0.25;
+
 pub const PORTAL_TRAVEL_DURATION: Tick = 10 * SECONDS;
 // This is used to check if a travel was done using a portal or teleporting.
 pub const TELEPORT_TRAVEL_DURATION: Tick = 0;
@@ -104,11 +106,14 @@ pub const NETWORK_GAME_START_DELAY: Tick = 30 * SECONDS;
 static GALAXY_ROOT_STR: &str = "71a43700-0000-0000-0000-000000000000";
 static DEFAULT_PLANET_STR: &str = "71a43700-0000-0000-0002-000000000000";
 static SOL_STR: &str = "71a43700-0000-0000-0001-000000000000";
-pub static GALAXY_ROOT_ID: LazyLock<PlanetId> =
-    LazyLock::new(|| PlanetId::try_parse(GALAXY_ROOT_STR).unwrap());
-pub static DEFAULT_PLANET_ID: LazyLock<PlanetId> =
-    LazyLock::new(|| PlanetId::try_parse(DEFAULT_PLANET_STR).unwrap());
-pub static SOL_ID: LazyLock<PlanetId> = LazyLock::new(|| PlanetId::try_parse(SOL_STR).unwrap());
+pub static GALAXY_ROOT_ID: LazyLock<PlanetId> = LazyLock::new(|| {
+    PlanetId::try_parse(GALAXY_ROOT_STR).expect("GALAXY_ROOT_STR must be a valid PlanetId")
+});
+pub static DEFAULT_PLANET_ID: LazyLock<PlanetId> = LazyLock::new(|| {
+    PlanetId::try_parse(DEFAULT_PLANET_STR).expect("DEFAULT_PLANET_STR must be a valid PlanetId")
+});
+pub static SOL_ID: LazyLock<PlanetId> =
+    LazyLock::new(|| PlanetId::try_parse(SOL_STR).expect("SOL_STR must be a valid PlanetId"));
 
 pub struct TirednessCost;
 impl TirednessCost {
@@ -164,8 +169,6 @@ pub const MORALE_HIRE_BONUS: f32 = MoraleModifier::CRITICAL_BONUS;
 pub const TIREDNESS_DRINK_MALUS: f32 = TirednessCost::SEVERE;
 pub const TIREDNESS_DRINK_MALUS_SPUGNA: f32 = TirednessCost::HIGH;
 pub const TIREDNESS_DECREASE_AFTER_TOURNAMENT_GAME: f32 = 2.0 * TirednessCost::CRITICAL;
-
-pub const TRAIT_PROBABILITY: f64 = 0.25;
 
 pub const MIN_RELATIVE_RETIREMENT_AGE: f32 = 0.96;
 pub const PEAK_PERFORMANCE_RELATIVE_AGE: f32 = 0.7;
