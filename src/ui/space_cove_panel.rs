@@ -3,13 +3,13 @@ use super::{traits::Screen, ui_callback::UiCallback};
 use crate::game_engine::TournamentType;
 use crate::image::utils::ExtraImageUtils;
 use crate::image::utils::{open_image, LightMaskStyle};
-use crate::types::{PlanetId, SystemTimeTick, TeamId};
+use crate::types::{PlanetId, TeamId};
 use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::traits::SplitPanel;
 use crate::ui::utils::img_to_lines;
 use crate::ui::ui_screen::{render_help_block, UiTab};
-use crate::ui::widgets::{default_block, selectable_list, teleport_button};
+use crate::ui::widgets::{default_block, go_to_planet_button, selectable_list};
 use crate::ui::{constants::*, ui_key};
 use ratatui::text::Line;
 use crate::{core::*, types::AppResult};
@@ -332,18 +332,17 @@ impl SpaceCovePanel {
         frame.render_interactive_widget(button, area);
     }
 
-    fn render_travel_or_teleport_slot(
+    fn render_go_to_planet_slot(
         &self,
         frame: &mut UiFrame,
         world: &World,
-        own_team: &Team,
         asteroid: Option<&Planet>,
         area: Rect,
     ) -> AppResult<()> {
         let asteroid = match asteroid {
             Some(a) => a,
             None => {
-                let mut button = Button::new("Travel", UiCallback::None)
+                let mut button = Button::new("Go to planet", UiCallback::None)
                     .set_hover_text("Select a cove first");
                 button.disable(Some("No cove selected".to_string()));
                 frame.render_interactive_widget(button, area);
@@ -351,48 +350,7 @@ impl SpaceCovePanel {
             }
         };
 
-        let on_asteroid = matches!(
-            own_team.current_location,
-            TeamLocation::OnPlanet { planet_id } if planet_id == asteroid.id
-        );
-
-        if on_asteroid {
-            let mut button = Button::new(
-                "Travel",
-                UiCallback::TravelToPlanet {
-                    planet_id: asteroid.id,
-                },
-            )
-            .set_hover_text(format!("You are already on {}", asteroid.name));
-            button.disable(Some("Already on this asteroid".to_string()));
-            frame.render_interactive_widget(button, area);
-            return Ok(());
-        }
-
-        if own_team.can_teleport_to(asteroid).is_ok() {
-            frame.render_interactive_widget(teleport_button(world, asteroid.id)?, area);
-            return Ok(());
-        }
-
-        let duration = world
-            .travel_duration_to_planet(own_team.id, asteroid.id)
-            .unwrap_or_default();
-        let mut travel_button = Button::new(
-            "Travel",
-            UiCallback::TravelToPlanet {
-                planet_id: asteroid.id,
-            },
-        )
-        .set_hotkey(ui_key::TRAVEL)
-        .set_hover_text(format!("Travel to {}", asteroid.name));
-
-        if let Err(e) = own_team.can_travel_to_planet(asteroid, duration) {
-            travel_button.disable(Some(e.to_string()));
-        } else if duration > 0 {
-            travel_button.set_text(format!("Travel ({})", duration.formatted()));
-        }
-
-        frame.render_interactive_widget(travel_button, area);
+        frame.render_interactive_widget(go_to_planet_button(world, asteroid.id)?, area);
         Ok(())
     }
 
@@ -567,7 +525,7 @@ impl Screen for SpaceCovePanel {
                     .cove_index
                     .and_then(|i| self.cove_entries.get(i).map(|(_, p)| *p))
                     .and_then(|id| world.planets.get(&id));
-                self.render_travel_or_teleport_slot(frame, world, own_team, selected_asteroid, col[4])?;
+                self.render_go_to_planet_slot(frame, world, selected_asteroid, col[4])?;
                 self.render_raid_placeholder(frame, col[5]);
             }
         }

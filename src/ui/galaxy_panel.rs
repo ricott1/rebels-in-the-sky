@@ -5,12 +5,11 @@ use super::traits::SplitPanel;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
 use super::ui_screen::UiTab;
-use super::widgets::{space_adventure_button, thick_block};
+use super::widgets::{space_adventure_button, thick_block, travel_or_teleport_button};
 use super::{traits::Screen, widgets::default_block};
 use ratatui::text::Line;
 use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId};
 use crate::ui::traits::UiStyled;
-use crate::ui::utils::format_au;
 use crate::ui::{constants::*, ui_key};
 use crate::{
     core::*,
@@ -301,40 +300,8 @@ impl GalaxyPanel {
                     }
                 }
 
-                TeamLocation::OnPlanet { planet_id } => {
-                    let duration = world.travel_duration_to_planet(own_team.id, planet.id)?;
-                    let hover_text = format!(
-                        "Travel to {}: Distance {} - Duration {} - Fuel {}",
-                        planet.name,
-                        format_au(
-                            world.distance_between_planets(planet_id, planet.id)? as f32
-                                / AU as f32
-                        ),
-                        duration.formatted(),
-                        world.fuel_consumption_to_planet(own_team.id, planet.id)?
-                    );
-
-                    let mut travel_to_planet_button = Button::new(
-                        "Travel",
-                        UiCallback::TravelToPlanet {
-                            planet_id: planet.id,
-                        },
-                    )
-                    .set_hotkey(ui_key::TRAVEL)
-                    .set_hover_text(hover_text);
-
-                    let is_teleporting = duration == TELEPORT_TRAVEL_DURATION;
-                    if let Err(e) = own_team.can_travel_to_planet(planet, duration) {
-                        travel_to_planet_button.disable(Some(e.to_string()));
-                    } else if is_teleporting {
-                        travel_to_planet_button.set_text("Teleport".to_string());
-                        travel_to_planet_button = travel_to_planet_button
-                            .set_hover_text(format!("Travel instantaneously to {}", planet.name));
-                    } else {
-                        travel_to_planet_button
-                            .set_text(format!("Travel ({})", duration.formatted()));
-                    }
-                    buttons.push(travel_to_planet_button);
+                TeamLocation::OnPlanet { planet_id: from } => {
+                    buttons.push(travel_or_teleport_button(world, planet.id, from)?);
                 }
 
                 TeamLocation::Travelling {
