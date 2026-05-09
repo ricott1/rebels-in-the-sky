@@ -138,7 +138,7 @@ impl NewTeamScreen {
                 .border_style(UiStyle::UNSELECTABLE)
                 .title("Spaceship name"),
         );
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         let mut color_presets = ColorPreset::iter().collect_vec();
         color_presets.shuffle(rng);
         let red_color_preset = color_presets[0];
@@ -1153,6 +1153,44 @@ impl Screen for NewTeamScreen {
         }
 
         None
+    }
+
+    fn render_help_widget(
+        &self,
+        frame: &mut UiFrame,
+        _world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
+        let lines = vec![
+            Line::from(""),
+            Line::from(" Walk through team creation step by step:"),
+            Line::from("   - Pick a team name and a spaceship name."),
+            Line::from("   - Choose your home planet."),
+            Line::from("   - Select jersey colors and style."),
+            Line::from("   - Pick your starting spaceship model."),
+            Line::from("   - Hire your starting players."),
+            Line::from(""),
+            Line::from(format!(
+                " Budget: you start with {} sat. The 'Remaining balance' bar at",
+                INITIAL_TEAM_BALANCE
+            )),
+            Line::from(" the top tracks your spending: each spaceship and each hired"),
+            Line::from(" player costs satoshi. Pricier ships and pricier pirates eat"),
+            Line::from(" your budget faster. The balance must stay non-negative to"),
+            Line::from(" confirm the team - if it turns red, drop a player or pick a"),
+            Line::from(" cheaper ship."),
+            Line::from(""),
+            Line::from(" Controls:"),
+            Line::from("   ↑/↓        Move highlight in lists."),
+            Line::from("   Enter      Confirm step / select."),
+            Line::from("   Backspace  Go back to the previous step."),
+            Line::from("   r/g/b      Cycle red/green/blue jersey color."),
+            Line::from("   R/G/B      Cycle backwards."),
+            Line::from("   Esc        Quit the game."),
+        ];
+        frame.render_widget(Paragraph::new(lines), area);
+        Ok(())
     }
 }
 

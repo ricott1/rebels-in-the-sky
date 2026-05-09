@@ -2,6 +2,8 @@ use ratatui::crossterm::event::KeyCode;
 
 pub const ESC: KeyCode = KeyCode::Esc;
 
+pub const HELP: KeyCode = KeyCode::Char('?');
+
 pub const NEXT_TAB: KeyCode = KeyCode::Right;
 pub const PREVIOUS_TAB: KeyCode = KeyCode::Left;
 

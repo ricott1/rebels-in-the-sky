@@ -1010,7 +1010,7 @@ mod tests {
     #[test]
     fn test_send_own_team() -> AppResult<()> {
         let mut world = World::new(None);
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         let home_planet = world.planets.keys().next().unwrap().clone();
         let team_name = "Testen".to_string();
         let ship_name = "Tosten".to_string();

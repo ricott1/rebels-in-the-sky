@@ -6,12 +6,14 @@ use super::ui_frame::UiFrame;
 use super::widgets::{
     go_to_team_current_planet_button, render_challenge_button, render_spaceship_description,
 };
+use super::ui_screen::{render_help_block, UiTab};
 use super::{
     constants::*,
     traits::{Screen, SplitPanel},
     utils::img_to_lines,
     widgets::{default_block, selectable_list},
 };
+use ratatui::text::Line;
 use crate::core::constants::MIN_PLAYERS_PER_GAME;
 use crate::core::team::Team;
 use crate::image::spaceship::{SPACESHIP_IMAGE_HEIGHT, SPACESHIP_IMAGE_WIDTH};
@@ -552,6 +554,67 @@ impl Screen for TeamListPanel {
             ),
             " Select player ".to_string(),
         ]
+    }
+
+    fn render_help_widget(
+        &self,
+        frame: &mut UiFrame,
+        _world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
+        render_help_block(
+            frame,
+            area,
+            vec![
+                Line::from(" Browse all the rival crews. Inspect their roster and ship,"),
+                Line::from(" check their rating, and challenge them to a match when they"),
+                Line::from(" are open and on the same planet as you."),
+            ],
+            vec![
+                (
+                    " Manage your own crew in ",
+                    "My Team",
+                    UiTab::MyTeam,
+                    ".",
+                ),
+                (
+                    " To inspect individual players, browse ",
+                    "Pirates",
+                    UiTab::Pirates,
+                    ".",
+                ),
+                (
+                    " To find a planet and travel there, see ",
+                    "Galaxy",
+                    UiTab::Galaxy,
+                    ".",
+                ),
+            ],
+            vec![
+                Line::from(" Controls:"),
+                Line::from(format!(
+                    "   {}        Cycle view (All / OpenToChallenge / Peers)",
+                    ui_key::CYCLE_VIEW
+                )),
+                Line::from("   ↑/↓        Move highlight in the team list"),
+                Line::from(format!(
+                    "   {} / {}      Scroll the player list inside the team",
+                    ui_key::PREVIOUS_SELECTION,
+                    ui_key::NEXT_SELECTION
+                )),
+                Line::from(format!(
+                    "   {}          Challenge highlighted team to a match",
+                    ui_key::game::CHALLENGE_TEAM
+                )),
+                Line::from(format!(
+                    "   {}          Open home planet / {} current planet",
+                    ui_key::GO_TO_HOME_PLANET,
+                    ui_key::ON_PLANET
+                )),
+            ],
+        );
+        Ok(())
     }
 }
 

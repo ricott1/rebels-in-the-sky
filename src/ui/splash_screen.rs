@@ -7,6 +7,7 @@ use super::{
     traits::{Screen, SplitPanel},
     widgets::default_block,
 };
+use ratatui::text::Line;
 use crate::core::constants::{DEBUG_TIME_MULTIPLIER, SOL_ID};
 use crate::store::world_file_data;
 use crate::types::{AppResult, SystemTimeTick, Tick};
@@ -41,7 +42,7 @@ pub struct SplashScreen {
     gif_map: GifMap,
 }
 
-const QUOTES: [&str;21] = [
+const QUOTES: [&str;23] = [
     " “What cannot be destroyed can, nonetheless, be diverted, frozen, transformed, and gradually deprived of its substance - which in the case of states, is ultimately their capacity to inspire terror.” - D. Graeber",
     " “Aber der Staat lügt in allen Zungen des Guten und Bösen; und was er auch redet, er lügt—und was er auch hat, gestohlen hat er's.” - F. Nietzsche",
     " “That is what I have always understood to be the essence of anarchism: the conviction that the burden of proof has to be placed on authority, and that it should be dismantled if that burden cannot be met.” - N. Chomsky",
@@ -63,7 +64,10 @@ const QUOTES: [&str;21] = [
     " “Se ha generado una literatura contra el Estado falsa. Pero el Estado es como la caja de herramientas, no tiene conciencia. Los que fallamos somos los humanos que manejamos el Estado.” - José 'Pepe' Mujica",    
     " “Chi trova il coraggio di costruire la propria esistenza nel mare mosso dell'incerto riuscirà più facilmente a trovare il proprio spazio nel presente di chi invece tenta di gettare l'ancora verso i lidi di epoche passate.” - Alexander Langer",
     " “May you'll be half an hour in heaven before the devil knows you're dead.” - The Irish Rovers",
-    " “All'effimero occidentale preferiamo il duraturo, alla plastica l'acciaio, alla freddezza il calore, ma al calore la freddezza. Ognuno ha l'immaginario che si merita.” - Giovanni Lindo Ferretti"
+    " “All'effimero occidentale preferiamo il duraturo, alla plastica l'acciaio, alla freddezza il calore, ma al calore la freddezza. Ognuno ha l'immaginario che si merita.” - Giovanni Lindo Ferretti",
+    " “Quod tibi, inquit, ut orbem terrarum; sed quia <id> ego exiguo navigio facio, latro vocor; quia tu magna classe, imperator.”  - Aurelius Augustinus Hipponensis",
+    " “Remota itaque iustitia quid sunt regna nisi magna latrocinia? quia et latrocinia quid sunt nisi parva regna?” - Aurelius Augustinus Hipponensis"
+    
     ];
 
 const TITLE: [&str; 13] = [
@@ -108,7 +112,7 @@ impl SplashScreen {
         selection_text.push("Quit".to_string());
 
         let quote = QUOTES
-            .choose(&mut ChaCha8Rng::from_os_rng())
+            .choose(&mut ChaCha8Rng::from_rng(&mut rand::rng()))
             .expect("There should be a quote");
         let index = if can_load_world { 0 } else { 1 };
         let title = big_text(&TITLE);
@@ -318,7 +322,7 @@ impl Screen for SplashScreen {
             },
             KeyCode::Char('r') => {
                 self.quote = QUOTES
-                    .choose(&mut ChaCha8Rng::from_os_rng())
+                    .choose(&mut ChaCha8Rng::from_rng(&mut rand::rng()))
                     .expect("There should be a quote");
             }
 
@@ -334,6 +338,30 @@ impl Screen for SplashScreen {
             " Enter ".to_string(),
             " Confirm ".to_string(),
         ]
+    }
+
+    fn render_help_widget(
+        &self,
+        frame: &mut UiFrame,
+        _world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
+        let lines = vec![
+            Line::from(""),
+            Line::from(" Welcome to Rebels of the Sky - basketball among the stars."),
+            Line::from(""),
+            Line::from(" Controls:"),
+            Line::from("   ↑/↓     Move the highlight between options."),
+            Line::from("   Enter   Confirm the highlighted option."),
+            Line::from("   r       Roll a new quote."),
+            Line::from("   Esc     Quit the game."),
+            Line::from(""),
+            Line::from(" Pick 'Continue' to resume your saved game or"),
+            Line::from(" 'New Game' to start a new game."),
+        ];
+        frame.render_widget(Paragraph::new(lines), area);
+        Ok(())
     }
 }
 

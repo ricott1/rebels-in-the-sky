@@ -3,7 +3,7 @@ use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     skill::GameSkill,
 };
-use rand::{seq::IndexedRandom, Rng};
+use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
@@ -241,7 +241,7 @@ pub(crate) fn execute(
                 description: [
                     format!(
                         "{} passes to {} who tried to get free using the screen, but {} is all over {}.",
-                        playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name(), target.info.pronouns.as_possessive()
+                        playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name(), target.info.pronouns.as_object()
                     ),
                     format!(
                         "{} attempts to shake off {} with the screen, but {} sticks to {} like glue.",

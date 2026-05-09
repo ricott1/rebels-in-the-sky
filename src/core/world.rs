@@ -1,6 +1,6 @@
 use super::constants::*;
 use super::jersey::{Jersey, JerseyStyle};
-use super::planet::Planet;
+use super::planet::{Planet, PlanetType};
 use super::player::{Player, Trait};
 use super::position::{GamePosition, MAX_GAME_POSITION};
 use super::resources::Resource;
@@ -14,7 +14,6 @@ use crate::core::{
     AsteroidUpgradeTarget, AutonomousStrategy, GameResult, Honour, Rated, RatedPlayers, Skill,
     TournamentRegistrationState, Upgrade, MIN_SKILL,
 };
-use crate::space_adventure::ControllableSpaceship;
 use crate::game_engine::game::{Game, GameSummary};
 use crate::game_engine::tactic::Tactic;
 use crate::game_engine::types::{Possession, TeamInGame};
@@ -24,6 +23,7 @@ use crate::game_engine::{
 use crate::image::color_map::ColorMap;
 use crate::network::network_store_data::NetworkStoreData;
 use crate::network::types::{NetworkGame, NetworkTeam};
+use crate::space_adventure::ControllableSpaceship;
 use crate::space_adventure::SpaceAdventure;
 use crate::store::{save_game, save_tournament};
 use crate::types::*;
@@ -32,10 +32,10 @@ use anyhow::anyhow;
 use itertools::Itertools;
 use libp2p::PeerId;
 use rand::seq::{IteratorRandom, SliceRandom};
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use strum::IntoEnumIterator;
 
 // const GAME_CLEANUP_TIME: Tick = 10 * SECONDS;
@@ -861,6 +861,7 @@ impl World {
         if matches!(own_team.has_space_cove_on(), Some(id) if id == asteroid_id) {
             own_team.space_cove = None;
         }
+        own_team.version += 1;
 
         self.dirty = true;
         self.dirty_network = true;
@@ -922,8 +923,7 @@ impl World {
         let should_spawn_asteroid = current_planet.asteroid_probability > 0.0
             && own_team.asteroid_ids.len() < MAX_NUM_ASTEROID_PER_TEAM;
         let gold_fragment_probability = 0.001
-            + 0.075 * (current_planet.resources.value(&Resource::GOLD) as f64)
-                / MAX_SKILL as f64;
+            + 0.075 * (current_planet.resources.value(&Resource::GOLD) as f64) / MAX_SKILL as f64;
 
         let speed_bonus = TeamBonus::SpaceshipSpeed.current_team_bonus(self, &own_team.id)?;
         let weapons_bonus = TeamBonus::Weapons.current_team_bonus(self, &own_team.id)?;
@@ -952,9 +952,7 @@ impl World {
         Ok(())
     }
 
-    pub fn return_from_space_adventure(
-        &mut self,
-    ) -> AppResult<(String, Option<usize>)> {
+    pub fn return_from_space_adventure(&mut self) -> AppResult<(String, Option<usize>)> {
         let mut own_team = self.get_own_team()?.clone();
 
         let space = self
@@ -1282,14 +1280,27 @@ impl World {
 
         let db_team = self.teams.get(&team.id).cloned();
 
-        // When adding a network planet, we do not update the parent planet satellites on purpose,
-        // to avoid complications when cleaning up to store the world.
-        // This means that the network satellite will not appear in the galaxy.
+        // Stitch network asteroids into their parent planet's satellites so they show in the
+        // galaxy. Dangling satellite ids are pruned later in filter_peer_data.
         for asteroid in asteroids {
             if asteroid.peer_id.is_none() {
                 return Err(anyhow!(
                     "Cannot receive planet without peer_id over the network."
                 ));
+            }
+            let satellite_of = asteroid
+                .satellite_of
+                .ok_or_else(|| anyhow!("Asteroid should have a parent planet"))?;
+            if let Some(planet) = self.planets.get_mut(&satellite_of) {
+                // A satellite's parent must be a local planet; refuse to attach to a peer one.
+                if planet.peer_id.is_some() {
+                    return Err(anyhow!(
+                        "Cannot receive asteroid whose parent planet has a peer_id set."
+                    ));
+                }
+                if !planet.satellites.contains(&asteroid.id) {
+                    planet.satellites.push(asteroid.id);
+                }
             }
             self.planets.insert(asteroid.id, asteroid);
         }
@@ -1387,7 +1398,7 @@ impl World {
         bonus: f32,
         planet: &Planet,
     ) -> AppResult<ResourceMap> {
-        let mut rng = ChaCha8Rng::from_os_rng();
+        let mut rng = ChaCha8Rng::from_rng(&mut rand::rng());
         let mut resources = HashMap::new();
 
         for (&resource, &amount) in planet.resources.iter() {
@@ -1409,7 +1420,7 @@ impl World {
         planet: &Planet,
         duration: Tick,
     ) -> AppResult<Vec<PlayerId>> {
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         let mut free_pirates = vec![];
 
         let duration_bonus = (duration as f32 / HOURS as f32).powf(1.3);
@@ -2183,7 +2194,7 @@ impl World {
                     let mut around_planet = self.planets.get_or_err(&around)?.clone();
                     team.current_location = TeamLocation::OnPlanet { planet_id: around };
 
-                    let mut rng = ChaCha8Rng::from_os_rng();
+                    let mut rng = ChaCha8Rng::from_rng(&mut rand::rng());
 
                     // If team has already MAX_NUM_ASTEROID_PER_TEAM, it cannot find another one.
                     // Finding asteroids becomes progressively more difficult.
@@ -2350,7 +2361,7 @@ impl World {
                 team.player_ids = Team::best_position_assignment(pirates);
             }
 
-            let rng = &mut ChaCha8Rng::from_os_rng();
+            let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
             team.game_tactic = Tactic::random(rng);
         }
 
@@ -2411,14 +2422,31 @@ impl World {
                 continue;
             }
 
-            // Hire as many pirates are needed to reach MIN_PLAYERS_PER_GAME
-            let needed_pirates = MIN_PLAYERS_PER_GAME
-                .saturating_sub(team.player_ids.len())
-                .max(1);
+            // Hire as many pirates are needed to reach crew capacity
+            let max_hirable_pirates = {
+                let mut n = 0;
+                let mut running_cost = 0;
+
+                // Loop and keep candidates until the team is out of balance
+                for pirate in available_free_pirates.iter() {
+                    running_cost += pirate.hire_cost(team.reputation);
+                    if running_cost > team.balance() {
+                        break;
+                    }
+                    n += 1;
+                }
+
+                // If team is at capactiy we still want to try to hire one (but only 1) pirate.
+                let free_spots =
+                    (team.spaceship.crew_capacity() as usize).saturating_sub(team.player_ids.len());
+                n = n.min(free_spots).max(1);
+
+                n
+            };
 
             let candidates = available_free_pirates
                 .iter()
-                .take(needed_pirates)
+                .take(max_hirable_pirates)
                 .collect_vec();
 
             if team.player_ids.len() == team.spaceship.crew_capacity() as usize {
@@ -2486,27 +2514,27 @@ impl World {
 
             for idx in 0..player.skills_training.len() {
                 // Reduce player skills. This is planned to counteract the effect of training by playing games.
-
-                let factor = (1.0 - PEAK_PERFORMANCE_RELATIVE_AGE)
-                    / (1.0 - 0.5 * (player.info.relative_age() + PEAK_PERFORMANCE_RELATIVE_AGE))
-                        .max(0.01);
-                let age_modifier =
-                    // Age modifier increseas linearly from (0,2/3) to (PEAK_PERFORMANCE_RELATIVE_AGE, 1),
-                    // then increseas linearly from (PEAK_PERFORMANCE_RELATIVE_AGE, 1) to (1, 4).
-                    if PEAK_PERFORMANCE_RELATIVE_AGE >= player.info.relative_age() {
-                        1.0 / (1.5
-                            - player.info.relative_age() / (2.0 * PEAK_PERFORMANCE_RELATIVE_AGE)).max(1.0)
-                    }
-                    // Mental abilities decrease slowly for mature players.
-                    else if idx > 15 {
-                         factor
-                    }
-                    // Reduce athletics skills even more if relative_age is more than PEAK_PERFORMANCE_RELATIVE_AGE.
-                    else if idx < 4 {
-                        4.0 * factor
+                // Age modifier:
+                //   Young: linear from 0.75 at birth to 1.0 at peak.
+                //   Old:   linear from 1.0 at peak to max_modifier at retirement.
+                //          Athletics (idx 0-3):  max 3.0
+                //          Off/Def/Tech (4-15):  max 2.0
+                //          Mental (16-19):       max 1.5
+                let relative_age = player.info.relative_age();
+                let age_modifier = if relative_age <= PEAK_PERFORMANCE_RELATIVE_AGE {
+                    0.75 + 0.25 * (relative_age / PEAK_PERFORMANCE_RELATIVE_AGE)
+                } else {
+                    let progress = (relative_age - PEAK_PERFORMANCE_RELATIVE_AGE)
+                        / (1.0 - PEAK_PERFORMANCE_RELATIVE_AGE);
+                    let max_modifier = if idx < 4 {
+                        3.0
+                    } else if idx > 15 {
+                        1.5
                     } else {
-                      2.0 *  factor
+                        2.0
                     };
+                    1.0 + progress * (max_modifier - 1.0)
+                };
 
                 player.modify_skill(idx, SKILL_DECREMENT_PER_LONG_TICK * age_modifier.bound());
 
@@ -2582,7 +2610,7 @@ impl World {
                 continue;
             }
 
-            let rng = &mut ChaCha8Rng::from_os_rng();
+            let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
             if player.morale < MORALE_THRESHOLD_FOR_LEAVING
                 && rng.random_bool(
                     (1.0 - player.morale / MAX_SKILL) as f64 * LEAVING_PROBABILITY_MORALE_MODIFIER,
@@ -2643,7 +2671,7 @@ impl World {
                 continue;
             }
 
-            let rng = &mut ChaCha8Rng::from_os_rng();
+            let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
             if player.info.relative_age() > MIN_RELATIVE_RETIREMENT_AGE {
                 // Add extra check to avoid running rng call unnecessarily.
                 if player.info.relative_age() > rng.random_range(MIN_RELATIVE_RETIREMENT_AGE..1.0) {
@@ -2699,7 +2727,7 @@ impl World {
     }
 
     fn generate_random_games(&mut self) -> AppResult<()> {
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         for planet in self.planets.values() {
             if planet.team_ids.len() < 2 {
                 continue;
@@ -2728,7 +2756,7 @@ impl World {
             if candidate_teams.len() < 2 {
                 continue;
             }
-            let teams = candidate_teams.iter().choose_multiple(rng, 2);
+            let teams = candidate_teams.iter().sample(rng, 2);
             let home_team_in_game =
                 TeamInGame::from_team_id(&teams[0].id, &self.teams, &self.players)?;
 
@@ -2825,11 +2853,13 @@ impl World {
 
         self.teams.insert(own_team.id, own_team);
 
-        // Remove teams from planet teams vector.
+        // Drop dangling team_ids and satellite ids from each planet.
+        let valid_planet_ids: HashSet<PlanetId> = self.planets.keys().copied().collect();
         for (_, planet) in self.planets.iter_mut() {
             planet
                 .team_ids
                 .retain(|&team_id| self.teams.contains_key(&team_id));
+            planet.satellites.retain(|id| valid_planet_ids.contains(id));
         }
 
         // Set current game to None for teams playing a game not stored in games.
@@ -2977,25 +3007,57 @@ impl World {
             network_store_data: self.network_store_data.to_store(),
             ..Default::default()
         };
+
         w.filter_peer_data(None)?;
+
+        // Drop asteroids that are no longer owned by any team. Asteroid abandonment is
+        // deferred to save time so that an in-progress visit to the asteroid is not broken:
+        // skip asteroids any team is currently located on, and prune dangling satellite ids
+        // from each parent planet afterwards.
+        let owned_asteroids: HashSet<PlanetId> = w
+            .teams
+            .values()
+            .flat_map(|team| team.asteroid_ids.iter().copied())
+            .collect();
+        let occupied_planets: HashSet<PlanetId> = w
+            .teams
+            .values()
+            .filter_map(|team| match team.current_location {
+                TeamLocation::OnPlanet { planet_id } => Some(planet_id),
+                TeamLocation::Exploring { around, .. }
+                | TeamLocation::OnSpaceAdventure { around } => Some(around),
+                TeamLocation::Travelling { to, .. } => Some(to),
+            })
+            .collect();
+        w.planets.retain(|_, planet| {
+            planet.planet_type != PlanetType::Asteroid
+                || owned_asteroids.contains(&planet.id)
+                || occupied_planets.contains(&planet.id)
+        });
+        let valid_planet_ids: HashSet<PlanetId> = w.planets.keys().copied().collect();
+        for planet in w.planets.values_mut() {
+            planet.satellites.retain(|id| valid_planet_ids.contains(id));
+        }
 
         Ok(w)
     }
 
-    pub fn get_team_players<'a>(players: &'a PlayerMap, team: &'a Team) -> AppResult<Vec<&'a Player>>
-    {
+    pub fn get_team_players<'a>(
+        players: &'a PlayerMap,
+        team: &'a Team,
+    ) -> AppResult<Vec<&'a Player>> {
         let team_players = match team
             .player_ids
             .iter()
             .map(|id| players.get_or_err(id))
             .collect::<AppResult<Vec<_>>>()
-            {
-                Ok(players) => players,
-                Err(err) => {
-                    log::error!("Error while collecting team players: {err}");
-                    return Err(anyhow!("Error while collecting team players: {err}"))
-                }
-            };
+        {
+            Ok(players) => players,
+            Err(err) => {
+                log::error!("Error while collecting team players: {err}");
+                return Err(anyhow!("Error while collecting team players: {err}"));
+            }
+        };
         Ok(team_players)
     }
 }
@@ -3021,7 +3083,7 @@ mod test {
         ui::UiCallback,
     };
     use itertools::Itertools;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
     use uuid::uuid;
 
@@ -3064,7 +3126,7 @@ mod test {
     #[test]
     fn test_exploration_result() -> AppResult<()> {
         let mut world = World::new(None);
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         let jupiter_id = uuid!("71a43700-0000-0000-0002-000000000002");
         let planet = world.planets.get(&jupiter_id).unwrap().clone();
         println!(
@@ -3143,7 +3205,7 @@ mod test {
     #[test]
     fn test_exploration_result_capping() -> AppResult<()> {
         let mut world = World::new(None);
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         let jupiter_id = uuid!("71a43700-0000-0000-0002-000000000002");
         let planet = world.planets.get(&jupiter_id).unwrap().clone();
         println!(
@@ -3235,7 +3297,7 @@ mod test {
         app.new_world();
 
         // let world = &mut app.world;
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         let planet = PLANET_DATA[0].clone();
         let team_id = app.world.generate_random_team(
             rng,
@@ -3543,7 +3605,7 @@ mod test {
         app.world.tick_auto_hire_free_pirates()?;
 
         let team = app.world.teams.get_or_err(&team_id)?;
-        assert!(team.player_ids.len() == MIN_PLAYERS_PER_GAME);
+        assert!(team.player_ids.len() >= MIN_PLAYERS_PER_GAME);
 
         Ok(())
     }

@@ -16,7 +16,7 @@ use glam::{I16Vec2, Vec2};
 use image::imageops::{rotate270, rotate90};
 use image::{Pixel, Rgba, RgbaImage};
 use rand::seq::IndexedRandom;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
@@ -159,7 +159,7 @@ impl Body for SpaceshipEntity {
         self.previous_position = self.position;
 
         let mut callbacks = vec![];
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
 
         // Generate fire particle if ship is damaged
         for _ in self.current_durability as usize..(0.5 * self.max_durability) as usize {

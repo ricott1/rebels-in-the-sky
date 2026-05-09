@@ -1036,7 +1036,7 @@ impl NetworkCallback {
                         && own_team.autonomous_strategy.challenge_network
                         && average_tiredness <= MAX_AVG_TIREDNESS_PER_AUTO_GAME
                     {
-                        let rng = &mut ChaCha8Rng::from_os_rng();
+                        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
                         own_team.player_ids.shuffle(rng);
                         app.network_handler
                             .accept_challenge(&app.world, challenge.clone())?;

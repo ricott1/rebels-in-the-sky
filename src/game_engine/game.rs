@@ -18,7 +18,7 @@ use crate::{
     types::*,
 };
 use itertools::Itertools;
-use rand::{seq::IndexedRandom, Rng, SeedableRng};
+use rand::{seq::IndexedRandom, RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -759,7 +759,6 @@ impl Game {
                 end_at: self.timer,
                 home_score: self.get_score().0,
                 away_score: self.get_score().1,
-                situation: ActionSituation::EndOfQuarter,
                 ..Default::default()
             });
 
@@ -767,7 +766,6 @@ impl Game {
                 // It's a draw. In this case we have a final total brawl to determine the winner.
                 // The team who has possession after the brawl is the winner.
                 let action_input = self.action_results[self.action_results.len() - 1].clone();
-                assert!(action_input.situation == ActionSituation::EndOfQuarter);
                 let result =
                     Action::TotalBrawl.execute(&action_input, self, action_rng, description_rng);
 

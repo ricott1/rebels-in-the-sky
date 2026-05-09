@@ -12,7 +12,7 @@ use anyhow::anyhow;
 use libp2p::PeerId;
 use rand::prelude::Distribution;
 use rand::seq::IndexedRandom;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::weighted::WeightedIndex;
 use serde::{Deserialize, Serialize};
@@ -174,7 +174,7 @@ impl Planet {
     }
 
     pub fn asteroid(name: String, filename: String, satellite_of: PlanetId) -> Self {
-        let rng = &mut ChaCha8Rng::from_os_rng();
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         let revolution_period: usize = [120, 180, 360]
             .choose(rng)
             .copied()

@@ -132,6 +132,43 @@ pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Butt
     Ok(teleport_button)
 }
 
+pub fn travel_or_teleport_button<'a>(
+    world: &World,
+    planet_id: PlanetId,
+    from: PlanetId,
+) -> AppResult<Button<'a>> {
+    let own_team = world.get_own_team()?;
+    let planet = world.planets.get_or_err(&planet_id)?;
+
+    if own_team.can_teleport_to(planet).is_ok() {
+        return teleport_button(world, planet_id);
+    }
+
+    let duration = world.travel_duration_to_planet(own_team.id, planet_id)?;
+    let formatted_duration = duration.formatted();
+
+    let hover_text = format!(
+        "Travel to {}: Distance {} - Duration {} - Fuel {}",
+        planet.name,
+        format_au(world.distance_between_planets(from, planet_id)? as f32 / AU as f32),
+        formatted_duration,
+        world.fuel_consumption_to_planet(own_team.id, planet_id)?
+    );
+
+    let mut button = Button::new(
+        format!("Travel ({formatted_duration})"),
+        UiCallback::TravelToPlanet { planet_id },
+    )
+    .set_hotkey(ui_key::TRAVEL)
+    .set_hover_text(hover_text);
+
+    if let Err(e) = own_team.can_travel_to_planet(planet, duration) {
+        button.disable(Some(e.to_string()));
+    }
+
+    Ok(button)
+}
+
 pub fn go_to_team_home_planet_button<'a>(world: &World, team_id: &TeamId) -> AppResult<Button<'a>> {
     let team = world.teams.get_or_err(team_id)?;
     let planet_name = &world.planets.get_or_err(&team.home_planet_id)?.name;

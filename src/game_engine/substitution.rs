@@ -16,7 +16,7 @@ use crate::{
     types::SortablePlayerMap,
 };
 use itertools::Itertools;
-use rand::{seq::IndexedRandom, Rng};
+use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 

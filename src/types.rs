@@ -299,7 +299,7 @@ mod tests {
         core::{resources::Resource, DAYS},
         types::{SystemTimeTick, Tick, SECONDS},
     };
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
     use std::time::Instant;
 
@@ -372,7 +372,7 @@ mod tests {
             start.elapsed().as_micros()
         );
 
-        let chacha_rng = &mut ChaCha8Rng::from_os_rng();
+        let chacha_rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         let start = Instant::now();
         for _ in 0..1_000_000 {
             let _: f32 = chacha_rng.random();

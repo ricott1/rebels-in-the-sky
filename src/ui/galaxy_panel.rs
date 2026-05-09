@@ -4,11 +4,12 @@ use super::gif_map::{GifMap, ImageResizeInGalaxyGif};
 use super::traits::SplitPanel;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
-use super::widgets::{space_adventure_button, thick_block};
+use super::ui_screen::UiTab;
+use super::widgets::{space_adventure_button, thick_block, travel_or_teleport_button};
 use super::{traits::Screen, widgets::default_block};
+use ratatui::text::Line;
 use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId};
 use crate::ui::traits::UiStyled;
-use crate::ui::utils::format_au;
 use crate::ui::{constants::*, ui_key};
 use crate::{
     core::*,
@@ -299,40 +300,8 @@ impl GalaxyPanel {
                     }
                 }
 
-                TeamLocation::OnPlanet { planet_id } => {
-                    let duration = world.travel_duration_to_planet(own_team.id, planet.id)?;
-                    let hover_text = format!(
-                        "Travel to {}: Distance {} - Duration {} - Fuel {}",
-                        planet.name,
-                        format_au(
-                            world.distance_between_planets(planet_id, planet.id)? as f32
-                                / AU as f32
-                        ),
-                        duration.formatted(),
-                        world.fuel_consumption_to_planet(own_team.id, planet.id)?
-                    );
-
-                    let mut travel_to_planet_button = Button::new(
-                        "Travel",
-                        UiCallback::TravelToPlanet {
-                            planet_id: planet.id,
-                        },
-                    )
-                    .set_hotkey(ui_key::TRAVEL)
-                    .set_hover_text(hover_text);
-
-                    let is_teleporting = duration == TELEPORT_TRAVEL_DURATION;
-                    if let Err(e) = own_team.can_travel_to_planet(planet, duration) {
-                        travel_to_planet_button.disable(Some(e.to_string()));
-                    } else if is_teleporting {
-                        travel_to_planet_button.set_text("Teleport".to_string());
-                        travel_to_planet_button = travel_to_planet_button
-                            .set_hover_text(format!("Travel instantaneously to {}", planet.name));
-                    } else {
-                        travel_to_planet_button
-                            .set_text(format!("Travel ({})", duration.formatted()));
-                    }
-                    buttons.push(travel_to_planet_button);
+                TeamLocation::OnPlanet { planet_id: from } => {
+                    buttons.push(travel_or_teleport_button(world, planet.id, from)?);
                 }
 
                 TeamLocation::Travelling {
@@ -737,6 +706,64 @@ impl Screen for GalaxyPanel {
                 " Zoom out ".to_string(),
             ],
         }
+    }
+
+    fn render_help_widget(
+        &self,
+        frame: &mut UiFrame,
+        _world: &World,
+        area: Rect,
+        _debug_view: bool,
+    ) -> AppResult<()> {
+        super::ui_screen::render_help_block(
+            frame,
+            area,
+            vec![
+                Line::from(" Navigate the star map. Zoom out shows a planet and its"),
+                Line::from(" satellites; zoom in reveals surface details, asteroids, and"),
+                Line::from(" the teams that live there."),
+            ],
+            vec![
+                (
+                    " To plan travel and refuel decisions, check ",
+                    "My Team",
+                    UiTab::MyTeam,
+                    ".",
+                ),
+                (
+                    " To find rivals on a planet, browse ",
+                    "Crews",
+                    UiTab::Crews,
+                    ".",
+                ),
+                (
+                    " To recruit free pirates from a planet, see ",
+                    "Pirates",
+                    UiTab::Pirates,
+                    ".",
+                ),
+            ],
+            vec![
+                Line::from(" Controls:"),
+                Line::from("   ↑/↓        Move highlight between satellites"),
+                Line::from("   Enter      Zoom in on the highlighted body"),
+                Line::from("   Backspace  Zoom out one level"),
+                Line::from(format!(
+                    "   {} / {}      Travel to highlighted planet / Explore around it",
+                    ui_key::TRAVEL,
+                    ui_key::EXPLORE
+                )),
+                Line::from(format!(
+                    "   {}          Teleport (costs Rum equal to crew size)",
+                    ui_key::GO_TO_PLANET
+                )),
+                Line::from(format!(
+                    "   {}          Start a space adventure mini-game",
+                    ui_key::SPACE_ADVENTURE
+                )),
+            ],
+        );
+        Ok(())
     }
 }
 

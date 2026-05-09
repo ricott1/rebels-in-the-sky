@@ -1,7 +1,7 @@
 use super::position::{GamePosition, GamePositionUtils};
 use crate::core::Player;
 use core::fmt;
-use rand::Rng;
+use rand::{RngExt};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
 use serde::{Deserialize, Serialize};

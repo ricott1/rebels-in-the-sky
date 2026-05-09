@@ -7,7 +7,7 @@ use crate::{
     core::{player::Player, skill::GameSkill},
     game_engine::constants::ADV_NEUTRAL_LIMIT,
 };
-use rand::Rng;
+use rand::{RngExt};
 use rand_chacha::ChaCha8Rng;
 
 pub(crate) fn execute(
