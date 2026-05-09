@@ -36,7 +36,7 @@ futures = "0.3.32"
 gif = "0.14.2"
 glam = "0.32.1"
 image = "0.25.10"
-imageproc = "0.26.1"
+imageproc = "0.26.2"
 include_dir = "0.7.4"
 itertools = "0.14.0"
 libp2p = { version = "0.56.0", features = [
