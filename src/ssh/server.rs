@@ -2,7 +2,7 @@ use super::client::AppClient;
 use crate::network::constants::DEFAULT_NETWORK_PORT;
 use crate::types::AppResult;
 use itertools::Either;
-use rand::Rng;
+use rand::RngExt;
 use russh::{
     keys::ssh_key::private::{Ed25519Keypair, Ed25519PrivateKey, KeypairData},
     server::{Config, Server},

@@ -1,6 +1,6 @@
 use crate::{app::AppEvent, tui::TerminalEvent, types::AppResult};
 use anyhow::anyhow;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rand_distr::Alphanumeric;
 use ratatui::crossterm::{
