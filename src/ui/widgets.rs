@@ -111,7 +111,7 @@ pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Butt
     let planet = world.planets.get_or_err(&planet_id)?;
 
     let button_label = match own_team.home_planet_id == planet_id {
-        true => String::from("Teleport"),
+        true => "Teleport".to_string(),
         false => format!("Teleport (-{} Rum)", own_team.player_ids.len()),
     };
 
