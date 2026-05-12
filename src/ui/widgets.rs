@@ -110,8 +110,13 @@ pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Butt
     let own_team = world.get_own_team()?;
     let planet = world.planets.get_or_err(&planet_id)?;
 
+    let button_label = match own_team.home_planet_id == planet_id {
+        true => String::from("Teleport"),
+        false => format!("Teleport (-{} Rum)", own_team.player_ids.len()),
+    };
+
     let mut teleport_button = Button::new(
-        format!("Teleport (-{} Rum)", own_team.player_ids.len()),
+        button_label,
         UiCallback::TravelToPlanet { planet_id },
     )
     .set_hover_text(format!(
