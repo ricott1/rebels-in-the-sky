@@ -827,8 +827,8 @@ impl UiCallback {
 
             let is_teleporting = duration == TELEPORT_TRAVEL_DURATION;
             if is_teleporting {
-                if planet_id != own_team.home_planet_id {
-                    let rum_consumed = own_team.player_ids.len() as u32;
+                let rum_consumed = own_team.teleport_rum_cost(planet_id);
+                if rum_consumed > 0 {
                     own_team.sub_resource(Resource::RUM, rum_consumed)?;
                 }
             } else {

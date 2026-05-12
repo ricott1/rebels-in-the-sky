@@ -342,11 +342,7 @@ impl Team {
             return Err(anyhow!("Cannot use teleportation pad on {}", to.name));
         }
 
-        let rum_required = if self.home_planet_id == to.id {
-            0
-        } else {
-            self.player_ids.len() as u32
-        };
+        let rum_required = self.teleport_rum_cost(to.id);
         let has_rum = self.resources.value(&Resource::RUM) >= rum_required;
 
         if !has_rum {
@@ -1033,5 +1029,12 @@ impl Team {
         new_players.append(&mut bench.iter().map(|&p| p.id).collect::<Vec<PlayerId>>());
 
         new_players
+    }
+
+    pub fn teleport_rum_cost(&self, planet_id: PlanetId) -> u32 {
+        match self.home_planet_id == planet_id {
+            true => 0,
+            false => self.player_ids.len() as u32,
+        }
     }
 }
