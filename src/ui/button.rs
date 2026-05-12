@@ -8,7 +8,7 @@ use ratatui::crossterm;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::{
     layout::{Margin, Rect},
-    style::{Style, Styled, Stylize},
+    style::{Style, Styled},
     symbols::border,
     text::{Line, Span, Text},
     widgets::{Block, Paragraph, Widget},

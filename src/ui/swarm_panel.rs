@@ -35,7 +35,7 @@ use ratatui::{
 };
 use std::collections::{BTreeSet, HashMap};
 use strum_macros::Display;
-use tui_textarea::{CursorMove, TextArea};
+use ratatui_textarea::{CursorMove, TextArea};
 
 const EVENT_DUPLICATE_DELAY: Tick = 2 * MINUTES;
 const PEER_DISCONNECTION_INTERVAL: Tick = 5 * MINUTES;

@@ -8,9 +8,9 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{block::Title, Paragraph},
+    widgets::Paragraph,
 };
-use tui_textarea::{Input, Key, TextArea};
+use ratatui_textarea::{Input, Key, TextArea};
 use unicode_width::UnicodeWidthStr;
 
 pub const fn input_from_key_event(key: KeyEvent) -> Input {
@@ -124,7 +124,7 @@ where
 
 pub fn validate_textarea_input<'a>(
     textarea: &mut TextArea<'a>,
-    title: impl Into<Title<'a>>,
+    title: impl Into<Line<'a>>,
 ) -> bool {
     let text = textarea.lines()[0].trim();
     let width = UnicodeWidthStr::width(text);
