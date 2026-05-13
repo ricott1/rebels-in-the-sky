@@ -111,9 +111,10 @@ pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Butt
     let planet = world.planets.get_or_err(&planet_id)?;
 
     let rum_cost = own_team.teleport_rum_cost(planet_id);
-    let button_label = match rum_cost == 0 {
-        true => "Teleport".to_string(),
-        false => format!("Teleport (-{} Rum)", rum_cost),
+    let button_label = if rum_cost > 0 {
+        format!("Teleport (-{} Rum)", rum_cost)
+    } else {
+        "Teleport".to_string()
     };
 
     let mut teleport_button = Button::new(
