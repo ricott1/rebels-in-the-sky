@@ -1032,9 +1032,10 @@ impl Team {
     }
 
     pub fn teleport_rum_cost(&self, planet_id: PlanetId) -> u32 {
-        match self.home_planet_id == planet_id {
-            true => 0,
-            false => self.player_ids.len() as u32,
+        if self.home_planet_id == planet_id {
+            0
+        } else {
+            self.player_ids.len() as u32
         }
     }
 }
