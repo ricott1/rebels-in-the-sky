@@ -110,17 +110,24 @@ pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Butt
     let own_team = world.get_own_team()?;
     let planet = world.planets.get_or_err(&planet_id)?;
 
+    let rum_cost = own_team.teleport_rum_cost(planet_id);
+    let button_label = if rum_cost > 0 {
+        format!("Teleport (-{} Rum)", rum_cost)
+    } else {
+        "Teleport".to_string()
+    };
+
     let mut teleport_button = Button::new(
-        format!("Teleport (-{} Rum)", own_team.player_ids.len()),
+        button_label,
         UiCallback::TravelToPlanet { planet_id },
     )
     .set_hover_text(format!(
         "Travel instantaneously to {}{}",
         planet.name,
-        if planet_id == own_team.home_planet_id {
+        if rum_cost == 0 {
             String::new()
         } else {
-            format!(" for {} Rum", own_team.player_ids.len()) // FIXME: don't hardcode this, but get it somehow from the teleport action.)
+            format!(" for {} Rum", rum_cost)
         }
     ))
     .set_hotkey(ui_key::TRAVEL);
