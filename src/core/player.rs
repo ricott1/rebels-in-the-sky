@@ -61,6 +61,7 @@ pub struct Player {
     // pub skills_potential: [Skill; 20], // Each skill has a separate potential. For retrocompatibility reasons, we allow this array to be all zeros, in which case we initialize it during deserialization.
     pub tiredness: Skill,
     pub morale: Skill,
+    pub drunkenness: Skill,
     pub historical_stats: GameStats,
     build_data: PlayerBuildData, // Intermediate state used to build the random player. Not serialized
 }
@@ -87,6 +88,7 @@ impl Default for Player {
             previous_skills: [Skill::default(); 20],
             tiredness: Skill::default(),
             morale: Skill::default(),
+            drunkenness: Skill::default(),
             historical_stats: GameStats::default(),
             build_data: PlayerBuildData::default(),
         }
@@ -99,7 +101,7 @@ impl Serialize for Player {
         // and serialize them in a vector which is then deserialized
         // into the corresponding fields
         let compact_skills = self.current_skill_array().to_vec();
-        let mut state = serializer.serialize_struct("Player", 17)?;
+        let mut state = serializer.serialize_struct("Player", 18)?;
         state.serialize_field("id", &self.id)?;
 
         state.serialize_field("peer_id", &self.peer_id)?;
@@ -115,6 +117,7 @@ impl Serialize for Player {
         state.serialize_field("skills_training", &self.skills_training)?;
         state.serialize_field("tiredness", &self.tiredness)?;
         state.serialize_field("morale", &self.morale)?;
+        state.serialize_field("drunkenness", &self.drunkenness)?;
         state.serialize_field("compact_skills", &compact_skills)?;
         state.serialize_field("historical_stats", &self.historical_stats)?;
         state.end()
@@ -141,6 +144,7 @@ impl<'de> Deserialize<'de> for Player {
             SkillsTraining,
             Tiredness,
             Morale,
+            Drunkenness,
             CompactSkills,
             HistoricalStats,
         }
@@ -175,6 +179,7 @@ impl<'de> Deserialize<'de> for Player {
                             "skills_training" => Ok(Field::SkillsTraining),
                             "tiredness" => Ok(Field::Tiredness),
                             "morale" => Ok(Field::Morale),
+                            "drunkenness" => Ok(Field::Drunkenness),
                             "compact_skills" => Ok(Field::CompactSkills),
                             "historical_stats" => Ok(Field::HistoricalStats),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -195,116 +200,6 @@ impl<'de> Deserialize<'de> for Player {
                 formatter.write_str("struct Player")
             }
 
-            fn visit_seq<V>(self, mut seq: V) -> Result<Player, V::Error>
-            where
-                V: serde::de::SeqAccess<'de>,
-            {
-                let id = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
-                let peer_id = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
-                let version = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(2, &self))?;
-                let info = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(3, &self))?;
-                let team = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(4, &self))?;
-                let special_trait = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(5, &self))?;
-                let reputation = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(6, &self))?;
-                let potential = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(7, &self))?;
-                let image = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(8, &self))?;
-                let current_location = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(9, &self))?;
-                let previous_skills = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(10, &self))?;
-                let skills_training = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(11, &self))?;
-                let tiredness = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(12, &self))?;
-                let morale = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(13, &self))?;
-                let compact_skills: Vec<Skill> = seq
-                    .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(14, &self))?;
-                let historical_stats = seq.next_element()?.unwrap_or_default();
-
-                let mut player = Player {
-                    id,
-
-                    peer_id,
-                    version,
-                    info,
-                    team,
-                    special_trait,
-                    reputation,
-                    potential,
-                    athletics: Athletics::default(),
-                    offense: Offense::default(),
-                    defense: Defense::default(),
-                    technical: Technical::default(),
-                    mental: Mental::default(),
-                    image,
-                    current_location,
-                    skills_training,
-                    previous_skills,
-                    tiredness,
-                    morale,
-                    historical_stats,
-                    build_data: PlayerBuildData::default(),
-                };
-
-                player.athletics = Athletics {
-                    quickness: compact_skills[0],
-                    vertical: compact_skills[1],
-                    strength: compact_skills[2],
-                    stamina: compact_skills[3],
-                };
-                player.offense = Offense {
-                    brawl: compact_skills[4],
-                    close_range: compact_skills[5],
-                    medium_range: compact_skills[6],
-                    long_range: compact_skills[7],
-                };
-                player.defense = Defense {
-                    steal: compact_skills[8],
-                    block: compact_skills[9],
-                    perimeter_defense: compact_skills[10],
-                    interior_defense: compact_skills[11],
-                };
-                player.technical = Technical {
-                    passing: compact_skills[12],
-                    ball_handling: compact_skills[13],
-                    post_moves: compact_skills[14],
-                    rebounds: compact_skills[15],
-                };
-                player.mental = Mental {
-                    vision: compact_skills[16],
-                    aggression: compact_skills[17],
-                    intuition: compact_skills[18],
-                    charisma: compact_skills[19],
-                };
-
-                Ok(player)
-            }
-
             fn visit_map<V>(self, mut map: V) -> Result<Player, V::Error>
             where
                 V: serde::de::MapAccess<'de>,
@@ -323,6 +218,7 @@ impl<'de> Deserialize<'de> for Player {
                 let mut previous_skills = None;
                 let mut tiredness = None;
                 let mut morale = None;
+                let mut drunkenness = None;
                 let mut compact_skills: Option<Vec<Skill>> = None;
                 let mut historical_stats = None;
 
@@ -412,6 +308,12 @@ impl<'de> Deserialize<'de> for Player {
                             }
                             morale = Some(map.next_value()?);
                         }
+                        Field::Drunkenness => {
+                            if drunkenness.is_some() {
+                                return Err(serde::de::Error::duplicate_field("drunkenness"));
+                            }
+                            drunkenness = Some(map.next_value()?);
+                        }
                         Field::CompactSkills => {
                             if compact_skills.is_some() {
                                 return Err(serde::de::Error::duplicate_field("compact_skills"));
@@ -449,6 +351,7 @@ impl<'de> Deserialize<'de> for Player {
                 let tiredness =
                     tiredness.ok_or_else(|| serde::de::Error::missing_field("tiredness"))?;
                 let morale = morale.ok_or_else(|| serde::de::Error::missing_field("morale"))?;
+                let drunkenness = drunkenness.unwrap_or_default();
                 let compact_skills = compact_skills
                     .ok_or_else(|| serde::de::Error::missing_field("compact_skills"))?;
                 let historical_stats = historical_stats.unwrap_or_default();
@@ -474,6 +377,7 @@ impl<'de> Deserialize<'de> for Player {
                     previous_skills,
                     tiredness,
                     morale,
+                    drunkenness,
                     historical_stats,
                     build_data: PlayerBuildData::default(),
                 };
@@ -528,6 +432,7 @@ impl<'de> Deserialize<'de> for Player {
             "previous_skills",
             "tiredness",
             "morale",
+            "drunkenness",
             "compact_skills",
             "historical_stats",
         ];
