@@ -24,7 +24,7 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::{Clear, Paragraph, Wrap};
 use strum_macros::Display;
-use tui_textarea::TextArea;
+use ratatui_textarea::TextArea;
 
 const FRAME_DURATION_MILLIS: Tick = 150;
 const TREASURE_GIF_ANIMATION_DELAY: Tick = 450;

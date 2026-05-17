@@ -20,7 +20,7 @@ use itertools::Itertools;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Margin};
 use ratatui::style::Stylize;
-use ratatui::widgets::{block, Borders, List, ListItem};
+use ratatui::widgets::{Borders, List, ListItem, TitlePosition};
 use ratatui::{
     layout::Layout,
     prelude::Rect,
@@ -143,7 +143,7 @@ impl GalaxyPanel {
             // trial and errors. For instance, the central block must be handled separately, otherwise
             // some borders disappear when the resoultion gets higher.
             let mut borders = Borders::NONE;
-            let mut title_position = block::Position::Top;
+            let mut title_position = TitlePosition::Top;
 
             if x >= 0.0 {
                 borders |= Borders::LEFT;
@@ -161,7 +161,7 @@ impl GalaxyPanel {
             if y >= 0.0 {
                 borders |= Borders::TOP;
             } else {
-                title_position = block::Position::Bottom;
+                title_position = TitlePosition::Bottom;
                 height = height.saturating_sub(y.abs() as u16);
                 y = 0.0;
             }

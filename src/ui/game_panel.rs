@@ -36,11 +36,10 @@ use core::fmt::Debug;
 use itertools::Itertools;
 use ratatui::crossterm;
 use ratatui::crossterm::event::KeyCode;
-use ratatui::style::{Style, Stylize};
+use ratatui::style::Style;
 use ratatui::{
     layout::{Constraint, Layout, Margin},
     prelude::Rect,
-    style::Styled,
     text::{Line, Span},
     widgets::{Cell, Paragraph, Row, Table, Wrap},
 };
@@ -841,7 +840,7 @@ impl GamePanel {
             Cell::from(format!("{:>+3}", plus_minus_total / 5)),
         ];
 
-        rows.push(Row::new(totals).set_style(UiStyle::HIGHLIGHT));
+        rows.push(Row::new(totals).style(UiStyle::HIGHLIGHT));
 
         Table::new(
             rows,
