@@ -64,22 +64,18 @@ impl SshGame for RebelsGame {
         let session_auth = SessionAuth::new(username.clone(), cred_str);
         let filename = format!("{username}.sshpwd");
 
-        if save_game_exists(&username) {
-            match load_data(&filename) {
-                Ok(persisted) => {
-                    let saved: Password = persisted
-                        .try_into()
-                        .map_err(|_| anyhow!("malformed sshpwd for {username}"))?;
-                    if !session_auth.check_password(saved) {
-                        return Err(anyhow!("invalid credential for {username}"));
-                    }
-                }
-                Err(_) => {
-                    save_data(&filename, &session_auth.hashed_password)?;
+        match load_data(&filename) {
+            Ok(persisted) => {
+                let saved: Password = persisted
+                    .try_into()
+                    .map_err(|_| anyhow!("malformed sshpwd for {username}"))?;
+                if !session_auth.check_password(saved) {
+                    return Err(anyhow!("invalid credential for {username}"));
                 }
             }
-        } else {
-            save_data(&filename, &session_auth.hashed_password)?;
+            Err(_) => {
+                save_data(&filename, &session_auth.hashed_password)?;
+            }
         }
 
         Ok(session_auth)
