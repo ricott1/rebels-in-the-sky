@@ -1836,6 +1836,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "frittura-ssh-core"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b111e16f29d75e2f295d6f724d75951fa269f4e491553f8866d6c1b94c0729aa"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "log",
+ "rand 0.10.1",
+ "russh",
+ "tokio",
+]
+
+[[package]]
 name = "fs_extra"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5183,6 +5197,7 @@ dependencies = [
  "clap",
  "directories",
  "flate2",
+ "frittura-ssh-core",
  "futures",
  "gif",
  "glam 0.32.1",
@@ -5200,7 +5215,6 @@ dependencies = [
  "ratatui-textarea",
  "rayon",
  "rodio",
- "russh",
  "serde",
  "serde_json",
  "serde_repr",

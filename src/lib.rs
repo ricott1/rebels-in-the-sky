@@ -11,7 +11,9 @@ pub mod network;
 pub mod relayer;
 pub mod space_adventure;
 #[cfg(feature = "ssh")]
-pub mod ssh;
+pub mod session_auth;
+#[cfg(feature = "ssh")]
+pub mod ssh_game;
 pub mod store;
 pub mod tick_event_handler;
 pub mod tui;
