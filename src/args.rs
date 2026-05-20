@@ -32,6 +32,9 @@ pub struct AppArgs {
     #[cfg(feature = "ssh")]
     #[clap(long, short='j', action=ArgAction::SetTrue, help = "Run SSH server")]
     ssh_server: bool,
+    #[cfg(feature = "ssh")]
+    #[clap(long="ssh-port", action=ArgAction::Set, help = "SSH server listen port (default 3788)")]
+    pub ssh_port: Option<u16>,
     #[clap(long, short = 's', action=ArgAction::Set, help = "Set ip of seed node")]
     pub seed_node_ip: Option<String>,
     #[clap(long, short = 'p', action=ArgAction::Set, help = "Set network port")]
@@ -66,6 +69,7 @@ impl AppArgs {
             #[cfg(feature = "relayer")]
             relayer_mode: false,
             ssh_server: false,
+            ssh_port: None,
             seed_node_ip: None,
             network_port,
             use_ipv6: true,
@@ -88,6 +92,8 @@ impl AppArgs {
             relayer_mode: false,
             #[cfg(feature = "ssh")]
             ssh_server: false,
+            #[cfg(feature = "ssh")]
+            ssh_port: None,
             seed_node_ip: None,
             network_port: None,
             use_ipv6: true,

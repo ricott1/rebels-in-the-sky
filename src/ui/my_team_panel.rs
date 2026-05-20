@@ -2147,6 +2147,9 @@ impl MyTeamPanel {
 
         let player_id = player.id;
         for idx in 0..MAX_PLAYERS_PER_GAME {
+            if idx >= own_team.player_ids.len() {
+                break;
+            }
             let position = idx as GamePosition;
             let rect = position_button_splits[idx];
             let mut button = Button::new(

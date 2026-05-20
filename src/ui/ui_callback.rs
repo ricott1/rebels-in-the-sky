@@ -758,16 +758,21 @@ impl UiCallback {
 
     fn swap_player_positions(player_id: PlayerId, position: usize) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let mut team = app.world.get_own_team()?.clone();
+            let team = app.world.get_own_team_mut()?;
+            if position >= team.player_ids.len() {
+                return Err(anyhow!(
+                    "Invalid position {position}: team has only {} players.",
+                    team.player_ids.len()
+                ));
+            }
             let current_player_position = team
                 .player_ids
                 .iter()
                 .position(|&id| id == player_id)
-                .unwrap();
+                .ok_or_else(|| anyhow!("Could not find player with id {player_id}."))?;
             team.player_ids.swap(position, current_player_position);
             app.world.dirty = true;
             app.world.dirty_ui = true;
-            app.world.teams.insert(team.id, team);
             Ok(None)
         })
     }

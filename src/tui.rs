@@ -1,8 +1,6 @@
 #[cfg(feature = "audio")]
 use crate::audio;
 use crate::core::world::World;
-#[cfg(feature = "ssh")]
-use crate::ssh::SSHWriterProxy;
 use crate::types::AppResult;
 use crate::ui::*;
 use ratatui::crossterm::cursor::{Hide, Show};
@@ -26,6 +24,13 @@ pub trait WriterProxy: io::Write + std::fmt::Debug {
 }
 
 impl WriterProxy for io::Stdout {}
+
+#[cfg(feature = "ssh")]
+impl WriterProxy for frittura_ssh_core::SshWriterProxy {
+    async fn send(&mut self) -> std::io::Result<usize> {
+        frittura_ssh_core::SshWriterProxy::send(self).await
+    }
+}
 
 #[derive(Debug)]
 pub struct DummyWriter {}
@@ -84,8 +89,11 @@ impl Tui<io::Stdout> {
 }
 
 #[cfg(feature = "ssh")]
-impl Tui<SSHWriterProxy> {
-    pub fn new_ssh(writer: SSHWriterProxy) -> AppResult<Self> {
+impl<W> Tui<W>
+where
+    W: WriterProxy,
+{
+    pub fn new_ssh(writer: W) -> AppResult<Self> {
         let backend = CrosstermBackend::new(writer);
         let opts = TerminalOptions {
             viewport: Viewport::Fixed(Rect {
