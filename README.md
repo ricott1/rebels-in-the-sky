@@ -17,7 +17,7 @@ The game is under heavy development and breaking changes are often introduced. I
 
 Connect via SSH to try the game.
 
-`ssh rebels.frittura.org -p 3788`
+`ssh frittura.org` and pick 'rebels'
 
 Save files are deleted after 2 days of inactivity.
 
