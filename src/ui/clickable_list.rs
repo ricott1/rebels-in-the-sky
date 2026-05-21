@@ -165,7 +165,7 @@ impl StatefulWidget for &ClickableList<'_> {
         buf.set_style(area, self.style);
         let list_area = self.block.inner_if_some(area);
 
-        self.block.render(area, buf);
+        self.block.clone().render(area, buf);
 
         if list_area.is_empty() {
             return;

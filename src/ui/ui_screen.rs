@@ -40,7 +40,7 @@ use ratatui::{
 use std::time::Instant;
 use std::vec;
 use strum_macros::Display;
-use tui_textarea::{CursorMove, TextArea};
+use ratatui_textarea::{CursorMove, TextArea};
 
 const MAX_POPUP_MESSAGES: usize = 8;
 

@@ -1916,22 +1916,20 @@ impl MyTeamPanel {
         let rows = players
             .iter()
             .map(|player| {
-                let skills = player.current_skill_array();
-
                 let current_role = match own_team.player_ids.iter().position(|id| *id == player.id)
                 {
                     Some(idx) => format!(
                         "{:<2} {:<5}",
                         (idx as GamePosition).as_str(),
                         if (idx as GamePosition) < MAX_GAME_POSITION {
-                            (idx as GamePosition).player_rating(skills).stars()
+                            player.position_rating(idx as GamePosition).stars()
                         } else {
                             "".to_string()
                         }
                     ),
                     None => unreachable!("Player in MyTeam should have a position."),
                 };
-                let best_role = GamePosition::best(skills);
+                let best_role = player.best_position();
                 let overall = player.average_skill().stars();
                 let potential = player.potential.stars();
 
@@ -2012,7 +2010,7 @@ impl MyTeamPanel {
                     ClickableCell::from(format!(
                         "{:<2} {:<5}",
                         best_role.as_str(),
-                        best_role.player_rating(skills).stars()
+                        player.position_rating(best_role).stars()
                     )),
                     ClickableCell::from(player.info.crew_role.to_string()),
                     ClickableCell::from(bonus_string_1),
@@ -2147,6 +2145,9 @@ impl MyTeamPanel {
 
         let player_id = player.id;
         for idx in 0..MAX_PLAYERS_PER_GAME {
+            if idx >= own_team.player_ids.len() {
+                break;
+            }
             let position = idx as GamePosition;
             let rect = position_button_splits[idx];
             let mut button = Button::new(

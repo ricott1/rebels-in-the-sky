@@ -39,7 +39,7 @@ use ratatui::{
 use std::cmp::min;
 use std::collections::HashMap;
 use strum::IntoEnumIterator;
-use tui_textarea::{CursorMove, TextArea};
+use ratatui_textarea::{CursorMove, TextArea};
 use uuid::uuid;
 
 const INITIAL_TEAM_SIZE: usize = 5;

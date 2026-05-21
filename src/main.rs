@@ -10,10 +10,13 @@ use rebels::args::AppMode;
 #[cfg(feature = "relayer")]
 use rebels::relayer::Relayer;
 #[cfg(feature = "ssh")]
-use rebels::ssh::AppServer;
+use rebels::ssh_game::RebelsGame;
 use rebels::store::store_path;
 use rebels::tui::Tui;
 use rebels::types::AppResult;
+
+#[cfg(feature = "ssh")]
+const DEFAULT_SSH_PORT: u16 = 3788;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> AppResult<()> {
@@ -35,7 +38,9 @@ async fn main() -> AppResult<()> {
 
     #[cfg(feature = "ssh")]
     if mode == AppMode::SSHServer {
-        return AppServer::new().run().await;
+        let port = args.ssh_port.unwrap_or(DEFAULT_SSH_PORT);
+        frittura_ssh_core::run_server(RebelsGame::new(), port).await?;
+        return Ok(());
     }
 
     #[cfg(feature = "relayer")]
