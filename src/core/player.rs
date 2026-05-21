@@ -59,6 +59,7 @@ pub struct Player {
     pub skills_training: [Skill; 20],
     pub previous_skills: [Skill; 20], // This is for displaying purposes to show the skills that were recently modified
     // pub skills_potential: [Skill; 20], // Each skill has a separate potential. For retrocompatibility reasons, we allow this array to be all zeros, in which case we initialize it during deserialization.
+    pub game_position_fitness: [Skill; MAX_GAME_POSITION as usize],
     pub tiredness: Skill,
     pub morale: Skill,
     pub drunkenness: Skill,
@@ -86,6 +87,7 @@ impl Default for Player {
             current_location: PlayerLocation::default(),
             skills_training: [Skill::default(); 20],
             previous_skills: [Skill::default(); 20],
+            game_position_fitness: [Skill::default(); MAX_GAME_POSITION as usize],
             tiredness: Skill::default(),
             morale: Skill::default(),
             drunkenness: Skill::default(),
@@ -119,6 +121,7 @@ impl Serialize for Player {
         state.serialize_field("morale", &self.morale)?;
         state.serialize_field("drunkenness", &self.drunkenness)?;
         state.serialize_field("compact_skills", &compact_skills)?;
+        state.serialize_field("game_position_fitness", &self.game_position_fitness)?;
         state.serialize_field("historical_stats", &self.historical_stats)?;
         state.end()
     }
@@ -142,6 +145,7 @@ impl<'de> Deserialize<'de> for Player {
             CurrentLocation,
             PreviousSkills,
             SkillsTraining,
+            GamePositionFitness,
             Tiredness,
             Morale,
             Drunkenness,
@@ -177,6 +181,7 @@ impl<'de> Deserialize<'de> for Player {
                             "current_location" => Ok(Field::CurrentLocation),
                             "previous_skills" => Ok(Field::PreviousSkills),
                             "skills_training" => Ok(Field::SkillsTraining),
+                            "game_position_fitness" => Ok(Field::GamePositionFitness),
                             "tiredness" => Ok(Field::Tiredness),
                             "morale" => Ok(Field::Morale),
                             "drunkenness" => Ok(Field::Drunkenness),
@@ -216,6 +221,7 @@ impl<'de> Deserialize<'de> for Player {
                 let mut current_location = None;
                 let mut skills_training = None;
                 let mut previous_skills = None;
+                let mut game_position_fitness = None;
                 let mut tiredness = None;
                 let mut morale = None;
                 let mut drunkenness = None;
@@ -296,6 +302,14 @@ impl<'de> Deserialize<'de> for Player {
                             }
                             previous_skills = Some(map.next_value()?);
                         }
+                        Field::GamePositionFitness => {
+                            if game_position_fitness.is_some() {
+                                return Err(serde::de::Error::duplicate_field(
+                                    "game_position_fitness",
+                                ));
+                            }
+                            game_position_fitness = Some(map.next_value()?);
+                        }
                         Field::Tiredness => {
                             if tiredness.is_some() {
                                 return Err(serde::de::Error::duplicate_field("tiredness"));
@@ -348,6 +362,8 @@ impl<'de> Deserialize<'de> for Player {
                     .ok_or_else(|| serde::de::Error::missing_field("skills_training"))?;
                 let previous_skills = previous_skills
                     .ok_or_else(|| serde::de::Error::missing_field("previous_skills"))?;
+
+                let game_position_fitness = game_position_fitness.unwrap_or_default();
                 let tiredness =
                     tiredness.ok_or_else(|| serde::de::Error::missing_field("tiredness"))?;
                 let morale = morale.ok_or_else(|| serde::de::Error::missing_field("morale"))?;
@@ -375,6 +391,7 @@ impl<'de> Deserialize<'de> for Player {
                     current_location,
                     skills_training,
                     previous_skills,
+                    game_position_fitness,
                     tiredness,
                     morale,
                     drunkenness,
@@ -412,6 +429,12 @@ impl<'de> Deserialize<'de> for Player {
                     intuition: compact_skills[18],
                     charisma: compact_skills[19],
                 };
+
+                // FIXME: remove me in next version
+                if player.game_position_fitness == [Skill::default(); MAX_GAME_POSITION as usize] {
+                    let current_fitness =
+                        (0..MAX_GAME_POSITION).map(|position| player.position_rating(position));
+                }
 
                 Ok(player)
             }
@@ -596,6 +619,33 @@ impl Player {
         self.build_data.base_level = base_level;
 
         self
+    }
+
+    pub fn position_rating(&self, position: GamePosition) -> Skill {
+        let mut rating = 0 as f32;
+        let weights = position.weights();
+        let mut total_weight = 0 as f32;
+        for i in 0..self.current_skill_array().len() {
+            let w = weights[i].powf(4.0);
+            rating += w * self.current_skill_array()[i];
+            total_weight += w;
+        }
+
+        // FIXME: add position fitness here
+        (rating / total_weight).round()
+    }
+
+    pub fn best_position(&self) -> GamePosition {
+        let mut best = 0;
+        let mut best_rating = 0.0;
+        for i in 0..MAX_GAME_POSITION {
+            let rating = self.position_rating(i);
+            if rating > best_rating {
+                best = i;
+                best_rating = rating;
+            }
+        }
+        best
     }
 
     pub fn current_skill_array(&self) -> [Skill; 20] {

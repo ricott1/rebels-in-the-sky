@@ -8,7 +8,7 @@ use crate::{
         team::Team,
         types::TrainingFocus,
         utils::is_default,
-        GamePositionUtils, GameRating, GameSkill, Rated, Skill,
+        GameRating, GameSkill, Rated, Skill,
     },
     game_engine::constants::NUMBER_OF_ROLLS,
     image::game::PitchImage,
@@ -18,11 +18,11 @@ use anyhow::anyhow;
 use itertools::Itertools;
 
 use libp2p::PeerId;
-use std::sync::LazyLock;
-use rand::{RngExt};
+use rand::RngExt;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::sync::LazyLock;
 use std::{collections::HashMap, ops::Not};
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
@@ -378,7 +378,7 @@ impl EnginePlayer for Player {
             .max(self.min_roll())
             .min(self.max_roll());
 
-        roll as f32 + 2.0 * position.player_rating(self.current_skill_array())
+        roll as f32 + 2.0 * self.position_rating(position)
     }
 }
 

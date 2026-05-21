@@ -3,17 +3,16 @@ use super::clickable_list::ClickableListState;
 use super::gif_map::GifMap;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
+use super::ui_screen::{render_help_block, UiTab};
 use super::widgets::{
     go_to_team_current_planet_button, render_challenge_button, render_spaceship_description,
 };
-use super::ui_screen::{render_help_block, UiTab};
 use super::{
     constants::*,
     traits::{Screen, SplitPanel},
     utils::img_to_lines,
     widgets::{default_block, selectable_list},
 };
-use ratatui::text::Line;
 use crate::core::constants::MIN_PLAYERS_PER_GAME;
 use crate::core::team::Team;
 use crate::image::spaceship::{SPACESHIP_IMAGE_HEIGHT, SPACESHIP_IMAGE_WIDTH};
@@ -34,6 +33,7 @@ use ratatui::crossterm;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::Margin;
 use ratatui::style::{Styled, Stylize};
+use ratatui::text::Line;
 use ratatui::{
     layout::{Alignment, Constraint, Layout},
     prelude::Rect,
@@ -291,9 +291,7 @@ impl TeamListPanel {
                 Paragraph::new(format!(
                     "{} {}",
                     (i as GamePosition).as_str(),
-                    (i as GamePosition)
-                        .player_rating(player.current_skill_array())
-                        .stars()
+                    player.position_rating(i as GamePosition).stars()
                 ))
                 .centered(),
                 player_rating_split[i + 1],
@@ -344,13 +342,12 @@ impl TeamListPanel {
             {
                 if let Some(player) = world.players.get(player_id) {
                     let info = format!("{}\n", player.info.short_name());
-                    let skills = player.current_skill_array();
-                    let best_role = GamePosition::best(skills);
+                    let best_role = player.best_position();
 
                     let role_info = format!(
                         "{:<2} {:<5}",
                         best_role.as_str(),
-                        best_role.player_rating(skills).stars()
+                        player.position_rating(best_role).stars()
                     );
                     let mut button = Button::new(
                         format!("{info}{role_info}"),
@@ -572,12 +569,7 @@ impl Screen for TeamListPanel {
                 Line::from(" are open and on the same planet as you."),
             ],
             vec![
-                (
-                    " Manage your own crew in ",
-                    "My Team",
-                    UiTab::MyTeam,
-                    ".",
-                ),
+                (" Manage your own crew in ", "My Team", UiTab::MyTeam, "."),
                 (
                     " To inspect individual players, browse ",
                     "Pirates",
