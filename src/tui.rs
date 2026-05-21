@@ -17,18 +17,47 @@ use std::time::{Duration, Instant};
 
 const MAX_DRAW_FPS: u8 = 40;
 
-pub trait WriterProxy: io::Write + std::fmt::Debug {
+pub trait WriterProxy: io::Write + std::fmt::Debug + Sized {
     fn send(&mut self) -> impl std::future::Future<Output = std::io::Result<usize>> + Send {
         async { Ok(0) }
     }
+
+    fn close(&mut self) -> impl std::future::Future<Output = ()> {
+        async {
+            let _ = crossterm::execute!(
+                self,
+                LeaveAlternateScreen,
+                DisableMouseCapture,
+                Clear(crossterm::terminal::ClearType::All),
+                Show
+            );
+        }
+    }
 }
 
-impl WriterProxy for io::Stdout {}
+impl WriterProxy for io::Stdout {
+    fn close(&mut self) -> impl std::future::Future<Output = ()> {
+        async {
+            let _ = terminal::disable_raw_mode();
+            let _ = crossterm::execute!(
+                self,
+                LeaveAlternateScreen,
+                DisableMouseCapture,
+                Clear(crossterm::terminal::ClearType::All),
+                Show
+            );
+        }
+    }
+}
 
 #[cfg(feature = "ssh")]
 impl WriterProxy for frittura_ssh_core::SshWriterProxy {
     async fn send(&mut self) -> std::io::Result<usize> {
         frittura_ssh_core::SshWriterProxy::send(self).await
+    }
+
+    async fn close(&mut self) {
+        self.send_and_close().await;
     }
 }
 
@@ -230,26 +259,7 @@ where
     }
 
     pub async fn exit(&mut self) -> AppResult<()> {
-        crossterm::execute!(
-            self.terminal.backend_mut(),
-            LeaveAlternateScreen,
-            DisableMouseCapture,
-            Show
-        )?;
-
-        if self.tui_type == TuiType::Local {
-            crossterm::execute!(
-                self.terminal.backend_mut(),
-                Clear(crossterm::terminal::ClearType::All)
-            )?;
-            terminal::disable_raw_mode()?;
-        }
-
-        #[cfg(feature = "ssh")]
-        if self.tui_type == TuiType::Ssh {
-            self.terminal.backend_mut().writer_mut().send().await?;
-        }
-
+        self.terminal.backend_mut().writer_mut().close().await;
         Ok(())
     }
 }
