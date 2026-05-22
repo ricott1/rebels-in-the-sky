@@ -39,9 +39,24 @@ use ratatui::{
     prelude::Rect,
     widgets::Paragraph,
 };
+use std::collections::HashMap;
 use std::fmt::Display;
+use std::sync::{LazyLock, Mutex};
 
 const IMG_FRAME_WIDTH: u16 = 80;
+
+static FLOOR_CACHE: LazyLock<Mutex<HashMap<u32, Vec<Line<'static>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn floor_lines_for(width: u32) -> Vec<Line<'static>> {
+    let mut cache = FLOOR_CACHE
+        .lock()
+        .expect("floor cache mutex poisoned");
+    cache
+        .entry(width)
+        .or_insert_with(|| img_to_lines(&floor_from_size(width, 2)))
+        .clone()
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum TeamView {
@@ -226,9 +241,8 @@ impl TeamListPanel {
         ])
         .split(area);
 
-        let floor = floor_from_size(area.width as u32, 2);
         frame.render_widget(
-            Paragraph::new(img_to_lines(&floor)).centered(),
+            Paragraph::new(floor_lines_for(area.width as u32)).centered(),
             vertical_split[1].inner(Margin {
                 horizontal: 1,
                 vertical: 0,

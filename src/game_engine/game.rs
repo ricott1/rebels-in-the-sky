@@ -590,7 +590,7 @@ impl Game {
             .copied()
             .collect_vec()
             .try_into()
-            .unwrap_or_else(|_| panic!("There should be exactly {MAX_GAME_POSITION} players"))
+            .expect(format!("There should be exactly {MAX_GAME_POSITION} players.").as_str())
     }
 
     pub fn defending_players_array(&self) -> [&Player; MAX_GAME_POSITION as usize] {
@@ -601,7 +601,7 @@ impl Game {
             .copied()
             .collect_vec()
             .try_into()
-            .unwrap_or_else(|_| panic!("There should be exactly {MAX_GAME_POSITION} players"))
+            .expect(format!("There should be exactly {MAX_GAME_POSITION} players").as_str())
     }
 
     fn get_rng_seed(&self) -> [u8; 32] {

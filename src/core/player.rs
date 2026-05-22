@@ -17,6 +17,7 @@ use crate::{
 };
 use anyhow::anyhow;
 
+use itertools::Itertools;
 use libp2p::PeerId;
 use rand::{
     seq::{IndexedRandom, IteratorRandom},
@@ -432,8 +433,8 @@ impl<'de> Deserialize<'de> for Player {
 
                 // FIXME: remove me in next version
                 if player.game_position_fitness == [Skill::default(); MAX_GAME_POSITION as usize] {
-                    let current_fitness =
-                        (0..MAX_GAME_POSITION).map(|position| player.position_rating(position));
+                    player.set_initial_game_position_fitness(None);
+                    // return Err(anyhow!("Missing game_position_fitness. You probably need to download version 1.6.2 and load the file once to initialize it."))
                 }
 
                 Ok(player)
@@ -548,6 +549,8 @@ impl Player {
 
         self.previous_skills = self.current_skill_array();
 
+        self.set_initial_game_position_fitness(Some(rng));
+
         // Extra potential has a variance that depends
         let std_dev = 3.0 + 1.0 - self.info.relative_age();
         let normal = Normal::new(0.0, std_dev).expect("Should create valid normal distribution");
@@ -621,6 +624,37 @@ impl Player {
         self
     }
 
+    fn set_initial_game_position_fitness(&mut self, rng: Option<&mut ChaCha8Rng>) {
+        let rng = if let Some(r) = rng {
+            r
+        } else {
+            &mut ChaCha8Rng::from_rng(&mut rand::rng())
+        };
+        let positions_by_skill_fitness = (0..MAX_GAME_POSITION)
+            .sorted_by(|&a, &b| {
+                self.position_rating(a)
+                    .partial_cmp(&self.position_rating(b))
+                    .expect("There should be an ordering")
+            })
+            .collect_vec();
+        let base_fitness = [22.0, 16.0, 14.0, 11.0, 7.0];
+
+        // NOTE: this function is called only during initialization, so the relevant value is the intuition at initialization
+        // (potential does not change).
+        let bonus_fitness = 0.15 * (0.5 * self.mental.intuition + 0.5 * self.potential);
+        let std_dev = 4.0;
+        for i in 0..MAX_GAME_POSITION as usize {
+            let mean = base_fitness[i] + bonus_fitness; //Can be larger than MAX_SKILL
+            let normal =
+                Normal::new(mean, std_dev).expect("Should create valid normal distribution");
+            let value = normal.sample(rng).bound();
+            let position = positions_by_skill_fitness[i] as usize;
+            self.game_position_fitness[position] = value;
+        }
+    }
+
+    pub fn increase_game_position_fitness(&mut self) {}
+
     pub fn position_rating(&self, position: GamePosition) -> Skill {
         let mut rating = 0 as f32;
         let weights = position.weights();
@@ -631,8 +665,15 @@ impl Player {
             total_weight += w;
         }
 
-        // FIXME: add position fitness here
-        (rating / total_weight).round()
+        // FIXME: add position fitness here at next major version
+        // let fitness = self
+        //     .game_position_fitness
+        //     .get(position as usize)
+        //     .copied()
+        //     .unwrap_or_default()
+        //     / MAX_SKILL;
+        // (rating / total_weight * fitness).bound()
+        (rating / total_weight).bound()
     }
 
     pub fn best_position(&self) -> GamePosition {
