@@ -47,8 +47,9 @@ impl PitchImage {
         }
     }
 
-    pub fn image(&self) -> AppResult<RgbaImage> {
-        open_image(self.asset_filename())
+    pub fn image(&self) -> RgbaImage {
+        let path = self.asset_filename();
+        open_image(path).expect(format!("Pitch image {path} should exist.").as_str())
     }
 
     pub fn image_with_shot_pixels(
@@ -57,7 +58,7 @@ impl PitchImage {
         last_shot: Option<(u8, u8, bool)>,
         tick: usize,
     ) -> AppResult<RgbaImage> {
-        let mut img = self.image()?;
+        let mut img = self.image();
         for (position, count) in shots_map.iter() {
             let x = position.0;
             let y = position.1;
@@ -115,7 +116,7 @@ mod tests {
             PitchImage::PitchPlanet,
             PitchImage::PitchFancy,
         ] {
-            let img = pitch.image()?;
+            let img = pitch.image();
 
             image::save_buffer(
                 &Path::new(

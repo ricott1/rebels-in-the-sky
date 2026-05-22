@@ -164,14 +164,8 @@ impl TeamInGame {
             stats.insert(player_id, player_stats.clone());
         }
 
-        let initial_tiredness = players
-            .keys()
-            .map(|id| players.get(id).unwrap().tiredness)
-            .collect();
-        let initial_morale = players
-            .keys()
-            .map(|id| players.get(id).unwrap().morale)
-            .collect();
+        let initial_tiredness = players.values().map(|p| p.tiredness).collect();
+        let initial_morale = players.values().map(|p| p.morale).collect();
 
         let network_game_rating = team.network_game_rating.clone();
         Self {
@@ -291,7 +285,7 @@ pub static AWAY_IMPOSSIBLE_SHOT_POSITIONS: LazyLock<Vec<(u8, u8)>> =
     LazyLock::new(|| get_shot_positions(PitchImage::AwayImpossibleShotMask));
 
 fn get_shot_positions(mask: PitchImage) -> Vec<(u8, u8)> {
-    let img = mask.image().unwrap();
+    let img = mask.image();
     // select the position of all pixels with positive alpha
     let mut positions = vec![];
     for x in 0..img.width() {
