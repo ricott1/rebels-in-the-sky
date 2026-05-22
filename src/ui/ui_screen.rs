@@ -37,12 +37,34 @@ use ratatui::{
     layout::{Constraint, Layout},
     Frame,
 };
+use std::collections::HashMap;
+use std::sync::LazyLock;
 use std::time::Instant;
 use std::vec;
 use strum_macros::Display;
 use ratatui_textarea::{CursorMove, TextArea};
 
 const MAX_POPUP_MESSAGES: usize = 8;
+
+static CONSTANT_TAB_BUTTONS: LazyLock<HashMap<UiTab, [Button<'static>; 2]>> = LazyLock::new(|| {
+    let constant_tabs = [
+        UiTab::Crews,
+        UiTab::Pirates,
+        UiTab::Galaxy,
+        UiTab::Games,
+        UiTab::Tournaments,
+        UiTab::SpaceCoves,
+    ];
+    constant_tabs
+        .into_iter()
+        .map(|tab| {
+            let callback = UiCallback::SetUiTab { ui_tab: tab };
+            let unselected = Button::no_box(tab.to_string(), callback.clone());
+            let selected = Button::new(tab.to_string(), callback).selected();
+            (tab, [unselected, selected])
+        })
+        .collect()
+});
 
 /// Returns a centered rect ~60% wide / 80% tall, used for the help popup.
 /// Falls back to the full screen if it would otherwise be smaller than the
@@ -131,7 +153,7 @@ pub enum UiState {
     SpaceAdventure,
 }
 
-#[derive(Debug, Clone, Copy, Hash, Display, PartialEq)]
+#[derive(Debug, Clone, Copy, Hash, Display, PartialEq, Eq)]
 pub enum UiTab {
     #[strum(to_string = "My Team")]
     MyTeam,
@@ -590,52 +612,39 @@ impl UiScreen {
                 let mut constraints = [Constraint::Length(16)].repeat(self.ui_tabs.len());
                 constraints.push(Constraint::Min(0));
 
-                ui_frame.render_widget(Clear, tab_main_split[0]);
                 ui_frame.render_widget(default_block(), tab_main_split[0]);
                 let tab_split = Layout::horizontal(constraints).split(tab_main_split[0]);
 
                 for (idx, &tab) in self.ui_tabs.iter().enumerate() {
-                    let tab_name = if tab == UiTab::MyTeam {
-                        world
-                            .get_own_team()
-                            .expect("Own team should be set if rendering main page")
-                            .name
-                            .clone()
-                    } else if tab == UiTab::Swarm {
-                        format!(
-                            "{}{}",
-                            tab,
-                            if self.swarm_panel.unread_chat_messages() > 99 {
+                    let selected = idx == self.tab_index;
+                    let mut button = if let Some(variants) = CONSTANT_TAB_BUTTONS.get(&tab) {
+                        variants[selected as usize].clone()
+                    } else {
+                        let tab_name = if tab == UiTab::MyTeam {
+                            world
+                                .get_own_team()
+                                .expect("Own team should be set if rendering main page")
+                                .name
+                                .clone()
+                        } else {
+                            let unread = self.swarm_panel.unread_chat_messages();
+                            let suffix = if unread > 99 {
                                 " (99+)".to_string()
-                            } else if self.swarm_panel.unread_chat_messages() > 0 {
-                                format!(" ({})", self.swarm_panel.unread_chat_messages())
+                            } else if unread > 0 {
+                                format!(" ({unread})")
                             } else {
-                                "".to_string()
-                            }
-                        )
-                    } else {
-                        tab.to_string()
+                                String::new()
+                            };
+                            format!("{tab}{suffix}")
+                        };
+                        let callback = UiCallback::SetUiTab { ui_tab: tab };
+                        if selected {
+                            Button::new(tab_name, callback).selected()
+                        } else {
+                            Button::no_box(tab_name, callback)
+                        }
                     };
 
-                    let mut button = if idx == self.tab_index {
-                        Button::new(
-                            tab_name,
-                            UiCallback::SetUiTab {
-                                ui_tab: self.ui_tabs[idx],
-                            },
-                        )
-                        .selected()
-                    } else {
-                        Button::no_box(
-                            tab_name,
-                            UiCallback::SetUiTab {
-                                ui_tab: self.ui_tabs[idx],
-                            },
-                        )
-                    };
-
-                    // Keep tab navigation clickable while the help overlay is active
-                    // (clicking a tab closes help and switches panel).
                     if self.show_help && self.popup_messages.is_empty() {
                         button = button.set_layer(1);
                     }
