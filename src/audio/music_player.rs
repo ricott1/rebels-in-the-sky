@@ -2,7 +2,7 @@ use crate::app::AppEvent;
 use crate::store::ASSETS_DIR;
 use crate::types::AppResult;
 use anyhow::anyhow;
-use rodio::{Decoder, OutputStreamBuilder, Sink};
+use rodio::{Decoder, DeviceSinkBuilder};
 use serde::Deserialize;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -160,15 +160,15 @@ impl MusicPlayer {
         thread::Builder::new()
             .name("audio-thread".into())
             .spawn(move || {
-                let stream_handle = match OutputStreamBuilder::open_default_stream() {
+                let stream_handle = match DeviceSinkBuilder::open_default_sink() {
                     Ok(v) => v,
                     Err(e) => {
-                        log::error!("Failed to create audio output stream: {e}");
+                        log::error!("Failed to create audio output sink: {e}");
                         return;
                     }
                 };
 
-                let sink = Sink::connect_new(&stream_handle.mixer());
+                let sink = rodio::Player::connect_new(&stream_handle.mixer());
                 sink.pause();
 
                 while let Ok(cmd) = receiver.recv() {

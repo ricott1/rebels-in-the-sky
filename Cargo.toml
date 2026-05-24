@@ -70,7 +70,7 @@ unicode-width = "0.2"
 uuid = { version = "1.23.1", features = ["v4", "serde"] }
 
 # Feature deps
-rodio = { version = "0.21", optional = true }
+rodio = { version = "0.22", optional = true }
 russh = { version = "0.60.1", optional = true }
 stream-download = { version = "0.24.0", features = ["reqwest-rustls"], optional = true }
 url = { version = "2.5.8", optional = true }
