@@ -160,6 +160,8 @@ impl MusicPlayer {
         thread::Builder::new()
             .name("audio-thread".into())
             .spawn(move || {
+                super::hacks::mute_stderr_spam();
+
                 let stream_handle = match DeviceSinkBuilder::open_default_sink() {
                     Ok(v) => v,
                     Err(e) => {

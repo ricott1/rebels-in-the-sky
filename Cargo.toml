@@ -75,9 +75,14 @@ russh = { version = "0.60.1", optional = true }
 stream-download = { version = "0.24.0", features = ["reqwest-rustls"], optional = true }
 url = { version = "2.5.8", optional = true }
 
+# Direct access to low-level libs for src/audio/hacks.rs
+[target.'cfg(target_os = "linux")'.dependencies]
+alsa = { version = "0.11", optional = true }
+jack = { version = "0.13", optional = true }
+
 [features]
 default = ["audio"]
-audio = ["rodio", "stream-download", "url"]
+audio = ["alsa", "jack", "rodio", "stream-download", "url"]
 relayer = []
 ssh = ["russh"]
 
