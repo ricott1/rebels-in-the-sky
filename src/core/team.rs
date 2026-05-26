@@ -93,9 +93,6 @@ pub struct Team {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub game_position_fluidity: GamePositionFluidity,
-    #[serde(skip_serializing_if = "is_default")]
-    #[serde(default)]
-    pub training_focus: Option<TrainingFocus>,
     #[serde(skip)]
     pub sent_trades: HashMap<(PlayerId, PlayerId), Trade>,
     #[serde(skip)]
@@ -836,7 +833,7 @@ impl Team {
         Ok(())
     }
 
-    fn can_change_team_settings(&self) -> AppResult<()> {
+    pub fn can_change_team_settings(&self) -> AppResult<()> {
         if self.current_game.is_some() {
             return Err(anyhow!("{} is playing", self.name));
         }
@@ -846,14 +843,6 @@ impl Team {
         }
 
         Ok(())
-    }
-
-    pub fn can_change_tactic(&self) -> AppResult<()> {
-        self.can_change_team_settings()
-    }
-
-    pub fn can_change_training_focus(&self) -> AppResult<()> {
-        self.can_change_team_settings()
     }
 
     pub fn can_trade_resource(

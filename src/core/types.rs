@@ -398,7 +398,7 @@ impl Pronoun {
     }
 }
 
-#[derive(Debug, Clone, Copy, Display, Default, PartialEq, EnumIter)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, EnumIter)]
 pub enum TrainingFocus {
     #[default]
     Athletics,
@@ -409,15 +409,65 @@ pub enum TrainingFocus {
     GamePosition(GamePosition),
 }
 
-impl TrainingFocus {
-    pub fn is_focus(&self, skill_index: usize) -> bool {
+impl Display for TrainingFocus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Athletics => skill_index < 4,
-            Self::Offense => (4..8).contains(&skill_index),
-            Self::Defense => (8..12).contains(&skill_index),
-            Self::Technical => (12..16).contains(&skill_index),
-            Self::Mental => skill_index >= 16,
-            Self::GamePosition(..) => false,
+            Self::Athletics => write!(f, "Athletics"),
+            Self::Offense => write!(f, "Offense"),
+            Self::Defense => write!(f, "Defense"),
+            Self::Technical => write!(f, "Technical"),
+            Self::Mental => write!(f, "Mental"),
+            Self::GamePosition(position) => match position {
+                0 => write!(f, "PG"),
+                1 => write!(f, "SG"),
+                2 => write!(f, "SF"),
+                3 => write!(f, "PF"),
+                4 => write!(f, "C"),
+                _ => unreachable!(),
+            },
+        }
+    }
+}
+
+impl TrainingFocus {
+    pub fn bonus_for_skill(&self, skill_index: usize) -> f32 {
+        match self {
+            Self::Athletics => {
+                if skill_index < 4 {
+                    2.0
+                } else {
+                    0.5
+                }
+            }
+            Self::Offense => {
+                if (4..8).contains(&skill_index) {
+                    2.0
+                } else {
+                    0.5
+                }
+            }
+            Self::Defense => {
+                if (8..12).contains(&skill_index) {
+                    2.0
+                } else {
+                    0.5
+                }
+            }
+            Self::Technical => {
+                if (12..16).contains(&skill_index) {
+                    2.0
+                } else {
+                    0.5
+                }
+            }
+            Self::Mental => {
+                if skill_index >= 16 {
+                    2.0
+                } else {
+                    0.5
+                }
+            }
+            Self::GamePosition(..) => 0.75,
         }
     }
 
@@ -427,7 +477,7 @@ impl TrainingFocus {
             Self::Offense => Some(Self::Defense),
             Self::Defense => Some(Self::Technical),
             Self::Technical => Some(Self::Mental),
-            Self::Mental => None, // FIXME: Some(Self::GamePosition(0)),
+            Self::Mental => Some(Self::GamePosition(0)),
             Self::GamePosition(position) => {
                 if *position < NUM_GAME_POSITIONS - 1 {
                     Some(Self::GamePosition(*position + 1))
@@ -511,14 +561,14 @@ pub enum TeamBonus {
 impl Display for TeamBonus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TeamBonus::Exploration => write!(f, "Exploration"),
-            TeamBonus::Reputation => write!(f, "Reputation"),
-            TeamBonus::SpaceshipSpeed => write!(f, "Ship speed"),
-            TeamBonus::TirednessRecovery => write!(f, "Recovery"),
-            TeamBonus::TradePrice => write!(f, "Trading"),
-            TeamBonus::Training => write!(f, "Training"),
-            TeamBonus::Weapons => write!(f, "Weapons"),
-            TeamBonus::Upgrades => write!(f, "Upgrades"),
+            Self::Exploration => write!(f, "Exploration"),
+            Self::Reputation => write!(f, "Reputation"),
+            Self::SpaceshipSpeed => write!(f, "Ship speed"),
+            Self::TirednessRecovery => write!(f, "Recovery"),
+            Self::TradePrice => write!(f, "Trading"),
+            Self::Training => write!(f, "Training"),
+            Self::Weapons => write!(f, "Weapons"),
+            Self::Upgrades => write!(f, "Upgrades"),
         }
     }
 }
@@ -529,14 +579,14 @@ impl TeamBonus {
     pub fn current_team_bonus(&self, world: &World, team_id: &TeamId) -> AppResult<f32> {
         let team = world.teams.get_or_err(team_id)?;
         let player_id = match self {
-            TeamBonus::Exploration => team.crew_roles.pilot,
-            TeamBonus::SpaceshipSpeed => team.crew_roles.pilot,
-            TeamBonus::Training => team.crew_roles.doctor,
-            TeamBonus::TirednessRecovery => team.crew_roles.doctor,
-            TeamBonus::TradePrice => team.crew_roles.captain,
-            TeamBonus::Reputation => team.crew_roles.captain,
-            TeamBonus::Weapons => team.crew_roles.engineer,
-            TeamBonus::Upgrades => team.crew_roles.engineer,
+            Self::Exploration => team.crew_roles.pilot,
+            Self::SpaceshipSpeed => team.crew_roles.pilot,
+            Self::Training => team.crew_roles.doctor,
+            Self::TirednessRecovery => team.crew_roles.doctor,
+            Self::TradePrice => team.crew_roles.captain,
+            Self::Reputation => team.crew_roles.captain,
+            Self::Weapons => team.crew_roles.engineer,
+            Self::Upgrades => team.crew_roles.engineer,
         };
 
         let skill = if let Some(id) = player_id {

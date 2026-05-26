@@ -1653,7 +1653,7 @@ impl World {
                         training_bonus *= TOURNAMENT_GAME_TRAINING_BONUS_MODIFIER;
                     }
 
-                    let training_focus = team.training_focus;
+                    let training_focus = player.training_focus;
                     player.update_skills_training(
                         stats.experience_at_position,
                         training_bonus,

@@ -61,7 +61,7 @@ pub struct Player {
     pub previous_skills: [Skill; 20], // This is for displaying purposes to show the skills that were recently modified
     // pub skills_potential: [Skill; 20], // Each skill has a separate potential. For retrocompatibility reasons, we allow this array to be all zeros, in which case we initialize it during deserialization.
     pub game_position_fitness: [Skill; NUM_GAME_POSITIONS as usize],
-    training_focus: Option<TrainingFocus>,
+    pub training_focus: Option<TrainingFocus>,
     pub tiredness: Skill,
     pub morale: Skill,
     pub drunkenness: Skill,
@@ -1089,15 +1089,27 @@ impl Player {
                 continue;
             }
 
+            let position_bonus = if matches!(training_focus, Some(TrainingFocus::GamePosition(pos)) if pos == p)
+            {
+                experience_at_position[p as usize] as f32
+                    * EXPERIENCE_PER_SKILL_MULTIPLIER
+                    * training_bonus
+                    * 1.25
+                    * potential_modifier
+            } else {
+                experience_at_position[p as usize] as f32
+                    * EXPERIENCE_PER_SKILL_MULTIPLIER
+                    * training_bonus
+                    * 0.5
+                    * potential_modifier
+            };
+            if let Some(value) = self.game_position_fitness.get_mut(p as usize) {
+                *value = (*value + position_bonus).bound()
+            }
+
             for (idx, &w) in p.weights().iter().enumerate() {
                 let training_focus_bonus = match training_focus {
-                    Some(focus) => {
-                        if focus.is_focus(idx) {
-                            2.0
-                        } else {
-                            0.5
-                        }
-                    }
+                    Some(focus) => focus.bonus_for_skill(idx),
                     None => 1.0,
                 };
                 self.skills_training[idx] += experience_at_position[p as usize] as f32

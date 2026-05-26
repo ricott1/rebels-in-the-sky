@@ -13,6 +13,7 @@ use super::{
 use crate::app_version;
 use crate::core::{AsteroidUpgradeTarget, UpgradeableElement};
 use crate::game_engine::game::Game;
+use crate::game_engine::types::{GamePositionFluidity, SubstitutionTendency};
 use crate::game_engine::{Tournament, TournamentId, TournamentType};
 use crate::network::types::TournamentRequestState;
 use crate::network::{challenge::Challenge, trade::Trade};
@@ -125,7 +126,12 @@ pub enum UiCallback {
     SetTeamTactic {
         tactic: Tactic,
     },
-    SetNextTeamTactic,
+    SetTeamSubstitutionTendency {
+        substitution_tendency: SubstitutionTendency,
+    },
+    SetTeamGamePositionFluidity {
+        game_position_fluidity: GamePositionFluidity,
+    },
     SetUiTab {
         ui_tab: UiTab,
     },
@@ -223,7 +229,7 @@ pub enum UiCallback {
     TogglePlayerStatusView,
     TogglePlayerWidgetView,
     NextTrainingFocus {
-        team_id: TeamId,
+        player_id: PlayerId,
     },
     TravelToPlanet {
         planet_id: PlanetId,
@@ -777,17 +783,24 @@ impl UiCallback {
         })
     }
 
-    fn next_training_focus(team_id: TeamId) -> AppCallback {
+    fn next_training_focus(player_id: PlayerId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let mut team = app.world.teams.get_or_err(&team_id)?.clone();
-            team.can_change_training_focus()?;
+            let player = app.world.players.get_mut_or_err(&player_id)?;
+            let team_id = if let Some(id) = player.team {
+                id
+            } else {
+                return Err(anyhow!(
+                    "Player should have a team to change training focus."
+                ));
+            };
+            let team = app.world.teams.get_mut_or_err(&team_id)?;
+            team.can_change_team_settings()?;
 
-            let new_focus = match team.training_focus {
+            let new_focus = match player.training_focus {
                 Some(focus) => focus.next(),
                 None => Some(TrainingFocus::default()),
             };
-            team.training_focus = new_focus;
-            app.world.teams.insert(team.id, team);
+            player.training_focus = new_focus;
             app.world.dirty = true;
             app.world.dirty_ui = true;
             Ok(None)
@@ -1237,25 +1250,36 @@ impl UiCallback {
                 Ok(None)
             }
             Self::SetTeamTactic { tactic } => {
-                let own_team = app.world.get_own_team()?;
-                let mut team = own_team.clone();
-                team.game_tactic = *tactic;
-                app.world.teams.insert(team.id, team);
+                let own_team = app.world.get_own_team_mut()?;
+                own_team.game_tactic = *tactic;
                 app.world.dirty = true;
                 app.world.dirty_ui = true;
                 app.world.dirty_network = true;
                 Ok(None)
             }
-            Self::SetNextTeamTactic => {
-                let own_team = app.world.get_own_team()?;
-                let mut team = own_team.clone();
-                team.game_tactic = team.game_tactic.next();
-                app.world.teams.insert(team.id, team);
+
+            Self::SetTeamSubstitutionTendency {
+                substitution_tendency,
+            } => {
+                let own_team = app.world.get_own_team_mut()?;
+                own_team.substitution_tendency = *substitution_tendency;
                 app.world.dirty = true;
                 app.world.dirty_ui = true;
                 app.world.dirty_network = true;
                 Ok(None)
             }
+
+            Self::SetTeamGamePositionFluidity {
+                game_position_fluidity,
+            } => {
+                let own_team = app.world.get_own_team_mut()?;
+                own_team.game_position_fluidity = *game_position_fluidity;
+                app.world.dirty = true;
+                app.world.dirty_ui = true;
+                app.world.dirty_network = true;
+                Ok(None)
+            }
+
             Self::TogglePitchView => {
                 app.ui.game_panel.toggle_pitch_view();
                 Ok(None)
@@ -1794,7 +1818,7 @@ impl UiCallback {
                 player_id,
                 position,
             } => Self::swap_player_positions(*player_id, *position)(app),
-            Self::NextTrainingFocus { team_id } => Self::next_training_focus(*team_id)(app),
+            Self::NextTrainingFocus { player_id } => Self::next_training_focus(*player_id)(app),
             Self::TravelToPlanet { planet_id } => Self::travel_to_planet(*planet_id)(app),
             Self::ExploreAroundPlanet { duration } => Self::explore_around_planet(*duration)(app),
             Self::ZoomToPlanet {

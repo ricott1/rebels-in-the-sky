@@ -40,7 +40,7 @@ use strum::IntoEnumIterator;
 pub enum MyTeamView {
     #[default]
     Info,
-    Team,
+    TeamSettings,
     Games,
     Market,
     Shipyard,
@@ -50,8 +50,8 @@ pub enum MyTeamView {
 impl MyTeamView {
     const fn next(&self) -> Self {
         match self {
-            Self::Info => Self::Team,
-            Self::Team => Self::Games,
+            Self::Info => Self::TeamSettings,
+            Self::TeamSettings => Self::Games,
             Self::Games => Self::Market,
             Self::Market => Self::Shipyard,
             Self::Shipyard => Self::Asteroids,
@@ -107,9 +107,9 @@ impl MyTeamPanel {
         .set_hover_text("View crew information.");
 
         let mut view_team_button = Button::new(
-            "Team",
+            "Team Settings",
             UiCallback::SetMyTeamPanelView {
-                view: MyTeamView::Team,
+                view: MyTeamView::TeamSettings,
             },
         )
         .bold()
@@ -166,7 +166,7 @@ impl MyTeamPanel {
 
         match self.view {
             MyTeamView::Info => view_info_button.select(),
-            MyTeamView::Team => view_team_button.select(),
+            MyTeamView::TeamSettings => view_team_button.select(),
             MyTeamView::Games => view_games_button.select(),
             MyTeamView::Market => view_market_button.select(),
             MyTeamView::Shipyard => view_shipyard_button.select(),
@@ -649,15 +649,12 @@ impl MyTeamPanel {
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
         ])
-        .split(split[0].inner(Margin {
-            horizontal: 1,
-            vertical: 1,
-        }));
+        .split(split[0].inner(Margin::new(1, 1)));
 
-        let top_button_split =
-            Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-                .split(btm_split[0]);
+        let can_change_team_settings = own_team.can_change_team_settings();
 
         let mut tactic_button = Button::new(
             format!("tactic: {}", own_team.game_tactic),
@@ -672,33 +669,52 @@ impl MyTeamPanel {
         ))
         .set_hotkey(ui_key::team::SET_TACTIC);
 
-        let can_change_tactic = own_team.can_change_tactic();
-        if let Err(err) = can_change_tactic {
+        if let Err(err) = can_change_team_settings.as_ref() {
             tactic_button.disable(Some(err.to_string()));
         }
 
-        frame.render_interactive_widget(tactic_button, top_button_split[0]);
+        frame.render_interactive_widget(tactic_button, btm_split[0]);
 
-        let can_change_training_focus = own_team.can_change_training_focus();
-        let mut training_button = Button::new(
-            format!(
-                "Training: {}",
-                if let Some(focus) = own_team.training_focus {
-                    focus.to_string()
-                } else {
-                    "General".to_string()
-                }
-            ),
-            UiCallback::NextTrainingFocus {
-                team_id: own_team.id,
+        let mut sub_tendency_button = Button::new(
+            format!("substitutions: {}", own_team.substitution_tendency),
+            UiCallback::SetTeamSubstitutionTendency {
+                substitution_tendency: own_team.substitution_tendency.next(),
             },
         )
-        .set_hover_text("Change the training focus, which skills increase faster.")
-        .set_hotkey(ui_key::team::TRAINING_FOCUS);
-        if let Err(err) = can_change_training_focus {
-            training_button.disable(Some(err.to_string()));
+        .set_hover_text(format!(
+            "{}: {}",
+            own_team.substitution_tendency,
+            own_team.substitution_tendency.description()
+        ))
+        .set_hotkey(ui_key::team::SET_SUBSTITUTION_TENDENCY);
+
+        if let Err(err) = can_change_team_settings.as_ref() {
+            sub_tendency_button.disable(Some(err.to_string()));
         }
-        frame.render_interactive_widget(training_button, top_button_split[1]);
+
+        frame.render_interactive_widget(sub_tendency_button, btm_split[1]);
+
+        let mut game_position_fluidity_button = Button::new(
+            format!(
+                "game position fluidity: {}",
+                own_team.game_position_fluidity
+            ),
+            UiCallback::SetTeamGamePositionFluidity {
+                game_position_fluidity: own_team.game_position_fluidity.next(),
+            },
+        )
+        .set_hover_text(format!(
+            "{}: {}",
+            own_team.game_position_fluidity,
+            own_team.game_position_fluidity.description()
+        ))
+        .set_hotkey(ui_key::team::SET_GAME_POSITION_FLUIDITY);
+
+        if let Err(err) = can_change_team_settings.as_ref() {
+            game_position_fluidity_button.disable(Some(err.to_string()));
+        }
+
+        frame.render_interactive_widget(game_position_fluidity_button, btm_split[2]);
 
         let local_challenge_button = Button::new(
             format!(
@@ -713,7 +729,7 @@ impl MyTeamPanel {
         )
         .set_hover_text("Accept challenges from local teams automatically.".to_string())
         .set_hotkey(ui_key::team::TOGGLE_ACCEPT_LOCAL_CHALLENGES);
-        frame.render_interactive_widget(local_challenge_button, btm_split[1]);
+        frame.render_interactive_widget(local_challenge_button, btm_split[3]);
 
         let network_challenge_button = Button::new(
             format!(
@@ -728,7 +744,7 @@ impl MyTeamPanel {
         )
         .set_hover_text("Accept challenges from network teams automatically.".to_string())
         .set_hotkey(ui_key::team::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
-        frame.render_interactive_widget(network_challenge_button, btm_split[2]);
+        frame.render_interactive_widget(network_challenge_button, btm_split[4]);
 
         match own_team.current_location {
             TeamLocation::OnPlanet { .. } => {
@@ -1755,12 +1771,9 @@ impl MyTeamPanel {
             Constraint::Length(12),
             Constraint::Length(24),
             Constraint::Length(24),
-            Constraint::Min(0),
+            Constraint::Fill(1),
         ])
-        .split(area.inner(Margin {
-            vertical: 0,
-            horizontal: 1,
-        }));
+        .split(area.inner(Margin::new(1, 0)));
 
         let can_set_crew_role = own_team.can_set_crew_role(player);
 
@@ -2136,7 +2149,8 @@ impl MyTeamPanel {
             Constraint::Length(6),  //bench
             Constraint::Length(6),  //bench
             Constraint::Length(30), //auto-assign
-            Constraint::Min(0),
+            Constraint::Length(24), //training
+            Constraint::Fill(1),
         ])
         .split(table_bottom[1].inner(Margin {
             vertical: 0,
@@ -2185,6 +2199,28 @@ impl MyTeamPanel {
                 .set_hover_text("Auto-assign players' initial position.")
                 .set_hotkey(ui_key::team::AUTO_ASSIGN);
         frame.render_interactive_widget(auto_assign_button, position_button_splits[7]);
+
+        let can_change_team_settings = own_team.can_change_team_settings();
+        let mut training_button = Button::new(
+            format!(
+                "Training: {}",
+                if let Some(focus) = player.training_focus {
+                    focus.to_string()
+                } else {
+                    "General".to_string()
+                }
+            ),
+            UiCallback::NextTrainingFocus {
+                player_id: player.id,
+            },
+        )
+        .set_hover_text("Change the training focus to change skills increase faster.")
+        .set_hotkey(ui_key::player::TRAINING_FOCUS);
+        if let Err(err) = can_change_team_settings {
+            training_button.disable(Some(err.to_string()));
+        }
+        frame.render_interactive_widget(training_button, position_button_splits[8]);
+
         self.render_player_buttons(&sorted_players, frame, world, table_bottom[2])?;
 
         Ok(())
@@ -2539,7 +2575,7 @@ impl Screen for MyTeamPanel {
 
         match self.view {
             MyTeamView::Info => self.render_info(frame, world, bottom_split[1])?,
-            MyTeamView::Team => self.render_team(frame, world, bottom_split[1])?,
+            MyTeamView::TeamSettings => self.render_team(frame, world, bottom_split[1])?,
             MyTeamView::Games => self.render_games(frame, world, bottom_split[1])?,
             MyTeamView::Market => self.render_market(frame, world, bottom_split[1])?,
             MyTeamView::Shipyard => self.render_shipyard(frame, world, bottom_split[1])?,
@@ -2643,8 +2679,13 @@ impl Screen for MyTeamPanel {
                 )),
                 Line::from(format!(
                     "   {} / {}      Set training focus / cycle tactic",
-                    ui_key::team::TRAINING_FOCUS,
+                    ui_key::player::TRAINING_FOCUS,
                     ui_key::team::SET_TACTIC
+                )),
+                Line::from(format!(
+                    "   {} / {}      Cycle substitution tendency / game position fluidity",
+                    ui_key::team::SET_SUBSTITUTION_TENDENCY,
+                    ui_key::team::SET_GAME_POSITION_FLUIDITY
                 )),
             ],
         );

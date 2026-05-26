@@ -6,7 +6,6 @@ use crate::{
         position::{GamePosition, NUM_GAME_POSITIONS},
         skill::{MAX_SKILL, MIN_SKILL},
         team::Team,
-        types::TrainingFocus,
         utils::is_default,
         GameRating, GameSkill, Rated, Skill,
     },
@@ -24,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::sync::LazyLock;
 use std::{collections::HashMap, ops::Not};
+use strum::Display;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GameStats {
@@ -145,7 +145,6 @@ pub struct TeamInGame {
     pub players: PlayerMap,
     pub stats: GameStatsMap,
     pub tactic: Tactic,
-    pub training_focus: Option<TrainingFocus>,
     pub momentum: u8,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
@@ -180,7 +179,6 @@ impl TeamInGame {
             players,
             stats,
             tactic: team.game_tactic,
-            training_focus: team.training_focus,
             network_game_rating,
             ..Default::default()
         }
@@ -246,7 +244,7 @@ impl Rated for TeamInGame {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, Clone, Copy, Default, Display, PartialEq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum SubstitutionTendency {
     Low,
@@ -255,13 +253,49 @@ pub enum SubstitutionTendency {
     High,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize_repr, Deserialize_repr)]
+impl SubstitutionTendency {
+    pub const fn next(&self) -> Self {
+        match self {
+            Self::Low => Self::Normal,
+            Self::Normal => Self::High,
+            Self::High => Self::Low,
+        }
+    }
+
+    pub const fn description(&self) -> &'static str {
+        match self {
+            Self::Low => "Tend to substitute players less frequently during games.",
+            Self::Normal => "Tend to substitute players with default frequency during games.",
+            Self::High => "Tend to substitute players more often during games.",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Display, PartialEq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum GamePositionFluidity {
     Low,
     #[default]
     Normal,
     High,
+}
+
+impl GamePositionFluidity {
+    pub const fn next(&self) -> Self {
+        match self {
+            Self::Low => Self::Normal,
+            Self::Normal => Self::High,
+            Self::High => Self::Low,
+        }
+    }
+
+    pub const fn description(&self) -> &'static str {
+        match self {
+            Self::Low => "Tend to put players in their best position as much as possible.",
+            Self::Normal => "Tend to put players in their best position with default frequency.",
+            Self::High => "Tend to allow players to play in more positions.",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize_repr, Deserialize_repr)]
