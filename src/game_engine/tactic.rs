@@ -35,7 +35,7 @@ impl Tactic {
             .expect("There should be at least a tactic")
     }
 
-    pub fn next(&self) -> Self {
+    pub const fn next(&self) -> Self {
         match self {
             Self::Balanced => Self::BigPirates,
             Self::BigPirates => Self::Arrembaggio,
