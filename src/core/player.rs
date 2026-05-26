@@ -632,19 +632,19 @@ impl Player {
         };
         let positions_by_skill_fitness = (0..NUM_GAME_POSITIONS)
             .sorted_by(|&a, &b| {
-                self.position_rating(a)
-                    .partial_cmp(&self.position_rating(b))
+                self.position_rating(b)
+                    .partial_cmp(&self.position_rating(a))
                     .expect("There should be an ordering")
             })
             .collect_vec();
-        let base_fitness = [22.0, 16.0, 14.0, 11.0, 7.0];
 
         // NOTE: this function is called only during initialization, so the relevant value is the intuition at initialization
         // (potential does not change).
-        let bonus_fitness = 0.15 * (0.5 * self.mental.intuition + 0.5 * self.potential);
+        let bonus_fitness = 0.15 * (0.5 * self.mental.intuition + 0.5 * self.potential)
+            + self.info.population.bonus_base_fitness();
         let std_dev = 4.0;
         for i in 0..NUM_GAME_POSITIONS as usize {
-            let mean = base_fitness[i] + bonus_fitness; //Can be larger than MAX_SKILL
+            let mean = BASE_FITNESS[i] + bonus_fitness; //Can be larger than MAX_SKILL
             let normal =
                 Normal::new(mean, std_dev).expect("Should create valid normal distribution");
             let value = normal.sample(rng).bound();

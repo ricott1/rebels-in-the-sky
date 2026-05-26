@@ -5,7 +5,7 @@ use super::{
     world::World,
 };
 use crate::{
-    core::{Resource, Trait},
+    core::{Resource, Skill, Trait},
     image::color_map::SkinColorMap,
     types::{AppResult, HashMapWithResult, PlanetId, SystemTimeTick, TeamId, Tick},
 };
@@ -69,7 +69,7 @@ pub enum Population {
 impl Serialize for Population {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         // Serialize the enum as a u8.
-        // The Human option is serialized as 1000.(region as u8)
+        // The Human option is serialized as 100 + (region as u8)
         let value = match self {
             Self::Human { region } => 100 + *region as u8,
             Self::Yardalaim => 1,
@@ -86,7 +86,7 @@ impl Serialize for Population {
 impl<'de> Deserialize<'de> for Population {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         // Deserialize the enum from a u8.
-        // The Human option is deserialized as 1000.(region as u8)
+        // The Human option is deserialized as 100 + (region as u8)
         let value = u8::deserialize(deserializer)?;
         match value {
             1 => Ok(Self::Yardalaim),
@@ -155,9 +155,19 @@ impl Population {
             Self::Yardalaim => 120.0,
             Self::Polpett => 41.0,
             Self::Juppa => 110.0,
-            Self::Galdari => 270.0,
+            Self::Galdari => 220.0,
             Self::Pupparoll => 45.0,
             Self::Octopulp => 18.0,
+        }
+    }
+
+    pub fn bonus_base_fitness(&self) -> Skill {
+        match self {
+            Self::Human { .. } => 2.5,
+            Self::Octopulp => 1.75,
+            Self::Juppa => -2.0,
+            Self::Galdari => -1.0,
+            _ => 0.0,
         }
     }
 
