@@ -248,6 +248,24 @@ impl Rated for TeamInGame {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
+pub enum SubstitutionTendency {
+    Low,
+    #[default]
+    Normal,
+    High,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
+pub enum GamePositionFluidity {
+    Low,
+    #[default]
+    Normal,
+    High,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
 pub enum Possession {
     #[default]
     Home,

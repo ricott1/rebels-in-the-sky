@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     core::{constants::MAX_CREW_SIZE, utils::is_default},
-    game_engine::{tactic::Tactic, types::EnginePlayer, Tournament, TournamentId, TournamentState},
+    game_engine::{tactic::Tactic, types::*, Tournament, TournamentId, TournamentState},
     network::{challenge::Challenge, trade::Trade},
     types::*,
 };
@@ -68,7 +68,11 @@ pub struct Team {
     #[serde(default)]
     pub asteroid_ids: Vec<PlanetId>,
     pub current_location: TeamLocation,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub peer_id: Option<PeerId>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub current_game: Option<GameId>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
@@ -83,6 +87,14 @@ pub struct Team {
     #[serde(default)]
     pub network_game_rating: GameRating,
     pub game_tactic: Tactic,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub substitution_tendency: SubstitutionTendency,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub game_position_fluidity: GamePositionFluidity,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub training_focus: Option<TrainingFocus>,
     #[serde(skip)]
     pub sent_trades: HashMap<(PlayerId, PlayerId), Trade>,
