@@ -2357,7 +2357,7 @@ impl World {
                 continue;
             }
 
-            if let Ok(pirates) = Self::get_team_players(&self.players, &team) {
+            if let Ok(pirates) = Self::get_team_players(&self.players, team) {
                 team.player_ids = Team::best_position_assignment(pirates);
             }
 
@@ -2454,7 +2454,7 @@ impl World {
                 assert!(candidates.len() <= 1);
                 // Check if weakest pirate is worse than best free pirate.
                 // If not, continue.
-                if let Ok(pirates) = Self::get_team_players(&self.players, &team) {
+                if let Ok(pirates) = Self::get_team_players(&self.players, team) {
                     let worst_pirate = *pirates
                         .sort_by_rating()
                         .last()

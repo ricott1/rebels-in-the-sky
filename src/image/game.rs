@@ -49,7 +49,7 @@ impl PitchImage {
 
     pub fn image(&self) -> RgbaImage {
         let path = self.asset_filename();
-        open_image(path).expect(format!("Pitch image {path} should exist.").as_str())
+        open_image(path).unwrap_or_else(|_| panic!("Pitch image {path} should exist."))
     }
 
     pub fn image_with_shot_pixels(
