@@ -61,6 +61,7 @@ pub struct Player {
     pub previous_skills: [Skill; 20], // This is for displaying purposes to show the skills that were recently modified
     // pub skills_potential: [Skill; 20], // Each skill has a separate potential. For retrocompatibility reasons, we allow this array to be all zeros, in which case we initialize it during deserialization.
     pub game_position_fitness: [Skill; NUM_GAME_POSITIONS as usize],
+    training_focus: Option<TrainingFocus>,
     pub tiredness: Skill,
     pub morale: Skill,
     pub drunkenness: Skill,
@@ -89,6 +90,7 @@ impl Default for Player {
             skills_training: [Skill::default(); 20],
             previous_skills: [Skill::default(); 20],
             game_position_fitness: [Skill::default(); NUM_GAME_POSITIONS as usize],
+            training_focus: None,
             tiredness: Skill::default(),
             morale: Skill::default(),
             drunkenness: Skill::default(),
@@ -106,7 +108,6 @@ impl Serialize for Player {
         let compact_skills = self.current_skill_array().to_vec();
         let mut state = serializer.serialize_struct("Player", 18)?;
         state.serialize_field("id", &self.id)?;
-
         state.serialize_field("peer_id", &self.peer_id)?;
         state.serialize_field("version", &self.version)?;
         state.serialize_field("info", &self.info)?;
@@ -123,6 +124,7 @@ impl Serialize for Player {
         state.serialize_field("drunkenness", &self.drunkenness)?;
         state.serialize_field("compact_skills", &compact_skills)?;
         state.serialize_field("game_position_fitness", &self.game_position_fitness)?;
+        state.serialize_field("training_focus", &self.training_focus)?;
         state.serialize_field("historical_stats", &self.historical_stats)?;
         state.end()
     }
@@ -147,6 +149,7 @@ impl<'de> Deserialize<'de> for Player {
             PreviousSkills,
             SkillsTraining,
             GamePositionFitness,
+            TrainingFocus,
             Tiredness,
             Morale,
             Drunkenness,
@@ -183,6 +186,7 @@ impl<'de> Deserialize<'de> for Player {
                             "previous_skills" => Ok(Field::PreviousSkills),
                             "skills_training" => Ok(Field::SkillsTraining),
                             "game_position_fitness" => Ok(Field::GamePositionFitness),
+                            "training_focus" => Ok(Field::TrainingFocus),
                             "tiredness" => Ok(Field::Tiredness),
                             "morale" => Ok(Field::Morale),
                             "drunkenness" => Ok(Field::Drunkenness),
@@ -223,6 +227,7 @@ impl<'de> Deserialize<'de> for Player {
                 let mut skills_training = None;
                 let mut previous_skills = None;
                 let mut game_position_fitness = None;
+                let mut training_focus = None;
                 let mut tiredness = None;
                 let mut morale = None;
                 let mut drunkenness = None;
@@ -311,6 +316,12 @@ impl<'de> Deserialize<'de> for Player {
                             }
                             game_position_fitness = Some(map.next_value()?);
                         }
+                        Field::TrainingFocus => {
+                            if training_focus.is_some() {
+                                return Err(serde::de::Error::duplicate_field("training_focus"));
+                            }
+                            training_focus = Some(map.next_value()?);
+                        }
                         Field::Tiredness => {
                             if tiredness.is_some() {
                                 return Err(serde::de::Error::duplicate_field("tiredness"));
@@ -365,6 +376,7 @@ impl<'de> Deserialize<'de> for Player {
                     .ok_or_else(|| serde::de::Error::missing_field("previous_skills"))?;
 
                 let game_position_fitness = game_position_fitness.unwrap_or_default();
+                let training_focus = training_focus.unwrap_or_default();
                 let tiredness =
                     tiredness.ok_or_else(|| serde::de::Error::missing_field("tiredness"))?;
                 let morale = morale.ok_or_else(|| serde::de::Error::missing_field("morale"))?;
@@ -393,6 +405,7 @@ impl<'de> Deserialize<'de> for Player {
                     skills_training,
                     previous_skills,
                     game_position_fitness,
+                    training_focus,
                     tiredness,
                     morale,
                     drunkenness,
@@ -454,6 +467,8 @@ impl<'de> Deserialize<'de> for Player {
             "current_location",
             "skills_training",
             "previous_skills",
+            "game_position_fitness",
+            "training_focus",
             "tiredness",
             "morale",
             "drunkenness",

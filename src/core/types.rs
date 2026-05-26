@@ -5,7 +5,7 @@ use super::{
     world::World,
 };
 use crate::{
-    core::{Resource, Skill, Trait},
+    core::{GamePosition, Resource, Skill, Trait, NUM_GAME_POSITIONS},
     image::color_map::SkinColorMap,
     types::{AppResult, HashMapWithResult, PlanetId, SystemTimeTick, TeamId, Tick},
 };
@@ -398,10 +398,7 @@ impl Pronoun {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, Display, Serialize_repr, Deserialize_repr, PartialEq, EnumIter, Default,
-)]
-#[repr(u8)]
+#[derive(Debug, Clone, Copy, Display, Default, PartialEq, EnumIter)]
 pub enum TrainingFocus {
     #[default]
     Athletics,
@@ -409,6 +406,7 @@ pub enum TrainingFocus {
     Defense,
     Technical,
     Mental,
+    GamePosition(GamePosition),
 }
 
 impl TrainingFocus {
@@ -419,6 +417,7 @@ impl TrainingFocus {
             Self::Defense => (8..12).contains(&skill_index),
             Self::Technical => (12..16).contains(&skill_index),
             Self::Mental => skill_index >= 16,
+            Self::GamePosition(..) => false,
         }
     }
 
@@ -428,7 +427,47 @@ impl TrainingFocus {
             Self::Offense => Some(Self::Defense),
             Self::Defense => Some(Self::Technical),
             Self::Technical => Some(Self::Mental),
-            Self::Mental => None,
+            Self::Mental => None, // FIXME: Some(Self::GamePosition(0)),
+            Self::GamePosition(position) => {
+                if *position < NUM_GAME_POSITIONS - 1 {
+                    Some(Self::GamePosition(*position + 1))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+impl Serialize for TrainingFocus {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Serialize the enum as a u8.
+        // The GamePosition option is serialized as 10 + (position as u8)
+        let value = match self {
+            Self::Athletics => 0,
+            Self::Offense => 1,
+            Self::Defense => 2,
+            Self::Technical => 3,
+            Self::Mental => 4,
+            Self::GamePosition(position) => 10 + position,
+        };
+        value.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for TrainingFocus {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Deserialize the enum from a u8.
+        // The GamePosition option is deserialized as 100 + (position as u8)
+        let value = u8::deserialize(deserializer)?;
+        match value {
+            0 => Ok(Self::Athletics),
+            1 => Ok(Self::Offense),
+            2 => Ok(Self::Defense),
+            3 => Ok(Self::Technical),
+            4 => Ok(Self::Mental),
+            10..=14 => Ok(Self::GamePosition(value - 10)),
+            _ => Err(serde::de::Error::custom("Invalid value for TrainingFocus")),
         }
     }
 }
