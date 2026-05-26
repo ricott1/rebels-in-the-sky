@@ -1921,7 +1921,7 @@ impl MyTeamPanel {
                     Some(idx) => format!(
                         "{:<2} {:<5}",
                         (idx as GamePosition).as_str(),
-                        if (idx as GamePosition) < MAX_GAME_POSITION {
+                        if (idx as GamePosition) < NUM_GAME_POSITIONS {
                             player.position_rating(idx as GamePosition).stars()
                         } else {
                             "".to_string()

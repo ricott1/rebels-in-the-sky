@@ -1,7 +1,7 @@
 use super::{
     constants::*,
     jersey::Jersey,
-    position::{GamePosition, GamePositionUtils, MAX_GAME_POSITION},
+    position::{GamePosition, GamePositionUtils, NUM_GAME_POSITIONS},
     resources::Resource,
     role::CrewRole,
     skill::*,
@@ -60,7 +60,7 @@ pub struct Player {
     pub skills_training: [Skill; 20],
     pub previous_skills: [Skill; 20], // This is for displaying purposes to show the skills that were recently modified
     // pub skills_potential: [Skill; 20], // Each skill has a separate potential. For retrocompatibility reasons, we allow this array to be all zeros, in which case we initialize it during deserialization.
-    pub game_position_fitness: [Skill; MAX_GAME_POSITION as usize],
+    pub game_position_fitness: [Skill; NUM_GAME_POSITIONS as usize],
     pub tiredness: Skill,
     pub morale: Skill,
     pub drunkenness: Skill,
@@ -88,7 +88,7 @@ impl Default for Player {
             current_location: PlayerLocation::default(),
             skills_training: [Skill::default(); 20],
             previous_skills: [Skill::default(); 20],
-            game_position_fitness: [Skill::default(); MAX_GAME_POSITION as usize],
+            game_position_fitness: [Skill::default(); NUM_GAME_POSITIONS as usize],
             tiredness: Skill::default(),
             morale: Skill::default(),
             drunkenness: Skill::default(),
@@ -432,7 +432,7 @@ impl<'de> Deserialize<'de> for Player {
                 };
 
                 // FIXME: remove me in next version
-                if player.game_position_fitness == [Skill::default(); MAX_GAME_POSITION as usize] {
+                if player.game_position_fitness == [Skill::default(); NUM_GAME_POSITIONS as usize] {
                     player.set_initial_game_position_fitness(None);
                     // return Err(anyhow!("Missing game_position_fitness. You probably need to download version 1.6.2 and load the file once to initialize it."))
                 }
@@ -485,7 +485,7 @@ impl Player {
         let position = if let Some(pos) = self.build_data.position {
             pos
         } else {
-            rng.random_range(0..MAX_GAME_POSITION)
+            rng.random_range(0..NUM_GAME_POSITIONS)
         };
 
         self.info.population = if let Some(population) = self.build_data.population {
@@ -630,7 +630,7 @@ impl Player {
         } else {
             &mut ChaCha8Rng::from_rng(&mut rand::rng())
         };
-        let positions_by_skill_fitness = (0..MAX_GAME_POSITION)
+        let positions_by_skill_fitness = (0..NUM_GAME_POSITIONS)
             .sorted_by(|&a, &b| {
                 self.position_rating(a)
                     .partial_cmp(&self.position_rating(b))
@@ -643,7 +643,7 @@ impl Player {
         // (potential does not change).
         let bonus_fitness = 0.15 * (0.5 * self.mental.intuition + 0.5 * self.potential);
         let std_dev = 4.0;
-        for i in 0..MAX_GAME_POSITION as usize {
+        for i in 0..NUM_GAME_POSITIONS as usize {
             let mean = base_fitness[i] + bonus_fitness; //Can be larger than MAX_SKILL
             let normal =
                 Normal::new(mean, std_dev).expect("Should create valid normal distribution");
@@ -679,7 +679,7 @@ impl Player {
     pub fn best_position(&self) -> GamePosition {
         let mut best = 0;
         let mut best_rating = 0.0;
-        for i in 0..MAX_GAME_POSITION {
+        for i in 0..NUM_GAME_POSITIONS {
             let rating = self.position_rating(i);
             if rating > best_rating {
                 best = i;
@@ -1056,7 +1056,7 @@ impl Player {
 
     pub fn update_skills_training(
         &mut self,
-        experience_at_position: [u32; MAX_GAME_POSITION as usize],
+        experience_at_position: [u32; NUM_GAME_POSITIONS as usize],
         training_bonus: f32,
         training_focus: Option<TrainingFocus>,
     ) {
@@ -1069,7 +1069,7 @@ impl Player {
         } else {
             1.0 + (self.potential - self.average_skill()) / MAX_SKILL
         };
-        for p in 0..MAX_GAME_POSITION {
+        for p in 0..NUM_GAME_POSITIONS {
             if experience_at_position[p as usize] == 0 {
                 continue;
             }

@@ -3,7 +3,7 @@ use crate::{
     core::{
         constants::MAX_PLAYERS_PER_GAME,
         player::Player,
-        position::{GamePosition, MAX_GAME_POSITION},
+        position::{GamePosition, NUM_GAME_POSITIONS},
         skill::{MAX_SKILL, MIN_SKILL},
         team::Team,
         types::TrainingFocus,
@@ -158,7 +158,7 @@ impl TeamInGame {
 
         for (idx, &player_id) in players.keys().enumerate() {
             let mut player_stats = GameStats::default();
-            if (idx as GamePosition) < MAX_GAME_POSITION {
+            if (idx as GamePosition) < NUM_GAME_POSITIONS {
                 player_stats.position = Some(idx as GamePosition);
             }
             stats.insert(player_id, player_stats.clone());

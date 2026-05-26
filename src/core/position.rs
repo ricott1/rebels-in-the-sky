@@ -1,7 +1,7 @@
 use super::constants::MAX_PLAYERS_PER_GAME;
 
 pub type GamePosition = u8;
-pub const MAX_GAME_POSITION: GamePosition = 5;
+pub const NUM_GAME_POSITIONS: GamePosition = 5;
 
 pub trait GamePositionUtils {
     fn as_str(&self) -> &str;
@@ -51,12 +51,12 @@ impl GamePositionUtils for GamePosition {
 
 #[cfg(test)]
 mod test {
-    use super::{GamePositionUtils, MAX_GAME_POSITION};
+    use super::{GamePositionUtils, NUM_GAME_POSITIONS};
     use itertools::Itertools;
 
     #[test]
     fn test_weights() {
-        let means = (0..MAX_GAME_POSITION)
+        let means = (0..NUM_GAME_POSITIONS)
             .map(|p| p.weights().iter().map(|w| w).sum::<f32>())
             .collect_vec();
         println!("{:?}", means);
@@ -66,7 +66,7 @@ mod test {
             assert!(mean == m);
         }
 
-        let stds = (0..MAX_GAME_POSITION)
+        let stds = (0..NUM_GAME_POSITIONS)
             .map(|p| p.weights().iter().map(|w| w.powf(2.0)).sum::<f32>())
             .collect_vec();
         println!("{:?}", stds);

@@ -1,7 +1,7 @@
 use super::challenge::Challenge;
 use super::trade::Trade;
 use crate::core::planet::Planet;
-use crate::core::position::{GamePosition, MAX_GAME_POSITION};
+use crate::core::position::{GamePosition, NUM_GAME_POSITIONS};
 use crate::core::skill::Skill;
 use crate::game_engine::timer::Timer;
 use crate::game_engine::types::GameStats;
@@ -164,7 +164,7 @@ impl NetworkGame {
         for (idx, player_id) in home_team_in_game.initial_positions.iter().enumerate() {
             // Set position in stats to initial one
             let mut player_stats = GameStats::default();
-            if (idx as GamePosition) < MAX_GAME_POSITION {
+            if (idx as GamePosition) < NUM_GAME_POSITIONS {
                 player_stats.position = Some(idx as GamePosition);
             }
             stats.insert(*player_id, player_stats.clone());
@@ -186,7 +186,7 @@ impl NetworkGame {
         let mut stats = HashMap::new();
         for (idx, player_id) in away_team_in_game.initial_positions.iter().enumerate() {
             let mut player_stats = GameStats::default();
-            if (idx as GamePosition) < MAX_GAME_POSITION {
+            if (idx as GamePosition) < NUM_GAME_POSITIONS {
                 player_stats.position = Some(idx as GamePosition);
             }
             stats.insert(*player_id, player_stats.clone());

@@ -4,7 +4,7 @@ use super::{
     types::{GameStatsMap, Possession},
 };
 use crate::{
-    core::{utils::is_default, GamePosition, Player, MAX_GAME_POSITION},
+    core::{utils::is_default, GamePosition, Player, NUM_GAME_POSITIONS},
     game_engine::{
         brawl, end_of_quarter, fastbreak, isolation, jump_ball, off_the_screen, pick_and_roll,
         post, rebound, shot, start_of_quarter, total_brawl,
@@ -154,8 +154,8 @@ impl Action {
 
 pub fn sample_player_index(
     rng: &mut ChaCha8Rng,
-    mut weights: [GamePosition; MAX_GAME_POSITION as usize],
-    players: [&Player; MAX_GAME_POSITION as usize],
+    mut weights: [GamePosition; NUM_GAME_POSITIONS as usize],
+    players: [&Player; NUM_GAME_POSITIONS as usize],
 ) -> Option<usize> {
     for (idx, player) in players.iter().enumerate() {
         if player.is_knocked_out() {

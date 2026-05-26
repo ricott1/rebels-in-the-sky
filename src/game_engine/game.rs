@@ -9,7 +9,7 @@ use crate::{
     core::{
         constants::TirednessCost,
         player::{Player, Trait},
-        position::MAX_GAME_POSITION,
+        position::NUM_GAME_POSITIONS,
         skill::GameSkill,
         utils::is_default,
         DEFAULT_PLANET_ID,
@@ -582,26 +582,26 @@ impl Game {
         &self.defending_team().players
     }
 
-    pub fn attacking_players_array(&self) -> [&Player; MAX_GAME_POSITION as usize] {
+    pub fn attacking_players_array(&self) -> [&Player; NUM_GAME_POSITIONS as usize] {
         self.all_attacking_players()
             .by_position(self.attacking_stats())
             .iter()
-            .take(MAX_GAME_POSITION as usize)
+            .take(NUM_GAME_POSITIONS as usize)
             .copied()
             .collect_vec()
             .try_into()
-            .expect(format!("There should be exactly {MAX_GAME_POSITION} players.").as_str())
+            .expect(format!("There should be exactly {NUM_GAME_POSITIONS} players.").as_str())
     }
 
-    pub fn defending_players_array(&self) -> [&Player; MAX_GAME_POSITION as usize] {
+    pub fn defending_players_array(&self) -> [&Player; NUM_GAME_POSITIONS as usize] {
         self.all_defending_players()
             .by_position(self.defending_stats())
             .iter()
-            .take(MAX_GAME_POSITION as usize)
+            .take(NUM_GAME_POSITIONS as usize)
             .copied()
             .collect_vec()
             .try_into()
-            .expect(format!("There should be exactly {MAX_GAME_POSITION} players").as_str())
+            .expect(format!("There should be exactly {NUM_GAME_POSITIONS} players").as_str())
     }
 
     fn get_rng_seed(&self) -> [u8; 32] {

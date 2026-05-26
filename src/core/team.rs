@@ -980,7 +980,7 @@ impl Team {
     }
 
     pub fn best_position_assignment(players: Vec<&Player>) -> Vec<PlayerId> {
-        if players.len() < MAX_GAME_POSITION as usize {
+        if players.len() < NUM_GAME_POSITIONS as usize {
             return players.iter().map(|&p| p.id).collect();
         }
 
@@ -989,7 +989,7 @@ impl Team {
             .iter()
             .take(MAX_CREW_SIZE) // For performance reasons, we only consider the first MAX_CREW_SIZE players by rating.
             .map(|&p| {
-                (0..MAX_GAME_POSITION)
+                (0..NUM_GAME_POSITIONS)
                     .map(|position| p.in_game_rating_at_position(position))
                     .collect::<Vec<f32>>()
             })
@@ -1001,7 +1001,7 @@ impl Team {
         // Iterate over all 5-permutations of the players. For each permutation assign a value equal to the sum of the ratings
         // when the player is assigned to the role corresponding to the index in the permutation.
         for perm in all_ratings.iter().permutations(5).enumerate() {
-            let team_value = (0..MAX_GAME_POSITION as usize)
+            let team_value = (0..NUM_GAME_POSITIONS as usize)
                 .map(|i| perm.1[i][i])
                 .sum::<f32>();
             if team_value > max_team_value {
@@ -1015,7 +1015,7 @@ impl Team {
             .collect::<Vec<Vec<usize>>>();
         let max_perm = &idx_perms[max_perm_index];
         let mut new_players: Vec<PlayerId> = max_perm.iter().map(|&i| players[i].id).collect();
-        assert!(new_players.len() == MAX_GAME_POSITION as usize);
+        assert!(new_players.len() == NUM_GAME_POSITIONS as usize);
         let mut bench = players
             .iter()
             .filter(|&p| !new_players.contains(&p.id))

@@ -25,7 +25,7 @@ use crate::{
     core::{
         constants::*,
         player::Player,
-        position::{GamePosition, GamePositionUtils, MAX_GAME_POSITION},
+        position::{GamePosition, GamePositionUtils, NUM_GAME_POSITIONS},
         resources::Resource,
         skill::{GameSkill, Rated, SKILL_NAMES},
         spaceship_upgrades::SpaceshipUpgradeTarget,
@@ -1623,7 +1623,7 @@ fn improvement_indicator<'a>(skill: f32, previous: f32) -> Span<'a> {
 fn format_player_skills(player: &'_ Player) -> Vec<Line<'_>> {
     let skills = player.current_skill_array();
     let mut text = vec![];
-    let mut roles = (0..MAX_GAME_POSITION)
+    let mut roles = (0..NUM_GAME_POSITIONS)
         .map(|i: GamePosition| (i.as_str().to_string(), player.position_rating(i)))
         .collect::<Vec<(String, f32)>>();
     roles.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));

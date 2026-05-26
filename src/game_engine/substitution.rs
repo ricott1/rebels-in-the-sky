@@ -7,7 +7,7 @@ use super::{
 use crate::{
     core::{
         player::Player,
-        position::{GamePosition, MAX_GAME_POSITION},
+        position::{GamePosition, NUM_GAME_POSITIONS},
         skill::MAX_SKILL,
         team::Team,
         GameSkill,
@@ -27,7 +27,7 @@ fn get_subs<'a>(
 ) -> Vec<&'a Player> {
     let bench: Vec<&Player> = players
         .iter()
-        .skip(MAX_GAME_POSITION as usize)
+        .skip(NUM_GAME_POSITIONS as usize)
         .filter(|&p| {
             let stats = team_stats.get(&p.id).unwrap();
             !stats.is_playing() && !p.is_knocked_out()
@@ -41,7 +41,7 @@ fn get_subs<'a>(
 
     let playing: Vec<&Player> = players
         .iter()
-        .take(MAX_GAME_POSITION as usize)
+        .take(NUM_GAME_POSITIONS as usize)
         .filter(|&p| {
             let stats = team_stats.get(&p.id).unwrap();
             stats.is_playing() && p.tiredness > MIN_TIREDNESS_FOR_SUB

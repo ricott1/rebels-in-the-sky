@@ -2,7 +2,7 @@ use super::constants::*;
 use super::jersey::{Jersey, JerseyStyle};
 use super::planet::{Planet, PlanetType};
 use super::player::{Player, Trait};
-use super::position::{GamePosition, MAX_GAME_POSITION};
+use super::position::{GamePosition, NUM_GAME_POSITIONS};
 use super::resources::Resource;
 use super::role::CrewRole;
 use super::skill::{GameSkill, MAX_SKILL};
@@ -152,7 +152,7 @@ impl World {
         for _ in 0..number_free_pirates {
             let base_level = own_team_base_level + rng.random_range(0.0..4.0);
             self.generate_random_player(rng, Some(position), planet, base_level)?;
-            position = (position + 1) % MAX_GAME_POSITION;
+            position = (position + 1) % NUM_GAME_POSITIONS;
         }
 
         Ok(())
@@ -198,7 +198,7 @@ impl World {
         self.teams.insert(team.id, team);
 
         let team_base_level = team_base_level.unwrap_or(rng.random_range(2..=14) as f32);
-        for position in 0..MAX_GAME_POSITION {
+        for position in 0..NUM_GAME_POSITIONS {
             let player_id =
                 self.generate_random_player(rng, Some(position), &planet, team_base_level)?;
             self.add_player_to_team(&player_id, &team_id)?;
