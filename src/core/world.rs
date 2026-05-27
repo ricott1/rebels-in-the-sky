@@ -144,13 +144,13 @@ impl World {
         let number_free_pirates = planet.total_population();
         let mut position = 0 as GamePosition;
         let own_team_base_level = if let Ok(own_team) = self.get_own_team() {
-            own_team.reputation / 5.0
+            own_team.reputation / 7.0
         } else {
             0.0
         };
 
         for _ in 0..number_free_pirates {
-            let base_level = own_team_base_level + rng.random_range(0.0..4.0);
+            let base_level = own_team_base_level + rng.random_range(0.0..2.5);
             self.generate_random_player(rng, Some(position), planet, base_level)?;
             position = (position + 1) % NUM_GAME_POSITIONS;
         }
@@ -2512,13 +2512,25 @@ impl World {
             player.add_morale(MORALE_DECREASE_PER_LONG_TICK);
             player.reputation = (player.reputation + REPUTATION_DECREASE_PER_LONG_TICK).bound();
 
+            for p in 0..player.game_position_fitness.len() {
+                if let Some(value) = player.game_position_fitness.get_mut(p) {
+                    *value = (*value
+                        + player
+                            .game_position_fitness_training
+                            .get(p)
+                            .copied()
+                            .unwrap_or_default())
+                    .bound()
+                }
+            }
+
             for idx in 0..player.skills_training.len() {
                 // Reduce player skills. This is planned to counteract the effect of training by playing games.
                 // Age modifier:
                 //   Young: linear from 0.75 at birth to 1.0 at peak.
                 //   Old:   linear from 1.0 at peak to max_modifier at retirement.
                 //          Athletics (idx 0-3):  max 3.0
-                //          Off/Def/Tech (4-15):  max 2.0
+                //          Off/Def/Tech (4-15):  max 2.25
                 //          Mental (16-19):       max 1.5
                 let relative_age = player.info.relative_age();
                 let age_modifier = if relative_age <= PEAK_PERFORMANCE_RELATIVE_AGE {
@@ -2531,17 +2543,22 @@ impl World {
                     } else if idx > 15 {
                         1.5
                     } else {
-                        2.0
+                        2.25
                     };
                     1.0 + progress * (max_modifier - 1.0)
                 };
 
                 player.modify_skill(idx, SKILL_DECREMENT_PER_LONG_TICK * age_modifier.bound());
+                for idx in 0..NUM_GAME_POSITIONS as usize {
+                    player.game_position_fitness[idx] +=
+                        0.25 * SKILL_DECREMENT_PER_LONG_TICK * age_modifier.bound();
+                }
 
                 // Increase player skills from training
                 player.modify_skill(idx, player.skills_training[idx]);
             }
-            player.skills_training = [0.0; 20];
+            player.game_position_fitness_training = [Skill::default(); NUM_GAME_POSITIONS as usize];
+            player.skills_training = [Skill::default(); 20];
         }
     }
 

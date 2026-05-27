@@ -39,9 +39,10 @@ pub const MAX_CREW_SIZE: usize = MIN_PLAYERS_PER_GAME + 5;
 // Then, with potential, focus, and doctor bonus, per game a skill can improve at most
 // by 12000 * 8 * EXPERIENCE_PER_SKILL_MULTIPLIER ~ 0.4.
 // More realistically, one should take a factor 10 less.
-pub const EXPERIENCE_PER_SKILL_MULTIPLIER: f32 = 0.00001;
-pub const MAX_SKILL_INCREASE_PER_LONG_TICK: f32 = 0.35;
-pub const SKILL_DECREMENT_PER_LONG_TICK: f32 = -0.06;
+pub const EXPERIENCE_PER_SKILL_MULTIPLIER: f32 = 0.0000085;
+pub const MAX_SKILL_INCREASE_PER_LONG_TICK: f32 = 0.3;
+pub const SKILL_DECREMENT_PER_LONG_TICK: f32 = -0.05;
+pub const TOT_SKILL_MODIFIER: f32 = 1.35;
 
 pub const TOURNAMENT_GAME_TRAINING_BONUS_MODIFIER: f32 = 0.5;
 

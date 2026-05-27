@@ -1,7 +1,7 @@
 use super::position::{GamePosition, GamePositionUtils};
 use crate::core::Player;
 use core::fmt;
-use rand::{RngExt};
+use rand::RngExt;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Normal};
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,7 @@ pub type Skill = f32;
 
 const NORMAL_AVG: f32 = 0.6;
 const NORMAL_STD: f32 = 4.4;
-const LEVEL_BONUS: u8 = 2;
+const LEVEL_RANGE: f32 = 1.25;
 pub const WEIGHT_MOD: f32 = 1.45;
 pub const MIN_SKILL: f32 = 0.0;
 pub const MAX_SKILL: f32 = 20.0;
@@ -143,7 +143,7 @@ pub struct Athletics {
 impl Athletics {
     pub fn for_position(position: GamePosition, rng: &mut ChaCha8Rng, base_level: f32) -> Self {
         let weights = position.weights();
-        let level = base_level + rng.random_range(0..=LEVEL_BONUS) as f32;
+        let level = base_level + rng.random_range(-LEVEL_RANGE..=LEVEL_RANGE);
         let quickness = (level + WEIGHT_MOD * weights[0]).normal_sample(rng);
         let vertical = (level + WEIGHT_MOD * weights[1]).normal_sample(rng);
         let strength = (level + WEIGHT_MOD * weights[2]).normal_sample(rng);
@@ -174,7 +174,7 @@ pub struct Offense {
 impl Offense {
     pub fn for_position(position: GamePosition, rng: &mut ChaCha8Rng, base_level: f32) -> Self {
         let weights = position.weights();
-        let level = base_level + rng.random_range(0..=LEVEL_BONUS) as f32;
+        let level = base_level + rng.random_range(-LEVEL_RANGE..=LEVEL_RANGE);
         let brawl = (level + WEIGHT_MOD * weights[4]).normal_sample(rng);
         let close_range = (level + WEIGHT_MOD * weights[5]).normal_sample(rng);
         let medium_range = (level + WEIGHT_MOD * weights[6]).normal_sample(rng);
@@ -205,7 +205,7 @@ pub struct Defense {
 impl Defense {
     pub fn for_position(position: GamePosition, rng: &mut ChaCha8Rng, base_level: f32) -> Self {
         let weights = position.weights();
-        let level = base_level + rng.random_range(0..=LEVEL_BONUS) as f32;
+        let level = base_level + rng.random_range(-LEVEL_RANGE..=LEVEL_RANGE);
         let steal = (level + WEIGHT_MOD * weights[8]).normal_sample(rng);
         let block = (level + WEIGHT_MOD * weights[9]).normal_sample(rng);
         let perimeter_defense = (level + WEIGHT_MOD * weights[10]).normal_sample(rng);
@@ -236,7 +236,7 @@ pub struct Technical {
 impl Technical {
     pub fn for_position(position: GamePosition, rng: &mut ChaCha8Rng, base_level: f32) -> Self {
         let weights = position.weights();
-        let level = base_level + rng.random_range(0..=LEVEL_BONUS) as f32;
+        let level = base_level + rng.random_range(-LEVEL_RANGE..=LEVEL_RANGE);
         let passing = (level + WEIGHT_MOD * weights[12]).normal_sample(rng);
         let ball_handling = (level + WEIGHT_MOD * weights[13]).normal_sample(rng);
         let post_moves = (level + WEIGHT_MOD * weights[14]).normal_sample(rng);
@@ -267,7 +267,7 @@ pub struct Mental {
 impl Mental {
     pub fn for_position(position: GamePosition, rng: &mut ChaCha8Rng, base_level: f32) -> Self {
         let weights = position.weights();
-        let level = base_level + rng.random_range(0..=LEVEL_BONUS) as f32;
+        let level = base_level + rng.random_range(-LEVEL_RANGE..=LEVEL_RANGE);
         let vision = (level + WEIGHT_MOD * weights[16]).normal_sample(rng);
         let aggression = (level + WEIGHT_MOD * weights[17]).normal_sample(rng);
         let intuition = (level + WEIGHT_MOD * weights[18]).normal_sample(rng);

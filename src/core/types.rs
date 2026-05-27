@@ -5,7 +5,7 @@ use super::{
     world::World,
 };
 use crate::{
-    core::{GamePosition, Resource, Skill, Trait, NUM_GAME_POSITIONS},
+    core::{GamePosition, GamePositionUtils, Resource, Skill, Trait, NUM_GAME_POSITIONS},
     image::color_map::SkinColorMap,
     types::{AppResult, HashMapWithResult, PlanetId, SystemTimeTick, TeamId, Tick},
 };
@@ -434,40 +434,40 @@ impl TrainingFocus {
         match self {
             Self::Athletics => {
                 if skill_index < 4 {
-                    2.0
+                    1.5
                 } else {
-                    0.5
+                    0.75
                 }
             }
             Self::Offense => {
                 if (4..8).contains(&skill_index) {
-                    2.0
+                    1.4
                 } else {
-                    0.5
+                    0.775
                 }
             }
             Self::Defense => {
                 if (8..12).contains(&skill_index) {
-                    2.0
+                    1.55
                 } else {
-                    0.5
+                    0.8
                 }
             }
             Self::Technical => {
                 if (12..16).contains(&skill_index) {
-                    2.0
+                    1.55
                 } else {
-                    0.5
+                    0.75
                 }
             }
             Self::Mental => {
                 if skill_index >= 16 {
-                    2.0
+                    1.7
                 } else {
-                    0.5
+                    0.8
                 }
             }
-            Self::GamePosition(..) => 0.75,
+            Self::GamePosition(position) => 0.55 * position.weights()[skill_index].sqrt(),
         }
     }
 
