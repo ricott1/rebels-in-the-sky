@@ -588,7 +588,7 @@ impl Player {
         self.set_initial_game_position_fitness(Some(rng));
 
         // Extra potential has a variance that depends on current age
-        let std_dev = 3.0 + 1.0 - self.info.relative_age();
+        let std_dev = 1.5 + 3.0 * (1.0 - self.info.relative_age());
         let normal = Normal::new(0.0, std_dev).expect("Should create valid normal distribution");
         let extra_potential = normal.sample(rng).abs();
         self.potential = (self.average_skill() + extra_potential).bound();

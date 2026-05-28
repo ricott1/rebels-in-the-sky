@@ -2530,7 +2530,7 @@ impl World {
                 //   Young: linear from 0.75 at birth to 1.0 at peak.
                 //   Old:   linear from 1.0 at peak to max_modifier at retirement.
                 //          Athletics (idx 0-3):  max 3.0
-                //          Off/Def/Tech (4-15):  max 2.25
+                //          Off/Def/Tech (4-15):  max 2.5
                 //          Mental (16-19):       max 1.5
                 let relative_age = player.info.relative_age();
                 let age_modifier = if relative_age <= PEAK_PERFORMANCE_RELATIVE_AGE {
@@ -2539,11 +2539,11 @@ impl World {
                     let progress = (relative_age - PEAK_PERFORMANCE_RELATIVE_AGE)
                         / (1.0 - PEAK_PERFORMANCE_RELATIVE_AGE);
                     let max_modifier = if idx < 4 {
-                        3.0
+                        3.15
                     } else if idx > 15 {
-                        1.5
+                        1.55
                     } else {
-                        2.25
+                        2.55
                     };
                     1.0 + progress * (max_modifier - 1.0)
                 };
