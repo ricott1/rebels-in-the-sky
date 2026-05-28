@@ -7,11 +7,10 @@ use crate::types::{PlanetId, TeamId};
 use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::traits::SplitPanel;
-use crate::ui::utils::img_to_lines;
 use crate::ui::ui_screen::{render_help_block, UiTab};
+use crate::ui::utils::img_to_lines;
 use crate::ui::widgets::{default_block, go_to_planet_button, selectable_list};
 use crate::ui::{constants::*, ui_key};
-use ratatui::text::Line;
 use crate::{core::*, types::AppResult};
 use core::fmt::Debug;
 use image::RgbaImage;
@@ -20,6 +19,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Margin};
 use ratatui::prelude::Rect;
 use ratatui::style::Stylize;
+use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use std::collections::HashSet;
 use std::fmt::{self, Display};
@@ -33,6 +33,13 @@ pub enum SpaceCoveView {
 
 impl SpaceCoveView {
     pub const fn next(&self) -> Self {
+        match self {
+            Self::OwnCove => Self::AllCoves,
+            Self::AllCoves => Self::OwnCove,
+        }
+    }
+
+    pub const fn previous(&self) -> Self {
         match self {
             Self::OwnCove => Self::AllCoves,
             Self::AllCoves => Self::OwnCove,
@@ -176,7 +183,6 @@ impl SpaceCovePanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("Manage your own space cove.");
         if own_team.space_cove.is_none() {
             own_button.disable(Some("You don't have a space cove yet".to_string()));
@@ -189,7 +195,6 @@ impl SpaceCovePanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("Browse coves owned by other crews.");
 
         match self.view {
@@ -202,12 +207,7 @@ impl SpaceCovePanel {
         Ok(())
     }
 
-    fn render_cove_list(
-        &self,
-        frame: &mut UiFrame,
-        world: &World,
-        area: Rect,
-    ) -> AppResult<()> {
+    fn render_cove_list(&self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         if self.cove_entries.is_empty() {
             frame.render_widget(default_block().title("No known coves"), area);
             return Ok(());
@@ -318,12 +318,9 @@ impl SpaceCovePanel {
             None => blurb.to_string(),
         };
 
-        let mut button = Button::new(
-            label,
-            UiCallback::OrganizeNewTournament { tournament_type },
-        )
-        .set_hotkey(hotkey)
-        .set_hover_text(hover);
+        let mut button = Button::new(label, UiCallback::OrganizeNewTournament { tournament_type })
+            .set_hotkey(hotkey)
+            .set_hover_text(hover);
 
         if let Err(err) = own_team.can_organize_tournament() {
             button.disable(Some(err.to_string()));
@@ -404,7 +401,11 @@ impl Screen for SpaceCovePanel {
         self.cove_index = if self.cove_entries.is_empty() {
             None
         } else {
-            Some(self.cove_index.unwrap_or(0).min(self.cove_entries.len() - 1))
+            Some(
+                self.cove_index
+                    .unwrap_or(0)
+                    .min(self.cove_entries.len() - 1),
+            )
         };
         let index_changed = prev_index != self.cove_index;
 
@@ -462,11 +463,8 @@ impl Screen for SpaceCovePanel {
         area: Rect,
         _debug_view: bool,
     ) -> AppResult<()> {
-        let split = Layout::horizontal([
-            Constraint::Length(LEFT_PANEL_WIDTH),
-            Constraint::Fill(1),
-        ])
-        .split(area);
+        let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Fill(1)])
+            .split(area);
 
         frame.render_widget(default_block(), split[1]);
         let t = self.tick % 60;
@@ -533,17 +531,18 @@ impl Screen for SpaceCovePanel {
         Ok(())
     }
 
-    fn handle_key_events(
-        &mut self,
-        key_event: KeyEvent,
-        _world: &World,
-    ) -> Option<UiCallback> {
+    fn handle_key_events(&mut self, key_event: KeyEvent, _world: &World) -> Option<UiCallback> {
         match key_event.code {
             KeyCode::Up if self.view == SpaceCoveView::AllCoves => self.next_index(),
             KeyCode::Down if self.view == SpaceCoveView::AllCoves => self.previous_index(),
             ui_key::CYCLE_VIEW => {
                 return Some(UiCallback::SetSpaceCovePanelView {
                     view: self.view.next(),
+                });
+            }
+            ui_key::CYCLE_VIEW_BACK => {
+                return Some(UiCallback::SetSpaceCovePanelView {
+                    view: self.view.previous(),
                 });
             }
             _ => {}

@@ -4,9 +4,9 @@ use super::constants::*;
 use super::gif_map::GifMap;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
+use super::ui_screen::{render_help_block, UiTab};
 use super::utils::format_satoshi;
 use super::widgets::PlayerWidgetView;
-use super::ui_screen::{render_help_block, UiTab};
 use super::{
     constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
     traits::{Screen, SplitPanel},
@@ -49,6 +49,15 @@ impl PlayerView {
             Self::FreePirates => Self::Tradable,
             Self::Tradable => Self::OwnTeam,
             Self::OwnTeam => Self::All,
+        }
+    }
+
+    const fn previous(&self) -> Self {
+        match self {
+            Self::All => Self::OwnTeam,
+            Self::FreePirates => Self::All,
+            Self::Tradable => Self::FreePirates,
+            Self::OwnTeam => Self::Tradable,
         }
     }
 
@@ -160,7 +169,6 @@ impl PlayerListPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View all pirates.");
 
         let mut filter_free_pirates_button = Button::new(
@@ -170,7 +178,6 @@ impl PlayerListPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View free pirates.");
 
         let mut filter_tradable_button = Button::new(
@@ -180,7 +187,6 @@ impl PlayerListPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View pirates open for trade.");
 
         let mut filter_own_team_button = Button::new(
@@ -190,7 +196,6 @@ impl PlayerListPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View your pirates from your crew.");
         match self.view {
             PlayerView::All => filter_all_button.select(),
@@ -628,6 +633,11 @@ impl Screen for PlayerListPanel {
             ui_key::CYCLE_VIEW => {
                 return Some(UiCallback::SetPlayerPanelView {
                     view: self.view.next(),
+                });
+            }
+            ui_key::CYCLE_VIEW_BACK => {
+                return Some(UiCallback::SetPlayerPanelView {
+                    view: self.view.previous(),
                 });
             }
 

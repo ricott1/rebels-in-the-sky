@@ -58,6 +58,17 @@ impl MyTeamView {
             Self::Asteroids => Self::Info,
         }
     }
+
+    const fn previous(&self) -> Self {
+        match self {
+            Self::Info => Self::Asteroids,
+            Self::TeamSettings => Self::Info,
+            Self::Games => Self::TeamSettings,
+            Self::Market => Self::Games,
+            Self::Shipyard => Self::Market,
+            Self::Asteroids => Self::Shipyard,
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -103,7 +114,6 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View crew information.");
 
         let mut view_team_button = Button::new(
@@ -113,7 +123,6 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View team information.");
 
         let mut view_games_button = Button::new(
@@ -123,7 +132,6 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View recent games.");
 
         let mut view_market_button = Button::new(
@@ -133,7 +141,6 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View market, buy and sell resources.");
 
         let mut view_shipyard_button = Button::new(
@@ -143,7 +150,6 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View shipyard, improve your spaceship.");
 
         let mut view_asteroids_button = Button::new(
@@ -161,7 +167,6 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View asteorids found during exploration.");
 
         match self.view {
@@ -2602,6 +2607,11 @@ impl Screen for MyTeamPanel {
             ui_key::CYCLE_VIEW => {
                 return Some(UiCallback::SetMyTeamPanelView {
                     view: self.view.next(),
+                });
+            }
+            ui_key::CYCLE_VIEW_BACK => {
+                return Some(UiCallback::SetMyTeamPanelView {
+                    view: self.view.previous(),
                 });
             }
             _ => {}

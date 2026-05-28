@@ -75,6 +75,14 @@ impl TeamView {
         }
     }
 
+    const fn previous(&self) -> Self {
+        match self {
+            Self::All => Self::Peers,
+            Self::OpenToChallenge => Self::All,
+            Self::Peers => Self::OpenToChallenge,
+        }
+    }
+
     fn rule(&self, team: &Team, own_team: &Team) -> bool {
         match self {
             Self::All => true,
@@ -150,7 +158,7 @@ impl TeamListPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
+        
         .set_hover_text("View all crews.");
 
         let mut filter_challenge_button = Button::new(
@@ -160,7 +168,7 @@ impl TeamListPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
+        
         .set_hover_text("View all crews that can be currently challenged to a game.");
 
         let mut filter_peers_button = Button::new(
@@ -169,7 +177,7 @@ impl TeamListPanel {
                 view: TeamView::Peers,
             },
         ).bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
+        
         .set_hover_text(
             "View all crews received from the network (i.e. crews controlled by other players online)."
                 ,
@@ -543,6 +551,11 @@ impl Screen for TeamListPanel {
             ui_key::CYCLE_VIEW => {
                 return Some(UiCallback::SetTeamPanelView {
                     view: self.view.next(),
+                });
+            }
+            ui_key::CYCLE_VIEW_BACK => {
+                return Some(UiCallback::SetTeamPanelView {
+                    view: self.view.previous(),
                 });
             }
             KeyCode::Enter => {

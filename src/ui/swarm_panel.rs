@@ -4,10 +4,10 @@ use super::constants::*;
 use super::gif_map::GifMap;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
+use super::ui_screen::{render_help_block, UiTab};
 use super::widgets::{
     render_player_description, render_spaceship_description, selectable_list, PlayerWidgetView,
 };
-use super::ui_screen::{render_help_block, UiTab};
 use super::{
     traits::{Screen, SplitPanel},
     utils::input_from_key_event,
@@ -33,9 +33,9 @@ use ratatui::{
     text::{Line, Span},
     widgets::{List, ListItem},
 };
+use ratatui_textarea::{CursorMove, TextArea};
 use std::collections::{BTreeSet, HashMap};
 use strum_macros::Display;
-use ratatui_textarea::{CursorMove, TextArea};
 
 const EVENT_DUPLICATE_DELAY: Tick = 2 * MINUTES;
 const PEER_DISCONNECTION_INTERVAL: Tick = 5 * MINUTES;
@@ -56,6 +56,15 @@ impl SwarmView {
             Self::Requests => Self::Log,
             Self::Log => Self::Ranking,
             Self::Ranking => Self::Chat,
+        }
+    }
+
+    const fn previous(&self) -> Self {
+        match self {
+            Self::Chat => Self::Ranking,
+            Self::Requests => Self::Chat,
+            Self::Log => Self::Requests,
+            Self::Ranking => Self::Log,
         }
     }
 }
@@ -372,7 +381,6 @@ impl SwarmPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View the chat. Just type and press Enter to message the network.");
 
         let mut requests_button = Button::new(
@@ -382,7 +390,6 @@ impl SwarmPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View challenges received from the network.");
 
         let mut log_button = Button::new(
@@ -392,7 +399,6 @@ impl SwarmPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View log and system info from the network.");
 
         let mut ranking_button = Button::new(
@@ -402,7 +408,6 @@ impl SwarmPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View ranking of best pirates and crews in the network.");
 
         match self.view {
@@ -1071,6 +1076,11 @@ impl Screen for SwarmPanel {
                     topic: self.view.next(),
                 });
             }
+            ui_key::CYCLE_VIEW_BACK => {
+                return Some(UiCallback::SetSwarmPanelView {
+                    topic: self.view.previous(),
+                });
+            }
             KeyCode::Enter => {
                 // FIXME: if a message is selected, render this as a reply to that message.
                 if self.max_index() > 0 {
@@ -1152,12 +1162,7 @@ impl Screen for SwarmPanel {
                     UiTab::Crews,
                     ".",
                 ),
-                (
-                    " Browse traded players in ",
-                    "Pirates",
-                    UiTab::Pirates,
-                    ".",
-                ),
+                (" Browse traded players in ", "Pirates", UiTab::Pirates, "."),
             ],
             vec![
                 Line::from(" Controls:"),

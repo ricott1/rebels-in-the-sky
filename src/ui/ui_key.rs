@@ -12,6 +12,7 @@ pub const PREVIOUS_SELECTION: KeyCode = KeyCode::Char('[');
 
 pub const UI_DEBUG_MODE: KeyCode = KeyCode::Char('`');
 pub const CYCLE_VIEW: KeyCode = KeyCode::Tab;
+pub const CYCLE_VIEW_BACK: KeyCode = KeyCode::BackTab;
 
 pub const YES_TO_DIALOG: KeyCode = KeyCode::Enter;
 pub const NO_TO_DIALOG: KeyCode = KeyCode::Backspace;

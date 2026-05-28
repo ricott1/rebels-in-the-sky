@@ -45,6 +45,14 @@ impl TournamentView {
         }
     }
 
+    const fn previous(&self) -> Self {
+        match self {
+            Self::All => Self::Past,
+            Self::Open => Self::All,
+            Self::Past => Self::Open,
+        }
+    }
+
     fn rule(&self, tournament_id: &TournamentId, world: &World) -> bool {
         match self {
             Self::All => true,
@@ -105,7 +113,6 @@ impl TournamentPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View all tournaments.");
 
         let mut filter_open_button = Button::new(
@@ -115,7 +122,6 @@ impl TournamentPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View all tournaments yet to start.");
 
         let mut filter_past_button = Button::new(
@@ -125,7 +131,6 @@ impl TournamentPanel {
             },
         )
         .bold()
-        .set_hotkey(ui_key::CYCLE_VIEW)
         .set_hover_text("View all past tournaments.");
 
         match self.view {
@@ -652,6 +657,11 @@ impl Screen for TournamentPanel {
             ui_key::CYCLE_VIEW => {
                 return Some(UiCallback::SetTournamentPanelView {
                     view: self.view.next(),
+                });
+            }
+            ui_key::CYCLE_VIEW_BACK => {
+                return Some(UiCallback::SetTournamentPanelView {
+                    view: self.view.previous(),
                 });
             }
 
