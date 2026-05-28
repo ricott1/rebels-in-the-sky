@@ -62,7 +62,12 @@ fn dump_player_evolution() -> AppResult<()> {
     let pid = world
         .players
         .values()
-        .sorted_by(|a, b| b.potential.partial_cmp(&a.potential).unwrap())
+        .sorted_by(|a, b| {
+            a.info
+                .relative_age()
+                .partial_cmp(&b.info.relative_age())
+                .unwrap()
+        })
         .next()
         .expect("at least one player")
         .id;
@@ -94,7 +99,7 @@ fn dump_player_evolution() -> AppResult<()> {
     let mut all_series = Vec::new();
     for (label, focus) in &focuses {
         let mut player = base.clone();
-        player.info.age = player.info.population.min_age();
+        player.potential = 20.0;
         player.skills_training = [0.0; 20];
 
         let mut snapshots = Vec::new();
@@ -269,7 +274,7 @@ fn dump_player_evolution() -> AppResult<()> {
     let dump = Dump {
         player_name: base.info.full_name(),
         population: format!("{:?}", base.info.population),
-        potential: base.potential,
+        potential: player.potential,
         best_position: best_pos,
         initial_skills: base.current_skill_array().to_vec(),
         series: all_series,

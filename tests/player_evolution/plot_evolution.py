@@ -80,6 +80,8 @@ def plot_main(dump: dict) -> None:
 
     for ax, (panel_name, panel_range) in zip(axes, panels):
         for s in dump["series"]:
+            if s["focus"] == "Switching":
+                continue
             snaps = s["snapshots"]
             xs = [snap["rel_age"] for snap in snaps]
             if panel_range is None:
@@ -94,7 +96,9 @@ def plot_main(dump: dict) -> None:
             else f"{panel_name} avg (idx {panel_range.start}-{panel_range.stop - 1})"
         )
         ax.grid(True, alpha=0.3)
-        ax.axhline(dump["potential"], linestyle="--", color="black", alpha=0.4, linewidth=0.8)
+        ax.axhline(
+            dump["potential"], linestyle="--", color="black", alpha=0.4, linewidth=0.8
+        )
         ax.axvline(0.7, linestyle=":", color="grey", alpha=0.5, linewidth=0.8)
 
     axes[0].set_xlim(0.0, 1.0)
@@ -152,12 +156,19 @@ def plot_switching(dump: dict) -> None:
                 va="top",
                 fontsize=9,
                 color="black",
-                bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7, edgecolor="grey"),
+                bbox=dict(
+                    boxstyle="round,pad=0.2",
+                    facecolor="white",
+                    alpha=0.7,
+                    edgecolor="grey",
+                ),
             )
     for t in transitions:
         ax.axvline(t, linestyle="--", color="black", alpha=0.5, linewidth=0.9)
 
-    ax.axhline(dump["potential"], linestyle="--", color="grey", alpha=0.4, linewidth=0.8)
+    ax.axhline(
+        dump["potential"], linestyle="--", color="grey", alpha=0.4, linewidth=0.8
+    )
     ax.axvline(0.7, linestyle=":", color="grey", alpha=0.5, linewidth=0.8)
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 20.5)
