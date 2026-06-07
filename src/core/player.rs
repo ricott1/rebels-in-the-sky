@@ -1173,7 +1173,7 @@ impl Player {
                 log::debug!(
                     "Experience increase: {:.3}={}x{}x{}x{}x{}x{:.2}",
                     w * training_focus_bonus * base_increase,
-                    experience_at_position[p as usize] as f32,
+                    experience_at_position[p] as f32,
                     w,
                     EXPERIENCE_PER_SKILL_MULTIPLIER,
                     training_bonus,

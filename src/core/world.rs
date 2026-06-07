@@ -3025,11 +3025,11 @@ impl World {
         let occupied_planets: HashSet<PlanetId> = w
             .teams
             .values()
-            .filter_map(|team| match team.current_location {
-                TeamLocation::OnPlanet { planet_id } => Some(planet_id),
+            .map(|team| match team.current_location {
+                TeamLocation::OnPlanet { planet_id } => planet_id,
                 TeamLocation::Exploring { around, .. }
-                | TeamLocation::OnSpaceAdventure { around } => Some(around),
-                TeamLocation::Travelling { to, .. } => Some(to),
+                | TeamLocation::OnSpaceAdventure { around } => around,
+                TeamLocation::Travelling { to, .. } => to,
             })
             .collect();
         w.planets.retain(|_, planet| {
