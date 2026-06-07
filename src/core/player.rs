@@ -1039,6 +1039,30 @@ impl Player {
         self.morale = (self.morale + mod_morale).max(min_morale).bound();
     }
 
+    pub fn age_modifier_to_skill_update(&self, idx: usize) -> f32 {
+        // Age modifier:
+        //   Young: linear from 0.75 at birth to 1.0 at peak.
+        //   Old:   linear from 1.0 at peak to max_modifier at retirement.
+        //          Athletics (idx 0-3):  max 3.15
+        //          Mental (16-19):       max 1.55
+        //          Off/Def/Tech (4-15):  max 2.55
+        let relative_age = self.info.relative_age();
+        if relative_age <= PEAK_PERFORMANCE_RELATIVE_AGE {
+            0.75 + 0.25 * (relative_age / PEAK_PERFORMANCE_RELATIVE_AGE)
+        } else {
+            let progress = (relative_age - PEAK_PERFORMANCE_RELATIVE_AGE)
+                / (1.0 - PEAK_PERFORMANCE_RELATIVE_AGE);
+            let max_modifier = if idx < 4 {
+                3.15
+            } else if idx > 15 {
+                1.55
+            } else {
+                2.55
+            };
+            1.0 + progress * (max_modifier - 1.0)
+        }
+    }
+
     pub fn modify_skill(&mut self, idx: usize, mut value: f32) {
         // Quickness cannot improve beyond WOODEN_LEG_MAX_QUICKNESS if player has a wooden leg
         if self.has_wooden_leg() && idx == 0 && self.athletics.quickness >= WOODEN_LEG_MAX_QUICKNESS
@@ -1378,10 +1402,7 @@ mod test {
 
     #[test]
     fn test_player_evolution() -> AppResult<()> {
-        use crate::core::constants::{
-            AGE_INCREASE_PER_LONG_TICK, PEAK_PERFORMANCE_RELATIVE_AGE,
-            SKILL_DECREMENT_PER_LONG_TICK,
-        };
+        use crate::core::constants::{AGE_INCREASE_PER_LONG_TICK, SKILL_DECREMENT_PER_LONG_TICK};
         use crate::core::types::TrainingFocus;
 
         fn round_skills(skills: [f32; 20]) -> Vec<f32> {
@@ -1442,8 +1463,8 @@ mod test {
                 let mut iterations = 0usize;
 
                 loop {
-                    let rel_age = player.info.relative_age();
-                    if rel_age >= 1.0 || iterations > 5000 {
+                    let relative_age = player.info.relative_age();
+                    if relative_age >= 1.0 || iterations > 5000 {
                         break;
                     }
 
@@ -1468,20 +1489,7 @@ mod test {
                     // Inline the relevant body of World::tick_players_update so we
                     // don't need to expose it.
                     for idx in 0..player.skills_training.len() {
-                        let age_modifier = if rel_age <= PEAK_PERFORMANCE_RELATIVE_AGE {
-                            0.75 + 0.25 * (rel_age / PEAK_PERFORMANCE_RELATIVE_AGE)
-                        } else {
-                            let progress = (rel_age - PEAK_PERFORMANCE_RELATIVE_AGE)
-                                / (1.0 - PEAK_PERFORMANCE_RELATIVE_AGE);
-                            let max_modifier = if idx < 4 {
-                                3.0
-                            } else if idx > 15 {
-                                1.5
-                            } else {
-                                2.0
-                            };
-                            1.0 + progress * (max_modifier - 1.0)
-                        };
+                        let age_modifier = player.age_modifier_to_skill_update(idx);
                         player.modify_skill(idx, SKILL_DECREMENT_PER_LONG_TICK * age_modifier);
                         let training = player.skills_training[idx];
                         player.modify_skill(idx, training);

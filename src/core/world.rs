@@ -2532,21 +2532,7 @@ impl World {
                 //          Athletics (idx 0-3):  max 3.15
                 //          Mental (16-19):       max 1.55
                 //          Off/Def/Tech (4-15):  max 2.55
-                let relative_age = player.info.relative_age();
-                let age_modifier = if relative_age <= PEAK_PERFORMANCE_RELATIVE_AGE {
-                    0.75 + 0.25 * (relative_age / PEAK_PERFORMANCE_RELATIVE_AGE)
-                } else {
-                    let progress = (relative_age - PEAK_PERFORMANCE_RELATIVE_AGE)
-                        / (1.0 - PEAK_PERFORMANCE_RELATIVE_AGE);
-                    let max_modifier = if idx < 4 {
-                        3.15
-                    } else if idx > 15 {
-                        1.55
-                    } else {
-                        2.55
-                    };
-                    1.0 + progress * (max_modifier - 1.0)
-                };
+                let age_modifier = player.age_modifier_to_skill_update(idx);
 
                 player.modify_skill(idx, SKILL_DECREMENT_PER_LONG_TICK * age_modifier.bound());
                 for idx in 0..NUM_GAME_POSITIONS as usize {
