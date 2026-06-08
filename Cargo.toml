@@ -57,6 +57,10 @@ rand = "0.10.1"
 rand_chacha = "0.10.0"
 rand_distr = "0.6.0"
 ratatui = { version = "=0.30.0", features = ["unstable-backend-writer"] }
+# Pinned: ratatui-widgets 0.3.1 added Block::shadow holding Arc<dyn CellEffect>
+# (no Send+Sync), making Block non-Sync and breaking the static CONSTANT_TAB_BUTTONS.
+# ratatui 0.30.0's dep on widgets is a caret range, so widgets must be pinned directly.
+ratatui-widgets = "=0.3.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.150"
 serde_repr = "0.1.20"
