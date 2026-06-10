@@ -129,6 +129,9 @@ pub struct Game {
     pub winner: Option<TeamId>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
+    pub last_substitution_tick: [Tick; 2],
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub home_team_mvps: Option<Vec<GameMVPSummary>>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
@@ -217,6 +220,7 @@ impl Game {
             timer: Timer::default(),
             next_step: 0,
             winner: None,
+            last_substitution_tick: [Tick::default(); 2],
             home_team_mvps: None,
             away_team_mvps: None,
             part_of_tournament,
@@ -517,6 +521,8 @@ impl Game {
                     player_stats.position = update.position;
                 }
             }
+            // Update tick of last substitution, used for recency modifier in future substitutions.
+            self.last_substitution_tick[0] = self.timer.as_tick();
         }
         if let Some(updates) = away_stats_update {
             for (id, player_stats) in self.away_team_in_game.stats.iter_mut() {
@@ -524,6 +530,8 @@ impl Game {
                     player_stats.position = update.position;
                 }
             }
+            // Update tick of last substitution, used for recency modifier in future substitutions.
+            self.last_substitution_tick[1] = self.timer.as_tick();
         }
     }
 

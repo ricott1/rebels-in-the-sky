@@ -10,10 +10,10 @@ use crate::{
         position::{GamePosition, NUM_GAME_POSITIONS},
         skill::MAX_SKILL,
         team::Team,
-        GameSkill,
+        GameSkill, TickInterval,
     },
-    game_engine::{constants::SUBSTITUTION_ACTION_PROBABILITY, types::EnginePlayer},
-    types::SortablePlayerMap,
+    game_engine::types::{EnginePlayer, GamePositionFluidity, SubstitutionTendency},
+    types::{SortablePlayerMap, Tick},
 };
 use itertools::Itertools;
 use rand::{seq::IndexedRandom, RngExt};
@@ -23,6 +23,9 @@ use std::collections::HashMap;
 fn get_subs<'a>(
     players: &[&'a Player],
     team_stats: &GameStatsMap,
+    subsitution_tendency: SubstitutionTendency,
+    game_position_fluidity: GamePositionFluidity,
+    ticks_since_last_substitution: Tick,
     action_rng: &mut ChaCha8Rng,
 ) -> Vec<&'a Player> {
     let bench: Vec<&Player> = players
@@ -54,14 +57,14 @@ fn get_subs<'a>(
             let a_position = a_stats
                 .position
                 .expect("Playing player should have a position");
-            let v1 = a.in_game_rating_at_position(a_position) as u16;
+            let v1 = a.in_game_rating_at_position(a_position, game_position_fluidity) as u16;
             let b_stats = team_stats
                 .get(&b.id)
                 .expect("Playing player should have stats");
             let b_position = b_stats
                 .position
                 .expect("Playing player should have a position");
-            let v2 = b.in_game_rating_at_position(b_position) as u16;
+            let v2 = b.in_game_rating_at_position(b_position, game_position_fluidity) as u16;
 
             v1.cmp(&v2)
         })
@@ -84,24 +87,39 @@ fn get_subs<'a>(
         .iter()
         //Sort from most to less skilled*tired
         .max_by(|&a, &b| {
-            let v1 = a.in_game_rating_at_position(out_position) as u16;
-            let v2 = b.in_game_rating_at_position(out_position) as u16;
+            let v1 = a.in_game_rating_at_position(out_position, game_position_fluidity) as u16;
+            let v2 = b.in_game_rating_at_position(out_position, game_position_fluidity) as u16;
             v1.cmp(&v2)
         })
         .expect("There should be a in candidate");
 
-    // If in candidate is worse than out candidate, there is still a 25% chance of subbing.
-    // This probability increases linearly up to 100% when the in candidate skills
-    // are 15 points moreis than the out candidate's.
-    let sub_probability_modifier = (0.25
-        + (in_candidate.in_game_rating_at_position(out_position)
-            - out_candidate.in_game_rating_at_position(out_position))
+    let sub_probability = if out_candidate.is_knocked_out() && !in_candidate.is_knocked_out() {
+        1.0
+    } else {
+        // If in candidate is worse than out candidate, there is still a finite chance of subbing.
+        // This probability increases when the in candidate skills are better than the out candidate's.
+        let rating_modifier = (in_candidate
+            .in_game_rating_at_position(out_position, game_position_fluidity)
+            - out_candidate.in_game_rating_at_position(out_position, game_position_fluidity))
         .bound()
-            / MAX_SKILL) as f64;
+            / MAX_SKILL;
 
-    let sub_probability = SUBSTITUTION_ACTION_PROBABILITY * sub_probability_modifier;
+        // A small negative modifier if the last substitution was recent.
+        let recency_modifier = if ticks_since_last_substitution < TickInterval::SHORT * 30 {
+            0.05
+        } else if ticks_since_last_substitution < TickInterval::SHORT * 60 {
+            0.5
+        } else if ticks_since_last_substitution > TickInterval::SHORT * 60 * 10 {
+            1.5
+        } else {
+            1.0
+        };
+        ((subsitution_tendency.substitution_probability() + rating_modifier as f64)
+            * recency_modifier)
+            .clamp(0.0, 1.0)
+    };
 
-    if action_rng.random_bool(sub_probability.clamp(0.0, 1.0)) {
+    if action_rng.random_bool(sub_probability) {
         vec![in_candidate, out_candidate]
     } else {
         vec![]
@@ -111,10 +129,20 @@ fn get_subs<'a>(
 fn make_substitution(
     players: Vec<&Player>,
     stats: &GameStatsMap,
+    subsitution_tendency: SubstitutionTendency,
+    game_position_fluidity: GamePositionFluidity,
+    ticks_since_last_substitution: Tick,
     action_rng: &mut ChaCha8Rng,
     description_rng: &mut ChaCha8Rng,
 ) -> Option<(String, GameStatsMap)> {
-    let subs = get_subs(&players, stats, action_rng);
+    let subs = get_subs(
+        &players,
+        stats,
+        subsitution_tendency,
+        game_position_fluidity,
+        ticks_since_last_substitution,
+        action_rng,
+    );
     if subs.is_empty() {
         return None;
     }
@@ -240,9 +268,13 @@ pub(crate) fn should_execute(
 
     let mut home_sub = false;
     let mut away_sub = false;
+    let home_ticks_since_last_substitution = game.timer.as_tick() - game.last_substitution_tick[0];
     if let Some((description, stats_update)) = make_substitution(
         home_players.by_position(&game.home_team_in_game.stats),
         &game.home_team_in_game.stats,
+        game.home_team_in_game.substitution_tendency,
+        game.home_team_in_game.game_position_fluidity,
+        home_ticks_since_last_substitution,
         action_rng,
         description_rng,
     ) {
@@ -262,9 +294,13 @@ pub(crate) fn should_execute(
         home_sub = true;
     }
 
+    let away_ticks_since_last_substitution = game.timer.as_tick() - game.last_substitution_tick[1];
     if let Some((description, stats_update)) = make_substitution(
         away_players.by_position(&game.away_team_in_game.stats),
         &game.away_team_in_game.stats,
+        game.away_team_in_game.substitution_tendency,
+        game.away_team_in_game.game_position_fluidity,
+        away_ticks_since_last_substitution,
         action_rng,
         description_rng,
     ) {

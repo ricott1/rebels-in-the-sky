@@ -132,20 +132,44 @@ impl GameStats {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct TeamInGame {
     pub team_id: TeamId,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub peer_id: Option<PeerId>,
     pub reputation: Skill,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub version: u64,
     pub name: String,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub initial_positions: Vec<PlayerId>,
     // This is necessary for NetworkGame and in general to be able to simulate a game from the start
     // because the player tiredness is updated during the game.
     // The order is the same as initial_positions
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub initial_tiredness: Vec<Skill>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub initial_morale: Vec<Skill>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub players: PlayerMap,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub stats: GameStatsMap,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub tactic: Tactic,
-    pub momentum: u8,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub substitution_tendency: SubstitutionTendency,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub game_position_fluidity: GamePositionFluidity,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub momentum: Skill,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub network_game_rating: GameRating,
@@ -269,6 +293,14 @@ impl SubstitutionTendency {
             Self::High => "Tend to substitute players more often during games.",
         }
     }
+
+    pub const fn substitution_probability(&self) -> f64 {
+        match self {
+            Self::Low => 0.125,
+            Self::Normal => 0.25,
+            Self::High => 0.425,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Display, PartialEq, Serialize_repr, Deserialize_repr)]
@@ -294,6 +326,14 @@ impl GamePositionFluidity {
             Self::Low => "Tend to put players in their best position as much as possible.",
             Self::Normal => "Tend to put players in their best position with default frequency.",
             Self::High => "Tend to allow players to play in more positions.",
+        }
+    }
+
+    pub const fn game_modifier(&self) -> f32 {
+        match self {
+            Self::Low => 1.3,
+            Self::Normal => 1.0,
+            Self::High => 0.7,
         }
     }
 }
@@ -385,7 +425,11 @@ pub trait EnginePlayer {
     fn min_roll(&self) -> i16;
     fn max_roll(&self) -> i16;
     fn roll(&self, rng: &mut ChaCha8Rng) -> i16;
-    fn in_game_rating_at_position(&self, position: GamePosition) -> f32;
+    fn in_game_rating_at_position(
+        &self,
+        position: GamePosition,
+        game_position_fluidity: GamePositionFluidity,
+    ) -> f32;
 }
 
 impl EnginePlayer for Player {
@@ -414,17 +458,24 @@ impl EnginePlayer for Player {
             .min(self.max_roll())
     }
 
-    fn in_game_rating_at_position(&self, position: GamePosition) -> f32 {
+    fn in_game_rating_at_position(
+        &self,
+        position: GamePosition,
+        game_position_fluidity: GamePositionFluidity,
+    ) -> f32 {
         if self.is_knocked_out() {
             return 0.0;
         }
 
         // Follow the general rule: Roll + 2 * skills ( + tactic but it's the same for evey player in the team).
+        // This factor takes into account the current tiredness
         let roll = ((MIN_SKILL as i16 + NUMBER_OF_ROLLS as i16 * MAX_SKILL as i16) / 2)
             .max(self.min_roll())
             .min(self.max_roll());
 
-        roll as f32 + 2.0 * self.position_rating(position)
+        // This factor takes into account how much a player role fitness matters.
+        let game_position_fluidity_modifier = game_position_fluidity.game_modifier();
+        roll as f32 + 2.0 * self.position_rating(position) * game_position_fluidity_modifier
     }
 }
 

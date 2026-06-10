@@ -700,15 +700,13 @@ impl Player {
             total_weight += w;
         }
 
-        // FIXME: add position fitness here at next major version
-        // let fitness = self
-        //     .game_position_fitness
-        //     .get(position as usize)
-        //     .copied()
-        //     .unwrap_or_default()
-        //     / MAX_SKILL;
-        // (rating / total_weight * fitness).bound()
-        (rating / total_weight).bound()
+        let fitness = self
+            .game_position_fitness
+            .get(position as usize)
+            .copied()
+            .unwrap_or_default()
+            / MAX_SKILL;
+        (rating / total_weight * fitness).bound()
     }
 
     pub fn best_position(&self) -> GamePosition {

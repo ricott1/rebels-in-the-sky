@@ -6,7 +6,9 @@ mod tests {
     use rebels::game_engine::action::{ActionOutput, ActionSituation, Advantage};
     use rebels::game_engine::game::Game;
     use rebels::game_engine::tactic::Tactic;
-    use rebels::game_engine::types::{GameStats, GameStatsMap, Possession, TeamInGame};
+    use rebels::game_engine::types::{
+        GamePositionFluidity, GameStats, GameStatsMap, Possession, SubstitutionTendency, TeamInGame,
+    };
     use rebels::types::{AppResult, PlayerId, PlayerMap, SystemTimeTick, TeamId, Tick};
     use std::collections::{BTreeMap, HashMap};
     use strum::IntoEnumIterator;
@@ -26,8 +28,8 @@ mod tests {
 
     #[derive(Debug)]
     struct MatchupResult {
-        home_tactic: Tactic,
-        away_tactic: Tactic,
+        home_team_settings: (Tactic, SubstitutionTendency, GamePositionFluidity),
+        away_team_settings: (Tactic, SubstitutionTendency, GamePositionFluidity),
         bins: Vec<BinResult>,
     }
 
@@ -185,8 +187,8 @@ mod tests {
     fn get_simulated_game_samples(
         n_games: usize,
         max_delta_rating: f32,
-        home_tactic: Tactic,
-        away_tactic: Tactic,
+        home_team_settings: (Tactic, SubstitutionTendency, GamePositionFluidity),
+        away_team_settings: (Tactic, SubstitutionTendency, GamePositionFluidity),
         with_fixed_stamina: Option<Skill>,
     ) -> Vec<GameSample> {
         let mut samples = Vec::with_capacity(n_games);
@@ -233,9 +235,12 @@ mod tests {
                     )
                 };
 
-            home_team_in_game.tactic = home_tactic;
-            away_team_in_game.tactic = away_tactic;
-
+            home_team_in_game.tactic = home_team_settings.0;
+            home_team_in_game.substitution_tendency = home_team_settings.1;
+            home_team_in_game.game_position_fluidity = home_team_settings.2;
+            away_team_in_game.tactic = away_team_settings.0;
+            away_team_in_game.substitution_tendency = away_team_settings.1;
+            away_team_in_game.game_position_fluidity = away_team_settings.2;
             let mut current_tick = Tick::now();
             let mut game = Game::test(home_team_in_game, away_team_in_game);
 
@@ -516,8 +521,8 @@ mod tests {
 
     fn print_stats_report(result: &MatchupResult, cutoff: usize) {
         println!(
-            "Result for {} vs {}",
-            result.home_tactic, result.away_tactic
+            "Result for {:#?} vs {:#?}",
+            result.home_team_settings, result.away_team_settings
         );
 
         for bin in &result.bins {
@@ -685,17 +690,28 @@ mod tests {
         let results: Vec<MatchupResult> = tactic_pairs
             .par_iter()
             .map(|&(home_tactic, away_tactic)| {
+                let home_team_settings = (
+                    home_tactic,
+                    SubstitutionTendency::Normal,
+                    GamePositionFluidity::High,
+                );
+                let away_team_settings = (
+                    away_tactic,
+                    SubstitutionTendency::Low,
+                    GamePositionFluidity::Low,
+                );
                 let samples = get_simulated_game_samples(
                     N,
                     max_delta_rating,
-                    home_tactic,
-                    away_tactic,
+                    home_team_settings,
+                    away_team_settings,
                     with_fixed_stamina,
                 );
                 let bins = process_stats(&samples, BIN_SIZE);
+
                 MatchupResult {
-                    home_tactic,
-                    away_tactic,
+                    home_team_settings,
+                    away_team_settings,
                     bins,
                 }
             })

@@ -7,7 +7,6 @@ pub(crate) const MIN_TIREDNESS_FOR_SUB: f32 = 0.95 * MIN_TIREDNESS_FOR_ROLL_DECL
 pub const BASE_ATTENDANCE: u32 = 60;
 pub(crate) const BRAWL_ACTION_PROBABILITY: f64 = 0.045;
 pub(crate) const FASTBREAK_ACTION_PROBABILITY: f64 = 0.4;
-pub(crate) const SUBSTITUTION_ACTION_PROBABILITY: f64 = 1.1;
 
 pub(crate) const DUNK_PROBABILITY: f64 = 0.45;
 

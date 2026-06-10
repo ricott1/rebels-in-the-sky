@@ -1,6 +1,6 @@
 [package]
 name = "rebels"
-version = "1.6.2"
+version = "1.7.0"
 edition = "2021"
 authors = ["Alessandro Ricottone <ricott2@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -34,9 +34,9 @@ directories = "6.0.0"
 flate2 = { version = "1.1.9", features = ["zlib-ng"], default-features = false }
 futures = "0.3.32"
 gif = "0.14.2"
-glam = "0.33.0"
+glam = "0.33.1"
 image = { version = "0.25.10", default-features = false, features = ["png", "gif"] }
-imageproc = { version = "0.26.2", default-features = false, features = ["rayon"] }
+imageproc = { version = "0.27.0", default-features = false, features = ["rayon"] }
 include_dir = "0.7.4"
 itertools = "0.14.0"
 libp2p = { version = "0.56.0", features = [
@@ -71,7 +71,7 @@ tokio = { version = "1.52.1", features = ["rt", "time", "macros", "sync"] }
 tokio-util = "0.7.18"
 ratatui-textarea = "0.9.1"
 unicode-width = "0.2"
-uuid = { version = "1.23.2", features = ["v4", "serde"] }
+uuid = { version = "1.23.3", features = ["v4", "serde"] }
 
 # Feature deps
 frittura-ssh-core = { version = "0.2.2", optional = true }

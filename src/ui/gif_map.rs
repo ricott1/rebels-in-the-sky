@@ -489,7 +489,7 @@ impl GifMap {
                     img,
                     std::f32::consts::PI / 2.0,
                     Interpolation::Nearest,
-                    Rgba([255, 0, 0, 0]),
+                    imageproc::geometric_transformations::Border::Constant(Rgba([255, 0, 0, 0])),
                 )
             })
             .collect::<Gif>();
@@ -550,7 +550,7 @@ impl GifMap {
                     img,
                     std::f32::consts::PI / 2.0,
                     Interpolation::Nearest,
-                    Rgba([255, 0, 0, 0]),
+                    imageproc::geometric_transformations::Border::Constant(Rgba([255, 0, 0, 0])),
                 )
             })
             .collect::<Gif>();

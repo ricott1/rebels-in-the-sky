@@ -991,7 +991,9 @@ impl Team {
             .take(MAX_CREW_SIZE) // For performance reasons, we only consider the first MAX_CREW_SIZE players by rating.
             .map(|&p| {
                 (0..NUM_GAME_POSITIONS)
-                    .map(|position| p.in_game_rating_at_position(position))
+                    .map(|position| {
+                        p.in_game_rating_at_position(position, GamePositionFluidity::default())
+                    })
                     .collect::<Vec<f32>>()
             })
             .collect::<Vec<Vec<f32>>>();

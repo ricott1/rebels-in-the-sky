@@ -10,6 +10,8 @@
 .DS_Store
 desktop.ini
 
+create_release.sh
+
 ## Editor
 *.swp
 *.swo
