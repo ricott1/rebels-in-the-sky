@@ -13,7 +13,7 @@ use super::{
 use crate::app_version;
 use crate::core::{AsteroidUpgradeTarget, UpgradeableElement};
 use crate::game_engine::game::Game;
-use crate::game_engine::types::{GamePositionFluidity, SubstitutionTendency};
+use crate::game_engine::types::{GamePositionFluidity, InGameDrinking, SubstitutionTendency};
 use crate::game_engine::{Tournament, TournamentId, TournamentType};
 use crate::network::types::TournamentRequestState;
 use crate::network::{challenge::Challenge, trade::Trade};
@@ -134,6 +134,9 @@ pub enum UiCallback {
     },
     SetTeamGamePositionFluidity {
         game_position_fluidity: GamePositionFluidity,
+    },
+    SetTeamInGameDrinking {
+        in_game_drinking: InGameDrinking,
     },
     SetUiTab {
         ui_tab: UiTab,
@@ -1278,6 +1281,15 @@ impl UiCallback {
             } => {
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.game_position_fluidity = *game_position_fluidity;
+                app.world.dirty = true;
+                app.world.dirty_ui = true;
+                app.world.dirty_network = true;
+                Ok(None)
+            }
+
+            Self::SetTeamInGameDrinking { in_game_drinking } => {
+                let own_team = app.world.get_own_team_mut()?;
+                own_team.in_game_drinking = *in_game_drinking;
                 app.world.dirty = true;
                 app.world.dirty_ui = true;
                 app.world.dirty_network = true;

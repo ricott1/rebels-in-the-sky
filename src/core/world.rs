@@ -1119,6 +1119,11 @@ impl World {
             }
         };
 
+        // Rum brought to the game is debited upfront and (if not drunk) returned at the end,
+        // so that trading rum during the game cannot influence the game.
+        let home_initial_rum = home_team_in_game.initial_rum;
+        let away_initial_rum = away_team_in_game.initial_rum;
+
         let game_id = self.generate_game_no_checks(
             home_team_in_game,
             away_team_in_game,
@@ -1146,7 +1151,9 @@ impl World {
         }
 
         home_team.current_game = Some(game_id);
+        home_team.saturating_sub_resource(Resource::RUM, home_initial_rum);
         away_team.current_game = Some(game_id);
+        away_team.saturating_sub_resource(Resource::RUM, away_initial_rum);
         self.dirty = true;
         self.dirty_ui = true;
 
@@ -1177,6 +1184,9 @@ impl World {
             .expect("Should have failed in can_challenge_team");
 
         let team_ids = [home_team_in_game.team_id, away_team_in_game.team_id];
+        // Rum brought to the game is debited upfront and (if not drunk) returned at the end,
+        // so that trading rum during the game cannot influence the game.
+        let initial_rums = [home_team_in_game.initial_rum, away_team_in_game.initial_rum];
 
         let game_id = self.generate_game_no_checks(
             home_team_in_game,
@@ -1186,13 +1196,14 @@ impl World {
             None,
         )?;
 
-        for team_id in team_ids.iter() {
+        for (team_id, initial_rum) in team_ids.iter().zip(initial_rums) {
             let team = self
                 .teams
                 .get_mut(team_id)
                 .ok_or_else(|| anyhow!("Team {team_id:?} not found"))?;
 
             team.current_game = Some(game_id);
+            team.saturating_sub_resource(Resource::RUM, initial_rum);
             if team.id == self.own_team_id {
                 self.dirty_network = true
             }
@@ -1598,6 +1609,7 @@ impl World {
 
                     player.tiredness = game_player.tiredness;
                     player.morale = game_player.morale;
+                    player.drunkenness = game_player.drunkenness;
 
                     player.version += 1;
                     player.add_morale(MORALE_INCREASE_PER_GAME);
@@ -1805,6 +1817,16 @@ impl World {
                     };
                     team.saturating_add_resource(Resource::RUM, rum_bonus);
 
+                    // Return the rum brought to the game that was not drunk.
+                    // Note: like the rum bonus, this is capped by the available storage,
+                    // so bottles that no longer fit (if storage filled up during the game) are lost.
+                    let remaining_rum = if idx == 0 {
+                        game.home_team_in_game.rum
+                    } else {
+                        game.away_team_in_game.rum
+                    };
+                    team.saturating_add_resource(Resource::RUM, remaining_rum);
+
                     self.teams.insert(team.id, team);
                 }
             } else {
@@ -1858,6 +1880,16 @@ impl World {
                         away_team_rum
                     };
                     team.saturating_add_resource(Resource::RUM, rum_bonus);
+
+                    // Return the rum brought to the game that was not drunk.
+                    // Note: like the rum bonus, this is capped by the available storage,
+                    // so bottles that no longer fit (if storage filled up during the game) are lost.
+                    let remaining_rum = if idx == 0 {
+                        game.home_team_in_game.rum
+                    } else {
+                        game.away_team_in_game.rum
+                    };
+                    team.saturating_add_resource(Resource::RUM, remaining_rum);
 
                     self.teams.insert(team.id, team);
                 }
@@ -2045,7 +2077,13 @@ impl World {
                 game.home_team_in_game.team_id,
                 game.away_team_in_game.team_id,
             ];
-            for team_id in team_ids.iter() {
+            // Rum brought to the game is debited upfront and (if not drunk) returned at the end,
+            // so that trading rum during the game cannot influence the game.
+            let initial_rums = [
+                game.home_team_in_game.initial_rum,
+                game.away_team_in_game.initial_rum,
+            ];
+            for (team_id, initial_rum) in team_ids.iter().zip(initial_rums) {
                 let team = if let Some(team) = self.teams.get_mut(team_id) {
                     team
                 } else {
@@ -2053,6 +2091,7 @@ impl World {
                 };
 
                 team.current_game = Some(game.id);
+                team.saturating_sub_resource(Resource::RUM, initial_rum);
                 if team.id == self.own_team_id {
                     self.dirty_network = true
                 }
@@ -3093,6 +3132,7 @@ mod test {
             RatedPlayers, DEFAULT_PLANET_ID, MAX_SKILL, MIN_PLAYERS_PER_GAME,
             PORTAL_TRAVEL_DURATION,
         },
+        game_engine::types::TeamInGame,
         types::{HashMapWithResult, StorableResourceMap, SystemTimeTick, Tick},
         ui::UiCallback,
     };
@@ -3391,6 +3431,104 @@ mod test {
         println!("Travelled distance {}", team.total_travelled);
         // Teleportation does not add to total_travelled
         assert!(team.total_travelled == 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_in_game_drinking_rum_accounting() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.new_world();
+
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
+        let planet = PLANET_DATA[0].clone();
+        let home_id = app.world.generate_random_team(
+            rng,
+            planet.id,
+            "home".into(),
+            "homeship".into(),
+            None,
+        )?;
+        let away_id = app.world.generate_random_team(
+            rng,
+            planet.id,
+            "away".into(),
+            "awayship".into(),
+            None,
+        )?;
+
+        // Give both teams a known amount of rum.
+        const STARTING_RUM: u32 = 20;
+        for team_id in [home_id, away_id] {
+            let mut team = app.world.teams.get_or_err(&team_id)?.clone();
+            let current_rum = team.resources.value(&Resource::RUM);
+            team.saturating_sub_resource(Resource::RUM, current_rum);
+            team.add_resource(Resource::RUM, STARTING_RUM)?;
+            app.world.teams.insert(team.id, team);
+        }
+
+        let home_team_in_game =
+            TeamInGame::from_team_id(&home_id, &app.world.teams, &app.world.players)?;
+        let away_team_in_game =
+            TeamInGame::from_team_id(&away_id, &app.world.teams, &app.world.players)?;
+        let initial_rums = [
+            home_team_in_game.initial_rum,
+            away_team_in_game.initial_rum,
+        ];
+        assert!(initial_rums[0] > 0);
+        assert!(initial_rums[1] > 0);
+
+        let game_id = app
+            .world
+            .generate_local_game(home_team_in_game, away_team_in_game)?;
+
+        // The rum brought to the game is debited upfront.
+        for (team_id, initial_rum) in [home_id, away_id].iter().zip(initial_rums) {
+            let team = app.world.teams.get_or_err(team_id)?;
+            assert!(team.resources.value(&Resource::RUM) == STARTING_RUM - initial_rum);
+        }
+
+        // Play the game to the end.
+        {
+            let game = app
+                .world
+                .games
+                .get_mut(&game_id)
+                .expect("Game should exist");
+            let mut current_tick = game.starting_at;
+            while !game.has_ended() {
+                game.tick(current_tick);
+                current_tick += TickInterval::SHORT;
+            }
+        }
+
+        let game = app.world.games.get_or_err(&game_id)?.clone();
+        app.world.cleanup_games(Tick::now())?;
+
+        // After the game, the remaining brought rum is returned along with the rum bonus.
+        for (idx, (team_id, initial_rum)) in
+            [home_id, away_id].iter().zip(initial_rums).enumerate()
+        {
+            let team_in_game = if idx == 0 {
+                &game.home_team_in_game
+            } else {
+                &game.away_team_in_game
+            };
+
+            let rum_bonus = match game.winner {
+                Some(winner) if winner == *team_id => team_in_game.players.len() as u32,
+                _ => 1,
+            };
+
+            let total_drunk: u16 = team_in_game.stats.values().map(|s| s.rum_drunk).sum();
+            assert!(total_drunk as u32 == initial_rum - team_in_game.rum);
+
+            let team = app.world.teams.get_or_err(team_id)?;
+            assert!(
+                team.resources.value(&Resource::RUM)
+                    == STARTING_RUM - initial_rum + team_in_game.rum + rum_bonus
+            );
+        }
 
         Ok(())
     }

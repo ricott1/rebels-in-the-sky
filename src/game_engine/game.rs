@@ -546,30 +546,92 @@ impl Game {
         &mut self,
         attack_stats_update: Option<&GameStatsMap>,
         defense_stats_update: Option<&GameStatsMap>,
-    ) {
+        action_rng: &mut ChaCha8Rng,
+        description_rng: &mut ChaCha8Rng,
+    ) -> Vec<String> {
         let (home_stats_update, away_stats_update) = match self.possession {
             Possession::Home => (attack_stats_update, defense_stats_update),
             Possession::Away => (defense_stats_update, attack_stats_update),
         };
 
-        if let Some(updates) = home_stats_update {
-            for (id, player_stats) in self.home_team_in_game.stats.iter_mut() {
-                if let Some(update) = updates.get(id) {
-                    player_stats.position = update.position;
+        // Collects a description for each player drinking on the bench.
+        let mut drink_descriptions = vec![];
+
+        let timer_tick = self.timer.as_tick();
+        for (team_idx, (team, stats_update)) in [
+            (&mut self.home_team_in_game, home_stats_update),
+            (&mut self.away_team_in_game, away_stats_update),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let updates = if let Some(updates) = stats_update {
+                updates
+            } else {
+                continue;
+            };
+
+            for (id, player_stats) in team.stats.iter_mut() {
+                let update = if let Some(update) = updates.get(id) {
+                    update
+                } else {
+                    continue;
+                };
+                player_stats.position = update.position;
+
+                // The player subbed out (and only them, so that at most one rng roll
+                // happens per team and network replays stay deterministic) can take
+                // a swig of rum on the bench, at most bottles_per_player times per game.
+                if update.position.is_some()
+                    || team.rum == 0
+                    || player_stats.rum_drunk as u32 >= team.in_game_drinking.bottles_per_player()
+                {
+                    continue;
+                }
+
+                if let Some(player) = team.players.get_mut(id) {
+                    if player.is_knocked_out() {
+                        continue;
+                    }
+
+                    // Pirates with low morale are more likely to drink.
+                    let drink_probability = ((MAX_SKILL - player.morale) / MAX_SKILL) as f64
+                        * team.in_game_drinking.drink_probability_modifier();
+                    if action_rng.random_bool(drink_probability.clamp(0.0, 1.0)) {
+                        team.rum -= 1;
+                        player_stats.rum_drunk += 1;
+                        let got_drunk = player.drink(action_rng);
+
+                        let name = player.info.short_name();
+                        let description = if got_drunk {
+                            [
+                                format!("{name} takes a swig of rum on the bench... and collapses, completely wasted! "),
+                                format!("{name} celebrates the rest with one drink too many and passes out on the bench! "),
+                                format!("{name} empties the bottle on the bench and goes down with it. What a disgrace! "),
+                            ]
+                            .choose(description_rng)
+                            .expect("There should be one option")
+                            .clone()
+                        } else {
+                            [
+                                format!("{name} takes a swig of rum on the bench. "),
+                                format!("{name} celebrates the breather with a sip of rum. "),
+                                format!("{name} reaches straight for the rum bottle on the bench. "),
+                            ]
+                            .choose(description_rng)
+                            .expect("There should be one option")
+                            .clone()
+                        };
+
+                        drink_descriptions.push(description);
+                    }
                 }
             }
             // Update tick of last substitution, used for recency modifier in future substitutions.
-            self.last_substitution_tick[0] = self.timer.as_tick();
+            self.last_substitution_tick[team_idx] = timer_tick;
         }
-        if let Some(updates) = away_stats_update {
-            for (id, player_stats) in self.away_team_in_game.stats.iter_mut() {
-                if let Some(update) = updates.get(id) {
-                    player_stats.position = update.position;
-                }
-            }
-            // Update tick of last substitution, used for recency modifier in future substitutions.
-            self.last_substitution_tick[1] = self.timer.as_tick();
-        }
+
+        drink_descriptions
     }
 
     fn apply_tiredness_update(&mut self) {
@@ -978,16 +1040,21 @@ impl Game {
             {
                 if situation == ActionSituation::BallInBackcourt {
                     let action_input = self.action_results[self.action_results.len() - 1].clone();
-                    if let Some(sub) = substitution::should_execute(
+                    if let Some(mut sub) = substitution::should_execute(
                         &action_input,
                         self,
                         action_rng,
                         description_rng,
                     ) {
-                        self.apply_sub_update(
+                        let drink_descriptions = self.apply_sub_update(
                             sub.attack_stats_update.as_ref(),
                             sub.defense_stats_update.as_ref(),
+                            action_rng,
+                            description_rng,
                         );
+                        for description in drink_descriptions {
+                            sub.description.push_str(description.as_str());
+                        }
                         self.action_results.push(sub);
                     }
                 }
@@ -999,13 +1066,63 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use super::Game;
+    use crate::core::skill::MIN_SKILL;
     use crate::core::world::World;
     use crate::core::{Rated, TickInterval};
     use crate::game_engine::action::{ActionSituation, Advantage};
     use crate::game_engine::game::GameSummary;
-    use crate::game_engine::types::{GameStatsMap, Possession, TeamInGame};
+    use crate::game_engine::types::{GameStatsMap, InGameDrinking, Possession, TeamInGame};
     use crate::types::AppResult;
     use crate::types::{SystemTimeTick, Tick};
+
+    #[test]
+    fn test_in_game_drinking() -> AppResult<()> {
+        let mut home_team_in_game = TeamInGame::test();
+        let mut away_team_in_game = TeamInGame::test();
+
+        // Bring rum to the game and make pirates thirsty (low morale drinks often).
+        for team_in_game in [&mut home_team_in_game, &mut away_team_in_game] {
+            team_in_game.in_game_drinking = InGameDrinking::High;
+            let bottles = team_in_game.in_game_drinking.bottles_per_player()
+                * team_in_game.players.len() as u32;
+            team_in_game.initial_rum = bottles;
+            team_in_game.rum = bottles;
+            for player in team_in_game.players.values_mut() {
+                player.morale = MIN_SKILL;
+            }
+        }
+
+        let mut game = Game::test(home_team_in_game, away_team_in_game);
+        let mut current_tick = game.starting_at;
+        while !game.has_ended() {
+            game.tick(current_tick);
+            current_tick += TickInterval::SHORT;
+        }
+
+        let mut total_drunk_overall = 0;
+        for team_in_game in [&game.home_team_in_game, &game.away_team_in_game] {
+            // Rum never underflows and every drink consumed exactly one bottle.
+            assert!(team_in_game.rum <= team_in_game.initial_rum);
+            let total_drunk: u16 = team_in_game.stats.values().map(|s| s.rum_drunk).sum();
+            assert!(total_drunk as u32 == team_in_game.initial_rum - team_in_game.rum);
+
+            // Players drink at most bottles_per_player times per game.
+            for stats in team_in_game.stats.values() {
+                assert!(
+                    (stats.rum_drunk as u32)
+                        <= team_in_game.in_game_drinking.bottles_per_player()
+                );
+            }
+
+            total_drunk_overall += total_drunk;
+        }
+
+        // With low morale, plenty of rum and a High drinking setting,
+        // it is virtually impossible that nobody drank.
+        assert!(total_drunk_overall > 0);
+
+        Ok(())
+    }
 
     #[test]
     fn test_game_consistency() -> AppResult<()> {

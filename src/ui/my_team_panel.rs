@@ -656,6 +656,7 @@ impl MyTeamPanel {
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
+            Constraint::Length(3),
         ])
         .split(split[0].inner(Margin::new(1, 1)));
 
@@ -721,6 +722,25 @@ impl MyTeamPanel {
 
         frame.render_interactive_widget(game_position_fluidity_button, btm_split[2]);
 
+        let mut in_game_drinking_button = Button::new(
+            format!("in-game drinking: {}", own_team.in_game_drinking),
+            UiCallback::SetTeamInGameDrinking {
+                in_game_drinking: own_team.in_game_drinking.next(),
+            },
+        )
+        .set_hover_text(format!(
+            "{}: {}",
+            own_team.in_game_drinking,
+            own_team.in_game_drinking.description()
+        ))
+        .set_hotkey(ui_key::team::SET_IN_GAME_DRINKING);
+
+        if let Err(err) = can_change_team_settings.as_ref() {
+            in_game_drinking_button.disable(Some(err.to_string()));
+        }
+
+        frame.render_interactive_widget(in_game_drinking_button, btm_split[3]);
+
         let local_challenge_button = Button::new(
             format!(
                 "Auto-accept local challenges: {}",
@@ -734,7 +754,7 @@ impl MyTeamPanel {
         )
         .set_hover_text("Accept challenges from local teams automatically.".to_string())
         .set_hotkey(ui_key::team::TOGGLE_ACCEPT_LOCAL_CHALLENGES);
-        frame.render_interactive_widget(local_challenge_button, btm_split[3]);
+        frame.render_interactive_widget(local_challenge_button, btm_split[4]);
 
         let network_challenge_button = Button::new(
             format!(
@@ -749,7 +769,7 @@ impl MyTeamPanel {
         )
         .set_hover_text("Accept challenges from network teams automatically.".to_string())
         .set_hotkey(ui_key::team::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
-        frame.render_interactive_widget(network_challenge_button, btm_split[4]);
+        frame.render_interactive_widget(network_challenge_button, btm_split[5]);
 
         match own_team.current_location {
             TeamLocation::OnPlanet { .. } => {

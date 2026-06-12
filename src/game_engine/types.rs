@@ -4,6 +4,7 @@ use crate::{
         constants::MAX_PLAYERS_PER_GAME,
         player::Player,
         position::{GamePosition, NUM_GAME_POSITIONS},
+        resources::Resource,
         skill::{MAX_SKILL, MIN_SKILL},
         team::Team,
         utils::is_default,
@@ -11,7 +12,7 @@ use crate::{
     },
     game_engine::constants::{FITNESS_ROLL_MALUS, NUMBER_OF_ROLLS},
     image::game::PitchImage,
-    types::{AppResult, GameId, PlayerId, PlayerMap, TeamId, TeamMap},
+    types::{AppResult, GameId, PlayerId, PlayerMap, StorableResourceMap, TeamId, TeamMap},
 };
 use anyhow::anyhow;
 use itertools::Itertools;
@@ -74,6 +75,9 @@ pub struct GameStats {
     pub turnovers: u16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
+    pub rum_drunk: u16,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub plus_minus: i32,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
@@ -113,6 +117,7 @@ impl GameStats {
         self.steals += stats.steals;
         self.blocks += stats.blocks;
         self.turnovers += stats.turnovers;
+        self.rum_drunk += stats.rum_drunk;
         if let Some(shot) = stats.last_action_shot {
             self.shots.push(shot);
             assert!(!self.shots.is_empty());
@@ -154,6 +159,17 @@ pub struct TeamInGame {
     pub initial_morale: Vec<Skill>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
+    pub initial_drunkenness: Vec<Skill>,
+    // Rum brought to the game, debited from the team at game start.
+    // Whatever is not drunk is returned at the end of the game.
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub initial_rum: u32,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub rum: u32,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub players: PlayerMap,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
@@ -167,6 +183,9 @@ pub struct TeamInGame {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub game_position_fluidity: GamePositionFluidity,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub in_game_drinking: InGameDrinking,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub score_run: u16,
@@ -189,6 +208,12 @@ impl TeamInGame {
 
         let initial_tiredness = players.values().map(|p| p.tiredness).collect();
         let initial_morale = players.values().map(|p| p.morale).collect();
+        let initial_drunkenness = players.values().map(|p| p.drunkenness).collect();
+
+        // Rum brought to the game, depending on the team in-game drinking setting.
+        let initial_rum = team.resources.value(&Resource::RUM).min(
+            team.in_game_drinking.bottles_per_player() * players.len() as u32,
+        );
 
         let network_game_rating = team.network_game_rating.clone();
         Self {
@@ -199,6 +224,9 @@ impl TeamInGame {
             initial_positions: players.keys().copied().collect_vec(),
             initial_tiredness,
             initial_morale,
+            initial_drunkenness,
+            initial_rum,
+            rum: initial_rum,
             version: team.version,
             players,
             stats,
@@ -206,6 +234,7 @@ impl TeamInGame {
             network_game_rating,
             substitution_tendency: team.substitution_tendency,
             game_position_fluidity: team.game_position_fluidity,
+            in_game_drinking: team.in_game_drinking,
             ..Default::default()
         }
     }
@@ -336,6 +365,51 @@ impl GamePositionFluidity {
             Self::Low => 1.5,
             Self::Normal => 1.0,
             Self::High => 0.6,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Display, PartialEq, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
+pub enum InGameDrinking {
+    None,
+    #[default]
+    Normal,
+    High,
+}
+
+impl InGameDrinking {
+    pub const fn next(&self) -> Self {
+        match self {
+            Self::None => Self::Normal,
+            Self::Normal => Self::High,
+            Self::High => Self::None,
+        }
+    }
+
+    pub const fn description(&self) -> &'static str {
+        match self {
+            Self::None => "Bring no rum to games: pirates never drink on the bench.",
+            Self::Normal => "Bring 1 liter of rum per pirate to games for the occasional bench swig.",
+            Self::High => "Bring 2 liters of rum per pirate to games. The bench drinks often.",
+        }
+    }
+
+    // How many liters of rum per pirate are brought to a game.
+    pub const fn bottles_per_player(&self) -> u32 {
+        match self {
+            Self::None => 0,
+            Self::Normal => 1,
+            Self::High => 2,
+        }
+    }
+
+    // Multiplies the morale-based probability of drinking when substituted out.
+    pub const fn drink_probability_modifier(&self) -> f64 {
+        match self {
+            Self::None => 0.0,
+            Self::Normal => 1.0,
+            Self::High => 1.5,
         }
     }
 }

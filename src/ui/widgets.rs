@@ -1488,11 +1488,12 @@ pub fn render_player_description(
         |t| Span::styled(format!("{t}"), t.style()),
     );
 
-    let drunkenness_span = match player.drunkenness_description() {
+    let drunkenness = player.current_drunkenness(world);
+    let drunkenness_span = match Player::drunkenness_description(drunkenness) {
         "Sober" => Span::raw(""),
         desc => Span::styled(
             format!(" {desc}"),
-            ((MAX_SKILL - player.drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL).style(),
+            ((MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL).style(),
         ),
     };
 

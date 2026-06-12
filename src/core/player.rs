@@ -780,6 +780,29 @@ impl Player {
         morale
     }
 
+    pub fn current_drunkenness(&self, world: &World) -> f32 {
+        let mut drunkenness = self.drunkenness;
+        // Check if player is currently playing.
+        // In this case, read current drunkenness from game.
+        if let Some(team_id) = self.team {
+            if let Ok(team) = world.teams.get_or_err(&team_id) {
+                if let Some(game_id) = team.current_game {
+                    if let Ok(game) = world.games.get_or_err(&game_id) {
+                        if let Some(p) = if game.home_team_in_game.team_id == team_id {
+                            game.home_team_in_game.players.get(&self.id)
+                        } else {
+                            game.away_team_in_game.players.get(&self.id)
+                        } {
+                            drunkenness = p.drunkenness;
+                        }
+                    }
+                }
+            }
+        }
+
+        drunkenness
+    }
+
     pub fn can_drink(&self, world: &World) -> AppResult<()> {
         if self.team.is_none() {
             return Err(anyhow!("Player has no team, so no rum to drink"));
@@ -833,8 +856,8 @@ impl Player {
         false
     }
 
-    pub fn drunkenness_description(&self) -> &'static str {
-        match self.drunkenness {
+    pub fn drunkenness_description(drunkenness: Skill) -> &'static str {
+        match drunkenness {
             x if x < 4.0 => "Sober",
             x if x < 8.0 => "Tipsy",
             x if x < 12.0 => "Merry",

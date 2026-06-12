@@ -119,6 +119,7 @@ pub mod team {
     pub const SET_PILOT: KeyCode = KeyCode::Char('p');
     pub const SET_SUBSTITUTION_TENDENCY: KeyCode = KeyCode::Char('s');
     pub const SET_GAME_POSITION_FLUIDITY: KeyCode = KeyCode::Char('g');
+    pub const SET_IN_GAME_DRINKING: KeyCode = KeyCode::Char('r');
 
     pub const fn set_player_position(position: GamePosition) -> KeyCode {
         match position {

@@ -179,8 +179,16 @@ impl NetworkGame {
             // Reset morale to initial one
             let morale = home_team_in_game.initial_morale[idx];
             player.morale = morale;
+            // Reset drunkenness to initial one.
+            // Safe indexing since games from older versions have an empty vector.
+            player.drunkenness = home_team_in_game
+                .initial_drunkenness
+                .get(idx)
+                .copied()
+                .unwrap_or_default();
         }
         home_team_in_game.stats = stats;
+        home_team_in_game.rum = home_team_in_game.initial_rum;
 
         let mut away_team_in_game = game.away_team_in_game.clone();
         let mut stats = HashMap::new();
@@ -201,8 +209,16 @@ impl NetworkGame {
             // Reset morale to initial one
             let morale = away_team_in_game.initial_morale[idx];
             player.morale = morale;
+            // Reset drunkenness to initial one.
+            // Safe indexing since games from older versions have an empty vector.
+            player.drunkenness = away_team_in_game
+                .initial_drunkenness
+                .get(idx)
+                .copied()
+                .unwrap_or_default();
         }
         away_team_in_game.stats = stats;
+        away_team_in_game.rum = away_team_in_game.initial_rum;
 
         Ok(Self {
             id: game.id,

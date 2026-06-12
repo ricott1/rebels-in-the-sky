@@ -93,6 +93,9 @@ pub struct Team {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub game_position_fluidity: GamePositionFluidity,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub in_game_drinking: InGameDrinking,
     #[serde(skip)]
     pub sent_trades: HashMap<(PlayerId, PlayerId), Trade>,
     #[serde(skip)]
