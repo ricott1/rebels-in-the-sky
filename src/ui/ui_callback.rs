@@ -746,16 +746,16 @@ impl UiCallback {
 
     fn assign_best_team_positions() -> AppCallback {
         Box::new(move |app: &mut App| {
-            let mut team = app.world.get_own_team()?.clone();
+            let team = app.world.teams.get_mut_or_err(&app.world.own_team_id)?;
+            let current_ids = team.player_ids.clone();
             team.player_ids = Team::best_position_assignment(
-                team.player_ids
+                current_ids
                     .iter()
                     .map(|id| app.world.players.get(id).unwrap())
                     .collect(),
                 team.game_position_fluidity,
             );
 
-            app.world.teams.insert(team.id, team);
             app.world.dirty = true;
             app.world.dirty_ui = true;
 

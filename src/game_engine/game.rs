@@ -12,7 +12,7 @@ use crate::{
         position::NUM_GAME_POSITIONS,
         skill::GameSkill,
         utils::is_default,
-        DEFAULT_PLANET_ID,
+        CrewRole, Skill, TeamBonus, DEFAULT_PLANET_ID,
     },
     game_engine::{end_of_quarter, substitution, TournamentId},
     types::*,
@@ -503,6 +503,31 @@ impl Game {
                 }
             }
         }
+
+        // Update momentum. If the opposite team scored, break run.
+        if score_change > 0 {
+            attacking_team.score_run += score_change;
+            defending_team.score_run = 0;
+        }
+    }
+
+    pub fn team_momentum(&self, possession: Possession) -> Skill {
+        let team = match possession {
+            Possession::Home => &self.home_team_in_game,
+            Possession::Away => &self.away_team_in_game,
+        };
+
+        if team.score_run == 0 {
+            return 0.0;
+        }
+
+        let team_captain = team
+            .players
+            .values()
+            .find(|&p| p.info.crew_role == CrewRole::Captain);
+        let captain_bonus =
+            team_captain.map_or(1.0, |p| TeamBonus::Reputation.current_player_bonus(p));
+        0.1 * (team.score_run as Skill * captain_bonus).bound()
     }
 
     fn apply_sub_update(
@@ -843,9 +868,19 @@ impl Game {
         );
 
         if result.score_change > 0 {
+            let score_run_description = if self.attacking_team().score_run >= 8 {
+                format!(
+                    "{} is on a {}-0 run! ",
+                    self.attacking_team().name,
+                    self.attacking_team().score_run
+                )
+            } else {
+                "".to_string()
+            };
+
             result.description = format!(
-                "{} [{}-{}]",
-                result.description, result.home_score, result.away_score,
+                "{} {}[{}-{}]",
+                result.description, score_run_description, result.home_score, result.away_score,
             );
         }
 

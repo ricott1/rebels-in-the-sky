@@ -169,7 +169,7 @@ pub struct TeamInGame {
     pub game_position_fluidity: GamePositionFluidity,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub momentum: Skill,
+    pub score_run: u16,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub network_game_rating: GameRating,

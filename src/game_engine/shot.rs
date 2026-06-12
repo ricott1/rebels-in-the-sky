@@ -811,10 +811,10 @@ fn execute_shot(
             score.1 < score.0 && score.0 - score.1 <= losing_margin
         };
 
-        let extra_morale = if attacking_team_was_losing_by_margin {
-            MoraleModifier::MEDIUM_BONUS
-        } else {
-            MoraleModifier::SMALL_BONUS
+        let mut extra_morale = MoraleModifier::SMALL_BONUS + game.team_momentum(input.possession);
+
+        if attacking_team_was_losing_by_margin {
+            extra_morale *= 2.0;
         };
 
         for player in game.all_attacking_players().values() {
