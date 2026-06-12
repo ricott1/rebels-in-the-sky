@@ -736,6 +736,7 @@ impl World {
                 .iter()
                 .map(|&id| self.players.get(&id).unwrap())
                 .collect(),
+            team.game_position_fluidity,
         );
         team.version += 1;
 
@@ -818,7 +819,7 @@ impl World {
         team.player_ids.retain(|&p| p != player.id);
 
         if let Ok(pirates) = Self::get_team_players(&self.players, &team) {
-            team.player_ids = Team::best_position_assignment(pirates);
+            team.player_ids = Team::best_position_assignment(pirates, team.game_position_fluidity);
             team.version += 1;
         }
 
@@ -2358,7 +2359,8 @@ impl World {
             }
 
             if let Ok(pirates) = Self::get_team_players(&self.players, team) {
-                team.player_ids = Team::best_position_assignment(pirates);
+                team.player_ids =
+                    Team::best_position_assignment(pirates, team.game_position_fluidity);
             }
 
             let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
@@ -2507,31 +2509,34 @@ impl World {
 
             // Pirates slightly dislike being part of a team.
             // This is counteracted by the morale boost pirates get by playing games.
-            // We do not apply this to computer teams since no games are played during simulation,
-            // and hence it would result in all computer players to be completely demoralized.
             player.add_morale(MORALE_DECREASE_PER_LONG_TICK);
             player.reputation = (player.reputation + REPUTATION_DECREASE_PER_LONG_TICK).bound();
 
+            // All game position fitness have decrease by a small amount
+            // that depends on the total game fitness and the player intuition.
+            //This is planned to counteract the effect of training by playing games.
+            let malus = GAME_POSITION_DECREMENT_PER_LONG_TICK
+                * ((player.game_position_fitness.iter().sum::<Skill>()
+                    / player.game_position_fitness.len() as Skill
+                    - 0.25 * player.mental.intuition)
+                    / MAX_SKILL)
+                    .bound();
             for p in 0..player.game_position_fitness.len() {
                 if let Some(value) = player.game_position_fitness.get_mut(p) {
-                    *value = (*value
-                        + player
-                            .game_position_fitness_training
-                            .get(p)
-                            .copied()
-                            .unwrap_or_default())
-                    .bound()
+                    *value = (*value + malus).bound();
+
+                    // Increase player game position from training
+                    let bonus = player
+                        .game_position_fitness_training
+                        .get(p)
+                        .copied()
+                        .unwrap_or_default();
+                    *value = (*value + bonus).bound()
                 }
             }
 
             for idx in 0..player.skills_training.len() {
                 // Reduce player skills. This is planned to counteract the effect of training by playing games.
-                // Age modifier:
-                //   Young: linear from 0.75 at birth to 1.0 at peak.
-                //   Old:   linear from 1.0 at peak to max_modifier at retirement.
-                //          Athletics (idx 0-3):  max 3.15
-                //          Mental (16-19):       max 1.55
-                //          Off/Def/Tech (4-15):  max 2.55
                 let age_modifier = player.age_modifier_to_skill_update(idx);
 
                 player.modify_skill(idx, SKILL_DECREMENT_PER_LONG_TICK * age_modifier.bound());

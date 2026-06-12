@@ -23,7 +23,7 @@ use std::collections::HashMap;
 fn get_subs<'a>(
     players: &[&'a Player],
     team_stats: &GameStatsMap,
-    subsitution_tendency: SubstitutionTendency,
+    substitution_tendency: SubstitutionTendency,
     game_position_fluidity: GamePositionFluidity,
     ticks_since_last_substitution: Tick,
     action_rng: &mut ChaCha8Rng,
@@ -104,7 +104,7 @@ fn get_subs<'a>(
         .bound()
             / MAX_SKILL;
 
-        // A small negative modifier if the last substitution was recent.
+        // A small negative modifier if the last substitution was recent, a boost if it was long ago.
         let recency_modifier = if ticks_since_last_substitution < TickInterval::SHORT * 30 {
             0.05
         } else if ticks_since_last_substitution < TickInterval::SHORT * 60 {
@@ -114,7 +114,7 @@ fn get_subs<'a>(
         } else {
             1.0
         };
-        ((subsitution_tendency.substitution_probability() + rating_modifier as f64)
+        ((substitution_tendency.substitution_probability() + rating_modifier as f64)
             * recency_modifier)
             .clamp(0.0, 1.0)
     };
@@ -129,7 +129,7 @@ fn get_subs<'a>(
 fn make_substitution(
     players: Vec<&Player>,
     stats: &GameStatsMap,
-    subsitution_tendency: SubstitutionTendency,
+    substitution_tendency: SubstitutionTendency,
     game_position_fluidity: GamePositionFluidity,
     ticks_since_last_substitution: Tick,
     action_rng: &mut ChaCha8Rng,
@@ -138,7 +138,7 @@ fn make_substitution(
     let subs = get_subs(
         &players,
         stats,
-        subsitution_tendency,
+        substitution_tendency,
         game_position_fluidity,
         ticks_since_last_substitution,
         action_rng,
@@ -229,7 +229,7 @@ fn make_substitution(
         .copied()
         .collect();
     playing.push(player_in);
-    let assignement = Team::best_position_assignment(playing);
+    let assignement = Team::best_position_assignment(playing, game_position_fluidity);
     for (idx, &id) in assignement.clone().iter().enumerate() {
         let mut player_update = if let Some(update) = stats_update.get(&id) {
             update.clone()

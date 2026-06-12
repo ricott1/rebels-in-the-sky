@@ -697,7 +697,7 @@ mod tests {
                 );
                 let away_team_settings = (
                     away_tactic,
-                    SubstitutionTendency::Low,
+                    SubstitutionTendency::Normal,
                     GamePositionFluidity::Low,
                 );
                 let samples = get_simulated_game_samples(

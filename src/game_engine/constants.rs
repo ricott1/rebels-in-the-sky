@@ -9,6 +9,7 @@ pub(crate) const BRAWL_ACTION_PROBABILITY: f64 = 0.045;
 pub(crate) const FASTBREAK_ACTION_PROBABILITY: f64 = 0.4;
 
 pub(crate) const DUNK_PROBABILITY: f64 = 0.45;
+pub(crate) const FITNESS_ROLL_MALUS: f32 = 16.0;
 
 // Action checks compare attacker and defender as
 // NUMBER_OF_ROLLS + 2 player skill + 1 tactic skill

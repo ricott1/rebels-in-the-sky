@@ -98,7 +98,7 @@ pub(crate) fn execute(
         ..Default::default()
     };
 
-    let mut atk_result = attacker.roll(action_rng)
+    let mut atk_result = attacker.roll(action_rng, None)
         + (0.5 * attacker.athletics.strength + 0.5 * attacker.mental.aggression).game_value()
         + attacker.offense.brawl.game_value()
         + game
@@ -110,7 +110,7 @@ pub(crate) fn execute(
         atk_result += attacker.reputation.game_value();
     }
 
-    let mut def_result = defender.roll(action_rng)
+    let mut def_result = defender.roll(action_rng, None)
         + (0.5 * defender.athletics.strength + 0.5 * defender.mental.aggression).game_value()
         + defender.offense.brawl.game_value()
         + game

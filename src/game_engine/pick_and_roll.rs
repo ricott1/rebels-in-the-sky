@@ -2,7 +2,7 @@ use super::{action::*, constants::*, game::Game, shot, types::*};
 use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     skill::GameSkill,
-    Player, MAX_SKILL,
+    GamePosition, Player, MAX_SKILL,
 };
 use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
@@ -142,7 +142,7 @@ fn playmaker_uses_the_screen(
         ..Default::default()
     };
 
-    let atk_result = playmaker.roll(action_rng)
+    let atk_result = playmaker.roll(action_rng, Some(play_idx as GamePosition))
         + (0.75 * playmaker.technical.ball_handling + 0.25 * playmaker.athletics.quickness)
             .game_value()
         + (0.5 * screener.athletics.strength + 0.5 * playmaker.mental.intuition).game_value()
@@ -151,7 +151,7 @@ fn playmaker_uses_the_screen(
             .tactic
             .attack_roll_bonus(&Action::PickAndRoll);
 
-    let def_result = playmaker_defender.roll(action_rng)
+    let def_result = playmaker_defender.roll(action_rng, Some(play_idx as GamePosition))
         + playmaker_defender.defense.perimeter_defense.game_value()
         + (0.25 * playmaker_defender.defense.steal
             + 0.5 * playmaker_defender.athletics.quickness
@@ -465,7 +465,7 @@ fn playmaker_passes_to_target(
         ..Default::default()
     };
 
-    let atk_result = playmaker.roll(action_rng)
+    let atk_result = playmaker.roll(action_rng, Some(play_idx as GamePosition))
         + (0.25 * playmaker.technical.ball_handling
             + 0.25 * playmaker.mental.vision
             + 0.5 * target.mental.intuition)
@@ -476,7 +476,7 @@ fn playmaker_passes_to_target(
             .tactic
             .attack_roll_bonus(&Action::PickAndRoll);
 
-    let def_result = playmaker_defender.roll(action_rng)
+    let def_result = playmaker_defender.roll(action_rng, Some(play_idx as GamePosition))
         + playmaker_defender.defense.perimeter_defense.game_value()
         + (0.25 * target_defender.athletics.quickness
             + 0.5 * target_defender.mental.intuition

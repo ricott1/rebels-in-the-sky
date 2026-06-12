@@ -7,7 +7,7 @@ use crate::{
     core::{player::Player, skill::GameSkill},
     game_engine::constants::ADV_NEUTRAL_LIMIT,
 };
-use rand::{RngExt};
+use rand::RngExt;
 use rand_chacha::ChaCha8Rng;
 
 pub(crate) fn execute(
@@ -31,8 +31,8 @@ pub(crate) fn execute(
         .max_by_key(|&p| jump_ball(p))
         .expect("There should be a max");
 
-    let home_result = home_jumper.roll(action_rng) + jump_ball(home_jumper);
-    let away_result = away_jumper.roll(action_rng) + jump_ball(away_jumper);
+    let home_result = home_jumper.roll(action_rng, None) + jump_ball(home_jumper);
+    let away_result = away_jumper.roll(action_rng, None) + jump_ball(away_jumper);
 
     let timer_increase = 6 + action_rng.random_range(0..=7);
 

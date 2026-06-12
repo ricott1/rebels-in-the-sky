@@ -43,7 +43,7 @@ pub(crate) fn execute(
     let atk_result: Skill = attacking_players_array
         .iter()
         .map(|player| {
-            let mut result = player.roll(action_rng) as Skill
+            let mut result = player.roll(action_rng, None) as Skill
                 + (0.5 * player.athletics.strength + 0.5 * player.mental.aggression)
                 + player.offense.brawl;
 
@@ -57,7 +57,7 @@ pub(crate) fn execute(
     let def_result: Skill = defending_players_array
         .iter()
         .map(|player| {
-            let mut result = player.roll(action_rng) as Skill
+            let mut result = player.roll(action_rng, None) as Skill
                 + (0.5 * player.athletics.strength + 0.5 * player.mental.aggression)
                 + player.offense.brawl;
 

@@ -9,7 +9,7 @@ use crate::{
         utils::is_default,
         GameRating, GameSkill, Rated, Skill,
     },
-    game_engine::constants::NUMBER_OF_ROLLS,
+    game_engine::constants::{FITNESS_ROLL_MALUS, NUMBER_OF_ROLLS},
     image::game::PitchImage,
     types::{AppResult, GameId, PlayerId, PlayerMap, TeamId, TeamMap},
 };
@@ -204,6 +204,8 @@ impl TeamInGame {
             stats,
             tactic: team.game_tactic,
             network_game_rating,
+            substitution_tendency: team.substitution_tendency,
+            game_position_fluidity: team.game_position_fluidity,
             ..Default::default()
         }
     }
@@ -329,7 +331,7 @@ impl GamePositionFluidity {
         }
     }
 
-    pub const fn game_modifier(&self) -> f32 {
+    pub const fn fitness_exponent(&self) -> f32 {
         match self {
             Self::Low => 1.3,
             Self::Normal => 1.0,
@@ -424,7 +426,7 @@ fn test_gamestats_serde() {
 pub trait EnginePlayer {
     fn min_roll(&self) -> i16;
     fn max_roll(&self) -> i16;
-    fn roll(&self, rng: &mut ChaCha8Rng) -> i16;
+    fn roll(&self, rng: &mut ChaCha8Rng, position: Option<GamePosition>) -> i16;
     fn in_game_rating_at_position(
         &self,
         position: GamePosition,
@@ -452,10 +454,26 @@ impl EnginePlayer for Player {
                 * (MAX_SKILL - (self.tiredness - MIN_TIREDNESS_FOR_ROLL_DECLINE)) as i16
     }
 
-    fn roll(&self, rng: &mut ChaCha8Rng) -> i16 {
-        rng.random_range(MIN_SKILL as i16..=NUMBER_OF_ROLLS as i16 * MAX_SKILL as i16)
+    fn roll(&self, rng: &mut ChaCha8Rng, position: Option<GamePosition>) -> i16 {
+        let base = rng
+            .random_range(MIN_SKILL as i16..=NUMBER_OF_ROLLS as i16 * MAX_SKILL as i16)
             .max(self.min_roll())
-            .min(self.max_roll())
+            .min(self.max_roll());
+
+        // Playing out of position caps performance, scaled by how poor the fit is.
+        let fitness_malus = if let Some(position) = position {
+            let fitness = self
+                .game_position_fitness
+                .get(position as usize)
+                .copied()
+                .unwrap_or_default()
+                / MAX_SKILL;
+            ((1.0 - fitness) * FITNESS_ROLL_MALUS) as i16
+        } else {
+            0
+        };
+
+        (base - fitness_malus).max(MIN_SKILL as i16)
     }
 
     fn in_game_rating_at_position(
@@ -473,9 +491,20 @@ impl EnginePlayer for Player {
             .max(self.min_roll())
             .min(self.max_roll());
 
-        // This factor takes into account how much a player role fitness matters.
-        let game_position_fluidity_modifier = game_position_fluidity.game_modifier();
-        roll as f32 + 2.0 * self.position_rating(position) * game_position_fluidity_modifier
+        let fitness = self
+            .game_position_fitness
+            .get(position as usize)
+            .copied()
+            .unwrap_or_default()
+            / MAX_SKILL;
+
+        let fitness_adjustment = if fitness > 0.0 {
+            fitness.powf(game_position_fluidity.fitness_exponent() - 1.0)
+        } else {
+            1.0
+        };
+
+        roll as f32 + 2.0 * self.position_rating(position) * fitness_adjustment
     }
 }
 
@@ -485,8 +514,8 @@ fn test_roll() {
     use rand::SeedableRng;
 
     fn print_player_rolls(player: &Player, rng: &mut ChaCha8Rng) {
-        let roll = player.roll(rng);
-        let roll2 = player.roll(rng);
+        let roll = player.roll(rng, None);
+        let roll2 = player.roll(rng, None);
         println!(
             "Tiredness={:<4.1} Morale={:<4.1} => Min={:<3} Max={:<3} Roll={:<3}  AdvAtk={:<3} AdvDef={:<3}",
             player.tiredness,

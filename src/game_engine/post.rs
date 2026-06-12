@@ -3,6 +3,7 @@ use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     player::Player,
     skill::GameSkill,
+    GamePosition,
 };
 use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
@@ -58,7 +59,7 @@ pub(crate) fn execute(
         ..Default::default()
     };
 
-    let atk_result = poster.roll(action_rng)
+    let atk_result = poster.roll(action_rng, Some(post_idx as GamePosition))
         + poster.technical.post_moves.game_value()
         + poster.athletics.strength.game_value()
         + game
@@ -66,7 +67,7 @@ pub(crate) fn execute(
             .tactic
             .attack_roll_bonus(&Action::Post);
 
-    let def_result = defender.roll(action_rng)
+    let def_result = defender.roll(action_rng, Some(post_idx as GamePosition))
         + defender.defense.interior_defense.game_value()
         + (0.75 * defender.athletics.strength + 0.25 * defender.defense.steal).game_value()
         + game

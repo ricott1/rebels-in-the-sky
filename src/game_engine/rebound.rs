@@ -67,16 +67,17 @@ pub(crate) fn execute(
         match input.advantage {
             Advantage::Attack => {
                 attack_rebounds[idx] += attacking_players_array[idx]
-                    .roll(action_rng)
-                    .max(attacking_players_array[idx].roll(action_rng));
+                    .roll(action_rng, Some(idx as GamePosition))
+                    .max(attacking_players_array[idx].roll(action_rng, Some(idx as GamePosition)));
             }
             Advantage::Neutral => {
-                attack_rebounds[idx] += attacking_players_array[idx].roll(action_rng);
+                attack_rebounds[idx] +=
+                    attacking_players_array[idx].roll(action_rng, Some(idx as GamePosition));
             }
             Advantage::Defense => {
                 attack_rebounds[idx] += attacking_players_array[idx]
-                    .roll(action_rng)
-                    .min(attacking_players_array[idx].roll(action_rng));
+                    .roll(action_rng, Some(idx as GamePosition))
+                    .min(attacking_players_array[idx].roll(action_rng, Some(idx as GamePosition)));
             }
         }
     }
@@ -90,7 +91,8 @@ pub(crate) fn execute(
         defense_rebounds[idx] =
             (defense_rebounds[idx] as f32 * position_rebound_bonus(idx as GamePosition)) as i16;
         //add random roll
-        defense_rebounds[idx] += defending_players_array[idx].roll(action_rng);
+        defense_rebounds[idx] +=
+            defending_players_array[idx].roll(action_rng, Some(idx as GamePosition));
     }
 
     let attack_result = *attack_rebounds

@@ -752,6 +752,7 @@ impl UiCallback {
                     .iter()
                     .map(|id| app.world.players.get(id).unwrap())
                     .collect(),
+                team.game_position_fluidity,
             );
 
             app.world.teams.insert(team.id, team);

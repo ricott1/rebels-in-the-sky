@@ -980,7 +980,10 @@ impl Team {
         matches!(self.current_location, TeamLocation::Travelling { .. })
     }
 
-    pub fn best_position_assignment(players: Vec<&Player>) -> Vec<PlayerId> {
+    pub fn best_position_assignment(
+        players: Vec<&Player>,
+        game_position_fluidity: GamePositionFluidity,
+    ) -> Vec<PlayerId> {
         if players.len() < NUM_GAME_POSITIONS as usize {
             return players.iter().map(|&p| p.id).collect();
         }
@@ -991,9 +994,7 @@ impl Team {
             .take(MAX_CREW_SIZE) // For performance reasons, we only consider the first MAX_CREW_SIZE players by rating.
             .map(|&p| {
                 (0..NUM_GAME_POSITIONS)
-                    .map(|position| {
-                        p.in_game_rating_at_position(position, GamePositionFluidity::default())
-                    })
+                    .map(|position| p.in_game_rating_at_position(position, game_position_fluidity))
                     .collect::<Vec<f32>>()
             })
             .collect::<Vec<Vec<f32>>>();

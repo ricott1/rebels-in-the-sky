@@ -8,7 +8,7 @@ use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     player::Player,
     skill::GameSkill,
-    CrewRole, TeamBonus, Trait, MAX_SKILL,
+    CrewRole, GamePosition, TeamBonus, Trait, MAX_SKILL,
 };
 use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
@@ -556,8 +556,9 @@ fn execute_shot(
     };
     let def_skill = defenders
         .iter()
-        .map(|&p| {
-            p.roll(action_rng) / defenders.len() as i16
+        .zip(input.defenders.iter())
+        .map(|(&p, &def_idx)| {
+            p.roll(action_rng, Some(def_idx as GamePosition)) / defenders.len() as i16
                 + if p.is_knocked_out() {
                     0
                 } else {
@@ -568,14 +569,21 @@ fn execute_shot(
 
     let roll = match input.advantage {
         Advantage::Attack => {
-            (shooter.roll(action_rng).max(shooter.roll(action_rng)) + atk_skill)
+            (shooter
+                .roll(action_rng, Some(shooter_idx as GamePosition))
+                .max(shooter.roll(action_rng, Some(shooter_idx as GamePosition)))
+                + atk_skill)
                 - (shot_difficulty as i16 + def_skill)
         }
         Advantage::Neutral => {
-            (shooter.roll(action_rng) + atk_skill) - (shot_difficulty as i16 + def_skill)
+            (shooter.roll(action_rng, Some(shooter_idx as GamePosition)) + atk_skill)
+                - (shot_difficulty as i16 + def_skill)
         }
         Advantage::Defense => {
-            (shooter.roll(action_rng).min(shooter.roll(action_rng)) + atk_skill)
+            (shooter
+                .roll(action_rng, Some(shooter_idx as GamePosition))
+                .min(shooter.roll(action_rng, Some(shooter_idx as GamePosition)))
+                + atk_skill)
                 - (shot_difficulty as i16 + def_skill)
         }
     };
