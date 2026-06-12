@@ -434,12 +434,8 @@ impl Game {
             ActionSituation::AfterSubstitution | ActionSituation::BallInBackcourt => {
                 // Drunk players on court increase the brawl probability.
                 // Wasted players don't contribute since their drunkenness is reset to 0.
-                let total_drunkenness = self
-                    .attacking_players_array()
-                    .iter()
-                    .chain(self.defending_players_array().iter())
-                    .map(|p| p.drunkenness)
-                    .sum::<Skill>();
+                let total_drunkenness = self.home_team_in_game.playing_drunkenness()
+                    + self.away_team_in_game.playing_drunkenness();
                 let drunkenness_modifier = DRUNKENNESS_BRAWL_PROBABILITY_MODIFIER
                     * (total_drunkenness / (2.0 * NUM_GAME_POSITIONS as f32) / MAX_SKILL) as f64;
 
@@ -589,42 +585,39 @@ impl Game {
                     continue;
                 }
 
-                if let Some(player) = team.players.get_mut(id) {
-                    if player.is_knocked_out() {
-                        continue;
-                    }
+                let Some(player) = team.players.get_mut(id) else {
+                    continue;
+                };
+                if player.is_knocked_out() {
+                    continue;
+                }
 
-                    // Pirates with low morale are more likely to drink.
-                    let drink_probability = ((MAX_SKILL - player.morale) / MAX_SKILL) as f64
-                        * team.in_game_drinking.drink_probability_modifier();
-                    if action_rng.random_bool(drink_probability.clamp(0.0, 1.0)) {
-                        team.rum -= 1;
-                        player_stats.rum_drunk += 1;
-                        let got_drunk = player.drink(action_rng);
+                // Pirates with low morale are more likely to drink.
+                let drink_probability = ((MAX_SKILL - player.morale) / MAX_SKILL) as f64
+                    * team.in_game_drinking.drink_probability_modifier();
+                if action_rng.random_bool(drink_probability.clamp(0.0, 1.0)) {
+                    team.rum -= 1;
+                    player_stats.rum_drunk += 1;
 
-                        let name = player.info.short_name();
-                        let description = if got_drunk {
-                            [
-                                format!("{name} takes a swig of rum on the bench... and collapses, completely wasted! "),
-                                format!("{name} celebrates the rest with one drink too many and passes out on the bench! "),
-                                format!("{name} empties the bottle on the bench and goes down with it. What a disgrace! "),
-                            ]
-                            .choose(description_rng)
-                            .expect("There should be one option")
-                            .clone()
-                        } else {
-                            [
-                                format!("{name} takes a swig of rum on the bench. "),
-                                format!("{name} celebrates the breather with a sip of rum. "),
-                                format!("{name} reaches straight for the rum bottle on the bench. "),
-                            ]
-                            .choose(description_rng)
-                            .expect("There should be one option")
-                            .clone()
-                        };
+                    let options = if player.drink(action_rng) {
+                        [
+                            "takes a swig of rum on the bench... and collapses, completely wasted! ",
+                            "celebrates the rest with one drink too many and passes out on the bench! ",
+                            "empties the bottle on the bench and goes down with it. What a disgrace! ",
+                        ]
+                    } else {
+                        [
+                            "takes a swig of rum on the bench. ",
+                            "celebrates the breather with a sip of rum. ",
+                            "reaches straight for the rum bottle on the bench. ",
+                        ]
+                    };
+                    let choice = options
+                        .choose(description_rng)
+                        .expect("There should be one option");
 
-                        drink_descriptions.push(description);
-                    }
+                    drink_descriptions
+                        .push(format!("{} {choice}", player.info.short_name()));
                 }
             }
             // Update tick of last substitution, used for recency modifier in future substitutions.

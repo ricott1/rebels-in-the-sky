@@ -1119,8 +1119,6 @@ impl World {
             }
         };
 
-        // Rum brought to the game is debited upfront and (if not drunk) returned at the end,
-        // so that trading rum during the game cannot influence the game.
         let home_initial_rum = home_team_in_game.initial_rum;
         let away_initial_rum = away_team_in_game.initial_rum;
 
@@ -1150,10 +1148,8 @@ impl World {
             }
         }
 
-        home_team.current_game = Some(game_id);
-        home_team.saturating_sub_resource(Resource::RUM, home_initial_rum);
-        away_team.current_game = Some(game_id);
-        away_team.saturating_sub_resource(Resource::RUM, away_initial_rum);
+        home_team.enter_game(game_id, home_initial_rum);
+        away_team.enter_game(game_id, away_initial_rum);
         self.dirty = true;
         self.dirty_ui = true;
 
@@ -1184,8 +1180,6 @@ impl World {
             .expect("Should have failed in can_challenge_team");
 
         let team_ids = [home_team_in_game.team_id, away_team_in_game.team_id];
-        // Rum brought to the game is debited upfront and (if not drunk) returned at the end,
-        // so that trading rum during the game cannot influence the game.
         let initial_rums = [home_team_in_game.initial_rum, away_team_in_game.initial_rum];
 
         let game_id = self.generate_game_no_checks(
@@ -1202,8 +1196,7 @@ impl World {
                 .get_mut(team_id)
                 .ok_or_else(|| anyhow!("Team {team_id:?} not found"))?;
 
-            team.current_game = Some(game_id);
-            team.saturating_sub_resource(Resource::RUM, initial_rum);
+            team.enter_game(game_id, initial_rum);
             if team.id == self.own_team_id {
                 self.dirty_network = true
             }
@@ -1756,6 +1749,12 @@ impl World {
                 None => (1, 1),
             };
 
+            // On top of the bonus, teams get back the rum brought to the game that was not drunk.
+            // Note: the total is capped by the available storage, so bottles that no longer fit
+            // (if storage filled up during the game) are lost.
+            let home_team_rum = home_team_rum + game.home_team_in_game.rum;
+            let away_team_rum = away_team_rum + game.away_team_in_game.rum;
+
             // Set playing teams current game to None and assign income, reputation, and rum.
             // Network games allow for not finding the team in the world.teams, local games don't
             let team_ids = [
@@ -1817,16 +1816,6 @@ impl World {
                     };
                     team.saturating_add_resource(Resource::RUM, rum_bonus);
 
-                    // Return the rum brought to the game that was not drunk.
-                    // Note: like the rum bonus, this is capped by the available storage,
-                    // so bottles that no longer fit (if storage filled up during the game) are lost.
-                    let remaining_rum = if idx == 0 {
-                        game.home_team_in_game.rum
-                    } else {
-                        game.away_team_in_game.rum
-                    };
-                    team.saturating_add_resource(Resource::RUM, remaining_rum);
-
                     self.teams.insert(team.id, team);
                 }
             } else {
@@ -1880,16 +1869,6 @@ impl World {
                         away_team_rum
                     };
                     team.saturating_add_resource(Resource::RUM, rum_bonus);
-
-                    // Return the rum brought to the game that was not drunk.
-                    // Note: like the rum bonus, this is capped by the available storage,
-                    // so bottles that no longer fit (if storage filled up during the game) are lost.
-                    let remaining_rum = if idx == 0 {
-                        game.home_team_in_game.rum
-                    } else {
-                        game.away_team_in_game.rum
-                    };
-                    team.saturating_add_resource(Resource::RUM, remaining_rum);
 
                     self.teams.insert(team.id, team);
                 }
@@ -2077,8 +2056,6 @@ impl World {
                 game.home_team_in_game.team_id,
                 game.away_team_in_game.team_id,
             ];
-            // Rum brought to the game is debited upfront and (if not drunk) returned at the end,
-            // so that trading rum during the game cannot influence the game.
             let initial_rums = [
                 game.home_team_in_game.initial_rum,
                 game.away_team_in_game.initial_rum,
@@ -2090,8 +2067,7 @@ impl World {
                     continue;
                 };
 
-                team.current_game = Some(game.id);
-                team.saturating_sub_resource(Resource::RUM, initial_rum);
+                team.enter_game(game.id, initial_rum);
                 if team.id == self.own_team_id {
                     self.dirty_network = true
                 }
@@ -2582,12 +2558,7 @@ impl World {
             for idx in 0..player.skills_training.len() {
                 // Reduce player skills. This is planned to counteract the effect of training by playing games.
                 let age_modifier = player.age_modifier_to_skill_update(idx);
-
                 player.modify_skill(idx, SKILL_DECREMENT_PER_LONG_TICK * age_modifier.bound());
-                for idx in 0..NUM_GAME_POSITIONS as usize {
-                    player.game_position_fitness[idx] +=
-                        0.25 * SKILL_DECREMENT_PER_LONG_TICK * age_modifier.bound();
-                }
 
                 // Increase player skills from training
                 player.modify_skill(idx, player.skills_training[idx]);
@@ -3372,14 +3343,7 @@ mod test {
         spugna.drunkenness = MAX_SKILL;
         spugna.athletics.stamina = 0.0;
         app.world.players.insert(spugna.id, spugna);
-        if app
-            .world
-            .players
-            .get_or_err(&spugna_id)?
-            .info
-            .crew_role
-            != CrewRole::Pilot
-        {
+        if app.world.players.get_or_err(&spugna_id)?.info.crew_role != CrewRole::Pilot {
             app.world.set_team_crew_role(CrewRole::Pilot, spugna_id)?;
         }
 
@@ -3471,10 +3435,7 @@ mod test {
             TeamInGame::from_team_id(&home_id, &app.world.teams, &app.world.players)?;
         let away_team_in_game =
             TeamInGame::from_team_id(&away_id, &app.world.teams, &app.world.players)?;
-        let initial_rums = [
-            home_team_in_game.initial_rum,
-            away_team_in_game.initial_rum,
-        ];
+        let initial_rums = [home_team_in_game.initial_rum, away_team_in_game.initial_rum];
         assert!(initial_rums[0] > 0);
         assert!(initial_rums[1] > 0);
 
@@ -3506,8 +3467,7 @@ mod test {
         app.world.cleanup_games(Tick::now())?;
 
         // After the game, the remaining brought rum is returned along with the rum bonus.
-        for (idx, (team_id, initial_rum)) in
-            [home_id, away_id].iter().zip(initial_rums).enumerate()
+        for (idx, (team_id, initial_rum)) in [home_id, away_id].iter().zip(initial_rums).enumerate()
         {
             let team_in_game = if idx == 0 {
                 &game.home_team_in_game

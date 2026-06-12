@@ -160,8 +160,7 @@ pub struct TeamInGame {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub initial_drunkenness: Vec<Skill>,
-    // Rum brought to the game, debited from the team at game start.
-    // Whatever is not drunk is returned at the end of the game.
+    // Rum brought to the game, see Team::enter_game.
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub initial_rum: u32,
@@ -272,6 +271,16 @@ impl TeamInGame {
         }
 
         Ok(TeamInGame::new(team, team_players))
+    }
+
+    // Total drunkenness of the players currently on the pitch.
+    pub(crate) fn playing_drunkenness(&self) -> Skill {
+        self.stats
+            .iter()
+            .filter(|(_, stats)| stats.is_playing())
+            .filter_map(|(id, _)| self.players.get(id))
+            .map(|p| p.drunkenness)
+            .sum()
     }
 
     pub fn pick_action(&self, rng: &mut ChaCha8Rng) -> Option<Action> {
@@ -562,21 +571,18 @@ impl EnginePlayer for Player {
         // This factor takes into account the current tiredness
         let roll = (self.min_roll() + self.max_roll()) / 2;
 
-        // Adjust the skill part by the position fitness
+        // Adjust the skill part by the position fitness, reshaped by the team
+        // fluidity setting: the exponent widens (Low) or narrows (High) the gap
+        // between good and bad fits.
         let fitness = self
             .game_position_fitness
             .get(position as usize)
             .copied()
             .unwrap_or_default()
             / MAX_SKILL;
+        let adjusted_fitness = fitness.powf(game_position_fluidity.fitness_exponent());
 
-        let fitness_adjustment = if fitness > 0.0 {
-            fitness.powf(game_position_fluidity.fitness_exponent() - 1.0)
-        } else {
-            1.0
-        };
-
-        roll as f32 + 2.0 * self.position_rating(position) * fitness_adjustment
+        roll as f32 + 2.0 * self.position_skill_rating(position) * adjusted_fitness
     }
 }
 

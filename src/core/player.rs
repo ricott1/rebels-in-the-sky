@@ -689,8 +689,9 @@ impl Player {
     }
 
     // Skill-only rating, ignoring game position fitness. Used to order positions
-    // when assigning the initial fitness, which is not set yet at that point.
-    fn position_skill_rating(&self, position: GamePosition) -> Skill {
+    // when assigning the initial fitness (which is not set yet at that point) and
+    // by the game engine to apply the fitness with the fluidity exponent on top.
+    pub(crate) fn position_skill_rating(&self, position: GamePosition) -> Skill {
         let mut rating = 0 as f32;
         let weights = position.weights();
         let mut total_weight = 0 as f32;
@@ -734,73 +735,31 @@ impl Player {
             .expect("There should be 20 skills")
     }
 
-    pub fn current_tiredness(&self, world: &World) -> f32 {
-        let mut tiredness = self.tiredness;
-        // Check if player is currently playing.
-        // In this case, read current tiredness from game.
-        if let Some(team_id) = self.team {
-            if let Ok(team) = world.teams.get_or_err(&team_id) {
-                if let Some(game_id) = team.current_game {
-                    if let Ok(game) = world.games.get_or_err(&game_id) {
-                        if let Some(p) = if game.home_team_in_game.team_id == team_id {
-                            game.home_team_in_game.players.get(&self.id)
-                        } else {
-                            game.away_team_in_game.players.get(&self.id)
-                        } {
-                            tiredness = p.tiredness;
-                        }
-                    }
-                }
-            }
+    // If the player is currently playing a game, returns the in-game copy of the player,
+    // which carries the live tiredness, morale and drunkenness.
+    fn in_game_copy<'a>(&self, world: &'a World) -> Option<&'a Player> {
+        let team_id = self.team?;
+        let team = world.teams.get(&team_id)?;
+        let game = world.games.get(&team.current_game?)?;
+        if game.home_team_in_game.team_id == team_id {
+            game.home_team_in_game.players.get(&self.id)
+        } else {
+            game.away_team_in_game.players.get(&self.id)
         }
+    }
 
-        tiredness
+    pub fn current_tiredness(&self, world: &World) -> f32 {
+        self.in_game_copy(world)
+            .map_or(self.tiredness, |p| p.tiredness)
     }
 
     pub fn current_morale(&self, world: &World) -> f32 {
-        let mut morale = self.morale;
-        // Check if player is currently playing.
-        // In this case, read current morale from game.
-        if let Some(team_id) = self.team {
-            if let Ok(team) = world.teams.get_or_err(&team_id) {
-                if let Some(game_id) = team.current_game {
-                    if let Ok(game) = world.games.get_or_err(&game_id) {
-                        if let Some(p) = if game.home_team_in_game.team_id == team_id {
-                            game.home_team_in_game.players.get(&self.id)
-                        } else {
-                            game.away_team_in_game.players.get(&self.id)
-                        } {
-                            morale = p.morale;
-                        }
-                    }
-                }
-            }
-        }
-
-        morale
+        self.in_game_copy(world).map_or(self.morale, |p| p.morale)
     }
 
     pub fn current_drunkenness(&self, world: &World) -> f32 {
-        let mut drunkenness = self.drunkenness;
-        // Check if player is currently playing.
-        // In this case, read current drunkenness from game.
-        if let Some(team_id) = self.team {
-            if let Ok(team) = world.teams.get_or_err(&team_id) {
-                if let Some(game_id) = team.current_game {
-                    if let Ok(game) = world.games.get_or_err(&game_id) {
-                        if let Some(p) = if game.home_team_in_game.team_id == team_id {
-                            game.home_team_in_game.players.get(&self.id)
-                        } else {
-                            game.away_team_in_game.players.get(&self.id)
-                        } {
-                            drunkenness = p.drunkenness;
-                        }
-                    }
-                }
-            }
-        }
-
-        drunkenness
+        self.in_game_copy(world)
+            .map_or(self.drunkenness, |p| p.drunkenness)
     }
 
     pub fn can_drink(&self, world: &World) -> AppResult<()> {
@@ -856,13 +815,14 @@ impl Player {
         false
     }
 
-    pub fn drunkenness_description(drunkenness: Skill) -> &'static str {
+    // Returns None when the player is sober (nothing worth displaying).
+    pub fn drunkenness_description(drunkenness: Skill) -> Option<&'static str> {
         match drunkenness {
-            x if x < 4.0 => "Sober",
-            x if x < 8.0 => "Tipsy",
-            x if x < 12.0 => "Merry",
-            x if x < 16.0 => "Drunk",
-            _ => "Hammered",
+            x if x < 4.0 => None,
+            x if x < 8.0 => Some("Tipsy"),
+            x if x < 12.0 => Some("Merry"),
+            x if x < 16.0 => Some("Drunk"),
+            _ => Some("Hammered"),
         }
     }
 

@@ -656,7 +656,6 @@ impl MyTeamPanel {
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Length(3),
         ])
         .split(split[0].inner(Margin::new(1, 1)));
 
@@ -741,9 +740,14 @@ impl MyTeamPanel {
 
         frame.render_interactive_widget(in_game_drinking_button, btm_split[3]);
 
+        let challenges_split = Layout::horizontal([22, 12, 14]).split(btm_split[4]);
+        frame.render_widget(
+            Paragraph::new("Accept challenges").centered(),
+            challenges_split[0].inner(Margin::new(0, 1)),
+        );
         let local_challenge_button = Button::new(
             format!(
-                "Auto-accept local challenges: {}",
+                "local:{}",
                 if own_team.autonomous_strategy.challenge_local {
                     "on"
                 } else {
@@ -754,11 +758,11 @@ impl MyTeamPanel {
         )
         .set_hover_text("Accept challenges from local teams automatically.".to_string())
         .set_hotkey(ui_key::team::TOGGLE_ACCEPT_LOCAL_CHALLENGES);
-        frame.render_interactive_widget(local_challenge_button, btm_split[4]);
+        frame.render_interactive_widget(local_challenge_button, challenges_split[1]);
 
         let network_challenge_button = Button::new(
             format!(
-                "Auto-accept network challenges: {}",
+                "network:{}",
                 if own_team.autonomous_strategy.challenge_network {
                     "on"
                 } else {
@@ -769,7 +773,7 @@ impl MyTeamPanel {
         )
         .set_hover_text("Accept challenges from network teams automatically.".to_string())
         .set_hotkey(ui_key::team::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
-        frame.render_interactive_widget(network_challenge_button, btm_split[5]);
+        frame.render_interactive_widget(network_challenge_button, challenges_split[2]);
 
         match own_team.current_location {
             TeamLocation::OnPlanet { .. } => {

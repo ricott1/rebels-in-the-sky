@@ -243,6 +243,14 @@ impl Team {
         self.resources.saturating_sub(resource, amount);
     }
 
+    // Register the team to a game. The rum brought to the game is debited upfront
+    // and (if not drunk) returned at the end, so that trading rum during the game
+    // cannot influence the game.
+    pub fn enter_game(&mut self, game_id: GameId, brought_rum: u32) {
+        self.current_game = Some(game_id);
+        self.saturating_sub_resource(Resource::RUM, brought_rum);
+    }
+
     pub fn fuel(&self) -> u32 {
         self.resources.value(&Resource::FUEL)
     }

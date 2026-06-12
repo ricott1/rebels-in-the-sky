@@ -1489,13 +1489,15 @@ pub fn render_player_description(
     );
 
     let drunkenness = player.current_drunkenness(world);
-    let drunkenness_span = match Player::drunkenness_description(drunkenness) {
-        "Sober" => Span::raw(""),
-        desc => Span::styled(
-            format!(" {desc}"),
-            ((MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL).style(),
-        ),
-    };
+    let drunkenness_span = Player::drunkenness_description(drunkenness).map_or_else(
+        || Span::raw(""),
+        |desc| {
+            Span::styled(
+                format!(" {desc}"),
+                ((MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL).style(),
+            )
+        },
+    );
 
     let line = HoverTextLine::from(vec![
         HoverTextSpan::new(
