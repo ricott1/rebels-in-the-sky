@@ -10,7 +10,7 @@ use crate::{
         constants::TirednessCost,
         player::{Player, Trait},
         position::NUM_GAME_POSITIONS,
-        skill::GameSkill,
+        skill::{GameSkill, MAX_SKILL},
         utils::is_default,
         CrewRole, Skill, TeamBonus, DEFAULT_PLANET_ID,
     },
@@ -432,10 +432,22 @@ impl Game {
             ActionSituation::MissedShot => Action::Rebound,
             ActionSituation::EndOfQuarter => Action::StartOfQuarter,
             ActionSituation::AfterSubstitution | ActionSituation::BallInBackcourt => {
+                // Drunk players on court increase the brawl probability.
+                // Wasted players don't contribute since their drunkenness is reset to 0.
+                let total_drunkenness = self
+                    .attacking_players_array()
+                    .iter()
+                    .chain(self.defending_players_array().iter())
+                    .map(|p| p.drunkenness)
+                    .sum::<Skill>();
+                let drunkenness_modifier = DRUNKENNESS_BRAWL_PROBABILITY_MODIFIER
+                    * (total_drunkenness / (2.0 * NUM_GAME_POSITIONS as f32) / MAX_SKILL) as f64;
+
                 let brawl_probability = BRAWL_ACTION_PROBABILITY
                     * (self.home_team_in_game.tactic.brawl_probability_modifier()
-                        + self.away_team_in_game.tactic.brawl_probability_modifier());
-                if action_rng.random_bool(brawl_probability) {
+                        + self.away_team_in_game.tactic.brawl_probability_modifier())
+                    + drunkenness_modifier;
+                if action_rng.random_bool(brawl_probability.clamp(0.0, 1.0)) {
                     Action::Brawl
                 } else {
                     match self.possession {

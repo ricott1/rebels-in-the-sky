@@ -254,7 +254,9 @@ pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button
         },
     )
     .set_hotkey(ui_key::player::DRINK)
-    .set_hover_text("Drink a liter of rum, increasing morale and decreasing energy.");
+    .set_hover_text(
+        "Drink a liter of rum, increasing morale and drunkenness. Drink too much and the pirate could get wasted!",
+    );
 
     if let Err(err) = can_drink {
         button.disable(Some(err.to_string()));
@@ -1486,6 +1488,14 @@ pub fn render_player_description(
         |t| Span::styled(format!("{t}"), t.style()),
     );
 
+    let drunkenness_span = match player.drunkenness_description() {
+        "Sober" => Span::raw(""),
+        desc => Span::styled(
+            format!(" {desc}"),
+            ((MAX_SKILL - player.drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL).style(),
+        ),
+    };
+
     let line = HoverTextLine::from(vec![
         HoverTextSpan::new(
             Span::raw(format!(
@@ -1497,7 +1507,8 @@ pub fn render_player_description(
         HoverTextSpan::new(
             trait_span,
             player.special_trait.map_or_else(String::new, |t| t.description(player)),
-        )
+        ),
+        HoverTextSpan::new(drunkenness_span, String::new()),
     ]);
     frame.render_interactive_widget(line, header_body_stats[1]);
 

@@ -22,11 +22,13 @@ pub(crate) fn execute(
     let weights = attacking_players_array
         .iter()
         .map(|p| {
-            if p.special_trait == Some(Trait::Killer) {
+            let aggression = if p.special_trait == Some(Trait::Killer) {
                 p.mental.aggression.value() * 2
             } else {
                 p.mental.aggression.value()
-            }
+            };
+            // Drunk players are more likely to start a brawl.
+            aggression + p.drunkenness.value()
         })
         .collect::<Vec<u8>>()
         .try_into()
@@ -54,11 +56,13 @@ pub(crate) fn execute(
     let weights = defending_players_array
         .iter()
         .map(|p| {
-            if p.special_trait == Some(Trait::Killer) {
+            let aggression = if p.special_trait == Some(Trait::Killer) {
                 p.mental.aggression.value() * 2
             } else {
                 p.mental.aggression.value()
-            }
+            };
+            // Drunk players are more likely to join a brawl.
+            aggression + p.drunkenness.value()
         })
         .collect::<Vec<u8>>()
         .try_into()

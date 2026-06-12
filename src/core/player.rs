@@ -793,13 +793,8 @@ impl Player {
             return Err(anyhow!("Can't drink during game"));
         }
 
-        // Spugna can drink ad libitum
-        if self.morale == MAX_SKILL && !matches!(self.special_trait, Some(Trait::Spugna)) {
-            return Err(anyhow!("No need to drink"));
-        }
-
         if self.tiredness == MAX_SKILL {
-            return Err(anyhow!("No energy to drink"));
+            return Err(anyhow!("Too wasted to drink"));
         }
 
         if team.resources.value(&Resource::RUM) == 0 {
@@ -807,6 +802,45 @@ impl Player {
         }
 
         Ok(())
+    }
+
+    /// Drink one liter of rum, increasing drunkenness and boosting morale.
+    /// There is a chance, growing with drunkenness, that the player gets fully drunk:
+    /// in that case tiredness goes to max (the player is wasted), drunkenness resets
+    /// and morale is unaffected (happy to get drunk ;) ). Returns whether the player got fully drunk.
+    pub fn drink(&mut self, rng: &mut ChaCha8Rng) -> bool {
+        let amount = if self.special_trait == Some(Trait::Spugna) {
+            // Spugna gets drunk 10 times as slow.
+            DRUNKENNESS_PER_DRINK / 10.0
+        } else {
+            DRUNKENNESS_PER_DRINK
+        };
+        self.drunkenness = (self.drunkenness + amount).bound();
+
+        // Probability equal to the new drunkenness over MAX_SKILL,
+        // mitigated by stamina: high-stamina players hold their liquor.
+        let drunk_probability =
+            (self.drunkenness / MAX_SKILL) / (1.0 + self.athletics.stamina / MAX_SKILL);
+        if rng.random_bool(drunk_probability as f64) {
+            // Wasted: tiredness is set directly rather than through add_tiredness,
+            // since morale must be unaffected and trait caps must not prevent it.
+            self.tiredness = MAX_SKILL;
+            self.drunkenness = MIN_SKILL;
+            return true;
+        }
+
+        self.add_morale(MORALE_DRINK_BONUS);
+        false
+    }
+
+    pub fn drunkenness_description(&self) -> &'static str {
+        match self.drunkenness {
+            x if x < 4.0 => "Sober",
+            x if x < 8.0 => "Tipsy",
+            x if x < 12.0 => "Merry",
+            x if x < 16.0 => "Drunk",
+            _ => "Hammered",
+        }
     }
 
     pub fn bare_hiring_value(&self) -> f32 {
@@ -1021,6 +1055,8 @@ impl Player {
 
         if self.is_knocked_out() {
             self.morale = MIN_SKILL;
+            // A wasted player sobers up completely.
+            self.drunkenness = MIN_SKILL;
         }
     }
 
@@ -1325,7 +1361,7 @@ impl Trait {
                     player.reputation.value()
                 )
             }
-            Trait::Spugna => "Immediately maximizes morale when drinking. It is said that a drunk pilot could bring you somewhere unexpected...".to_string(),
+            Trait::Spugna => "Gets drunk 10 times as slow when drinking. It is said that a drunk pilot could bring you somewhere unexpected...".to_string(),
             Trait::Crumiro => "Legendary trait of the emperor's crew members".to_string(),
         }
     }
@@ -1333,13 +1369,63 @@ impl Trait {
 
 #[cfg(test)]
 mod test {
+    use super::{Player, Trait};
     use crate::{
         app::App,
-        core::skill::Rated,
+        core::{
+            constants::DRUNKENNESS_PER_DRINK,
+            skill::{Rated, MAX_SKILL, MIN_SKILL},
+        },
         types::{AppResult, HashMapWithResult},
     };
     use itertools::Itertools;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
     use serde::{Deserialize, Serialize};
+
+    #[test]
+    fn test_drink() -> AppResult<()> {
+        let rng = &mut ChaCha8Rng::seed_from_u64(0);
+
+        // Drinking increases drunkenness and boosts morale, but does not drain energy.
+        let mut player = Player::default();
+        player.athletics.stamina = MAX_SKILL;
+        let got_drunk = player.drink(rng);
+        assert!(!got_drunk);
+        assert!(player.drunkenness == DRUNKENNESS_PER_DRINK);
+        assert!(player.morale > MIN_SKILL);
+        assert!(player.tiredness == MIN_SKILL);
+
+        // Spugna gets drunk 10 times as slow.
+        let mut spugna = Player::default();
+        spugna.athletics.stamina = MAX_SKILL;
+        spugna.special_trait = Some(Trait::Spugna);
+        let got_drunk = spugna.drink(rng);
+        assert!(!got_drunk);
+        assert!(spugna.drunkenness == DRUNKENNESS_PER_DRINK / 10.0);
+
+        // At max drunkenness and zero stamina the drunk event is guaranteed:
+        // the player gets wasted, sobers up and morale is unaffected.
+        let mut player = Player::default();
+        player.drunkenness = MAX_SKILL;
+        player.athletics.stamina = 0.0;
+        player.morale = 10.0;
+        let got_drunk = player.drink(rng);
+        assert!(got_drunk);
+        assert!(player.is_knocked_out());
+        assert!(player.drunkenness == MIN_SKILL);
+        assert!(player.morale == 10.0);
+
+        // Getting knocked out by tiredness also resets drunkenness.
+        let mut player = Player::default();
+        player.drunkenness = 10.0;
+        player.add_tiredness(10.0 * MAX_SKILL);
+        assert!(player.is_knocked_out());
+        assert!(player.drunkenness == MIN_SKILL);
+        assert!(player.morale == MIN_SKILL);
+
+        Ok(())
+    }
 
     #[test]
     fn test_bare_value() -> AppResult<()> {

@@ -2333,6 +2333,11 @@ impl World {
                     player.tiredness =
                         (player.tiredness - bonus * RECOVERING_TIREDNESS_PER_SHORT_TICK).bound();
                 }
+
+                if player.drunkenness > 0.0 {
+                    player.drunkenness =
+                        (player.drunkenness - RECOVERING_DRUNKENNESS_PER_SHORT_TICK).bound();
+                }
             }
         }
 
@@ -3085,7 +3090,8 @@ mod test {
             types::TeamLocation,
             utils::PLANET_DATA,
             world::{TickInterval, AU, EXPLORATION_DURATION},
-            RatedPlayers, DEFAULT_PLANET_ID, MIN_PLAYERS_PER_GAME,
+            RatedPlayers, DEFAULT_PLANET_ID, MAX_SKILL, MIN_PLAYERS_PER_GAME,
+            PORTAL_TRAVEL_DURATION,
         },
         types::{HashMapWithResult, StorableResourceMap, SystemTimeTick, Tick},
         ui::UiCallback,
@@ -3300,11 +3306,9 @@ mod test {
 
     #[test]
     fn test_spugna_portal() -> AppResult<()> {
-        // To actually test this, set PORTAL_DISCOVERY_PROBABILITY to 1.0
         let mut app = App::test_default()?;
         app.new_world();
 
-        // let world = &mut app.world;
         let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         let planet = PLANET_DATA[0].clone();
         let team_id = app.world.generate_random_team(
@@ -3319,14 +3323,25 @@ mod test {
         let mut team = app.world.teams.get_or_err(&team_id)?.clone();
         team.add_resource(Resource::RUM, 20)?;
 
-        // Give player Spugna skill and set it as pilot
+        // Give player Spugna skill and set it as pilot.
+        // Max drunkenness and zero stamina make the next drink trigger
+        // the drunk event with probability exactly 1.0.
         let mut spugna = app.world.players.get_or_err(&team.player_ids[0])?.clone();
         let spugna_id = spugna.id.clone();
         spugna.special_trait = Some(Trait::Spugna);
-        if spugna.info.crew_role != CrewRole::Pilot {
-            app.world.set_team_crew_role(CrewRole::Pilot, spugna.id)?;
-        }
+        spugna.drunkenness = MAX_SKILL;
+        spugna.athletics.stamina = 0.0;
         app.world.players.insert(spugna.id, spugna);
+        if app
+            .world
+            .players
+            .get_or_err(&spugna_id)?
+            .info
+            .crew_role
+            != CrewRole::Pilot
+        {
+            app.world.set_team_crew_role(CrewRole::Pilot, spugna_id)?;
+        }
 
         // Travel to a random planet
         let target = PLANET_DATA[1].clone();
@@ -3344,11 +3359,28 @@ mod test {
         assert!(team.total_travelled == 0);
         app.world.teams.insert(team.id, team);
 
-        // Drink to trigger portal discovery
+        let morale_before = app.world.players.get_or_err(&spugna_id)?.morale;
+
+        // Drink: the spugna pilot gets drunk and discovers a portal.
         UiCallback::Drink {
             player_id: spugna_id,
         }
         .call(&mut app)?;
+
+        let spugna = app.world.players.get_or_err(&spugna_id)?;
+        // Getting drunk wastes the player, resets drunkenness and leaves morale untouched.
+        assert!(spugna.is_knocked_out());
+        assert!(spugna.drunkenness == 0.0);
+        assert!(spugna.morale == morale_before);
+
+        // The team is now travelling through the portal.
+        let team = app.world.teams.get_or_err(&team_id)?;
+        match team.current_location {
+            TeamLocation::Travelling { duration, .. } => {
+                assert!(duration == PORTAL_TRAVEL_DURATION)
+            }
+            _ => panic!("Team should be travelling through the portal"),
+        }
 
         app.world
             .handle_slow_tick_events(app.world.last_tick_short_interval + TickInterval::SHORT)?;

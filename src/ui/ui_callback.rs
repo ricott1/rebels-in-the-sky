@@ -29,7 +29,10 @@ use crate::{
     types::{AppCallback, AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick},
 };
 use anyhow::anyhow;
-use rand::{seq::IteratorRandom, RngExt, SeedableRng};
+use rand::{
+    seq::{IndexedRandom, IteratorRandom},
+    RngExt, SeedableRng,
+};
 use rand_chacha::ChaCha8Rng;
 use ratatui::crossterm::event::{KeyCode, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
@@ -1499,20 +1502,8 @@ impl UiCallback {
                 let mut player = app.world.players.get_or_err(player_id)?.clone();
                 player.can_drink(&app.world)?;
 
-                let morale_bonus = if matches!(player.special_trait, Some(Trait::Spugna)) {
-                    MAX_SKILL
-                } else {
-                    MORALE_DRINK_BONUS
-                };
-
-                let tiredness_malus = if matches!(player.special_trait, Some(Trait::Spugna)) {
-                    TIREDNESS_DRINK_MALUS_SPUGNA
-                } else {
-                    TIREDNESS_DRINK_MALUS
-                };
-
-                player.add_morale(morale_bonus);
-                player.add_tiredness(tiredness_malus);
+                let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
+                let got_drunk = player.drink(rng);
 
                 let mut team = app
                     .world
@@ -1522,16 +1513,32 @@ impl UiCallback {
 
                 team.sub_resource(Resource::RUM, 1)?;
 
-                //If player is a spugna and pilot and team is travelling or exploring and player was already maxxed in morale,
-                // there is a chance that the player enters a portal to a random planet.
-                let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
+                if got_drunk {
+                    let description = [
+                        "puked on the floor!".to_string(),
+                        "drunk one too many!".to_string(),
+                        "got wasted!".to_string(),
+                        format!(
+                            "collapsed with the bottle in {} hand!",
+                            player.info.pronouns.as_possessive()
+                        ),
+                    ]
+                    .choose(rng)
+                    .expect("There should be one option")
+                    .clone();
 
-                let discovery_probability = (PORTAL_DISCOVERY_PROBABILITY
-                    * TeamBonus::Exploration.current_player_bonus(&player) as f64)
-                    .min(1.0);
-                if matches!(player.special_trait, Some(Trait::Spugna))
+                    app.ui.push_popup(PopupMessage::Ok {
+                        message: format!("{} {}", player.info.short_name(), description),
+                        is_skippable: true,
+                        timestamp: Tick::now(),
+                    });
+                }
+
+                // If a spugna pilot gets drunk while the team is travelling or exploring,
+                // the player enters a portal to a random planet.
+                if got_drunk
+                    && matches!(player.special_trait, Some(Trait::Spugna))
                     && player.info.crew_role == CrewRole::Pilot
-                    && rng.random_bool(discovery_probability)
                 {
                     let portal_target_id = match team.current_location {
                         TeamLocation::OnPlanet { .. } | TeamLocation::OnSpaceAdventure { .. } => {
