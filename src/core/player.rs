@@ -667,8 +667,8 @@ impl Player {
         };
         let positions_by_skill_fitness = (0..NUM_GAME_POSITIONS)
             .sorted_by(|&a, &b| {
-                self.position_rating(b)
-                    .partial_cmp(&self.position_rating(a))
+                self.position_skill_rating(b)
+                    .partial_cmp(&self.position_skill_rating(a))
                     .expect("There should be an ordering")
             })
             .collect_vec();
@@ -688,9 +688,9 @@ impl Player {
         }
     }
 
-    pub fn increase_game_position_fitness(&mut self) {}
-
-    pub fn position_rating(&self, position: GamePosition) -> Skill {
+    // Skill-only rating, ignoring game position fitness. Used to order positions
+    // when assigning the initial fitness, which is not set yet at that point.
+    fn position_skill_rating(&self, position: GamePosition) -> Skill {
         let mut rating = 0 as f32;
         let weights = position.weights();
         let mut total_weight = 0 as f32;
@@ -700,13 +700,17 @@ impl Player {
             total_weight += w;
         }
 
+        (rating / total_weight).bound()
+    }
+
+    pub fn position_rating(&self, position: GamePosition) -> Skill {
         let fitness = self
             .game_position_fitness
             .get(position as usize)
             .copied()
             .unwrap_or_default()
             / MAX_SKILL;
-        (rating / total_weight * fitness).bound()
+        (self.position_skill_rating(position) * fitness).bound()
     }
 
     pub fn best_position(&self) -> GamePosition {
