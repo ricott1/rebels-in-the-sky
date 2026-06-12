@@ -1227,13 +1227,6 @@ impl Player {
 
         log::debug!("Total Experience increase: {:#?}", self.skills_training);
     }
-
-    pub fn tiredness_weighted_rating(&self) -> f32 {
-        if self.is_knocked_out() {
-            return 0.0;
-        }
-        self.average_skill() * (MAX_SKILL - self.tiredness / 2.0)
-    }
 }
 
 impl Rated for Player {

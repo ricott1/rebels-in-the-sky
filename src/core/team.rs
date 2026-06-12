@@ -1014,8 +1014,8 @@ impl Team {
             }
         }
 
-        let idx_perms = (0..min(players.len(), 12))
-            .permutations(5)
+        let idx_perms = (0..min(players.len(), MAX_CREW_SIZE))
+            .permutations(NUM_GAME_POSITIONS as usize)
             .collect::<Vec<Vec<usize>>>();
         let max_perm = &idx_perms[max_perm_index];
         let mut new_players: Vec<PlayerId> = max_perm.iter().map(|&i| players[i].id).collect();
@@ -1026,8 +1026,8 @@ impl Team {
             .copied()
             .collect::<Vec<&Player>>();
         bench.sort_by(|a, b| {
-            b.tiredness_weighted_rating()
-                .partial_cmp(&a.tiredness_weighted_rating())
+            (b.average_skill() * (1.0 - b.tiredness / MAX_SKILL))
+                .partial_cmp(&(a.average_skill() * (1.0 - a.tiredness / MAX_SKILL)))
                 .expect("Skill value should exist")
         });
         new_players.append(&mut bench.iter().map(|&p| p.id).collect::<Vec<PlayerId>>());

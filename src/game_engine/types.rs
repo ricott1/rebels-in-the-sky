@@ -484,13 +484,11 @@ impl EnginePlayer for Player {
         if self.is_knocked_out() {
             return 0.0;
         }
-
         // Follow the general rule: Roll + 2 * skills ( + tactic but it's the same for evey player in the team).
         // This factor takes into account the current tiredness
-        let roll = ((MIN_SKILL as i16 + NUMBER_OF_ROLLS as i16 * MAX_SKILL as i16) / 2)
-            .max(self.min_roll())
-            .min(self.max_roll());
+        let roll = (self.min_roll() + self.max_roll()) / 2;
 
+        // Adjust the skill part by the position fitness
         let fitness = self
             .game_position_fitness
             .get(position as usize)
