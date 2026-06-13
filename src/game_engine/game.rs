@@ -535,7 +535,27 @@ impl Game {
             .find(|&p| p.info.crew_role == CrewRole::Captain);
         let captain_bonus =
             team_captain.map_or(1.0, |p| TeamBonus::Reputation.current_player_bonus(p));
-        0.1 * (team.score_run as Skill * captain_bonus).bound()
+        (team.score_run as Skill * captain_bonus).bound()
+    }
+
+    // After a steal, the defending team may push for a fastbreak; otherwise it's a plain turnover.
+    pub(crate) fn fastbreak_or_turnover(
+        &self,
+        with_steal: bool,
+        attaking_momentum: Skill,
+        action_rng: &mut ChaCha8Rng,
+    ) -> ActionSituation {
+        let fastbreak_probability = FASTBREAK_ACTION_PROBABILITY
+            * (1.0 + attaking_momentum / MAX_SKILL) as f64
+            * self
+                .defending_team()
+                .tactic
+                .fastbreak_probability_modifier();
+        if with_steal && action_rng.random_bool(fastbreak_probability.clamp(0.0, 1.0)) {
+            ActionSituation::Fastbreak
+        } else {
+            ActionSituation::Turnover
+        }
     }
 
     fn apply_sub_update(
@@ -616,8 +636,7 @@ impl Game {
                         .choose(description_rng)
                         .expect("There should be one option");
 
-                    drink_descriptions
-                        .push(format!("{} {choice}", player.info.short_name()));
+                    drink_descriptions.push(format!("{} {choice}", player.info.short_name()));
                 }
             }
             // Update tick of last substitution, used for recency modifier in future substitutions.
@@ -1102,8 +1121,7 @@ mod tests {
             // Players drink at most bottles_per_player times per game.
             for stats in team_in_game.stats.values() {
                 assert!(
-                    (stats.rum_drunk as u32)
-                        <= team_in_game.in_game_drinking.bottles_per_player()
+                    (stats.rum_drunk as u32) <= team_in_game.in_game_drinking.bottles_per_player()
                 );
             }
 

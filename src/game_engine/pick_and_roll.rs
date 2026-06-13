@@ -351,11 +351,7 @@ fn playmaker_uses_the_screen(
                         playmaker_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
                     }
 
-                    let situation = if with_steal && action_rng.random_bool(FASTBREAK_ACTION_PROBABILITY * game.defending_team().tactic.fastbreak_probability_modifier()){
-                        ActionSituation::Fastbreak
-                    } else {
-                        ActionSituation::Turnover
-                    };
+                    let situation = game.fastbreak_or_turnover(with_steal,game.team_momentum(!input.possession), action_rng);
 
                     // After possession flips, the defender who stole is at the same index
                     // as the attacker they were guarding (players are mirrored by position).
@@ -658,11 +654,7 @@ fn playmaker_passes_to_target(
                     playmaker_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
                 }
 
-                let situation = if with_steal && action_rng.random_bool(FASTBREAK_ACTION_PROBABILITY * game.defending_team().tactic.fastbreak_probability_modifier()){
-                    ActionSituation::Fastbreak
-                } else {
-                    ActionSituation::Turnover
-                };
+                let situation = game.fastbreak_or_turnover(with_steal,game.team_momentum(!input.possession), action_rng);
 
                 let attackers = if with_steal {
                     vec![play_idx]

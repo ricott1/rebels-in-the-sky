@@ -264,18 +264,11 @@ pub(crate) fn execute(
                 post_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
             }
 
-            let situation = if with_steal
-                && action_rng.random_bool(
-                    FASTBREAK_ACTION_PROBABILITY
-                        * game
-                            .defending_team()
-                            .tactic
-                            .fastbreak_probability_modifier(),
-                ) {
-                ActionSituation::Fastbreak
-            } else {
-                ActionSituation::Turnover
-            };
+            let situation = game.fastbreak_or_turnover(
+                with_steal,
+                game.team_momentum(!input.possession),
+                action_rng,
+            );
 
             let attackers = if with_steal { vec![post_idx] } else { vec![] };
 
