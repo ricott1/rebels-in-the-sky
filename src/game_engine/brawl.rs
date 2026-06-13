@@ -194,8 +194,8 @@ pub(crate) fn execute(
         0 => {
             attacker_update.extra_tiredness += TirednessCost::HIGH;
             defender_update.extra_tiredness += TirednessCost::HIGH;
-            defender_update.extra_morale += MoraleModifier::SMALL_MALUS;
-            attacker_update.extra_morale += MoraleModifier::SMALL_MALUS;
+            defender_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
+            attacker_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
 
             attacker_update.brawls = [0, 0, 1];
             defender_update.brawls = [0, 0, 1];

@@ -270,7 +270,7 @@ pub(crate) fn execute(
             },
             _ => {
                 playmaker_update.turnovers = 1;
-                playmaker_update.extra_morale += MoraleModifier::SMALL_MALUS;
+                playmaker_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
                 playmaker_defender_update.extra_morale += MoraleModifier::SMALL_BONUS;
 
                 // Equivalent to `- def_result - target_defender.defense.steal.game_value() <= STEAL_LIMIT`

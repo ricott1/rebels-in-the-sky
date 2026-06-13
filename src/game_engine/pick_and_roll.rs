@@ -340,7 +340,7 @@ fn playmaker_uses_the_screen(
             },
                 _ => {
                     playmaker_update.turnovers = 1;
-                    playmaker_update.extra_morale += MoraleModifier::SMALL_MALUS;
+                    playmaker_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
                     playmaker_defender_update.extra_morale += MoraleModifier::SMALL_BONUS;
                     // Equivalent to `- def_result - target_defender.defense.steal.game_value() <= STEAL_LIMIT`
                     let with_steal = def_result + playmaker_defender.defense.steal.game_value() >= -STEAL_LIMIT;
@@ -642,7 +642,7 @@ fn playmaker_passes_to_target(
         },
             _ => {
                 playmaker_update.turnovers = 1;
-                playmaker_update.extra_morale += MoraleModifier::SMALL_MALUS;
+                playmaker_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
                 playmaker_defender_update.extra_morale += MoraleModifier::SMALL_BONUS;
 
                 // Equivalent to `- def_result - target_defender.defense.steal.game_value() <= STEAL_LIMIT`

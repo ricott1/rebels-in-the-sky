@@ -770,7 +770,7 @@ fn execute_shot(
         };
 
         if blocked_by.is_some() {
-            shooter_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
+            shooter_update.extra_morale += MoraleModifier::HIGH_MALUS;
         }
     }
 

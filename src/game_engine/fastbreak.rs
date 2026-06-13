@@ -138,7 +138,7 @@ pub(crate) fn execute(
         }
         _ => {
             playmaker_update.turnovers = 1;
-            playmaker_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
+            playmaker_update.extra_morale += MoraleModifier::HIGH_MALUS;
 
             let playmaker_defender_update = GameStats {
                 extra_tiredness: TirednessCost::MEDIUM,
