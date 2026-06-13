@@ -174,6 +174,6 @@ pub const TIREDNESS_DECREASE_AFTER_TOURNAMENT_GAME: f32 = 2.0 * TirednessCost::C
 
 pub const MIN_RELATIVE_RETIREMENT_AGE: f32 = 0.96;
 pub const PEAK_PERFORMANCE_RELATIVE_AGE: f32 = 0.7;
-pub const BASE_FITNESS: [Skill; NUM_GAME_POSITIONS as usize] = [22.0, 16.0, 14.0, 11.0, 7.0];
+pub const BASE_FITNESS: [Skill; NUM_GAME_POSITIONS as usize] = [24.0, 17.0, 14.5, 11.0, 7.0];
 
 pub const POLOSIUS_TEAM_ID: TeamId = uuid!("7eb1bb55-3bac-49ea-a480-44b581680167");
