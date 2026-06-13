@@ -10,9 +10,7 @@ use super::{
     traits::{Screen, SplitPanel},
     ui_screen::UiTab,
     utils::img_to_lines,
-    widgets::{
-        default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN,
-    },
+    widgets::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
 };
 use crate::store::load_game;
 use crate::types::HashMapWithResult;
@@ -1012,19 +1010,73 @@ impl GamePanel {
         frame.render_widget(default_block(), box_area[0]);
         frame.render_widget(home_table, home_box_split[0]);
         frame.render_widget(
-            Span::styled(
-                format!("   Tactic: {}", game.home_team_in_game.tactic),
-                UiStyle::HIGHLIGHT,
-            ),
+            Line::from(vec![
+                Span::raw("   Tactic:"),
+                Span::styled(
+                    format!("{:<11}  ", game.home_team_in_game.tactic.to_string()),
+                    UiStyle::HIGHLIGHT,
+                ),
+                Span::raw("Substitutions:"),
+                Span::styled(
+                    format!(
+                        "{:6}  ",
+                        game.home_team_in_game.substitution_tendency.to_string()
+                    ),
+                    UiStyle::HIGHLIGHT,
+                ),
+                Span::raw("Fluidity:"),
+                Span::styled(
+                    format!(
+                        "{:6}  ",
+                        game.home_team_in_game.game_position_fluidity.to_string()
+                    ),
+                    UiStyle::HIGHLIGHT,
+                ),
+                Span::raw("Rum:"),
+                Span::styled(
+                    format!(
+                        "{}/{}",
+                        game.home_team_in_game.rum, game.home_team_in_game.initial_rum
+                    ),
+                    UiStyle::HIGHLIGHT,
+                ),
+            ]),
             home_box_split[1],
         );
         frame.render_widget(default_block(), box_area[1]);
         frame.render_widget(away_table, away_box_split[0]);
         frame.render_widget(
-            Span::styled(
-                format!("   Tactic: {}", game.away_team_in_game.tactic),
-                UiStyle::HIGHLIGHT,
-            ),
+            Line::from(vec![
+                Span::raw("   Tactic:"),
+                Span::styled(
+                    format!("{:11}  ", game.away_team_in_game.tactic.to_string()),
+                    UiStyle::HIGHLIGHT,
+                ),
+                Span::raw("Substitutions:"),
+                Span::styled(
+                    format!(
+                        "{:6}  ",
+                        game.away_team_in_game.substitution_tendency.to_string()
+                    ),
+                    UiStyle::HIGHLIGHT,
+                ),
+                Span::raw("Fluidity:"),
+                Span::styled(
+                    format!(
+                        "{:6}  ",
+                        game.away_team_in_game.game_position_fluidity.to_string()
+                    ),
+                    UiStyle::HIGHLIGHT,
+                ),
+                Span::raw("Rum:"),
+                Span::styled(
+                    format!(
+                        "{}/{}",
+                        game.away_team_in_game.rum, game.away_team_in_game.initial_rum
+                    ),
+                    UiStyle::HIGHLIGHT,
+                ),
+            ]),
             away_box_split[1],
         );
     }
@@ -1307,7 +1359,8 @@ impl Screen for GamePanel {
                 )),
                 Line::from(format!(
                     "   {}/{}        Scroll commentary  /  Enter scrolls to top",
-                    ui_key::PREVIOUS_SELECTION, ui_key::NEXT_SELECTION
+                    ui_key::PREVIOUS_SELECTION,
+                    ui_key::NEXT_SELECTION
                 )),
                 Line::from("   0-4        Filter pitch view by quarter"),
                 Line::from(format!(
