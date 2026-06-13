@@ -126,7 +126,7 @@ pub(crate) fn execute(
             situation: ActionSituation::CloseShot,
             description: [
                 format!(
-                    "{} bumps on {} and gathers the ball to shoot.",
+                    "{} bumps on {} and tries to gather the ball to shoot.",
                     poster.info.short_name(),
                     defender.info.short_name(),
                 ),

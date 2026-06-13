@@ -61,7 +61,7 @@ enum AsteroidPlanetState {
 #[derive(Debug, Display, Clone, Copy, PartialEq)]
 enum SpaceAdventureObjective {
     Exploration,
-    Raid { target_team_id: TeamId },
+    _Raid { target_team_id: TeamId },
 }
 
 #[derive(Debug)]
@@ -69,7 +69,7 @@ pub struct SpaceAdventure {
     id: usize,
     rng: ChaCha8Rng,
     state: SpaceAdventureState,
-    objective: SpaceAdventureObjective,
+    _objective: SpaceAdventureObjective,
     tick: usize,
     background: RgbaImage,
     // Layered entities, to allow to draw/interact on separate layers.
@@ -328,7 +328,7 @@ impl SpaceAdventure {
             state: SpaceAdventureState::Starting {
                 time: Instant::now(),
             },
-            objective: SpaceAdventureObjective::Exploration,
+            _objective: SpaceAdventureObjective::Exploration,
             tick: 0,
             background,
             entities,
