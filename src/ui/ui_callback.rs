@@ -606,7 +606,7 @@ impl UiCallback {
             };
 
             let proposer_player = app.world.players.get_or_err(&proposer_player_id)?;
-            own_team.can_trade_players(proposer_player, target_player, target_team)?;
+            own_team.can_trade_players_with_team(proposer_player, target_player, target_team)?;
 
             // Network trade
             if let Some(peer_id) = target_team.peer_id {

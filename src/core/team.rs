@@ -677,7 +677,7 @@ impl Team {
         self.can_play_game_with_team(team, None)
     }
 
-    pub fn can_trade_players(
+    pub fn can_trade_players_with_team(
         &self,
         proposer_player: &Player,
         target_player: &Player,

@@ -453,8 +453,11 @@ impl PlayerListPanel {
                 .block(default_block().border_style(UiStyle::OK))
                 .set_hotkey(ui_key::ACCEPT_TRADE);
 
-                let can_trade =
-                    proposer_team.can_trade_players(proposer_player, target_player, own_team);
+                let can_trade = proposer_team.can_trade_players_with_team(
+                    proposer_player,
+                    target_player,
+                    own_team,
+                );
 
                 if let Err(err) = can_trade {
                     button.disable(Some(err.to_string()));
@@ -488,7 +491,7 @@ impl PlayerListPanel {
                 if let Some(target_team_id) = target_player.team {
                     let target_team = world.teams.get_or_err(&target_team_id)?;
                     if own_team
-                        .can_trade_players(proposer_player, target_player, target_team)
+                        .can_trade_players_with_team(proposer_player, target_player, target_team)
                         .is_ok()
                     {
                         let mut trade_button = Button::new(

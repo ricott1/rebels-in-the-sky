@@ -586,22 +586,36 @@ impl App {
                     );
                 }
 
-                if let Err(e) = self.network_handler.resend_open_trades(&self.world) {
-                    self.ui.push_log_event(
+                match self.network_handler.resend_open_trades(&self.world) {
+                    Ok(stale) => {
+                        if let Ok(own_team) = self.world.get_own_team_mut() {
+                            for id in stale {
+                                own_team.sent_trades.remove(&id);
+                            }
+                        }
+                    }
+                    Err(e) => self.ui.push_log_event(
                         Tick::now(),
                         None,
                         format!("Failed to send open trades to peers: {e}"),
                         log::Level::Error,
-                    );
+                    ),
                 }
 
-                if let Err(e) = self.network_handler.resend_open_challenges(&self.world) {
-                    self.ui.push_log_event(
+                match self.network_handler.resend_open_challenges(&self.world) {
+                    Ok(stale) => {
+                        if let Ok(own_team) = self.world.get_own_team_mut() {
+                            for id in stale {
+                                own_team.sent_challenges.remove(&id);
+                            }
+                        }
+                    }
+                    Err(e) => self.ui.push_log_event(
                         Tick::now(),
                         None,
                         format!("Failed to send open challenges to peers: {e}"),
                         log::Level::Error,
-                    );
+                    ),
                 }
             } else if let Err(e) = self.network_handler.dial_seed() {
                 self.ui.push_log_event(

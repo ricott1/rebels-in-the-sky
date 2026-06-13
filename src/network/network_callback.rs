@@ -842,7 +842,7 @@ impl NetworkCallback {
                                 .ok_or_else(|| anyhow!("Player in trade should have a team"))?,
                         )?;
 
-                        own_team.can_trade_players(
+                        own_team.can_trade_players_with_team(
                             &trade.proposer_player,
                             &trade.target_player,
                             target_team,
@@ -929,7 +929,7 @@ impl NetworkCallback {
                                 .ok_or_else(|| anyhow!("Player in trade should have a team"))?,
                         )?;
 
-                        proposer_team.can_trade_players(
+                        proposer_team.can_trade_players_with_team(
                             &trade.proposer_player,
                             &trade.target_player,
                             own_team,

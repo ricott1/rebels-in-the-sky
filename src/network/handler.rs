@@ -53,7 +53,10 @@ pub(crate) fn sanitize_listen_addrs(addrs: &[Multiaddr]) -> Vec<Multiaddr> {
 /// Extract the IP from an observed address and combine it with our actual listen port.
 /// The observed_addr from identify contains the correct public IP but the wrong
 /// (ephemeral) port from the outbound connection.
-fn build_external_addr_from_observed(observed_addr: &Multiaddr, listen_port: u16) -> Option<Multiaddr> {
+fn build_external_addr_from_observed(
+    observed_addr: &Multiaddr,
+    listen_port: u16,
+) -> Option<Multiaddr> {
     let mut ip_proto = None;
     for proto in observed_addr.iter() {
         match proto {
@@ -512,26 +515,70 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub fn resend_open_trades(&self, world: &World) -> AppResult<()> {
+    pub fn resend_open_trades(&self, world: &World) -> AppResult<Vec<(PlayerId, PlayerId)>> {
         let own_team = world.get_own_team()?;
+        let mut to_remove = vec![];
         for trade in own_team.sent_trades.values() {
-            if trade.state == NetworkRequestState::Syn {
-                self.send_trade(trade.clone())?;
+            let id = (trade.proposer_player.id, trade.target_player.id);
+            if trade.state != NetworkRequestState::Syn {
+                to_remove.push(id);
+                continue;
             }
+
+            let team_id = if let Some(id) = trade.target_player.team {
+                id
+            } else {
+                to_remove.push(id);
+                continue;
+            };
+
+            let target_team = if let Some(t) = world.teams.get(&team_id) {
+                t
+            } else {
+                to_remove.push(id);
+                continue;
+            };
+
+            if own_team
+                .can_trade_players_with_team(
+                    &trade.proposer_player,
+                    &trade.target_player,
+                    target_team,
+                )
+                .is_err()
+            {
+                to_remove.push(id);
+                continue;
+            }
+            self.send_trade(trade.clone())?;
         }
 
-        Ok(())
+        Ok(to_remove)
     }
 
-    pub fn resend_open_challenges(&self, world: &World) -> AppResult<()> {
+    pub fn resend_open_challenges(&self, world: &World) -> AppResult<Vec<TeamId>> {
         let own_team = world.get_own_team()?;
+        let mut to_remove = vec![];
         for challenge in own_team.sent_challenges.values() {
+            let team_id = challenge.away_team_in_game.team_id;
+            let team = if let Some(t) = world.teams.get(&team_id) {
+                t
+            } else {
+                to_remove.push(team_id);
+                continue;
+            };
+
+            if own_team.can_challenge_network_team(team).is_err() {
+                to_remove.push(team_id);
+                continue;
+            }
+
             if challenge.state == NetworkRequestState::Syn {
                 self.send_challenge(challenge.clone())?;
             }
         }
 
-        Ok(())
+        Ok(to_remove)
     }
 
     fn send_game(&self, world: &World, game_id: &GameId) -> AppResult<()> {
@@ -705,7 +752,7 @@ impl NetworkHandler {
             let mut trade = trade.clone();
             let target_player = world.players.get_or_err(&trade.target_player.id)?.clone();
             trade.target_player = target_player;
-            proposer_team.can_trade_players(
+            proposer_team.can_trade_players_with_team(
                 &trade.proposer_player,
                 &trade.target_player,
                 own_team,
@@ -781,9 +828,9 @@ impl NetworkHandler {
             SwarmEvent::Behaviour(BehaviourEvent::Kademlia(_)) => None,
             SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
                 sanitize_addr(&address).map(|clean| NetworkCallback::PeerIdentified {
-                        peer_id,
-                        listen_addrs: vec![clean],
-                    })
+                    peer_id,
+                    listen_addrs: vec![clean],
+                })
             }
             SwarmEvent::ExpiredListenAddr {
                 listener_id: _,
