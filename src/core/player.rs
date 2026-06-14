@@ -776,7 +776,7 @@ impl Player {
             return Err(anyhow!("Can't drink during game"));
         }
 
-        if self.tiredness == MAX_SKILL {
+        if self.is_knocked_out() {
             return Err(anyhow!("Too wasted to drink"));
         }
 
@@ -794,7 +794,7 @@ impl Player {
     pub fn drink(&mut self, rng: &mut ChaCha8Rng) -> bool {
         let amount = if self.special_trait == Some(Trait::Spugna) {
             // Spugna gets drunk 10 times as slow.
-            DRUNKENNESS_PER_DRINK / 10.0
+            0.1 * DRUNKENNESS_PER_DRINK
         } else {
             DRUNKENNESS_PER_DRINK
         };
@@ -808,7 +808,12 @@ impl Player {
             // Wasted: tiredness is set directly rather than through add_tiredness,
             // since morale must be unaffected and trait caps must not prevent it.
             self.tiredness = MAX_SKILL;
-            self.drunkenness = DRUNKENNESS_ON_GETTING_DRUNK;
+            self.drunkenness = if self.special_trait == Some(Trait::Spugna) {
+                // Spugna gets less drunk.
+                0.5 * DRUNKENNESS_ON_GETTING_DRUNK
+            } else {
+                DRUNKENNESS_ON_GETTING_DRUNK
+            };
             return true;
         }
 
