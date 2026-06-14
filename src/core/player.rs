@@ -819,7 +819,6 @@ impl Player {
     // Returns None when the player is sober (nothing worth displaying).
     pub fn drunkenness_description(drunkenness: Skill) -> Option<&'static str> {
         match drunkenness {
-            x if x < 0.0 => Some("Drunk"),
             x if x < 4.0 => None,
             x if x < 8.0 => Some("Tipsy"),
             x if x < 12.0 => Some("Merry"),

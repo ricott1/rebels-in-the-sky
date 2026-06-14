@@ -1542,16 +1542,39 @@ pub fn render_player_description(
         header_body_stats[2],
     );
 
-    let tiredness = player.current_tiredness(world);
-    let tiredness_length = (tiredness / MAX_SKILL * BARS_LENGTH as f32).round() as usize;
-    let energy_string = format!(
-        "{}{}",
-        "▰".repeat(BARS_LENGTH.saturating_sub(tiredness_length)),
-        "▱".repeat(tiredness_length),
-    );
-    let energy_style = ((MAX_SKILL - tiredness) / MAX_SKILL * GREEN_STYLE_SKILL).style();
+    if player.current_drunkenness(world) < 0.0 {
+        let drunkennes = player.current_drunkenness(world);
+        let drunkennes_length =
+            (drunkennes / DRUNKENNESS_ON_GETTING_DRUNK * BARS_LENGTH as f32).round() as usize;
+        let drunkennes_string = format!(
+            "{}{}",
+            "▰".repeat(drunkennes_length),
+            "▱".repeat(BARS_LENGTH.saturating_sub(drunkennes_length)),
+        );
+        let style = UiStyle::ERROR;
 
-    frame.render_interactive_widget(
+        frame.render_interactive_widget(
+        HoverTextLine::from(vec![
+            HoverTextSpan::new(
+                Span::raw("Drunk  ".to_string()),
+                format!("{} is drunk! While {} {} getting sober, tiredness is not recovered (current value {:.2})", player.info.full_name(), player.info.pronouns.as_subject().to_lowercase(), player.info.pronouns.to_be(), -1.0 * drunkenness),
+            ),
+            HoverTextSpan::new(Span::styled( drunkennes_string, style),"", 
+           ),
+        ]),
+        header_body_stats[3],
+    );
+    } else {
+        let tiredness = player.current_tiredness(world);
+        let tiredness_length = (tiredness / MAX_SKILL * BARS_LENGTH as f32).round() as usize;
+        let energy_string = format!(
+            "{}{}",
+            "▰".repeat(BARS_LENGTH.saturating_sub(tiredness_length)),
+            "▱".repeat(tiredness_length),
+        );
+        let energy_style = ((MAX_SKILL - tiredness) / MAX_SKILL * GREEN_STYLE_SKILL).style();
+
+        frame.render_interactive_widget(
         HoverTextLine::from(vec![
             HoverTextSpan::new(
                 Span::raw("Energy ".to_string()),
@@ -1562,6 +1585,7 @@ pub fn render_player_description(
         ]),
         header_body_stats[3],
     );
+    }
 
     frame.render_widget(
         Paragraph::new(format!(
