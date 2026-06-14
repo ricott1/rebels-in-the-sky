@@ -1492,10 +1492,12 @@ pub fn render_player_description(
     let drunkenness_span = Player::drunkenness_description(drunkenness).map_or_else(
         || Span::raw(""),
         |desc| {
-            Span::styled(
-                format!(" {desc}"),
-                ((MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL).style(),
-            )
+            let style = if drunkenness < 0.0 {
+                UiStyle::ERROR
+            } else {
+                ((MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL).style()
+            };
+            Span::styled(format!(" {desc}"), style)
         },
     );
 

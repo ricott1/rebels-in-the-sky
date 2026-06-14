@@ -2342,16 +2342,22 @@ impl World {
                 } else {
                     continue;
                 };
-                if player.tiredness > 0.0 {
+
+                // Negative drunkenness means that the player is drunk.
+                if player.drunkenness < 0.0 {
+                    player.drunkenness =
+                        (player.drunkenness + RECOVERING_DRUNKENNESS_PER_SHORT_TICK).min(0.0);
+                } else if player.drunkenness > 0.0 {
+                    player.drunkenness =
+                        (player.drunkenness - RECOVERING_DRUNKENNESS_PER_SHORT_TICK).bound();
+                }
+
+                // While drunk, tiredness is not recovered, until drunkenness is 0.0.
+                if player.tiredness > 0.0 && player.drunkenness >= 0.0 {
                     // Recovery outside of games is slower by a factor TICK_SHORT_INTERVAL/TICK_MEDIUM_INTERVAL
                     // so that it takes 1 minute * 10 * 100 ~ 18 hours to recover from 100% tiredness.
                     player.tiredness =
                         (player.tiredness - bonus * RECOVERING_TIREDNESS_PER_SHORT_TICK).bound();
-                }
-
-                if player.drunkenness > 0.0 {
-                    player.drunkenness =
-                        (player.drunkenness - RECOVERING_DRUNKENNESS_PER_SHORT_TICK).bound();
                 }
             }
         }

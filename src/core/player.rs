@@ -675,8 +675,8 @@ impl Player {
 
         let std_dev = 4.0;
         for rank in 0..NUM_GAME_POSITIONS {
-        // NOTE: this function is called only during initialization, so the relevant value is the intuition at initialization
-        // (potential does not change).
+            // NOTE: this function is called only during initialization, so the relevant value is the intuition at initialization
+            // (potential does not change).
             let position = positions_by_skill_fitness[rank as usize];
             let bonus_fitness = 3.0 * (0.5 * self.mental.intuition + 0.5 * self.potential)
                 / MAX_SKILL
@@ -808,7 +808,7 @@ impl Player {
             // Wasted: tiredness is set directly rather than through add_tiredness,
             // since morale must be unaffected and trait caps must not prevent it.
             self.tiredness = MAX_SKILL;
-            self.drunkenness = MIN_SKILL;
+            self.drunkenness = DRUNKENNESS_ON_GETTING_DRUNK;
             return true;
         }
 
@@ -819,10 +819,11 @@ impl Player {
     // Returns None when the player is sober (nothing worth displaying).
     pub fn drunkenness_description(drunkenness: Skill) -> Option<&'static str> {
         match drunkenness {
+            x if x < 0.0 => Some("Drunk"),
             x if x < 4.0 => None,
             x if x < 8.0 => Some("Tipsy"),
             x if x < 12.0 => Some("Merry"),
-            x if x < 16.0 => Some("Drunk"),
+            x if x < 16.0 => Some("Brillo"),
             _ => Some("Hammered"),
         }
     }
