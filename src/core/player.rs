@@ -673,18 +673,19 @@ impl Player {
             })
             .collect_vec();
 
+        let std_dev = 4.0;
+        for rank in 0..NUM_GAME_POSITIONS {
         // NOTE: this function is called only during initialization, so the relevant value is the intuition at initialization
         // (potential does not change).
-        let bonus_fitness = 0.15 * (0.5 * self.mental.intuition + 0.5 * self.potential)
-            + self.info.population.bonus_base_fitness();
-        let std_dev = 4.0;
-        for i in 0..NUM_GAME_POSITIONS as usize {
-            let mean = BASE_FITNESS[i] + bonus_fitness; //Can be larger than MAX_SKILL
+            let position = positions_by_skill_fitness[rank as usize];
+            let bonus_fitness = 3.0 * (0.5 * self.mental.intuition + 0.5 * self.potential)
+                / MAX_SKILL
+                + self.info.population.bonus_game_position_fitness(position);
+            let mean = BASE_FITNESS[rank as usize] + bonus_fitness; //Can be larger than MAX_SKILL
             let normal =
                 Normal::new(mean, std_dev).expect("Should create valid normal distribution");
             let value = normal.sample(rng).bound();
-            let position = positions_by_skill_fitness[i] as usize;
-            self.game_position_fitness[position] = value;
+            self.game_position_fitness[position as usize] = value;
         }
     }
 
@@ -711,7 +712,7 @@ impl Player {
             .copied()
             .unwrap_or_default()
             / MAX_SKILL;
-        (self.position_skill_rating(position) * fitness).bound()
+        self.position_skill_rating(position) * fitness
     }
 
     pub fn best_position(&self) -> GamePosition {
@@ -1357,7 +1358,6 @@ mod test {
     use itertools::Itertools;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
-    use serde::{Deserialize, Serialize};
 
     #[test]
     fn test_drink() -> AppResult<()> {
@@ -1430,37 +1430,6 @@ mod test {
             player.info.age += 0.025 * player.info.population.max_age();
         }
 
-        Ok(())
-    }
-
-    #[ignore]
-    #[test]
-    fn test_players_generation() -> AppResult<()> {
-        let mut app = App::test_default()?;
-
-        let world = &mut app.world;
-
-        let players = world
-            .players
-            .values()
-            .sorted_by(|a, b| a.average_skill().partial_cmp(&b.average_skill()).unwrap())
-            .collect_vec();
-
-        let skills = players.iter().map(|p| p.average_skill()).collect_vec();
-        let potentials = players.iter().map(|p| p.potential).collect_vec();
-
-        #[derive(Serialize, Deserialize)]
-        struct GenerationData {
-            skills: Vec<f32>,
-            potentials: Vec<f32>,
-        }
-
-        let data = GenerationData { skills, potentials };
-
-        std::fs::write(
-            "./pytests/player_generation.json",
-            serde_json::to_vec(&data)?,
-        )?;
         Ok(())
     }
 

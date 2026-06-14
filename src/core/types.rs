@@ -5,7 +5,7 @@ use super::{
     world::World,
 };
 use crate::{
-    core::{GamePosition, GamePositionUtils, Resource, Skill, Trait, NUM_GAME_POSITIONS},
+    core::{GamePosition, GamePositionUtils, Resource, Trait, NUM_GAME_POSITIONS},
     image::color_map::SkinColorMap,
     types::{AppResult, HashMapWithResult, PlanetId, SystemTimeTick, TeamId, Tick},
 };
@@ -161,13 +161,36 @@ impl Population {
         }
     }
 
-    pub fn bonus_base_fitness(&self) -> Skill {
+    pub fn bonus_game_position_fitness(&self, game_position: GamePosition) -> f32 {
         match self {
-            Self::Human { .. } => 2.5,
-            Self::Octopulp => 1.75,
-            Self::Juppa => -2.0,
+            Self::Human { .. } => 3.0,
+            Self::Yardalaim => match game_position {
+                4 => 6.0,
+                3 => 3.0,
+                0 => -2.5,
+                _ => 0.0,
+            },
+            Self::Polpett => match game_position {
+                0 | 1 => 4.0,
+                3 => -2.0,
+                4 => -2.0,
+                _ => 0.0,
+            },
+            Self::Juppa => match game_position {
+                4 => 1.0,
+                2 | 3 => 3.0,
+                _ => 0.0,
+            },
             Self::Galdari => -1.0,
-            _ => 0.0,
+            Self::Pupparoll => match game_position {
+                2 | 3 | 4 => 1.0,
+                _ => -1.0,
+            },
+            Self::Octopulp => match game_position {
+                2 => 4.0,
+                1 | 3 => 1.0,
+                _ => -1.0,
+            },
         }
     }
 
@@ -605,6 +628,10 @@ impl TeamBonus {
     }
 
     pub fn as_skill(&self, player: &Player) -> f32 {
+        if player.is_knocked_out() {
+            return 0.0;
+        }
+
         match self {
             TeamBonus::Exploration => {
                 0.15 * player.athletics.stamina

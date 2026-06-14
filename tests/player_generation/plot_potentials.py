@@ -1,8 +1,8 @@
 """Plot distributions of player potential (and supporting stats) from a
 large pool of randomly generated players.
 
-Run after `cargo test --test player_potential_distribution`, which writes
-`potential_data.json` next to this script.
+Run after `cargo test --test player_generation -- --ignored`, which writes
+`generation_data.json` next to this script.
 
 Outputs:
 - `potential_overall.png`  overall potential histogram + overall-vs-potential
@@ -10,7 +10,7 @@ Outputs:
 - `potential_by_age.png`   per-relative-age-bin potential histograms
 
 Usage:
-    python3 tests/player_potential_distribution/plot_potentials.py
+    python3 tests/player_generation/plot_potentials.py
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-DATA_PATH = HERE / "potential_data.json"
+DATA_PATH = HERE / "generation_data.json"
 OUT_OVERALL = HERE / "potential_overall.png"
 OUT_BY_AGE = HERE / "potential_by_age.png"
 
@@ -47,11 +47,23 @@ def plot_overall(dump: dict) -> None:
     )
 
     ax = axes[0]
-    ax.hist(potentials, bins=POTENTIAL_BINS, color="#444444", alpha=0.85, edgecolor="white")
-    ax.axvline(potentials.mean(), color="red", linestyle="--", linewidth=1.2,
-               label=f"mean={potentials.mean():.2f}")
-    ax.axvline(np.median(potentials), color="orange", linestyle=":", linewidth=1.2,
-               label=f"median={np.median(potentials):.2f}")
+    ax.hist(
+        potentials, bins=POTENTIAL_BINS, color="#444444", alpha=0.85, edgecolor="white"
+    )
+    ax.axvline(
+        potentials.mean(),
+        color="red",
+        linestyle="--",
+        linewidth=1.2,
+        label=f"mean={potentials.mean():.2f}",
+    )
+    ax.axvline(
+        np.median(potentials),
+        color="orange",
+        linestyle=":",
+        linewidth=1.2,
+        label=f"median={np.median(potentials):.2f}",
+    )
     ax.set_title("Potential distribution (all players)")
     ax.set_xlabel("potential")
     ax.set_ylabel("count")
@@ -62,8 +74,14 @@ def plot_overall(dump: dict) -> None:
     ax = axes[1]
     ax.scatter(overalls, potentials, s=4, alpha=0.25, color="#1f77b4")
     lo, hi = 0.0, 20.0
-    ax.plot([lo, hi], [lo, hi], color="grey", linestyle="--", linewidth=0.8,
-            label="potential = overall")
+    ax.plot(
+        [lo, hi],
+        [lo, hi],
+        color="grey",
+        linestyle="--",
+        linewidth=0.8,
+        label="potential = overall",
+    )
     ax.set_title("Potential vs current overall")
     ax.set_xlabel("current overall (average skill)")
     ax.set_ylabel("potential")
@@ -92,7 +110,9 @@ def plot_by_age(dump: dict) -> None:
     potentials = np.array([s["potential"] for s in samples])
 
     edges = AGE_BIN_EDGES
-    bin_labels = [f"[{edges[i]:.2f}, {edges[i + 1]:.2f})" for i in range(len(edges) - 1)]
+    bin_labels = [
+        f"[{edges[i]:.2f}, {edges[i + 1]:.2f})" for i in range(len(edges) - 1)
+    ]
     cmap = plt.get_cmap("viridis")
     bin_colors = [cmap(i / max(1, len(bin_labels) - 1)) for i in range(len(bin_labels))]
 
@@ -109,8 +129,9 @@ def plot_by_age(dump: dict) -> None:
     n_panels = len(bin_labels) + 1  # +1 for overlay
     cols = 3
     rows = (n_panels + cols - 1) // cols
-    fig, axes = plt.subplots(rows, cols, figsize=(4.5 * cols, 3.2 * rows),
-                             sharex=True, sharey=False)
+    fig, axes = plt.subplots(
+        rows, cols, figsize=(4.5 * cols, 3.2 * rows), sharex=True, sharey=False
+    )
     fig.suptitle(
         f"Potential distribution by relative age - n={dump['num_players']}",
         fontsize=12,
@@ -133,14 +154,22 @@ def plot_by_age(dump: dict) -> None:
     for label, vals, color in zip(bin_labels, binned, bin_colors):
         if len(vals) == 0:
             continue
-        ax.hist(vals, bins=POTENTIAL_BINS, color=color, alpha=0.8, histtype="step",
-                linewidth=1.6, label=f"rel_age {label}", density=True)
+        ax.hist(
+            vals,
+            bins=POTENTIAL_BINS,
+            color=color,
+            alpha=0.8,
+            histtype="step",
+            linewidth=1.6,
+            label=f"rel_age {label}",
+            density=True,
+        )
     ax.set_title("All age bins (density)")
     ax.set_xlim(0.0, 20.0)
     ax.grid(True, alpha=0.3)
     ax.legend(loc="upper right", fontsize=8)
 
-    for ax in axes_flat[len(bin_labels) + 1:]:
+    for ax in axes_flat[len(bin_labels) + 1 :]:
         ax.set_visible(False)
 
     for ax in axes_flat:

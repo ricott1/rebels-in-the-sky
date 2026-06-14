@@ -151,7 +151,7 @@ impl World {
 
         for _ in 0..number_free_pirates {
             let base_level = own_team_base_level + rng.random_range(0.0..2.5);
-            self.generate_random_player(rng, Some(position), planet, base_level)?;
+            self.generate_random_pirate(rng, Some(position), planet, base_level)?;
             position = (position + 1) % NUM_GAME_POSITIONS;
         }
 
@@ -200,12 +200,12 @@ impl World {
         let team_base_level = team_base_level.unwrap_or(rng.random_range(2..=14) as f32);
         for position in 0..NUM_GAME_POSITIONS {
             let player_id =
-                self.generate_random_player(rng, Some(position), &planet, team_base_level)?;
+                self.generate_random_pirate(rng, Some(position), &planet, team_base_level)?;
             self.add_player_to_team(&player_id, &team_id)?;
         }
 
         loop {
-            let player_id = self.generate_random_player(rng, None, &planet, team_base_level)?;
+            let player_id = self.generate_random_pirate(rng, None, &planet, team_base_level)?;
             self.add_player_to_team(&player_id, &team_id)?;
             let team = self.teams.get_or_err(&team_id)?;
             if team.player_ids.len() == team.spaceship.crew_capacity() as usize {
@@ -293,7 +293,7 @@ impl World {
         Ok(asteroid_id)
     }
 
-    fn generate_random_player(
+    fn generate_random_pirate(
         &mut self,
         rng: &mut ChaCha8Rng,
         position: Option<GamePosition>,
@@ -1438,7 +1438,7 @@ impl World {
         if amount > 0 {
             for _ in 0..amount {
                 let base_level = rng.random_range(0.0..7.0);
-                let player_id = self.generate_random_player(rng, None, planet, base_level)?;
+                let player_id = self.generate_random_pirate(rng, None, planet, base_level)?;
 
                 free_pirates.push(player_id);
             }

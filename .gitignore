@@ -96,5 +96,5 @@ pytests/*
 keys
 tests/player_evolution/evolution_data.json
 tests/player_evolution/*.png
-tests/player_potential_distribution/potential_data.json
-tests/player_potential_distribution/*.png
+tests/player_generation/generation_data.json
+tests/player_generation/*.png

@@ -37,12 +37,12 @@ use ratatui::{
     layout::{Constraint, Layout},
     Frame,
 };
+use ratatui_textarea::{CursorMove, TextArea};
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::Instant;
 use std::vec;
 use strum_macros::Display;
-use ratatui_textarea::{CursorMove, TextArea};
 
 const MAX_POPUP_MESSAGES: usize = 8;
 
@@ -800,7 +800,6 @@ impl UiScreen {
             let mut spans = vec![
                 format!(" FPS {:>4} ", fps),
                 format!(" World size {:04} kb ", world_size),
-                format!(" Seed {} ", world.seed),
                 format!(
                     " Frame size {}x{} ",
                     frame.area().width,
@@ -809,7 +808,7 @@ impl UiScreen {
             ];
             if world.has_own_team() {
                 spans.push(format!(
-                    " New FA in {} ",
+                    " New FA: {} ",
                     world.next_free_pirates_refresh().formatted()
                 ));
             }

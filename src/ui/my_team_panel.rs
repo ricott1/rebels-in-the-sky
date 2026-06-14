@@ -1962,7 +1962,7 @@ impl MyTeamPanel {
                 {
                     Some(idx) => format!(
                         "{:<2} {:<5}",
-                        (idx as GamePosition).as_str(),
+                        (idx as GamePosition).as_role(),
                         if (idx as GamePosition) < NUM_GAME_POSITIONS {
                             player.position_rating(idx as GamePosition).stars()
                         } else {
@@ -2051,7 +2051,7 @@ impl MyTeamPanel {
                     ClickableCell::from(current_role),
                     ClickableCell::from(format!(
                         "{:<2} {:<5}",
-                        best_role.as_str(),
+                        best_role.as_role(),
                         player.position_rating(best_role).stars()
                     )),
                     ClickableCell::from(player.info.crew_role.to_string()),
@@ -2202,7 +2202,7 @@ impl MyTeamPanel {
                     } else if position == 6 {
                         "B2"
                     } else {
-                        position.as_str()
+                        position.as_role()
                     }
                 ),
                 UiCallback::SwapPlayerPositions {
@@ -2212,7 +2212,7 @@ impl MyTeamPanel {
             )
             .set_hover_text(format!(
                 "Set player initial position to {}.",
-                position.as_str()
+                position.as_role()
             ))
             .set_hotkey(ui_key::team::set_player_position(position));
 

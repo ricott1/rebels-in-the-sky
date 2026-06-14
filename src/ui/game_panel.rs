@@ -770,7 +770,7 @@ impl GamePanel {
             plus_minus_total += player_data.plus_minus as i16;
 
             let role = match player_data.position {
-                Some(p) => (p as GamePosition).as_str().to_string(),
+                Some(p) => (p as GamePosition).as_role().to_string(),
                 None => "".to_string(),
             };
 
@@ -870,7 +870,7 @@ impl GamePanel {
             let player_data = &players_data[&player.id];
 
             let role = match player_data.position {
-                Some(p) => (p as GamePosition).as_str().to_string(),
+                Some(p) => (p as GamePosition).as_role().to_string(),
                 None => "".to_string(),
             };
 

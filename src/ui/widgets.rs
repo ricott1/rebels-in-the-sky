@@ -1638,7 +1638,12 @@ fn format_player_skills(player: &'_ Player) -> Vec<Line<'_>> {
     let skills = player.current_skill_array();
     let mut text = vec![];
     let mut roles = (0..NUM_GAME_POSITIONS)
-        .map(|i: GamePosition| (i.as_str().to_string(), player.position_rating(i)))
+        .map(|i: GamePosition| {
+            (
+                i.as_role().to_string(),
+                player.game_position_fitness[i as usize],
+            )
+        })
         .collect::<Vec<(String, f32)>>();
     roles.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 

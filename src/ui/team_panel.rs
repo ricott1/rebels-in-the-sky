@@ -312,7 +312,7 @@ impl TeamListPanel {
             frame.render_widget(
                 Paragraph::new(format!(
                     "{} {}",
-                    (i as GamePosition).as_str(),
+                    (i as GamePosition).as_role(),
                     player.position_rating(i as GamePosition).stars()
                 ))
                 .centered(),
@@ -368,7 +368,7 @@ impl TeamListPanel {
 
                     let role_info = format!(
                         "{:<2} {:<5}",
-                        best_role.as_str(),
+                        best_role.as_role(),
                         player.position_rating(best_role).stars()
                     );
                     let mut button = Button::new(

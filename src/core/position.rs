@@ -4,12 +4,12 @@ pub type GamePosition = u8;
 pub const NUM_GAME_POSITIONS: GamePosition = 5;
 
 pub trait GamePositionUtils {
-    fn as_str(&self) -> &str;
+    fn as_role(&self) -> &str;
     fn weights(&self) -> [f32; 20];
 }
 
 impl GamePositionUtils for GamePosition {
-    fn as_str(&self) -> &str {
+    fn as_role(&self) -> &str {
         match self {
             0 => "PG",
             1 => "SG",
