@@ -38,9 +38,11 @@ impl GameRating {
     }
 
     fn k_factor(&self) -> usize {
-        // K = 30: for a player new to the rating list until the completion of events with a total of 30 games.
-        // K = 15: for players who have always been rated under 2400.
-        // K = 10: for players with any published rating of at least 2400 and at least 30 games played in previous events. Thereafter it remains permanently at 10.
+        // Loosely based on the FIDE K-factor tiers, with the new-player threshold
+        // lowered to K_FACTOR_REDUCTION_THRESHOLD games:
+        // K = 30: until the team has completed K_FACTOR_REDUCTION_THRESHOLD games.
+        // K = 15: for teams that have always been rated under 2400.
+        // K = 10: once a team has reached a rating of at least 2400 (permanent thereafter).
         let n = self.num_games();
         if n < K_FACTOR_REDUCTION_THRESHOLD {
             30
@@ -56,6 +58,8 @@ impl GameRating {
     }
 
     pub fn update(&mut self, result: GameResult, other_rating: &GameRating) {
+        let k_factor = self.k_factor();
+
         self.record
             .entry(result)
             .and_modify(|e| *e += 1)
@@ -66,10 +70,10 @@ impl GameRating {
         let outcome = match result {
             GameResult::Win => 1.0,
             GameResult::Draw => 0.5,
-            GameResult::Loss => -1.0,
+            GameResult::Loss => 0.0,
         };
 
-        let new_rating = self.rating + self.k_factor() as f32 * (outcome - pa);
+        let new_rating = self.rating + k_factor as f32 * (outcome - pa);
 
         self.rating = new_rating.max(FLOOR_RATING);
 
@@ -100,5 +104,32 @@ mod tests {
         rating_a.update(GameResult::Draw, &rating_b);
         rating_b.update(GameResult::Draw, &rating_a);
         print!("{rating_a:#?} vs {rating_b:#?}");
+    }
+
+    #[test]
+    fn test_rating_update_is_zero_sum() {
+        // Both equal-rated and unequal-rated (same K, since both are fresh) teams.
+        for (start_a, start_b) in [(1200.0, 1200.0), (1500.0, 1100.0)] {
+            let mut rating_a = GameRating::default();
+            rating_a.rating = start_a;
+            let mut rating_b = GameRating::default();
+            rating_b.rating = start_b;
+
+            let pre_a = rating_a.clone();
+            let pre_b = rating_b.clone();
+
+            rating_a.update(GameResult::Win, &pre_b);
+            rating_b.update(GameResult::Loss, &pre_a);
+
+            let winner_gain = rating_a.rating - start_a;
+            let loser_loss = start_b - rating_b.rating;
+
+            assert!(winner_gain > 0.0, "winner should gain rating");
+            assert!(loser_loss > 0.0, "loser should lose rating");
+            assert!(
+                (winner_gain - loser_loss).abs() < 1e-3,
+                "Elo must be zero-sum for equal K: winner gained {winner_gain}, loser lost {loser_loss}"
+            );
+        }
     }
 }

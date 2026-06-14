@@ -1819,19 +1819,25 @@ impl World {
                     self.teams.insert(team.id, team);
                 }
             } else {
+                // Snapshot both teams' pre-game ratings before updating either
+                let home_local_rating = self
+                    .teams
+                    .get_or_err(&game.home_team_in_game.team_id)?
+                    .local_game_rating
+                    .clone();
+                let away_local_rating = self
+                    .teams
+                    .get_or_err(&game.away_team_in_game.team_id)?
+                    .local_game_rating
+                    .clone();
+
                 for (idx, team_id) in team_ids.iter().enumerate() {
                     let mut team = self.teams.get_or_err(team_id)?.clone();
 
                     let other_rating = if idx == 0 {
-                        &self
-                            .teams
-                            .get_or_err(&game.away_team_in_game.team_id)?
-                            .local_game_rating
+                        &away_local_rating
                     } else {
-                        &self
-                            .teams
-                            .get_or_err(&game.home_team_in_game.team_id)?
-                            .local_game_rating
+                        &home_local_rating
                     };
 
                     match game.winner {
