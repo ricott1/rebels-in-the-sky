@@ -794,7 +794,7 @@ impl Player {
     pub fn drink(&mut self, rng: &mut ChaCha8Rng) -> bool {
         let amount = if self.special_trait == Some(Trait::Spugna) {
             // Spugna gets drunk 10 times as slow.
-            0.1 * DRUNKENNESS_PER_DRINK
+            SPUGNA_DRUNKENNESS_PER_DRINK
         } else {
             DRUNKENNESS_PER_DRINK
         };
@@ -810,7 +810,7 @@ impl Player {
             self.tiredness = MAX_SKILL;
             self.drunkenness = if self.special_trait == Some(Trait::Spugna) {
                 // Spugna gets less drunk.
-                0.5 * DRUNKENNESS_ON_GETTING_DRUNK
+                SPUGNA_DRUNKENNESS_ON_GETTING_DRUNK
             } else {
                 DRUNKENNESS_ON_GETTING_DRUNK
             };
@@ -1355,7 +1355,9 @@ mod test {
     use crate::{
         app::App,
         core::{
-            constants::DRUNKENNESS_PER_DRINK,
+            constants::{
+                DRUNKENNESS_ON_GETTING_DRUNK, DRUNKENNESS_PER_DRINK, SPUGNA_DRUNKENNESS_PER_DRINK,
+            },
             skill::{Rated, MAX_SKILL, MIN_SKILL},
         },
         types::{AppResult, HashMapWithResult},
@@ -1383,10 +1385,10 @@ mod test {
         spugna.special_trait = Some(Trait::Spugna);
         let got_drunk = spugna.drink(rng);
         assert!(!got_drunk);
-        assert!(spugna.drunkenness == DRUNKENNESS_PER_DRINK / 10.0);
+        assert!(spugna.drunkenness == SPUGNA_DRUNKENNESS_PER_DRINK);
 
         // At max drunkenness and zero stamina the drunk event is guaranteed:
-        // the player gets wasted, sobers up and morale is unaffected.
+        // the player gets wasted, drunkenness goes negative and morale is unaffected.
         let mut player = Player::default();
         player.drunkenness = MAX_SKILL;
         player.athletics.stamina = 0.0;
@@ -1394,7 +1396,7 @@ mod test {
         let got_drunk = player.drink(rng);
         assert!(got_drunk);
         assert!(player.is_knocked_out());
-        assert!(player.drunkenness == MIN_SKILL);
+        assert!(player.drunkenness == DRUNKENNESS_ON_GETTING_DRUNK);
         assert!(player.morale == 10.0);
 
         // Getting knocked out by tiredness also resets drunkenness.

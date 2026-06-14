@@ -3113,7 +3113,7 @@ mod test {
             utils::PLANET_DATA,
             world::{TickInterval, AU, EXPLORATION_DURATION},
             RatedPlayers, DEFAULT_PLANET_ID, MAX_SKILL, MIN_PLAYERS_PER_GAME,
-            PORTAL_TRAVEL_DURATION,
+            PORTAL_TRAVEL_DURATION, SPUGNA_DRUNKENNESS_ON_GETTING_DRUNK,
         },
         game_engine::types::TeamInGame,
         types::{HashMapWithResult, StorableResourceMap, SystemTimeTick, Tick},
@@ -3384,9 +3384,9 @@ mod test {
         .call(&mut app)?;
 
         let spugna = app.world.players.get_or_err(&spugna_id)?;
-        // Getting drunk wastes the player, resets drunkenness and leaves morale untouched.
+        // Getting drunk wastes the player, makes drunkenness negative and leaves morale untouched.
         assert!(spugna.is_knocked_out());
-        assert!(spugna.drunkenness == 0.0);
+        assert!(spugna.drunkenness == SPUGNA_DRUNKENNESS_ON_GETTING_DRUNK);
         assert!(spugna.morale == morale_before);
 
         // The team is now travelling through the portal.

@@ -1492,11 +1492,7 @@ pub fn render_player_description(
     let drunkenness_span = Player::drunkenness_description(drunkenness).map_or_else(
         || Span::raw(""),
         |desc| {
-            let style = if drunkenness < 0.0 {
-                UiStyle::ERROR
-            } else {
-                ((MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL).style()
-            };
+            let style = ((MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL).style();
             Span::styled(format!(" {desc}"), style)
         },
     );
@@ -1542,14 +1538,13 @@ pub fn render_player_description(
         header_body_stats[2],
     );
 
-    if player.current_drunkenness(world) < 0.0 {
-        let drunkennes = player.current_drunkenness(world);
-        let drunkennes_length =
-            (drunkennes / DRUNKENNESS_ON_GETTING_DRUNK * BARS_LENGTH as f32).round() as usize;
-        let drunkennes_string = format!(
+    if drunkenness < 0.0 {
+        let drunkenness_length =
+            (drunkenness / DRUNKENNESS_ON_GETTING_DRUNK * BARS_LENGTH as f32).round() as usize;
+        let drunkenness_string = format!(
             "{}{}",
-            "▰".repeat(drunkennes_length),
-            "▱".repeat(BARS_LENGTH.saturating_sub(drunkennes_length)),
+            "▰".repeat(drunkenness_length),
+            "▱".repeat(BARS_LENGTH.saturating_sub(drunkenness_length)),
         );
         let style = UiStyle::ERROR;
 
@@ -1559,7 +1554,7 @@ pub fn render_player_description(
                 Span::raw("Drunk  ".to_string()),
                 format!("{} is drunk! While {} {} getting sober, tiredness is not recovered (current value {:.2})", player.info.full_name(), player.info.pronouns.as_subject().to_lowercase(), player.info.pronouns.to_be(), -1.0 * drunkenness),
             ),
-            HoverTextSpan::new(Span::styled( drunkennes_string, style),"", 
+            HoverTextSpan::new(Span::styled( drunkenness_string, style),"", 
            ),
         ]),
         header_body_stats[3],

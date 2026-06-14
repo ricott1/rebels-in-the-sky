@@ -170,6 +170,10 @@ pub const MORALE_DRINK_BONUS: f32 = MoraleModifier::SEVERE_BONUS;
 pub const MORALE_HIRE_BONUS: f32 = MoraleModifier::CRITICAL_BONUS;
 pub const DRUNKENNESS_PER_DRINK: f32 = 2.5;
 pub const DRUNKENNESS_ON_GETTING_DRUNK: f32 = -3.0;
+// Spugna players hold their liquor: they accrue drunkenness more slowly and are
+// less affected once they finally get wasted.
+pub const SPUGNA_DRUNKENNESS_PER_DRINK: f32 = 0.1 * DRUNKENNESS_PER_DRINK;
+pub const SPUGNA_DRUNKENNESS_ON_GETTING_DRUNK: f32 = 0.5 * DRUNKENNESS_ON_GETTING_DRUNK;
 pub const RECOVERING_DRUNKENNESS_PER_SHORT_TICK: f32 = TirednessCost::LOW;
 pub const TIREDNESS_DECREASE_AFTER_TOURNAMENT_GAME: f32 = 2.0 * TirednessCost::CRITICAL;
 
