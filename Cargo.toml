@@ -40,12 +40,16 @@ imageproc = { version = "0.27.0", default-features = false, features = ["rayon"]
 include_dir = "0.7.4"
 itertools = "0.14.0"
 libp2p = { version = "0.56.0", features = [
+    "autonat",
+    "dcutr",
     "dns",
     "gossipsub",
     "identify",
     "kad",
     "macros",
     "noise",
+    "quic",
+    "relay",
     "serde",
     "tcp",
     "tokio",

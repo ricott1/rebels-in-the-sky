@@ -22,7 +22,10 @@ use libp2p::gossipsub::{self, IdentTopic};
 use libp2p::identity::Keypair;
 use libp2p::multiaddr::Protocol;
 use libp2p::swarm::{DialError, NetworkBehaviour, SwarmEvent};
-use libp2p::{identify, identity, kad, noise, tcp, yamux, PeerId, StreamProtocol, TransportError};
+use libp2p::{
+    autonat, dcutr, identify, identity, kad, noise, relay, tcp, yamux, PeerId, StreamProtocol,
+    TransportError,
+};
 use libp2p::{Multiaddr, Swarm};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -49,6 +52,12 @@ pub(crate) fn sanitize_addr(addr: &Multiaddr) -> Option<Multiaddr> {
 /// Strip /p2p/ suffixes and filter out non-routable addresses from identify listen_addrs.
 pub(crate) fn sanitize_listen_addrs(addrs: &[Multiaddr]) -> Vec<Multiaddr> {
     addrs.iter().filter_map(sanitize_addr).collect()
+}
+
+/// Whether a multiaddr routes through a relay circuit (contains /p2p-circuit).
+/// Such addresses are relay-dependent, so they are kept out of the Kademlia DHT.
+pub(crate) fn is_relay_circuit(addr: &Multiaddr) -> bool {
+    addr.iter().any(|p| matches!(p, Protocol::P2pCircuit))
 }
 
 /// Extract the IP from an observed address and combine it with our actual listen port.
@@ -106,6 +115,16 @@ pub struct Behaviour {
     pub gossipsub: gossipsub::Behaviour,
     pub identify: identify::Behaviour,
     pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
+    // NAT traversal. Every node runs the client side; only the relayer build
+    // (`--features relayer`) compiles the server side.
+    pub relay_client: relay::client::Behaviour,
+    pub dcutr: dcutr::Behaviour,
+    pub autonat_client: autonat::v2::client::Behaviour,
+    // Server roles only exist in the relayer build (`--features relayer`).
+    #[cfg(feature = "relayer")]
+    pub relay_server: relay::Behaviour,
+    #[cfg(feature = "relayer")]
+    pub autonat_server: autonat::v2::server::Behaviour,
 }
 
 #[derive(Debug, Default)]
@@ -121,6 +140,9 @@ enum SwarmStatus {
 enum SwarmCommand {
     Dial { address: Multiaddr },
     Send { topic: IdentTopic, data: Vec<u8> },
+    /// Resolve a peer's current address through the Kademlia DHT, then dial it.
+    /// Used for self-healing reconnection without the relayer.
+    FindPeer { peer_id: PeerId },
 }
 
 #[derive(Debug)]
@@ -174,12 +196,6 @@ impl NetworkHandler {
         let store = kad::store::MemoryStore::new(peer_id);
         let kademlia = kad::Behaviour::with_config(peer_id, store, kad_config);
 
-        let behaviour = Behaviour {
-            gossipsub,
-            identify,
-            kademlia,
-        };
-
         let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
             .with_tokio()
             .with_tcp(
@@ -187,8 +203,21 @@ impl NetworkHandler {
                 noise::Config::new,
                 yamux::Config::default,
             )?
+            .with_quic()
             .with_dns()?
-            .with_behaviour(|_| behaviour)?
+            .with_relay_client(noise::Config::new, yamux::Config::default)?
+            .with_behaviour(|_keypair, relay_client| Behaviour {
+                gossipsub,
+                identify,
+                kademlia,
+                relay_client,
+                dcutr: dcutr::Behaviour::new(peer_id),
+                autonat_client: autonat::v2::client::Behaviour::default(),
+                #[cfg(feature = "relayer")]
+                relay_server: relay::Behaviour::new(peer_id, relay::Config::default()),
+                #[cfg(feature = "relayer")]
+                autonat_server: autonat::v2::server::Behaviour::default(),
+            })?
             .with_swarm_config(|cfg| {
                 cfg.with_idle_connection_timeout(Duration::from_secs(u64::MAX))
             })
@@ -196,20 +225,31 @@ impl NetworkHandler {
 
         let mut succesful_listen_on = false;
 
+        // Listen on QUIC (UDP) and TCP. QUIC is preferred for hole punching.
         if use_ipv6 {
-            if let Err(e) = swarm.listen_on(format!("/ip6/::/tcp/{tcp_port}").parse()?) {
-                log::error!("Could not listen on ip6: {e}");
-            } else {
-                succesful_listen_on = true;
-            };
+            for addr in [
+                format!("/ip6/::/udp/{tcp_port}/quic-v1"),
+                format!("/ip6/::/tcp/{tcp_port}"),
+            ] {
+                if let Err(e) = swarm.listen_on(addr.parse()?) {
+                    log::error!("Could not listen on ip6 {addr}: {e}");
+                } else {
+                    succesful_listen_on = true;
+                }
+            }
         }
 
         // Fallback to ipv4 if ipv6 gave an error.
         if use_ipv4 || !succesful_listen_on {
-            if let Err(e) = swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{tcp_port}").parse()?) {
-                log::error!("Could not listen on ip4: {e}");
-            } else {
-                succesful_listen_on = true;
+            for addr in [
+                format!("/ip4/0.0.0.0/udp/{tcp_port}/quic-v1"),
+                format!("/ip4/0.0.0.0/tcp/{tcp_port}"),
+            ] {
+                if let Err(e) = swarm.listen_on(addr.parse()?) {
+                    log::error!("Could not listen on ip4 {addr}: {e}");
+                } else {
+                    succesful_listen_on = true;
+                }
             }
         }
 
@@ -298,8 +338,11 @@ impl NetworkHandler {
     ) -> JoinHandle<()> {
         let local_keypair = self.local_keypair.clone();
         let own_peer_id = *self.own_peer_id();
+        let seed_addresses = self.seed_addresses.clone();
 
-        let (sender, mut receiver) = mpsc::channel(64);
+        // Sized to absorb a reconnect burst: dial_known_peers can enqueue a Dial
+        // and a FindPeer per known peer at once.
+        let (sender, mut receiver) = mpsc::channel(256);
 
         self.swarm_status = SwarmStatus::Ready { sender };
         let handle = tokio::spawn(async move {
@@ -312,6 +355,9 @@ impl NetworkHandler {
 
             assert_eq!(own_peer_id, *swarm.local_peer_id());
             let mut kad_bootstrapped = false;
+            // Whether we have already requested a relay reservation. Done once,
+            // on the first relay we see, so NATed peers get a reachable address.
+            let mut relay_reserved = false;
 
             loop {
                 tokio::select! {
@@ -338,20 +384,49 @@ impl NetworkHandler {
                             SwarmEvent::Behaviour(BehaviourEvent::Identify(
                                 identify::Event::Received { peer_id, info, .. }
                             )) => {
-                                let clean_addrs = sanitize_listen_addrs(&info.listen_addrs);
+                                // Add only direct (non-circuit) routable addresses to the DHT;
+                                // circuit addresses are relay-dependent.
+                                let mut added = 0;
+                                for addr in sanitize_listen_addrs(&info.listen_addrs) {
+                                    if is_relay_circuit(&addr) {
+                                        continue;
+                                    }
+                                    swarm.behaviour_mut().kademlia.add_address(peer_id, addr);
+                                    added += 1;
+                                }
                                 log::debug!(
-                                    "Identify from {peer_id}: adding {} routable addrs to Kademlia (from {} total)",
-                                    clean_addrs.len(),
+                                    "Identify from {peer_id}: added {added} routable addrs to Kademlia (from {} total)",
                                     info.listen_addrs.len()
                                 );
-                                for addr in &clean_addrs {
-                                    swarm.behaviour_mut().kademlia.add_address(peer_id, addr.clone());
+
+                                // If this peer is a relay and we have not reserved a slot yet,
+                                // listen on a circuit address through it so we become reachable
+                                // from behind a NAT. DCUtR then upgrades the relayed connection
+                                // to a direct one.
+                                if !relay_reserved
+                                    && info.protocols.iter().any(|p| *p == relay::HOP_PROTOCOL_NAME)
+                                {
+                                    for seed in &seed_addresses {
+                                        let circuit = seed
+                                            .clone()
+                                            .with(Protocol::P2p(*peer_id))
+                                            .with(Protocol::P2pCircuit);
+                                        match swarm.listen_on(circuit.clone()) {
+                                            Ok(_) => {
+                                                relay_reserved = true;
+                                                log::info!("Requesting relay reservation via {circuit}");
+                                            }
+                                            Err(e) => log::debug!(
+                                                "Could not listen on relay circuit {circuit}: {e}"
+                                            ),
+                                        }
+                                    }
                                 }
 
                                 // Build a proper external address from the observed IP
                                 // and our actual listen port. The observed_addr contains our
                                 // public IP as seen by the remote peer, but with an ephemeral
-                                // source port — not our listen port. Using it as-is would
+                                // source port - not our listen port. Using it as-is would
                                 // advertise unreachable addresses.
                                 // Skip when listening on an OS-assigned ephemeral port (0):
                                 // the configured port is not our real listen port, so we must
@@ -363,9 +438,43 @@ impl NetworkHandler {
                                     }
                                 }
                             }
+                            SwarmEvent::Behaviour(BehaviourEvent::AutonatClient(
+                                autonat::v2::client::Event { result, tested_addr, .. }
+                            )) => {
+                                // Drive Kademlia mode from reachability: a publicly reachable
+                                // node is a useful DHT server; a private one stays a client so
+                                // it does not pollute routing tables with unreachable entries.
+                                let mode = if result.is_ok() {
+                                    kad::Mode::Server
+                                } else {
+                                    kad::Mode::Client
+                                };
+                                log::debug!("AutoNAT result for {tested_addr}: {result:?} -> kad {mode:?}");
+                                swarm.behaviour_mut().kademlia.set_mode(Some(mode));
+                            }
+                            SwarmEvent::Behaviour(BehaviourEvent::Dcutr(event)) => {
+                                log::debug!("DCUtR event: {event:?}");
+                            }
+                            SwarmEvent::Behaviour(BehaviourEvent::Kademlia(
+                                kad::Event::OutboundQueryProgressed {
+                                    result: kad::QueryResult::GetClosestPeers(Ok(ok)),
+                                    step,
+                                    ..
+                                }
+                            )) if step.last => {
+                                // A FindPeer lookup finished: dial the target now that the DHT
+                                // has supplied addresses for it (self-healing reconnection).
+                                if let Ok(target) = PeerId::from_bytes(&ok.key) {
+                                    if target != own_peer_id {
+                                        let _ = swarm.dial(target);
+                                    }
+                                }
+                            }
                             SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
                                 if let Some(clean) = sanitize_addr(address) {
-                                    swarm.behaviour_mut().kademlia.add_address(peer_id, clean);
+                                    if !is_relay_circuit(&clean) {
+                                        swarm.behaviour_mut().kademlia.add_address(peer_id, clean);
+                                    }
                                 }
                             }
                             SwarmEvent::ConnectionEstablished { .. } => {
@@ -400,6 +509,10 @@ impl NetworkHandler {
                                 if let Err(e) = swarm.dial(address.clone()) {
                                     log::error!("Swarm dial error for {address}: {e}");
                                 }
+                            }
+                            SwarmCommand::FindPeer { peer_id } => {
+                                log::debug!("Looking up peer {peer_id} in the DHT");
+                                swarm.behaviour_mut().kademlia.get_closest_peers(peer_id);
                             }
                         }
                     }
@@ -462,11 +575,28 @@ impl NetworkHandler {
             if *peer_id == own_peer_id {
                 continue;
             }
-            let Some(clean) = sanitize_addr(address) else {
-                continue;
-            };
-            if let Err(e) = self.dial_address(clean.clone()) {
-                log::warn!("dial_known_peers: failed to dial {peer_id} at {clean}: {e}");
+            // Try the last known direct address.
+            if let Some(clean) = sanitize_addr(address) {
+                if let Err(e) = self.dial_address(clean.clone()) {
+                    log::warn!("dial_known_peers: failed to dial {peer_id} at {clean}: {e}");
+                }
+            }
+            // Also resolve the peer through the DHT: this recovers a current address
+            // even if the stored one is stale, and works without the relayer.
+            // Best-effort: a full command channel must not abort the whole reconnect.
+            if let Err(e) = self.find_peer(*peer_id) {
+                log::warn!("dial_known_peers: failed to enqueue DHT lookup for {peer_id}: {e}");
+            }
+        }
+        Ok(())
+    }
+
+    /// Ask the swarm to resolve a peer through the Kademlia DHT and dial it.
+    pub fn find_peer(&mut self, peer_id: PeerId) -> AppResult<()> {
+        match &self.swarm_status {
+            SwarmStatus::Uninitialized => {}
+            SwarmStatus::Ready { sender } => {
+                sender.try_send(SwarmCommand::FindPeer { peer_id })?;
             }
         }
         Ok(())
