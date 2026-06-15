@@ -160,7 +160,13 @@ impl MusicPlayer {
         thread::Builder::new()
             .name("audio-thread".into())
             .spawn(move || {
-                let (_stream, stream_handle) = match OutputStream::try_default() {
+                // Hide the device-probe stderr spam from the C audio stack while
+                // we open the output; stderr comes back when `_silencer` drops.
+                let stream_result = {
+                    let _silencer = super::hacks::StderrSilencer::new();
+                    OutputStream::try_default()
+                };
+                let (_stream, stream_handle) = match stream_result {
                     Ok(v) => v,
                     Err(e) => {
                         log::error!("Failed to create audio output stream: {e}");

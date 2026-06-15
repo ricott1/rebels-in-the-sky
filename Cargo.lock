@@ -5257,6 +5257,7 @@ dependencies = [
  "imageproc",
  "include_dir",
  "itertools 0.14.0",
+ "libc",
  "libp2p",
  "log",
  "log4rs",

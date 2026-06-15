@@ -79,6 +79,9 @@ rodio = { version = "0.20.1", optional = true }
 stream-download = { version = "0.24.0", features = ["reqwest-rustls"], optional = true }
 url = { version = "2.5.8", optional = true }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [features]
 default = ["audio"]
 audio = ["dep:rodio", "dep:stream-download", "dep:url"]
