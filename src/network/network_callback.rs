@@ -66,9 +66,8 @@ impl NetworkCallback {
                 log::Level::Debug,
             );
 
-            app.network_handler.dial_seed()?;
             app.network_handler
-                .dial_known_peers(&app.world.network_store_data.peer_addresses)?;
+                .initial_dial(&app.world.network_store_data.peer_addresses)?;
 
             Ok(None)
         })

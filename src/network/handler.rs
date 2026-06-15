@@ -152,6 +152,11 @@ pub struct NetworkHandler {
     own_peer_id: PeerId,
     pub seed_addresses: Vec<Multiaddr>,
     swarm_status: SwarmStatus,
+    /// Whether we have already kicked off the initial dial of the seed and known
+    /// peers. `bind_address` fires once per listen address (TCP/QUIC x v4/v6 plus
+    /// relay reservations), so without this guard we would re-dial everyone many
+    /// times over and collide on the reused TCP source port.
+    initial_dial_done: bool,
 }
 
 impl NetworkHandler {
@@ -269,6 +274,7 @@ impl NetworkHandler {
             own_peer_id,
             seed_addresses: vec![],
             swarm_status: SwarmStatus::Uninitialized,
+            initial_dial_done: false,
         }
     }
 
@@ -304,6 +310,7 @@ impl NetworkHandler {
             own_peer_id,
             seed_addresses,
             swarm_status: SwarmStatus::Uninitialized,
+            initial_dial_done: false,
         })
     }
 
@@ -358,6 +365,10 @@ impl NetworkHandler {
             // Whether we have already requested a relay reservation. Done once,
             // on the first relay we see, so NATed peers get a reachable address.
             let mut relay_reserved = false;
+            // The relay circuit base (`/<relay>/p2p/<relay-id>/p2p-circuit`) we
+            // reserved on. Appending `/p2p/<target>` gives a dialable address that
+            // reaches any peer through the relay, which DCUtR then upgrades.
+            let mut relay_circuit: Option<Multiaddr> = None;
 
             loop {
                 tokio::select! {
@@ -414,6 +425,9 @@ impl NetworkHandler {
                                         match swarm.listen_on(circuit.clone()) {
                                             Ok(_) => {
                                                 relay_reserved = true;
+                                                if relay_circuit.is_none() {
+                                                    relay_circuit = Some(circuit.clone());
+                                                }
                                                 log::info!("Requesting relay reservation via {circuit}");
                                             }
                                             Err(e) => log::debug!(
@@ -513,6 +527,14 @@ impl NetworkHandler {
                             SwarmCommand::FindPeer { peer_id } => {
                                 log::debug!("Looking up peer {peer_id} in the DHT");
                                 swarm.behaviour_mut().kademlia.get_closest_peers(peer_id);
+                                // Also reach the peer through the relay circuit; DCUtR
+                                // then upgrades the relayed connection to a direct one.
+                                if let Some(base) = &relay_circuit {
+                                    let via_relay = base.clone().with(Protocol::P2p(peer_id));
+                                    if let Err(e) = swarm.dial(via_relay.clone()) {
+                                        log::debug!("Could not dial {peer_id} via relay {via_relay}: {e}");
+                                    }
+                                }
                             }
                         }
                     }
@@ -575,10 +597,14 @@ impl NetworkHandler {
             if *peer_id == own_peer_id {
                 continue;
             }
-            // Try the last known direct address.
+            // Try the last known direct address. Skip relay-circuit addresses:
+            // sanitize_addr strips the relay PeerId they need, so they are not
+            // dialable; NATed peers are reached via the derived circuit in find_peer.
             if let Some(clean) = sanitize_addr(address) {
-                if let Err(e) = self.dial_address(clean.clone()) {
-                    log::warn!("dial_known_peers: failed to dial {peer_id} at {clean}: {e}");
+                if !is_relay_circuit(&clean) {
+                    if let Err(e) = self.dial_address(clean.clone()) {
+                        log::warn!("dial_known_peers: failed to dial {peer_id} at {clean}: {e}");
+                    }
                 }
             }
             // Also resolve the peer through the DHT: this recovers a current address
@@ -588,6 +614,19 @@ impl NetworkHandler {
                 log::warn!("dial_known_peers: failed to enqueue DHT lookup for {peer_id}: {e}");
             }
         }
+        Ok(())
+    }
+
+    /// Dial the seed and known peers exactly once. `bind_address` calls this on
+    /// every `NewListenAddr`, but we only want one initial dial round; later
+    /// reconnection after a drop is handled by the periodic reconnect path.
+    pub fn initial_dial(&mut self, peer_addresses: &HashMap<PeerId, Multiaddr>) -> AppResult<()> {
+        if self.initial_dial_done {
+            return Ok(());
+        }
+        self.initial_dial_done = true;
+        self.dial_seed()?;
+        self.dial_known_peers(peer_addresses)?;
         Ok(())
     }
 
