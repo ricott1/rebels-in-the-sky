@@ -463,11 +463,11 @@ impl NetworkHandler {
                                 } else {
                                     kad::Mode::Client
                                 };
-                                log::debug!("AutoNAT result for {tested_addr}: {result:?} -> kad {mode:?}");
+                                log::info!("AutoNAT result for {tested_addr}: {result:?} -> kad {mode:?}");
                                 swarm.behaviour_mut().kademlia.set_mode(Some(mode));
                             }
                             SwarmEvent::Behaviour(BehaviourEvent::Dcutr(event)) => {
-                                log::debug!("DCUtR event: {event:?}");
+                                log::info!("DCUtR event: {event:?}");
                             }
                             SwarmEvent::Behaviour(BehaviourEvent::Kademlia(
                                 kad::Event::OutboundQueryProgressed {
@@ -491,7 +491,16 @@ impl NetworkHandler {
                                     }
                                 }
                             }
-                            SwarmEvent::ConnectionEstablished { .. } => {
+                            SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
+                                let kind = if is_relay_circuit(endpoint.get_remote_address()) {
+                                    "relayed"
+                                } else {
+                                    "direct"
+                                };
+                                log::info!(
+                                    "Connection established with {peer_id} ({kind}): {}",
+                                    endpoint.get_remote_address()
+                                );
                                 if !kad_bootstrapped
                                     && swarm.behaviour_mut().kademlia.bootstrap().is_ok()
                                 {
