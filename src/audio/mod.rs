@@ -1,2 +1,2 @@
-pub mod hacks;
 pub mod music_player;
+pub mod stderr_silencer;

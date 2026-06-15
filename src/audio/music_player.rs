@@ -165,7 +165,7 @@ impl MusicPlayer {
                 // Hide the device-probe stderr spam from the C audio stack while
                 // we open the output; stderr comes back when `_silencer` drops.
                 let stream_result = {
-                    let _silencer = super::hacks::StderrSilencer::new();
+                    let _silencer = super::stderr_silencer::StderrSilencer::new();
                     OutputStream::try_default()
                 };
                 let (_stream, stream_handle) = match stream_result {
