@@ -25,6 +25,7 @@ use libp2p::swarm::{DialError, NetworkBehaviour, SwarmEvent};
 use libp2p::{identify, identity, kad, noise, tcp, yamux, PeerId, StreamProtocol, TransportError};
 use libp2p::{Multiaddr, Swarm};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
@@ -352,9 +353,14 @@ impl NetworkHandler {
                                 // public IP as seen by the remote peer, but with an ephemeral
                                 // source port — not our listen port. Using it as-is would
                                 // advertise unreachable addresses.
-                                if let Some(ext_addr) = build_external_addr_from_observed(&info.observed_addr, tcp_port) {
-                                    log::debug!("Adding external address from observed: {ext_addr}");
-                                    swarm.add_external_address(ext_addr);
+                                // Skip when listening on an OS-assigned ephemeral port (0):
+                                // the configured port is not our real listen port, so we must
+                                // not advertise a bogus /tcp/0 external address.
+                                if tcp_port != 0 {
+                                    if let Some(ext_addr) = build_external_addr_from_observed(&info.observed_addr, tcp_port) {
+                                        log::debug!("Adding external address from observed: {ext_addr}");
+                                        swarm.add_external_address(ext_addr);
+                                    }
                                 }
                             }
                             SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
@@ -441,6 +447,28 @@ impl NetworkHandler {
             }
         }
 
+        Ok(())
+    }
+
+    /// Dial every known peer address (skipping our own). Used at startup and when
+    /// reconnecting after losing all connections, so that the relayer is not the
+    /// only way back into the network.
+    pub fn dial_known_peers(
+        &mut self,
+        peer_addresses: &HashMap<PeerId, Multiaddr>,
+    ) -> AppResult<()> {
+        let own_peer_id = self.own_peer_id;
+        for (peer_id, address) in peer_addresses.iter() {
+            if *peer_id == own_peer_id {
+                continue;
+            }
+            let Some(clean) = sanitize_addr(address) else {
+                continue;
+            };
+            if let Err(e) = self.dial_address(clean.clone()) {
+                log::warn!("dial_known_peers: failed to dial {peer_id} at {clean}: {e}");
+            }
+        }
         Ok(())
     }
 
