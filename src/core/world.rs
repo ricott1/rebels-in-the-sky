@@ -2351,11 +2351,13 @@ impl World {
 
                 // Negative drunkenness means that the player is drunk.
                 if player.drunkenness < 0.0 {
-                    player.drunkenness =
-                        (player.drunkenness + RECOVERING_DRUNKENNESS_PER_SHORT_TICK).min(0.0);
+                    player.drunkenness = (player.drunkenness
+                        + bonus * RECOVERING_DRUNKENNESS_PER_SHORT_TICK)
+                        .min(0.0);
                 } else if player.drunkenness > 0.0 {
-                    player.drunkenness =
-                        (player.drunkenness - RECOVERING_DRUNKENNESS_PER_SHORT_TICK).bound();
+                    player.drunkenness = (player.drunkenness
+                        - bonus * RECOVERING_DRUNKENNESS_PER_SHORT_TICK)
+                        .bound();
                 }
 
                 // While drunk, tiredness is not recovered, until drunkenness is 0.0.
