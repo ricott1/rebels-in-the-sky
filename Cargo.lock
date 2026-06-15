@@ -3043,8 +3043,10 @@ dependencies = [
  "futures-timer",
  "getrandom 0.2.17",
  "libp2p-allow-block-list",
+ "libp2p-autonat",
  "libp2p-connection-limits",
  "libp2p-core",
+ "libp2p-dcutr",
  "libp2p-dns",
  "libp2p-gossipsub",
  "libp2p-identify",
@@ -3054,6 +3056,7 @@ dependencies = [
  "libp2p-metrics",
  "libp2p-noise",
  "libp2p-quic",
+ "libp2p-relay",
  "libp2p-swarm",
  "libp2p-tcp",
  "libp2p-upnp",
@@ -3073,6 +3076,31 @@ dependencies = [
  "libp2p-core",
  "libp2p-identity",
  "libp2p-swarm",
+]
+
+[[package]]
+name = "libp2p-autonat"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fab5e25c49a7d48dac83d95d8f3bac0a290d8a5df717012f6e34ce9886396c0b"
+dependencies = [
+ "async-trait",
+ "asynchronous-codec",
+ "either",
+ "futures",
+ "futures-bounded",
+ "futures-timer",
+ "libp2p-core",
+ "libp2p-identity",
+ "libp2p-request-response",
+ "libp2p-swarm",
+ "quick-protobuf",
+ "quick-protobuf-codec",
+ "rand 0.8.6",
+ "rand_core 0.6.4",
+ "thiserror 2.0.18",
+ "tracing",
+ "web-time",
 ]
 
 [[package]]
@@ -3108,6 +3136,28 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "unsigned-varint 0.8.0",
+ "web-time",
+]
+
+[[package]]
+name = "libp2p-dcutr"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b4107305e12158af3e66960b6181789c547394c9c9a8696f721521602bfc73a"
+dependencies = [
+ "asynchronous-codec",
+ "either",
+ "futures",
+ "futures-bounded",
+ "futures-timer",
+ "hashlink 0.10.0",
+ "libp2p-core",
+ "libp2p-identity",
+ "libp2p-swarm",
+ "quick-protobuf",
+ "quick-protobuf-codec",
+ "thiserror 2.0.18",
+ "tracing",
  "web-time",
 ]
 
@@ -3253,10 +3303,12 @@ checksum = "805a555148522cb3414493a5153451910cb1a146c53ffbf4385708349baf62b7"
 dependencies = [
  "futures",
  "libp2p-core",
+ "libp2p-dcutr",
  "libp2p-gossipsub",
  "libp2p-identify",
  "libp2p-identity",
  "libp2p-kad",
+ "libp2p-relay",
  "libp2p-swarm",
  "pin-project",
  "prometheus-client",
@@ -3305,6 +3357,47 @@ dependencies = [
  "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "libp2p-relay"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8b9b0392ed623243ad298326b9f806d51191829ac7585cc825c54c6c67b04d9"
+dependencies = [
+ "asynchronous-codec",
+ "bytes",
+ "either",
+ "futures",
+ "futures-bounded",
+ "futures-timer",
+ "libp2p-core",
+ "libp2p-identity",
+ "libp2p-swarm",
+ "quick-protobuf",
+ "quick-protobuf-codec",
+ "rand 0.8.6",
+ "static_assertions",
+ "thiserror 2.0.18",
+ "tracing",
+ "web-time",
+]
+
+[[package]]
+name = "libp2p-request-response"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9f1cca83488b90102abac7b67d5c36fc65bc02ed47620228af7ed002e6a1478"
+dependencies = [
+ "async-trait",
+ "futures",
+ "futures-bounded",
+ "libp2p-core",
+ "libp2p-identity",
+ "libp2p-swarm",
+ "rand 0.8.6",
+ "smallvec",
  "tracing",
 ]
 

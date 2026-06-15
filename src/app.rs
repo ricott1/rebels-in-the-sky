@@ -617,13 +617,28 @@ impl App {
                         log::Level::Error,
                     ),
                 }
-            } else if let Err(e) = self.network_handler.dial_seed() {
-                self.ui.push_log_event(
-                    Tick::now(),
-                    None,
-                    format!("Failed to dial seed: {e}"),
-                    log::Level::Error,
-                );
+            } else {
+                // Not connected to anyone: try the seed AND every known peer, so the
+                // relayer is not the only path back into the network.
+                if let Err(e) = self.network_handler.dial_seed() {
+                    self.ui.push_log_event(
+                        Tick::now(),
+                        None,
+                        format!("Failed to dial seed: {e}"),
+                        log::Level::Error,
+                    );
+                }
+                if let Err(e) = self
+                    .network_handler
+                    .dial_known_peers(&self.world.network_store_data.peer_addresses)
+                {
+                    self.ui.push_log_event(
+                        Tick::now(),
+                        None,
+                        format!("Failed to dial known peers: {e}"),
+                        log::Level::Error,
+                    );
+                }
             }
         }
     }

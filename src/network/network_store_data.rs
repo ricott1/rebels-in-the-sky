@@ -89,9 +89,14 @@ impl NetworkStoreData {
         self.keypair = Some(keypair);
     }
 
-    pub fn update_peer_addresses(&mut self, peer_id: PeerId, address: Multiaddr) {
+    /// Store a peer address and refresh its last-connection timestamp.
+    /// Returns whether the stored address changed (useful to decide if the
+    /// world needs to be persisted).
+    pub fn update_peer_addresses(&mut self, peer_id: PeerId, address: Multiaddr) -> bool {
+        let changed = self.peer_addresses.get(&peer_id) != Some(&address);
         self.peer_addresses.insert(peer_id, address);
         self.peer_last_connection.insert(peer_id, Tick::now());
+        changed
     }
 
     pub fn update_rankings(&mut self, timestamp: Tick, network_team: &NetworkTeam) {

@@ -66,25 +66,8 @@ impl NetworkCallback {
                 log::Level::Debug,
             );
 
-            app.network_handler.dial_seed()?;
-            let own_peer_id = *app.network_handler.own_peer_id();
-            for (peer_id, peer_address) in app.world.network_store_data.peer_addresses.iter() {
-                if *peer_id == own_peer_id {
-                    continue;
-                }
-                let Some(clean_addr) = sanitize_addr(peer_address) else {
-                    continue;
-                };
-                log::debug!("bind_address: dialing stored peer {peer_id} at {clean_addr}");
-                if let Err(e) = app.network_handler.dial_address(clean_addr.clone()) {
-                    app.ui.push_log_event(
-                        Tick::now(),
-                        None,
-                        format!("bind_address: failed to dial stored peer {peer_id} at {clean_addr}: {e}"),
-                        log::Level::Warn,
-                    );
-                }
-            }
+            app.network_handler
+                .initial_dial(&app.world.network_store_data.peer_addresses)?;
 
             Ok(None)
         })
@@ -748,32 +731,11 @@ impl NetworkCallback {
                 log::Level::Debug,
             );
 
-            let self_peer_id = *app.network_handler.own_peer_id();
-            for (peer_id, address) in seed_info.network_store_data.peer_addresses.iter() {
-                if *peer_id == self_peer_id {
-                    continue;
-                }
-                let Some(clean_addr) = sanitize_addr(address) else {
-                    log::debug!("handle_seed_topic: skipping non-routable address {address} for peer {peer_id}");
-                    continue;
-                };
-
-                log::debug!("handle_seed_topic: dialing peer {peer_id} at {clean_addr}");
-                if let Err(e) = app.network_handler.dial_address(clean_addr.clone()) {
-                    app.ui.push_log_event(
-                        Tick::now(),
-                        Some(*peer_id),
-                        format!(
-                            "handle_seed_topic: failed to dial peer {peer_id} at {clean_addr}: {e}"
-                        ),
-                        log::Level::Warn,
-                    );
-                } else {
-                    app.world
-                        .network_store_data
-                        .update_peer_addresses(*peer_id, clean_addr.clone());
-                }
-            }
+            // Dial the peers advertised by the seed. We only dial here; addresses are
+            // persisted once a connection actually succeeds (see
+            // HandleConnectionEstablished), so we never store peers we merely tried.
+            app.network_handler
+                .dial_known_peers(&seed_info.network_store_data.peer_addresses)?;
             app.world.dirty_network = true;
             Ok(None)
         })
@@ -1266,7 +1228,23 @@ impl NetworkCallback {
             }
             Self::Unsubscribe { peer_id, topic } => Self::unsubscribe(*peer_id, topic.clone())(app),
             Self::CloseConnection { peer_id } => Self::close_connection(*peer_id)(app),
-            Self::HandleConnectionEstablished { peer_id, .. } => {
+            Self::HandleConnectionEstablished { peer_id, endpoint } => {
+                // Persist the address that actually worked, but only for outbound
+                // (dialer) connections: for inbound connections the remote address is
+                // an ephemeral source port and is useless for reconnecting later.
+                if endpoint.is_dialer() {
+                    if let Some(clean) = sanitize_addr(endpoint.get_remote_address()) {
+                        if *peer_id != *app.network_handler.own_peer_id()
+                            && app
+                                .world
+                                .network_store_data
+                                .update_peer_addresses(*peer_id, clean)
+                        {
+                            app.world.dirty = true;
+                        }
+                    }
+                }
+
                 app.network_handler.send_own_team(&app.world)?;
 
                 app.ui.push_log_event(
@@ -1337,9 +1315,13 @@ impl NetworkCallback {
             } => {
                 if *peer_id != *app.network_handler.own_peer_id() {
                     if let Some(addr) = listen_addrs.iter().next() {
-                        app.world
+                        if app
+                            .world
                             .network_store_data
-                            .update_peer_addresses(*peer_id, addr.clone());
+                            .update_peer_addresses(*peer_id, addr.clone())
+                        {
+                            app.world.dirty = true;
+                        }
                     }
                 }
                 Ok(None)

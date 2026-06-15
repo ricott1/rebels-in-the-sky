@@ -6,6 +6,7 @@ use crate::network::types::{ChatHistoryEntry, NetworkData};
 use crate::store::*;
 use crate::types::{AppResult, TeamId};
 use libp2p::gossipsub::IdentTopic;
+use libp2p::identity::Keypair;
 use libp2p::{gossipsub, identify, swarm::SwarmEvent};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
@@ -26,15 +27,38 @@ impl Default for Relayer {
 
 impl Relayer {
     pub fn new() -> Self {
-        let network_store_data = if let Ok(data) = load_relayer_network_store_data() {
+        let mut network_store_data = if let Ok(data) = load_relayer_network_store_data() {
             data
         } else {
             NetworkStoreData::default()
         };
 
+        let mut network_handler =
+            NetworkHandler::new(None).expect("Failed to initialize network handler");
+
+        // Keep a stable PeerId across restarts. The relayer's identity is embedded
+        // in every client's relay circuit address, so a changing PeerId would
+        // invalidate all of them. Restore the persisted keypair, or persist the
+        // freshly generated one on first run.
+        if let Some(bytes) = network_store_data.keypair.as_ref() {
+            match Keypair::from_protobuf_encoding(bytes) {
+                Ok(keypair) => {
+                    network_handler.set_keypair(keypair);
+                    log::info!("Relayer keypair restored.");
+                }
+                Err(e) => log::error!("Could not restore relayer keypair: {e}"),
+            }
+        } else if let Ok(bytes) = network_handler.keypair_bytes() {
+            network_store_data.set_keypair(bytes);
+            if let Err(e) = save_relayer_network_store_data(&network_store_data, false) {
+                log::error!("Could not persist relayer keypair: {e}");
+            } else {
+                log::info!("Relayer keypair persisted.");
+            }
+        }
+
         Self {
-            network_handler: NetworkHandler::new(None)
-                .expect("Failed to initialize network handler"),
+            network_handler,
             relayer_messages: Vec::new(),
             last_message_sent_to_team: HashMap::new(),
             network_store_data,

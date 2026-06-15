@@ -1,6 +1,5 @@
 use crate::app::{App, AppEvent};
 use crate::args::AppArgs;
-use crate::network::constants::DEFAULT_NETWORK_PORT;
 use crate::session_auth::{generate_user_id, Password, SessionAuth};
 use crate::store::{load_data, save_data, save_game_exists};
 use crate::tui::{TerminalEvent, Tui};
@@ -8,22 +7,12 @@ use anyhow::anyhow;
 use frittura_ssh_core::{
     spawn_event_converter, Credential, SshGame, SshSession, TerminalEvent as FtTerminalEvent,
 };
-use std::net::TcpListener;
 use std::sync::Arc;
 use std::time::Duration;
 
 const MIN_USERNAME_LENGTH: usize = 3;
 const MAX_USERNAME_LENGTH: usize = 16;
 const CHANNEL_DISCONNECTION_TIME_IN_SECONDS: u64 = 120;
-const MAX_LIBP2P_CLIENT_PORT: u16 = DEFAULT_NETWORK_PORT + 32;
-
-fn libp2p_port_available(port: u16) -> bool {
-    TcpListener::bind(("127.0.0.1", port)).is_ok()
-}
-
-fn get_available_libp2p_port() -> Option<u16> {
-    (DEFAULT_NETWORK_PORT..MAX_LIBP2P_CLIENT_PORT).find(|p| libp2p_port_available(*p))
-}
 
 pub struct RebelsGame;
 
@@ -92,14 +81,14 @@ impl SshGame for RebelsGame {
         } = session;
         let username = auth.username.clone();
 
-        let libp2p_port = tokio::task::spawn_blocking(get_available_libp2p_port)
-            .await
-            .ok()
-            .flatten();
-
+        // Let the OS assign a free ephemeral port to this session's libp2p swarm
+        // (listen on /tcp/0 and /udp/0): no fixed range, no check-then-bind race,
+        // and no cap on the number of concurrent sessions. Sessions reach the
+        // network through their outbound connection to the relayer, and become
+        // directly reachable via relay reservations + hole punching (Stage 2).
         let mut app = match App::new(AppArgs::ssh_client(
             Some(username.clone()),
-            libp2p_port,
+            Some(0),
             Some(CHANNEL_DISCONNECTION_TIME_IN_SECONDS),
         )) {
             Ok(a) => a,
