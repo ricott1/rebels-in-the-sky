@@ -183,7 +183,7 @@ impl Population {
             },
             Self::Galdari => -1.0,
             Self::Pupparoll => match game_position {
-                2 | 3 | 4 => 1.0,
+                2..=4 => 1.0,
                 _ => -1.0,
             },
             Self::Octopulp => match game_position {

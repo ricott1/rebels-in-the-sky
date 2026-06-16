@@ -1552,7 +1552,7 @@ pub fn render_player_description(
         HoverTextLine::from(vec![
             HoverTextSpan::new(
                 Span::raw("Drunk  ".to_string()),
-                format!("{} is drunk! While {} {} getting sober, tiredness is not recovered (current value {:.2})", player.info.full_name(), player.info.pronouns.as_subject().to_lowercase(), player.info.pronouns.to_be(), -1.0 * drunkenness),
+                format!("{} is drunk! While {} {} getting sober, tiredness is not recovered (current value {:.2})", player.info.full_name(), player.info.pronouns.as_subject().to_lowercase(), player.info.pronouns.to_be(), -drunkenness),
             ),
             HoverTextSpan::new(Span::styled( drunkenness_string, style),"", 
            ),
