@@ -7,7 +7,6 @@ use super::ui_frame::UiFrame;
 use super::ui_screen::UiTab;
 use super::widgets::{space_adventure_button, thick_block, travel_or_teleport_button};
 use super::{traits::Screen, widgets::default_block};
-use ratatui::text::Line;
 use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId};
 use crate::ui::traits::UiStyled;
 use crate::ui::{constants::*, ui_key};
@@ -20,6 +19,7 @@ use itertools::Itertools;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Margin};
 use ratatui::style::Stylize;
+use ratatui::text::Line;
 use ratatui::widgets::{Borders, List, ListItem, TitlePosition};
 use ratatui::{
     layout::Layout,
@@ -455,7 +455,13 @@ impl GalaxyPanel {
         let resource_options = target
             .resources
             .iter()
-            .sorted_by(|a, b| b.1.cmp(a.1))
+            .sorted_by(|a, b| {
+                if a.1 == b.1 {
+                    b.0.to_string().cmp(&a.0.to_string())
+                } else {
+                    b.1.cmp(a.1)
+                }
+            })
             .map(|(resource, &amount)| {
                 let text = format!("{:<7} {}", resource.to_string(), (amount as f32).stars(),);
                 (text, resource.style())
