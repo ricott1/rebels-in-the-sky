@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 use url::Url;
 
 const STREAMING_TIMEOUT_MILLIS: u64 = 2_000;
+const AUDIO_INIT_TIMEOUT_MILLIS: u64 = 2_000;
 
 #[derive(Debug)]
 pub enum MusicPlayerEvent {
@@ -155,15 +156,24 @@ impl MusicPlayer {
         let is_playing_clone = self.is_playing.clone();
 
         let (sender, receiver): (Sender<AudioCommand>, Receiver<AudioCommand>) = mpsc::channel();
-        self.stream_status = StreamStatus::Ready { sender };
+
+        let (init_sender, init_receiver) = mpsc::channel::<Result<(), String>>();
 
         thread::Builder::new()
             .name("audio-thread".into())
             .spawn(move || {
-                let (_stream, stream_handle) = match OutputStream::try_default() {
+                // Hide the device-probe stderr spam from the C audio stack while
+                // we open the output; stderr comes back when `_silencer` drops.
+                let stream_result = {
+                    let _silencer = super::stderr_silencer::StderrSilencer::new();
+                    OutputStream::try_default()
+                };
+                let (_stream, stream_handle) = match stream_result {
                     Ok(v) => v,
                     Err(e) => {
-                        log::error!("Failed to create audio output stream: {e}");
+                        let error_message = format!("Failed to create audio output stream: {e}");
+                        log::error!("{error_message}");
+                        let _ = init_sender.send(Err(error_message));
                         return;
                     }
                 };
@@ -171,11 +181,15 @@ impl MusicPlayer {
                 let sink = match Sink::try_new(&stream_handle) {
                     Ok(s) => s,
                     Err(e) => {
-                        log::error!("Failed to create rodio Sink: {e}");
+                        let error_message = format!("Failed to create rodio Sink: {e}");
+                        log::error!("{error_message}");
+                        let _ = init_sender.send(Err(error_message));
                         return;
                     }
                 };
                 sink.pause();
+
+                let _ = init_sender.send(Ok(()));
 
                 while let Ok(cmd) = receiver.recv() {
                     if cancellation_token.is_cancelled() {
@@ -224,7 +238,17 @@ impl MusicPlayer {
                 }
             })?;
 
-        Ok(())
+        // Block until the audio thread reports whether the device opened.
+        // On failure the caller drops it (audio_player = None),
+        // which disables the splash music button and hides the in-game radio.
+        match init_receiver.recv_timeout(Duration::from_millis(AUDIO_INIT_TIMEOUT_MILLIS)) {
+            Ok(Ok(())) => {
+                self.stream_status = StreamStatus::Ready { sender };
+                Ok(())
+            }
+            Ok(Err(error_message)) => Err(anyhow!(error_message)),
+            Err(_) => Err(anyhow!("Audio device initialization timed out")),
+        }
     }
 
     pub fn is_buffering(&self) -> bool {
