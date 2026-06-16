@@ -182,3 +182,7 @@ pub const PEAK_PERFORMANCE_RELATIVE_AGE: f32 = 0.7;
 pub const BASE_FITNESS: [Skill; NUM_GAME_POSITIONS as usize] = [22.0, 15.5, 12.5, 10.0, 6.0];
 
 pub const POLOSIUS_TEAM_ID: TeamId = uuid!("7eb1bb55-3bac-49ea-a480-44b581680167");
+
+// Used for running averages for player previous skills
+pub const TREND_WINDOW_DAYS: f32 = 3.0;
+pub const TREND_SMOOTHING: f32 = 1.0 / (TREND_WINDOW_DAYS + 1.0);

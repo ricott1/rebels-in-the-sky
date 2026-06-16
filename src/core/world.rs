@@ -2532,7 +2532,17 @@ impl World {
             }
             player.version += 1;
             // Reset player improvements for UI.
-            player.previous_skills = player.current_skill_array();
+            let current = player.current_skill_array();
+            for i in 0..player.previous_skills.len() {
+                player.previous_skills[i] = TREND_SMOOTHING * current[i]
+                    + (1.0 - TREND_SMOOTHING) * player.previous_skills[i];
+            }
+
+            for i in 0..NUM_GAME_POSITIONS as usize {
+                player.previous_game_position_fitness[i] = TREND_SMOOTHING
+                    * player.game_position_fitness[i]
+                    + (1.0 - TREND_SMOOTHING) * player.previous_game_position_fitness[i];
+            }
             player.info.age += AGE_INCREASE_PER_LONG_TICK;
 
             if player.special_trait == Some(Trait::Crumiro) {

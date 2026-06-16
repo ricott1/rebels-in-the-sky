@@ -59,7 +59,7 @@ pub struct Player {
     pub current_location: PlayerLocation,
     pub skills_training: [Skill; 20],
     pub previous_skills: [Skill; 20], // This is for displaying purposes to show the skills that were recently modified
-    // pub skills_potential: [Skill; 20], // Each skill has a separate potential. For retrocompatibility reasons, we allow this array to be all zeros, in which case we initialize it during deserialization.
+    pub previous_game_position_fitness: [Skill; NUM_GAME_POSITIONS as usize], // This is for displaying purposes to show the game positions that were recently modified
     pub game_position_fitness: [Skill; NUM_GAME_POSITIONS as usize],
     pub game_position_fitness_training: [Skill; NUM_GAME_POSITIONS as usize],
     pub training_focus: Option<TrainingFocus>,
@@ -90,6 +90,7 @@ impl Default for Player {
             current_location: PlayerLocation::default(),
             skills_training: [Skill::default(); 20],
             previous_skills: [Skill::default(); 20],
+            previous_game_position_fitness: [Skill::default(); NUM_GAME_POSITIONS as usize],
             game_position_fitness: [Skill::default(); NUM_GAME_POSITIONS as usize],
             game_position_fitness_training: [Skill::default(); NUM_GAME_POSITIONS as usize],
             training_focus: None,
@@ -108,7 +109,7 @@ impl Serialize for Player {
         // and serialize them in a vector which is then deserialized
         // into the corresponding fields
         let compact_skills = self.current_skill_array().to_vec();
-        let mut state = serializer.serialize_struct("Player", 18)?;
+        let mut state = serializer.serialize_struct("Player", 19)?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("peer_id", &self.peer_id)?;
         state.serialize_field("version", &self.version)?;
@@ -125,6 +126,10 @@ impl Serialize for Player {
         state.serialize_field("morale", &self.morale)?;
         state.serialize_field("drunkenness", &self.drunkenness)?;
         state.serialize_field("compact_skills", &compact_skills)?;
+        state.serialize_field(
+            "previous_game_position_fitness",
+            &self.previous_game_position_fitness,
+        )?;
         state.serialize_field("game_position_fitness", &self.game_position_fitness)?;
         state.serialize_field(
             "game_position_fitness_training",
@@ -153,6 +158,7 @@ impl<'de> Deserialize<'de> for Player {
             Image,
             CurrentLocation,
             PreviousSkills,
+            PreviousGamePositionFitness,
             SkillsTraining,
             GamePositionFitness,
             GamePositionFitnessTraining,
@@ -191,6 +197,9 @@ impl<'de> Deserialize<'de> for Player {
                             "image" => Ok(Field::Image),
                             "current_location" => Ok(Field::CurrentLocation),
                             "previous_skills" => Ok(Field::PreviousSkills),
+                            "previous_game_position_fitness" => {
+                                Ok(Field::PreviousGamePositionFitness)
+                            }
                             "skills_training" => Ok(Field::SkillsTraining),
                             "game_position_fitness" => Ok(Field::GamePositionFitness),
                             "game_position_fitness_training" => {
@@ -236,6 +245,7 @@ impl<'de> Deserialize<'de> for Player {
                 let mut current_location = None;
                 let mut skills_training = None;
                 let mut previous_skills = None;
+                let mut previous_game_position_fitness = None;
                 let mut game_position_fitness = None;
                 let mut game_position_fitness_training = None;
                 let mut training_focus = None;
@@ -319,6 +329,14 @@ impl<'de> Deserialize<'de> for Player {
                             }
                             previous_skills = Some(map.next_value()?);
                         }
+                        Field::PreviousGamePositionFitness => {
+                            if previous_game_position_fitness.is_some() {
+                                return Err(serde::de::Error::duplicate_field(
+                                    "previous_game_position_fitness",
+                                ));
+                            }
+                            previous_game_position_fitness = Some(map.next_value()?);
+                        }
                         Field::GamePositionFitness => {
                             if game_position_fitness.is_some() {
                                 return Err(serde::de::Error::duplicate_field(
@@ -395,6 +413,10 @@ impl<'de> Deserialize<'de> for Player {
                     .ok_or_else(|| serde::de::Error::missing_field("previous_skills"))?;
 
                 let game_position_fitness = game_position_fitness.unwrap_or_default();
+                // If absent (old save), fall back to the current fitness so nothing is
+                // spuriously highlighted as a recent change.
+                let previous_game_position_fitness =
+                    previous_game_position_fitness.unwrap_or(game_position_fitness);
                 let game_position_fitness_training =
                     game_position_fitness_training.unwrap_or_default();
                 let training_focus = training_focus.unwrap_or_default();
@@ -424,6 +446,7 @@ impl<'de> Deserialize<'de> for Player {
                     current_location,
                     skills_training,
                     previous_skills,
+                    previous_game_position_fitness,
                     game_position_fitness,
                     game_position_fitness_training,
                     training_focus,
@@ -489,6 +512,7 @@ impl<'de> Deserialize<'de> for Player {
             "current_location",
             "skills_training",
             "previous_skills",
+            "previous_game_position_fitness",
             "game_position_fitness",
             "training_focus",
             "tiredness",
@@ -587,6 +611,7 @@ impl Player {
         self.previous_skills = self.current_skill_array();
 
         self.set_initial_game_position_fitness(Some(rng));
+        self.previous_game_position_fitness = self.game_position_fitness;
 
         // Extra potential has a variance that depends on current age
         let std_dev = 1.5 + 3.0 * (1.0 - self.info.relative_age());

@@ -51,7 +51,7 @@ use strum::Display;
 pub const GREEN_STYLE_SKILL: f32 = 16.0;
 
 pub static UP_ARROW_SPAN: LazyLock<Span<'static>> =
-    LazyLock::new(|| Span::styled("↑", UiStyle::HEADER));
+    LazyLock::new(|| Span::styled("↑", MAX_SKILL.style()));
 pub static UP_RIGHT_ARROW_SPAN: LazyLock<Span<'static>> =
     LazyLock::new(|| Span::styled("↗", UiStyle::OK));
 pub static DOWN_ARROW_SPAN: LazyLock<Span<'static>> =
@@ -1641,17 +1641,14 @@ pub fn upgrade_resources_lines<'a, U: UpgradeableElement>(
 }
 
 fn improvement_indicator<'a>(skill: f32, previous: f32) -> Span<'a> {
-    // We only update at the end of the day, so we can display if something went recently up or not.
-    if skill.value() > previous.value() {
-        UP_ARROW_SPAN.clone()
-    } else if skill > previous + 0.33 {
-        UP_RIGHT_ARROW_SPAN.clone()
-    } else if skill.value() < previous.value() {
-        DOWN_ARROW_SPAN.clone()
-    } else if skill < previous - 0.33 {
-        DOWN_RIGHT_ARROW_SPAN.clone()
-    } else {
-        Span::styled(" ", UiStyle::DEFAULT)
+    let delta = (skill - previous) / TREND_WINDOW_DAYS;
+
+    match delta {
+        d if d >= TREND_STRONG_UP => UP_ARROW_SPAN.clone(),
+        d if d >= TREND_WEAK_UP => UP_RIGHT_ARROW_SPAN.clone(),
+        d if d <= -TREND_STRONG_DOWN => DOWN_ARROW_SPAN.clone(),
+        d if d <= -TREND_WEAK_DOWN => DOWN_RIGHT_ARROW_SPAN.clone(),
+        _ => Span::raw(" "),
     }
 }
 
@@ -1663,28 +1660,31 @@ fn format_player_skills(player: &'_ Player) -> Vec<Line<'_>> {
             (
                 i.as_role().to_string(),
                 player.game_position_fitness[i as usize],
+                player.previous_game_position_fitness[i as usize],
             )
         })
-        .collect::<Vec<(String, f32)>>();
+        .collect::<Vec<(String, Skill, Skill)>>();
     roles.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut spans = vec![];
     spans.push(Span::styled(
-        format!("{:<2} {:<5}          ", roles[0].0, roles[0].1.stars()),
+        format!("{:<2} {:<5}         ", roles[0].0, roles[0].1.stars()),
         roles[0].1.style(),
     ));
+    spans.push(improvement_indicator(roles[0].1, roles[0].2));
     spans.push(Span::styled(
         format!("Athletics {:<5}", player.athletics.stars()),
         player.athletics.rating().style(),
     ));
     text.push(Line::from(spans));
 
-    for i in 0..4 {
+    for i in 0..NUM_GAME_POSITIONS as usize - 1 {
         let mut spans = vec![];
         spans.push(Span::styled(
-            format!("{:<2} {:<5}       ", roles[i + 1].0, roles[i + 1].1.stars()),
+            format!("{:<2} {:<5}      ", roles[i + 1].0, roles[i + 1].1.stars()),
             roles[i + 1].1.style(),
         ));
+        spans.push(improvement_indicator(roles[i].1, roles[i].2));
 
         spans.push(Span::styled(
             format!(

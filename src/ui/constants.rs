@@ -1,5 +1,7 @@
 use ratatui::style::{Color, Modifier, Style};
 
+use crate::core::{MAX_SKILL_INCREASE_PER_LONG_TICK, SKILL_DECREMENT_PER_LONG_TICK};
+
 pub const UI_SCREEN_SIZE: (u16, u16) = (160, 48);
 
 pub const LEFT_PANEL_WIDTH: u16 = 36;
@@ -8,6 +10,12 @@ pub const MIN_NAME_LENGTH: usize = 3;
 pub const MAX_NAME_LENGTH: usize = 12;
 
 pub const BARS_LENGTH: usize = 25;
+
+// Used for improvement indicators
+pub const TREND_WEAK_UP: f32 = 0.05 * MAX_SKILL_INCREASE_PER_LONG_TICK;
+pub const TREND_STRONG_UP: f32 = 0.12 * MAX_SKILL_INCREASE_PER_LONG_TICK;
+pub const TREND_WEAK_DOWN: f32 = 1.4 * -SKILL_DECREMENT_PER_LONG_TICK;
+pub const TREND_STRONG_DOWN: f32 = 2.2 * -SKILL_DECREMENT_PER_LONG_TICK;
 
 pub struct UiStyle;
 
