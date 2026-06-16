@@ -1512,8 +1512,14 @@ impl World {
                 self.tick_team_position_assignment()?;
             }
 
-            if self.games.len() < AUTO_GENERATE_GAMES_NUMBER {
-                self.generate_random_games()?;
+            let num_local_games = self
+                .games
+                .values()
+                .filter(|g| g.is_local())
+                .collect_vec()
+                .len();
+            if num_local_games < AUTO_GENERATE_GAMES_NUMBER {
+                self.generate_random_games(AUTO_GENERATE_GAMES_NUMBER - num_local_games)?;
             }
 
             // Once every MEDIUM interval, set dirty_network flag,
@@ -2773,47 +2779,45 @@ impl World {
         Ok(())
     }
 
-    fn generate_random_games(&mut self) -> AppResult<()> {
+    fn generate_random_games(&mut self, num_games: usize) -> AppResult<()> {
         let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
+
+        // Phase 1: collect one matchup per eligible planet (immutable reads only).
+        let mut matchups: Vec<(TeamId, TeamId)> = vec![];
         for planet in self.planets.values() {
             if planet.team_ids.len() < 2 {
                 continue;
             }
-
             let candidate_teams = planet
                 .team_ids
                 .iter()
-                .map(|&id| self.teams.get_or_err(&id))
-                .filter(|team_res| {
-                    if let Ok(team) = team_res {
-                        if team.player_ids.len() < MIN_PLAYERS_PER_GAME {
-                            return false;
-                        }
-
-                        let average_tiredness = team.average_tiredness(self);
-                        return team.current_game.is_none()
-                            && team.autonomous_strategy.challenge_local
-                            && team.peer_id.is_none()
-                            && average_tiredness <= MAX_AVG_TIREDNESS_PER_AUTO_GAME;
-                    }
-                    false
+                .filter_map(|id| self.teams.get(id))
+                .filter(|team| {
+                    team.player_ids.len() >= MIN_PLAYERS_PER_GAME
+                        && team.current_game.is_none()
+                        && team.autonomous_strategy.challenge_local
+                        && team.peer_id.is_none()
+                        && team.average_tiredness(self) <= MAX_AVG_TIREDNESS_PER_AUTO_GAME
                 })
-                .collect::<AppResult<Vec<&Team>>>()?;
+                .collect::<Vec<&Team>>();
 
             if candidate_teams.len() < 2 {
                 continue;
             }
             let teams = candidate_teams.iter().sample(rng, 2);
-            let home_team_in_game =
-                TeamInGame::from_team_id(&teams[0].id, &self.teams, &self.players)?;
+            matchups.push((teams[0].id, teams[1].id));
+        }
 
-            let away_team_in_game =
-                TeamInGame::from_team_id(&teams[1].id, &self.teams, &self.players)?;
+        matchups.shuffle(rng);
+
+        // Phase 2: create games
+        for (home_id, away_id) in matchups.iter().take(num_games) {
+            let home_team_in_game = TeamInGame::from_team_id(home_id, &self.teams, &self.players)?;
+            let away_team_in_game = TeamInGame::from_team_id(away_id, &self.teams, &self.players)?;
 
             if let Err(err) = self.generate_local_game(home_team_in_game, away_team_in_game) {
                 log::error!("Error while generating local game: {err}");
             }
-            return Ok(()); // Generate only one game per call
         }
 
         Ok(())
@@ -3807,7 +3811,7 @@ mod test {
 
         for i in 0..11 {
             assert!(world.games.len() == i);
-            world.generate_random_games()?;
+            world.generate_random_games(1)?;
         }
 
         for game in world.games.values() {
