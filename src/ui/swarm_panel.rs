@@ -156,11 +156,12 @@ enum PanelList {
     Teams,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SwarmPanel {
     tick: usize,
     chat_events: BTreeSet<ChatEvent>,
     log_events: Vec<LogEvent>,
+    log_level: log::Level,
     view: SwarmView,
     textarea: TextArea<'static>,
     connected_peers: HashMap<PeerId, Tick>,
@@ -218,10 +219,29 @@ impl SwarmPanel {
         let chat_message_list = ClickableList::new(vec![]).block(default_block().title("Chat"));
 
         Self {
-            emojies_substutions,
-            log_message_list,
+            tick: 0,
+            chat_events: BTreeSet::default(),
+            log_events: Vec::default(),
+            log_level: log::Level::Debug,
+            view: SwarmView::default(),
+            textarea: TextArea::default(),
+            connected_peers: HashMap::default(),
+            team_id_to_peer_id: HashMap::default(),
+            peer_id_to_team_id: HashMap::default(),
+            team_ranking: Vec::default(),
+            team_ranking_index: None,
+            player_ranking: Vec::default(),
+            player_ranking_index: None,
+            gif_map: GifMap::default(),
+            active_list: PanelList::default(),
+            unread_chat_messages: 0,
+            chat_message_index: None,
+            log_message_index: None,
             chat_message_list,
-            ..Default::default()
+            log_message_list,
+            should_update_message_list: None,
+            emojies_substutions,
+            chat_history_received_len: 0,
         }
     }
 
@@ -951,7 +971,7 @@ impl SwarmPanel {
 
     fn update_log_event_list(&mut self) {
         let mut items = vec![];
-        for event in self.log_events.iter() {
+        for event in self.log_events.iter().filter(|e| e.level <= self.log_level) {
             let timestamp_span = Span::styled(
                 format!("[{}] ", event.timestamp.formatted_as_time()),
                 UiStyle::HIGHLIGHT,
