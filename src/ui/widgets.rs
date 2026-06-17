@@ -1668,10 +1668,11 @@ fn format_player_skills(player: &'_ Player) -> Vec<Line<'_>> {
 
     let mut spans = vec![];
     spans.push(Span::styled(
-        format!("{:<2} {:<5}         ", roles[0].0, roles[0].1.stars()),
+        format!("{:<2} {:<5} ", roles[0].0, roles[0].1.stars()),
         roles[0].1.style(),
     ));
     spans.push(improvement_indicator(roles[0].1, roles[0].2));
+    spans.push(Span::raw("        "));
     spans.push(Span::styled(
         format!("Athletics {:<5}", player.athletics.stars()),
         player.athletics.rating().style(),
@@ -1681,11 +1682,11 @@ fn format_player_skills(player: &'_ Player) -> Vec<Line<'_>> {
     for i in 0..NUM_GAME_POSITIONS as usize - 1 {
         let mut spans = vec![];
         spans.push(Span::styled(
-            format!("{:<2} {:<5}      ", roles[i + 1].0, roles[i + 1].1.stars()),
+            format!("{:<2} {:<5} ", roles[i + 1].0, roles[i + 1].1.stars()),
             roles[i + 1].1.style(),
         ));
         spans.push(improvement_indicator(roles[i].1, roles[i].2));
-
+        spans.push(Span::raw("     "));
         spans.push(Span::styled(
             format!(
                 "   {:<MAX_NAME_LENGTH$}{:02} ",
