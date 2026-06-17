@@ -7,7 +7,6 @@ use super::{
     traits::{Screen, SplitPanel},
     widgets::default_block,
 };
-use ratatui::text::Line;
 use crate::core::constants::{DEBUG_TIME_MULTIPLIER, SOL_ID};
 use crate::store::world_file_data;
 use crate::types::{AppResult, SystemTimeTick, Tick};
@@ -20,6 +19,7 @@ use rand_chacha::ChaCha8Rng;
 use ratatui::crossterm;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::Margin;
+use ratatui::text::Line;
 use ratatui::widgets::Clear;
 use ratatui::{
     prelude::{Constraint, Layout, Rect},
@@ -42,7 +42,7 @@ pub struct SplashScreen {
     gif_map: GifMap,
 }
 
-const QUOTES: [&str;23] = [
+const QUOTES: [&str;24] = [
     " “What cannot be destroyed can, nonetheless, be diverted, frozen, transformed, and gradually deprived of its substance - which in the case of states, is ultimately their capacity to inspire terror.” - D. Graeber",
     " “Aber der Staat lügt in allen Zungen des Guten und Bösen; und was er auch redet, er lügt—und was er auch hat, gestohlen hat er's.” - F. Nietzsche",
     " “That is what I have always understood to be the essence of anarchism: the conviction that the burden of proof has to be placed on authority, and that it should be dismantled if that burden cannot be met.” - N. Chomsky",
@@ -66,8 +66,8 @@ const QUOTES: [&str;23] = [
     " “May you'll be half an hour in heaven before the devil knows you're dead.” - The Irish Rovers",
     " “All'effimero occidentale preferiamo il duraturo, alla plastica l'acciaio, alla freddezza il calore, ma al calore la freddezza. Ognuno ha l'immaginario che si merita.” - Giovanni Lindo Ferretti",
     " “Quod tibi, inquit, ut orbem terrarum; sed quia <id> ego exiguo navigio facio, latro vocor; quia tu magna classe, imperator.”  - Aurelius Augustinus Hipponensis",
-    " “Remota itaque iustitia quid sunt regna nisi magna latrocinia? quia et latrocinia quid sunt nisi parva regna?” - Aurelius Augustinus Hipponensis"
-    
+    " “Remota itaque iustitia quid sunt regna nisi magna latrocinia? Quia et latrocinia quid sunt nisi parva regna?” - Aurelius Augustinus Hipponensis",
+    " “Happiness isn't good enough for me! I demand euphoria!” - Calvin"
     ];
 
 const TITLE: [&str; 13] = [
