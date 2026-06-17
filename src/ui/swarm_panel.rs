@@ -176,11 +176,21 @@ pub struct SwarmPanel {
     unread_chat_messages: usize,
     chat_message_index: Option<usize>,
     log_message_index: Option<usize>,
+    displayed_log_count: usize,
+    displayed_chat_count: usize,
     chat_message_list: ClickableList<'static>,
     log_message_list: ClickableList<'static>,
-    should_update_message_list: Option<SwarmView>,
+    should_update_chat_list: bool,
+    should_update_log_list: bool,
     emojies_substutions: Vec<(&'static str, &'static str)>,
     chat_history_received_len: usize,
+}
+
+fn clamped_tail_index(index: Option<usize>, prev_count: usize, new_count: usize) -> Option<usize> {
+    match index {
+        Some(i) if i + 1 < prev_count => (new_count > 0).then(|| i.min(new_count - 1)),
+        _ => new_count.checked_sub(1),
+    }
 }
 
 impl SwarmPanel {
@@ -237,9 +247,12 @@ impl SwarmPanel {
             unread_chat_messages: 0,
             chat_message_index: None,
             log_message_index: None,
+            displayed_log_count: 0,
+            displayed_chat_count: 0,
             chat_message_list,
             log_message_list,
-            should_update_message_list: None,
+            should_update_chat_list: false,
+            should_update_log_list: false,
             emojies_substutions,
             chat_history_received_len: 0,
         }
@@ -284,7 +297,7 @@ impl SwarmPanel {
                 && timestamp.saturating_sub(last_event.timestamp) <= EVENT_DUPLICATE_DELAY
             {
                 last_event.timestamp = timestamp;
-                self.should_update_message_list = Some(SwarmView::Log);
+                self.should_update_log_list = true;
 
                 return;
             }
@@ -293,12 +306,7 @@ impl SwarmPanel {
         let event = LogEvent::new(timestamp, peer_id, text, level);
 
         self.log_events.push(event);
-
-        self.log_message_index = self
-            .log_message_index
-            .map_or(Some(0), |index| Some(index + 1));
-
-        self.should_update_message_list = Some(SwarmView::Log);
+        self.should_update_log_list = true;
     }
 
     pub fn push_chat_event(
@@ -312,11 +320,8 @@ impl SwarmPanel {
 
         if self.chat_events.insert(event) {
             self.unread_chat_messages += 1;
-            self.chat_message_index = self
-                .chat_message_index
-                .map_or(Some(0), |index| Some(index + 1));
         }
-        self.should_update_message_list = Some(SwarmView::Chat);
+        self.should_update_chat_list = true;
     }
 
     pub fn push_chat_error_event(&mut self, timestamp: Tick, error: Error) {
@@ -324,11 +329,8 @@ impl SwarmPanel {
 
         if self.chat_events.insert(event) {
             self.unread_chat_messages += 1;
-            self.chat_message_index = self
-                .chat_message_index
-                .map_or(Some(0), |index| Some(index + 1));
         }
-        self.should_update_message_list = Some(SwarmView::Chat);
+        self.should_update_chat_list = true;
     }
 
     pub fn push_chat_history(&mut self, chat_history: &[ChatHistoryEntry]) {
@@ -351,12 +353,7 @@ impl SwarmPanel {
         }
 
         if any_new {
-            self.chat_message_index = self
-                .chat_message_index
-                .map_or(Some(self.unread_chat_messages), |index| {
-                    Some(index + self.unread_chat_messages)
-                });
-            self.should_update_message_list = Some(SwarmView::Chat);
+            self.should_update_chat_list = true;
         }
         self.chat_history_received_len = chat_history.len();
     }
@@ -365,12 +362,20 @@ impl SwarmPanel {
         self.team_id_to_peer_id.insert(team_id, peer_id);
         self.peer_id_to_team_id.insert(peer_id, team_id);
         self.connected_peers.insert(peer_id, Tick::now());
-        self.should_update_message_list = Some(SwarmView::Chat);
+        if self.peer_has_chat(&peer_id) {
+            self.should_update_chat_list = true;
+        }
     }
 
     pub fn remove_peer_id(&mut self, peer_id: &PeerId) {
         self.connected_peers.remove(peer_id);
-        self.should_update_message_list = Some(SwarmView::Chat);
+        if self.peer_has_chat(peer_id) {
+            self.should_update_chat_list = true;
+        }
+    }
+
+    fn peer_has_chat(&self, peer_id: &PeerId) -> bool {
+        self.chat_events.iter().any(|e| e.peer_id == Some(*peer_id))
     }
 
     fn is_peer_connected(&self, peer_id: &PeerId) -> bool {
@@ -966,7 +971,11 @@ impl SwarmPanel {
             items.push(ClickableListItem::new(lines));
         }
 
+        let new_count = items.len();
         self.chat_message_list = ClickableList::new(items).block(default_block().title("Chat"));
+        self.chat_message_index =
+            clamped_tail_index(self.chat_message_index, self.displayed_chat_count, new_count);
+        self.displayed_chat_count = new_count;
     }
 
     fn update_log_event_list(&mut self) {
@@ -1011,7 +1020,11 @@ impl SwarmPanel {
             items.push(ClickableListItem::new(lines));
         }
 
+        let new_count = items.len();
         self.log_message_list = ClickableList::new(items).block(default_block().title("Log"));
+        self.log_message_index =
+            clamped_tail_index(self.log_message_index, self.displayed_log_count, new_count);
+        self.displayed_log_count = new_count;
     }
 
     fn render_event_messages(&self, frame: &mut UiFrame, swarm_view: SwarmView, area: Rect) {
@@ -1040,14 +1053,11 @@ impl Screen for SwarmPanel {
         self.tick += 1;
 
         if self.max_index() == 0 {
-            match self.view {
-                SwarmView::Chat => self.chat_message_index = None,
-                SwarmView::Log => self.log_message_index = None,
-                SwarmView::Ranking => match self.active_list {
+            if self.view == SwarmView::Ranking {
+                match self.active_list {
                     PanelList::Players => self.player_ranking_index = None,
                     PanelList::Teams => self.team_ranking_index = None,
-                },
-                SwarmView::Requests => {}
+                }
             }
         }
         // If chat index is at the bottom, reset unread chat messages.
@@ -1057,16 +1067,13 @@ impl Screen for SwarmPanel {
             self.unread_chat_messages = 0;
         }
 
-        match self.should_update_message_list {
-            Some(SwarmView::Chat) => {
-                self.update_chat_event_list(world);
-                self.should_update_message_list = None;
-            }
-            Some(SwarmView::Log) => {
-                self.update_log_event_list();
-                self.should_update_message_list = None;
-            }
-            _ => {}
+        if self.should_update_chat_list {
+            self.update_chat_event_list(world);
+            self.should_update_chat_list = false;
+        }
+        if self.should_update_log_list {
+            self.update_log_event_list();
+            self.should_update_log_list = false;
         }
 
         Ok(())
@@ -1219,8 +1226,8 @@ impl SplitPanel for SwarmPanel {
 
     fn max_index(&self) -> usize {
         match self.view {
-            SwarmView::Chat => self.chat_events.len(),
-            SwarmView::Log => self.log_events.len(),
+            SwarmView::Chat => self.displayed_chat_count,
+            SwarmView::Log => self.displayed_log_count,
             SwarmView::Ranking => match self.active_list {
                 PanelList::Players => self.player_ranking.len(),
                 PanelList::Teams => self.team_ranking.len(),
