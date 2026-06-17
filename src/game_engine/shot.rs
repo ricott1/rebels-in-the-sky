@@ -8,7 +8,7 @@ use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     player::Player,
     skill::GameSkill,
-    CrewRole, GamePosition, TeamBonus, Trait, MAX_SKILL,
+    GamePosition, Trait, MAX_SKILL,
 };
 use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
@@ -794,28 +794,19 @@ fn execute_shot(
     // Add morale modifiers if team scored.
     // These modifiers are applied to the whole team, not only playing players.
     if success {
-        // Conditions for extra morale boost:
-        // shot success, team is losing at most by a certain margin.
-        let team_captain = game
-            .all_attacking_players()
-            .values()
-            .find(|&p| p.info.crew_role == CrewRole::Captain);
-        let losing_margin = 5 * team_captain
-            .map(|p| TeamBonus::Reputation.current_player_bonus(p))
-            .unwrap_or(1.0) as u16;
-        // // Note: this is the score BEFORE the result is applied to the score.
+        // Note: this is the score BEFORE the result is applied to the score.
         let score = game.get_score();
-        let attacking_team_was_losing_by_margin = if input.possession == Possession::Home {
-            score.0 < score.1 && score.1 - score.0 <= losing_margin
+        let attacking_team_was_losing = if input.possession == Possession::Home {
+            score.0 < score.1
         } else {
-            score.1 < score.0 && score.0 - score.1 <= losing_margin
+            score.1 < score.0
         };
 
         let mut extra_morale =
-            MoraleModifier::SMALL_BONUS + 2.0 * game.team_momentum(input.possession) / MAX_SKILL;
+            MoraleModifier::SMALL_BONUS + 1.25 * game.team_momentum(input.possession) / MAX_SKILL;
 
-        if attacking_team_was_losing_by_margin {
-            extra_morale *= 1.5;
+        if attacking_team_was_losing {
+            extra_morale *= 2.5;
         };
 
         for player in game.all_attacking_players().values() {
@@ -834,7 +825,7 @@ fn execute_shot(
             } else {
                 MoraleModifier::SMALL_MALUS
             };
-            if attacking_team_was_losing_by_margin {
+            if attacking_team_was_losing {
                 extra_morale *= 1.25;
             };
 
