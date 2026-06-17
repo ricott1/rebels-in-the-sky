@@ -7,12 +7,10 @@ use ratatui::crossterm;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    prelude::*,
-    style::{Style, Styled},
+    style::Style,
     text::Text,
-    widgets::{Block, ListDirection, StatefulWidget, Widget},
+    widgets::{Block, HighlightSpacing, List, ListItem, ListState, StatefulWidget, Widget},
 };
-use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
 pub struct ClickableListState {
@@ -57,25 +55,19 @@ impl<'a> ClickableListItem<'a> {
     }
 }
 
-#[derive(Debug, Default)]
+impl<'a> From<ClickableListItem<'a>> for ListItem<'a> {
+    fn from(item: ClickableListItem<'a>) -> Self {
+        ListItem::new(item.content).style(item.style)
+    }
+}
+
+#[derive(Debug)]
 pub struct ClickableList<'a> {
+    inner: List<'a>,
     block: Option<Block<'a>>,
-    items: Vec<ClickableListItem<'a>>,
-    /// Style used as a base style for the widget
-    style: Style,
-    /// List display direction
-    direction: ListDirection,
-    /// Style used to render selected item
-    select_style: Style,
-    // Style used to render hovered item
+    heights: Vec<u16>,
     hover_style: Style,
-    /// Symbol in front of the selected item (Shift all items to the right)
-    highlight_symbol: Option<&'a str>,
-    /// Whether to repeat the highlight symbol for each line of the selected item
-    repeat_highlight_symbol: bool,
-    /// Hack to be able to select a different index when clicking with the mouse
     selection_offset: usize,
-    disabled_scrolling: bool,
 }
 
 impl<'a> ClickableList<'a> {
@@ -83,24 +75,28 @@ impl<'a> ClickableList<'a> {
     where
         T: Into<Vec<ClickableListItem<'a>>>,
     {
+        let items = items.into();
+        let heights = items.iter().map(|item| item.height() as u16).collect();
+        let inner = List::new(items)
+            .highlight_style(UiStyle::SELECTED)
+            .highlight_spacing(HighlightSpacing::Never);
         ClickableList {
+            inner,
             block: None,
-            style: Style::default(),
-            items: items.into(),
-            direction: ListDirection::default(),
-            select_style: UiStyle::SELECTED,
+            heights,
             hover_style: UiStyle::HIGHLIGHT,
-            ..Self::default()
+            selection_offset: 0,
         }
     }
 
     pub fn block(mut self, block: Block<'a>) -> ClickableList<'a> {
+        self.inner = self.inner.block(block.clone());
         self.block = Some(block);
         self
     }
 
-    pub const fn style(mut self, style: Style) -> ClickableList<'a> {
-        self.style = style;
+    pub fn style(mut self, style: Style) -> ClickableList<'a> {
+        self.inner = self.inner.style(style);
         self
     }
 
@@ -109,52 +105,36 @@ impl<'a> ClickableList<'a> {
         self
     }
 
-    pub const fn disable_scrolling(&mut self) {
-        self.disabled_scrolling = true;
+    fn inner_area(&self, area: Rect) -> Rect {
+        self.block.as_ref().map_or(area, |block| block.inner(area))
     }
 
-    pub const fn enable_scrolling(&mut self) {
-        self.disabled_scrolling = false;
-    }
-
-    fn get_items_bounds(
+    fn hovered_row(
         &self,
-        selected: Option<usize>,
+        area: Rect,
         offset: usize,
-        max_height: usize,
-    ) -> (usize, usize) {
-        let offset = offset.min(self.items.len().saturating_sub(1));
-        let mut start = offset;
-        let mut end = offset;
-        let mut height = 0;
-        for item in self.items.iter().skip(offset) {
-            if height + item.height() > max_height {
+        callback_registry: &CallbackRegistry,
+    ) -> Option<(Rect, usize)> {
+        let inner = self.inner_area(area);
+        let offset = offset.min(self.heights.len().saturating_sub(1));
+        let mut y = inner.top();
+        for (i, &height) in self.heights.iter().enumerate().skip(offset) {
+            if y >= inner.bottom() {
                 break;
             }
-            height += item.height();
-            end += 1;
-        }
-
-        let selected = selected
-            .unwrap_or(0)
-            .min(self.items.len().saturating_sub(1));
-        while selected >= end {
-            height = height.saturating_add(self.items[end].height());
-            end += 1;
-            while height > max_height {
-                height = height.saturating_sub(self.items[start].height());
-                start += 1;
+            let height = height.min(inner.bottom() - y);
+            let row = Rect {
+                x: inner.left(),
+                y,
+                width: inner.width,
+                height,
+            };
+            if callback_registry.is_hovering(row) {
+                return Some((row, i));
             }
+            y += height;
         }
-        while selected < start {
-            start -= 1;
-            height = height.saturating_add(self.items[start].height());
-            while height > max_height {
-                end -= 1;
-                height = height.saturating_sub(self.items[end].height());
-            }
-        }
-        (start, end)
+        None
     }
 }
 
@@ -162,106 +142,14 @@ impl StatefulWidget for &ClickableList<'_> {
     type State = ClickableListState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        buf.set_style(area, self.style);
-        let list_area = self.block.inner_if_some(area);
+        let mut inner_state = ListState::default()
+            .with_offset(state.offset)
+            .with_selected(state.selected);
+        StatefulWidget::render(&self.inner, area, buf, &mut inner_state);
+        state.offset = inner_state.offset();
 
-        self.block.clone().render(area, buf);
-
-        if list_area.is_empty() {
-            return;
-        }
-
-        if self.items.is_empty() {
-            state.select(None);
-            return;
-        }
-
-        // If the selected index is out of bounds, set it to the last item
-        if state.selected.is_some_and(|s| s >= self.items.len()) {
-            state.select(Some(self.items.len().saturating_sub(1)));
-        }
-
-        let list_height = list_area.height as usize;
-
-        let (first_visible_index, last_visible_index) =
-            self.get_items_bounds(state.selected, state.offset, list_height);
-
-        // Important: this changes the state's offset to be the beginning of the now viewable items
-        state.offset = first_visible_index;
-
-        // Get our set highlighted symbol (if one was set)
-        let highlight_symbol = self.highlight_symbol.unwrap_or("");
-        let blank_symbol = " ".repeat(highlight_symbol.width());
-
-        let mut current_height = 0;
-        let selection_spacing = state.selected.is_some();
-
-        for (i, item) in self
-            .items
-            .iter()
-            .enumerate()
-            .skip(state.offset)
-            .take(last_visible_index - first_visible_index)
-        {
-            let (x, y) = if self.direction == ListDirection::BottomToTop {
-                current_height += item.height() as u16;
-                (list_area.left(), list_area.bottom() - current_height)
-            } else {
-                let pos = (list_area.left(), list_area.top() + current_height);
-                current_height += item.height() as u16;
-                pos
-            };
-
-            let row_area = Rect {
-                x,
-                y,
-                width: list_area.width,
-                height: item.height() as u16,
-            };
-
-            let item_style = self.style.patch(item.style);
-            buf.set_style(row_area, item_style);
-
-            let is_selected = state.selected == Some(i);
-
-            let item_area = if selection_spacing {
-                let highlight_symbol_width = self.highlight_symbol.unwrap_or("").width() as u16;
-                Rect {
-                    x: row_area.x + highlight_symbol_width,
-                    width: row_area.width.saturating_sub(highlight_symbol_width),
-                    ..row_area
-                }
-            } else {
-                row_area
-            };
-            item.content.clone().render(item_area, buf);
-
-            for j in 0..item.content.height() {
-                // if the item is selected, we need to display the highlight symbol:
-                // - either for the first line of the item only,
-                // - or for each line of the item if the appropriate option is set
-                let symbol = if is_selected && (j == 0 || self.repeat_highlight_symbol) {
-                    highlight_symbol
-                } else {
-                    &blank_symbol
-                };
-                if selection_spacing {
-                    buf.set_stringn(
-                        x,
-                        y + j as u16,
-                        symbol,
-                        list_area.width as usize,
-                        item_style,
-                    );
-                }
-            }
-            if state.hovered == row_area {
-                buf.set_style(row_area, self.hover_style);
-            }
-
-            if is_selected {
-                buf.set_style(row_area, self.select_style);
-            }
+        if state.hovered.width > 0 && state.hovered.height > 0 {
+            buf.set_style(state.hovered, self.hover_style);
         }
     }
 }
@@ -274,22 +162,10 @@ impl StatefulWidget for ClickableList<'_> {
     }
 }
 
-impl<'a> Widget for ClickableList<'a> {
+impl Widget for ClickableList<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let mut state = ClickableListState::default();
-        StatefulWidget::render(self, area, buf, &mut state);
-    }
-}
-
-impl<'a> Styled for ClickableList<'a> {
-    type Item = ClickableList<'a>;
-
-    fn style(&self) -> Style {
-        self.style
-    }
-
-    fn set_style<S: Into<Style>>(self, style: S) -> Self::Item {
-        self.style(style.into())
+        StatefulWidget::render(&self, area, buf, &mut state);
     }
 }
 
@@ -308,13 +184,13 @@ impl InteractiveStatefulWidget for &ClickableList<'_> {
         callback_registry: &mut CallbackRegistry,
         state: &mut Self::State,
     ) {
-        let list_area = self.block.inner_if_some(area);
+        state.hovered = Rect::default();
 
-        if list_area.is_empty() {
+        if self.inner_area(area).is_empty() {
             return;
         }
 
-        if self.items.is_empty() {
+        if self.heights.is_empty() {
             state.select(None);
             return;
         }
@@ -326,64 +202,25 @@ impl InteractiveStatefulWidget for &ClickableList<'_> {
             return;
         }
 
-        if !self.disabled_scrolling {
-            callback_registry.register_mouse_callback(
-                crossterm::event::MouseEventKind::ScrollDown,
-                None,
-                UiCallback::NextPanelIndex,
-            );
+        callback_registry.register_mouse_callback(
+            crossterm::event::MouseEventKind::ScrollDown,
+            None,
+            UiCallback::NextPanelIndex,
+        );
 
-            callback_registry.register_mouse_callback(
-                crossterm::event::MouseEventKind::ScrollUp,
-                None,
-                UiCallback::PreviousPanelIndex,
-            );
-        }
+        callback_registry.register_mouse_callback(
+            crossterm::event::MouseEventKind::ScrollUp,
+            None,
+            UiCallback::PreviousPanelIndex,
+        );
 
-        let list_height = list_area.height as usize;
-
-        let (first_visible_index, last_visible_index) =
-            self.get_items_bounds(state.selected, state.offset, list_height);
-
-        // Important: this changes the state's offset to be the beginning of the now viewable items
-        state.offset = first_visible_index;
-
-        let mut current_height = 0;
-
-        let mut selected_element: Option<(Rect, usize)> = None;
-        for (i, item) in self
-            .items
-            .iter()
-            .enumerate()
-            .skip(state.offset)
-            .take(last_visible_index - first_visible_index)
-        {
-            let (x, y) = if self.direction == ListDirection::BottomToTop {
-                current_height += item.height() as u16;
-                (list_area.left(), list_area.bottom() - current_height)
-            } else {
-                let pos = (list_area.left(), list_area.top() + current_height);
-                current_height += item.height() as u16;
-                pos
-            };
-
-            let row_area = Rect {
-                x,
-                y,
-                width: list_area.width,
-                height: item.height() as u16,
-            };
-
-            if callback_registry.is_hovering(row_area) {
-                selected_element = Some((row_area, i));
-                state.hovered = row_area;
+        if let Some((row, index)) = self.hovered_row(area, state.offset, callback_registry) {
+            if state.selected != Some(index) {
+                state.hovered = row;
             }
-        }
-
-        if let Some((row_area, index)) = selected_element {
             callback_registry.register_mouse_callback(
                 crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
-                Some(row_area),
+                Some(row),
                 UiCallback::SetPanelIndex {
                     index: index + self.selection_offset,
                 },

@@ -90,6 +90,8 @@ pub struct TournamentPanel {
     view: TournamentView,
     update_view: bool,
     tick: usize,
+    tournament_list_state: ClickableListState,
+    tournament_summary_list_state: ClickableListState,
 }
 
 impl TournamentPanel {
@@ -97,7 +99,7 @@ impl TournamentPanel {
         Self::default()
     }
 
-    fn build_left_panel(&self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn build_left_panel(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
         let split = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
@@ -152,7 +154,7 @@ impl TournamentPanel {
         }
     }
 
-    fn build_tournament_list(&self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn build_tournament_list(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
         if !self.filtered_tournament_ids.is_empty() {
             let mut options = vec![];
             for tournament_id in self.filtered_tournament_ids.iter() {
@@ -172,15 +174,16 @@ impl TournamentPanel {
             }
             let list = selectable_list(options);
 
+            self.tournament_list_state.select(self.index);
             frame.render_stateful_interactive_widget(
                 list,
                 area,
-                &mut ClickableListState::default().with_selected(self.index),
+                &mut self.tournament_list_state,
             );
         }
     }
 
-    fn build_tournament_summary_list(&self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn build_tournament_summary_list(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
         if !self.past_tournament_ids.is_empty() {
             let mut options = vec![];
             for tournament_id in self.filtered_tournament_ids.iter() {
@@ -200,10 +203,11 @@ impl TournamentPanel {
             }
             let list = selectable_list(options);
 
+            self.tournament_summary_list_state.select(self.index);
             frame.render_stateful_interactive_widget(
                 list,
                 area,
-                &mut ClickableListState::default().with_selected(self.index),
+                &mut self.tournament_summary_list_state,
             );
         }
     }

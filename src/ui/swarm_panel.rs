@@ -180,6 +180,10 @@ pub struct SwarmPanel {
     displayed_chat_count: usize,
     chat_message_list: ClickableList<'static>,
     log_message_list: ClickableList<'static>,
+    chat_list_state: ClickableListState,
+    log_list_state: ClickableListState,
+    team_ranking_list_state: ClickableListState,
+    player_ranking_list_state: ClickableListState,
     should_update_chat_list: bool,
     should_update_log_list: bool,
     emojies_substutions: Vec<(&'static str, &'static str)>,
@@ -251,6 +255,10 @@ impl SwarmPanel {
             displayed_chat_count: 0,
             chat_message_list,
             log_message_list,
+            chat_list_state: ClickableListState::default(),
+            log_list_state: ClickableListState::default(),
+            team_ranking_list_state: ClickableListState::default(),
+            player_ranking_list_state: ClickableListState::default(),
             should_update_chat_list: false,
             should_update_log_list: false,
             emojies_substutions,
@@ -765,10 +773,11 @@ impl SwarmPanel {
 
         let list = selectable_list(options);
 
+        self.team_ranking_list_state.select(Some(team_ranking_index));
         frame.render_stateful_interactive_widget(
             list,
             list_split[1],
-            &mut ClickableListState::default().with_selected(Some(team_ranking_index)),
+            &mut self.team_ranking_list_state,
         );
     }
 
@@ -852,10 +861,11 @@ impl SwarmPanel {
 
         let list = selectable_list(options);
 
+        self.player_ranking_list_state.select(Some(player_ranking_index));
         frame.render_stateful_interactive_widget(
             list,
             list_split[1],
-            &mut ClickableListState::default().with_selected(Some(player_ranking_index)),
+            &mut self.player_ranking_list_state,
         );
     }
 
@@ -1027,18 +1037,20 @@ impl SwarmPanel {
         self.displayed_log_count = new_count;
     }
 
-    fn render_event_messages(&self, frame: &mut UiFrame, swarm_view: SwarmView, area: Rect) {
+    fn render_event_messages(&mut self, frame: &mut UiFrame, swarm_view: SwarmView, area: Rect) {
         if swarm_view == SwarmView::Chat {
+            self.chat_list_state.select(self.chat_message_index);
             frame.render_stateful_interactive_widget(
                 &self.chat_message_list,
                 area,
-                &mut ClickableListState::default().with_selected(self.chat_message_index),
+                &mut self.chat_list_state,
             );
         } else {
+            self.log_list_state.select(self.log_message_index);
             frame.render_stateful_interactive_widget(
                 &self.log_message_list,
                 area,
-                &mut ClickableListState::default().with_selected(self.log_message_index),
+                &mut self.log_list_state,
             )
         }
     }

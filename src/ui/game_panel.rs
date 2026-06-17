@@ -59,6 +59,8 @@ pub struct GamePanel {
     action_results_len: usize,
     tick: usize,
     gif_map: GifMap,
+    games_list_state: ClickableListState,
+    local_games_list_state: ClickableListState,
 }
 
 impl GamePanel {
@@ -158,7 +160,7 @@ impl GamePanel {
         Ok(())
     }
 
-    fn build_game_list(&self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn build_game_list(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
         let maybe_options = self
             .game_ids
             .iter()
@@ -192,15 +194,12 @@ impl GamePanel {
 
             let list_index = self.index.filter(|&index| index < self.game_ids.len());
 
-            frame.render_stateful_interactive_widget(
-                list,
-                area,
-                &mut ClickableListState::default().with_selected(list_index),
-            );
+            self.games_list_state.select(list_index);
+            frame.render_stateful_interactive_widget(list, area, &mut self.games_list_state);
         }
     }
 
-    fn build_recent_games_list(&self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn build_recent_games_list(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
         let maybe_options = self
             .recent_game_ids
             .iter()
@@ -249,11 +248,8 @@ impl GamePanel {
                 .filter(|&index| index >= self.game_ids.len())
                 .map(|index| index - self.game_ids.len());
 
-            frame.render_stateful_interactive_widget(
-                list,
-                area,
-                &mut ClickableListState::default().with_selected(list_index),
-            );
+            self.local_games_list_state.select(list_index);
+            frame.render_stateful_interactive_widget(list, area, &mut self.local_games_list_state);
         }
     }
 

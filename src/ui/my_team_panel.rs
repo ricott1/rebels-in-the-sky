@@ -99,6 +99,11 @@ pub struct MyTeamPanel {
     tick: usize,
     gif_map: GifMap,
     players_table: ClickableTable<'static>,
+    players_table_state: ClickableTableState,
+    planet_list_state: ClickableListState,
+    game_list_state: ClickableListState,
+    spaceship_upgrade_list_state: ClickableListState,
+    asteroid_list_state: ClickableListState,
 }
 
 impl MyTeamPanel {
@@ -199,7 +204,7 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_market(&self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_market(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
         self.render_planet_markets(frame, world, split[0])?;
         self.render_market_buttons(frame, world, split[1])?;
@@ -208,7 +213,7 @@ impl MyTeamPanel {
     }
 
     fn render_planet_markets(
-        &self,
+        &mut self,
         frame: &mut UiFrame,
         world: &World,
         area: Rect,
@@ -240,13 +245,14 @@ impl MyTeamPanel {
         }
 
         let list = selectable_list(options);
+        self.planet_list_state.select(self.planet_index);
         frame.render_stateful_interactive_widget(
             list,
             split[0].inner(Margin {
                 horizontal: 0,
                 vertical: 1,
             }),
-            &mut ClickableListState::default().with_selected(self.planet_index),
+            &mut self.planet_list_state,
         );
 
         let planet_id =
@@ -926,11 +932,8 @@ impl MyTeamPanel {
         }
         let list = selectable_list(options);
 
-        frame.render_stateful_interactive_widget(
-            list,
-            v_split[0],
-            &mut ClickableListState::default().with_selected(self.game_index),
-        );
+        self.game_list_state.select(self.game_index);
+        frame.render_stateful_interactive_widget(list, v_split[0], &mut self.game_list_state);
 
         let game_index = if let Some(index) = self.game_index {
             index % self.past_game_ids.len()
@@ -1286,7 +1289,7 @@ impl MyTeamPanel {
     }
 
     fn render_shipyard_upgrades_list(
-        &self,
+        &mut self,
         frame: &mut UiFrame,
         world: &World,
         area: Rect,
@@ -1332,13 +1335,15 @@ impl MyTeamPanel {
 
         let list = selectable_list(options);
 
+        self.spaceship_upgrade_list_state
+            .select(Some(self.spaceship_upgrade_index));
         frame.render_stateful_interactive_widget(
             list,
             h_split[0].inner(Margin {
                 horizontal: 0,
                 vertical: 1,
             }),
-            &mut ClickableListState::default().with_selected(Some(self.spaceship_upgrade_index)),
+            &mut self.spaceship_upgrade_list_state,
         );
 
         let available = available_upgrade_targets(&own_team.spaceship);
@@ -1530,7 +1535,7 @@ impl MyTeamPanel {
     }
 
     fn render_asteroid_list(
-        &self,
+        &mut self,
         frame: &mut UiFrame,
         world: &World,
         area: Rect,
@@ -1596,13 +1601,14 @@ impl MyTeamPanel {
 
         let list = selectable_list(options);
 
+        self.asteroid_list_state.select(self.asteroid_index);
         frame.render_stateful_interactive_widget(
             list,
             h_split[0].inner(Margin {
                 horizontal: 0,
                 vertical: 1,
             }),
-            &mut ClickableListState::default().with_selected(self.asteroid_index),
+            &mut self.asteroid_list_state,
         );
 
         if let Some(index) = self.asteroid_index {
@@ -2103,10 +2109,11 @@ impl MyTeamPanel {
         let top_split =
             Layout::horizontal([Constraint::Fill(1), Constraint::Length(60)]).split(area);
 
+        self.players_table_state.select(self.player_index);
         frame.render_stateful_interactive_widget(
             &self.players_table,
             top_split[0],
-            &mut ClickableTableState::default().with_selected(self.player_index),
+            &mut self.players_table_state,
         );
 
         render_player_description(

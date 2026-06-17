@@ -65,6 +65,7 @@ pub struct SpaceCovePanel {
     cached_teams_len: usize,
     visiting_team_ids: Vec<TeamId>,
     cove_image_widgets: [Paragraph<'static>; 4], // no blinking, left, right, both
+    cove_list_state: ClickableListState,
 }
 
 impl SpaceCovePanel {
@@ -207,7 +208,12 @@ impl SpaceCovePanel {
         Ok(())
     }
 
-    fn render_cove_list(&self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_cove_list(
+        &mut self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         if self.cove_entries.is_empty() {
             frame.render_widget(default_block().title("No known coves"), area);
             return Ok(());
@@ -243,10 +249,11 @@ impl SpaceCovePanel {
         }
 
         let list = selectable_list(options);
+        self.cove_list_state.select(self.cove_index);
         frame.render_stateful_interactive_widget(
             list.block(default_block().title("Coves ↓/↑")),
             area,
-            &mut ClickableListState::default().with_selected(self.cove_index),
+            &mut self.cove_list_state,
         );
         Ok(())
     }

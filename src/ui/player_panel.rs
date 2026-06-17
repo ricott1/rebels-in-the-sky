@@ -145,6 +145,7 @@ pub struct PlayerListPanel {
     update_view: bool,
     tick: usize,
     gif_map: GifMap,
+    players_list_state: ClickableListState,
 }
 
 impl PlayerListPanel {
@@ -152,7 +153,7 @@ impl PlayerListPanel {
         Self::default()
     }
 
-    fn build_left_panel(&self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn build_left_panel(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
         let split = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
@@ -236,10 +237,11 @@ impl PlayerListPanel {
                 options.push((text, style));
             }
             let list = selectable_list(options);
+            self.players_list_state.select(self.index);
             frame.render_stateful_interactive_widget(
                 list.block(default_block().title("Pirates ↓/↑")),
                 split[4],
-                &mut ClickableListState::default().with_selected(self.index),
+                &mut self.players_list_state,
             );
         } else {
             frame.render_widget(default_block().title("Pirates"), split[4]);

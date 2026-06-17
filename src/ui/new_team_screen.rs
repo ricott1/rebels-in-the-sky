@@ -107,14 +107,18 @@ pub struct NewTeamScreen {
     team_name_textarea: TextArea<'static>,
     ship_name_textarea: TextArea<'static>,
     spaceship_model_index: usize,
+    spaceship_model_list_state: ClickableListState,
     planet_index: usize,
+    planet_list_state: ClickableListState,
     planet_ids: Vec<PlanetId>,
     jersey_styles: Vec<JerseyStyle>,
     jersey_style_index: usize,
+    jersey_style_list_state: ClickableListState,
     red_color_preset: ColorPreset,
     green_color_preset: ColorPreset,
     blue_color_preset: ColorPreset,
     player_index: usize,
+    player_list_state: ClickableListState,
     // Map of planet_id -> (player_id, hiring cost)
     planet_players: HashMap<PlanetId, Vec<(PlayerId, u32)>>,
     selected_players: Vec<PlayerId>,
@@ -273,7 +277,7 @@ impl NewTeamScreen {
         frame.render_widget(default_block(), area);
     }
 
-    fn render_spaceship_selection(&self, frame: &mut UiFrame, area: Rect) {
+    fn render_spaceship_selection(&mut self, frame: &mut UiFrame, area: Rect) {
         if self.state > CreationState::ShipModel {
             let selected_ship = SPACESHIP_MODELS[self.spaceship_model_index];
             frame.render_widget(
@@ -300,6 +304,8 @@ impl NewTeamScreen {
                 .collect_vec();
 
             let list = selectable_list(options);
+            self.spaceship_model_list_state
+                .select(Some(self.spaceship_model_index));
             frame.render_stateful_interactive_widget(
                 list.block(
                     default_block()
@@ -307,7 +313,7 @@ impl NewTeamScreen {
                         .title("Choose spaceship model ↓/↑"),
                 ),
                 area,
-                &mut ClickableListState::default().with_selected(Some(self.spaceship_model_index)),
+                &mut self.spaceship_model_list_state,
             );
         } else {
             frame.render_widget(
@@ -319,7 +325,7 @@ impl NewTeamScreen {
         }
     }
 
-    fn render_jersey_selection(&self, frame: &mut UiFrame, area: Rect) {
+    fn render_jersey_selection(&mut self, frame: &mut UiFrame, area: Rect) {
         if self.state > CreationState::Jersey {
             let selected_jersey_style = self.jersey_styles[self.jersey_style_index];
             frame.render_widget(
@@ -338,6 +344,8 @@ impl NewTeamScreen {
                 .collect_vec();
 
             let list = selectable_list(options);
+            self.jersey_style_list_state
+                .select(Some(self.jersey_style_index));
             frame.render_stateful_interactive_widget(
                 list.block(
                     default_block()
@@ -345,7 +353,7 @@ impl NewTeamScreen {
                         .title("Choose jersey style ↓/↑"),
                 ),
                 area,
-                &mut ClickableListState::default().with_selected(Some(self.jersey_style_index)),
+                &mut self.jersey_style_list_state,
             );
         } else {
             frame.render_widget(
@@ -476,7 +484,7 @@ impl NewTeamScreen {
     }
 
     fn render_planet_selection(
-        &self,
+        &mut self,
         frame: &mut UiFrame,
         world: &World,
         area: Rect,
@@ -504,6 +512,7 @@ impl NewTeamScreen {
                 .collect_vec();
 
             let list = selectable_list(options);
+            self.planet_list_state.select(Some(self.planet_index));
             frame.render_stateful_interactive_widget(
                 list.block(
                     default_block()
@@ -511,7 +520,7 @@ impl NewTeamScreen {
                         .title("Choose home planet ↓/↑"),
                 ),
                 area,
-                &mut ClickableListState::default().with_selected(Some(self.planet_index)),
+                &mut self.planet_list_state,
             );
         } else {
             frame.render_widget(
@@ -604,7 +613,12 @@ impl NewTeamScreen {
         frame.render_widget(Paragraph::new(text).block(block), area);
     }
 
-    fn render_player_list(&self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_player_list(
+        &mut self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         if self.state < CreationState::Players {
             frame.render_widget(
                 default_block()
@@ -664,19 +678,23 @@ impl NewTeamScreen {
             default_block().style(UiStyle::DEFAULT)
         };
 
-        let mut state = if self.state > CreationState::Players {
-            ClickableListState::default().with_selected(None)
+        let title = format!(
+            "Select {} players",
+            self.max_players_selected() - self.selected_players.len(),
+        );
+
+        let mut none_state = ClickableListState::default().with_selected(None);
+        let state: &mut ClickableListState = if self.state > CreationState::Players {
+            &mut none_state
         } else {
-            ClickableListState::default().with_selected(Some(self.player_index))
+            self.player_list_state.select(Some(self.player_index));
+            &mut self.player_list_state
         };
 
         frame.render_stateful_interactive_widget(
-            list.block(block.title(format!(
-                "Select {} players",
-                self.max_players_selected() - self.selected_players.len(),
-            ))),
+            list.block(block.title(title)),
             area,
-            &mut state,
+            state,
         );
         Ok(())
     }

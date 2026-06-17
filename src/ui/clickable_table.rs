@@ -6,12 +6,11 @@ use super::{
 use ratatui::crossterm;
 use ratatui::{
     buffer::Buffer,
-    layout::{Alignment, Constraint, Layout, Rect},
-    style::{Style, Styled},
+    layout::{Constraint, Rect},
+    style::Style,
     text::Text,
-    widgets::{Block, HighlightSpacing, StatefulWidget, Widget},
+    widgets::{Block, Cell, HighlightSpacing, Row, StatefulWidget, Table, TableState, Widget},
 };
-use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
 pub struct ClickableCell<'a> {
@@ -20,8 +19,7 @@ pub struct ClickableCell<'a> {
 }
 
 impl<'a> ClickableCell<'a> {
-    /// Set the `Style` of this cell.
-    pub const fn style(mut self, style: Style) -> Self {
+    pub fn style(mut self, style: Style) -> Self {
         self.style = style;
         self
     }
@@ -39,15 +37,9 @@ where
     }
 }
 
-impl<'a> Styled for ClickableCell<'a> {
-    type Item = ClickableCell<'a>;
-
-    fn style(&self) -> Style {
-        self.style
-    }
-
-    fn set_style<S: Into<Style>>(self, style: S) -> Self::Item {
-        self.style(style.into())
+impl<'a> From<ClickableCell<'a>> for Cell<'a> {
+    fn from(cell: ClickableCell<'a>) -> Self {
+        Cell::new(cell.content).style(cell.style)
     }
 }
 
@@ -56,11 +48,9 @@ pub struct ClickableRow<'a> {
     cells: Vec<ClickableCell<'a>>,
     height: u16,
     style: Style,
-    bottom_margin: u16,
 }
 
 impl<'a> ClickableRow<'a> {
-    /// Creates a new [`ClickableRow`] from an iterator where items can be converted to a [`ClickableCell`].
     pub fn new<T>(cells: T) -> Self
     where
         T: IntoIterator,
@@ -70,71 +60,25 @@ impl<'a> ClickableRow<'a> {
             height: 1,
             cells: cells.into_iter().map(Into::into).collect(),
             style: Style::default(),
-            bottom_margin: 0,
         }
-    }
-
-    /// Set the fixed height of the [`ClickableRow`]. Any [`ClickableCell`] whose content has more lines than this
-    /// height will see its content truncated.
-    pub const fn _height(mut self, height: u16) -> Self {
-        self.height = height;
-        self
-    }
-
-    /// Set the [`Style`] of the entire row. This [`Style`] can be overridden by the [`Style`] of a
-    /// any individual [`ClickableCell`] or event by their [`Text`] content.
-    pub const fn style(mut self, style: Style) -> Self {
-        self.style = style;
-        self
-    }
-
-    /// Set the bottom margin. By default, the bottom margin is `0`.
-    pub const fn _bottom_margin(mut self, margin: u16) -> Self {
-        self.bottom_margin = margin;
-        self
-    }
-
-    /// Returns the total height of the row.
-    const fn total_height(&self) -> u16 {
-        self.height.saturating_add(self.bottom_margin)
     }
 }
 
-impl<'a> Styled for ClickableRow<'a> {
-    type Item = ClickableRow<'a>;
-
-    fn style(&self) -> Style {
-        self.style
-    }
-
-    fn set_style<S: Into<Style>>(self, style: S) -> Self::Item {
-        self.style(style.into())
+impl<'a> From<ClickableRow<'a>> for Row<'a> {
+    fn from(row: ClickableRow<'a>) -> Self {
+        Row::new(row.cells.into_iter().map(Cell::from))
+            .height(row.height)
+            .style(row.style)
     }
 }
 
 #[derive(Debug, Default, Clone)]
-#[allow(dead_code)]
 pub struct ClickableTable<'a> {
-    /// A block to wrap the widget in
+    inner: Table<'a>,
     block: Option<Block<'a>>,
-    /// Base style for the widget
-    style: Style,
-    /// Width constraints for each column
-    widths: &'a [Constraint],
-    /// Space between each column
-    column_spacing: u16,
-    /// Style used to render the selected row
-    select_style: Style,
-    // Style used to render hovered item
+    row_heights: Vec<u16>,
+    header_offset: u16,
     hover_style: Style,
-    /// Symbol in front of the selected rom
-    highlight_symbol: Option<&'a str>,
-    /// Optional header
-    header: Option<ClickableRow<'a>>,
-    /// Data to display in each row
-    rows: Vec<ClickableRow<'a>>,
-    /// Decides when to allocate spacing for the row selection
-    highlight_spacing: HighlightSpacing,
 }
 
 impl<'a> ClickableTable<'a> {
@@ -142,31 +86,33 @@ impl<'a> ClickableTable<'a> {
     where
         T: IntoIterator<Item = ClickableRow<'a>>,
     {
+        let rows: Vec<ClickableRow<'a>> = rows.into_iter().collect();
+        let row_heights = rows.iter().map(|r| r.height).collect();
+        let inner = Table::new(rows.into_iter().map(Row::from), Vec::<Constraint>::new())
+            .row_highlight_style(UiStyle::SELECTED)
+            .highlight_spacing(HighlightSpacing::Never);
         Self {
+            inner,
             block: None,
-            style: Style::default(),
-            widths: &[],
-            column_spacing: 1,
-            select_style: UiStyle::SELECTED,
+            row_heights,
+            header_offset: 0,
             hover_style: UiStyle::HIGHLIGHT,
-            highlight_symbol: None,
-            header: None,
-            rows: rows.into_iter().collect(),
-            highlight_spacing: HighlightSpacing::default(),
         }
     }
 
     pub fn block(mut self, block: Block<'a>) -> Self {
+        self.inner = self.inner.block(block.clone());
         self.block = Some(block);
         self
     }
 
     pub fn header(mut self, header: ClickableRow<'a>) -> Self {
-        self.header = Some(header);
+        self.header_offset = header.height;
+        self.inner = self.inner.header(Row::from(header));
         self
     }
 
-    pub fn widths(mut self, widths: &'a [Constraint]) -> Self {
+    pub fn widths(mut self, widths: &[Constraint]) -> Self {
         let between_0_and_100 = |&w| match w {
             Constraint::Percentage(p) => p <= 100,
             _ => true,
@@ -175,101 +121,50 @@ impl<'a> ClickableTable<'a> {
             widths.iter().all(between_0_and_100),
             "Percentages should be between 0 and 100 inclusively."
         );
-        self.widths = widths;
+        self.inner = self.inner.widths(widths.iter().copied());
         self
     }
 
-    pub const fn style(mut self, style: Style) -> Self {
-        self.style = style;
+    pub fn style(mut self, style: Style) -> Self {
+        self.inner = self.inner.style(style);
         self
     }
 
-    pub const fn _highlight_symbol(mut self, highlight_symbol: &'a str) -> Self {
-        self.highlight_symbol = Some(highlight_symbol);
+    pub fn column_spacing(mut self, spacing: u16) -> Self {
+        self.inner = self.inner.column_spacing(spacing);
         self
     }
 
-    pub const fn column_spacing(mut self, spacing: u16) -> Self {
-        self.column_spacing = spacing;
-        self
+    fn inner_area(&self, area: Rect) -> Rect {
+        self.block.as_ref().map_or(area, |block| block.inner(area))
     }
 
-    /// Get all offsets and widths of all user specified columns
-    /// Returns (x, width)
-    fn get_columns_widths(&self, max_width: u16, selection_width: u16) -> Vec<(u16, u16)> {
-        let mut constraints = Vec::with_capacity(self.widths.len() * 2 + 1);
-        constraints.push(Constraint::Length(selection_width));
-        for constraint in self.widths {
-            constraints.push(*constraint);
-            constraints.push(Constraint::Length(self.column_spacing));
-        }
-        if !self.widths.is_empty() {
-            constraints.pop();
-        }
-        let chunks = Layout::horizontal(constraints)
-            // .segment_size(SegmentSize::None)
-            .split(Rect {
-                x: 0,
-                y: 0,
-                width: max_width,
-                height: 1,
-            });
-        chunks
-            .iter()
-            .skip(1)
-            .step_by(2)
-            .map(|c| (c.x, c.width))
-            .collect()
-    }
-
-    fn get_row_bounds(
+    fn hovered_row(
         &self,
-        selected: Option<usize>,
+        area: Rect,
         offset: usize,
-        max_height: u16,
-    ) -> (usize, usize) {
-        let offset = offset.min(self.rows.len().saturating_sub(1));
-        let mut start = offset;
-        let mut end = offset;
-        let mut height = 0;
-        for item in self.rows.iter().skip(offset) {
-            if height + item.height > max_height {
+        callback_registry: &CallbackRegistry,
+    ) -> Option<(Rect, usize)> {
+        let inner = self.inner_area(area);
+        let mut y = inner.top().saturating_add(self.header_offset);
+        let offset = offset.min(self.row_heights.len().saturating_sub(1));
+        for i in offset..self.row_heights.len() {
+            if y >= inner.bottom() {
                 break;
             }
-            height += item.total_height();
-            end += 1;
-        }
-
-        let selected = selected.unwrap_or(0).min(self.rows.len() - 1);
-        while selected >= end {
-            height = height.saturating_add(self.rows[end].total_height());
-            end += 1;
-            while height > max_height {
-                height = height.saturating_sub(self.rows[start].total_height());
-                start += 1;
+            let height = self.row_heights[i].min(inner.bottom() - y);
+            let row = Rect {
+                x: inner.left(),
+                y,
+                width: inner.width,
+                height,
+            };
+            if callback_registry.is_hovering(row) {
+                return Some((row, i));
             }
+            y = y.saturating_add(self.row_heights[i]);
         }
-        while selected < start {
-            start -= 1;
-            height = height.saturating_add(self.rows[start].total_height());
-            while height > max_height {
-                end -= 1;
-                height = height.saturating_sub(self.rows[end].total_height());
-            }
-        }
-        (start, end)
-    }
-}
-
-impl<'a> Styled for ClickableTable<'a> {
-    type Item = ClickableTable<'a>;
-
-    fn style(&self) -> Style {
-        self.style
-    }
-
-    fn set_style<S: Into<Style>>(self, style: S) -> Self::Item {
-        self.style(style.into())
+        None
     }
 }
 
@@ -281,29 +176,7 @@ pub struct ClickableTableState {
 }
 
 impl ClickableTableState {
-    pub const fn _offset(&self) -> usize {
-        self.offset
-    }
-
-    pub const fn _offset_mut(&mut self) -> &mut usize {
-        &mut self.offset
-    }
-
-    pub const fn with_selected(mut self, selected: Option<usize>) -> Self {
-        self.selected = selected;
-        self
-    }
-
-    pub const fn _with_offset(mut self, offset: usize) -> Self {
-        self.offset = offset;
-        self
-    }
-
-    pub const fn _selected(&self) -> Option<usize> {
-        self.selected
-    }
-
-    pub const fn _select(&mut self, index: Option<usize>) {
+    pub const fn select(&mut self, index: Option<usize>) {
         self.selected = index;
         if index.is_none() {
             self.offset = 0;
@@ -311,116 +184,18 @@ impl ClickableTableState {
     }
 }
 
-impl<'a> StatefulWidget for &ClickableTable<'a> {
+impl StatefulWidget for &ClickableTable<'_> {
     type State = ClickableTableState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        if area.area() == 0 {
-            return;
-        }
-        buf.set_style(area, self.style);
-        let table_area = match self.block.as_ref() {
-            Some(b) => {
-                let inner_area = b.inner(area);
-                b.render(area, buf);
-                inner_area
-            }
-            None => area,
-        };
+        let mut inner_state = TableState::default()
+            .with_offset(state.offset)
+            .with_selected(state.selected);
+        StatefulWidget::render(&self.inner, area, buf, &mut inner_state);
+        state.offset = inner_state.offset();
 
-        let selection_width = if state.selected.is_some() {
-            self.highlight_symbol.map_or(0, |s| s.width() as u16)
-        } else {
-            0
-        };
-        let columns_widths = self.get_columns_widths(table_area.width, selection_width);
-        let highlight_symbol = self.highlight_symbol.unwrap_or("");
-        let mut current_height = 0;
-        let mut rows_height = table_area.height;
-
-        // Draw header
-        if let Some(ref header) = self.header {
-            let max_header_height = table_area.height.min(header.total_height());
-            buf.set_style(
-                Rect {
-                    x: table_area.left(),
-                    y: table_area.top(),
-                    width: table_area.width,
-                    height: table_area.height.min(header.height),
-                },
-                header.style,
-            );
-            let inner_offset = table_area.left();
-            for ((x, width), cell) in columns_widths.iter().zip(header.cells.iter()) {
-                render_cell(
-                    buf,
-                    cell,
-                    Rect {
-                        x: inner_offset + x,
-                        y: table_area.top(),
-                        width: *width,
-                        height: max_header_height,
-                    },
-                );
-            }
-            current_height += max_header_height;
-            rows_height = rows_height.saturating_sub(max_header_height);
-        }
-
-        // Draw rows
-        if self.rows.is_empty() {
-            return;
-        }
-
-        let (start, end) = self.get_row_bounds(state.selected, state.offset, rows_height);
-        state.offset = start;
-        for (i, table_row) in self
-            .rows
-            .iter()
-            .enumerate()
-            .skip(state.offset)
-            .take(end - start)
-        {
-            let (row, inner_offset) = (table_area.top() + current_height, table_area.left());
-            current_height += table_row.total_height();
-            let table_row_area = Rect {
-                x: inner_offset,
-                y: row,
-                width: table_area.width,
-                height: table_row.height,
-            };
-            buf.set_style(table_row_area, table_row.style);
-            let is_selected = state.selected == Some(i);
-            if selection_width > 0 && is_selected {
-                // this should in normal cases be safe, because "get_columns_widths" allocates
-                // "highlight_symbol.width()" space but "get_columns_widths"
-                // currently does not bind it to max table.width()
-                buf.set_stringn(
-                    inner_offset,
-                    row,
-                    highlight_symbol,
-                    table_area.width as usize,
-                    table_row.style,
-                );
-            };
-            for ((x, width), cell) in columns_widths.iter().zip(table_row.cells.iter()) {
-                render_cell(
-                    buf,
-                    cell,
-                    Rect {
-                        x: inner_offset + x,
-                        y: row,
-                        width: *width,
-                        height: table_row.height,
-                    },
-                );
-            }
-            if state.hovered == table_row_area {
-                buf.set_style(table_row_area, self.hover_style);
-            }
-            if is_selected {
-                buf.set_style(table_row_area, self.select_style);
-            }
+        if state.hovered.width > 0 && state.hovered.height > 0 {
+            buf.set_style(state.hovered, self.hover_style);
         }
     }
 }
@@ -433,27 +208,10 @@ impl StatefulWidget for ClickableTable<'_> {
     }
 }
 
-fn render_cell(buf: &mut Buffer, cell: &ClickableCell, area: Rect) {
-    buf.set_style(area, cell.style);
-    for (i, line) in cell.content.lines.iter().enumerate() {
-        if i as u16 >= area.height {
-            break;
-        }
-
-        let x_offset = match line.alignment {
-            Some(Alignment::Center) => (area.width / 2).saturating_sub(line.width() as u16 / 2),
-            Some(Alignment::Right) => area.width.saturating_sub(line.width() as u16),
-            _ => 0,
-        };
-
-        buf.set_line(area.x + x_offset, area.y + i as u16, line, area.width);
-    }
-}
-
-impl<'a> Widget for ClickableTable<'a> {
+impl Widget for ClickableTable<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let mut state = ClickableTableState::default();
-        StatefulWidget::render(self, area, buf, &mut state);
+        StatefulWidget::render(&self, area, buf, &mut state);
     }
 }
 
@@ -472,18 +230,11 @@ impl InteractiveStatefulWidget for &ClickableTable<'_> {
         callback_registry: &mut CallbackRegistry,
         state: &mut Self::State,
     ) {
-        if area.area() == 0 {
+        state.hovered = Rect::default();
+
+        if self.inner_area(area).area() == 0 || self.row_heights.is_empty() {
             return;
         }
-
-        if self.rows.is_empty() {
-            return;
-        }
-
-        let table_area = match self.block.as_ref() {
-            Some(b) => b.inner(area),
-            None => area,
-        };
 
         let is_hovered = callback_registry.is_hovering(area)
             && callback_registry.get_active_layer() == self.layer();
@@ -492,59 +243,24 @@ impl InteractiveStatefulWidget for &ClickableTable<'_> {
             return;
         }
 
-        if is_hovered {
-            callback_registry.register_mouse_callback(
-                crossterm::event::MouseEventKind::ScrollDown,
-                None,
-                UiCallback::NextPanelIndex,
-            );
+        callback_registry.register_mouse_callback(
+            crossterm::event::MouseEventKind::ScrollDown,
+            None,
+            UiCallback::NextPanelIndex,
+        );
+        callback_registry.register_mouse_callback(
+            crossterm::event::MouseEventKind::ScrollUp,
+            None,
+            UiCallback::PreviousPanelIndex,
+        );
 
-            callback_registry.register_mouse_callback(
-                crossterm::event::MouseEventKind::ScrollUp,
-                None,
-                UiCallback::PreviousPanelIndex,
-            );
-        }
-
-        let mut current_height = 0;
-        let mut rows_height = table_area.height;
-
-        if let Some(ref header) = self.header {
-            let max_header_height = table_area.height.min(header.total_height());
-            current_height += max_header_height;
-            rows_height = rows_height.saturating_sub(max_header_height);
-        }
-
-        let (start, end) = self.get_row_bounds(state.selected, state.offset, rows_height);
-        state.offset = start;
-        let mut selected_element: Option<(Rect, usize)> = None;
-        for (i, table_row) in self
-            .rows
-            .iter()
-            .enumerate()
-            .skip(state.offset)
-            .take(end - start)
-        {
-            let (row, inner_offset) = (table_area.top() + current_height, table_area.left());
-            current_height += table_row.total_height();
-            let table_row_area = Rect {
-                x: inner_offset,
-                y: row,
-                width: table_area.width,
-                height: table_row.height,
-            };
-
-            if callback_registry.is_hovering(table_row_area) {
-                selected_element = Some((table_row_area, i));
-                state.hovered = table_row_area;
-                break;
+        if let Some((row, index)) = self.hovered_row(area, state.offset, callback_registry) {
+            if state.selected != Some(index) {
+                state.hovered = row;
             }
-        }
-
-        if let Some((area, index)) = selected_element {
             callback_registry.register_mouse_callback(
                 crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
-                Some(area),
+                Some(row),
                 UiCallback::SetPanelIndex { index },
             );
         }
