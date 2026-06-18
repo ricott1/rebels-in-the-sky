@@ -1648,7 +1648,15 @@ fn improvement_indicator<'a>(skill: f32, previous: f32) -> Span<'a> {
         d if d >= TREND_WEAK_UP => UP_RIGHT_ARROW_SPAN.clone(),
         d if d <= -TREND_STRONG_DOWN => DOWN_ARROW_SPAN.clone(),
         d if d <= -TREND_WEAK_DOWN => DOWN_RIGHT_ARROW_SPAN.clone(),
-        _ => Span::raw(" "),
+        _ => {
+            // If previous was at MAX_SKILL and skill < previous, display down-right arrow,
+            // so there is a visual indicator that the stat dropped (which at 20 can happen easily).
+            if previous == MAX_SKILL && skill.value() < previous.value() {
+                DOWN_RIGHT_ARROW_SPAN.clone()
+            } else {
+                Span::raw(" ")
+            }
+        }
     }
 }
 
