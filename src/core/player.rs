@@ -827,9 +827,9 @@ impl Player {
 
         // Probability equal to the new drunkenness over MAX_SKILL,
         // mitigated by stamina: high-stamina players hold their liquor.
-        let drunk_probability =
-            (self.drunkenness / MAX_SKILL) / (1.0 + self.athletics.stamina / MAX_SKILL);
-        if rng.random_bool(drunk_probability as f64) {
+        let drunk_probability = BASE_DRUNK_PROBABILITY
+            * ((self.drunkenness / MAX_SKILL) / (1.0 + self.athletics.stamina / MAX_SKILL)) as f64;
+        if rng.random_bool(drunk_probability) {
             // Wasted: tiredness is set directly rather than through add_tiredness,
             // since morale must be unaffected and trait caps must not prevent it.
             self.tiredness = MAX_SKILL;
@@ -852,8 +852,8 @@ impl Player {
             x if x < 4.0 => None,
             x if x < 8.0 => Some("Tipsy"),
             x if x < 12.0 => Some("Merry"),
-            x if x < 16.0 => Some("Brillo"),
-            _ => Some("Hammered"),
+            x if x < 16.0 => Some("Inebriated"),
+            _ => Some("Sloshed"),
         }
     }
 

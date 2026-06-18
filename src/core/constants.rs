@@ -168,6 +168,7 @@ pub const MORALE_DEMOTION_MALUS: f32 = MoraleModifier::MEDIUM_MALUS;
 pub const MORALE_GAME_POPULATION_MODIFIER: f32 = 0.5;
 pub const MORALE_DRINK_BONUS: f32 = MoraleModifier::SEVERE_BONUS;
 pub const MORALE_HIRE_BONUS: f32 = MoraleModifier::CRITICAL_BONUS;
+pub const BASE_DRUNK_PROBABILITY: f64 = 0.875;
 pub const DRUNKENNESS_PER_DRINK: f32 = 2.5;
 pub const DRUNKENNESS_ON_GETTING_DRUNK: f32 = -3.0;
 // Spugna players hold their liquor: they accrue drunkenness more slowly and are
