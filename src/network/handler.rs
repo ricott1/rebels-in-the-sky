@@ -21,6 +21,7 @@ use itertools::Itertools;
 use libp2p::gossipsub::{self, IdentTopic};
 use libp2p::identity::Keypair;
 use libp2p::multiaddr::Protocol;
+use libp2p::swarm::dial_opts::DialOpts;
 use libp2p::swarm::{DialError, NetworkBehaviour, SwarmEvent};
 use libp2p::{
     autonat, dcutr, identify, identity, kad, noise, relay, tcp, yamux, PeerId, StreamProtocol,
@@ -138,11 +139,18 @@ enum SwarmStatus {
 
 #[derive(Debug, Clone)]
 enum SwarmCommand {
-    Dial { address: Multiaddr },
-    Send { topic: IdentTopic, data: Vec<u8> },
+    Dial {
+        address: Multiaddr,
+    },
+    Send {
+        topic: IdentTopic,
+        data: Vec<u8>,
+    },
     /// Resolve a peer's current address through the Kademlia DHT, then dial it.
     /// Used for self-healing reconnection without the relayer.
-    FindPeer { peer_id: PeerId },
+    FindPeer {
+        peer_id: PeerId,
+    },
 }
 
 #[derive(Debug)]
@@ -411,9 +419,8 @@ impl NetworkHandler {
                                 );
 
                                 // If this peer is a relay and we have not reserved a slot yet,
-                                // listen on a circuit address through it so we become reachable
-                                // from behind a NAT. DCUtR then upgrades the relayed connection
-                                // to a direct one.
+                                // listen on a circuit address through it so we become reachable from behind a NAT.
+                                // DCUtR then upgrades the relayed connection to a direct one.
                                 if !relay_reserved
                                     && info.protocols.iter().any(|p| *p == relay::HOP_PROTOCOL_NAME)
                                 {
@@ -437,14 +444,12 @@ impl NetworkHandler {
                                     }
                                 }
 
-                                // Build a proper external address from the observed IP
-                                // and our actual listen port. The observed_addr contains our
-                                // public IP as seen by the remote peer, but with an ephemeral
-                                // source port - not our listen port. Using it as-is would
-                                // advertise unreachable addresses.
+                                // Build a proper external address from the observed IP and our actual listen port.
+                                // The observed_addr contains our public IP as seen by the remote peer,
+                                // but with an ephemeral source port, not our listen port.
+                                // Using it as-is would advertise unreachable addresses.
                                 // Skip when listening on an OS-assigned ephemeral port (0):
-                                // the configured port is not our real listen port, so we must
-                                // not advertise a bogus /tcp/0 external address.
+                                // the configured port is not our real listen port, so we must not advertise a bogus /tcp/0 external address.
                                 if tcp_port != 0 {
                                     if let Some(ext_addr) = build_external_addr_from_observed(&info.observed_addr, tcp_port) {
                                         log::debug!("Adding external address from observed: {ext_addr}");
@@ -455,9 +460,6 @@ impl NetworkHandler {
                             SwarmEvent::Behaviour(BehaviourEvent::AutonatClient(
                                 autonat::v2::client::Event { result, tested_addr, .. }
                             )) => {
-                                // Drive Kademlia mode from reachability: a publicly reachable
-                                // node is a useful DHT server; a private one stays a client so
-                                // it does not pollute routing tables with unreachable entries.
                                 let mode = if result.is_ok() {
                                     kad::Mode::Server
                                 } else {
@@ -480,7 +482,12 @@ impl NetworkHandler {
                                 // has supplied addresses for it (self-healing reconnection).
                                 if let Ok(target) = PeerId::from_bytes(&ok.key) {
                                     if target != own_peer_id {
-                                        let _ = swarm.dial(target);
+                                        // New port, not the reused listen port: avoids
+                                        // EADDRINUSE on redundant dials (reuse is only for
+                                        // DCUtR, which sets its own DialOpts).
+                                        let _ = swarm.dial(
+                                            DialOpts::peer_id(target).allocate_new_port().build(),
+                                        );
                                     }
                                 }
                             }
@@ -529,18 +536,26 @@ impl NetworkHandler {
                             }
                             SwarmCommand::Dial { address } => {
                                 log::debug!("Dialing address: {address}");
-                                if let Err(e) = swarm.dial(address.clone()) {
+                                // New port (see FindPeer dial): avoids EADDRINUSE.
+                                let opts = DialOpts::unknown_peer_id()
+                                    .address(address.clone())
+                                    .allocate_new_port()
+                                    .build();
+                                if let Err(e) = swarm.dial(opts) {
                                     log::error!("Swarm dial error for {address}: {e}");
                                 }
                             }
                             SwarmCommand::FindPeer { peer_id } => {
                                 log::debug!("Looking up peer {peer_id} in the DHT");
                                 swarm.behaviour_mut().kademlia.get_closest_peers(peer_id);
-                                // Also reach the peer through the relay circuit; DCUtR
-                                // then upgrades the relayed connection to a direct one.
+                                // Also reach the peer through the relay circuit; DCUtR then upgrades the relayed connection to a direct one.
                                 if let Some(base) = &relay_circuit {
                                     let via_relay = base.clone().with(Protocol::P2p(peer_id));
-                                    if let Err(e) = swarm.dial(via_relay.clone()) {
+                                    let opts = DialOpts::unknown_peer_id()
+                                        .address(via_relay.clone())
+                                        .allocate_new_port()
+                                        .build();
+                                    if let Err(e) = swarm.dial(opts) {
                                         log::debug!("Could not dial {peer_id} via relay {via_relay}: {e}");
                                     }
                                 }
@@ -626,9 +641,8 @@ impl NetworkHandler {
         Ok(())
     }
 
-    /// Dial the seed and known peers exactly once. `bind_address` calls this on
-    /// every `NewListenAddr`, but we only want one initial dial round; later
-    /// reconnection after a drop is handled by the periodic reconnect path.
+    /// Dial the seed and known peers exactly once. `bind_address` calls this on every `NewListenAddr`,
+    /// but we only want one initial dial round; later reconnection after a drop is handled by the periodic reconnect path.
     pub fn initial_dial(&mut self, peer_addresses: &HashMap<PeerId, Multiaddr>) -> AppResult<()> {
         if self.initial_dial_done {
             return Ok(());
@@ -1072,12 +1086,12 @@ impl NetworkHandler {
                     }
                     _ => format!("Dial failed for peer {peer_info}: {error}"),
                 };
-                log::warn!("{}", text);
+                log::trace!("{}", text);
                 Some(NetworkCallback::PushSwarmPanelLog {
                     timestamp: Tick::now(),
                     peer_id: None,
                     text,
-                    level: log::Level::Warn,
+                    level: log::Level::Trace,
                 })
             }
             _ => None,
