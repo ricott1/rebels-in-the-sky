@@ -563,6 +563,8 @@ impl TournamentPanel {
     pub const fn set_view(&mut self, filter: TournamentView) {
         self.view = filter;
         self.update_view = true;
+        self.index = None;
+        self.tournament_list_state.reset_offset();
     }
 
     pub const fn reset_view(&mut self) {

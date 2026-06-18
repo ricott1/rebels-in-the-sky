@@ -139,6 +139,24 @@ impl<'a> ClickableTable<'a> {
         self.block.as_ref().map_or(area, |block| block.inner(area))
     }
 
+    /// Largest scroll offset that still fills the viewport from the bottom.
+    /// A persisted offset left over from a longer table (e.g. before a filter
+    /// switch shrank it) would otherwise scroll rows off the top.
+    fn max_offset(&self, area: Rect) -> usize {
+        let inner_height = self
+            .inner_area(area)
+            .height
+            .saturating_sub(self.header_offset);
+        let mut acc = 0u16;
+        for (i, &height) in self.row_heights.iter().enumerate().rev() {
+            acc = acc.saturating_add(height);
+            if acc >= inner_height {
+                return i;
+            }
+        }
+        0
+    }
+
     fn hovered_row(
         &self,
         area: Rect,
@@ -182,12 +200,18 @@ impl ClickableTableState {
             self.offset = 0;
         }
     }
+
+    pub const fn reset_offset(&mut self) {
+        self.offset = 0;
+    }
 }
 
 impl StatefulWidget for &ClickableTable<'_> {
     type State = ClickableTableState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        state.offset = state.offset.min(self.max_offset(area));
+
         let mut inner_state = TableState::default()
             .with_offset(state.offset)
             .with_selected(state.selected);

@@ -31,6 +31,10 @@ impl ClickableListState {
             self.offset = 0;
         }
     }
+
+    pub const fn reset_offset(&mut self) {
+        self.offset = 0;
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -109,6 +113,21 @@ impl<'a> ClickableList<'a> {
         self.block.as_ref().map_or(area, |block| block.inner(area))
     }
 
+    /// Largest scroll offset that still fills the viewport from the bottom.
+    /// A persisted offset left over from a longer list (e.g. before a filter
+    /// switch shrank the list) would otherwise scroll items off the top.
+    fn max_offset(&self, area: Rect) -> usize {
+        let inner_height = self.inner_area(area).height;
+        let mut acc = 0u16;
+        for (i, &height) in self.heights.iter().enumerate().rev() {
+            acc = acc.saturating_add(height);
+            if acc >= inner_height {
+                return i;
+            }
+        }
+        0
+    }
+
     fn hovered_row(
         &self,
         area: Rect,
@@ -142,6 +161,8 @@ impl StatefulWidget for &ClickableList<'_> {
     type State = ClickableListState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        state.offset = state.offset.min(self.max_offset(area));
+
         let mut inner_state = ListState::default()
             .with_offset(state.offset)
             .with_selected(state.selected);
@@ -245,5 +266,49 @@ impl InteractiveStatefulWidget for ClickableList<'_> {
         state: &mut Self::State,
     ) {
         InteractiveStatefulWidget::before_rendering(&self, area, callback_registry, state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn items(n: usize) -> Vec<ClickableListItem<'static>> {
+        (0..n)
+            .map(|i| ClickableListItem::new(format!("player {i}")))
+            .collect()
+    }
+
+    fn first_row(buf: &Buffer, width: u16) -> String {
+        (0..width)
+            .filter_map(|x| buf.cell((x, 0u16)).map(|c| c.symbol().to_string()))
+            .collect()
+    }
+
+    // Regression: after the list shrinks (e.g. switching to the "own team"
+    // filter), a scroll offset persisted from the longer list must not push the
+    // top of the new list off-screen.
+    #[test]
+    fn top_visible_after_list_shrinks() {
+        let area = Rect::new(0, 0, 24, 12);
+        let mut state = ClickableListState::default();
+
+        // Long list, scrolled to the bottom: offset advances past 0.
+        let long = ClickableList::new(items(50));
+        state.select(Some(49));
+        StatefulWidget::render(&long, area, &mut Buffer::empty(area), &mut state);
+        assert!(state.offset > 0, "expected a non-zero offset on the long list");
+
+        // List shrinks to fewer rows than the viewport; selection is clamped.
+        state.select(Some(9));
+        let short = ClickableList::new(items(10));
+        let mut buf = Buffer::empty(area);
+        StatefulWidget::render(&short, area, &mut buf, &mut state);
+
+        assert!(
+            first_row(&buf, area.width).contains("player 0"),
+            "top of list scrolled off after shrink: {:?}",
+            first_row(&buf, area.width)
+        );
     }
 }

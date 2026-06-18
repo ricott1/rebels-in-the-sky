@@ -116,7 +116,7 @@ impl PlayerView {
 
                 player_team_planet_id == own_team_planet_id
             }
-            Self::OwnTeam => player.team.is_some() && player.team.unwrap() == own_team.id,
+            Self::OwnTeam => matches!(player.team, Some(id) if id == own_team.id),
         }
     }
 }
@@ -529,6 +529,8 @@ impl PlayerListPanel {
     pub const fn set_view(&mut self, filter: PlayerView) {
         self.view = filter;
         self.update_view = true;
+        self.index = None;
+        self.players_list_state.reset_offset();
     }
 
     pub const fn reset_view(&mut self) {

@@ -454,6 +454,8 @@ impl TeamListPanel {
     pub const fn set_view(&mut self, filter: TeamView) {
         self.view = filter;
         self.update_view = true;
+        self.index = None;
+        self.crews_list_state.reset_offset();
     }
 
     pub const fn reset_view(&mut self) {
