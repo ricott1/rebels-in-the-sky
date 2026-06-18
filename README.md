@@ -15,11 +15,7 @@ The game is under heavy development and breaking changes are often introduced. I
 
 ## Just try it out!
 
-Connect via SSH to try the game.
-
-`ssh frittura.org` and pick 'rebels'
-
-Save files are deleted after 2 days of inactivity.
+Connect via SSH to try the frittura-hub: `ssh frittura.org` or go to `https://hub.frittura.org` and pick 'rebels'.
 
 ## Installation
 
