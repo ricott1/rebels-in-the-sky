@@ -10,6 +10,13 @@ homepage = "https://github.com/ricott1/rebels-in-the-sky"
 repository = "https://github.com/ricott1/rebels-in-the-sky"
 keywords = ["cli", "pirates", "rebels", "game"]
 categories = ["games"]
+include = [
+    "/src",
+    "/assets",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/README.md",
+]
 
 [profile.release]
 strip = true
