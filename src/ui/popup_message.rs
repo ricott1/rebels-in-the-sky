@@ -3,7 +3,7 @@ use super::constants::{UiStyle, UiText};
 use super::gif_map::{self, GifMap, TREASURE_GIF};
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
-use super::utils::{img_to_lines, input_from_key_event, validate_textarea_input};
+use super::utils::{img_to_lines, input_from_key_event, validate_textarea_input, wrap_text};
 use super::widgets::{default_block, thick_block};
 use crate::core::planet::PlanetType;
 use crate::core::MAX_SKILL;
@@ -20,11 +20,11 @@ use itertools::Itertools;
 use ratatui::crossterm;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::layout::{Margin, Rect};
-use ratatui::style::Stylize;
+use ratatui::style::{Styled, Stylize};
 use ratatui::text::Line;
 use ratatui::widgets::{Clear, Paragraph, Wrap};
-use strum_macros::Display;
 use ratatui_textarea::TextArea;
+use strum_macros::Display;
 
 const FRAME_DURATION_MILLIS: Tick = 150;
 const TREASURE_GIF_ANIMATION_DELAY: Tick = 450;
@@ -1010,26 +1010,48 @@ impl PopupMessage {
                     split[0],
                 );
 
-                let messages = [
-                     "Hello pirate! This is a brief tutorial to get you started. Check the wiki at wiki.rebels.frittura.org",
-                     "You can navigate around by clicking on the tabs at the top or using the arrow keys.",
-                     "To start, you can try to challenge another team to a game.",
-                     "You can also explore around your planet to gather resources which you can then sell at the market.",
-                     "Once you have enough resources, you can upgrade your spaceship in the Shipyard.",
-                     "You can hire free pirates from the Pirates panel in exchange for satoshi.",
-                     "After you add shooters to your spaceship, you can go in a Space Adventure and try to find Asteroids.",
-                     "Be sure to check out the Chat in the Swarm panel from time to time.\nHave fun!"
+                let pages: [(&str, Vec<(&str, UiCallback)>); Self::MAX_TUTORIAL_PAGE + 1] = [
+                    (
+                        "Hello pirate! This is a brief tutorial to get you started. Check the wiki at wiki.rebels.frittura.org",
+                        vec![],
+                    ),
+                    (
+                        "You can navigate around by clicking on the tabs at the top or using the arrow keys.",
+                        vec![],
+                    ),
+                    (
+                        "To start, you can try to challenge another team to a game.",
+                        vec![("challenge", UiCallback::TutorialGoToChallenges)],
+                    ),
+                    (
+                        "You can also explore around your planet to gather resources which you can then sell at the market.",
+                        vec![("market", UiCallback::TutorialGoToMarket)],
+                    ),
+                    (
+                        "Once you have enough resources, you can upgrade your spaceship in the Shipyard.",
+                        vec![("Shipyard", UiCallback::TutorialGoToShipyard)],
+                    ),
+                    (
+                        "You can hire free pirates from the Pirates panel in exchange for satoshi.",
+                        vec![("Pirates", UiCallback::TutorialGoToFreePirates)],
+                    ),
+                    (
+                        "After you add shooters to your spaceship, you can embark on a Space Adventure and try to find Asteroids.",
+                        vec![
+                            ("Space Adventure", UiCallback::TutorialGoToSpaceAdventure),
+                            ("Asteroids", UiCallback::TutorialGoToAsteroids),
+                        ],
+                    ),
+                    (
+                        "Be sure to check out the Chat in the Swarm panel from time to time.\nHave fun!",
+                        vec![("Chat", UiCallback::TutorialGoToChat)],
+                    ),
                 ];
 
-                let message = messages.get(*index).copied().unwrap_or_default();
-
-                let central_split =
-                    Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).split(split[1]);
-
-                frame.render_widget(
-                    Paragraph::new(message).centered().wrap(Wrap { trim: true }),
-                    central_split[0].inner(Margin::new(1, 1)),
-                );
+                let area = split[1].inner(Margin::new(1, 1));
+                if let Some((message, links)) = pages.get(*index) {
+                    render_message_with_links(frame, area, message, links);
+                }
 
                 let close_button = Button::new("Close", UiCallback::CloseUiPopup)
                     .set_hover_text("Skip the tutorial")
@@ -1037,94 +1059,68 @@ impl PopupMessage {
                     .block(default_block().border_style(UiStyle::ERROR))
                     .set_layer(1);
 
-                let buttons_split =
-                    Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-                        .split(split[2]);
+                if *index == Self::MAX_TUTORIAL_PAGE {
+                    frame.render_interactive_widget(close_button, split[2]);
+                } else {
+                    let buttons_split =
+                        Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                            .split(split[2]);
 
-                let next_button =
-                    Button::new("Next >>", UiCallback::PushTutorialPage { index: index + 1 })
-                        .set_hover_text("Next tutorial")
-                        .set_hotkey(ui_key::YES_TO_DIALOG)
-                        .block(default_block().border_style(UiStyle::OK))
-                        .set_layer(1);
-
-                match index {
-                    2 => {
-                        let games_button =
-                            Button::new("Challenges", UiCallback::TutorialGoToChallenges)
-                                .set_hover_text("Go to available challenges")
-                                .set_hotkey(ui_key::GO_TO_CHALLENGES)
-                                .block(default_block())
-                                .set_layer(1);
-                        frame.render_interactive_widget(games_button, central_split[1]);
-
-                        frame.render_interactive_widget(next_button, buttons_split[0]);
-                        frame.render_interactive_widget(close_button, buttons_split[1]);
-                    }
-                    3 => {
-                        let market_button = Button::new("Market", UiCallback::TutorialGoToMarket)
-                            .set_hover_text("Go to market")
-                            .set_hotkey(ui_key::GO_TO_MARKET)
-                            .block(default_block())
+                    let next_button =
+                        Button::new("Next >>", UiCallback::PushTutorialPage { index: index + 1 })
+                            .set_hover_text("Next tutorial")
+                            .set_hotkey(ui_key::YES_TO_DIALOG)
+                            .block(default_block().border_style(UiStyle::OK))
                             .set_layer(1);
-                        frame.render_interactive_widget(market_button, central_split[1]);
 
-                        frame.render_interactive_widget(next_button, buttons_split[0]);
-                        frame.render_interactive_widget(close_button, buttons_split[1]);
-                    }
-                    4 => {
-                        let market_button =
-                            Button::new("Shipyard", UiCallback::TutorialGoToShipyard)
-                                .set_hover_text("Go to shipyard")
-                                .set_hotkey(ui_key::GO_TO_SHIPYARD)
-                                .block(default_block())
-                                .set_layer(1);
-                        frame.render_interactive_widget(market_button, central_split[1]);
-
-                        frame.render_interactive_widget(next_button, buttons_split[0]);
-                        frame.render_interactive_widget(close_button, buttons_split[1]);
-                    }
-                    5 => {
-                        let market_button =
-                            Button::new("Free Pirates", UiCallback::TutorialGoToFreePirates)
-                                .set_hover_text("Go to free pirates")
-                                .set_hotkey(ui_key::GO_TO_FREE_PIRATES)
-                                .block(default_block())
-                                .set_layer(1);
-                        frame.render_interactive_widget(market_button, central_split[1]);
-
-                        frame.render_interactive_widget(next_button, buttons_split[0]);
-                        frame.render_interactive_widget(close_button, buttons_split[1]);
-                    }
-                    6 => {
-                        let market_button =
-                            Button::new("Space Adventure", UiCallback::TutorialGoToSpaceAdventure)
-                                .set_hover_text("Go to space adventure")
-                                .set_hotkey(ui_key::GO_TO_SPACE_ADVENTURE)
-                                .block(default_block())
-                                .set_layer(1);
-                        frame.render_interactive_widget(market_button, central_split[1]);
-
-                        frame.render_interactive_widget(next_button, buttons_split[0]);
-                        frame.render_interactive_widget(close_button, buttons_split[1]);
-                    }
-                    7 => {
-                        let chat_button = Button::new("Chat", UiCallback::TutorialGoToChat)
-                            .set_hover_text("Go to Chat")
-                            .set_hotkey(ui_key::GO_TO_CHAT)
-                            .block(default_block().border_style(UiStyle::NETWORK))
-                            .set_layer(1);
-                        frame.render_interactive_widget(chat_button, central_split[1]);
-                        frame.render_interactive_widget(close_button, split[2]);
-                    }
-
-                    _ => {
-                        frame.render_interactive_widget(next_button, buttons_split[0]);
-                        frame.render_interactive_widget(close_button, buttons_split[1]);
-                    }
+                    frame.render_interactive_widget(next_button, buttons_split[0]);
+                    frame.render_interactive_widget(close_button, buttons_split[1]);
                 }
             }
         }
         Ok(())
+    }
+}
+
+fn render_message_with_links(
+    frame: &mut UiFrame,
+    area: Rect,
+    message: &str,
+    links: &[(&str, UiCallback)],
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let mut row: u16 = 0;
+    for segment in message.split('\n') {
+        for line in wrap_text(segment, area.width as usize) {
+            let y = area.y + row;
+            if y >= area.bottom() {
+                return;
+            }
+            let line_w = (line.chars().count() as u16).min(area.width);
+            let offset = area.width.saturating_sub(line_w) / 2;
+            frame.render_widget(
+                Paragraph::new(line.as_str()),
+                Rect::new(area.x + offset, y, line_w, 1),
+            );
+            for (label, callback) in links {
+                if let Some(col) = line.find(label) {
+                    let button = Button::no_box(*label, callback.clone())
+                        .set_style(UiStyle::HELP_LINK)
+                        .set_layer(1);
+                    frame.render_interactive_widget(
+                        button,
+                        Rect::new(
+                            area.x + offset + col as u16,
+                            y,
+                            label.chars().count() as u16,
+                            1,
+                        ),
+                    );
+                }
+            }
+            row += 1;
+        }
     }
 }

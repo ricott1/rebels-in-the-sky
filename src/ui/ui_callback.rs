@@ -94,6 +94,7 @@ pub enum UiCallback {
     TutorialGoToShipyard,
     TutorialGoToFreePirates,
     TutorialGoToSpaceAdventure,
+    TutorialGoToAsteroids,
     ChallengeTeam {
         team_id: TeamId,
     },
@@ -1227,6 +1228,13 @@ impl UiCallback {
             Self::TutorialGoToSpaceAdventure => {
                 app.ui.my_team_panel.update(&app.world)?;
                 app.ui.my_team_panel.set_view(MyTeamView::Info);
+                app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
+
+                Ok(None)
+            }
+            Self::TutorialGoToAsteroids => {
+                app.ui.my_team_panel.update(&app.world)?;
+                app.ui.my_team_panel.set_view(MyTeamView::Asteroids);
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
 
                 Ok(None)
