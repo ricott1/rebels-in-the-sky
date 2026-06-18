@@ -803,10 +803,10 @@ fn execute_shot(
         };
 
         let mut extra_morale =
-            MoraleModifier::SMALL_BONUS + 1.25 * game.team_momentum(input.possession) / MAX_SKILL;
+            MoraleModifier::SMALL_BONUS + game.team_momentum(input.possession) / MAX_SKILL;
 
         if attacking_team_was_losing {
-            extra_morale *= 2.5;
+            extra_morale *= 2.0;
         };
 
         for player in game.all_attacking_players().values() {
