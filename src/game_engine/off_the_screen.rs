@@ -241,16 +241,16 @@ pub(crate) fn execute(
                 situation: ActionSituation::MediumShot,
                 description: [
                     format!(
-                        "{} passes to {} who tried to get free using the screen, but {} is all over {}.",
-                        playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name(), target.info.pronouns.as_object()
+                        "{} passes to {} who tried to get free using the screen, but {} {} all over {}.",
+                        playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name(), target_defender.info.pronouns.to_be(), target.info.pronouns.as_object()
                     ),
                     format!(
                         "{} attempts to shake off {} with the screen, but {} sticks to {} like glue.",
                         target.info.short_name(), target_defender.info.short_name(), target_defender.info.short_name(), target.info.pronouns.as_possessive()
                     ),
                     format!(
-                        "{} tries to use the screen to get open for the shot, but {} is right there, forcing a bad attempt.",
-                        target.info.short_name(), target_defender.info.short_name(),
+                        "{} tries to use the screen to get open for the shot, but {} {} right there, forcing a bad attempt.",
+                        target.info.short_name(), target_defender.info.short_name(), target_defender.info.pronouns.to_be()
                                         ),
                     format!(
                         "{} receives the pass from {} but can't escape {}'s tight defense, resulting in a rushed shot.",

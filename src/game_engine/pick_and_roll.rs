@@ -379,8 +379,8 @@ fn playmaker_uses_the_screen(
                                 playmaker.info.short_name(), playmaker_defender.info.short_name()
                             ),
                             format!(
-                                "{} goes for the screen, but {} is quick to jump in, stealing the ball away from {}.",
-                                playmaker.info.short_name(), playmaker_defender.info.short_name(), playmaker.info.pronouns.as_possessive()
+                                "{} goes for the screen, but {} {} quick to jump in, stealing the ball away from {}.",
+                                playmaker.info.short_name(), playmaker_defender.info.short_name(), playmaker_defender.info.pronouns.to_be(), playmaker.info.pronouns.as_possessive()
                             ),
                         ]}else{[
                             format!(
@@ -611,12 +611,12 @@ fn playmaker_passes_to_target(
                     situation: ActionSituation::MediumShot,
                     description:[
                         format!(
-                            "They go for the pick'n'roll. {} passes to {} but {} is all over {}.",
-                            playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name(), target.info.pronouns.as_object()
+                            "They go for the pick'n'roll. {} passes to {} but {} {} all over {}.",
+                            playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name(), target_defender.info.pronouns.to_be(), target.info.pronouns.as_object()
                         ),
                         format!(
-                            "The pick'n'roll is executed, but {} is quick to cover as {} passes to {}.",
-                        target_defender.info.short_name(), playmaker.info.short_name(), target.info.short_name(),
+                            "The pick'n'roll is executed, but {} {} quick to cover as {} passes to {}.",
+                        target_defender.info.short_name(), target_defender.info.pronouns.to_be(), playmaker.info.short_name(), target.info.short_name(),
                         ),
                         format!(
                             "They try the pick'n'roll. {} passes to {} but {} sticks to {} like glue.",
@@ -627,8 +627,8 @@ fn playmaker_passes_to_target(
                             target_defender.info.short_name(), target.info.short_name()
                         ),
                         format!(
-                            "On the pick'n'roll, {} passes to {} but {} is right there, denying any space for a shot.",
-                            playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name()
+                            "On the pick'n'roll, {} passes to {} but {} {} right there, denying any space for a shot.",
+                            playmaker.info.short_name(), target.info.short_name(), target_defender.info.short_name(), target_defender.info.pronouns.to_be()
                         ),
                     ].choose(description_rng).expect("There should be one option").clone(),
                     assist_from: Some(play_idx),
