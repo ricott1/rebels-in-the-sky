@@ -3376,8 +3376,8 @@ mod test {
         team.add_resource(Resource::RUM, 20)?;
 
         // Give player Spugna skill and set it as pilot.
-        // Max drunkenness and zero stamina make the next drink trigger
-        // the drunk event with probability exactly 1.0.
+        // Max drunkenness and zero stamina maximize the chance each drink
+        // triggers the drunk event.
         let mut spugna = app.world.players.get_or_err(&team.player_ids[0])?.clone();
         let spugna_id = spugna.id.clone();
         spugna.special_trait = Some(Trait::Spugna);
@@ -3404,13 +3404,20 @@ mod test {
         assert!(team.total_travelled == 0);
         app.world.teams.insert(team.id, team);
 
-        let morale_before = app.world.players.get_or_err(&spugna_id)?.morale;
-
-        // Drink: the spugna pilot gets drunk and discovers a portal.
-        UiCallback::Drink {
-            player_id: spugna_id,
+        // Each drink only triggers the drunk event with probability < 1, so drink
+        // until it does. Morale is captured right before the successful drink: sober
+        // drinks raise morale, but getting drunk must leave it untouched.
+        let mut morale_before;
+        loop {
+            morale_before = app.world.players.get_or_err(&spugna_id)?.morale;
+            UiCallback::Drink {
+                player_id: spugna_id,
+            }
+            .call(&mut app)?;
+            if app.world.players.get_or_err(&spugna_id)?.is_knocked_out() {
+                break;
+            }
         }
-        .call(&mut app)?;
 
         let spugna = app.world.players.get_or_err(&spugna_id)?;
         // Getting drunk wastes the player, makes drunkenness negative and leaves morale untouched.
