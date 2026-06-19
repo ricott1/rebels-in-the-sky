@@ -268,23 +268,20 @@ impl UiScreen {
         if let Some(last_popup) = self.popup_messages.last().as_ref() {
             match (&popup_message, last_popup) {
                 (
-                    PopupMessage::Error { message, .. },
-                    PopupMessage::Error {
-                        message: l_message, ..
+                    PopupMessage::Message {
+                        message,
+                        links,
+                        level,
+                        ..
+                    },
+                    PopupMessage::Message {
+                        message: l_message,
+                        links: l_links,
+                        level: l_level,
+                        ..
                     },
                 ) => {
-                    if *message == *l_message {
-                        return;
-                    }
-                }
-
-                (
-                    PopupMessage::Ok { message, .. },
-                    PopupMessage::Ok {
-                        message: l_message, ..
-                    },
-                ) => {
-                    if *message == *l_message {
+                    if *message == *l_message && *links == *l_links && *level == *l_level {
                         return;
                     }
                 }

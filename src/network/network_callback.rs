@@ -11,7 +11,7 @@ use crate::game_engine::{Tournament, TournamentId, TournamentState};
 use crate::network::types::{ChatHistoryEntry, TournamentRequestState};
 use crate::store::deserialize;
 use crate::types::{AppResult, HashMapWithResult, PlayerMap, SystemTimeTick, TeamId, Tick};
-use crate::ui::{PopupMessage, UiScreen};
+use crate::ui::{PopupMessage, UiCallback, UiScreen};
 use crate::{app::App, types::AppCallback};
 use anyhow::anyhow;
 use libp2p::core::ConnectedPoint;
@@ -191,8 +191,10 @@ impl NetworkCallback {
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
             if matches!(team_id, Some(id) if id == app.world.own_team_id) || team_id.is_none() {
-                app.ui.push_popup(PopupMessage::Ok {
+                app.ui.push_popup(PopupMessage::Message {
                     message: message.clone(),
+                    links: vec![],
+                    level: log::Level::Info,
                     is_skippable: false,
                     timestamp,
                 });
@@ -439,12 +441,14 @@ impl NetworkCallback {
 
                 if let TournamentRequestState::Cancellation { reason } = &request_state {
                     own_team.tournament_registration_state = TournamentRegistrationState::None;
-                    app.ui.push_popup(PopupMessage::Ok {
+                    app.ui.push_popup(PopupMessage::Message {
                         message: format!(
                             "{} tournament got cancelled: {}.",
                             tournament.name(),
                             reason
                         ),
+                        links: vec![],
+                        level: log::Level::Info,
                         timestamp: Tick::now(),
                         is_skippable: true,
                     });
@@ -622,12 +626,14 @@ impl NetworkCallback {
                 && !app.world.tournaments.contains_key(&tournament.id)
             {
                 let planet = app.world.planets.get_or_err(&tournament.planet_id)?;
-                app.ui.push_popup(PopupMessage::Ok {
+                app.ui.push_popup(PopupMessage::Message {
                     message: format!(
                         "There is a tournament on {} starting in {} with available spots.",
                         planet.name,
                         (tournament.starting_at() - Tick::now()).formatted_as_time()
                     ),
+                    links: vec![("tournament".to_string(), UiCallback::GoToTournaments)],
+                    level: log::Level::Info,
                     is_skippable: true,
                     timestamp: Tick::now(),
                 });
@@ -764,9 +770,14 @@ impl NetworkCallback {
                     let own_team = app.world.get_own_team_mut()?;
                     own_team.add_received_trade(trade.clone());
 
-                    return Ok(Some(
-                        "Trade offer received.\nCheck the swarm panel".to_string(),
-                    ));
+                    app.ui.push_popup(PopupMessage::Message {
+                        message: "Trade offer received.\nCheck the swarm panel".to_string(),
+                        links: vec![("swarm panel".to_string(), UiCallback::GoToSwarmRequests)],
+                        level: log::Level::Info,
+                        is_skippable: true,
+                        timestamp,
+                    });
+                    return Ok(None);
                 }
                 NetworkRequestState::SynAck => {
                     if trade.target_peer_id == *self_peer_id {
@@ -823,8 +834,10 @@ impl NetworkCallback {
                             log::Level::Info,
                         );
 
-                        app.ui.push_popup(PopupMessage::Ok {
+                        app.ui.push_popup(PopupMessage::Message {
                             message: "Trade accepted, players swapped.".to_string(),
+                            links: vec![],
+                            level: log::Level::Info,
                             is_skippable: false,
                             timestamp: Tick::now(),
                         });
@@ -910,8 +923,10 @@ impl NetworkCallback {
                             log::Level::Info,
                         );
 
-                        app.ui.push_popup(PopupMessage::Ok {
+                        app.ui.push_popup(PopupMessage::Message {
                             message: "Trade accepted, players swapped.".to_string(),
+                            links: vec![],
+                            level: log::Level::Info,
                             is_skippable: false,
                             timestamp: Tick::now(),
                         });
@@ -938,10 +953,9 @@ impl NetworkCallback {
                     let own_team = app.world.get_own_team_mut()?;
                     own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
 
-                    app.ui.push_popup(PopupMessage::Error {
-                        message: format!("Trade failed: {error_message}"),
-                        timestamp: Tick::now(),
-                    });
+                    app.ui.push_popup(PopupMessage::error(format!(
+                        "Trade failed: {error_message}"
+                    )));
 
                     return Err(anyhow!(format!("Trade failed: {error_message}")))?;
                 }
@@ -1013,9 +1027,14 @@ impl NetworkCallback {
                     if challenge_present {
                         return Ok(None);
                     }
-                    return Ok(Some(
-                        "Challenge received.\nCheck the swarm panel".to_string(),
-                    ));
+                    app.ui.push_popup(PopupMessage::Message {
+                        message: "Challenge received.\nCheck the swarm panel".to_string(),
+                        links: vec![("swarm panel".to_string(), UiCallback::GoToSwarmRequests)],
+                        level: log::Level::Info,
+                        is_skippable: true,
+                        timestamp,
+                    });
+                    return Ok(None);
                 }
 
                 NetworkRequestState::SynAck => {
@@ -1081,8 +1100,10 @@ impl NetworkCallback {
                             return Err(anyhow!(err.to_string()));
                         }
 
-                        app.ui.push_popup(PopupMessage::Ok {
+                        app.ui.push_popup(PopupMessage::Message {
                             message: "Challenge accepted, game is starting.".to_string(),
+                            links: vec![("game".to_string(), UiCallback::GoToGames)],
+                            level: log::Level::Info,
                             is_skippable: false,
                             timestamp: Tick::now(),
                         });
@@ -1159,8 +1180,10 @@ impl NetworkCallback {
                             return Err(anyhow!("Cannot generate game, starting_at not set"));
                         }
 
-                        app.ui.push_popup(PopupMessage::Ok {
+                        app.ui.push_popup(PopupMessage::Message {
                             message: "Challenge accepted, game is starting.".to_string(),
+                            links: vec![("game".to_string(), UiCallback::GoToGames)],
+                            level: log::Level::Info,
                             is_skippable: false,
                             timestamp: Tick::now(),
                         });
@@ -1173,10 +1196,8 @@ impl NetworkCallback {
                             error_message: err.to_string(),
                         };
                         app.network_handler.send_challenge(challenge)?;
-                        app.ui.push_popup(PopupMessage::Error {
-                            message: format!("Challenge failed: {err}"),
-                            timestamp: Tick::now(),
-                        });
+                        app.ui
+                            .push_popup(PopupMessage::error(format!("Challenge failed: {err}")));
 
                         return Err(anyhow!(err.to_string()));
                     }
@@ -1195,10 +1216,9 @@ impl NetworkCallback {
                         challenge.away_team_in_game.team_id,
                     );
 
-                    app.ui.push_popup(PopupMessage::Error {
-                        message: format!("Challenge failed: {error_message}"),
-                        timestamp: Tick::now(),
-                    });
+                    app.ui.push_popup(PopupMessage::error(format!(
+                        "Challenge failed: {error_message}"
+                    )));
 
                     return Err(anyhow!("Challenge failed: {error_message}"))?;
                 }

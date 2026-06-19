@@ -31,16 +31,10 @@ const TREASURE_GIF_ANIMATION_DELAY: Tick = 450;
 
 #[derive(Debug, Display, Clone, PartialEq)]
 pub enum PopupMessage {
-    Error {
+    Message {
         message: String,
-        timestamp: Tick,
-    },
-    Warning {
-        message: String,
-        timestamp: Tick,
-    },
-    Ok {
-        message: String,
+        links: Vec<(String, UiCallback)>,
+        level: log::Level,
         is_skippable: bool,
         timestamp: Tick,
     },
@@ -99,6 +93,17 @@ pub enum PopupMessage {
 
 impl PopupMessage {
     const MAX_TUTORIAL_PAGE: usize = 7;
+
+    pub fn error(message: String) -> Self {
+        Self::Message {
+            message,
+            links: vec![],
+            level: log::Level::Error,
+            is_skippable: true,
+            timestamp: Tick::now(),
+        }
+    }
+
     fn rect(&self, area: Rect) -> Rect {
         let (width, height) = match self {
             Self::AsteroidNameDialog { .. } => (54, 28),
@@ -143,8 +148,7 @@ impl PopupMessage {
 
     pub const fn is_skippable(&self) -> bool {
         match self {
-            Self::Error { .. } | Self::Warning { .. } => true,
-            Self::Ok { is_skippable, .. } => *is_skippable,
+            Self::Message { is_skippable, .. } => *is_skippable,
             _ => false,
         }
     }
@@ -288,101 +292,32 @@ impl PopupMessage {
         frame.render_widget(Clear, rect);
         frame.render_widget(thick_block(), rect);
         match self {
-            Self::Ok {
-                message, timestamp, ..
+            Self::Message {
+                message,
+                links,
+                level,
+                timestamp,
+                ..
             } => {
+                let (label, border) = match level {
+                    log::Level::Error => ("Error", UiStyle::ERROR),
+                    log::Level::Warn => ("Warning", UiStyle::WARNING),
+                    _ => ("Message", UiStyle::OK),
+                };
                 frame.render_widget(
                     Paragraph::new(format!(
-                        "Message: {} {}",
+                        "{label}: {} {}",
                         timestamp.formatted_as_date(),
                         timestamp.formatted_as_time()
                     ))
                     .bold()
-                    .block(default_block().border_style(UiStyle::OK))
+                    .block(default_block().border_style(border))
                     .centered(),
                     split[0],
                 );
 
-                let lines = message.split("\n").map(Line::from).collect_vec();
-                frame.render_widget(
-                    Paragraph::new(lines).centered().wrap(Wrap { trim: true }),
-                    split[1].inner(Margin {
-                        horizontal: 1,
-                        vertical: 1,
-                    }),
-                );
-                let button = Button::new(UiText::YES, UiCallback::CloseUiPopup)
-                    .set_hover_text("Close the popup")
-                    .set_hotkey(ui_key::YES_TO_DIALOG)
-                    .block(default_block().border_style(UiStyle::OK))
-                    .set_layer(1);
+                render_message_body(frame, split[1], message, links);
 
-                frame.render_interactive_widget(
-                    button,
-                    split[2].inner(Margin {
-                        vertical: 0,
-                        horizontal: 8,
-                    }),
-                );
-            }
-
-            Self::Error { message, timestamp } => {
-                frame.render_widget(
-                    Paragraph::new(format!(
-                        "Error: {} {}",
-                        timestamp.formatted_as_date(),
-                        timestamp.formatted_as_time()
-                    ))
-                    .bold()
-                    .block(default_block().border_style(UiStyle::ERROR))
-                    .centered(),
-                    split[0],
-                );
-                frame.render_widget(
-                    Paragraph::new(message.clone())
-                        .centered()
-                        .wrap(Wrap { trim: true }),
-                    split[1].inner(Margin {
-                        horizontal: 1,
-                        vertical: 1,
-                    }),
-                );
-                let button = Button::new(UiText::YES, UiCallback::CloseUiPopup)
-                    .set_hover_text("Close the popup")
-                    .set_hotkey(ui_key::YES_TO_DIALOG)
-                    .block(default_block().border_style(UiStyle::OK))
-                    .set_layer(1);
-
-                frame.render_interactive_widget(
-                    button,
-                    split[2].inner(Margin {
-                        vertical: 0,
-                        horizontal: 8,
-                    }),
-                );
-            }
-
-            Self::Warning { message, timestamp } => {
-                frame.render_widget(
-                    Paragraph::new(format!(
-                        "Warning: {} {}",
-                        timestamp.formatted_as_date(),
-                        timestamp.formatted_as_time()
-                    ))
-                    .bold()
-                    .block(default_block().border_style(UiStyle::WARNING))
-                    .centered(),
-                    split[0],
-                );
-                frame.render_widget(
-                    Paragraph::new(message.clone())
-                        .centered()
-                        .wrap(Wrap { trim: true }),
-                    split[1].inner(Margin {
-                        horizontal: 1,
-                        vertical: 1,
-                    }),
-                );
                 let button = Button::new(UiText::YES, UiCallback::CloseUiPopup)
                     .set_hover_text("Close the popup")
                     .set_hotkey(ui_key::YES_TO_DIALOG)
@@ -1079,6 +1014,31 @@ impl PopupMessage {
             }
         }
         Ok(())
+    }
+}
+
+fn render_message_body(
+    frame: &mut UiFrame,
+    area: Rect,
+    message: &str,
+    links: &[(String, UiCallback)],
+) {
+    let inner = area.inner(Margin {
+        horizontal: 1,
+        vertical: 1,
+    });
+    if links.is_empty() {
+        let lines = message.split('\n').map(Line::from).collect_vec();
+        frame.render_widget(
+            Paragraph::new(lines).centered().wrap(Wrap { trim: true }),
+            inner,
+        );
+    } else {
+        let link_refs = links
+            .iter()
+            .map(|(label, callback)| (label.as_str(), callback.clone()))
+            .collect_vec();
+        render_message_with_links(frame, inner, message, &link_refs);
     }
 }
 

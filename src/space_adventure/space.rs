@@ -446,8 +446,9 @@ impl SpaceAdventure {
 
                         return Ok(vec![
                             UiCallback::PushUiPopup { popup_message:
-                                PopupMessage::Ok {
+                                PopupMessage::Message {
                                     message: "Danger! There's a breach in the hull.\nAll the resources in the stiva have been lost,\nyou need to go back to the base...".to_string(),
+                                    links: vec![], level: log::Level::Info,
                                     is_skippable:true, timestamp:Tick::now()}
                                 }
                         ]);
@@ -529,8 +530,9 @@ impl SpaceAdventure {
                         image_number: id % MAX_ASTEROID_PLANET_IMAGE_NUMBER,
                     };
                     ui_callbacks.push(UiCallback::PushUiPopup { popup_message:
-                        PopupMessage::Ok {
+                        PopupMessage::Message {
                         message: "You've found an asteroid! Bring the spaceship in touch with it to claim it.".to_string(),
+                            links: vec![], level: log::Level::Info,
                             is_skippable:true, timestamp:Tick::now()}
                         });
                 }

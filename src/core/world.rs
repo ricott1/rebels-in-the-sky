@@ -1688,7 +1688,7 @@ impl World {
                 self.dirty_network = true;
 
                 own_team_game_notification = Some(UiCallback::PushUiPopup {
-                    popup_message: PopupMessage::Ok {
+                    popup_message: PopupMessage::Message {
                         message: format!(
                             "Game ended\n{} {}-{} {}",
                             game.home_team_in_game.name,
@@ -1696,6 +1696,8 @@ impl World {
                             game.get_score().1,
                             game.away_team_in_game.name,
                         ),
+                        links: vec![("Game".to_string(), UiCallback::GoToGames)],
+                        level: log::Level::Info,
                         is_skippable: false,
                         timestamp: current_tick,
                     },
@@ -2045,8 +2047,13 @@ impl World {
                         );
 
                         let callback = UiCallback::PushUiPopup {
-                            popup_message: PopupMessage::Ok {
+                            popup_message: PopupMessage::Message {
                                 message,
+                                links: vec![(
+                                    "tournament".to_string(),
+                                    UiCallback::GoToTournaments,
+                                )],
+                                level: log::Level::Info,
                                 is_skippable: false,
                                 timestamp: current_tick,
                             },
@@ -2418,8 +2425,10 @@ impl World {
             self.populate_planet(rng, planet)?;
         }
         Ok(UiCallback::PushUiPopup {
-            popup_message: PopupMessage::Ok {
+            popup_message: PopupMessage::Message {
                 message: "Free pirates refreshed".into(),
+                links: vec![("Free pirates".to_string(), UiCallback::GoToFreePirates)],
+                level: log::Level::Info,
                 is_skippable: false,
                 timestamp: current_tick,
             },
@@ -2673,13 +2682,15 @@ impl World {
 
                 if player.team.expect("Team should be some") == self.own_team_id {
                     messages.push(UiCallback::PushUiPopup {
-                        popup_message: PopupMessage::Ok {
+                        popup_message: PopupMessage::Message {
                             message: format!(
                                 "{} {} left the crew!\n{} morale was too low...",
                                 player.info.first_name,
                                 player.info.last_name,
                                 player.info.pronouns.as_possessive()
                             ),
+                            links: vec![],
+                            level: log::Level::Info,
                             is_skippable: false,
                             timestamp: current_tick,
                         },
@@ -2732,7 +2743,7 @@ impl World {
 
                     if player.team.expect("Team should be some") == self.own_team_id {
                         messages.push(UiCallback::PushUiPopup {
-                            popup_message: PopupMessage::Ok{
+                            popup_message: PopupMessage::Message{
                                 message:format!(
                                     "{} {} left the crew and retired to cultivate turnips\n{} {} been a great pirate...",
                                     player.info.first_name,
@@ -2740,6 +2751,8 @@ impl World {
                                     player.info.pronouns.as_subject(),
                                     player.info.pronouns.to_have(),
                                 ),
+                                links: vec![],
+                                level: log::Level::Info,
                                 is_skippable:false,
                                 timestamp:current_tick
                             },

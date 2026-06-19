@@ -91,8 +91,10 @@ impl App {
             own_team.current_location = TeamLocation::OnPlanet { planet_id: around };
 
             self.ui
-            .push_popup(PopupMessage::Ok{
-               message: "The game was closed during a space adventure.\nNext time go back to the base first!".to_string(), 
+            .push_popup(PopupMessage::Message{
+               message: "The game was closed during a space adventure.\nNext time go back to the base first!".to_string(),
+               links: vec![],
+               level: log::Level::Info,
                is_skippable:false,
                timestamp: Tick::now()
             });
@@ -134,8 +136,10 @@ impl App {
         for callback in callbacks.iter() {
             match callback.call(self) {
                 Ok(Some(message)) => {
-                    self.ui.push_popup(PopupMessage::Ok {
+                    self.ui.push_popup(PopupMessage::Message {
                         message,
+                        links: vec![],
+                        level: log::Level::Info,
                         is_skippable: true,
                         timestamp: Tick::now(),
                     });
@@ -340,10 +344,9 @@ impl App {
                     AppEvent::AudioEvent(audio_event) => match audio_event {
                         MusicPlayerEvent::StreamOk => {}
                         MusicPlayerEvent::StreamErr { error_message } => {
-                            self.ui.push_popup(PopupMessage::Error {
-                                message: format!("Music player error: {error_message}"),
-                                timestamp: Tick::now(),
-                            });
+                            self.ui.push_popup(PopupMessage::error(format!(
+                                "Music player error: {error_message}"
+                            )));
                         }
                     },
                 }
@@ -368,8 +371,10 @@ impl App {
                 let message = format!(
                     "New version {version_major}.{version_minor}.{version_patch} available. \nDownload at https://rebels.frittura.org",
                 );
-                self.ui.push_popup(PopupMessage::Ok {
+                self.ui.push_popup(PopupMessage::Message {
                     message,
+                    links: vec![],
+                    level: log::Level::Info,
                     is_skippable: false,
                     timestamp: Tick::now(),
                 });
@@ -467,27 +472,24 @@ impl App {
                 for callback in callbacks.iter() {
                     match callback.call(self) {
                         Ok(Some(message)) => {
-                            self.ui.push_popup(PopupMessage::Ok {
+                            self.ui.push_popup(PopupMessage::Message {
                                 message,
+                                links: vec![],
+                                level: log::Level::Info,
                                 is_skippable: true,
                                 timestamp: Tick::now(),
                             });
                         }
                         Ok(None) => {}
                         Err(e) => {
-                            self.ui.push_popup(PopupMessage::Error {
-                                message: e.to_string(),
-                                timestamp: Tick::now(),
-                            });
+                            self.ui.push_popup(PopupMessage::error(e.to_string()));
                         }
                     }
                 }
             }
             Err(e) => {
-                self.ui.push_popup(PopupMessage::Error {
-                    message: format!("Tick error\n{e}"),
-                    timestamp: Tick::now(),
-                });
+                self.ui
+                    .push_popup(PopupMessage::error(format!("Tick error\n{e}")));
             }
         }
 
@@ -502,27 +504,24 @@ impl App {
                 for callback in callbacks.iter() {
                     match callback.call(self) {
                         Ok(Some(message)) => {
-                            self.ui.push_popup(PopupMessage::Ok {
+                            self.ui.push_popup(PopupMessage::Message {
                                 message,
+                                links: vec![],
+                                level: log::Level::Info,
                                 is_skippable: true,
                                 timestamp: Tick::now(),
                             });
                         }
                         Ok(None) => {}
                         Err(e) => {
-                            self.ui.push_popup(PopupMessage::Error {
-                                message: e.to_string(),
-                                timestamp: Tick::now(),
-                            });
+                            self.ui.push_popup(PopupMessage::error(e.to_string()));
                         }
                     }
                 }
             }
             Err(e) => {
-                self.ui.push_popup(PopupMessage::Error {
-                    message: format!("Tick error\n{e}"),
-                    timestamp: Tick::now(),
-                });
+                self.ui
+                    .push_popup(PopupMessage::error(format!("Tick error\n{e}")));
             }
         }
 
@@ -654,18 +653,17 @@ impl App {
                 if let Some(callback) = self.ui.handle_key_events(key_event, &self.world) {
                     match callback.call(self) {
                         Ok(Some(message)) => {
-                            self.ui.push_popup(PopupMessage::Ok {
+                            self.ui.push_popup(PopupMessage::Message {
                                 message,
+                                links: vec![],
+                                level: log::Level::Info,
                                 is_skippable: true,
                                 timestamp: Tick::now(),
                             });
                         }
                         Ok(None) => {}
                         Err(e) => {
-                            self.ui.push_popup(PopupMessage::Error {
-                                message: e.to_string(),
-                                timestamp: Tick::now(),
-                            });
+                            self.ui.push_popup(PopupMessage::error(e.to_string()));
                         }
                     }
 
@@ -687,18 +685,17 @@ impl App {
         if let Some(callback) = self.ui.handle_mouse_events(mouse_event) {
             match callback.call(self) {
                 Ok(Some(message)) => {
-                    self.ui.push_popup(PopupMessage::Ok {
+                    self.ui.push_popup(PopupMessage::Message {
                         message,
+                        links: vec![],
+                        level: log::Level::Info,
                         is_skippable: true,
                         timestamp: Tick::now(),
                     });
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    self.ui.push_popup(PopupMessage::Error {
-                        message: e.to_string(),
-                        timestamp: Tick::now(),
-                    });
+                    self.ui.push_popup(PopupMessage::error(e.to_string()));
                 }
             }
             should_draw = true;
@@ -710,8 +707,10 @@ impl App {
         if let Some(callback) = self.network_handler.handle_network_events(swarm_event) {
             match callback.call(self) {
                 Ok(Some(message)) => {
-                    self.ui.push_popup(PopupMessage::Ok {
+                    self.ui.push_popup(PopupMessage::Message {
                         message,
+                        links: vec![],
+                        level: log::Level::Info,
                         is_skippable: true,
                         timestamp: Tick::now(),
                     });

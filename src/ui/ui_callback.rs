@@ -95,6 +95,10 @@ pub enum UiCallback {
     TutorialGoToFreePirates,
     TutorialGoToSpaceAdventure,
     TutorialGoToAsteroids,
+    GoToSwarmRequests,
+    GoToFreePirates,
+    GoToGames,
+    GoToTournaments,
     ChallengeTeam {
         team_id: TeamId,
     },
@@ -718,7 +722,7 @@ impl UiCallback {
                 .tournaments
                 .insert(tournament.id, tournament.clone());
 
-            app.ui.push_popup_to_top(PopupMessage::Ok {
+            app.ui.push_popup_to_top(PopupMessage::Message {
                 message: format!(
                     "New tournament created! \nRegistrations closing on {} {} at {} \n {} max participants.",
                     tournament.registrations_closing_at.formatted_as_date(),
@@ -726,6 +730,8 @@ impl UiCallback {
                     planet.name,
                     tournament.max_participants
                 ),
+                links: vec![("tournament".to_string(), Self::GoToTournaments)],
+                level: log::Level::Info,
                 is_skippable: true,
                 timestamp: Tick::now(),
             });
@@ -1077,8 +1083,10 @@ impl UiCallback {
                 _ => "Spaceship upgrade completed!".to_string(),
             };
 
-            app.ui.push_popup(PopupMessage::Ok {
+            app.ui.push_popup(PopupMessage::Message {
                 message,
+                links: vec![],
+                level: log::Level::Info,
                 is_skippable: true,
                 timestamp: Tick::now(),
             });
@@ -1099,19 +1107,18 @@ impl UiCallback {
             let asteroid = if let Some(asteroid) = app.world.planets.get_mut(&asteroid_id) {
                 asteroid
             } else {
-                app.ui.push_popup(PopupMessage::Error {
-                    message: format!("Cannot find asteroid {asteroid_id}"),
-                    timestamp: Tick::now(),
-                });
+                app.ui.push_popup(PopupMessage::error(format!(
+                    "Cannot find asteroid {asteroid_id}"
+                )));
                 return Ok(None);
             };
             let own_team = if let Some(team) = app.world.teams.get_mut(&app.world.own_team_id) {
                 team
             } else {
-                app.ui.push_popup(PopupMessage::Error {
-                    message: format!("Cannot find own team {}", app.world.own_team_id),
-                    timestamp: Tick::now(),
-                });
+                app.ui.push_popup(PopupMessage::error(format!(
+                    "Cannot find own team {}",
+                    app.world.own_team_id
+                )));
                 return Ok(None);
             };
 
@@ -1142,8 +1149,10 @@ impl UiCallback {
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
             let message = app.world.upgrade_asteroid(asteroid_id, upgrade)?;
-            app.ui.push_popup(PopupMessage::Ok {
+            app.ui.push_popup(PopupMessage::Message {
                 message,
+                links: vec![],
+                level: log::Level::Info,
                 is_skippable: true,
                 timestamp: Tick::now(),
             });
@@ -1236,6 +1245,34 @@ impl UiCallback {
                 app.ui.my_team_panel.update(&app.world)?;
                 app.ui.my_team_panel.set_view(MyTeamView::Asteroids);
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
+
+                Ok(None)
+            }
+            Self::GoToSwarmRequests => {
+                app.ui.swarm_panel.update(&app.world)?;
+                app.ui.swarm_panel.set_view(SwarmView::Requests);
+                app.ui.switch_to(super::ui_screen::UiTab::Swarm);
+                app.ui.close_popup();
+
+                Ok(None)
+            }
+            Self::GoToFreePirates => {
+                app.ui.player_panel.update(&app.world)?;
+                app.ui.player_panel.set_view(PlayerView::FreePirates);
+                app.ui.switch_to(super::ui_screen::UiTab::Pirates);
+                app.ui.close_popup();
+
+                Ok(None)
+            }
+            Self::GoToGames => {
+                app.ui.switch_to(super::ui_screen::UiTab::Games);
+                app.ui.close_popup();
+
+                Ok(None)
+            }
+            Self::GoToTournaments => {
+                app.ui.switch_to(super::ui_screen::UiTab::Tournaments);
+                app.ui.close_popup();
 
                 Ok(None)
             }
@@ -1414,10 +1451,9 @@ impl UiCallback {
                 let app_sender = app.get_event_sender();
                 if let Some(player) = app.audio_player.as_mut() {
                     if let Err(err) = player.toggle_state(app_sender) {
-                        app.ui.push_popup_to_top(PopupMessage::Error {
-                            message: format!("Cannot toggle audio: {err}"),
-                            timestamp: Tick::now(),
-                        });
+                        app.ui.push_popup_to_top(PopupMessage::error(format!(
+                            "Cannot toggle audio: {err}"
+                        )));
                     }
                 } else {
                     log::info!("No audio player, cannot toggle it");
@@ -1430,10 +1466,9 @@ impl UiCallback {
                 let app_sender = app.get_event_sender();
                 if let Some(player) = app.audio_player.as_mut() {
                     if let Err(err) = player.previous_radio_stream(app_sender) {
-                        app.ui.push_popup_to_top(PopupMessage::Error {
-                            message: format!("Cannot toggle audio: {err}"),
-                            timestamp: Tick::now(),
-                        });
+                        app.ui.push_popup_to_top(PopupMessage::error(format!(
+                            "Cannot toggle audio: {err}"
+                        )));
                     }
                 } else {
                     log::info!("No audio player, cannot select previous sample");
@@ -1445,10 +1480,9 @@ impl UiCallback {
                 let app_sender = app.get_event_sender();
                 if let Some(player) = app.audio_player.as_mut() {
                     if let Err(err) = player.next_radio_stream(app_sender) {
-                        app.ui.push_popup_to_top(PopupMessage::Error {
-                            message: format!("Cannot toggle audio: {err}"),
-                            timestamp: Tick::now(),
-                        });
+                        app.ui.push_popup_to_top(PopupMessage::error(format!(
+                            "Cannot toggle audio: {err}"
+                        )));
                     }
                 } else {
                     log::info!("No audio player, cannot select next sample");
@@ -1547,8 +1581,10 @@ impl UiCallback {
                     .expect("There should be one option")
                     .clone();
 
-                    app.ui.push_popup(PopupMessage::Ok {
+                    app.ui.push_popup(PopupMessage::Message {
                         message: format!("{} {}", player.info.short_name(), description),
+                        links: vec![],
+                        level: log::Level::Info,
                         is_skippable: true,
                         timestamp: Tick::now(),
                     });
@@ -1690,8 +1726,10 @@ impl UiCallback {
                     {
                         let own_team = app.world.teams.get_mut_or_err(&app.world.own_team_id)?;
                         own_team.tournament_registration_state = TournamentRegistrationState::None;
-                        app.ui.push_popup(PopupMessage::Ok {
+                        app.ui.push_popup(PopupMessage::Message {
                             message: format!("{} tournament got cancelled.", tournament.name()),
+                            links: vec![],
+                            level: log::Level::Info,
                             timestamp: Tick::now(),
                             is_skippable: true,
                         });
