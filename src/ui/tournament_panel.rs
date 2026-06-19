@@ -2,7 +2,7 @@ use super::button::Button;
 use super::clickable_list::ClickableListState;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
-use super::ui_screen::{render_help_block, UiTab};
+use super::ui_screen::{render_help_block, tab_link, UiTab};
 use super::{
     constants::*,
     traits::{Screen, SplitPanel},
@@ -699,21 +699,15 @@ impl Screen for TournamentPanel {
                 Line::from(" Track running tournaments, browse past brackets, register"),
                 Line::from(" your team, or organize a new quick or big tournament from"),
                 Line::from(" your home planet."),
+                Line::from(""),
+                Line::from(" Watch live or finished tournament games in Games."),
+                Line::from(" Tune your roster before registering in My Team."),
+                Line::from(" Scout potential opponents in Crews."),
             ],
             vec![
-                (
-                    " Watch live or finished tournament games in ",
-                    "Games",
-                    UiTab::Games,
-                    ".",
-                ),
-                (
-                    " Tune your roster before registering in ",
-                    "My Team",
-                    UiTab::MyTeam,
-                    ".",
-                ),
-                (" Scout potential opponents in ", "Crews", UiTab::Crews, "."),
+                tab_link("Games", UiTab::Games),
+                tab_link("My Team", UiTab::MyTeam),
+                tab_link("Crews", UiTab::Crews),
             ],
             vec![
                 Line::from(" Controls:"),

@@ -8,7 +8,7 @@ use super::{
     big_numbers::{hyphen, BigNumberFont},
     constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
     traits::{Screen, SplitPanel},
-    ui_screen::UiTab,
+    ui_screen::{tab_link, UiTab},
     utils::img_to_lines,
     widgets::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
 };
@@ -1325,26 +1325,15 @@ impl Screen for GamePanel {
                 Line::from(" Browse upcoming, ongoing and recently finished games. Pick"),
                 Line::from(" one to follow live play-by-play commentary, the box score and"),
                 Line::from(" the pitch view."),
+                Line::from(""),
+                Line::from(" Pick your starting roster and tactics in My Team."),
+                Line::from(" Find a side to challenge from the Crews list."),
+                Line::from(" Track tournament brackets in Tournaments."),
             ],
             vec![
-                (
-                    " Pick your starting roster and tactics in ",
-                    "My Team",
-                    UiTab::MyTeam,
-                    ".",
-                ),
-                (
-                    " Find a side to challenge from the ",
-                    "Crews",
-                    UiTab::Crews,
-                    " list.",
-                ),
-                (
-                    " Track tournament brackets in ",
-                    "Tournaments",
-                    UiTab::Tournaments,
-                    ".",
-                ),
+                tab_link("My Team", UiTab::MyTeam),
+                tab_link("Crews", UiTab::Crews),
+                tab_link("Tournaments", UiTab::Tournaments),
             ],
             vec![
                 Line::from(" Controls:"),

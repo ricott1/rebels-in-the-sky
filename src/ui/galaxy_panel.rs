@@ -4,7 +4,7 @@ use super::gif_map::{GifMap, ImageResizeInGalaxyGif};
 use super::traits::SplitPanel;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
-use super::ui_screen::UiTab;
+use super::ui_screen::{tab_link, UiTab};
 use super::widgets::{space_adventure_button, thick_block, travel_or_teleport_button};
 use super::{traits::Screen, widgets::default_block};
 use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId};
@@ -728,26 +728,15 @@ impl Screen for GalaxyPanel {
                 Line::from(" Navigate the star map. Zoom out shows a planet and its"),
                 Line::from(" satellites; zoom in reveals surface details, asteroids, and"),
                 Line::from(" the teams that live there."),
+                Line::from(""),
+                Line::from(" To plan travel and refuel decisions, check My Team."),
+                Line::from(" To find rivals on a planet, browse Crews."),
+                Line::from(" To recruit free pirates from a planet, see Pirates."),
             ],
             vec![
-                (
-                    " To plan travel and refuel decisions, check ",
-                    "My Team",
-                    UiTab::MyTeam,
-                    ".",
-                ),
-                (
-                    " To find rivals on a planet, browse ",
-                    "Crews",
-                    UiTab::Crews,
-                    ".",
-                ),
-                (
-                    " To recruit free pirates from a planet, see ",
-                    "Pirates",
-                    UiTab::Pirates,
-                    ".",
-                ),
+                tab_link("My Team", UiTab::MyTeam),
+                tab_link("Crews", UiTab::Crews),
+                tab_link("Pirates", UiTab::Pirates),
             ],
             vec![
                 Line::from(" Controls:"),

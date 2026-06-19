@@ -1034,19 +1034,15 @@ fn render_message_body(
             inner,
         );
     } else {
-        let link_refs = links
-            .iter()
-            .map(|(label, callback)| (label.as_str(), callback.clone()))
-            .collect_vec();
-        render_message_with_links(frame, inner, message, &link_refs);
+        render_message_with_links(frame, inner, message, links);
     }
 }
 
-fn render_message_with_links(
+fn render_message_with_links<S: AsRef<str>>(
     frame: &mut UiFrame,
     area: Rect,
     message: &str,
-    links: &[(&str, UiCallback)],
+    links: &[(S, UiCallback)],
 ) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -1064,23 +1060,33 @@ fn render_message_with_links(
                 Paragraph::new(line.as_str()),
                 Rect::new(area.x + offset, y, line_w, 1),
             );
-            for (label, callback) in links {
-                if let Some(col) = line.find(label) {
-                    let button = Button::no_box(*label, callback.clone())
-                        .set_style(UiStyle::HELP_LINK)
-                        .set_layer(1);
-                    frame.render_interactive_widget(
-                        button,
-                        Rect::new(
-                            area.x + offset + col as u16,
-                            y,
-                            label.chars().count() as u16,
-                            1,
-                        ),
-                    );
-                }
-            }
+            overlay_line_links(frame, &line, area.x + offset, y, links);
             row += 1;
+        }
+    }
+}
+
+/// Overlays a clickable `HELP_LINK` button over each link label found in `text`,
+/// which is rendered with its left edge at column `x` on row `y`. Shared by the
+/// popup message body and the panels' help blocks.
+pub(super) fn overlay_line_links<S: AsRef<str>>(
+    frame: &mut UiFrame,
+    text: &str,
+    x: u16,
+    y: u16,
+    links: &[(S, UiCallback)],
+) {
+    for (label, callback) in links {
+        let label = label.as_ref();
+        if let Some(byte_col) = text.find(label) {
+            let col = text[..byte_col].chars().count() as u16;
+            let button = Button::no_box(label, callback.clone())
+                .set_style(UiStyle::HELP_LINK)
+                .set_layer(1);
+            frame.render_interactive_widget(
+                button,
+                Rect::new(x + col, y, label.chars().count() as u16, 1),
+            );
         }
     }
 }

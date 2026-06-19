@@ -3,7 +3,7 @@ use super::clickable_list::ClickableListState;
 use super::gif_map::GifMap;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
-use super::ui_screen::{render_help_block, UiTab};
+use super::ui_screen::{render_help_block, tab_link, UiTab};
 use super::widgets::{
     go_to_team_current_planet_button, render_challenge_button, render_spaceship_description,
 };
@@ -594,21 +594,15 @@ impl Screen for TeamListPanel {
                 Line::from(" Browse all the rival crews. Inspect their roster and ship,"),
                 Line::from(" check their rating, and challenge them to a match when they"),
                 Line::from(" are open and on the same planet as you."),
+                Line::from(""),
+                Line::from(" Manage your own crew in My Team."),
+                Line::from(" To inspect individual players, browse Pirates."),
+                Line::from(" To find a planet and travel there, see Galaxy."),
             ],
             vec![
-                (" Manage your own crew in ", "My Team", UiTab::MyTeam, "."),
-                (
-                    " To inspect individual players, browse ",
-                    "Pirates",
-                    UiTab::Pirates,
-                    ".",
-                ),
-                (
-                    " To find a planet and travel there, see ",
-                    "Galaxy",
-                    UiTab::Galaxy,
-                    ".",
-                ),
+                tab_link("My Team", UiTab::MyTeam),
+                tab_link("Pirates", UiTab::Pirates),
+                tab_link("Galaxy", UiTab::Galaxy),
             ],
             vec![
                 Line::from(" Controls:"),

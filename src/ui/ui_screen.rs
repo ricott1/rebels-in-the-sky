@@ -1,7 +1,7 @@
 use super::button::Button;
 use super::constants::UiStyle;
 use super::galaxy_panel::GalaxyPanel;
-use super::popup_message::PopupMessage;
+use super::popup_message::{overlay_line_links, PopupMessage};
 use super::space_screen::SpaceScreen;
 use super::splash_screen::SplashScreen;
 use super::swarm_panel::SwarmPanel;
@@ -30,7 +30,7 @@ use itertools::Itertools;
 use libp2p::PeerId;
 use ratatui::crossterm;
 use ratatui::layout::{Margin, Rect};
-use ratatui::style::{Color, Style, Styled, Stylize};
+use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
 use ratatui::{
@@ -81,65 +81,51 @@ fn help_popup_rect(screen_area: Rect) -> Rect {
     Rect::new(x, y, width, height)
 }
 
-/// Renders the standard help body: a description paragraph, a stack of
-/// inline-link rows pointing to other tabs, and a controls paragraph.
-/// Used by the main-tab panels' `render_help_widget` to avoid layout boilerplate.
+/// Renders the standard help body: a description paragraph with optional inline
+/// links overlaid on the text (each `(label, callback)` makes every occurrence of
+/// `label` a clickable button), followed by a controls paragraph. Used by the
+/// main-tab panels' `render_help_widget` to avoid layout boilerplate.
 pub fn render_help_block(
     frame: &mut UiFrame,
     area: Rect,
     description: Vec<Line<'static>>,
-    links: Vec<(&'static str, &'static str, UiTab, &'static str)>,
+    links: Vec<(String, UiCallback)>,
     controls: Vec<Line<'static>>,
 ) {
     let desc_h = description.len().max(1) as u16;
-    let n_links = links.len() as u16;
     let split = Layout::vertical([
         Constraint::Length(desc_h),
-        Constraint::Length(1),       // gap
-        Constraint::Length(n_links), // link rows
-        Constraint::Length(1),       // gap
-        Constraint::Min(5),          // controls
+        Constraint::Length(1), // gap
+        Constraint::Min(5),    // controls
     ])
     .split(area);
+
+    let texts = description
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        })
+        .collect_vec();
 
     frame.render_widget(Paragraph::new(description), split[0]);
-
-    if n_links > 0 {
-        let link_areas = Layout::vertical(vec![Constraint::Length(1); links.len()]).split(split[2]);
-        for (i, (prefix, label, ui_tab, suffix)) in links.into_iter().enumerate() {
-            render_help_link_line(frame, link_areas[i], prefix, label, ui_tab, suffix);
+    for (row, text) in texts.iter().enumerate() {
+        let y = split[0].y + row as u16;
+        if y >= split[0].bottom() {
+            break;
         }
+        overlay_line_links(frame, text, split[0].x, y, &links);
     }
 
-    frame.render_widget(Paragraph::new(controls), split[4]);
+    frame.render_widget(Paragraph::new(controls), split[2]);
 }
 
-/// Renders one help line as `prefix [link] suffix` where `link` is a clickable
-/// inline button that switches to the target tab. Designed for help overlays.
-pub fn render_help_link_line<'a>(
-    frame: &mut UiFrame,
-    area: Rect,
-    prefix: &'a str,
-    label: &'a str,
-    ui_tab: UiTab,
-    suffix: &'a str,
-) {
-    let prefix_w = prefix.chars().count() as u16;
-    let label_w = label.chars().count() as u16;
-    let suffix_w = suffix.chars().count() as u16;
-    let split = Layout::horizontal([
-        Constraint::Length(prefix_w),
-        Constraint::Length(label_w),
-        Constraint::Length(suffix_w),
-        Constraint::Min(0),
-    ])
-    .split(area);
-    frame.render_widget(Paragraph::new(prefix), split[0]);
-    let button = Button::no_box(label, UiCallback::SetUiTab { ui_tab })
-        .set_style(UiStyle::HELP_LINK)
-        .set_layer(1);
-    frame.render_interactive_widget(button, split[1]);
-    frame.render_widget(Paragraph::new(suffix), split[2]);
+/// Convenience constructor for a help-block link that switches to `tab`,
+/// labelled by `label` (which must appear verbatim in the help description).
+pub fn tab_link(label: &str, tab: UiTab) -> (String, UiCallback) {
+    (label.to_string(), UiCallback::SetUiTab { ui_tab: tab })
 }
 
 #[derive(Debug, Default, Display, PartialEq)]

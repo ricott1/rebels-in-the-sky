@@ -4,7 +4,7 @@ use super::constants::*;
 use super::gif_map::GifMap;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
-use super::ui_screen::{render_help_block, UiTab};
+use super::ui_screen::{render_help_block, tab_link, UiTab};
 use super::widgets::{
     render_player_description, render_spaceship_description, selectable_list, PlayerWidgetView,
 };
@@ -1192,21 +1192,15 @@ impl Screen for SwarmPanel {
                 Line::from(" Talk to other captains over the peer-to-peer swarm: chat,"),
                 Line::from(" review trade and challenge requests, browse the global player"),
                 Line::from(" and team rankings, and watch the network log."),
+                Line::from(""),
+                Line::from(" Accept a challenge here, then play it from Games."),
+                Line::from(" Inspect rivals before accepting via Crews."),
+                Line::from(" Browse traded players in Pirates."),
             ],
             vec![
-                (
-                    " Accept a challenge here, then play it from ",
-                    "Games",
-                    UiTab::Games,
-                    ".",
-                ),
-                (
-                    " Inspect rivals before accepting via ",
-                    "Crews",
-                    UiTab::Crews,
-                    ".",
-                ),
-                (" Browse traded players in ", "Pirates", UiTab::Pirates, "."),
+                tab_link("Games", UiTab::Games),
+                tab_link("Crews", UiTab::Crews),
+                tab_link("Pirates", UiTab::Pirates),
             ],
             vec![
                 Line::from(" Controls:"),

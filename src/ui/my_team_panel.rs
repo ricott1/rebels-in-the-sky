@@ -1,5 +1,5 @@
 use super::ui_frame::UiFrame;
-use super::ui_screen::UiTab;
+use super::ui_screen::{tab_link, UiTab};
 use super::{
     button::Button,
     clickable_list::ClickableListState,
@@ -2671,32 +2671,17 @@ impl Screen for MyTeamPanel {
             vec![
                 Line::from(" The captain's bridge: manage roster, training, tactics, ships,"),
                 Line::from(" markets, asteroids, and games. Use Tab to cycle the inner view."),
+                Line::from(""),
+                Line::from(" Recruit new pirates from the Pirates panel."),
+                Line::from(" Scout rivals and challenge them from Crews."),
+                Line::from(" Watch your scheduled or finished games in Games."),
+                Line::from(" Travel between planets via the Galaxy star map."),
             ],
             vec![
-                (
-                    " Recruit new pirates from the ",
-                    "Pirates",
-                    UiTab::Pirates,
-                    " panel.",
-                ),
-                (
-                    " Scout rivals and challenge them from ",
-                    "Crews",
-                    UiTab::Crews,
-                    ".",
-                ),
-                (
-                    " Watch your scheduled or finished games in ",
-                    "Games",
-                    UiTab::Games,
-                    ".",
-                ),
-                (
-                    " Travel between planets via the ",
-                    "Galaxy",
-                    UiTab::Galaxy,
-                    " star map.",
-                ),
+                tab_link("Pirates", UiTab::Pirates),
+                tab_link("Crews", UiTab::Crews),
+                tab_link("Games", UiTab::Games),
+                tab_link("Galaxy", UiTab::Galaxy),
             ],
             vec![
                 Line::from(" Controls:"),

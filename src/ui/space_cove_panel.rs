@@ -7,7 +7,7 @@ use crate::types::{PlanetId, TeamId};
 use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::traits::SplitPanel;
-use crate::ui::ui_screen::{render_help_block, UiTab};
+use crate::ui::ui_screen::{render_help_block, tab_link, UiTab};
 use crate::ui::utils::img_to_lines;
 use crate::ui::widgets::{default_block, go_to_planet_button, selectable_list};
 use crate::ui::{constants::*, ui_key};
@@ -578,26 +578,15 @@ impl Screen for SpaceCovePanel {
                 Line::from(" Manage your own space cove and browse other crews' coves."),
                 Line::from(" Use the two buttons at the top to switch view: yours"),
                 Line::from(" (tournaments + upgrades) or other coves (list + travel)."),
+                Line::from(""),
+                Line::from(" Manage the asteroid that hosts your cove from My Team."),
+                Line::from(" Inspect visiting crews directly, or browse all in Crews."),
+                Line::from(" To find another asteroid candidate, explore the Galaxy."),
             ],
             vec![
-                (
-                    " Manage the asteroid that hosts your cove from ",
-                    "My Team",
-                    UiTab::MyTeam,
-                    ".",
-                ),
-                (
-                    " Inspect visiting crews directly, or browse all in ",
-                    "Crews",
-                    UiTab::Crews,
-                    ".",
-                ),
-                (
-                    " To find another asteroid candidate, explore the ",
-                    "Galaxy",
-                    UiTab::Galaxy,
-                    ".",
-                ),
+                tab_link("My Team", UiTab::MyTeam),
+                tab_link("Crews", UiTab::Crews),
+                tab_link("Galaxy", UiTab::Galaxy),
             ],
             vec![
                 Line::from(" Controls:"),
