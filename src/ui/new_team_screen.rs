@@ -36,10 +36,10 @@ use ratatui::{
     text::Span,
     widgets::{Clear, Paragraph, Wrap},
 };
+use ratatui_textarea::{CursorMove, TextArea};
 use std::cmp::min;
 use std::collections::HashMap;
 use strum::IntoEnumIterator;
-use ratatui_textarea::{CursorMove, TextArea};
 use uuid::uuid;
 
 const INITIAL_TEAM_SIZE: usize = 5;
@@ -691,11 +691,7 @@ impl NewTeamScreen {
             &mut self.player_list_state
         };
 
-        frame.render_stateful_interactive_widget(
-            list.block(block.title(title)),
-            area,
-            state,
-        );
+        frame.render_stateful_interactive_widget(list.block(block.title(title)), area, state);
         Ok(())
     }
 

@@ -126,7 +126,7 @@ impl NetworkTeam {
             })
             .collect_vec();
 
-            // Set the peer_id on players and convert the Vec<&Player> into a PlayerMap
+        // Set the peer_id on players and convert the Vec<&Player> into a PlayerMap
         let mut team_players = PlayerMap::new();
         for player in players.iter_mut() {
             let mut team_player = player.clone();
@@ -136,7 +136,7 @@ impl NetworkTeam {
 
         // Set the peer_id for team we are sending out
         // This means that the team can be challenged online and it will not be stored.
-        team.peer_id = Some(peer_id);        
+        team.peer_id = Some(peer_id);
 
         Ok(Self::new(team, team_players, asteroids))
     }

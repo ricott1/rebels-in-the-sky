@@ -773,7 +773,8 @@ impl SwarmPanel {
 
         let list = selectable_list(options);
 
-        self.team_ranking_list_state.select(Some(team_ranking_index));
+        self.team_ranking_list_state
+            .select(Some(team_ranking_index));
         frame.render_stateful_interactive_widget(
             list,
             list_split[1],
@@ -861,7 +862,8 @@ impl SwarmPanel {
 
         let list = selectable_list(options);
 
-        self.player_ranking_list_state.select(Some(player_ranking_index));
+        self.player_ranking_list_state
+            .select(Some(player_ranking_index));
         frame.render_stateful_interactive_widget(
             list,
             list_split[1],
@@ -983,8 +985,11 @@ impl SwarmPanel {
 
         let new_count = items.len();
         self.chat_message_list = ClickableList::new(items).block(default_block().title("Chat"));
-        self.chat_message_index =
-            clamped_tail_index(self.chat_message_index, self.displayed_chat_count, new_count);
+        self.chat_message_index = clamped_tail_index(
+            self.chat_message_index,
+            self.displayed_chat_count,
+            new_count,
+        );
         self.displayed_chat_count = new_count;
     }
 

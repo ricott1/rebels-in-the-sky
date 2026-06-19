@@ -10,12 +10,12 @@ use crate::image::utils::{open_image, ExtraImageUtils, Gif};
 use glam::{I16Vec2, Vec2};
 use image::imageops::{rotate180, rotate270, rotate90};
 use image::{Pixel, Rgba, RgbaImage};
-use std::sync::LazyLock;
 use rand::seq::IteratorRandom;
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use strum::{Display, EnumIter, IntoEnumIterator};
 
 const MAX_ROTATION: usize = 4;

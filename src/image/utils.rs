@@ -4,8 +4,8 @@ use crate::types::AppResult;
 use anyhow::anyhow;
 use image::error::{ParameterError, ParameterErrorKind};
 use image::{ImageBuffer, ImageError, ImageReader, ImageResult, Rgb, Rgba, RgbaImage};
-use std::sync::LazyLock;
 use std::io::Cursor;
+use std::sync::LazyLock;
 
 pub type Gif = Vec<RgbaImage>;
 

@@ -175,11 +175,7 @@ impl TournamentPanel {
             let list = selectable_list(options);
 
             self.tournament_list_state.select(self.index);
-            frame.render_stateful_interactive_widget(
-                list,
-                area,
-                &mut self.tournament_list_state,
-            );
+            frame.render_stateful_interactive_widget(list, area, &mut self.tournament_list_state);
         }
     }
 

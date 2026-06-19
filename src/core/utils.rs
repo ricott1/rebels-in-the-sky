@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use super::{planet::Planet, skill::GameSkill, types::Population};
 use crate::store::ASSETS_DIR;
-use std::sync::LazyLock;
 use serde::Deserialize;
+use std::sync::LazyLock;
 
 #[derive(Deserialize)]
 pub struct PlayerData {

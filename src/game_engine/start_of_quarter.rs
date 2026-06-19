@@ -5,7 +5,7 @@ use super::{
     game::Game,
     timer::Period,
 };
-use rand::{RngExt};
+use rand::RngExt;
 use rand_chacha::ChaCha8Rng;
 
 pub(crate) fn execute(

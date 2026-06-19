@@ -9,9 +9,9 @@ pub mod image;
 pub mod network;
 #[cfg(feature = "relayer")]
 pub mod relayer;
-pub mod space_adventure;
 #[cfg(feature = "ssh")]
 pub mod session_auth;
+pub mod space_adventure;
 #[cfg(feature = "ssh")]
 pub mod ssh_game;
 pub mod store;

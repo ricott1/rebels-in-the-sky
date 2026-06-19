@@ -210,9 +210,10 @@ impl TeamInGame {
         let initial_drunkenness = players.values().map(|p| p.drunkenness).collect();
 
         // Rum brought to the game, depending on the team in-game drinking setting.
-        let initial_rum = team.resources.value(&Resource::RUM).min(
-            team.in_game_drinking.bottles_per_player() * players.len() as u32,
-        );
+        let initial_rum = team
+            .resources
+            .value(&Resource::RUM)
+            .min(team.in_game_drinking.bottles_per_player() * players.len() as u32);
 
         let network_game_rating = team.network_game_rating.clone();
         Self {
@@ -399,7 +400,9 @@ impl InGameDrinking {
     pub const fn description(&self) -> &'static str {
         match self {
             Self::None => "Bring no rum to games: pirates never drink on the bench.",
-            Self::Normal => "Bring 1 liter of rum per pirate to games for the occasional bench swig.",
+            Self::Normal => {
+                "Bring 1 liter of rum per pirate to games for the occasional bench swig."
+            }
             Self::High => "Bring 2 liters of rum per pirate to games. The bench drinks often.",
         }
     }

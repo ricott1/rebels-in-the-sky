@@ -297,7 +297,10 @@ mod tests {
         let long = ClickableList::new(items(50));
         state.select(Some(49));
         StatefulWidget::render(&long, area, &mut Buffer::empty(area), &mut state);
-        assert!(state.offset > 0, "expected a non-zero offset on the long list");
+        assert!(
+            state.offset > 0,
+            "expected a non-zero offset on the long list"
+        );
 
         // List shrinks to fewer rows than the viewport; selection is clamped.
         state.select(Some(9));

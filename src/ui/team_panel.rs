@@ -49,9 +49,7 @@ static FLOOR_CACHE: LazyLock<Mutex<HashMap<u32, Vec<Line<'static>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn floor_lines_for(width: u32) -> Vec<Line<'static>> {
-    let mut cache = FLOOR_CACHE
-        .lock()
-        .expect("floor cache mutex poisoned");
+    let mut cache = FLOOR_CACHE.lock().expect("floor cache mutex poisoned");
     cache
         .entry(width)
         .or_insert_with(|| img_to_lines(&floor_from_size(width, 2)))
@@ -159,7 +157,6 @@ impl TeamListPanel {
             },
         )
         .bold()
-        
         .set_hover_text("View all crews.");
 
         let mut filter_challenge_button = Button::new(
@@ -169,7 +166,6 @@ impl TeamListPanel {
             },
         )
         .bold()
-        
         .set_hover_text("View all crews that can be currently challenged to a game.");
 
         let mut filter_peers_button = Button::new(
@@ -178,7 +174,7 @@ impl TeamListPanel {
                 view: TeamView::Peers,
             },
         ).bold()
-        
+
         .set_hover_text(
             "View all crews received from the network (i.e. crews controlled by other players online)."
                 ,

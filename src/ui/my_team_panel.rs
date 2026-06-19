@@ -890,7 +890,7 @@ impl MyTeamPanel {
                     let text = format!(
                         " {:>12} {:>3}-{:<3} {:<}",
                         game.home_team_in_game.name,
-                        action.home_score, // FIXME: this is not the correct score
+                        action.home_score,
                         action.away_score,
                         game.away_team_in_game.name,
                     );
