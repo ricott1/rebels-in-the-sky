@@ -1,5 +1,6 @@
 mod big_numbers;
 mod button;
+mod checkbox;
 mod clickable_list;
 mod clickable_table;
 mod constants;

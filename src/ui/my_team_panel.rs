@@ -13,6 +13,7 @@ use super::{
 };
 use crate::game_engine::timer::Period;
 use crate::types::{HashMapWithResult, Tick};
+use crate::ui::checkbox::Checkbox;
 use crate::ui::popup_message::PopupMessage;
 use crate::ui::ui_key;
 use crate::{
@@ -751,31 +752,19 @@ impl MyTeamPanel {
             Paragraph::new("Accept challenges").centered(),
             challenges_split[0].inner(Margin::new(0, 1)),
         );
-        let local_challenge_button = Button::new(
-            format!(
-                "local:{}",
-                if own_team.autonomous_strategy.challenge_local {
-                    "on"
-                } else {
-                    "off"
-                }
-            ),
+        let local_challenge_button = Checkbox::new(
+            "local",
             UiCallback::ToggleTeamAutonomousStrategyForLocalChallenges,
+            own_team.autonomous_strategy.challenge_local,
         )
         .set_hover_text("Accept challenges from local teams automatically.".to_string())
         .set_hotkey(ui_key::team::TOGGLE_ACCEPT_LOCAL_CHALLENGES);
         frame.render_interactive_widget(local_challenge_button, challenges_split[1]);
 
-        let network_challenge_button = Button::new(
-            format!(
-                "network:{}",
-                if own_team.autonomous_strategy.challenge_network {
-                    "on"
-                } else {
-                    "off"
-                }
-            ),
+        let network_challenge_button = Checkbox::new(
+            "network",
             UiCallback::ToggleTeamAutonomousStrategyForNetworkChallenges,
+            own_team.autonomous_strategy.challenge_network,
         )
         .set_hover_text("Accept challenges from network teams automatically.".to_string())
         .set_hotkey(ui_key::team::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
