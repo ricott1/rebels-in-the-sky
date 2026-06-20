@@ -2,7 +2,7 @@ use super::constants::HOURS;
 use super::{resources::Resource, skill::MAX_SKILL, types::Population};
 use crate::core::skill::GameSkill;
 use crate::core::utils::is_default;
-use crate::core::{AsteroidUpgradeTarget, Upgrade, MIN_SKILL};
+use crate::core::{PlanetUpgradeTarget, SpaceCove, SpaceCoveUpgradeTarget, Upgrade, MIN_SKILL};
 use crate::types::{SystemTimeTick, Tick};
 use crate::{
     types::*,
@@ -27,6 +27,22 @@ use strum_macros::{Display, EnumIter};
 const TRADE_DELTA_SCARCITY: f32 = 3.25;
 const TRADE_DELTA_BUY_SELL: f32 = 0.05;
 const RESOURCE_PRICE_REFRESH_RATE_MILLIS: Tick = 2 * HOURS;
+
+fn deserialize_upgrades<'de, D>(deserializer: D) -> Result<HashSet<PlanetUpgradeTarget>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // Legacy saves stored AsteroidUpgradeTarget including Market(2); drop unknown reprs.
+    let raw = Vec::<u8>::deserialize(deserializer)?;
+    Ok(raw
+        .into_iter()
+        .filter_map(|v| match v {
+            0 => Some(PlanetUpgradeTarget::TeleportationPad),
+            1 => Some(PlanetUpgradeTarget::SpaceCove),
+            _ => None,
+        })
+        .collect())
+}
 
 #[derive(
     Debug, Display, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Default, EnumIter,
@@ -72,10 +88,13 @@ pub struct Planet {
     pub custom_radio_stream: Option<String>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub pending_upgrade: Option<Upgrade<AsteroidUpgradeTarget>>,
-    #[serde(skip_serializing_if = "is_default")]
-    #[serde(default)]
-    pub upgrades: HashSet<AsteroidUpgradeTarget>,
+    pub pending_upgrade: Option<Upgrade<PlanetUpgradeTarget>>,
+    #[serde(
+        skip_serializing_if = "is_default",
+        default,
+        deserialize_with = "deserialize_upgrades"
+    )]
+    pub upgrades: HashSet<PlanetUpgradeTarget>,
 }
 
 impl Planet {
@@ -142,8 +161,12 @@ impl Planet {
         self.populations.values().sum()
     }
 
-    pub fn has_market(&self) -> bool {
-        self.total_population() > 0 || self.upgrades.contains(&AsteroidUpgradeTarget::Market)
+    pub fn has_market(&self, space_cove: Option<&SpaceCove>) -> bool {
+        // Note: order is important. If a space cove has a tavern, population >0, but the market may not be present.
+        if let Some(cove) = space_cove {
+            return cove.upgrades.contains(&SpaceCoveUpgradeTarget::Market);
+        }
+        self.total_population() > 0
     }
 
     pub fn random_population(&self, rng: &mut ChaCha8Rng) -> Option<Population> {
@@ -159,7 +182,7 @@ impl Planet {
 
     pub fn can_be_travelled_to(&self) -> AppResult<()> {
         // Cannot travel to network asteroid unless it has a space cove.
-        if self.peer_id.is_some() && !self.upgrades.contains(&AsteroidUpgradeTarget::SpaceCove) {
+        if self.peer_id.is_some() && !self.upgrades.contains(&PlanetUpgradeTarget::SpaceCove) {
             return Err(anyhow!(
                 "Cannot travel to network asteroid without a space cove."
             ));
@@ -213,5 +236,19 @@ impl Planet {
             pending_upgrade: None,
             upgrades: HashSet::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn drops_legacy_market_upgrade() {
+        let mut de = serde_json::Deserializer::from_str("[0,1,2]");
+        let set = deserialize_upgrades(&mut de).unwrap();
+        assert_eq!(set.len(), 2);
+        assert!(set.contains(&PlanetUpgradeTarget::TeleportationPad));
+        assert!(set.contains(&PlanetUpgradeTarget::SpaceCove));
     }
 }

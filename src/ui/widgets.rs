@@ -16,8 +16,8 @@ use super::{
 use crate::core::skill::{Skill, MAX_SKILL, MIN_SKILL};
 use crate::core::types::TeamBonus;
 use crate::core::{
-    AsteroidUpgradeTarget, ChargeUnit, Honour, Planet, Shield, Shooter, SpaceshipComponent,
-    Upgrade, UpgradeableElement,
+    ChargeUnit, Honour, Planet, PlanetUpgradeTarget, Shield, Shooter, SpaceshipComponent, Upgrade,
+    UpgradeableElement,
 };
 use crate::ui::utils::format_au;
 use crate::ui::{ui_key, PopupMessage};
@@ -1061,7 +1061,7 @@ pub fn render_available_spaceship_upgrades(
 
 pub fn render_build_asteroid_upgrade_button(
     asteroid: &Planet,
-    possible_upgrade: Option<Upgrade<AsteroidUpgradeTarget>>,
+    possible_upgrade: Option<Upgrade<PlanetUpgradeTarget>>,
     own_team: &Team,
     frame: &mut UiFrame,
     area: Rect,
@@ -1079,7 +1079,7 @@ pub fn render_build_asteroid_upgrade_button(
 
         frame.render_interactive_widget(build_button, area);
     } else if let Some(upgrade) = possible_upgrade {
-        let on_click = if upgrade.target == AsteroidUpgradeTarget::SpaceCove {
+        let on_click = if upgrade.target == PlanetUpgradeTarget::SpaceCove {
             UiCallback::PushUiPopup {
                 popup_message: PopupMessage::BuildSpaceCove {
                     asteroid_name: asteroid.name.clone(),
@@ -1105,7 +1105,7 @@ pub fn render_build_asteroid_upgrade_button(
         .set_hotkey(ui_key::BUILD_ASTEROID_UPGRADE)
         .set_hover_text(upgrade.target.description());
 
-        if upgrade.target == AsteroidUpgradeTarget::SpaceCove {
+        if upgrade.target == PlanetUpgradeTarget::SpaceCove {
             build_button = build_button.block(default_block().border_style(UiStyle::WARNING));
         }
 

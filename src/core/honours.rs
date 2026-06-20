@@ -3,8 +3,8 @@ use std::{borrow::Cow, collections::HashMap};
 use super::constants::POLOSIUS_TEAM_ID;
 use crate::{
     core::{
-        Planet, Player, SpaceCoveState, Team, LIGHT_YEAR, MAX_NUM_ASTEROID_PER_TEAM,
-        MAX_PLAYERS_PER_GAME, SATOSHI_PER_BITCOIN, WEEKS,
+        Planet, Player, Team, LIGHT_YEAR, MAX_NUM_ASTEROID_PER_TEAM, MAX_PLAYERS_PER_GAME,
+        SATOSHI_PER_BITCOIN, WEEKS,
     },
     game_engine::game::GameSummary,
     types::{GameId, PlanetId, PlayerId, SystemTimeTick, Tick},
@@ -93,7 +93,7 @@ impl Honour {
             Self::Pirate => team
                 .space_cove
                 .as_ref()
-                .filter(|cove| cove.state == SpaceCoveState::Ready)
+                .filter(|cove| cove.is_ready())
                 .is_some(),
             Self::Traveller => team.total_travelled >= LIGHT_YEAR,
             Self::Veteran => {

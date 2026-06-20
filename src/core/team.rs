@@ -351,7 +351,7 @@ impl Team {
         let has_teleportation_pad = self.home_planet_id == to.id
             || to
                 .upgrades
-                .contains(&AsteroidUpgradeTarget::TeleportationPad);
+                .contains(&PlanetUpgradeTarget::TeleportationPad);
 
         if !has_teleportation_pad {
             return Err(anyhow!("{} has no teleportation pad", to.name));
@@ -372,7 +372,11 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_add_player(&self, player: &Player) -> AppResult<()> {
+    pub fn can_add_player(
+        &self,
+        player: &Player,
+        is_in_space_cove_on: Option<PlanetId>,
+    ) -> AppResult<()> {
         if player.team.is_some() {
             return Err(anyhow!("Already in a team"));
         }
@@ -402,6 +406,12 @@ impl Team {
             return Err(anyhow!("Not on the same planet"));
         }
 
+        if is_in_space_cove_on.is_some()
+            && self.space_cove.as_ref().map(|cove| cove.planet_id) != is_in_space_cove_on
+        {
+            return Err(anyhow!("Not in team space cove"));
+        }
+
         Ok(())
     }
 
@@ -420,8 +430,12 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_hire_player(&self, player: &Player) -> AppResult<()> {
-        self.can_add_player(player)?;
+    pub fn can_hire_player(
+        &self,
+        player: &Player,
+        is_in_space_cove_on: Option<PlanetId>,
+    ) -> AppResult<()> {
+        self.can_add_player(player, is_in_space_cove_on)?;
         self.can_consider_hiring_player(player)?;
 
         Ok(())
@@ -526,20 +540,23 @@ impl Team {
             None => {
                 return Err(anyhow!("Cannot organize a tournament without a space cove"));
             }
-            Some(cove) => match cove.state {
-                SpaceCoveState::UnderConstruction => {
-                    return Err(anyhow!(
-                        "Cannot organize a tournament if space cove is not ready"
-                    ))
-                }
-                SpaceCoveState::Ready => {
+            Some(cove) => {
+                if cove.is_ready() {
                     if !matches!(self.is_on_planet(), Some(id) if id == cove.planet_id) {
                         return Err(anyhow!(
                             "Cannot organize a tournament while not at your space cove"
                         ));
                     }
+
+                    if !cove.has_stadium() {
+                        return Err(anyhow!("Cannot organize a tournament whitout a stadium"));
+                    }
+                } else {
+                    return Err(anyhow!(
+                        "Cannot organize a tournament if space cove is not ready"
+                    ));
                 }
-            },
+            }
         }
 
         // FIXME: add conditions on kartoffeln
@@ -912,14 +929,14 @@ impl Team {
     pub fn can_upgrade_asteroid(
         &self,
         asteroid: &Planet,
-        upgrade: &Upgrade<AsteroidUpgradeTarget>,
+        upgrade: &Upgrade<PlanetUpgradeTarget>,
     ) -> AppResult<()> {
         if asteroid.upgrades.contains(&upgrade.target) {
             return Err(anyhow!("Asteroid already has this upgrade"));
         }
 
         // Special rules for space cove: it has to be unique across all asteroids.
-        if upgrade.target == AsteroidUpgradeTarget::SpaceCove && self.space_cove.is_some() {
+        if upgrade.target == PlanetUpgradeTarget::SpaceCove && self.space_cove.is_some() {
             return Err(anyhow!("You already have a space cove"));
         }
 

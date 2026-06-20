@@ -415,6 +415,8 @@ impl PlayerListPanel {
 
         // Add hire button for free pirates
         if player.team.is_none() {
+            let is_in_space_cove = world.player_is_in_space_cove_on(player);
+
             let hire_cost = player.hire_cost(own_team.reputation);
             let mut button = Button::new(
                 format!("Hire (-{})", format_satoshi(hire_cost)),
@@ -427,7 +429,7 @@ impl PlayerListPanel {
                 format_satoshi(hire_cost)
             ))
             .set_hotkey(ui_key::player::HIRE);
-            if let Err(err) = own_team.can_hire_player(player) {
+            if let Err(err) = own_team.can_hire_player(player, is_in_space_cove) {
                 button.disable(Some(err.to_string()));
             }
 

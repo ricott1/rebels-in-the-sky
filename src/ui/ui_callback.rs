@@ -11,7 +11,7 @@ use super::{
     ui_screen::{UiState, UiTab},
 };
 use crate::app_version;
-use crate::core::{AsteroidUpgradeTarget, UpgradeableElement};
+use crate::core::{PlanetUpgradeTarget, UpgradeableElement};
 use crate::game_engine::game::Game;
 use crate::game_engine::types::{GamePositionFluidity, InGameDrinking, SubstitutionTendency};
 use crate::game_engine::{Tournament, TournamentId, TournamentType};
@@ -272,11 +272,11 @@ pub enum UiCallback {
     },
     SetAsteroidPendingUpgrade {
         asteroid_id: PlanetId,
-        upgrade: Upgrade<AsteroidUpgradeTarget>,
+        upgrade: Upgrade<PlanetUpgradeTarget>,
     },
     UpgradeAsteroid {
         asteroid_id: PlanetId,
-        upgrade: Upgrade<AsteroidUpgradeTarget>,
+        upgrade: Upgrade<PlanetUpgradeTarget>,
     },
     StartSpaceAdventure,
     ReturnFromSpaceAdventure,
@@ -1101,7 +1101,7 @@ impl UiCallback {
 
     fn set_asteroid_pending_upgrade(
         asteroid_id: PlanetId,
-        upgrade: Upgrade<AsteroidUpgradeTarget>,
+        upgrade: Upgrade<PlanetUpgradeTarget>,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
             let asteroid = if let Some(asteroid) = app.world.planets.get_mut(&asteroid_id) {
@@ -1129,7 +1129,7 @@ impl UiCallback {
             }
 
             // Special handling for space cove
-            if upgrade.target == AsteroidUpgradeTarget::SpaceCove {
+            if upgrade.target == PlanetUpgradeTarget::SpaceCove {
                 own_team.space_cove = Some(SpaceCove::under_construction(asteroid_id));
             }
 
@@ -1145,7 +1145,7 @@ impl UiCallback {
 
     fn upgrade_asteroid(
         asteroid_id: PlanetId,
-        upgrade: Upgrade<AsteroidUpgradeTarget>,
+        upgrade: Upgrade<PlanetUpgradeTarget>,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
             let message = app.world.upgrade_asteroid(asteroid_id, upgrade)?;
@@ -1521,7 +1521,7 @@ impl UiCallback {
             Self::BuildSpaceCove { asteroid_id } => {
                 let own_team = app.world.get_own_team()?;
                 let bonus = TeamBonus::Upgrades.current_team_bonus(&app.world, &own_team.id)?;
-                let upgrade = Upgrade::new(AsteroidUpgradeTarget::SpaceCove, bonus);
+                let upgrade = Upgrade::new(PlanetUpgradeTarget::SpaceCove, bonus);
                 Self::set_asteroid_pending_upgrade(*asteroid_id, upgrade)(app)?;
                 app.ui.close_popup();
                 Ok(None)

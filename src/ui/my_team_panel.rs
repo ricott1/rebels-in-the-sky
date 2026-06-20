@@ -339,7 +339,7 @@ impl MyTeamPanel {
             default_block().title(format!("Planet {} Market", planet.name)),
             area,
         );
-        if !planet.has_market() {
+        if !planet.has_market(world.space_cove_on(planet.id)) {
             frame.render_widget(
                 Paragraph::new(vec![
                     Line::from("There is no market available on this planet."),
@@ -1631,20 +1631,14 @@ impl MyTeamPanel {
 
             let possible_upgrade = if !asteroid
                 .upgrades
-                .contains(&AsteroidUpgradeTarget::TeleportationPad)
+                .contains(&PlanetUpgradeTarget::TeleportationPad)
             {
                 let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
-                Some(Upgrade::new(AsteroidUpgradeTarget::TeleportationPad, bonus))
+                Some(Upgrade::new(PlanetUpgradeTarget::TeleportationPad, bonus))
             } else if own_team.has_space_cove_on().is_none() {
                 // Build space cove button
                 let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
-                Some(Upgrade::new(AsteroidUpgradeTarget::SpaceCove, bonus))
-            } else if matches!(own_team.has_space_cove_on(), Some(id) if id == asteroid.id)
-                && !asteroid.upgrades.contains(&AsteroidUpgradeTarget::Market)
-            {
-                // Build market button
-                let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
-                Some(Upgrade::new(AsteroidUpgradeTarget::Market, bonus))
+                Some(Upgrade::new(PlanetUpgradeTarget::SpaceCove, bonus))
             } else {
                 None
             };
@@ -1739,10 +1733,7 @@ impl MyTeamPanel {
             .planet_zoom_out_frame_lines(asteroid, 0, world)?;
         frame.render_widget(Paragraph::new(img_lines).centered(), split[0]);
 
-        if asteroid
-            .upgrades
-            .contains(&AsteroidUpgradeTarget::SpaceCove)
-        {
+        if asteroid.upgrades.contains(&PlanetUpgradeTarget::SpaceCove) {
             let b_split = Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
                 .split(split[1]);
             frame.render_interactive_widget(teleport_button(world, asteroid_id)?, b_split[0]);
@@ -2465,10 +2456,15 @@ impl Screen for MyTeamPanel {
         };
 
         if self.planet_markets.is_empty() || world.dirty_ui {
+            let coves: HashMap<_, _> = world
+                .teams
+                .values()
+                .filter_map(|team| team.space_cove.as_ref().map(|cove| (cove.planet_id, cove)))
+                .collect();
             self.planet_markets = world
                 .planets
                 .iter()
-                .filter(|(_, planet)| planet.has_market())
+                .filter(|(_, planet)| planet.has_market(coves.get(&planet.id).copied()))
                 .sorted_by(|(_, a), (_, b)| a.name.cmp(&b.name))
                 .map(|(id, _)| *id)
                 .collect::<Vec<PlanetId>>();

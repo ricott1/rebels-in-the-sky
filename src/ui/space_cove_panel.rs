@@ -12,6 +12,7 @@ use crate::ui::utils::img_to_lines;
 use crate::ui::widgets::{default_block, go_to_planet_button, selectable_list};
 use crate::ui::{constants::*, ui_key};
 use crate::{core::*, types::AppResult};
+use anyhow::anyhow;
 use core::fmt::Debug;
 use image::RgbaImage;
 use itertools::Itertools;
@@ -381,7 +382,7 @@ impl Screen for SpaceCovePanel {
                 .filter_map(|team| {
                     team.space_cove
                         .as_ref()
-                        .filter(|cove| cove.state == SpaceCoveState::Ready)
+                        .filter(|cove| cove.is_ready())
                         .map(|cove| (team.id, cove.planet_id, team.name.as_str()))
                 })
                 .collect();
@@ -486,6 +487,10 @@ impl Screen for SpaceCovePanel {
         frame.render_widget(widget, split[1].inner(Margin::new(1, 1)));
 
         let own_team = world.get_own_team()?;
+        let cove = own_team
+            .space_cove
+            .as_ref()
+            .ok_or(anyhow!("Team should have a space cove"));
 
         let col = Layout::vertical([
             Constraint::Length(3),
@@ -501,12 +506,13 @@ impl Screen for SpaceCovePanel {
 
         match self.view {
             SpaceCoveView::OwnCove => {
-                frame.render_widget(default_block().title("Upgrades"), col[2]);
+                frame.render_widget(default_block().title("Buildings"), col[2]);
                 self.render_visiting_teams(frame, world, col[3])?;
 
                 let asteroid = own_team
                     .has_space_cove_on()
                     .and_then(|id| world.planets.get(&id));
+
                 self.render_tournament_button(
                     frame,
                     own_team,

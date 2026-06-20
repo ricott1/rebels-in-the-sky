@@ -1,10 +1,10 @@
-pub mod asteroid_upgrades;
 pub mod constants;
 pub mod game_rating;
 pub mod honours;
 pub mod jersey;
 pub mod kartoffel;
 pub mod planet;
+pub mod planet_upgrades;
 pub mod player;
 pub mod position;
 pub mod resources;
@@ -19,13 +19,13 @@ pub mod types;
 pub mod utils;
 pub mod world;
 
-pub use asteroid_upgrades::*;
 pub use constants::*;
 pub use game_rating::*;
 pub use honours::*;
 pub use jersey::*;
 pub use kartoffel::*;
 pub use planet::*;
+pub use planet_upgrades::*;
 pub use player::*;
 pub use position::*;
 pub use resources::*;

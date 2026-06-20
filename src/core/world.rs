@@ -11,8 +11,8 @@ use super::team::Team;
 use super::types::{PlayerLocation, TeamBonus, TeamLocation};
 use super::utils::{is_default, PLANET_DATA, TEAM_DATA};
 use crate::core::{
-    AsteroidUpgradeTarget, AutonomousStrategy, GameResult, Honour, Rated, RatedPlayers, Skill,
-    TournamentRegistrationState, Upgrade, MIN_SKILL,
+    PlanetUpgradeTarget, AutonomousStrategy, GameResult, Honour, Rated, RatedPlayers, Skill,
+    SpaceCove, TournamentRegistrationState, Upgrade, MIN_SKILL,
 };
 use crate::game_engine::game::{Game, GameSummary};
 use crate::game_engine::tactic::Tactic;
@@ -728,7 +728,8 @@ impl World {
     fn add_player_to_team(&mut self, player_id: &PlayerId, team_id: &TeamId) -> AppResult<()> {
         let mut player = self.players.get_or_err(player_id)?.clone();
         let mut team = self.teams.get_or_err(team_id)?.clone();
-        team.can_add_player(&player)?;
+        let is_in_space_cove = self.player_is_in_space_cove_on(&player);
+        team.can_add_player(&player, is_in_space_cove)?;
 
         team.player_ids.push(player.id);
         team.player_ids = Team::best_position_assignment(
@@ -773,7 +774,8 @@ impl World {
     ) -> AppResult<()> {
         let player = self.players.get_or_err(player_id)?;
         let mut team = self.teams.get_or_err(team_id)?.clone();
-        team.can_hire_player(player)?;
+        let is_in_space_cove = self.player_is_in_space_cove_on(player);
+        team.can_hire_player(player, is_in_space_cove)?;
         team.sub_resource(Resource::SATOSHI, player.hire_cost(team.reputation))?;
         self.teams.insert(team.id, team);
 
@@ -873,12 +875,12 @@ impl World {
     pub fn upgrade_asteroid(
         &mut self,
         asteroid_id: PlanetId,
-        upgrade: Upgrade<AsteroidUpgradeTarget>,
+        upgrade: Upgrade<PlanetUpgradeTarget>,
     ) -> AppResult<String> {
         // Validate asteroid exists
         self.planets.get_or_err(&asteroid_id)?;
 
-        if upgrade.target == AsteroidUpgradeTarget::SpaceCove {
+        if upgrade.target == PlanetUpgradeTarget::SpaceCove {
             let own_team = self.teams.get_mut_or_err(&self.own_team_id)?;
             if let Some(cove) = own_team.space_cove.as_mut() {
                 if cove.planet_id != asteroid_id {
@@ -1352,6 +1354,21 @@ impl World {
         Ok(team_version_updated)
     }
 
+    pub fn space_cove_on(&self, planet_id: PlanetId) -> Option<&SpaceCove> {
+        self.teams
+            .values()
+            .find_map(|team| team.space_cove.as_ref().filter(|cove| cove.planet_id == planet_id))
+    }
+
+    pub fn player_is_in_space_cove_on(&self, player: &Player) -> Option<PlanetId> {
+        player.is_on_planet().and_then(|id| {
+            self.planets
+                .get(&id)
+                .filter(|planet| planet.planet_type == PlanetType::Asteroid)
+                .map(|planet| planet.id)
+        })
+    }
+
     pub fn get_own_team(&self) -> AppResult<&Team> {
         self.teams.get_or_err(&self.own_team_id)
     }
@@ -1537,6 +1554,7 @@ impl World {
             }
 
             self.tick_teams_reputation()?;
+            self.tick_space_coves()?;
 
             // Local teams hire free pirates just before refreshing team,
             // so own team has had already time to hire them.
@@ -1696,7 +1714,7 @@ impl World {
                             game.get_score().1,
                             game.away_team_in_game.name,
                         ),
-                        links: vec![("Game".to_string(), UiCallback::GoToGames)],
+                        links: vec![("Game ended".to_string(), UiCallback::GoToGames)],
                         level: log::Level::Info,
                         is_skippable: false,
                         timestamp: current_tick,
@@ -2643,6 +2661,46 @@ impl World {
             let team = self.teams.get_mut_or_err(&team_id)?;
             team.reputation = new_reputation;
         }
+        Ok(())
+    }
+
+    fn tick_space_coves(&mut self) -> AppResult<()> {
+        for (_, team) in self.teams.iter_mut() {
+            //TODO: once we remove local teams, we can remove this loop and only apply to own_team
+            if team.peer_id.is_some() {
+                continue;
+            }
+
+            let cove = if let Some(c) = team.space_cove.as_mut() {
+                c
+            } else {
+                continue;
+            };
+
+            if !cove.is_ready() {
+                continue;
+            }
+
+            cove.upkeep(&mut team.resources);
+
+            let asteroid = self.planets.get_or_err(&cove.planet_id)?;
+            let parent_planet_populations = &self
+                .planets
+                .get_or_err(
+                    &asteroid
+                        .satellite_of
+                        .ok_or(anyhow!("Asteroid {} should have a parent.", asteroid.id))?,
+                )?
+                .populations;
+
+            if let Some(tavern) = cove.tavern.as_mut() {
+                tavern.refresh_populations(parent_planet_populations);
+
+                let asteroid = self.planets.get_mut_or_err(&cove.planet_id)?;
+                asteroid.populations = tavern.populations.clone();
+            }
+        }
+
         Ok(())
     }
 
