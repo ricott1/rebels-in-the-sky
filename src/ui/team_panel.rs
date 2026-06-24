@@ -460,8 +460,11 @@ impl TeamListPanel {
 }
 
 impl Screen for TeamListPanel {
-    fn update(&mut self, world: &World) -> AppResult<()> {
+    fn tick(&mut self) {
         self.tick += 1;
+    }
+
+    fn update(&mut self, world: &World) -> AppResult<()> {
         if world.dirty_ui || self.all_team_ids.len() != world.teams.len() {
             self.all_team_ids = world.teams.keys().copied().collect();
             self.all_team_ids.sort_by(|a, b| {

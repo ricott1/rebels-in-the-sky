@@ -541,6 +541,26 @@ impl UiScreen {
         Ok(())
     }
 
+    pub fn tick(&mut self) {
+        match self.state {
+            UiState::Splash => self.splash_screen.tick(),
+            UiState::NewTeam => self.new_team_screen.tick(),
+            UiState::Main => {
+                self.my_team_panel.tick();
+                self.team_panel.tick();
+                self.player_panel.tick();
+                self.game_panel.tick();
+                self.tournament_panel.tick();
+                self.galaxy_panel.tick();
+                self.space_cove_panel.tick();
+                if self.ui_tabs.contains(&UiTab::Swarm) {
+                    self.swarm_panel.tick();
+                }
+            }
+            UiState::SpaceAdventure => self.space_screen.tick(),
+        }
+    }
+
     /// Renders the user interface widgets.
     pub fn render(
         &mut self,

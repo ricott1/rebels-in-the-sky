@@ -166,7 +166,6 @@ impl App {
             home_planet_id,
             "own team".into(),
             "ship_name".into(),
-            None,
         )?;
 
         Ok(app)
@@ -525,6 +524,7 @@ impl App {
             }
         }
 
+        self.ui.tick();
         match self.ui.update(
             &self.world,
             #[cfg(feature = "audio")]

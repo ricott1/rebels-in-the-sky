@@ -5,7 +5,9 @@ use super::traits::SplitPanel;
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
 use super::ui_screen::{tab_link, UiTab};
-use super::widgets::{space_adventure_button, thick_block, travel_or_teleport_button};
+use super::widgets::{
+    render_navigable_list, space_adventure_button, thick_block, travel_or_teleport_button,
+};
 use super::{traits::Screen, widgets::default_block};
 use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId};
 use crate::ui::traits::UiStyled;
@@ -17,7 +19,7 @@ use crate::{
 use core::fmt::Debug;
 use itertools::Itertools;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::{Constraint, Margin};
+use ratatui::layout::Constraint;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::{Borders, List, ListItem, TitlePosition};
@@ -496,46 +498,15 @@ impl GalaxyPanel {
         .split(area);
 
         if !team_options.is_empty() {
-            frame.render_widget(Clear, split[1]);
-            let l_split = Layout::vertical([Constraint::Length(1)].repeat(team_options.len()))
-                .split(split[1].inner(Margin {
-                    horizontal: 2,
-                    vertical: 1,
-                }));
-
-            for (idx, (team_id, text, style)) in team_options.iter().enumerate() {
-                frame.render_interactive_widget(
-                    Button::no_box(
-                        Span::styled(text.clone(), *style).into_left_aligned_line(),
-                        UiCallback::GoToTeam { team_id: *team_id },
-                    )
-                    .set_hover_style(UiStyle::HIGHLIGHT),
-                    l_split[idx],
-                );
-            }
-            frame.render_widget(default_block().title("Teams "), split[1]);
+            render_navigable_list(frame, split[1], "Teams ", &team_options, |team_id| {
+                UiCallback::GoToTeam { team_id }
+            });
         }
 
         if !player_options.is_empty() {
-            frame.render_widget(Clear, split[2]);
-            let l_split = Layout::vertical([Constraint::Length(1)].repeat(player_options.len()))
-                .split(split[2].inner(Margin {
-                    horizontal: 2,
-                    vertical: 1,
-                }));
-
-            for (idx, (player_id, text, style)) in player_options.iter().enumerate() {
-                frame.render_interactive_widget(
-                    Button::no_box(
-                        Span::styled(text.clone(), *style).into_left_aligned_line(),
-                        UiCallback::GoToPlayer {
-                            player_id: *player_id,
-                        },
-                    ),
-                    l_split[idx],
-                );
-            }
-            frame.render_widget(default_block().title("Top free pirates "), split[2]);
+            render_navigable_list(frame, split[2], "Top free pirates ", &player_options, |player_id| {
+                UiCallback::GoToPlayer { player_id }
+            });
         }
 
         if !resource_options.is_empty() {
@@ -627,8 +598,11 @@ impl GalaxyPanel {
 }
 
 impl Screen for GalaxyPanel {
-    fn update(&mut self, world: &World) -> AppResult<()> {
+    fn tick(&mut self) {
         self.tick += 1;
+    }
+
+    fn update(&mut self, world: &World) -> AppResult<()> {
         if self.planets.len() < world.planets.len() || world.dirty_ui {
             self.planets = world.planets.clone();
         }

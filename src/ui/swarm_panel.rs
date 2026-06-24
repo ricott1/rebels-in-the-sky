@@ -1066,8 +1066,11 @@ impl SwarmPanel {
 }
 
 impl Screen for SwarmPanel {
-    fn update(&mut self, world: &World) -> AppResult<()> {
+    fn tick(&mut self) {
         self.tick += 1;
+    }
+
+    fn update(&mut self, world: &World) -> AppResult<()> {
 
         if self.max_index() == 0 {
             if self.view == SwarmView::Ranking {
@@ -1076,12 +1079,6 @@ impl Screen for SwarmPanel {
                     PanelList::Teams => self.team_ranking_index = None,
                 }
             }
-        }
-        // If chat index is at the bottom, reset unread chat messages.
-        else if self.view == SwarmView::Chat
-            && matches!(self.index(), Some(idx) if idx == self.max_index() - 1)
-        {
-            self.unread_chat_messages = 0;
         }
 
         if self.should_update_chat_list {

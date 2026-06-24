@@ -2445,8 +2445,11 @@ impl MyTeamPanel {
 }
 
 impl Screen for MyTeamPanel {
-    fn update(&mut self, world: &World) -> AppResult<()> {
+    fn tick(&mut self) {
         self.tick += 1;
+    }
+
+    fn update(&mut self, world: &World) -> AppResult<()> {
         self.own_team_id = world.own_team_id;
         let own_team = world.get_own_team()?;
 

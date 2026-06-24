@@ -548,8 +548,11 @@ impl PlayerListPanel {
 }
 
 impl Screen for PlayerListPanel {
-    fn update(&mut self, world: &World) -> AppResult<()> {
+    fn tick(&mut self) {
         self.tick += 1;
+    }
+
+    fn update(&mut self, world: &World) -> AppResult<()> {
         if world.dirty_ui || self.all_players.len() != world.players.len() {
             self.all_players = world.players.keys().copied().collect();
             self.all_players.sort_by(|a, b| {

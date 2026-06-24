@@ -42,7 +42,7 @@ use ratatui::crossterm::event::KeyCode;
 use ratatui::{
     prelude::*,
     text::Span,
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
 use std::sync::LazyLock;
 use strum::Display;
@@ -88,6 +88,28 @@ pub fn selectable_list<'a>(options: Vec<(String, Style)>) -> ClickableList<'a> {
         .collect();
 
     ClickableList::new(items)
+}
+
+pub fn render_navigable_list<Id: Copy>(
+    frame: &mut UiFrame,
+    area: Rect,
+    title: &str,
+    options: &[(Id, String, Style)],
+    on_click: impl Fn(Id) -> UiCallback,
+) {
+    frame.render_widget(Clear, area);
+    let rows = Layout::vertical([Constraint::Length(1)].repeat(options.len()))
+        .split(area.inner(Margin::new(2, 1)));
+    for (idx, (id, text, style)) in options.iter().enumerate() {
+        frame.render_interactive_widget(
+            Button::no_box(
+                Span::styled(text.clone(), *style).into_left_aligned_line(),
+                on_click(*id),
+            ),
+            rows[idx],
+        );
+    }
+    frame.render_widget(default_block().title(title.to_string()), area);
 }
 
 pub fn go_to_planet_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Button<'a>> {
@@ -393,7 +415,6 @@ pub fn trade_resource_button<'a>(
     resource: Resource,
     amount: i32,
     unit_cost: u32,
-
     hotkey: Option<KeyCode>,
     box_style: Style,
 ) -> AppResult<Button<'a>> {

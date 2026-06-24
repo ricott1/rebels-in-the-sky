@@ -569,8 +569,11 @@ impl TournamentPanel {
 }
 
 impl Screen for TournamentPanel {
-    fn update(&mut self, world: &World) -> AppResult<()> {
+    fn tick(&mut self) {
         self.tick += 1;
+    }
+
+    fn update(&mut self, world: &World) -> AppResult<()> {
 
         if world.dirty_ui || self.all_tournament_ids.len() != world.tournaments.len() {
             self.all_tournament_ids = world

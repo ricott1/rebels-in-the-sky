@@ -19,6 +19,7 @@ pub type ImageLines = Vec<Line<'static>>;
 pub type GifLines = Vec<ImageLines>;
 
 pub trait Screen {
+    fn tick(&mut self);
     fn update(&mut self, world: &World) -> AppResult<()>;
     fn render(
         &mut self,

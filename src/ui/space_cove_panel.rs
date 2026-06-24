@@ -1,18 +1,24 @@
 use super::ui_frame::UiFrame;
 use super::{traits::Screen, ui_callback::UiCallback};
 use crate::game_engine::TournamentType;
+use crate::image::player::PLAYER_IMAGE_WIDTH;
 use crate::image::utils::ExtraImageUtils;
 use crate::image::utils::{open_image, LightMaskStyle};
-use crate::types::{PlanetId, TeamId};
+use crate::types::{
+    HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, SystemTimeTick, TeamId,
+};
 use crate::ui::button::Button;
+use crate::ui::checkbox::Checkbox;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::traits::SplitPanel;
 use crate::ui::ui_screen::{render_help_block, tab_link, UiTab};
 use crate::ui::utils::img_to_lines;
-use crate::ui::widgets::{default_block, go_to_planet_button, selectable_list};
+use crate::ui::widgets::{
+    default_block, go_to_planet_button, render_available_upgrades, render_navigable_list,
+    selectable_list, teleport_button,
+};
 use crate::ui::{constants::*, ui_key};
 use crate::{core::*, types::AppResult};
-use anyhow::anyhow;
 use core::fmt::Debug;
 use image::RgbaImage;
 use itertools::Itertools;
@@ -20,10 +26,17 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Margin};
 use ratatui::prelude::Rect;
 use ratatui::style::Stylize;
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use std::collections::HashSet;
 use std::fmt::{self, Display};
+
+const BUILDINGS: [SpaceCoveUpgradeTarget; 4] = [
+    SpaceCoveUpgradeTarget::TeleportationPad,
+    SpaceCoveUpgradeTarget::Tavern,
+    SpaceCoveUpgradeTarget::Stadium,
+    SpaceCoveUpgradeTarget::Market,
+];
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SpaceCoveView {
@@ -57,6 +70,9 @@ impl Display for SpaceCoveView {
     }
 }
 
+// Top-left of each 5x8 lamp slot in tavern.png.
+const TAVERN_LAMP_POSITIONS: [(u32, u32); 3] = [(40, 23), (88, 24), (108, 28)];
+
 #[derive(Debug, Default)]
 pub struct SpaceCovePanel {
     tick: usize,
@@ -67,13 +83,20 @@ pub struct SpaceCovePanel {
     visiting_team_ids: Vec<TeamId>,
     cove_image_widgets: [Paragraph<'static>; 4], // no blinking, left, right, both
     cove_list_state: ClickableListState,
+    building_index: Option<usize>,
+    tavern_widget: Paragraph<'static>,
+    tavern_lamps_on: bool,
+    tavern_pirate_ids: Vec<PlayerId>,
 }
 
 impl SpaceCovePanel {
     pub fn new() -> Self {
         let widgets = Self::build_image_widgets(&[]).expect("Should be able to create cove image");
+        let tavern_widget =
+            Self::build_tavern_widget(false, &[]).expect("Should be able to create tavern image");
         Self {
             cove_image_widgets: widgets,
+            tavern_widget,
             ..Default::default()
         }
     }
@@ -158,6 +181,54 @@ impl SpaceCovePanel {
         ])
     }
 
+    fn get_tavern_image(lamps_on: bool, pirate_frames: &[RgbaImage]) -> AppResult<RgbaImage> {
+        let mut base = open_image("cove/tavern.png")?;
+        let lamp = open_image(if lamps_on {
+            "cove/lamp_on.png"
+        } else {
+            "cove/lamp_off.png"
+        })?;
+        for &(x, y) in TAVERN_LAMP_POSITIONS.iter() {
+            base.copy_non_trasparent_from(&lamp, x, y)?;
+            if lamps_on {
+                base.apply_light_mask(&LightMaskStyle::lamp((x + 2, y + 4)));
+            }
+        }
+
+        // Blit each free pirate standing in the tavern, clustered and centered.
+        const PIRATE_X_STEP: u32 = 20;
+        const PIRATE_BASELINES_Y: [u32; MAX_TAVERN_POPULATION as usize] = [66, 70, 67];
+        let pirates = &pirate_frames[..pirate_frames.len().min(MAX_TAVERN_POPULATION as usize)];
+        if !pirates.is_empty() {
+            let group_width = PIRATE_X_STEP * (pirates.len() as u32 - 1) + PLAYER_IMAGE_WIDTH;
+            let mut x = base.width().saturating_sub(group_width) / 2 + 4;
+            for (idx, frame) in pirates.iter().enumerate() {
+                let y = PIRATE_BASELINES_Y[idx] - frame.height();
+                base.copy_non_trasparent_from(frame, x, y)?;
+                x += PIRATE_X_STEP;
+            }
+        }
+
+        let outer = open_image("cove/base_outer.png")?;
+        base.copy_non_trasparent_from(&outer, 0, 0)?;
+        Ok(base)
+    }
+
+    fn get_selected_building(&self) -> Option<&SpaceCoveUpgradeTarget> {
+        if self.view != SpaceCoveView::OwnCove {
+            return None;
+        }
+        self.building_index.and_then(|index| BUILDINGS.get(index))
+    }
+
+    fn build_tavern_widget(
+        lamps_on: bool,
+        pirate_frames: &[RgbaImage],
+    ) -> AppResult<Paragraph<'static>> {
+        let img = Self::get_tavern_image(lamps_on, pirate_frames)?;
+        Ok(Paragraph::new(img_to_lines(&img)))
+    }
+
     fn render_view_buttons(
         &self,
         frame: &mut UiFrame,
@@ -175,7 +246,7 @@ impl SpaceCovePanel {
                     .unwrap_or("???");
                 format!("Space cove on {}", asteroid_name)
             }
-            None => "No space cove".to_string(),
+            None => "No own space cove".to_string(),
         };
 
         let mut own_button = Button::new(
@@ -265,37 +336,35 @@ impl SpaceCovePanel {
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
-        if !self.visiting_team_ids.is_empty() {
-            let mut options = vec![];
-            for team_id in self.visiting_team_ids.iter() {
-                let team = if let Some(team) = world.teams.get(team_id) {
-                    team
-                } else {
-                    continue;
-                };
-                let mut style = UiStyle::DEFAULT;
-                if team.id == world.own_team_id {
-                    style = UiStyle::OWN_TEAM;
-                } else if team.peer_id.is_some() {
-                    style = UiStyle::NETWORK;
-                }
-                let text = format!(
-                    "{:<MAX_NAME_LENGTH$} {}",
-                    team.name,
-                    world.team_rating(&team.id).unwrap_or_default().stars()
-                );
-                options.push((text, style));
+        let mut options = vec![];
+        for team_id in self.visiting_team_ids.iter() {
+            let team = if let Some(team) = world.teams.get(team_id) {
+                team
+            } else {
+                continue;
+            };
+            let mut style = UiStyle::DEFAULT;
+            if team.id == world.own_team_id {
+                style = UiStyle::OWN_TEAM;
+            } else if team.peer_id.is_some() {
+                style = UiStyle::NETWORK;
             }
-            let list = selectable_list(options);
-
-            frame.render_stateful_interactive_widget(
-                list.block(default_block().title("Visiting teams")),
-                area,
-                &mut ClickableListState::default(),
+            let text = format!(
+                "{:<MAX_NAME_LENGTH$} {}",
+                team.name,
+                world.team_rating(&team.id).unwrap_or_default().stars()
             );
-        } else {
-            frame.render_widget(default_block().title("No visiting teams"), area);
+            options.push((team.id, text, style));
         }
+
+        if options.is_empty() {
+            frame.render_widget(default_block().title("No visiting teams"), area);
+            return Ok(());
+        }
+
+        render_navigable_list(frame, area, "Visiting teams", &options, |team_id| {
+            UiCallback::GoToTeam { team_id }
+        });
 
         Ok(())
     }
@@ -304,7 +373,7 @@ impl SpaceCovePanel {
         &self,
         frame: &mut UiFrame,
         own_team: &Team,
-        asteroid: Option<&Planet>,
+        asteroid: &Planet,
         tournament_type: TournamentType,
         area: Rect,
     ) {
@@ -321,10 +390,7 @@ impl SpaceCovePanel {
             ),
         };
 
-        let hover = match asteroid {
-            Some(asteroid) => format!("Organize on {}. {blurb}", asteroid.name),
-            None => blurb.to_string(),
-        };
+        let hover = format!("Organize on {}. {blurb}", asteroid.name);
 
         let mut button = Button::new(label, UiCallback::OrganizeNewTournament { tournament_type })
             .set_hotkey(hotkey)
@@ -337,41 +403,342 @@ impl SpaceCovePanel {
         frame.render_interactive_widget(button, area);
     }
 
-    fn render_go_to_planet_slot(
+    fn render_building_list(&self, frame: &mut UiFrame, cove: &SpaceCove, area: Rect) {
+        let options = BUILDINGS
+            .iter()
+            .map(|building| {
+                let text = building.to_string();
+
+                let style = if cove.upgrades.contains(building) {
+                    UiStyle::DEFAULT
+                } else if cove.pending_upgrade.is_some_and(|u| u.target == *building) {
+                    UiStyle::WARNING
+                } else {
+                    UiStyle::DISCONNECTED
+                };
+                (text, style)
+            })
+            .collect::<Vec<_>>();
+
+        let list = selectable_list(options);
+        let mut state = ClickableListState::default();
+        state.select(self.building_index);
+        frame.render_stateful_interactive_widget(
+            list.block(default_block().title("Buildings ↓/↑")),
+            area,
+            &mut state,
+        );
+    }
+
+    fn render_building_detail(
         &self,
         frame: &mut UiFrame,
         world: &World,
-        asteroid: Option<&Planet>,
+        own_team: &Team,
+        asteroid: &Planet,
+        cove: &SpaceCove,
+        building: &SpaceCoveUpgradeTarget,
         area: Rect,
     ) -> AppResult<()> {
-        let asteroid = match asteroid {
-            Some(a) => a,
-            None => {
-                let mut button = Button::new("Go to planet", UiCallback::None)
-                    .set_hover_text("Select a cove first");
-                button.disable(Some("No cove selected".to_string()));
-                frame.render_interactive_widget(button, area);
-                return Ok(());
-            }
-        };
+        own_team
+            .has_space_cove_on()
+            .and_then(|id| world.planets.get(&id))
+            .expect("Asteroid with space cove should exist in world");
 
-        frame.render_interactive_widget(go_to_planet_button(world, asteroid.id)?, area);
+        if cove.upgrades.contains(&building) {
+            match building {
+                SpaceCoveUpgradeTarget::TeleportationPad => {
+                    return self.render_teleportation_pad_detail(frame, world, asteroid, area);
+                }
+                SpaceCoveUpgradeTarget::Tavern => {
+                    return self.render_tavern_detail(frame, world, own_team, cove, area);
+                }
+
+                SpaceCoveUpgradeTarget::Stadium => {
+                    return self.render_stadium_detail(frame, asteroid, own_team, area);
+                }
+
+                SpaceCoveUpgradeTarget::Market => {
+                    return self.render_market_detail(frame, area);
+                }
+            }
+        }
+
+        self.render_missing_building(frame, world, own_team, cove, building, area)
+    }
+
+    fn render_missing_building(
+        &self,
+        frame: &mut UiFrame,
+        world: &World,
+        own_team: &Team,
+        cove: &SpaceCove,
+        building: &SpaceCoveUpgradeTarget,
+        area: Rect,
+    ) -> AppResult<()> {
+        let split = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Length(7),
+            Constraint::Fill(1),
+        ])
+        .split(area);
+
+        let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
+        let upgrade = Upgrade::new(*building, bonus);
+        let pending_upgrade = cove.pending_upgrade.filter(|u| u.target == *building);
+
+        let cost_block = default_block().title("Building cost");
+        let cost_inner = cost_block.inner(split[1]);
+        frame.render_widget(cost_block, split[1]);
+        render_available_upgrades(
+            pending_upgrade,
+            Some(upgrade),
+            world,
+            own_team,
+            frame,
+            cost_inner,
+        )?;
+
+        if pending_upgrade.is_some() {
+            let mut button = Button::new(format!("Building {building}"), UiCallback::None);
+            button.disable(Some("In progress".to_string()));
+            frame.render_interactive_widget(button, split[0]);
+        } else {
+            let mut button = Button::new(
+                format!("Build {} ({})", building, upgrade.duration.formatted()),
+                UiCallback::SetSpaceCovePendingUpgrade { upgrade },
+            )
+            .set_hover_text(building.description());
+            if let Err(e) = own_team.can_upgrade_space_cove(*building) {
+                button.disable(Some(e.to_string()));
+            }
+            frame.render_interactive_widget(button, split[0]);
+        }
+
         Ok(())
     }
 
-    fn render_raid_placeholder(&self, frame: &mut UiFrame, area: Rect) {
-        let mut button =
-            Button::new("Raid", UiCallback::None).set_hover_text("Raids are coming soon");
-        button.disable(Some("Coming soon".to_string()));
-        frame.render_interactive_widget(button, area);
+    fn render_teleportation_pad_detail(
+        &self,
+        frame: &mut UiFrame,
+        world: &World,
+        asteroid: &Planet,
+        area: Rect,
+    ) -> AppResult<()> {
+        let layout = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Fill(1),
+        ])
+        .split(area);
+        let checkbox = Checkbox::new(
+            "Allow external teleport",
+            UiCallback::ToggleAsteroidExternalTeleport {
+                asteroid_id: asteroid.id,
+            },
+            asteroid.allow_external_teleport,
+        )
+        .set_hover_text("Let other crews teleport to this asteroid.");
+        frame.render_interactive_widget(checkbox, layout[0]);
+        frame.render_interactive_widget(teleport_button(world, asteroid.id)?, layout[1]);
+
+        Ok(())
+    }
+
+    fn render_tavern_detail(
+        &self,
+        frame: &mut UiFrame,
+        world: &World,
+        own_team: &Team,
+        cove: &SpaceCove,
+        area: Rect,
+    ) -> AppResult<()> {
+        let layout = Layout::vertical([
+            Constraint::Fill(1),   // free pirates list
+            Constraint::Length(3), // add rum to store
+            Constraint::Length(3), // rum served per day
+        ])
+        .split(area);
+
+        let rum_per_day = cove
+            .tavern
+            .as_ref()
+            .and_then(|tavern| tavern.upkeep_cost.get(&Resource::RUM).copied())
+            .unwrap_or(0);
+
+        let options = self
+            .tavern_pirate_ids
+            .iter()
+            .filter_map(|id| world.players.get(id))
+            .map(|player| {
+                (
+                    player.id,
+                    format!(
+                        "{:<width$} {}",
+                        player.info.full_name(),
+                        player.stars(),
+                        width = MAX_NAME_LENGTH * 2,
+                    ),
+                    UiStyle::DEFAULT,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        if options.is_empty() {
+            frame.render_widget(
+                Paragraph::new("No free pirates on the cove.")
+                    .centered()
+                    .block(default_block().title("Free Pirates")),
+                layout[0],
+            );
+        } else {
+            render_navigable_list(frame, layout[0], "Free Pirates", &options, |player_id| {
+                UiCallback::GoToPlayer { player_id }
+            });
+        }
+
+        // Move rum from the crew stores into the cove, mirroring the market buttons.
+        let available_rum = own_team.resources.get(&Resource::RUM).copied().unwrap_or(0);
+        let add_rum_split = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(6),
+            Constraint::Length(6),
+        ])
+        .split(layout[1]);
+
+        let border_style = if cove.can_pay_tavern_upkeep() {
+            UiStyle::DEFAULT
+        } else {
+            UiStyle::WARNING
+        };
+        frame.render_widget(
+            Paragraph::new(format!(
+                "{} rum stored",
+                cove.resources.value(&Resource::RUM)
+            ))
+            .centered()
+            .block(default_block().border_style(border_style)),
+            add_rum_split[0],
+        );
+
+        for (idx, amount) in [rum_per_day, 7 * rum_per_day].iter().enumerate() {
+            let mut button = Button::new(
+                format!("+{amount}"),
+                UiCallback::AddRumToCove { amount: *amount },
+            )
+            .set_hover_text(format!(
+                "Store {amount} rum in the tavern (you have {available_rum})."
+            ))
+            .block(default_block().border_style(UiStyle::OK));
+            if available_rum < *amount {
+                button.disable(Some("Not enough rum"));
+            }
+            frame.render_interactive_widget(button, add_rum_split[idx + 1]);
+        }
+
+        let rum_per_day_split = Layout::horizontal([
+            Constraint::Length(6),
+            Constraint::Fill(1),
+            Constraint::Length(6),
+        ])
+        .split(layout[2]);
+        let mut less = Button::new("-1", UiCallback::ChangeTavernRumPerDay { delta: -1 })
+            .set_hover_text("Serve one less rum per day.")
+            .block(default_block().border_style(UiStyle::ERROR));
+        if rum_per_day == 0 {
+            less.disable(Some("Already zero"));
+        }
+        frame.render_interactive_widget(less, rum_per_day_split[0]);
+
+        let border_style = if cove.can_pay_tavern_upkeep() {
+            UiStyle::DEFAULT
+        } else {
+            UiStyle::WARNING
+        };
+        frame.render_widget(
+            Paragraph::new(format!("{rum_per_day} rum/day"))
+                .centered()
+                .block(default_block().border_style(border_style)),
+            rum_per_day_split[1],
+        );
+        let more = Button::new("+1", UiCallback::ChangeTavernRumPerDay { delta: 1 })
+            .set_hover_text("Serve one more rum per day.")
+            .block(default_block().border_style(UiStyle::OK));
+        frame.render_interactive_widget(more, rum_per_day_split[2]);
+
+        Ok(())
+    }
+
+    fn render_stadium_detail(
+        &self,
+        frame: &mut UiFrame,
+        asteroid: &Planet,
+        own_team: &Team,
+        area: Rect,
+    ) -> AppResult<()> {
+        let layout = Layout::vertical([
+            Constraint::Fill(1),   // tournaments
+            Constraint::Length(3), // organize
+            Constraint::Length(3), // organize
+        ])
+        .split(area);
+
+        self.render_tournament_button(frame, own_team, asteroid, TournamentType::Cup, layout[1]);
+        self.render_tournament_button(
+            frame,
+            own_team,
+            asteroid,
+            TournamentType::Supercup,
+            layout[2],
+        );
+
+        Ok(())
+    }
+
+    fn render_market_detail(&self, frame: &mut UiFrame, area: Rect) -> AppResult<()> {
+        let layout = Layout::vertical([
+            Constraint::Fill(1),   // list?
+            Constraint::Length(3), // market
+        ])
+        .split(area);
+
+        let button = Button::new("Go to market", UiCallback::GoToMarket)
+            .set_hover_text("Trade resources at the cove market.");
+        frame.render_interactive_widget(button, layout[1]);
+
+        Ok(())
     }
 }
 
 impl Screen for SpaceCovePanel {
-    fn update(&mut self, world: &World) -> AppResult<()> {
+    fn tick(&mut self) {
         self.tick += 1;
+    }
 
-        let own_team_id = world.own_team_id;
+    fn update(&mut self, world: &World) -> AppResult<()> {
+        let own_team = world.get_own_team()?;
+        let cove_planet = own_team.has_space_cove_on();
+        let lamps_on = own_team.is_on_planet() == own_team.has_space_cove_on();
+        let tavern_pirate_ids: Vec<PlayerId> = match cove_planet {
+            Some(planet) => world
+                .players
+                .values()
+                .filter(|p| p.team.is_none() && p.is_on_planet() == Some(planet))
+                .map(|p| p.id)
+                .collect(),
+            None => Vec::new(),
+        };
+        if lamps_on != self.tavern_lamps_on || tavern_pirate_ids != self.tavern_pirate_ids {
+            let pirate_frames: Vec<RgbaImage> = tavern_pirate_ids
+                .iter()
+                .filter_map(|id| world.players.get(id))
+                .filter_map(|player| player.compose_image().ok())
+                .filter_map(|gif| gif.into_iter().next())
+                .collect();
+            self.tavern_widget = Self::build_tavern_widget(lamps_on, &pirate_frames)?;
+            self.tavern_lamps_on = lamps_on;
+            self.tavern_pirate_ids = tavern_pirate_ids;
+        }
 
         // Rebuild the cove entries only when the team set or contents may have shifted.
         let mut entries_changed = false;
@@ -388,8 +755,8 @@ impl Screen for SpaceCovePanel {
                 .collect();
 
             decorated.sort_by(|a, b| {
-                let a_own = a.0 == own_team_id;
-                let b_own = b.0 == own_team_id;
+                let a_own = a.0 == own_team.id;
+                let b_own = b.0 == own_team.id;
                 match (a_own, b_own) {
                     (true, false) => std::cmp::Ordering::Less,
                     (false, true) => std::cmp::Ordering::Greater,
@@ -417,7 +784,6 @@ impl Screen for SpaceCovePanel {
         };
         let index_changed = prev_index != self.cove_index;
 
-        let own_team = world.get_own_team()?;
         let selected_asteroid_id = match self.view {
             SpaceCoveView::OwnCove => own_team.has_space_cove_on(),
             SpaceCoveView::AllCoves => self
@@ -461,6 +827,16 @@ impl Screen for SpaceCovePanel {
             }
         }
 
+        self.building_index = if own_team.space_cove.is_none() {
+            None
+        } else {
+            Some(self.building_index.unwrap_or(0).min(BUILDINGS.len() - 1))
+        };
+
+        if own_team.space_cove.is_none() {
+            self.view = SpaceCoveView::AllCoves;
+        }
+
         Ok(())
     }
 
@@ -475,85 +851,144 @@ impl Screen for SpaceCovePanel {
             .split(area);
 
         frame.render_widget(default_block(), split[1]);
-        let t = self.tick % 60;
-        let left_eye_blinking = [2, 3, 5, 13, 33].contains(&t);
-        let right_eye_blinking = [2, 3, 6, 7, 41].contains(&t);
-        let widget = match (left_eye_blinking, right_eye_blinking) {
-            (false, false) => &self.cove_image_widgets[0],
-            (true, false) => &self.cove_image_widgets[1],
-            (false, true) => &self.cove_image_widgets[2],
-            (true, true) => &self.cove_image_widgets[3],
-        };
-        frame.render_widget(widget, split[1].inner(Margin::new(1, 1)));
 
         let own_team = world.get_own_team()?;
-        let cove = own_team
-            .space_cove
-            .as_ref()
-            .ok_or(anyhow!("Team should have a space cove"));
 
-        let col = Layout::vertical([
+        let layout = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Fill(1),
-            Constraint::Fill(1),
-            Constraint::Length(3),
-            Constraint::Length(3),
         ])
         .split(split[0]);
 
-        self.render_view_buttons(frame, world, col[0], col[1])?;
+        self.render_view_buttons(frame, world, layout[0], layout[1])?;
 
         match self.view {
             SpaceCoveView::OwnCove => {
-                frame.render_widget(default_block().title("Buildings"), col[2]);
-                self.render_visiting_teams(frame, world, col[3])?;
+                let sub_layout = Layout::vertical([
+                    Constraint::Length(BUILDINGS.len() as u16 + 2),
+                    Constraint::Fill(1),
+                ])
+                .split(layout[2]);
 
-                let asteroid = own_team
-                    .has_space_cove_on()
-                    .and_then(|id| world.planets.get(&id));
+                match own_team.space_cove.as_ref() {
+                    None => {}
+                    Some(cove) if !cove.is_ready() => {
+                        let countdown = own_team
+                            .has_space_cove_on()
+                            .and_then(|id| world.planets.get(&id))
+                            .and_then(|asteroid| asteroid.pending_upgrade)
+                            .map(|upgrade| {
+                                (upgrade.started + upgrade.duration)
+                                    .saturating_sub(world.last_tick_short_interval)
+                                    .formatted()
+                            })
+                            .unwrap_or_default();
+                        frame.render_widget(
+                            Paragraph::new(vec![
+                                Line::from(Span::styled(
+                                    "Space cove under construction",
+                                    UiStyle::HEADER.bold(),
+                                )),
+                                Line::from(countdown),
+                            ])
+                            .centered()
+                            .block(default_block().title("Buildings")),
+                            sub_layout[0],
+                        );
+                        self.render_visiting_teams(frame, world, sub_layout[1])?;
+                    }
+                    Some(cove) => {
+                        let asteroid_id = if let Some(id) = own_team.has_space_cove_on() {
+                            id
+                        } else {
+                            return Ok(());
+                        };
 
-                self.render_tournament_button(
-                    frame,
-                    own_team,
-                    asteroid,
-                    TournamentType::Cup,
-                    col[4],
-                );
-                self.render_tournament_button(
-                    frame,
-                    own_team,
-                    asteroid,
-                    TournamentType::Supercup,
-                    col[5],
-                );
+                        self.render_building_list(frame, cove, sub_layout[0]);
+
+                        let building = if let Some(b) = self.get_selected_building() {
+                            b
+                        } else {
+                            return Ok(());
+                        };
+
+                        let asteroid = world.planets.get_or_err(&asteroid_id)?;
+
+                        self.render_building_detail(
+                            frame,
+                            world,
+                            own_team,
+                            asteroid,
+                            cove,
+                            building,
+                            sub_layout[1],
+                        )?;
+
+                        // Render right side
+                        if *building == SpaceCoveUpgradeTarget::Tavern {
+                            frame.render_widget(
+                                &self.tavern_widget,
+                                split[1].inner(Margin::new(1, 1)),
+                            );
+                        }
+                    }
+                }
             }
             SpaceCoveView::AllCoves => {
-                self.render_cove_list(frame, world, col[2])?;
-                self.render_visiting_teams(frame, world, col[3])?;
+                let sub_layout = Layout::vertical([
+                    Constraint::Fill(1),
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Fill(1),
+                ])
+                .split(layout[2]);
+                self.render_cove_list(frame, world, sub_layout[0])?;
+                self.render_visiting_teams(frame, world, sub_layout[3])?;
 
-                let selected_asteroid = self
+                if let Some(asteroid) = self
                     .cove_index
                     .and_then(|i| self.cove_entries.get(i).map(|(_, p)| *p))
-                    .and_then(|id| world.planets.get(&id));
-                self.render_go_to_planet_slot(frame, world, selected_asteroid, col[4])?;
-                self.render_raid_placeholder(frame, col[5]);
+                    .and_then(|id| world.planets.get(&id))
+                {
+                    frame.render_interactive_widget(
+                        go_to_planet_button(world, asteroid.id)?,
+                        sub_layout[1],
+                    );
+                    frame.render_interactive_widget(
+                        teleport_button(world, asteroid.id)?,
+                        sub_layout[2],
+                    );
+                }
+
+                let t = self.tick % 60;
+                let left_eye_blinking = [2, 3, 5, 13, 33].contains(&t);
+                let right_eye_blinking = [2, 3, 6, 7, 41].contains(&t);
+                let widget = match (left_eye_blinking, right_eye_blinking) {
+                    (false, false) => &self.cove_image_widgets[0],
+                    (true, false) => &self.cove_image_widgets[1],
+                    (false, true) => &self.cove_image_widgets[2],
+                    (true, true) => &self.cove_image_widgets[3],
+                };
+                frame.render_widget(widget, split[1].inner(Margin::new(1, 1)));
             }
         }
 
         Ok(())
     }
 
-    fn handle_key_events(&mut self, key_event: KeyEvent, _world: &World) -> Option<UiCallback> {
+    fn handle_key_events(&mut self, key_event: KeyEvent, world: &World) -> Option<UiCallback> {
+        let own_team = world.get_own_team().ok()?;
+        let has_space_cove = own_team.has_space_cove_on().is_some();
         match key_event.code {
-            KeyCode::Up if self.view == SpaceCoveView::AllCoves => self.next_index(),
-            KeyCode::Down if self.view == SpaceCoveView::AllCoves => self.previous_index(),
-            ui_key::CYCLE_VIEW => {
+            KeyCode::Up => self.next_index(),
+            KeyCode::Down => self.previous_index(),
+            ui_key::CYCLE_VIEW if has_space_cove => {
                 return Some(UiCallback::SetSpaceCovePanelView {
                     view: self.view.next(),
                 });
             }
-            ui_key::CYCLE_VIEW_BACK => {
+            ui_key::CYCLE_VIEW_BACK if has_space_cove => {
                 return Some(UiCallback::SetSpaceCovePanelView {
                     view: self.view.previous(),
                 });
@@ -621,16 +1056,73 @@ impl Screen for SpaceCovePanel {
 
 impl SplitPanel for SpaceCovePanel {
     fn index(&self) -> Option<usize> {
-        self.cove_index
+        match self.view {
+            SpaceCoveView::OwnCove => self.building_index,
+            SpaceCoveView::AllCoves => self.cove_index,
+        }
     }
 
     fn max_index(&self) -> usize {
-        self.cove_entries.len()
+        match self.view {
+            SpaceCoveView::OwnCove => BUILDINGS.len(),
+            SpaceCoveView::AllCoves => self.cove_entries.len(),
+        }
     }
 
     fn set_index(&mut self, index: usize) {
-        if self.max_index() > 0 {
-            self.cove_index = Some(index % self.max_index());
+        match self.view {
+            SpaceCoveView::OwnCove => {
+                self.building_index = Some(index % BUILDINGS.len());
+            }
+            SpaceCoveView::AllCoves => {
+                if !self.cove_entries.is_empty() {
+                    self.cove_index = Some(index % self.cove_entries.len());
+                }
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SpaceCovePanel;
+    use crate::core::{Player, Population};
+    use crate::types::AppResult;
+    use image::{self, RgbaImage};
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+    use std::path::Path;
+    use strum::IntoEnumIterator;
+
+    #[ignore]
+    #[test]
+    fn test_generate_tavern_image_with_pirates() -> AppResult<()> {
+        let rng = &mut ChaCha8Rng::seed_from_u64(0);
+
+        // One free pirate per population; the tavern caps how many it draws.
+        let mut pirate_frames: Vec<RgbaImage> = Vec::new();
+        for population in Population::iter() {
+            let player = Player::default()
+                .with_population(population)
+                .randomize(Some(&mut *rng));
+            pirate_frames.push(player.compose_image()?[0].clone());
+        }
+
+        for lamps_on in [false, true] {
+            let img = SpaceCovePanel::get_tavern_image(lamps_on, &pirate_frames)?;
+            let (width, height) = (img.width(), img.height());
+            image::save_buffer(
+                Path::new(&format!(
+                    "tests/images/tavern_image_lamps_{}.png",
+                    if lamps_on { "on" } else { "off" }
+                )),
+                &img,
+                width,
+                height,
+                image::ColorType::Rgba8,
+            )?;
+        }
+
+        Ok(())
     }
 }

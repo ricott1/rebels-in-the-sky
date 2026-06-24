@@ -145,8 +145,11 @@ impl SplashScreen {
 }
 
 impl Screen for SplashScreen {
-    fn update(&mut self, _world: &World) -> AppResult<()> {
+    fn tick(&mut self) {
         self.tick += 1;
+    }
+
+    fn update(&mut self, _world: &World) -> AppResult<()> {
         self.selection_text[2] = if self.audio_player_state == AudioPlayerState::Playing {
             "Music: On ".to_string()
         } else {

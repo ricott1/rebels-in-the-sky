@@ -785,8 +785,11 @@ impl NewTeamScreen {
 }
 
 impl Screen for NewTeamScreen {
-    fn update(&mut self, world: &World) -> AppResult<()> {
+    fn tick(&mut self) {
         self.tick += 1;
+    }
+
+    fn update(&mut self, world: &World) -> AppResult<()> {
 
         // If planets is empty, we initialize the list of planets and planet_players
         if self.planet_ids.is_empty() {
@@ -799,27 +802,29 @@ impl Screen for NewTeamScreen {
                 .collect_vec();
 
             for player in world.players.values() {
-                if player.team.is_none() {
-                    let planet_players = self
-                        .planet_players
-                        .entry(player.info.home_planet_id)
-                        .or_default();
-                    planet_players.push((player.id, player.hire_cost(0.0)));
-                    planet_players.sort_by(|a, b| {
-                        let p1 = world
-                            .players
-                            .get(&a.0)
-                            .map(|p| p.hire_cost(0.0))
-                            .unwrap_or_default();
-                        let p2 = world
-                            .players
-                            .get(&b.0)
-                            .map(|p| p.hire_cost(0.0))
-                            .unwrap_or_default();
-                        p2.cmp(&p1)
-                    });
-                }
+                // Free pirates only, grouped by the planet they're standing on.
+                let planet_id = match player.is_on_planet() {
+                    Some(planet_id) if player.team.is_none() => planet_id,
+                    _ => continue,
+                };
+
+                let planet_players = self.planet_players.entry(planet_id).or_default();
+                planet_players.push((player.id, player.hire_cost(0.0)));
+                planet_players.sort_by(|a, b| {
+                    let p1 = world
+                        .players
+                        .get(&a.0)
+                        .map(|p| p.hire_cost(0.0))
+                        .unwrap_or_default();
+                    let p2 = world
+                        .players
+                        .get(&b.0)
+                        .map(|p| p.hire_cost(0.0))
+                        .unwrap_or_default();
+                    p2.cmp(&p1)
+                });
             }
+
             self.set_index(0);
         }
 
