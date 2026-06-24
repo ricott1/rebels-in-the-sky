@@ -95,6 +95,9 @@ pub struct Planet {
         deserialize_with = "deserialize_upgrades"
     )]
     pub upgrades: HashSet<PlanetUpgradeTarget>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub allow_external_teleport: bool,
 }
 
 impl Planet {
@@ -235,6 +238,7 @@ impl Planet {
             custom_radio_stream: None,
             pending_upgrade: None,
             upgrades: HashSet::new(),
+            allow_external_teleport: false,
         }
     }
 }

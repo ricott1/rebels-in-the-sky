@@ -10,7 +10,6 @@ use super::{
     world::World,
 };
 use crate::{
-    core::PLANET_DATA,
     game_engine::types::GameStats,
     image::{player::PlayerImage, utils::Gif},
     types::{AppResult, HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, TeamId},
@@ -24,9 +23,10 @@ use rand::{
     RngExt, SeedableRng,
 };
 use rand_chacha::ChaCha8Rng;
-use rand_distr::{Distribution, Normal};
+use rand_distr::{num_traits::Signed, Distribution, Normal};
 use serde::{de::Visitor, ser::SerializeStruct, Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use strum::IntoEnumIterator;
 use strum_macros::Display;
 
 const HOOK_MAX_BALL_HANDLING: f32 = 4.0;
@@ -37,6 +37,7 @@ const WOODEN_LEG_MAX_QUICKNESS: f32 = 4.0;
 struct PlayerBuildData {
     position: Option<GamePosition>,
     base_level: f32,
+    extra_potential: Skill,
     population: Option<Population>,
 }
 
@@ -533,15 +534,6 @@ impl Player {
             &mut ChaCha8Rng::from_rng(&mut rand::rng())
         };
 
-        if self.info.home_planet_id == PlanetId::default() {
-            let home_planet = PLANET_DATA
-                .iter()
-                .filter(|p| p.total_population() > 0)
-                .choose(rng)
-                .expect("There should be a planet.");
-            self.info.home_planet_id = home_planet.id;
-        }
-
         let mut build_base_level = self.build_data.base_level;
         let position = if let Some(pos) = self.build_data.position {
             pos
@@ -549,16 +541,10 @@ impl Player {
             rng.random_range(0..NUM_GAME_POSITIONS)
         };
 
-        self.info.population = if let Some(population) = self.build_data.population {
-            population
-        } else {
-            let home_planet = PLANET_DATA
-                .iter()
-                .find(|p| p.id == self.info.home_planet_id)
-                .expect("There should be a planet.");
-
-            home_planet.random_population(rng).unwrap_or_default()
-        };
+        self.info.population = self
+            .build_data
+            .population
+            .unwrap_or_else(|| Population::iter().choose(rng).unwrap_or_default());
 
         self.info.randomize_for_position(position, rng);
 
@@ -613,10 +599,17 @@ impl Player {
         self.set_initial_game_position_fitness(Some(rng));
         self.previous_game_position_fitness = self.game_position_fitness;
 
-        // Extra potential has a variance that depends on current age
-        let std_dev = 1.5 + 3.0 * (1.0 - self.info.relative_age());
-        let normal = Normal::new(0.0, std_dev).expect("Should create valid normal distribution");
-        let extra_potential = normal.sample(rng).abs();
+        let extra_potential = {
+            // Extra potential has a variance that depends on current age
+            let mut std_dev = 1.5 + 3.0 * (1.0 - self.info.relative_age());
+            if self.build_data.extra_potential > Skill::default() {
+                std_dev += self.build_data.extra_potential;
+            }
+            let normal =
+                Normal::new(0.0, std_dev).expect("Should create valid normal distribution");
+            normal.sample(rng).abs()
+        };
+
         self.potential = (self.average_skill() + extra_potential).bound();
         self.reputation = (self.average_skill() / 6.0 + self.info.relative_age() * 4.5).bound();
 
@@ -633,14 +626,11 @@ impl Player {
         self
     }
 
-    pub fn with_home_planet(mut self, home_planet_id: PlanetId) -> Self {
-        self.info.home_planet_id = home_planet_id;
+    pub fn with_current_location_on_planet(mut self, planet_id: PlanetId) -> Self {
         self.current_location = if self.team.is_some() {
             PlayerLocation::WithTeam
         } else {
-            PlayerLocation::OnPlanet {
-                planet_id: home_planet_id,
-            }
+            PlayerLocation::OnPlanet { planet_id }
         };
 
         self
@@ -653,25 +643,6 @@ impl Player {
         self
     }
 
-    pub fn with_random_population(mut self, rng: Option<&mut ChaCha8Rng>) -> Self {
-        let home_planet = PLANET_DATA
-            .iter()
-            .find(|p| p.id == self.info.home_planet_id)
-            .expect("There should be a planet.");
-
-        let rng = if let Some(r) = rng {
-            r
-        } else {
-            &mut ChaCha8Rng::from_rng(&mut rand::rng())
-        };
-
-        let population = home_planet.random_population(rng).unwrap_or_default();
-        self.info.population = population;
-        self.image = PlayerImage::from_info(&self.info, rng);
-
-        self
-    }
-
     pub fn with_position(mut self, position: Option<GamePosition>) -> Self {
         self.build_data.position = position;
 
@@ -680,6 +651,12 @@ impl Player {
 
     pub fn with_base_level(mut self, base_level: f32) -> Self {
         self.build_data.base_level = base_level;
+
+        self
+    }
+
+    pub fn with_extra_potential(mut self, extra_potential: Skill) -> Self {
+        self.build_data.extra_potential = extra_potential;
 
         self
     }
@@ -1116,27 +1093,36 @@ impl Player {
     }
 
     pub fn modify_skill(&mut self, idx: usize, mut value: f32) {
-        // Quickness cannot improve beyond WOODEN_LEG_MAX_QUICKNESS if player has a wooden leg
-        if self.has_wooden_leg() && idx == 0 && self.athletics.quickness >= WOODEN_LEG_MAX_QUICKNESS
-        {
-            return;
-        }
-        // Vision cannot improve beyond EYE_PATCH_MAX_VISION if player has an eye patch
-        if self.has_eye_patch() && idx == 16 && self.mental.vision >= EYE_PATCH_MAX_VISION {
-            return;
-        }
-        // Charisma improves quicker if player has an eye patch
-        if self.has_eye_patch() && idx == 19 && value > 0.0 {
-            value *= 1.5;
-        }
+        if value.is_positive() {
+            // Quickness cannot improve beyond WOODEN_LEG_MAX_QUICKNESS if player has a wooden leg
+            if self.has_wooden_leg()
+                && idx == 0
+                && self.athletics.quickness >= WOODEN_LEG_MAX_QUICKNESS
+            {
+                return;
+            }
+            // Vision cannot improve beyond EYE_PATCH_MAX_VISION if player has an eye patch
+            if self.has_eye_patch() && idx == 16 && self.mental.vision >= EYE_PATCH_MAX_VISION {
+                return;
+            }
 
-        // Ball handling cannot improve beyond HOOK_MAX_BALL_HANDLING if player has a hook
-        if self.has_hook() && idx == 13 && self.technical.ball_handling >= HOOK_MAX_BALL_HANDLING {
-            return;
-        }
-        // Strength improves quicker if player has a hook
-        if self.has_hook() && idx == 2 && value > 0.0 {
-            value *= 1.5;
+            // Ball handling cannot improve beyond HOOK_MAX_BALL_HANDLING if player has a hook
+            if self.has_hook()
+                && idx == 13
+                && self.technical.ball_handling >= HOOK_MAX_BALL_HANDLING
+            {
+                return;
+            }
+
+            // Charisma improves quicker if player has an eye patch
+            if self.has_eye_patch() && idx == 19 {
+                value *= 1.5;
+            }
+
+            // Strength improves quicker if player has a hook
+            if self.has_hook() && idx == 2 {
+                value *= 1.5;
+            }
         }
 
         let new_value = (self.skill_at_index(idx) + value).bound();
@@ -1254,7 +1240,6 @@ pub struct InfoStats {
     pub first_name: String,
     pub last_name: String,
     pub crew_role: CrewRole,
-    pub home_planet_id: PlanetId,
     pub population: Population,
     pub age: f32,
     pub pronouns: Pronoun,
@@ -1269,7 +1254,6 @@ impl Default for InfoStats {
             first_name: "Defaulto".to_string(),
             last_name: "Faultonio".to_string(),
             crew_role: CrewRole::default(),
-            home_planet_id: PlanetId::default(),
             population,
             age: population.min_age(),
             pronouns: Pronoun::default(),

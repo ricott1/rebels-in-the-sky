@@ -697,7 +697,11 @@ mod tests {
     fn test_tournament_error_registrations_closed() -> AppResult<()> {
         let mut organizer = Team::random(None);
         let planet_id = PlanetId::default();
-        organizer.space_cove = Some(crate::core::SpaceCove::ready(planet_id));
+        let mut cove = crate::core::SpaceCove::under_construction(planet_id);
+        cove.finish_contruction();
+        cove.upgrades
+            .insert(crate::core::SpaceCoveUpgradeTarget::Stadium);
+        organizer.space_cove = Some(cove);
         organizer.current_location = TeamLocation::OnPlanet { planet_id };
 
         let mut tournament = Tournament::new(&organizer, TournamentType::Cup)?;
@@ -726,7 +730,11 @@ mod tests {
     fn test_tournament_error_wrong_location() -> AppResult<()> {
         let mut organizer = Team::random(None);
         let planet_id = PlanetId::default();
-        organizer.space_cove = Some(crate::core::SpaceCove::ready(planet_id));
+        let mut cove = crate::core::SpaceCove::under_construction(planet_id);
+        cove.finish_contruction();
+        cove.upgrades
+            .insert(crate::core::SpaceCoveUpgradeTarget::Stadium);
+        organizer.space_cove = Some(cove);
         organizer.current_location = TeamLocation::OnPlanet { planet_id };
 
         let timestamp = Tick::now();

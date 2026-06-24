@@ -11,13 +11,13 @@ use super::{
     ui_screen::{UiState, UiTab},
 };
 use crate::app_version;
-use crate::core::{PlanetUpgradeTarget, UpgradeableElement};
+use crate::core::{PlanetUpgradeTarget, Resource, SpaceCoveUpgradeTarget, UpgradeableElement};
 use crate::game_engine::game::Game;
 use crate::game_engine::types::{GamePositionFluidity, InGameDrinking, SubstitutionTendency};
 use crate::game_engine::{Tournament, TournamentId, TournamentType};
 use crate::network::types::TournamentRequestState;
 use crate::network::{challenge::Challenge, trade::Trade};
-use crate::types::{HashMapWithResult, PlayerMap};
+use crate::types::{HashMapWithResult, PlayerMap, StorableResourceMap};
 use crate::ui::tournament_panel::TournamentView;
 use crate::ui::ui_key;
 use crate::{
@@ -277,6 +277,23 @@ pub enum UiCallback {
     UpgradeAsteroid {
         asteroid_id: PlanetId,
         upgrade: Upgrade<PlanetUpgradeTarget>,
+    },
+    SetSpaceCovePendingUpgrade {
+        upgrade: Upgrade<SpaceCoveUpgradeTarget>,
+    },
+    UpgradeSpaceCove {
+        target: SpaceCoveUpgradeTarget,
+    },
+    GoToMarket,
+    GoToAsteroids,
+    AddRumToCove {
+        amount: u32,
+    },
+    ChangeTavernRumPerDay {
+        delta: i32,
+    },
+    ToggleAsteroidExternalTeleport {
+        asteroid_id: PlanetId,
     },
     StartSpaceAdventure,
     ReturnFromSpaceAdventure,
@@ -1149,13 +1166,96 @@ impl UiCallback {
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
             let message = app.world.upgrade_asteroid(asteroid_id, upgrade)?;
+            let links = if upgrade.target == PlanetUpgradeTarget::SpaceCove {
+                vec![("Space cove".to_string(), UiCallback::GoToSpaceCove)]
+            } else {
+                vec![("Asteroid".to_string(), UiCallback::GoToAsteroids)]
+            };
             app.ui.push_popup(PopupMessage::Message {
                 message,
-                links: vec![],
+                links,
                 level: log::Level::Info,
                 is_skippable: true,
                 timestamp: Tick::now(),
             });
+            Ok(None)
+        })
+    }
+
+    fn set_space_cove_pending_upgrade(upgrade: Upgrade<SpaceCoveUpgradeTarget>) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let own_team_id = app.world.own_team_id;
+            let own_team = app.world.teams.get_mut_or_err(&own_team_id)?;
+            own_team.can_upgrade_space_cove(upgrade.target)?;
+
+            for (resource, amount) in &upgrade.target.upgrade_cost() {
+                own_team.sub_resource(*resource, *amount)?;
+            }
+
+            if let Some(cove) = own_team.space_cove.as_mut() {
+                cove.pending_upgrade = Some(upgrade);
+            }
+
+            app.world.dirty = true;
+            app.world.dirty_network = true;
+            app.world.dirty_ui = true;
+
+            Ok(None)
+        })
+    }
+
+    fn upgrade_space_cove(target: SpaceCoveUpgradeTarget) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            app.world.upgrade_space_cove(target)?;
+            app.ui.push_popup(PopupMessage::Message {
+                message: format!("{target} construction completed in the space cove!"),
+                links: vec![("space cove".to_string(), UiCallback::GoToSpaceCove)],
+                level: log::Level::Info,
+                is_skippable: true,
+                timestamp: Tick::now(),
+            });
+            Ok(None)
+        })
+    }
+
+    fn add_rum_to_cove(amount: u32) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let own_team_id = app.world.own_team_id;
+            let own_team = app.world.teams.get_mut_or_err(&own_team_id)?;
+            if own_team.space_cove.is_none() {
+                return Ok(None);
+            }
+            own_team.sub_resource(Resource::RUM, amount)?;
+            if let Some(cove) = own_team.space_cove.as_mut() {
+                cove.resources.add(Resource::RUM, amount, u32::MAX)?;
+            }
+
+            app.world.dirty = true;
+            app.world.dirty_network = true;
+            app.world.dirty_ui = true;
+
+            Ok(None)
+        })
+    }
+
+    fn change_tavern_rum_per_day(delta: i32) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let own_team_id = app.world.own_team_id;
+            let own_team = app.world.teams.get_mut_or_err(&own_team_id)?;
+            if let Some(tavern) = own_team
+                .space_cove
+                .as_mut()
+                .and_then(|cove| cove.tavern.as_mut())
+            {
+                let current = tavern.upkeep_cost.get(&Resource::RUM).copied().unwrap_or(0) as i32;
+                let updated = (current + delta).max(0) as u32;
+                tavern.upkeep_cost.insert(Resource::RUM, updated);
+            }
+
+            app.world.dirty = true;
+            app.world.dirty_network = true;
+            app.world.dirty_ui = true;
+
             Ok(None)
         })
     }
@@ -1529,12 +1629,16 @@ impl UiCallback {
             Self::HirePlayer { player_id } => {
                 let own_team_id = app.world.own_team_id;
                 app.world.hire_player_for_team(player_id, &own_team_id)?;
+                app.world.dirty_ui = true;
+                app.ui.player_panel.update(&app.world)?;
                 Ok(None)
             }
             Self::ReleasePlayer { player_id } => {
                 app.world.release_player_from_team(*player_id)?;
                 app.ui.close_popup();
                 app.ui.swarm_panel.remove_player_from_ranking(*player_id);
+                app.world.dirty_ui = true;
+                app.ui.my_team_panel.update(&app.world)?;
                 Ok(None)
             }
             Self::LockPlayerPanel { player_id } => {
@@ -1916,6 +2020,39 @@ impl UiCallback {
                 asteroid_id,
                 upgrade,
             } => Self::upgrade_asteroid(*asteroid_id, *upgrade)(app),
+
+            Self::SetSpaceCovePendingUpgrade { upgrade } => {
+                Self::set_space_cove_pending_upgrade(*upgrade)(app)
+            }
+
+            Self::UpgradeSpaceCove { target } => Self::upgrade_space_cove(*target)(app),
+
+            Self::GoToMarket => {
+                app.ui.my_team_panel.set_view(MyTeamView::Market);
+                app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
+                Ok(None)
+            }
+
+            Self::GoToAsteroids => {
+                app.ui.my_team_panel.set_view(MyTeamView::Asteroids);
+                app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
+                Ok(None)
+            }
+
+            Self::AddRumToCove { amount } => Self::add_rum_to_cove(*amount)(app),
+
+            Self::ChangeTavernRumPerDay { delta } => Self::change_tavern_rum_per_day(*delta)(app),
+
+            Self::ToggleAsteroidExternalTeleport { asteroid_id } => {
+                if let Some(planet) = app.world.planets.get_mut(asteroid_id) {
+                    planet.allow_external_teleport = !planet.allow_external_teleport;
+                    planet.version += 1;
+                    app.world.dirty = true;
+                    app.world.dirty_network = true;
+                    app.world.dirty_ui = true;
+                }
+                Ok(None)
+            }
 
             Self::StartSpaceAdventure => {
                 app.world.start_space_adventure()?;

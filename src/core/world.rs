@@ -11,8 +11,8 @@ use super::team::Team;
 use super::types::{PlayerLocation, TeamBonus, TeamLocation};
 use super::utils::{is_default, PLANET_DATA, TEAM_DATA};
 use crate::core::{
-    PlanetUpgradeTarget, AutonomousStrategy, GameResult, Honour, Rated, RatedPlayers, Skill,
-    SpaceCove, TournamentRegistrationState, Upgrade, MIN_SKILL,
+    AutonomousStrategy, GameResult, Honour, PlanetUpgradeTarget, Rated, RatedPlayers, Skill,
+    SpaceCove, SpaceCoveUpgradeTarget, Tavern, TournamentRegistrationState, Upgrade, MIN_SKILL,
 };
 use crate::game_engine::game::{Game, GameSummary};
 use crate::game_engine::tactic::Tactic;
@@ -116,7 +116,7 @@ impl World {
     pub fn initialize(&mut self, generate_local_world: bool) -> AppResult<()> {
         let rng = &mut ChaCha8Rng::seed_from_u64(self.seed);
         for planet in PLANET_DATA.iter() {
-            self.populate_planet(rng, planet)?;
+            self.populate_planet(rng, planet, None)?;
         }
 
         if generate_local_world {
@@ -139,19 +139,24 @@ impl World {
         self.own_team_id != TeamId::default()
     }
 
-    fn populate_planet(&mut self, rng: &mut ChaCha8Rng, planet: &Planet) -> AppResult<()> {
-        // generate free pirates per each planet
+    fn populate_planet(
+        &mut self,
+        rng: &mut ChaCha8Rng,
+        planet: &Planet,
+        extra_potential: Option<Skill>,
+    ) -> AppResult<()> {
         let number_free_pirates = planet.total_population();
-        let mut position = 0 as GamePosition;
-        let own_team_base_level = if let Ok(own_team) = self.get_own_team() {
-            own_team.reputation / 7.0
-        } else {
-            0.0
-        };
+        let mut position = rng.random_range(0..NUM_GAME_POSITIONS) as GamePosition;
 
         for _ in 0..number_free_pirates {
-            let base_level = own_team_base_level + rng.random_range(0.0..2.5);
-            self.generate_random_pirate(rng, Some(position), planet, base_level)?;
+            let pirate_base_level = Some(rng.random_range(-2.0..2.0));
+            self.generate_random_pirate(
+                rng,
+                planet,
+                Some(position),
+                pirate_base_level,
+                extra_potential,
+            )?;
             position = (position + 1) % NUM_GAME_POSITIONS;
         }
 
@@ -173,7 +178,7 @@ impl World {
             let (team_name, ship_name) = team_data[idx].clone();
             // Assign 2 teams to each planet
             let home_planet_id = home_planet_ids[(idx / 2) % home_planet_ids.len()];
-            self.generate_random_team(rng, home_planet_id, team_name, ship_name, None)?;
+            self.generate_random_team(rng, home_planet_id, team_name, ship_name)?;
         }
         Ok(())
     }
@@ -184,7 +189,6 @@ impl World {
         home_planet_id: PlanetId,
         team_name: String,
         ship_name: String,
-        team_base_level: Option<f32>,
     ) -> AppResult<TeamId> {
         let team = Team::random(Some(rng))
             .with_name(team_name)
@@ -197,15 +201,21 @@ impl World {
 
         self.teams.insert(team.id, team);
 
-        let team_base_level = team_base_level.unwrap_or(rng.random_range(2..=14) as f32);
+        let team_base_level = rng.random_range(2.0..=14.0);
         for position in 0..NUM_GAME_POSITIONS {
-            let player_id =
-                self.generate_random_pirate(rng, Some(position), &planet, team_base_level)?;
+            let player_id = self.generate_random_pirate(
+                rng,
+                &planet,
+                Some(position),
+                Some(team_base_level),
+                None,
+            )?;
             self.add_player_to_team(&player_id, &team_id)?;
         }
 
         loop {
-            let player_id = self.generate_random_pirate(rng, None, &planet, team_base_level)?;
+            let player_id =
+                self.generate_random_pirate(rng, &planet, None, Some(team_base_level), None)?;
             self.add_player_to_team(&player_id, &team_id)?;
             let team = self.teams.get_or_err(&team_id)?;
             if team.player_ids.len() == team.spaceship.crew_capacity() as usize {
@@ -296,17 +306,26 @@ impl World {
     fn generate_random_pirate(
         &mut self,
         rng: &mut ChaCha8Rng,
-        position: Option<GamePosition>,
         home_planet: &Planet,
-        base_level: f32,
+        position: Option<GamePosition>,
+        base_level: Option<Skill>,
+        extra_potential: Option<Skill>,
     ) -> AppResult<PlayerId> {
-        let player = Player::default()
+        let mut build_player = Player::default()
             .with_position(position)
-            .with_home_planet(home_planet.id)
-            .with_base_level(base_level)
-            .randomize(Some(rng));
+            .with_population(home_planet.random_population(rng).unwrap_or_default())
+            .with_current_location_on_planet(home_planet.id);
 
-        // random(rng, position, home_planet, base_level);
+        if let Some(v) = base_level {
+            build_player = build_player.with_base_level(v);
+        }
+
+        if let Some(v) = extra_potential {
+            build_player = build_player.with_extra_potential(v);
+        }
+
+        let player = build_player.randomize(Some(rng));
+
         let player_id = player.id;
         self.players.insert(player.id, player);
         self.dirty = true;
@@ -1355,9 +1374,11 @@ impl World {
     }
 
     pub fn space_cove_on(&self, planet_id: PlanetId) -> Option<&SpaceCove> {
-        self.teams
-            .values()
-            .find_map(|team| team.space_cove.as_ref().filter(|cove| cove.planet_id == planet_id))
+        self.teams.values().find_map(|team| {
+            team.space_cove
+                .as_ref()
+                .filter(|cove| cove.planet_id == planet_id)
+        })
     }
 
     pub fn player_is_in_space_cove_on(&self, player: &Player) -> Option<PlanetId> {
@@ -1367,6 +1388,27 @@ impl World {
                 .filter(|planet| planet.planet_type == PlanetType::Asteroid)
                 .map(|planet| planet.id)
         })
+    }
+
+    pub fn upgrade_space_cove(&mut self, target: SpaceCoveUpgradeTarget) -> AppResult<()> {
+        let own_team = self.teams.get_mut_or_err(&self.own_team_id)?;
+        let cove = own_team
+            .space_cove
+            .as_mut()
+            .ok_or(anyhow!("No space cove to upgrade"))?;
+
+        cove.pending_upgrade = None;
+        cove.upgrades.insert(target);
+        if target == SpaceCoveUpgradeTarget::Tavern {
+            cove.tavern = Some(Tavern::default());
+        }
+        own_team.version += 1;
+
+        self.dirty = true;
+        self.dirty_ui = true;
+        self.dirty_network = true;
+
+        Ok(())
     }
 
     pub fn get_own_team(&self) -> AppResult<&Team> {
@@ -1454,8 +1496,10 @@ impl World {
 
         if amount > 0 {
             for _ in 0..amount {
-                let base_level = rng.random_range(0.0..7.0);
-                let player_id = self.generate_random_pirate(rng, None, planet, base_level)?;
+                let base_level = Some(rng.random_range(0.0..7.0));
+                let extra_potential = Some(1.0 + rng.random_range(0.0..5.0));
+                let player_id =
+                    self.generate_random_pirate(rng, planet, None, base_level, extra_potential)?;
 
                 free_pirates.push(player_id);
             }
@@ -1504,6 +1548,10 @@ impl World {
 
             for cb in self.tick_asteroid_upgrade(current_tick)? {
                 callbacks.push(cb);
+            }
+
+            if let Some(callback) = self.tick_space_cove_upgrade(current_tick)? {
+                callbacks.push(callback);
             }
 
             if self.dirty {
@@ -2364,6 +2412,20 @@ impl World {
         Ok(callbacks)
     }
 
+    fn tick_space_cove_upgrade(&self, current_tick: Tick) -> AppResult<Option<UiCallback>> {
+        let own_team = self.get_own_team()?;
+        if let Some(cove) = own_team.space_cove.as_ref() {
+            if let Some(upgrade) = cove.pending_upgrade {
+                if current_tick > upgrade.started + upgrade.duration {
+                    return Ok(Some(UiCallback::UpgradeSpaceCove {
+                        target: upgrade.target,
+                    }));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     fn tick_tiredness_recovery(&mut self) -> AppResult<()> {
         let teams = self
             .teams
@@ -2436,12 +2498,28 @@ impl World {
     }
 
     fn tick_free_pirates(&mut self, current_tick: Tick) -> AppResult<UiCallback> {
+        // Remove old unhired free pirates
         self.players.retain(|_, player| player.team.is_some());
-
         let rng = &mut ChaCha8Rng::seed_from_u64(rand::random());
+
         for planet in PLANET_DATA.iter() {
-            self.populate_planet(rng, planet)?;
+            self.populate_planet(rng, planet, None)?;
         }
+
+        let cove_asteroids: Vec<Planet> = self
+            .teams
+            .values()
+            .filter(|team| team.peer_id.is_none())
+            .filter_map(|team| team.space_cove.as_ref())
+            .filter(|cove| cove.is_ready())
+            .filter_map(|cove| self.planets.get(&cove.planet_id).cloned())
+            .collect();
+
+        let extra_potential = self.get_own_team().ok().map(|t| t.reputation / 6.0);
+        for asteroid in &cove_asteroids {
+            self.populate_planet(rng, asteroid, extra_potential)?;
+        }
+
         Ok(UiCallback::PushUiPopup {
             popup_message: PopupMessage::Message {
                 message: "Free pirates refreshed".into(),
@@ -2460,6 +2538,15 @@ impl World {
             .filter(|p| p.team.is_none())
             .collect_vec()
             .sort_by_rating();
+
+        // Free pirates standing in a space cove can only be hired by that cove's team.
+        let pirate_cove_planet: HashMap<PlayerId, PlanetId> = free_pirates
+            .iter()
+            .filter_map(|&p| {
+                self.player_is_in_space_cove_on(p)
+                    .map(|planet_id| (p.id, planet_id))
+            })
+            .collect();
 
         let mut released_player_ids: Vec<PlayerId> = vec![];
         let mut hired_player_ids: Vec<PlayerId> = vec![];
@@ -2484,6 +2571,8 @@ impl World {
                     !hired_player_ids.contains(&player.id)
                         && team.can_consider_hiring_player(player).is_ok()
                         && team.is_on_player_planet(player)
+                        && team
+                            .can_hire_from_space_cove(pirate_cove_planet.get(&player.id).copied())
                 })
                 .collect_vec();
 
@@ -2665,6 +2754,7 @@ impl World {
     }
 
     fn tick_space_coves(&mut self) -> AppResult<()> {
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         for (_, team) in self.teams.iter_mut() {
             //TODO: once we remove local teams, we can remove this loop and only apply to own_team
             if team.peer_id.is_some() {
@@ -2681,8 +2771,6 @@ impl World {
                 continue;
             }
 
-            cove.upkeep(&mut team.resources);
-
             let asteroid = self.planets.get_or_err(&cove.planet_id)?;
             let parent_planet_populations = &self
                 .planets
@@ -2693,11 +2781,13 @@ impl World {
                 )?
                 .populations;
 
-            if let Some(tavern) = cove.tavern.as_mut() {
-                tavern.refresh_populations(parent_planet_populations);
+            let effective_rum = cove.consume_daily_rum();
+            if let Some(tavern) = cove.tavern.as_ref() {
+                let populations =
+                    tavern.refresh_populations(parent_planet_populations, effective_rum, rng);
 
                 let asteroid = self.planets.get_mut_or_err(&cove.planet_id)?;
-                asteroid.populations = tavern.populations.clone();
+                asteroid.populations = populations;
             }
         }
 
@@ -3274,7 +3364,7 @@ mod test {
         );
 
         let team_id =
-            world.generate_random_team(rng, planet.id, "test".into(), "testship".into(), None)?;
+            world.generate_random_team(rng, planet.id, "test".into(), "testship".into())?;
 
         world.own_team_id = team_id;
 
@@ -3353,7 +3443,7 @@ mod test {
         );
 
         let team_id =
-            world.generate_random_team(rng, planet.id, "test".into(), "testship".into(), None)?;
+            world.generate_random_team(rng, planet.id, "test".into(), "testship".into())?;
 
         world.own_team_id = team_id;
 
@@ -3421,13 +3511,9 @@ mod test {
 
         let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         let planet = PLANET_DATA[0].clone();
-        let team_id = app.world.generate_random_team(
-            rng,
-            planet.id,
-            "test".into(),
-            "testship".into(),
-            None,
-        )?;
+        let team_id =
+            app.world
+                .generate_random_team(rng, planet.id, "test".into(), "testship".into())?;
 
         // Add rum to team
         let mut team = app.world.teams.get_or_err(&team_id)?.clone();
@@ -3512,20 +3598,12 @@ mod test {
 
         let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         let planet = PLANET_DATA[0].clone();
-        let home_id = app.world.generate_random_team(
-            rng,
-            planet.id,
-            "home".into(),
-            "homeship".into(),
-            None,
-        )?;
-        let away_id = app.world.generate_random_team(
-            rng,
-            planet.id,
-            "away".into(),
-            "awayship".into(),
-            None,
-        )?;
+        let home_id =
+            app.world
+                .generate_random_team(rng, planet.id, "home".into(), "homeship".into())?;
+        let away_id =
+            app.world
+                .generate_random_team(rng, planet.id, "away".into(), "awayship".into())?;
 
         // Give both teams a known amount of rum.
         const STARTING_RUM: u32 = 20;
@@ -3774,7 +3852,6 @@ mod test {
             DEFAULT_PLANET_ID.clone(),
             "Testen".to_string(),
             "Tosten".to_string(),
-            Some(0.0),
         )?;
 
         let team = app.world.teams.get_or_err(&team_id)?;
@@ -3832,7 +3909,6 @@ mod test {
             DEFAULT_PLANET_ID.clone(),
             "Testen".to_string(),
             "Tosten".to_string(),
-            Some(0.0),
         )?;
 
         let mut team = app.world.teams.get_or_err(&team_id)?.clone();

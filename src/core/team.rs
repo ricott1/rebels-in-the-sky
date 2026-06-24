@@ -349,17 +349,19 @@ impl Team {
 
     pub fn can_teleport_to(&self, to: &Planet) -> AppResult<()> {
         let has_teleportation_pad = self.home_planet_id == to.id
-            || to
-                .upgrades
-                .contains(&PlanetUpgradeTarget::TeleportationPad);
+            || to.upgrades.contains(&PlanetUpgradeTarget::TeleportationPad);
 
         if !has_teleportation_pad {
             return Err(anyhow!("{} has no teleportation pad", to.name));
         }
 
         // If it has a pad but it's not your own asteroid, cannot teleport
-        if self.home_planet_id != to.id && !self.asteroid_ids.contains(&to.id) {
-            return Err(anyhow!("Cannot use teleportation pad on {}", to.name));
+        // unless the asteroid opened its pad to external crews.
+        if self.home_planet_id != to.id
+            && !self.asteroid_ids.contains(&to.id)
+            && !to.allow_external_teleport
+        {
+            return Err(anyhow!("Cannot use teleportation pad"));
         }
 
         let rum_required = self.teleport_rum_cost(to.id);
@@ -406,13 +408,17 @@ impl Team {
             return Err(anyhow!("Not on the same planet"));
         }
 
-        if is_in_space_cove_on.is_some()
-            && self.space_cove.as_ref().map(|cove| cove.planet_id) != is_in_space_cove_on
-        {
+        if !self.can_hire_from_space_cove(is_in_space_cove_on) {
             return Err(anyhow!("Not in team space cove"));
         }
 
         Ok(())
+    }
+
+    /// A free pirate standing in a space cove can only be hired by that cove's team.
+    pub fn can_hire_from_space_cove(&self, player_space_cove: Option<PlanetId>) -> bool {
+        player_space_cove.is_none()
+            || self.space_cove.as_ref().map(|cove| cove.planet_id) == player_space_cove
     }
 
     // This function is necessary for local teams to consider hiring a player (even if the crew is full).
@@ -971,6 +977,37 @@ impl Team {
         }
 
         for (resource, amount) in upgrade.target.upgrade_cost().iter() {
+            if self.resources.value(resource) < *amount {
+                return Err(anyhow!("Insufficient resources"));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn can_upgrade_space_cove(&self, target: SpaceCoveUpgradeTarget) -> AppResult<()> {
+        let cove = self
+            .space_cove
+            .as_ref()
+            .ok_or(anyhow!("You don't have a space cove"))?;
+
+        if !cove.is_ready() {
+            return Err(anyhow!("The space cove is still under construction"));
+        }
+
+        if cove.upgrades.contains(&target) {
+            return Err(anyhow!("{target} is already built"));
+        }
+
+        if cove.pending_upgrade.is_some() {
+            return Err(anyhow!("Already building something in the cove"));
+        }
+
+        if self.is_on_planet() != Some(cove.planet_id) {
+            return Err(anyhow!("Can only build at the space cove"));
+        }
+
+        for (resource, amount) in target.upgrade_cost().iter() {
             if self.resources.value(resource) < *amount {
                 return Err(anyhow!("Insufficient resources"));
             }

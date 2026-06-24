@@ -120,13 +120,13 @@ impl<'a> Widget for Checkbox<'a> {
 
         let switch = if self.state {
             vec![
-                Span::styled("  ", Style::default().bg(track_color)),
-                Span::styled("█", Style::default().fg(knob_color).bg(track_color)),
+                Span::styled("■■", Style::default().fg(track_color)),
+                Span::styled("■", Style::default().fg(knob_color)),
             ]
         } else {
             vec![
-                Span::styled("█", Style::default().fg(knob_color).bg(track_color)),
-                Span::styled("  ", Style::default().bg(track_color)),
+                Span::styled("■", Style::default().fg(knob_color)),
+                Span::styled("■■", Style::default().fg(track_color)),
             ]
         };
 

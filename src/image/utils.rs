@@ -161,6 +161,16 @@ impl LightMaskStyle {
         }
     }
 
+    pub fn lamp(center: (u32, u32)) -> Self {
+        Self::Exponential {
+            from_background: Rgb([255, 200, 90]),
+            to_background: None,
+            from_alpha: 255,
+            to_alpha: 0,
+            center: Some(center),
+        }
+    }
+
     pub fn mask(&self, width: u32, height: u32) -> RgbaImage {
         fn interpolate_pixel(
             v: f32,
