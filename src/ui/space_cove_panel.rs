@@ -14,8 +14,8 @@ use crate::ui::traits::SplitPanel;
 use crate::ui::ui_screen::{render_help_block, tab_link, UiTab};
 use crate::ui::utils::img_to_lines;
 use crate::ui::widgets::{
-    default_block, go_to_planet_button, render_available_upgrades, render_navigable_list,
-    selectable_list, teleport_button,
+    default_block, go_to_planet_button, render_available_upgrades, render_market_on_planet,
+    render_navigable_list, selectable_list, teleport_button,
 };
 use crate::ui::{constants::*, ui_key};
 use crate::{core::*, types::AppResult};
@@ -440,11 +440,6 @@ impl SpaceCovePanel {
         building: &SpaceCoveUpgradeTarget,
         area: Rect,
     ) -> AppResult<()> {
-        own_team
-            .has_space_cove_on()
-            .and_then(|id| world.planets.get(&id))
-            .expect("Asteroid with space cove should exist in world");
-
         if cove.upgrades.contains(&building) {
             match building {
                 SpaceCoveUpgradeTarget::TeleportationPad => {
@@ -455,12 +450,10 @@ impl SpaceCovePanel {
                 }
 
                 SpaceCoveUpgradeTarget::Stadium => {
-                    return self.render_stadium_detail(frame, asteroid, own_team, area);
+                    return self.render_stadium_detail(frame, world, asteroid, own_team, area);
                 }
 
-                SpaceCoveUpgradeTarget::Market => {
-                    return self.render_market_detail(frame, area);
-                }
+                SpaceCoveUpgradeTarget::Market => return Ok(()),
             }
         }
 
@@ -672,6 +665,7 @@ impl SpaceCovePanel {
     fn render_stadium_detail(
         &self,
         frame: &mut UiFrame,
+        world: &World,
         asteroid: &Planet,
         own_team: &Team,
         area: Rect,
@@ -683,6 +677,39 @@ impl SpaceCovePanel {
         ])
         .split(area);
 
+        let mut current = world
+            .tournaments
+            .values()
+            .filter(|t| t.planet_id == asteroid.id)
+            .collect::<Vec<_>>();
+        current.sort_by_key(|t| t.name());
+
+        let mut past = world
+            .past_tournaments
+            .values()
+            .filter(|s| s.planet_id == asteroid.id)
+            .collect::<Vec<_>>();
+        past.sort_by_key(|s| std::cmp::Reverse(s.ended_at));
+
+        let mut options = vec![];
+        for t in current {
+            options.push((
+                format!("{:<24} {}", t.name(), t.stars()),
+                UiStyle::HIGHLIGHT,
+            ));
+        }
+        for s in past {
+            options.push((format!("{:<24} {}", s.name(), s.stars()), UiStyle::DEFAULT));
+        }
+
+        let list = selectable_list(options);
+        let mut state = ClickableListState::default();
+        frame.render_stateful_interactive_widget(
+            list.block(default_block().title("Tournaments")),
+            layout[0],
+            &mut state,
+        );
+
         self.render_tournament_button(frame, own_team, asteroid, TournamentType::Cup, layout[1]);
         self.render_tournament_button(
             frame,
@@ -691,20 +718,6 @@ impl SpaceCovePanel {
             TournamentType::Supercup,
             layout[2],
         );
-
-        Ok(())
-    }
-
-    fn render_market_detail(&self, frame: &mut UiFrame, area: Rect) -> AppResult<()> {
-        let layout = Layout::vertical([
-            Constraint::Fill(1),   // list?
-            Constraint::Length(3), // market
-        ])
-        .split(area);
-
-        let button = Button::new("Go to market", UiCallback::GoToMarket)
-            .set_hover_text("Trade resources at the cove market.");
-        frame.render_interactive_widget(button, layout[1]);
 
         Ok(())
     }
@@ -926,11 +939,30 @@ impl Screen for SpaceCovePanel {
                         )?;
 
                         // Render right side
-                        if *building == SpaceCoveUpgradeTarget::Tavern {
-                            frame.render_widget(
-                                &self.tavern_widget,
-                                split[1].inner(Margin::new(1, 1)),
-                            );
+                        let right_area = split[1].inner(Margin::new(1, 1));
+                        match building {
+                            SpaceCoveUpgradeTarget::TeleportationPad => {
+                                let t = self.tick % 60;
+                                let left_eye_blinking = [2, 3, 5, 13, 33].contains(&t);
+                                let right_eye_blinking = [2, 3, 6, 7, 41].contains(&t);
+                                let widget = match (left_eye_blinking, right_eye_blinking) {
+                                    (false, false) => &self.cove_image_widgets[0],
+                                    (true, false) => &self.cove_image_widgets[1],
+                                    (false, true) => &self.cove_image_widgets[2],
+                                    (true, true) => &self.cove_image_widgets[3],
+                                };
+                                frame.render_widget(widget, right_area);
+                            }
+                            SpaceCoveUpgradeTarget::Tavern => {
+                                frame.render_widget(&self.tavern_widget, right_area);
+                            }
+                            SpaceCoveUpgradeTarget::Stadium => {
+                                //render selected tournament?
+                            }
+
+                            SpaceCoveUpgradeTarget::Market => {
+                                render_market_on_planet(frame, world, own_team, asteroid, split[1])?
+                            }
                         }
                     }
                 }

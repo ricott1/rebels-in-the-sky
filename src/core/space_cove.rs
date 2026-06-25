@@ -181,14 +181,18 @@ impl UpgradeableElement for SpaceCoveUpgradeTarget {
                     (Resource::SATOSHI, 80_000),
                     (Resource::SCRAPS, 60),
                     (Resource::GOLD, 5),
-                    (Resource::RUM, 100),
+                    (Resource::RUM, 25),
                 ]
             }
-            Self::Stadium => vec![(Resource::SCRAPS, 220), (Resource::GOLD, 80)],
+            Self::Stadium => vec![
+                (Resource::SATOSHI, 70_000),
+                (Resource::SCRAPS, 220),
+                (Resource::GOLD, 80),
+            ],
             Self::Tavern => vec![
-                (Resource::SATOSHI, 180_000),
-                (Resource::SCRAPS, 120),
-                (Resource::RUM, 50),
+                (Resource::SATOSHI, 60_000),
+                (Resource::SCRAPS, 100),
+                (Resource::RUM, 150),
             ],
         }
     }
