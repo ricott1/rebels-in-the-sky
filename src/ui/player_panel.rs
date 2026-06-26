@@ -417,7 +417,7 @@ impl PlayerListPanel {
         if player.team.is_none() {
             let is_in_space_cove = world.player_is_in_space_cove_on(player);
 
-            let hire_cost = player.hire_cost(own_team.reputation);
+            let hire_cost = player.hire_cost();
             let mut button = Button::new(
                 format!("Hire (-{})", format_satoshi(hire_cost)),
                 UiCallback::HirePlayer {

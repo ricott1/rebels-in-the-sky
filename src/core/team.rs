@@ -423,7 +423,7 @@ impl Team {
 
     // This function is necessary for local teams to consider hiring a player (even if the crew is full).
     pub fn can_consider_hiring_player(&self, player: &Player) -> AppResult<()> {
-        let hiring_cost = player.hire_cost(self.reputation);
+        let hiring_cost = player.hire_cost();
         if self.balance() < hiring_cost {
             return Err(anyhow!("Not enough money {hiring_cost}"));
         }

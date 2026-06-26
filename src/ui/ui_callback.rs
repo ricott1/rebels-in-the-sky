@@ -644,7 +644,7 @@ impl UiCallback {
             }
 
             // Local trade
-            if proposer_player.bare_hiring_value() >= target_player.bare_hiring_value() {
+            if proposer_player.hire_cost() >= target_player.hire_cost() {
                 app.world
                     .swap_players_team(proposer_player_id, target_player_id)?;
 

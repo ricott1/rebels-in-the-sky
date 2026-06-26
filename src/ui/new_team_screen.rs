@@ -664,7 +664,7 @@ impl NewTeamScreen {
                     format!(
                         "{:max_width$}{:>9}",
                         name,
-                        format_satoshi(player.hire_cost(0.0),)
+                        format_satoshi(player.hire_cost(),)
                     ),
                     style,
                 )
@@ -790,7 +790,6 @@ impl Screen for NewTeamScreen {
     }
 
     fn update(&mut self, world: &World) -> AppResult<()> {
-
         // If planets is empty, we initialize the list of planets and planet_players
         if self.planet_ids.is_empty() {
             self.planet_ids = world
@@ -809,17 +808,17 @@ impl Screen for NewTeamScreen {
                 };
 
                 let planet_players = self.planet_players.entry(planet_id).or_default();
-                planet_players.push((player.id, player.hire_cost(0.0)));
+                planet_players.push((player.id, player.hire_cost()));
                 planet_players.sort_by(|a, b| {
                     let p1 = world
                         .players
                         .get(&a.0)
-                        .map(|p| p.hire_cost(0.0))
+                        .map(|p| p.hire_cost())
                         .unwrap_or_default();
                     let p2 = world
                         .players
                         .get(&b.0)
-                        .map(|p| p.hire_cost(0.0))
+                        .map(|p| p.hire_cost())
                         .unwrap_or_default();
                     p2.cmp(&p1)
                 });

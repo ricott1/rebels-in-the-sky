@@ -795,7 +795,7 @@ impl World {
         let mut team = self.teams.get_or_err(team_id)?.clone();
         let is_in_space_cove = self.player_is_in_space_cove_on(player);
         team.can_hire_player(player, is_in_space_cove)?;
-        team.sub_resource(Resource::SATOSHI, player.hire_cost(team.reputation))?;
+        team.sub_resource(Resource::SATOSHI, player.hire_cost())?;
         self.teams.insert(team.id, team);
 
         self.add_player_to_team(player_id, team_id)?;
@@ -2587,7 +2587,7 @@ impl World {
 
                 // Loop and keep candidates until the team is out of balance
                 for pirate in available_free_pirates.iter() {
-                    running_cost += pirate.hire_cost(team.reputation);
+                    running_cost += pirate.hire_cost();
                     if running_cost > team.balance() {
                         break;
                     }

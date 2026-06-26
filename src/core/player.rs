@@ -834,29 +834,27 @@ impl Player {
         }
     }
 
-    pub fn bare_hiring_value(&self) -> f32 {
-        // Age modifier: linear 1.5 at birth, 1.0 at peak, 0.5 at retirement.
-        let relative_age = self.info.relative_age();
-        let age_modifier = if relative_age <= PEAK_PERFORMANCE_RELATIVE_AGE {
-            1.5 - 0.5 * (relative_age / PEAK_PERFORMANCE_RELATIVE_AGE)
-        } else {
-            let progress = (relative_age - PEAK_PERFORMANCE_RELATIVE_AGE)
-                / (1.0 - PEAK_PERFORMANCE_RELATIVE_AGE);
-            1.0 - 0.5 * progress
+    pub fn hire_cost(&self) -> u32 {
+        let bare_value = {
+            // Age modifier: linear 1.5 at birth, 1.0 at peak, 0.5 at retirement.
+            let relative_age = self.info.relative_age();
+            let age_modifier = if relative_age <= PEAK_PERFORMANCE_RELATIVE_AGE {
+                1.5 - 0.5 * (relative_age / PEAK_PERFORMANCE_RELATIVE_AGE)
+            } else {
+                let progress = (relative_age - PEAK_PERFORMANCE_RELATIVE_AGE)
+                    / (1.0 - PEAK_PERFORMANCE_RELATIVE_AGE);
+                1.0 - 0.5 * progress
+            };
+
+            let special_trait_extra = if self.special_trait.is_some() {
+                SPECIAL_TRAIT_VALUE_BONUS * self.reputation.powf(1.0 / 3.0)
+            } else {
+                1.0
+            };
+
+            (self.average_skill() * age_modifier * special_trait_extra).max(0.0)
         };
-
-        let special_trait_extra = if self.special_trait.is_some() {
-            SPECIAL_TRAIT_VALUE_BONUS * self.reputation.powf(1.0 / 3.0)
-        } else {
-            1.0
-        };
-
-        (self.average_skill() * age_modifier * special_trait_extra).max(0.0)
-    }
-
-    pub fn hire_cost(&self, team_reputation: f32) -> u32 {
-        (COST_PER_VALUE * self.bare_hiring_value() * (5.0 * self.reputation - team_reputation))
-            .max(1.0) as u32
+        (COST_PER_VALUE * bare_value).max(1.0) as u32
     }
 
     pub fn release_cost(&self) -> u32 {
@@ -1441,7 +1439,7 @@ mod test {
                 player.info.relative_age(),
                 player.average_skill(),
                 player.average_skill().stars(),
-                player.bare_hiring_value()
+                player.hire_cost()
             );
             player.info.age += 0.025 * player.info.population.max_age();
         }
