@@ -1484,17 +1484,17 @@ pub fn render_market_on_planet(
     );
 
     if let Some(cove) = own_team.space_cove.as_ref() {
-        if matches!(own_team.is_on_planet(), Some(id) if id == cove.planet_id) {
-            if !cove.upgrades.contains(&SpaceCoveUpgradeTarget::Market) {
-                frame.render_widget(
-                    Paragraph::new(vec![Line::from(
-                        "There is no market available on the cove yet.",
-                    )])
-                    .centered(),
-                    inner_area,
-                );
-                return Ok(());
-            }
+        if matches!(own_team.is_on_planet(), Some(id) if id == cove.planet_id)
+            && !cove.upgrades.contains(&SpaceCoveUpgradeTarget::Market)
+        {
+            frame.render_widget(
+                Paragraph::new(vec![Line::from(
+                    "There is no market available on the cove yet.",
+                )])
+                .centered(),
+                inner_area,
+            );
+            return Ok(());
         }
     }
 

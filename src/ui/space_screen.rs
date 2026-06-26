@@ -58,7 +58,6 @@ impl Screen for SpaceScreen {
     }
 
     fn update(&mut self, world: &World) -> AppResult<()> {
-
         if let Some(space_adventure) = &world.space_adventure {
             self.entity_count = space_adventure.entity_count();
         }

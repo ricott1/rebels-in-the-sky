@@ -504,9 +504,13 @@ impl GalaxyPanel {
         }
 
         if !player_options.is_empty() {
-            render_navigable_list(frame, split[2], "Top free pirates ", &player_options, |player_id| {
-                UiCallback::GoToPlayer { player_id }
-            });
+            render_navigable_list(
+                frame,
+                split[2],
+                "Top free pirates ",
+                &player_options,
+                |player_id| UiCallback::GoToPlayer { player_id },
+            );
         }
 
         if !resource_options.is_empty() {

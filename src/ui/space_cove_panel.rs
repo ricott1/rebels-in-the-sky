@@ -455,7 +455,7 @@ impl SpaceCovePanel {
         building: &SpaceCoveUpgradeTarget,
         area: Rect,
     ) -> AppResult<()> {
-        if cove.upgrades.contains(&building) {
+        if cove.upgrades.contains(building) {
             match building {
                 SpaceCoveUpgradeTarget::TeleportationPad => {
                     return self.render_teleportation_pad_detail(frame, world, asteroid, area);

@@ -1071,13 +1071,10 @@ impl Screen for SwarmPanel {
     }
 
     fn update(&mut self, world: &World) -> AppResult<()> {
-
-        if self.max_index() == 0 {
-            if self.view == SwarmView::Ranking {
-                match self.active_list {
-                    PanelList::Players => self.player_ranking_index = None,
-                    PanelList::Teams => self.team_ranking_index = None,
-                }
+        if self.max_index() == 0 && self.view == SwarmView::Ranking {
+            match self.active_list {
+                PanelList::Players => self.player_ranking_index = None,
+                PanelList::Teams => self.team_ranking_index = None,
             }
         }
 

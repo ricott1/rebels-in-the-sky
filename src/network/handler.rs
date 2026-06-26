@@ -422,7 +422,7 @@ impl NetworkHandler {
                                 // listen on a circuit address through it so we become reachable from behind a NAT.
                                 // DCUtR then upgrades the relayed connection to a direct one.
                                 if !relay_reserved
-                                    && info.protocols.iter().any(|p| *p == relay::HOP_PROTOCOL_NAME)
+                                    && info.protocols.contains(&relay::HOP_PROTOCOL_NAME)
                                 {
                                     for seed in &seed_addresses {
                                         let circuit = seed
