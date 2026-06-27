@@ -772,7 +772,7 @@ impl SpaceCovePanel {
         let mut state = ClickableListState::default();
         state.select(self.tournament_index);
         frame.render_stateful_interactive_widget(
-            list.block(default_block().title("Tournaments")),
+            list.block(default_block().title(format!("Tournaments on {}", asteroid.name))),
             layout[2],
             &mut state,
         );
