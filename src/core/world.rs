@@ -1762,7 +1762,10 @@ impl World {
                             game.get_score().1,
                             game.away_team_in_game.name,
                         ),
-                        links: vec![("Game ended".to_string(), UiCallback::GoToGames)],
+                        links: vec![(
+                            "Game ended".to_string(),
+                            UiCallback::GoToGame { game_id: game.id },
+                        )],
                         level: log::Level::Info,
                         is_skippable: false,
                         timestamp: current_tick,

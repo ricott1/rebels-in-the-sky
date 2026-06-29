@@ -4,8 +4,8 @@ use super::{
     ui_callback::{CallbackRegistry, UiCallback},
     widgets::default_block,
 };
-use ratatui::crossterm;
 use ratatui::crossterm::event::KeyCode;
+use ratatui::{crossterm, layout::Alignment};
 use ratatui::{
     layout::{Margin, Rect},
     style::{Style, Styled},
@@ -23,7 +23,7 @@ pub struct Button<'a> {
     selected: bool,
     is_hovered: bool,
     disabled_text: Option<Text<'a>>,
-    text_alignemnt: ratatui::layout::Alignment,
+    text_alignemnt: Alignment,
     style: Style,
     hover_style: Style,
     block: Option<Block<'a>>,
@@ -53,8 +53,14 @@ impl<'a> Button<'a> {
         }
     }
 
-    pub fn set_text(&mut self, text: impl Into<Text<'a>>) {
+    pub fn set_text(mut self, text: impl Into<Text<'a>>) -> Self {
         self.text = text.into();
+        self
+    }
+
+    pub fn set_text_alignemnt(mut self, text_alignemnt: Alignment) -> Self {
+        self.text_alignemnt = text_alignemnt;
+        self
     }
 
     pub fn disable(&mut self, text: Option<impl Into<Text<'a>>>) {

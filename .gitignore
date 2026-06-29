@@ -12,6 +12,7 @@ desktop.ini
 
 create_release.sh
 
+
 ## Editor
 *.swp
 *.swo
@@ -89,8 +90,8 @@ tests/rustdoc-gui/src/**.lock
 
 # Before adding new lines, see the comment at the top.
 
-local_world.json.compressed
-local_world.json.gz
+*_world.json
+*_world.json.gz
 pytests
 pytests/*
 keys

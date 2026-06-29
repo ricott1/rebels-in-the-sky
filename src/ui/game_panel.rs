@@ -34,6 +34,7 @@ use core::fmt::Debug;
 use itertools::Itertools;
 use ratatui::crossterm;
 use ratatui::crossterm::event::KeyCode;
+use ratatui::layout::Alignment;
 use ratatui::style::{Style, Styled};
 use ratatui::{
     layout::{Constraint, Layout, Margin},
@@ -413,65 +414,70 @@ impl GamePanel {
             frame.render_widget(paragraph, top_split[3]);
         }
 
-        let home_dot = if action.possession == Possession::Home {
-            "● "
-        } else {
-            "  "
-        };
-        let away_dot = if action.possession == Possession::Away {
-            " ●"
-        } else {
-            "  "
-        };
-        let l = MAX_NAME_LENGTH + 2;
+        let l = MAX_NAME_LENGTH as u16 + 2;
         let spans_split = Layout::horizontal([
             Constraint::Fill(1),
-            Constraint::Length(2),
-            Constraint::Max(l as u16),
-            Constraint::Length(4),
-            Constraint::Max(l as u16),
-            Constraint::Length(2),
+            Constraint::Length(l),
+            Constraint::Length(7),
+            Constraint::Length(l),
             Constraint::Fill(1),
         ])
         .split(central_split[1]);
-        frame.render_widget(Paragraph::new(home_dot), spans_split[1]);
 
         if world.teams.contains_key(&game.home_team_in_game.team_id) {
             let home_button = Button::no_box(
-                format!("{:>}", game.home_team_in_game.name),
+                game.home_team_in_game.name.clone(),
                 UiCallback::GoToTeam {
                     team_id: game.home_team_in_game.team_id,
                 },
             )
+            .set_text_alignemnt(Alignment::Right)
             .set_style(UiStyle::HELP_LINK)
             .set_hover_text(format!("Go to {} team", game.home_team_in_game.name));
-            frame.render_interactive_widget(home_button, spans_split[2]);
+
+            let name_split = Layout::horizontal([
+                Constraint::Fill(1),
+                Constraint::Length(game.home_team_in_game.name.len() as u16),
+            ])
+            .split(spans_split[1]);
+            frame.render_interactive_widget(home_button, name_split[1]);
         } else {
-            frame.render_widget(
-                Paragraph::new(format!("{:>}", game.home_team_in_game.name)),
-                spans_split[2],
-            );
+            frame.render_widget(format!("{:>}", game.home_team_in_game.name), spans_split[1]);
         }
 
         frame.render_widget(Paragraph::default(), spans_split[3]);
 
         if world.teams.contains_key(&game.away_team_in_game.team_id) {
             let away_button = Button::no_box(
-                format!("{:<}", game.away_team_in_game.name),
+                game.away_team_in_game.name.clone(),
                 UiCallback::GoToTeam {
                     team_id: game.away_team_in_game.team_id,
                 },
             )
+            .set_text_alignemnt(Alignment::Left)
             .set_style(UiStyle::HELP_LINK)
             .set_hover_text(format!("Go to {} team", game.away_team_in_game.name));
-            frame.render_interactive_widget(away_button, spans_split[4]);
+
+            let name_split = Layout::horizontal([
+                Constraint::Length(game.away_team_in_game.name.len() as u16),
+                Constraint::Fill(1),
+            ])
+            .split(spans_split[3]);
+            frame.render_interactive_widget(away_button, name_split[0]);
         } else {
-            frame.render_widget(
-                Paragraph::new(format!("{:<}", game.away_team_in_game.name)),
-                spans_split[4],
-            );
+            frame.render_widget(format!("{:<}", game.away_team_in_game.name), spans_split[3]);
         }
-        frame.render_widget(Paragraph::new(away_dot), spans_split[5]);
+
+        let possession_indicator = if action.possession == Possession::Home {
+            Paragraph::new("●").left_aligned()
+        } else {
+            Paragraph::new("●").right_aligned()
+        };
+
+        frame.render_widget(
+            possession_indicator,
+            spans_split[2].inner(Margin::new(1, 0)),
+        );
 
         let timer_lines = self.build_timer_lines(world, game);
         frame.render_widget(Paragraph::new(timer_lines).centered(), central_split[5]);

@@ -342,7 +342,7 @@ impl TournamentPanel {
         if let Err(err) = own_team.can_register_to_tournament(tournament, Tick::now()) {
             register_button.disable(Some(err.to_string()));
             if tournament.is_team_registered(&world.own_team_id) {
-                register_button.set_text("Already registered");
+                register_button = register_button.set_text("Already registered");
             }
         }
 

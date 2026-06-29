@@ -436,7 +436,7 @@ pub fn trade_resource_button<'a>(
     }
 
     if amount == 0 {
-        button.set_text("");
+        button = button.set_text("");
         let disabled_text: Option<&str> = None;
         button.disable(disabled_text);
     }
@@ -2005,8 +2005,8 @@ fn format_player_stats(player: &'_ Player) -> Vec<Line<'_>> {
     let games_played = stats.games.iter().sum::<u16>().max(1) as f32;
 
     text.push(Line::from(format!(
-        "{:<12} W{}/L{}/D{}",
-        "Games", stats.games[0], stats.games[1], stats.games[2]
+        "{:<12} W{}/L{}",
+        "Games", stats.games[0], stats.games[1]
     )));
 
     text.push(Line::from(format!(
