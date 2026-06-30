@@ -166,6 +166,12 @@ fn compute_round_sizes(participants: usize) -> Vec<usize> {
     rounds
 }
 
+fn set_line(lines: &mut [Line<'static>], idx: usize, line: Line<'static>) {
+    if let Some(slot) = lines.get_mut(idx) {
+        *slot = line;
+    }
+}
+
 fn get_round_lines(
     round_idx: usize,
     round_description: Vec<TournamentDescription>,
@@ -197,7 +203,7 @@ fn get_round_lines(
         } else {
             UiStyle::DEFAULT
         };
-        lines[central_line_index - num_blank_lines - 1] = Line::from(vec![
+        set_line(&mut lines, central_line_index - num_blank_lines - 1, Line::from(vec![
             Span::styled("═".repeat(l), style),
             Span::raw(" "),
             Span::styled(home_team_name.clone(), home_team_style),
@@ -207,7 +213,7 @@ fn get_round_lines(
                 style,
             ),
             Span::styled("╗   ", style),
-        ]);
+        ]));
 
         let blank_line = Line::from(vec![
             Span::raw(" ".repeat(COL_WIDTH + 2)),
@@ -215,26 +221,26 @@ fn get_round_lines(
         ]);
 
         for b_idx in 0..num_blank_lines {
-            lines[central_line_index - num_blank_lines + b_idx] = blank_line.clone();
+            set_line(&mut lines, central_line_index - num_blank_lines + b_idx, blank_line.clone());
         }
 
         let result_width = COL_WIDTH + 2;
 
         if matches!(winner, Some(p)  if p == Possession::Home) {
-            lines[central_line_index] = Line::from(vec![
+            set_line(&mut lines, central_line_index, Line::from(vec![
                 Span::raw(format!("{:^result_width$}", result.clone())),
                 Span::styled("╚═", UiStyle::OK),
-            ]);
+            ]));
         } else if matches!(winner, Some(p)  if p == Possession::Away) {
-            lines[central_line_index] = Line::from(vec![
+            set_line(&mut lines, central_line_index, Line::from(vec![
                 Span::raw(format!("{:^result_width$}", result.clone())),
                 Span::styled("╔═", UiStyle::OK),
-            ]);
+            ]));
         } else {
-            lines[central_line_index] = Line::from(vec![
+            set_line(&mut lines, central_line_index, Line::from(vec![
                 Span::raw(format!("{:^result_width$}", result.clone())),
                 Span::raw("╠═"),
-            ]);
+            ]));
         };
 
         let style = if matches!(winner,Some(p)  if p == Possession::Away) {
@@ -248,11 +254,11 @@ fn get_round_lines(
             Span::styled("║", style),
         ]);
         for b_idx in 0..num_blank_lines {
-            lines[central_line_index + 1 + b_idx] = blank_line.clone();
+            set_line(&mut lines, central_line_index + 1 + b_idx, blank_line.clone());
         }
         let l = COL_WIDTH.saturating_sub(away_team_name.len()) / 2;
 
-        lines[central_line_index + num_blank_lines + 1] = Line::from(vec![
+        set_line(&mut lines, central_line_index + num_blank_lines + 1, Line::from(vec![
             Span::styled("═".repeat(l), style),
             Span::raw(" "),
             Span::styled(away_team_name.clone(), away_team_style),
@@ -262,7 +268,7 @@ fn get_round_lines(
                 style,
             ),
             Span::styled("╝   ", style),
-        ]);
+        ]));
     }
 
     lines
@@ -847,5 +853,33 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_get_bracket_lines_oversized_does_not_panic() {
+        for n in [25usize, 32] {
+            let mut tournament = Tournament::test(n, n);
+            let mut games = GameMap::new();
+
+            for game in tournament.initialize() {
+                games.insert(game.id, game);
+            }
+
+            let own_team_id = tournament.participants.keys().next().unwrap().clone();
+            let active_games = tournament.active_games(&games);
+
+            let brackets = get_bracket_lines(
+                None,
+                n,
+                &active_games,
+                &[],
+                own_team_id,
+                tournament.registrations_closing_at,
+            );
+
+            for round_lines in brackets.iter() {
+                assert_eq!(round_lines.len(), ROUND_LINES_LEN);
+            }
+        }
     }
 }
