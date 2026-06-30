@@ -43,6 +43,21 @@ pub const fn input_from_key_event(key: KeyEvent) -> Input {
     }
 }
 
+pub enum IndexBound {
+    Wrap,
+    Clamp,
+}
+
+pub fn normalize_index(index: usize, len: usize, bound: IndexBound) -> Option<usize> {
+    if len == 0 {
+        return None;
+    }
+    Some(match bound {
+        IndexBound::Wrap => index % len,
+        IndexBound::Clamp => index.min(len - 1),
+    })
+}
+
 pub fn img_to_lines<'a>(img: &RgbaImage) -> Vec<Line<'a>> {
     let mut lines: Vec<Line> = vec![];
     let width = img.width();

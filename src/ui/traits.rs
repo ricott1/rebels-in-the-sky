@@ -5,7 +5,7 @@ use crate::core::resources::Resource;
 use crate::core::world::World;
 use crate::core::{Kartoffel, Trait};
 use crate::image::utils::Gif;
-use crate::ui::utils::img_to_lines;
+use crate::ui::utils::{img_to_lines, normalize_index, IndexBound};
 use crate::{core::skill::Rated, types::AppResult};
 use ratatui::crossterm;
 use ratatui::{
@@ -66,16 +66,18 @@ pub trait SplitPanel {
     }
     fn set_index(&mut self, _index: usize) {}
     fn previous_index(&mut self) {
-        if self.max_index() > 0 {
-            if let Some(current_index) = self.index() {
-                self.set_index((current_index + 1) % self.max_index());
+        let len = self.max_index();
+        if let Some(i) = self.index() {
+            if let Some(next) = normalize_index(i + 1, len, IndexBound::Wrap) {
+                self.set_index(next);
             }
         }
     }
     fn next_index(&mut self) {
-        if self.max_index() > 0 {
-            if let Some(current_index) = self.index() {
-                self.set_index((current_index + self.max_index() - 1) % self.max_index());
+        let len = self.max_index();
+        if let Some(i) = self.index() {
+            if let Some(next) = normalize_index((i + len).saturating_sub(1), len, IndexBound::Wrap) {
+                self.set_index(next);
             }
         }
     }
