@@ -2518,7 +2518,7 @@ impl World {
             .filter_map(|cove| self.planets.get(&cove.planet_id).cloned())
             .collect();
 
-        let extra_potential = self.get_own_team().ok().map(|t| t.reputation / 6.0);
+        let extra_potential = self.get_own_team().ok().map(|t| t.reputation / 5.0);
         for asteroid in &cove_asteroids {
             self.populate_planet(rng, asteroid, extra_potential)?;
         }
