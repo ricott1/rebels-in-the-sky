@@ -99,6 +99,9 @@ pub enum UiCallback {
     GoToFreePirates,
     GoToGames,
     GoToTournaments,
+    GoToTournament {
+        tournament_id: TournamentId,
+    },
     ChallengeTeam {
         team_id: TeamId,
     },
@@ -340,6 +343,16 @@ impl UiCallback {
                 app.ui.switch_to(super::ui_screen::UiTab::Pirates);
             }
 
+            Ok(None)
+        })
+    }
+
+    fn go_to_tournament(tournament_id: TournamentId) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            app.ui
+                .tournament_panel
+                .set_active_tournament(tournament_id, &app.world)?;
+            app.ui.switch_to(super::ui_screen::UiTab::Tournaments);
             Ok(None)
         })
     }
@@ -1300,82 +1313,85 @@ impl UiCallback {
             }
             Self::GoToTeam { team_id } => Self::go_to_team(*team_id)(app),
             Self::TutorialGoToChat => {
-                app.ui.swarm_panel.update(&app.world)?;
                 app.ui.swarm_panel.set_view(SwarmView::Chat);
+                app.ui.swarm_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Swarm);
 
                 Ok(None)
             }
             Self::TutorialGoToChallenges => {
-                app.ui.team_panel.update(&app.world)?;
                 app.ui.team_panel.set_view(TeamView::OpenToChallenge);
+                app.ui.team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Crews);
 
                 Ok(None)
             }
             Self::TutorialGoToMarket => {
-                app.ui.my_team_panel.update(&app.world)?;
                 app.ui.my_team_panel.set_view(MyTeamView::Market);
+                app.ui.my_team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
 
                 Ok(None)
             }
             Self::TutorialGoToShipyard => {
-                app.ui.my_team_panel.update(&app.world)?;
                 app.ui.my_team_panel.set_view(MyTeamView::Shipyard);
+                app.ui.my_team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
 
                 Ok(None)
             }
             Self::TutorialGoToFreePirates => {
-                app.ui.player_panel.update(&app.world)?;
                 app.ui.player_panel.set_view(PlayerView::FreePirates);
+                app.ui.player_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Pirates);
 
                 Ok(None)
             }
             Self::TutorialGoToSpaceAdventure => {
-                app.ui.my_team_panel.update(&app.world)?;
                 app.ui.my_team_panel.set_view(MyTeamView::Info);
+                app.ui.my_team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
 
                 Ok(None)
             }
             Self::TutorialGoToAsteroids => {
-                app.ui.my_team_panel.update(&app.world)?;
                 app.ui.my_team_panel.set_view(MyTeamView::Asteroids);
+                app.ui.my_team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
 
                 Ok(None)
             }
             Self::GoToSwarmRequests => {
-                app.ui.swarm_panel.update(&app.world)?;
                 app.ui.swarm_panel.set_view(SwarmView::Requests);
+                app.ui.swarm_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Swarm);
                 app.ui.close_popup();
 
                 Ok(None)
             }
             Self::GoToFreePirates => {
-                app.ui.player_panel.update(&app.world)?;
                 app.ui.player_panel.set_view(PlayerView::FreePirates);
+                app.ui.player_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Pirates);
                 app.ui.close_popup();
 
                 Ok(None)
             }
             Self::GoToGames => {
+                app.ui.game_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Games);
                 app.ui.close_popup();
 
                 Ok(None)
             }
             Self::GoToTournaments => {
+                app.ui.tournament_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Tournaments);
                 app.ui.close_popup();
 
                 Ok(None)
             }
+            Self::GoToTournament { tournament_id } => Self::go_to_tournament(*tournament_id)(app),
             Self::GoToPlayer { player_id } => Self::go_to_player(*player_id)(app),
             Self::GoToPlayerTeam { player_id } => Self::go_to_player_team(*player_id)(app),
             Self::GoToLoadedGame { game } => Self::go_to_loaded_game(game.clone())(app),

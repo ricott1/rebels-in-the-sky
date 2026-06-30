@@ -566,6 +566,28 @@ impl TournamentPanel {
     pub const fn reset_view(&mut self) {
         self.set_view(TournamentView::All);
     }
+
+    pub fn set_active_tournament(
+        &mut self,
+        tournament_id: TournamentId,
+        world: &World,
+    ) -> AppResult<()> {
+        self.set_view(if world.past_tournaments.contains_key(&tournament_id) {
+            TournamentView::Past
+        } else {
+            TournamentView::All
+        });
+        self.update(world)?;
+        if let Some(index) = self
+            .filtered_tournament_ids
+            .iter()
+            .position(|&id| id == tournament_id)
+        {
+            self.set_index(index);
+            self.update(world)?;
+        }
+        Ok(())
+    }
 }
 
 impl Screen for TournamentPanel {

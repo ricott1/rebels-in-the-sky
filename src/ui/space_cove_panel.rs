@@ -1,6 +1,6 @@
 use super::ui_frame::UiFrame;
 use super::{traits::Screen, ui_callback::UiCallback};
-use crate::game_engine::TournamentType;
+use crate::game_engine::{TournamentId, TournamentType};
 use crate::image::player::PLAYER_IMAGE_WIDTH;
 use crate::image::utils::ExtraImageUtils;
 use crate::image::utils::{open_image, LightMaskStyle};
@@ -12,10 +12,9 @@ use crate::ui::checkbox::Checkbox;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::traits::SplitPanel;
 use crate::ui::ui_screen::{render_help_block, tab_link, UiTab};
-use crate::ui::utils::img_to_lines;
+use crate::ui::utils::{img_to_lines, normalize_index, IndexBound};
 use crate::ui::widgets::{
-    default_block, go_to_planet_button, render_available_upgrades, render_navigable_list,
-    selectable_list, teleport_button,
+    default_block, go_to_planet_button, render_available_upgrades, selectable_list, teleport_button,
 };
 use crate::ui::{constants::*, ui_key};
 use crate::{core::*, types::AppResult};
@@ -41,11 +40,17 @@ const BUILDINGS: [SpaceCoveUpgradeTarget; 4] = [
 #[derive(Debug, Default, PartialEq)]
 enum PanelList {
     #[default]
-    Buildings,
-    Coves,
-    FreePirates,
-    Teams,
-    Tournaments,
+    Top,
+    Bottom,
+}
+
+enum ActiveSelection {
+    Building,
+    Cove,
+    VisitingTeam,
+    Tournament,
+    TavernPirate,
+    None,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -95,6 +100,9 @@ pub struct SpaceCovePanel {
     cove_list_state: ClickableListState,
     building_index: Option<usize>,
     tournament_index: Option<usize>,
+    tournament_ids: Vec<TournamentId>,
+    visiting_team_index: Option<usize>,
+    tavern_pirate_index: Option<usize>,
     tavern_widget: Paragraph<'static>,
     tavern_lamps_on: bool,
     tavern_pirate_ids: Vec<PlayerId>,
@@ -115,6 +123,29 @@ impl SpaceCovePanel {
 
     pub fn set_view(&mut self, view: SpaceCoveView) {
         self.view = view;
+    }
+
+    fn active_selection(&self) -> ActiveSelection {
+        match self.view {
+            SpaceCoveView::OwnCove => {
+                if self.active_list == PanelList::Top {
+                    return ActiveSelection::Building;
+                }
+                match self.building_index.and_then(|i| BUILDINGS.get(i)) {
+                    Some(SpaceCoveUpgradeTarget::TeleportationPad) => ActiveSelection::VisitingTeam,
+                    Some(SpaceCoveUpgradeTarget::Stadium) => ActiveSelection::Tournament,
+                    Some(SpaceCoveUpgradeTarget::Tavern) => ActiveSelection::TavernPirate,
+                    _ => ActiveSelection::None,
+                }
+            }
+            SpaceCoveView::AllCoves => {
+                if self.active_list == PanelList::Top {
+                    ActiveSelection::Cove
+                } else {
+                    ActiveSelection::VisitingTeam
+                }
+            }
+        }
     }
 
     fn get_cove_images(
@@ -333,7 +364,7 @@ impl SpaceCovePanel {
             &mut self.cove_list_state,
         );
         if frame.is_hovering(area) {
-            self.active_list = PanelList::Coves;
+            self.active_list = PanelList::Top;
         }
         Ok(())
     }
@@ -362,7 +393,7 @@ impl SpaceCovePanel {
                 team.name,
                 world.team_rating(&team.id).unwrap_or_default().stars()
             );
-            options.push((team.id, text, style));
+            options.push((text, style));
         }
 
         if options.is_empty() {
@@ -370,11 +401,16 @@ impl SpaceCovePanel {
             return Ok(());
         }
 
-        render_navigable_list(frame, area, "Visiting teams", &options, |team_id| {
-            UiCallback::GoToTeam { team_id }
-        });
+        let list = selectable_list(options);
+        let mut state = ClickableListState::default();
+        state.select(self.visiting_team_index);
+        frame.render_stateful_interactive_widget(
+            list.block(default_block().title("Visiting teams")),
+            area,
+            &mut state,
+        );
         if frame.is_hovering(area) {
-            self.active_list = PanelList::Teams;
+            self.active_list = PanelList::Bottom;
         }
 
         Ok(())
@@ -441,7 +477,7 @@ impl SpaceCovePanel {
         );
 
         if frame.is_hovering(area) {
-            self.active_list = PanelList::Buildings;
+            self.active_list = PanelList::Top;
         }
     }
 
@@ -565,40 +601,7 @@ impl SpaceCovePanel {
         frame.render_interactive_widget(checkbox, layout[0]);
         frame.render_interactive_widget(teleport_button(world, asteroid.id)?, layout[1]);
 
-        if !self.visiting_team_ids.is_empty() {
-            let mut options = vec![];
-            for team_id in self.visiting_team_ids.iter() {
-                let team = if let Some(team) = world.teams.get(team_id) {
-                    team
-                } else {
-                    continue;
-                };
-                let mut style = UiStyle::DEFAULT;
-                if team.id == world.own_team_id {
-                    style = UiStyle::OWN_TEAM;
-                } else if team.peer_id.is_some() {
-                    style = UiStyle::NETWORK;
-                }
-                let text = format!(
-                    "{:<MAX_NAME_LENGTH$} {}",
-                    team.name,
-                    world.team_rating(&team.id).unwrap_or_default().stars()
-                );
-                options.push((text, style));
-            }
-            let list = selectable_list(options);
-
-            frame.render_stateful_interactive_widget(
-                list.block(default_block().title("Visiting teams")),
-                layout[2],
-                &mut ClickableListState::default(),
-            );
-            if frame.is_hovering(layout[2]) {
-                self.active_list = PanelList::Teams
-            }
-        } else {
-            frame.render_widget(default_block().title("No visiting teams"), layout[2]);
-        }
+        self.render_visiting_teams(frame, world, layout[2])?;
 
         Ok(())
     }
@@ -630,7 +633,6 @@ impl SpaceCovePanel {
             .filter_map(|id| world.players.get(id))
             .map(|player| {
                 (
-                    player.id,
                     format!(
                         "{:<width$} {}",
                         player.info.full_name(),
@@ -650,11 +652,16 @@ impl SpaceCovePanel {
                 layout[2],
             );
         } else {
-            render_navigable_list(frame, layout[2], "Free Pirates", &options, |player_id| {
-                UiCallback::GoToPlayer { player_id }
-            });
+            let list = selectable_list(options);
+            let mut state = ClickableListState::default();
+            state.select(self.tavern_pirate_index);
+            frame.render_stateful_interactive_widget(
+                list.block(default_block().title("Free Pirates")),
+                layout[2],
+                &mut state,
+            );
             if frame.is_hovering(layout[2]) {
-                self.active_list = PanelList::FreePirates;
+                self.active_list = PanelList::Bottom;
             }
         }
 
@@ -743,29 +750,16 @@ impl SpaceCovePanel {
         ])
         .split(area);
 
-        let mut current = world
-            .tournaments
-            .values()
-            .filter(|t| t.planet_id == asteroid.id)
-            .collect::<Vec<_>>();
-        current.sort_by_key(|t| t.name());
-
-        let mut past = world
-            .past_tournaments
-            .values()
-            .filter(|s| s.planet_id == asteroid.id)
-            .collect::<Vec<_>>();
-        past.sort_by_key(|s| std::cmp::Reverse(s.ended_at));
-
         let mut options = vec![];
-        for t in current {
-            options.push((
-                format!("{:<24} {}", t.name(), t.stars()),
-                UiStyle::HIGHLIGHT,
-            ));
-        }
-        for s in past {
-            options.push((format!("{:<24} {}", s.name(), s.stars()), UiStyle::DEFAULT));
+        for id in &self.tournament_ids {
+            if let Some(t) = world.tournaments.get(id) {
+                options.push((
+                    format!("{:<24} {}", t.name(), t.stars()),
+                    UiStyle::HIGHLIGHT,
+                ));
+            } else if let Some(s) = world.past_tournaments.get(id) {
+                options.push((format!("{:<24} {}", s.name(), s.stars()), UiStyle::DEFAULT));
+            }
         }
 
         let list = selectable_list(options);
@@ -777,7 +771,7 @@ impl SpaceCovePanel {
             &mut state,
         );
         if frame.is_hovering(layout[2]) {
-            self.active_list = PanelList::Tournaments;
+            self.active_list = PanelList::Bottom;
         }
 
         self.render_tournament_button(frame, own_team, asteroid, TournamentType::Cup, layout[0]);
@@ -856,15 +850,11 @@ impl Screen for SpaceCovePanel {
         }
 
         let prev_index = self.cove_index;
-        self.cove_index = if self.cove_entries.is_empty() {
-            None
-        } else {
-            Some(
-                self.cove_index
-                    .unwrap_or(0)
-                    .min(self.cove_entries.len() - 1),
-            )
-        };
+        self.cove_index = normalize_index(
+            self.cove_index.unwrap_or(0),
+            self.cove_entries.len(),
+            IndexBound::Wrap,
+        );
         let index_changed = prev_index != self.cove_index;
 
         let selected_asteroid_id = match self.view {
@@ -915,6 +905,49 @@ impl Screen for SpaceCovePanel {
         } else {
             Some(self.building_index.unwrap_or(0).min(BUILDINGS.len() - 1))
         };
+
+        if world.dirty_ui {
+            self.tournament_ids = match cove_planet {
+                Some(planet_id) => {
+                    let mut current = world
+                        .tournaments
+                        .iter()
+                        .filter(|(_, t)| t.planet_id == planet_id)
+                        .collect::<Vec<_>>();
+                    current.sort_by_key(|(_, t)| t.name());
+
+                    let mut past = world
+                        .past_tournaments
+                        .iter()
+                        .filter(|(_, s)| s.planet_id == planet_id)
+                        .collect::<Vec<_>>();
+                    past.sort_by_key(|(_, s)| std::cmp::Reverse(s.ended_at));
+
+                    current
+                        .into_iter()
+                        .map(|(id, _)| *id)
+                        .chain(past.into_iter().map(|(id, _)| *id))
+                        .collect()
+                }
+                None => Vec::new(),
+            };
+        }
+
+        self.tournament_index = normalize_index(
+            self.tournament_index.unwrap_or(0),
+            self.tournament_ids.len(),
+            IndexBound::Wrap,
+        );
+        self.visiting_team_index = normalize_index(
+            self.visiting_team_index.unwrap_or(0),
+            self.visiting_team_ids.len(),
+            IndexBound::Wrap,
+        );
+        self.tavern_pirate_index = normalize_index(
+            self.tavern_pirate_index.unwrap_or(0),
+            self.tavern_pirate_ids.len(),
+            IndexBound::Wrap,
+        );
 
         if own_team.space_cove.is_none() {
             self.view = SpaceCoveView::AllCoves;
@@ -1099,6 +1132,23 @@ impl Screen for SpaceCovePanel {
                     view: self.view.previous(),
                 });
             }
+            KeyCode::Enter => {
+                return match self.active_selection() {
+                    ActiveSelection::VisitingTeam => {
+                        let team_id = *self.visiting_team_ids.get(self.visiting_team_index?)?;
+                        Some(UiCallback::GoToTeam { team_id })
+                    }
+                    ActiveSelection::Tournament => {
+                        let tournament_id = *self.tournament_ids.get(self.tournament_index?)?;
+                        Some(UiCallback::GoToTournament { tournament_id })
+                    }
+                    ActiveSelection::TavernPirate => {
+                        let player_id = *self.tavern_pirate_ids.get(self.tavern_pirate_index?)?;
+                        Some(UiCallback::GoToPlayer { player_id })
+                    }
+                    _ => None,
+                };
+            }
             _ => {}
         }
         None
@@ -1162,29 +1212,40 @@ impl Screen for SpaceCovePanel {
 
 impl SplitPanel for SpaceCovePanel {
     fn index(&self) -> Option<usize> {
-        match self.view {
-            SpaceCoveView::OwnCove => self.building_index,
-            SpaceCoveView::AllCoves => self.cove_index,
+        match self.active_selection() {
+            ActiveSelection::Building => self.building_index,
+            ActiveSelection::Cove => self.cove_index,
+            ActiveSelection::VisitingTeam => self.visiting_team_index,
+            ActiveSelection::Tournament => self.tournament_index,
+            ActiveSelection::TavernPirate => self.tavern_pirate_index,
+            ActiveSelection::None => None,
         }
     }
 
     fn max_index(&self) -> usize {
-        match self.view {
-            SpaceCoveView::OwnCove => BUILDINGS.len(),
-            SpaceCoveView::AllCoves => self.cove_entries.len(),
+        match self.active_selection() {
+            ActiveSelection::Building => BUILDINGS.len(),
+            ActiveSelection::Cove => self.cove_entries.len(),
+            ActiveSelection::VisitingTeam => self.visiting_team_ids.len(),
+            ActiveSelection::Tournament => self.tournament_ids.len(),
+            ActiveSelection::TavernPirate => self.tavern_pirate_ids.len(),
+            ActiveSelection::None => 0,
         }
     }
 
     fn set_index(&mut self, index: usize) {
-        match self.view {
-            SpaceCoveView::OwnCove => {
-                self.building_index = Some(index % BUILDINGS.len());
-            }
-            SpaceCoveView::AllCoves => {
-                if !self.cove_entries.is_empty() {
-                    self.cove_index = Some(index % self.cove_entries.len());
-                }
-            }
+        let len = self.max_index();
+        if len == 0 {
+            return;
+        }
+        let clamped = index % len;
+        match self.active_selection() {
+            ActiveSelection::Building => self.building_index = Some(clamped),
+            ActiveSelection::Cove => self.cove_index = Some(clamped),
+            ActiveSelection::VisitingTeam => self.visiting_team_index = Some(clamped),
+            ActiveSelection::Tournament => self.tournament_index = Some(clamped),
+            ActiveSelection::TavernPirate => self.tavern_pirate_index = Some(clamped),
+            ActiveSelection::None => {}
         }
     }
 }
