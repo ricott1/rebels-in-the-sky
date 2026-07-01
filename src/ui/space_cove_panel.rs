@@ -107,6 +107,7 @@ pub struct SpaceCovePanel {
     tavern_lamps_on: bool,
     tavern_pirate_ids: Vec<PlayerId>,
     market_widget: Paragraph<'static>,
+    stadium_widget: Paragraph<'static>,
     active_list: PanelList,
 }
 
@@ -127,10 +128,20 @@ impl SpaceCovePanel {
                 .expect("Should be able to copy image");
             Paragraph::new(img_to_lines(&base))
         };
+        let stadium_widget = {
+            let mut base =
+                open_image("cove/stadium.png").expect("Should be able to create stadium image");
+            let outer = open_image("cove/base_outer.png")
+                .expect("Should be able to create base outer image");
+            base.copy_non_trasparent_from(&outer, 0, 0)
+                .expect("Should be able to copy image");
+            Paragraph::new(img_to_lines(&base))
+        };
         Self {
             cove_image_widgets: widgets,
             tavern_widget,
             market_widget,
+            stadium_widget,
             ..Default::default()
         }
     }
@@ -1074,7 +1085,7 @@ impl Screen for SpaceCovePanel {
                                     frame.render_widget(&self.tavern_widget, right_area);
                                 }
                                 SpaceCoveUpgradeTarget::Stadium => {
-                                    //render selected tournament?
+                                    frame.render_widget(&self.stadium_widget, right_area);
                                 }
 
                                 SpaceCoveUpgradeTarget::Market => {

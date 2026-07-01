@@ -775,6 +775,10 @@ impl UiCallback {
                 );
             }
 
+            app.world.dirty = true;
+            app.world.dirty_ui = true;
+            app.world.dirty_network = true;
+
             Ok(None)
         })
     }
