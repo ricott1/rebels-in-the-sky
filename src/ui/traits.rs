@@ -65,18 +65,27 @@ pub trait SplitPanel {
         0
     }
     fn set_index(&mut self, _index: usize) {}
+    fn index_bound(&self) -> IndexBound {
+        IndexBound::Wrap
+    }
     fn previous_index(&mut self) {
         let len = self.max_index();
+        let bound = self.index_bound();
         if let Some(i) = self.index() {
-            if let Some(next) = normalize_index(i + 1, len, IndexBound::Wrap) {
+            if let Some(next) = normalize_index(i + 1, len, bound) {
                 self.set_index(next);
             }
         }
     }
     fn next_index(&mut self) {
         let len = self.max_index();
+        let bound = self.index_bound();
         if let Some(i) = self.index() {
-            if let Some(next) = normalize_index((i + len).saturating_sub(1), len, IndexBound::Wrap) {
+            let raw = match bound {
+                IndexBound::Wrap => (i + len).saturating_sub(1),
+                IndexBound::Clamp => i.saturating_sub(1),
+            };
+            if let Some(next) = normalize_index(raw, len, bound) {
                 self.set_index(next);
             }
         }

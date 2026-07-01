@@ -19,7 +19,7 @@ use crate::network::types::{ChatHistoryEntry, PlayerRanking, TeamRanking};
 use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId, Tick};
 use crate::ui::clickable_list::{ClickableList, ClickableListItem};
 use crate::ui::ui_key;
-use crate::ui::utils::{normalize_index, wrap_text, IndexBound};
+use crate::ui::utils::{wrap_text, IndexBound};
 use anyhow::Error;
 use core::fmt::Debug;
 use itertools::Itertools;
@@ -1259,21 +1259,7 @@ impl SplitPanel for SwarmPanel {
         }
     }
 
-    fn previous_index(&mut self) {
-        let len = self.max_index();
-        if let Some(i) = self.index() {
-            if let Some(next) = normalize_index(i + 1, len, IndexBound::Clamp) {
-                self.set_index(next);
-            }
-        }
-    }
-
-    fn next_index(&mut self) {
-        let len = self.max_index();
-        if let Some(i) = self.index() {
-            if let Some(next) = normalize_index(i.saturating_sub(1), len, IndexBound::Clamp) {
-                self.set_index(next);
-            }
-        }
+    fn index_bound(&self) -> IndexBound {
+        IndexBound::Clamp
     }
 }
