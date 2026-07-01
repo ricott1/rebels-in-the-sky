@@ -709,19 +709,11 @@ impl SpaceCovePanel {
         }
 
         let rum_per_day_split = Layout::horizontal([
-            Constraint::Length(6),
             Constraint::Fill(1),
+            Constraint::Length(6),
             Constraint::Length(6),
         ])
         .split(layout[1]);
-        let mut less = Button::new("-1", UiCallback::ChangeTavernRumPerDay { delta: -1 })
-            .set_hover_text("Serve one less rum per day.")
-            .block(default_block().border_style(UiStyle::ERROR));
-        if rum_per_day == 0 {
-            less.disable(Some("Already zero"));
-        }
-        frame.render_interactive_widget(less, rum_per_day_split[0]);
-
         let border_style = if cove.can_pay_tavern_upkeep() {
             UiStyle::DEFAULT
         } else {
@@ -731,8 +723,16 @@ impl SpaceCovePanel {
             Paragraph::new(format!("{rum_per_day} rum/day"))
                 .centered()
                 .block(default_block().border_style(border_style)),
-            rum_per_day_split[1],
+            rum_per_day_split[0],
         );
+        let mut less = Button::new("-1", UiCallback::ChangeTavernRumPerDay { delta: -1 })
+            .set_hover_text("Serve one less rum per day.")
+            .block(default_block().border_style(UiStyle::ERROR));
+        if rum_per_day == 0 {
+            less.disable(Some("Already zero"));
+        }
+        frame.render_interactive_widget(less, rum_per_day_split[1]);
+
         let more = Button::new("+1", UiCallback::ChangeTavernRumPerDay { delta: 1 })
             .set_hover_text("Serve one more rum per day.")
             .block(default_block().border_style(UiStyle::OK));
