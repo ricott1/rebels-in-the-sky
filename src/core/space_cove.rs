@@ -70,6 +70,10 @@ pub enum SpaceCoveState {
     Ready,
 }
 
+fn default_upgrades() -> HashSet<SpaceCoveUpgradeTarget> {
+    HashSet::from([SpaceCoveUpgradeTarget::TeleportationPad])
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct SpaceCove {
     state: SpaceCoveState,
@@ -78,7 +82,7 @@ pub struct SpaceCove {
     #[serde(default)]
     pub pending_upgrade: Option<Upgrade<SpaceCoveUpgradeTarget>>,
     #[serde(skip_serializing_if = "is_default")]
-    #[serde(default)]
+    #[serde(default = "default_upgrades")]
     pub upgrades: HashSet<SpaceCoveUpgradeTarget>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
@@ -213,5 +217,20 @@ impl UpgradeableElement for SpaceCoveUpgradeTarget {
             Self::Stadium => "Allows to organize tournaments in the space cove",
             Self::Tavern => "The best way to attract talented pirates to the cove",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_legacy_ready_cove_defaults_to_teleportation_pad() {
+        let json = r#"{"state":1,"planet_id":"00000000-0000-0000-0000-000000000000"}"#;
+        let cove: SpaceCove = serde_json::from_str(json).unwrap();
+        assert!(cove.is_ready());
+        assert!(cove
+            .upgrades
+            .contains(&SpaceCoveUpgradeTarget::TeleportationPad));
     }
 }
