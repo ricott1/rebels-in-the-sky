@@ -538,6 +538,12 @@ impl TournamentPanel {
 
         let num_participants = tournament_summary.participant_ids.len();
 
+        log::info!(
+            "render_past_tournament id={} participants={num_participants} game_summaries={}",
+            tournament_summary.id,
+            game_summaries.len()
+        );
+
         let brackets = tournament_brackets_lines::get_bracket_lines(
             Some(tournament_summary.winner_name.as_str()),
             num_participants,
