@@ -106,17 +106,31 @@ pub struct SpaceCovePanel {
     tavern_widget: Paragraph<'static>,
     tavern_lamps_on: bool,
     tavern_pirate_ids: Vec<PlayerId>,
+    market_widget: Paragraph<'static>,
     active_list: PanelList,
 }
 
 impl SpaceCovePanel {
     pub fn new() -> Self {
         let widgets = Self::build_image_widgets(&[]).expect("Should be able to create cove image");
-        let tavern_widget =
-            Self::build_tavern_widget(false, &[]).expect("Should be able to create tavern image");
+        let tavern_widget = {
+            let img =
+                Self::get_tavern_image(false, &[]).expect("Should be able to create tavern image");
+            Paragraph::new(img_to_lines(&img))
+        };
+        let market_widget = {
+            let mut base =
+                open_image("cove/market.png").expect("Should be able to create market image");
+            let outer = open_image("cove/base_outer.png")
+                .expect("Should be able to create base outer image");
+            base.copy_non_trasparent_from(&outer, 0, 0)
+                .expect("Should be able to copy image");
+            Paragraph::new(img_to_lines(&base))
+        };
         Self {
             cove_image_widgets: widgets,
             tavern_widget,
+            market_widget,
             ..Default::default()
         }
     }
@@ -255,14 +269,6 @@ impl SpaceCovePanel {
         let outer = open_image("cove/base_outer.png")?;
         base.copy_non_trasparent_from(&outer, 0, 0)?;
         Ok(base)
-    }
-
-    fn build_tavern_widget(
-        lamps_on: bool,
-        pirate_frames: &[RgbaImage],
-    ) -> AppResult<Paragraph<'static>> {
-        let img = Self::get_tavern_image(lamps_on, pirate_frames)?;
-        Ok(Paragraph::new(img_to_lines(&img)))
     }
 
     fn render_view_buttons(
@@ -812,7 +818,10 @@ impl Screen for SpaceCovePanel {
                 .filter_map(|player| player.compose_image().ok())
                 .filter_map(|gif| gif.into_iter().next())
                 .collect();
-            self.tavern_widget = Self::build_tavern_widget(lamps_on, &pirate_frames)?;
+            self.tavern_widget = {
+                let img = Self::get_tavern_image(lamps_on, &pirate_frames)?;
+                Paragraph::new(img_to_lines(&img))
+            };
             self.tavern_lamps_on = lamps_on;
             self.tavern_pirate_ids = tavern_pirate_ids;
         }
@@ -1046,29 +1055,31 @@ impl Screen for SpaceCovePanel {
                         )?;
 
                         // Render right side
-                        let right_area = split[1].inner(Margin::new(1, 1));
-                        match building {
-                            SpaceCoveUpgradeTarget::TeleportationPad => {
-                                let t = self.tick % 60;
-                                let left_eye_blinking = [2, 3, 5, 13, 33].contains(&t);
-                                let right_eye_blinking = [2, 3, 6, 7, 41].contains(&t);
-                                let widget = match (left_eye_blinking, right_eye_blinking) {
-                                    (false, false) => &self.cove_image_widgets[0],
-                                    (true, false) => &self.cove_image_widgets[1],
-                                    (false, true) => &self.cove_image_widgets[2],
-                                    (true, true) => &self.cove_image_widgets[3],
-                                };
-                                frame.render_widget(widget, right_area);
-                            }
-                            SpaceCoveUpgradeTarget::Tavern => {
-                                frame.render_widget(&self.tavern_widget, right_area);
-                            }
-                            SpaceCoveUpgradeTarget::Stadium => {
-                                //render selected tournament?
-                            }
+                        if cove.upgrades.contains(building) {
+                            let right_area = split[1].inner(Margin::new(1, 1));
+                            match building {
+                                SpaceCoveUpgradeTarget::TeleportationPad => {
+                                    let t = self.tick % 60;
+                                    let left_eye_blinking = [2, 3, 5, 13, 33].contains(&t);
+                                    let right_eye_blinking = [2, 3, 6, 7, 41].contains(&t);
+                                    let widget = match (left_eye_blinking, right_eye_blinking) {
+                                        (false, false) => &self.cove_image_widgets[0],
+                                        (true, false) => &self.cove_image_widgets[1],
+                                        (false, true) => &self.cove_image_widgets[2],
+                                        (true, true) => &self.cove_image_widgets[3],
+                                    };
+                                    frame.render_widget(widget, right_area);
+                                }
+                                SpaceCoveUpgradeTarget::Tavern => {
+                                    frame.render_widget(&self.tavern_widget, right_area);
+                                }
+                                SpaceCoveUpgradeTarget::Stadium => {
+                                    //render selected tournament?
+                                }
 
-                            SpaceCoveUpgradeTarget::Market => {
-                                // render_market_on_planet(frame, world, own_team, asteroid, split[1])?
+                                SpaceCoveUpgradeTarget::Market => {
+                                    frame.render_widget(&self.market_widget, right_area);
+                                }
                             }
                         }
                     }
