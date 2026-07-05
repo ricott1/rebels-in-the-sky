@@ -5,7 +5,7 @@ use super::{
     world::World,
 };
 use crate::{
-    core::{GamePosition, GamePositionUtils, Resource, Trait, NUM_GAME_POSITIONS},
+    core::{GamePosition, GamePositionUtils, Rated, Resource, Trait, NUM_GAME_POSITIONS},
     image::color_map::SkinColorMap,
     types::{AppResult, HashMapWithResult, PlanetId, SystemTimeTick, TeamId, Tick},
 };
@@ -571,11 +571,11 @@ impl AutonomousStrategy {
 
 #[derive(Clone, Copy, Debug)]
 pub enum TeamBonus {
-    Exploration,       //pilot
+    Scouting,          //pilot
     SpaceshipSpeed,    //pilot
     Training,          //doctor
     TirednessRecovery, //doctor
-    TradePrice,        //captain
+    Bargaining,        //captain
     Reputation,        //captain
     Weapons,           //engineer
     Upgrades,          //engineer
@@ -584,11 +584,11 @@ pub enum TeamBonus {
 impl Display for TeamBonus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Exploration => write!(f, "Exploration"),
+            Self::Scouting => write!(f, "Scouting"),
             Self::Reputation => write!(f, "Reputation"),
             Self::SpaceshipSpeed => write!(f, "Ship speed"),
             Self::TirednessRecovery => write!(f, "Recovery"),
-            Self::TradePrice => write!(f, "Trading"),
+            Self::Bargaining => write!(f, "Bargaining"),
             Self::Training => write!(f, "Training"),
             Self::Weapons => write!(f, "Weapons"),
             Self::Upgrades => write!(f, "Upgrades"),
@@ -602,11 +602,11 @@ impl TeamBonus {
     pub fn current_team_bonus(&self, world: &World, team_id: &TeamId) -> AppResult<f32> {
         let team = world.teams.get_or_err(team_id)?;
         let player_id = match self {
-            Self::Exploration => team.crew_roles.pilot,
+            Self::Scouting => team.crew_roles.pilot,
             Self::SpaceshipSpeed => team.crew_roles.pilot,
             Self::Training => team.crew_roles.doctor,
             Self::TirednessRecovery => team.crew_roles.doctor,
-            Self::TradePrice => team.crew_roles.captain,
+            Self::Bargaining => team.crew_roles.captain,
             Self::Reputation => team.crew_roles.captain,
             Self::Weapons => team.crew_roles.engineer,
             Self::Upgrades => team.crew_roles.engineer,
@@ -633,10 +633,11 @@ impl TeamBonus {
         }
 
         match self {
-            TeamBonus::Exploration => {
-                0.15 * player.athletics.stamina
-                    + 0.15 * player.defense.steal
-                    + 0.7 * player.mental.vision
+            TeamBonus::Scouting => {
+                0.15 * player.offense.rating()
+                    + 0.15 * player.defense.rating()
+                    + 0.5 * player.mental.vision
+                    + 0.2 * player.mental.intuition
             }
             TeamBonus::Reputation => {
                 let mut bonus = 0.75 * player.mental.charisma
@@ -657,10 +658,10 @@ impl TeamBonus {
                 }
                 bonus
             }
-            TeamBonus::TradePrice => {
-                0.5 * player.mental.charisma
+            TeamBonus::Bargaining => {
+                0.45 * player.mental.charisma
                     + 0.25 * player.mental.aggression
-                    + 0.25 * player.mental.intuition
+                    + 0.3 * player.reputation
             }
             TeamBonus::Training => {
                 0.25 * player.athletics.strength
@@ -772,11 +773,11 @@ mod tests {
     fn test_team_bonus() {
         let mut player = Player::default();
 
-        assert!(TeamBonus::Exploration.as_skill(&player) == 0.0);
+        assert!(TeamBonus::Scouting.as_skill(&player) == 0.0);
         player.athletics.stamina = 10.0;
         player.defense.steal = 6.0;
         player.mental.vision = 2.0;
-        assert!(TeamBonus::Exploration.as_skill(&player) == 0.15 * 10.0 + 0.15 * 6.0 + 0.7 * 2.0);
+        assert!(TeamBonus::Scouting.as_skill(&player) == 0.15 * 10.0 + 0.15 * 6.0 + 0.7 * 2.0);
 
         assert!(TeamBonus::Weapons.as_skill(&player) == 0.0);
         player.technical.ball_handling = 8.5;

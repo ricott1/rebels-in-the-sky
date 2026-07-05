@@ -1,7 +1,7 @@
 #[cfg(feature = "relayer")]
 use crate::network::network_store_data::NetworkStoreData;
 use crate::{
-    core::world::World,
+    core::{world::World, MAX_SKILL},
     game_engine::{game::Game, Tournament, TournamentId},
     types::*,
 };
@@ -153,7 +153,22 @@ pub fn save_world(
 }
 
 pub fn load_world(store_prefix: &str) -> AppResult<World> {
-    load_from_json::<World>(&prefixed_world_filename(store_prefix))
+    let mut w = load_from_json::<World>(&prefixed_world_filename(store_prefix))?;
+
+    // Migration passes
+    // 1. populate players_scouting
+    let own = w.own_team_id;
+    if w.players_scouting.is_empty() {
+        for (id, player) in &w.players {
+            if player.team == Some(own) {
+                w.players_scouting.insert(*id, MAX_SKILL);
+            } else {
+                w.players_scouting.insert(*id, player.reputation);
+            }
+        }
+    }
+
+    Ok(w)
 }
 
 pub fn save_game(game: &Game) -> AppResult<()> {

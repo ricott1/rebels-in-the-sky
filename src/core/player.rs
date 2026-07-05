@@ -19,7 +19,7 @@ use anyhow::anyhow;
 use itertools::Itertools;
 use libp2p::PeerId;
 use rand::{
-    seq::{IndexedRandom, IteratorRandom},
+    seq::{IndexedRandom, IteratorRandom, SliceRandom},
     RngExt, SeedableRng,
 };
 use rand_chacha::ChaCha8Rng;
@@ -69,6 +69,7 @@ pub struct Player {
     pub drunkenness: Skill,
     pub historical_stats: GameStats,
     build_data: PlayerBuildData, // Intermediate state used to build the random player. Not serialized
+    pub scouted_skills: [usize; 20], // Cached order of scouted skill. Not serialized
 }
 
 impl Default for Player {
@@ -100,6 +101,7 @@ impl Default for Player {
             drunkenness: Skill::default(),
             historical_stats: GameStats::default(),
             build_data: PlayerBuildData::default(),
+            scouted_skills: [usize::default(); 20],
         }
     }
 }
@@ -234,7 +236,7 @@ impl<'de> Deserialize<'de> for Player {
             where
                 V: serde::de::MapAccess<'de>,
             {
-                let mut id = None;
+                let mut id: Option<uuid::Uuid> = None;
                 let mut peer_id = None;
                 let mut version = None;
                 let mut info = None;
@@ -456,7 +458,10 @@ impl<'de> Deserialize<'de> for Player {
                     drunkenness,
                     historical_stats,
                     build_data: PlayerBuildData::default(),
+                    scouted_skills: [usize::default(); 20],
                 };
+
+                player.set_initial_scouted_skill();
 
                 player.athletics = Athletics {
                     quickness: compact_skills[0],
@@ -598,10 +603,11 @@ impl Player {
 
         self.set_initial_game_position_fitness(Some(rng));
         self.previous_game_position_fitness = self.game_position_fitness;
+        self.set_initial_scouted_skill();
 
         let extra_potential = {
             // Extra potential has a variance that depends on current age
-            let mut std_dev = 1.5 + 3.0 * (1.0 - self.info.relative_age());
+            let mut std_dev = 1.0 + 2.0 * (1.0 - self.info.relative_age());
             if self.build_data.extra_potential > Skill::default() {
                 std_dev += self.build_data.extra_potential;
             }
@@ -610,7 +616,8 @@ impl Player {
             normal.sample(rng).abs()
         };
 
-        self.potential = (self.average_skill() + extra_potential).bound();
+        self.potential =
+            (self.average_skill() * AVG_SKILL_TO_POTENTIAL_MODIFIER + extra_potential).bound();
         self.reputation = (self.average_skill() / 6.0 + self.info.relative_age() * 4.5).bound();
 
         self
@@ -659,6 +666,16 @@ impl Player {
         self.build_data.extra_potential = extra_potential;
 
         self
+    }
+
+    fn set_initial_scouted_skill(&mut self) {
+        let rng = &mut ChaCha8Rng::seed_from_u64(self.id.as_u64_pair().0);
+        let mut scouted_skills: [usize; 20] = (0..20_usize)
+            .collect_vec()
+            .try_into()
+            .expect("Should convert");
+        scouted_skills.shuffle(rng);
+        self.scouted_skills = scouted_skills;
     }
 
     fn set_initial_game_position_fitness(&mut self, rng: Option<&mut ChaCha8Rng>) {
@@ -736,6 +753,17 @@ impl Player {
             .collect::<Vec<Skill>>()
             .try_into()
             .expect("There should be 20 skills")
+    }
+
+    pub fn is_skill_scouted(&self, scouting: Skill, skill_index: usize) -> bool {
+        const SKILLS_REVEALED_PER_SCOUTING: f32 = 1.15;
+        let known = ((SKILLS_REVEALED_PER_SCOUTING * scouting).bound() as usize)
+            .min(self.scouted_skills.len());
+        self.scouted_skills[..known].contains(&skill_index)
+    }
+
+    pub fn is_role_scouted(&self, scouting: Skill, role_value: Skill) -> bool {
+        scouting >= MAX_SKILL - role_value
     }
 
     // If the player is currently playing a game, returns the in-game copy of the player,
@@ -835,30 +863,42 @@ impl Player {
     }
 
     pub fn hire_cost(&self) -> u32 {
+        const COST_PER_VALUE: f32 = 700.0;
+        let hire_age_modifier_at_birth: f32 =
+            (1.25_f32).powf(1.0 + 2.1 * self.potential / MAX_SKILL);
+        const HIRE_AGE_MODIFIER_AT_PEAK: f32 = 1.0;
+        const HIRE_AGE_MODIFIER_AT_RETIREMENT: f32 = 0.425;
+        const SPECIAL_TRAIT_VALUE_BONUS: f32 = 1.45;
+
         let bare_value = {
-            // Age modifier: linear 1.5 at birth, 1.0 at peak, 0.5 at retirement.
+            // Age modifier: linear between birth, peak, and retirement values.
             let relative_age = self.info.relative_age();
             let age_modifier = if relative_age <= PEAK_PERFORMANCE_RELATIVE_AGE {
-                1.5 - 0.5 * (relative_age / PEAK_PERFORMANCE_RELATIVE_AGE)
+                hire_age_modifier_at_birth
+                    - (hire_age_modifier_at_birth - HIRE_AGE_MODIFIER_AT_PEAK)
+                        * (relative_age / PEAK_PERFORMANCE_RELATIVE_AGE)
             } else {
                 let progress = (relative_age - PEAK_PERFORMANCE_RELATIVE_AGE)
                     / (1.0 - PEAK_PERFORMANCE_RELATIVE_AGE);
-                1.0 - 0.5 * progress
+                HIRE_AGE_MODIFIER_AT_PEAK
+                    - (HIRE_AGE_MODIFIER_AT_PEAK - HIRE_AGE_MODIFIER_AT_RETIREMENT) * progress
             };
 
             let special_trait_extra = if self.special_trait.is_some() {
-                SPECIAL_TRAIT_VALUE_BONUS * self.reputation.powf(1.0 / 3.0)
+                SPECIAL_TRAIT_VALUE_BONUS * (1.0 + self.reputation / MAX_SKILL).powf(0.5)
             } else {
                 1.0
             };
 
-            (self.average_skill() * age_modifier * special_trait_extra).max(0.0)
+            let reputation_modifier = 1.0 + self.reputation / MAX_SKILL;
+
+            self.average_skill()
+                * (1.0 + self.average_skill() / MAX_SKILL).powf(2.35)
+                * age_modifier
+                * special_trait_extra
+                * reputation_modifier
         };
         (COST_PER_VALUE * bare_value).max(1.0) as u32
-    }
-
-    pub fn release_cost(&self) -> u32 {
-        0
     }
 
     fn apply_population_skill_modifiers(&mut self) {
@@ -963,7 +1003,7 @@ impl Player {
         );
     }
 
-    fn skill_at_index(&self, idx: usize) -> Skill {
+    pub fn skill_at_index(&self, idx: usize) -> Skill {
         match idx {
             0 => self.athletics.quickness,
             1 => self.athletics.vertical,
@@ -1162,7 +1202,7 @@ impl Player {
         // genuinely far below their potential, avoiding the rubber-band
         // effect that a linear slope produced.
         // Above the cap, growth decays sharply via powf(30).
-        let tot_skill = TOT_SKILL_MODIFIER * self.average_skill();
+        let tot_skill = AVG_SKILL_TO_POTENTIAL_MODIFIER * self.average_skill();
         let potential_modifier = if tot_skill > self.potential {
             (1.0 + (self.potential - tot_skill) / MAX_SKILL)
                 .max(0.0)
@@ -1419,6 +1459,8 @@ mod test {
 
     #[test]
     fn test_bare_value() -> AppResult<()> {
+        use crate::core::constants::{AGE_INCREASE_PER_LONG_TICK, SKILL_DECREMENT_PER_LONG_TICK};
+
         let mut app = App::test_default()?;
 
         let world = &mut app.world;
@@ -1430,19 +1472,65 @@ mod test {
             .expect("There should be at least one player")
             .id;
 
-        let player = world.players.get_mut_or_err(&player_id)?;
+        let mut player = world.players.get_or_err(&player_id)?.clone();
         player.info.age = player.info.population.min_age();
+        player.skills_training = [0.0; 20];
 
-        for _ in 0..20 {
-            println!(
-                "Relative age {:02} - Overall {:02} {} - Bare value {:02}",
-                player.info.relative_age(),
-                player.average_skill(),
-                player.average_skill().stars(),
-                player.hire_cost()
-            );
-            player.info.age += 0.025 * player.info.population.max_age();
+        println!(
+            "Population {:?} - Potential {:.2} - Trait {}",
+            player.info.population,
+            player.potential,
+            player
+                .special_trait
+                .map(|t| t.to_string())
+                .unwrap_or("None".to_string())
+        );
+
+        let mut next_log = 0.0;
+        while player.info.relative_age() < 1.0 {
+            if player.info.relative_age() >= next_log {
+                println!(
+                    "Relative age {:5.2} - Overall {:5.2} {} - Hire cost {}",
+                    player.info.relative_age(),
+                    player.average_skill(),
+                    player.average_skill().stars(),
+                    player.hire_cost()
+                );
+                next_log += 0.05;
+            }
+
+            // One game per day, 32 minutes played, distributed by fitness rank
+            // as in test_player_evolution.
+            let mut ranked: Vec<usize> = (0..5).collect();
+            ranked.sort_by(|&a, &b| {
+                player.game_position_fitness[b]
+                    .partial_cmp(&player.game_position_fitness[a])
+                    .unwrap()
+            });
+            let mut experience_at_position = [0u32; 5];
+            experience_at_position[ranked[0]] = 1152;
+            experience_at_position[ranked[1]] = 256;
+            experience_at_position[ranked[2]] = 256;
+            experience_at_position[ranked[3]] = 256;
+            player.update_skills_training(experience_at_position, 1.5, None);
+
+            for idx in 0..player.skills_training.len() {
+                let age_modifier = player.age_modifier_to_skill_update(idx);
+                player.modify_skill(idx, SKILL_DECREMENT_PER_LONG_TICK * age_modifier);
+                let training = player.skills_training[idx];
+                player.modify_skill(idx, training);
+            }
+            player.skills_training = [0.0; 20];
+            player.info.age += AGE_INCREASE_PER_LONG_TICK;
         }
+
+        println!(
+            "Relative age {:5.2} - Overall {:5.2} {} - Hire cost {}",
+            player.info.relative_age(),
+            player.average_skill(),
+            player.average_skill().stars(),
+            player.hire_cost()
+        );
 
         Ok(())
     }
