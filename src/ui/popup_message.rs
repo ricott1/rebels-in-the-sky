@@ -1,9 +1,10 @@
 use super::button::Button;
 use super::constants::{UiStyle, UiText};
 use super::gif_map::{self, GifMap, TREASURE_GIF};
+use super::link_lines::{render_lines_with_links, LinkAlign};
 use super::ui_callback::UiCallback;
 use super::ui_frame::UiFrame;
-use super::utils::{img_to_lines, input_from_key_event, validate_textarea_input, wrap_text};
+use super::utils::{img_to_lines, input_from_key_event, validate_textarea_input};
 use super::widgets::{default_block, thick_block};
 use crate::core::planet::PlanetType;
 use crate::core::MAX_SKILL;
@@ -20,7 +21,7 @@ use itertools::Itertools;
 use ratatui::crossterm;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::layout::{Margin, Rect};
-use ratatui::style::{Styled, Stylize};
+use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::{Clear, Paragraph, Wrap};
 use ratatui_textarea::TextArea;
@@ -1044,49 +1045,5 @@ fn render_message_with_links<S: AsRef<str>>(
     message: &str,
     links: &[(S, UiCallback)],
 ) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-    let mut row: u16 = 0;
-    for segment in message.split('\n') {
-        for line in wrap_text(segment, area.width as usize) {
-            let y = area.y + row;
-            if y >= area.bottom() {
-                return;
-            }
-            let line_w = (line.chars().count() as u16).min(area.width);
-            let offset = area.width.saturating_sub(line_w) / 2;
-            frame.render_widget(
-                Paragraph::new(line.as_str()),
-                Rect::new(area.x + offset, y, line_w, 1),
-            );
-            overlay_line_links(frame, &line, area.x + offset, y, links);
-            row += 1;
-        }
-    }
-}
-
-/// Overlays a clickable `HELP_LINK` button over each link label found in `text`,
-/// which is rendered with its left edge at column `x` on row `y`. Shared by the
-/// popup message body and the panels' help blocks.
-pub(super) fn overlay_line_links<S: AsRef<str>>(
-    frame: &mut UiFrame,
-    text: &str,
-    x: u16,
-    y: u16,
-    links: &[(S, UiCallback)],
-) {
-    for (label, callback) in links {
-        let label = label.as_ref();
-        if let Some(byte_col) = text.find(label) {
-            let col = text[..byte_col].chars().count() as u16;
-            let button = Button::no_box(label, callback.clone())
-                .set_style(UiStyle::HELP_LINK)
-                .set_layer(1);
-            frame.render_interactive_widget(
-                button,
-                Rect::new(x + col, y, label.chars().count() as u16, 1),
-            );
-        }
-    }
+    render_lines_with_links(frame, area, message, links, LinkAlign::Center);
 }

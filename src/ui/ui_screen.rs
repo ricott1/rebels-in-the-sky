@@ -1,27 +1,19 @@
 use super::button::Button;
 use super::constants::UiStyle;
-use super::galaxy_panel::GalaxyPanel;
-use super::popup_message::{overlay_line_links, PopupMessage};
-use super::space_screen::SpaceScreen;
-use super::splash_screen::SplashScreen;
-use super::swarm_panel::SwarmPanel;
-use super::traits::SplitPanel;
+use super::panels::*;
+use super::panels::{Screen, SplitPanel};
+use super::popup_message::PopupMessage;
 use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::ui_frame::UiFrame;
 use super::ui_key;
 use super::widgets::{default_block, thick_block};
-use super::{
-    game_panel::GamePanel, my_team_panel::MyTeamPanel, new_team_screen::NewTeamScreen,
-    player_panel::PlayerListPanel, team_panel::TeamListPanel, tournament_panel::TournamentPanel,
-    traits::Screen,
-};
+
 #[cfg(feature = "audio")]
 use crate::audio::music_player::MusicPlayer;
 use crate::core::world::World;
 use crate::network::types::ChatHistoryEntry;
 use crate::types::Tick;
 use crate::types::{AppResult, SystemTimeTick};
-use crate::ui::space_cove_panel::SpaceCovePanel;
 #[cfg(feature = "audio")]
 use crate::AudioPlayerState;
 use anyhow::Error;
@@ -79,47 +71,6 @@ fn help_popup_rect(screen_area: Rect) -> Rect {
     let x = screen_area.x + screen_area.width.saturating_sub(width) / 2;
     let y = screen_area.y + screen_area.height.saturating_sub(height) / 2;
     Rect::new(x, y, width, height)
-}
-
-/// Renders the standard help body: a description paragraph with optional inline
-/// links overlaid on the text (each `(label, callback)` makes every occurrence of
-/// `label` a clickable button), followed by a controls paragraph. Used by the
-/// main-tab panels' `render_help_widget` to avoid layout boilerplate.
-pub fn render_help_block(
-    frame: &mut UiFrame,
-    area: Rect,
-    description: Vec<Line<'static>>,
-    links: Vec<(String, UiCallback)>,
-    controls: Vec<Line<'static>>,
-) {
-    let desc_h = description.len().max(1) as u16;
-    let split = Layout::vertical([
-        Constraint::Length(desc_h),
-        Constraint::Length(1), // gap
-        Constraint::Min(5),    // controls
-    ])
-    .split(area);
-
-    let texts = description
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|s| s.content.as_ref())
-                .collect::<String>()
-        })
-        .collect_vec();
-
-    frame.render_widget(Paragraph::new(description), split[0]);
-    for (row, text) in texts.iter().enumerate() {
-        let y = split[0].y + row as u16;
-        if y >= split[0].bottom() {
-            break;
-        }
-        overlay_line_links(frame, text, split[0].x, y, &links);
-    }
-
-    frame.render_widget(Paragraph::new(controls), split[2]);
 }
 
 /// Convenience constructor for a help-block link that switches to `tab`,
@@ -699,20 +650,8 @@ impl UiScreen {
                 popup_split[0],
             );
 
-            let debug_view = self.debug_view;
-            if let Err(err) = self.get_active_screen().render_help_widget(
-                &mut ui_frame,
-                world,
-                popup_split[1],
-                debug_view,
-            ) {
-                self.push_log_event(
-                    Tick::now(),
-                    None,
-                    format!("Help render error\n{err}"),
-                    log::Level::Error,
-                );
-            }
+            let content = self.get_active_screen().help_content();
+            render_help_content(&mut ui_frame, popup_split[1], content);
 
             let button_split = Layout::horizontal([
                 Constraint::Min(0),

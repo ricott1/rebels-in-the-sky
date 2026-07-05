@@ -1,21 +1,22 @@
-use super::ui_frame::UiFrame;
-use super::ui_screen::{tab_link, UiTab};
-use super::{
+use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
+use crate::game_engine::timer::Period;
+use crate::types::{HashMapWithResult, Tick};
+use crate::ui::checkbox::Checkbox;
+use crate::ui::popup_message::PopupMessage;
+use crate::ui::ui_frame::UiFrame;
+use crate::ui::ui_key;
+use crate::ui::ui_screen::{tab_link, UiTab};
+use crate::ui::{
     button::Button,
     clickable_list::ClickableListState,
     clickable_table::{ClickableCell, ClickableRow, ClickableTable, ClickableTableState},
     constants::*,
     gif_map::GifMap,
-    traits::{PercentageRating, Screen, SplitPanel, UiStyled},
+    traits::{PercentageRating, UiStyled},
     ui_callback::UiCallback,
     utils::format_satoshi,
     widgets::*,
 };
-use crate::game_engine::timer::Period;
-use crate::types::{HashMapWithResult, Tick};
-use crate::ui::checkbox::Checkbox;
-use crate::ui::popup_message::PopupMessage;
-use crate::ui::ui_key;
 use crate::{
     core::*,
     game_engine::game::Game,
@@ -284,7 +285,7 @@ impl MyTeamPanel {
         let planet_id =
             self.planet_markets[self.planet_index.unwrap_or_default() % self.planet_markets.len()];
         let planet = world.planets.get_or_err(&planet_id)?;
-        let merchant_bonus = TeamBonus::TradePrice.current_team_bonus(world, &own_team.id)?;
+        let merchant_bonus = TeamBonus::Bargaining.current_team_bonus(world, &own_team.id)?;
 
         let mut lines = vec![Line::from(Span::styled(
             format!("{:<8} {:>4}/{:<4}", "Resource", "Buy", "Sell"),
@@ -476,7 +477,12 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_team(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_team_settings(
+        &mut self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
         let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
 
@@ -513,7 +519,7 @@ impl MyTeamPanel {
         frame.render_interactive_widget(tactic_button, btm_split[0]);
 
         let mut sub_tendency_button = Button::new(
-            format!("substitutions: {}", own_team.substitution_tendency),
+            format!("Substitutions: {}", own_team.substitution_tendency),
             UiCallback::SetTeamSubstitutionTendency {
                 substitution_tendency: own_team.substitution_tendency.next(),
             },
@@ -533,7 +539,7 @@ impl MyTeamPanel {
 
         let mut game_position_fluidity_button = Button::new(
             format!(
-                "game position fluidity: {}",
+                "Game position fluidity: {}",
                 own_team.game_position_fluidity
             ),
             UiCallback::SetTeamGamePositionFluidity {
@@ -554,7 +560,7 @@ impl MyTeamPanel {
         frame.render_interactive_widget(game_position_fluidity_button, btm_split[2]);
 
         let mut in_game_drinking_button = Button::new(
-            format!("in-game drinking: {}", own_team.in_game_drinking),
+            format!("In-game drinking: {}", own_team.in_game_drinking),
             UiCallback::SetTeamInGameDrinking {
                 in_game_drinking: own_team.in_game_drinking.next(),
             },
@@ -595,40 +601,8 @@ impl MyTeamPanel {
         .set_hotkey(ui_key::team::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
         frame.render_interactive_widget(network_challenge_button, challenges_split[2]);
 
-        match own_team.current_location {
-            TeamLocation::OnPlanet { .. } => {
-                if let Some(upgrade) = &own_team.spaceship.pending_upgrade {
-                    self.render_upgrading_spaceship(frame, world, split[1], upgrade)?
-                } else {
-                    self.render_on_planet_spaceship(frame, world, split[1])?
-                }
-            }
-            TeamLocation::Travelling {
-                to,
-                started,
-                duration,
-                ..
-            } => {
-                let countdown = (started + duration)
-                    .saturating_sub(world.last_tick_short_interval)
-                    .formatted();
-                self.render_travelling_spaceship(frame, world, split[1], &to, countdown)?
-            }
-            TeamLocation::Exploring {
-                around,
-                started,
-                duration,
-                ..
-            } => {
-                let countdown = (started + duration)
-                    .saturating_sub(world.last_tick_short_interval)
-                    .formatted();
-                self.render_exploring_spaceship(frame, world, split[1], &around, countdown)?
-            }
-            TeamLocation::OnSpaceAdventure { .. } => {
-                return Err(anyhow!("Team is on a space adventure"))
-            }
-        }
+        // Render team in game positions
+
         Ok(())
     }
 
@@ -764,9 +738,15 @@ impl MyTeamPanel {
         if world.games.contains_key(&game_id)
             || world.recently_finished_games.contains_key(&game_id)
         {
-            let button = Button::new("Go to game", UiCallback::GoToGame { game_id })
-                .set_hotkey(ui_key::GO_TO_GAME)
-                .set_hover_text("Go to game");
+            let button = Button::new(
+                "Go to game",
+                UiCallback::GoToGame {
+                    game_id,
+                    from_popup: false,
+                },
+            )
+            .set_hotkey(ui_key::GO_TO_GAME)
+            .set_hover_text("Go to game");
 
             frame.render_interactive_widget(button, v_split[1]);
         } else if let Some(loaded_game) = self.loaded_games.get(&game_id) {
@@ -1628,8 +1608,8 @@ impl MyTeamPanel {
             "Set player to captain role: {} +{}%, {} {}%",
             TeamBonus::Reputation,
             TeamBonus::Reputation.as_skill(player).percentage(),
-            TeamBonus::TradePrice,
-            TeamBonus::TradePrice.as_skill(player).percentage()
+            TeamBonus::Bargaining,
+            TeamBonus::Bargaining.as_skill(player).percentage()
         ))
         .set_hotkey(ui_key::team::SET_CAPTAIN);
         if own_team.crew_roles.captain == Some(player.id) {
@@ -1652,8 +1632,8 @@ impl MyTeamPanel {
             "Set player to pilot role: {} +{}%, {} {}%",
             TeamBonus::SpaceshipSpeed,
             TeamBonus::SpaceshipSpeed.as_skill(player).percentage(),
-            TeamBonus::Exploration,
-            TeamBonus::Exploration.as_skill(player).percentage()
+            TeamBonus::Scouting,
+            TeamBonus::Scouting.as_skill(player).percentage()
         ))
         .set_hotkey(ui_key::team::SET_PILOT);
         if own_team.crew_roles.pilot == Some(player.id) {
@@ -1815,21 +1795,21 @@ impl MyTeamPanel {
                             skill.style(),
                         )
                     }
-                    CrewRole::Mozzo => Span::raw(""),
+                    CrewRole::Mozzo => Span::default(),
                 };
 
                 let bonus_string_2 = match player.info.crew_role {
                     CrewRole::Pilot => {
-                        let skill = TeamBonus::Exploration.as_skill(player);
+                        let skill = TeamBonus::Scouting.as_skill(player);
                         Span::styled(
-                            format!(" {} +{}%", TeamBonus::Exploration, skill.percentage()),
+                            format!(" {} +{}%", TeamBonus::Scouting, skill.percentage()),
                             skill.style(),
                         )
                     }
                     CrewRole::Captain => {
-                        let skill = TeamBonus::TradePrice.as_skill(player);
+                        let skill = TeamBonus::Bargaining.as_skill(player);
                         Span::styled(
-                            format!(" {} +{}%", TeamBonus::TradePrice, skill.percentage()),
+                            format!(" {} +{}%", TeamBonus::Bargaining, skill.percentage()),
                             skill.style(),
                         )
                     }
@@ -1847,7 +1827,7 @@ impl MyTeamPanel {
                             skill.style(),
                         )
                     }
-                    CrewRole::Mozzo => Span::raw(""),
+                    CrewRole::Mozzo => Span::default(),
                 };
 
                 let name = if name_header_width >= 2 * MAX_NAME_LENGTH as u16 + 2 {
@@ -1923,6 +1903,7 @@ impl MyTeamPanel {
 
         render_player_description(
             player,
+            &world.players_scouting,
             self.player_widget_view,
             &mut self.gif_map,
             self.tick,
@@ -1965,7 +1946,10 @@ impl MyTeamPanel {
                         Line::from(game_text).centered(),
                         Line::from(game.timer.format()).centered(),
                     ],
-                    UiCallback::GoToGame { game_id },
+                    UiCallback::GoToGame {
+                        game_id,
+                        from_popup: false,
+                    },
                 )
                 .set_hover_text("Go to current game")
                 .set_hotkey(ui_key::GO_TO_CURRENT_GAME)
@@ -2424,7 +2408,7 @@ impl Screen for MyTeamPanel {
 
         match self.view {
             MyTeamView::Info => self.render_info(frame, world, bottom_split[1])?,
-            MyTeamView::TeamSettings => self.render_team(frame, world, bottom_split[1])?,
+            MyTeamView::TeamSettings => self.render_team_settings(frame, world, bottom_split[1])?,
             MyTeamView::Games => self.render_games(frame, world, bottom_split[1])?,
             MyTeamView::Market => self.render_market(frame, world, bottom_split[1])?,
             MyTeamView::Shipyard => self.render_shipyard(frame, world, bottom_split[1])?,
@@ -2471,64 +2455,59 @@ impl Screen for MyTeamPanel {
         ]
     }
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        super::ui_screen::render_help_block(
-            frame,
-            area,
-            vec![
-                Line::from(" The captain's bridge: manage roster, training, tactics, ships,"),
-                Line::from(" markets, asteroids, and games. Use Tab to cycle the inner view."),
-                Line::from(""),
-                Line::from(" Recruit new pirates from the Pirates panel."),
-                Line::from(" Scout rivals and challenge them from Crews."),
-                Line::from(" Watch your scheduled or finished games in Games."),
-                Line::from(" Travel between planets via the Galaxy star map."),
-            ],
-            vec![
+}
+
+impl HelpPanel for MyTeamPanel {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: [
+                "The captain's bridge: manage roster, training, tactics, ships, markets, asteroids, and games.",
+                "Use Tab to cycle the inner view.",
+                "",
+                "Recruit new pirates from the Pirates panel.",
+                "Scout rivals and challenge them from Crews.",
+                "Watch your scheduled or finished games in Games.",
+                "Travel between planets via the Galaxy star map.",
+            ]
+            .join("\n"),
+            links: vec![
                 tab_link("Pirates", UiTab::Pirates),
                 tab_link("Crews", UiTab::Crews),
                 tab_link("Games", UiTab::Games),
                 tab_link("Galaxy", UiTab::Galaxy),
             ],
-            vec![
-                Line::from(" Controls:"),
+            controls: vec![
+                Line::from("Controls:"),
                 Line::from(format!(
-                    "   {}        Cycle view (Info/Team/Games/Market/Shipyard/Asteroids)",
+                    "  {}        Cycle view (Info/Team/Games/Market/Shipyard/Asteroids)",
                     ui_key::CYCLE_VIEW
                 )),
-                Line::from("   ↑/↓        Move highlight in the active list"),
+                Line::from("  ↑/↓        Move highlight in the active list"),
                 Line::from(format!(
-                    "   {}/{}/{}/{}    Set captain/doctor/engineer/pilot",
+                    "  {}/{}/{}/{}    Set captain/doctor/engineer/pilot",
                     ui_key::team::SET_CAPTAIN,
                     ui_key::team::SET_DOCTOR,
                     ui_key::team::SET_ENGINEER,
-                    ui_key::team::SET_PILOT
+                    ui_key::team::SET_PILOT,
                 )),
-                Line::from("   1-7        Place highlighted player in that game position"),
+                Line::from("  1-7        Place highlighted player in that game position"),
                 Line::from(format!(
-                    "   {} / {}      Hire / fire highlighted pirate",
+                    "  {} / {}      Hire / fire highlighted pirate",
                     ui_key::player::HIRE,
                     ui_key::player::FIRE
                 )),
                 Line::from(format!(
-                    "   {} / {}      Set training focus / cycle tactic",
+                    "  {} / {}      Set training focus / cycle tactic",
                     ui_key::player::TRAINING_FOCUS,
                     ui_key::team::SET_TACTIC
                 )),
                 Line::from(format!(
-                    "   {} / {}      Cycle substitution tendency / game position fluidity",
+                    "  {} / {}      Cycle substitution tendency / game position fluidity",
                     ui_key::team::SET_SUBSTITUTION_TENDENCY,
                     ui_key::team::SET_GAME_POSITION_FLUIDITY
                 )),
             ],
-        );
-        Ok(())
+        }
     }
 }
 

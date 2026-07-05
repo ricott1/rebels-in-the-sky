@@ -1,22 +1,22 @@
-use super::button::Button;
-use super::clickable_list::ClickableListState;
-use super::constants::UiStyle;
-use super::gif_map::*;
-use super::ui_callback::UiCallback;
-use super::ui_frame::UiFrame;
-use super::{
+use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
+use crate::store::load_game;
+use crate::types::HashMapWithResult;
+use crate::ui::button::Button;
+use crate::ui::clickable_list::ClickableListState;
+use crate::ui::constants::UiStyle;
+use crate::ui::constants::GREEN_STYLE_SKILL;
+use crate::ui::gif_map::*;
+use crate::ui::traits::UiStyled;
+use crate::ui::ui_callback::UiCallback;
+use crate::ui::ui_frame::UiFrame;
+use crate::ui::ui_key;
+use crate::ui::{
     big_numbers::{hyphen, BigNumberFont},
     constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
-    traits::{Screen, SplitPanel},
     ui_screen::{tab_link, UiTab},
     utils::img_to_lines,
     widgets::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
 };
-use crate::store::load_game;
-use crate::types::HashMapWithResult;
-use crate::ui::traits::UiStyled;
-use crate::ui::ui_key;
-use crate::ui::widgets::GREEN_STYLE_SKILL;
 use crate::{
     core::*,
     game_engine::{
@@ -690,7 +690,7 @@ impl GamePanel {
             match action_result.advantage {
                 Advantage::Attack => UP_ARROW_SPAN.clone(),
                 Advantage::Defense => DOWN_ARROW_SPAN.clone(),
-                Advantage::Neutral => Span::raw(""),
+                Advantage::Neutral => Span::default(),
             }
         };
         let timer = Span::styled(format!("[{}] ", timer.format()), UiStyle::HIGHLIGHT);
@@ -1324,51 +1324,45 @@ impl Screen for GamePanel {
         v
     }
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        super::ui_screen::render_help_block(
-            frame,
-            area,
-            vec![
-                Line::from(" Browse upcoming, ongoing and recently finished games. Pick"),
-                Line::from(" one to follow live play-by-play commentary, the box score and"),
-                Line::from(" the pitch view."),
-                Line::from(""),
-                Line::from(" Pick your starting roster and tactics in My Team."),
-                Line::from(" Find a side to challenge from the Crews list."),
-                Line::from(" Track tournament brackets in Tournaments."),
-            ],
-            vec![
+}
+
+impl HelpPanel for GamePanel {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: [
+                "Browse upcoming, ongoing and recently finished games.",
+                "Pick one to follow live play-by-play commentary, the box score and the pitch view.",
+                "",
+                "Pick your starting roster and tactics in My Team.",
+                "Find a side to challenge from the Crews list.",
+                "Track tournament brackets in Tournaments.",
+            ]
+            .join("\n"),
+            links: vec![
                 tab_link("My Team", UiTab::MyTeam),
                 tab_link("Crews", UiTab::Crews),
                 tab_link("Tournaments", UiTab::Tournaments),
             ],
-            vec![
-                Line::from(" Controls:"),
-                Line::from("   ↑/↓        Move highlight in the game list"),
+            controls: vec![
+                Line::from("Controls:"),
+                Line::from("  ↑/↓        Move highlight in the game list"),
                 Line::from(format!(
-                    "   {}          Toggle play-by-play vs. pitch view",
+                    "  {}          Toggle play-by-play vs. pitch view",
                     ui_key::game::PITCH_VIEW
                 )),
                 Line::from(format!(
-                    "   {}/{}        Scroll commentary  /  Enter scrolls to top",
+                    "  {}/{}        Scroll commentary  /  Enter scrolls to top",
                     ui_key::PREVIOUS_SELECTION,
                     ui_key::NEXT_SELECTION
                 )),
-                Line::from("   0-4        Filter pitch view by quarter"),
+                Line::from("  0-4        Filter pitch view by quarter"),
                 Line::from(format!(
-                    "   {} / {}      Challenge highlighted team / open its team page",
+                    "  {} / {}      Challenge highlighted team / open its team page",
                     ui_key::game::CHALLENGE_TEAM,
                     ui_key::GO_TO_TEAM_ALT
                 )),
             ],
-        );
-        Ok(())
+        }
     }
 }
 

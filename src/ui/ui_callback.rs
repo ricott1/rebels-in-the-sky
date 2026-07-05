@@ -1,16 +1,7 @@
-use super::swarm_panel::SwarmView;
 use super::{
-    galaxy_panel::ZoomLevel,
-    my_team_panel::MyTeamView,
-    new_team_screen::CreationState,
-    player_panel::PlayerView,
-    popup_message::PopupMessage,
-    space_cove_panel::SpaceCoveView,
-    team_panel::TeamView,
-    traits::{Screen, SplitPanel},
+    panels::*,
     ui_screen::{UiState, UiTab},
 };
-use crate::app_version;
 use crate::core::{PlanetUpgradeTarget, Resource, SpaceCoveUpgradeTarget, UpgradeableElement};
 use crate::game_engine::game::Game;
 use crate::game_engine::types::{GamePositionFluidity, InGameDrinking, SubstitutionTendency};
@@ -18,7 +9,6 @@ use crate::game_engine::{Tournament, TournamentId, TournamentType};
 use crate::network::types::TournamentRequestState;
 use crate::network::{challenge::Challenge, trade::Trade};
 use crate::types::{HashMapWithResult, PlayerMap, StorableResourceMap};
-use crate::ui::tournament_panel::TournamentView;
 use crate::ui::ui_key;
 use crate::{
     app::App,
@@ -28,6 +18,7 @@ use crate::{
     space_adventure::PlayerInput,
     types::{AppCallback, AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick},
 };
+use crate::{app_version, ui::PopupMessage};
 use anyhow::anyhow;
 use rand::{
     seq::{IndexedRandom, IteratorRandom},
@@ -60,6 +51,7 @@ pub enum UiCallback {
     },
     GoToGame {
         game_id: GameId,
+        from_popup: bool,
     },
     GoToLoadedGame {
         game: Game,
@@ -425,11 +417,14 @@ impl UiCallback {
         })
     }
 
-    fn go_to_game(game_id: GameId) -> AppCallback {
+    fn go_to_game(game_id: GameId, from_popup: bool) -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.game_panel.update(&app.world)?;
             app.ui.game_panel.set_active_game(game_id)?;
             app.ui.switch_to(super::ui_screen::UiTab::Games);
+            if from_popup {
+                app.ui.close_popup();
+            }
             Ok(None)
         })
     }
@@ -785,8 +780,7 @@ impl UiCallback {
 
     fn cancel_generate_own_team() -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.new_team_screen.set_state(CreationState::Players);
-            app.ui.new_team_screen.clear_selected_players();
+            app.ui.new_team_screen.cancel_confirmation();
             Ok(None)
         })
     }
@@ -1399,7 +1393,10 @@ impl UiCallback {
             Self::GoToPlayer { player_id } => Self::go_to_player(*player_id)(app),
             Self::GoToPlayerTeam { player_id } => Self::go_to_player_team(*player_id)(app),
             Self::GoToLoadedGame { game } => Self::go_to_loaded_game(game.clone())(app),
-            Self::GoToGame { game_id } => Self::go_to_game(*game_id)(app),
+            Self::GoToGame {
+                game_id,
+                from_popup,
+            } => Self::go_to_game(*game_id, *from_popup)(app),
             Self::GoToPlanet { planet_id } => Self::go_to_planet(*planet_id)(app),
             Self::GoToSpaceCove => Self::go_to_space_cove()(app),
             Self::GoToHomePlanet { team_id } => Self::go_to_home_planet(*team_id)(app),
@@ -1649,6 +1646,7 @@ impl UiCallback {
             Self::HirePlayer { player_id } => {
                 let own_team_id = app.world.own_team_id;
                 app.world.hire_player_for_team(player_id, &own_team_id)?;
+                app.world.players_scouting.insert(*player_id, MAX_SKILL);
                 app.world.dirty_ui = true;
                 app.ui.player_panel.update(&app.world)?;
                 Ok(None)

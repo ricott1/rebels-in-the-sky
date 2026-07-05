@@ -11,6 +11,9 @@ pub const MAX_NAME_LENGTH: usize = 12;
 
 pub const BARS_LENGTH: usize = 25;
 
+// This is used as a convenience value so that the bars are colored green if at max value.
+pub const GREEN_STYLE_SKILL: f32 = 16.0;
+
 // Used for improvement indicators
 pub const TREND_WEAK_UP: f32 = 0.05 * MAX_SKILL_INCREASE_PER_LONG_TICK;
 pub const TREND_STRONG_UP: f32 = 0.12 * MAX_SKILL_INCREASE_PER_LONG_TICK;

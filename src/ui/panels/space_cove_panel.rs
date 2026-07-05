@@ -1,5 +1,4 @@
-use super::ui_frame::UiFrame;
-use super::{traits::Screen, ui_callback::UiCallback};
+use super::traits::SplitPanel;
 use crate::game_engine::{TournamentId, TournamentType};
 use crate::image::player::PLAYER_IMAGE_WIDTH;
 use crate::image::utils::ExtraImageUtils;
@@ -10,9 +9,11 @@ use crate::types::{
 use crate::ui::button::Button;
 use crate::ui::checkbox::Checkbox;
 use crate::ui::clickable_list::ClickableListState;
-use crate::ui::traits::SplitPanel;
-use crate::ui::ui_screen::{render_help_block, tab_link, UiTab};
-use crate::ui::utils::{img_to_lines, normalize_index, IndexBound};
+use crate::ui::panels::traits::{normalize_index, HelpContent, HelpPanel, IndexBound, Screen};
+use crate::ui::ui_callback::UiCallback;
+use crate::ui::ui_frame::UiFrame;
+use crate::ui::ui_screen::{tab_link, UiTab};
+use crate::ui::utils::img_to_lines;
 use crate::ui::widgets::{
     default_block, go_to_planet_button, render_available_upgrades, selectable_list, teleport_button,
 };
@@ -1183,52 +1184,46 @@ impl Screen for SpaceCovePanel {
         ]
     }
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        render_help_block(
-            frame,
-            area,
-            vec![
-                Line::from(" Manage your own space cove and browse other crews' coves."),
-                Line::from(" Use the two buttons at the top to switch view: yours"),
-                Line::from(" (tournaments + upgrades) or other coves (list + travel)."),
-                Line::from(""),
-                Line::from(" Manage the asteroid that hosts your cove from My Team."),
-                Line::from(" Inspect visiting crews directly, or browse all in Crews."),
-                Line::from(" To find another asteroid candidate, explore the Galaxy."),
-            ],
-            vec![
+}
+
+impl HelpPanel for SpaceCovePanel {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: [
+                "Manage your own space cove and browse other crews' coves.",
+                " Use the two buttons at the top to switch view between yours and other coves.",
+                "",
+                "Manage the asteroid that hosts your cove from My Team.",
+                "Inspect visiting crews directly, or browse all in Crews.",
+                "To find another asteroid candidate, explore the Galaxy.",
+            ]
+            .join("\n"),
+            links: vec![
                 tab_link("My Team", UiTab::MyTeam),
                 tab_link("Crews", UiTab::Crews),
                 tab_link("Galaxy", UiTab::Galaxy),
             ],
-            vec![
-                Line::from(" Controls:"),
+            controls: vec![
+                Line::from("Controls:"),
                 Line::from(format!(
-                    "   {}        Cycle between Own cove and Other coves view",
+                    "  {}        Cycle between Own cove and Other coves view",
                     ui_key::CYCLE_VIEW
                 )),
                 Line::from("   ↑/↓        Move highlight in the cove list (Other coves view)"),
                 Line::from(format!(
-                    "   {}          Teleport / Travel to the selected cove asteroid",
+                    "  {}          Teleport / Travel to the selected cove asteroid",
                     ui_key::TRAVEL
                 )),
                 Line::from(format!(
-                    "   {}          Organize a quick tournament (own cove only)",
+                    "  {}          Organize a quick tournament (own cove only)",
                     ui_key::ORGANIZE_QUICK_TOURNAMENT
                 )),
                 Line::from(format!(
-                    "   {}          Organize a big tournament (own cove only)",
+                    "  {}          Organize a big tournament (own cove only)",
                     ui_key::ORGANIZE_BIG_TOURNAMENT
                 )),
             ],
-        );
-        Ok(())
+        }
     }
 }
 

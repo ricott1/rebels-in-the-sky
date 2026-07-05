@@ -1,19 +1,20 @@
-use super::button::Button;
-use super::clickable_list::ClickableListState;
-use super::ui_callback::UiCallback;
-use super::ui_frame::UiFrame;
-use super::ui_screen::{render_help_block, tab_link, UiTab};
-use super::{
-    constants::*,
-    traits::{Screen, SplitPanel},
-    widgets::{default_block, selectable_list},
-};
+use super::tournament_brackets_lines::{current_round, number_of_rounds};
+use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
 use crate::core::{skill::Rated, world::World};
 use crate::game_engine::game::GameSummary;
 use crate::game_engine::{Tournament, TournamentId, TournamentState, TournamentSummary};
 use crate::types::{AppResult, SystemTimeTick, Tick};
-use crate::ui::tournament_brackets_lines::{current_round, number_of_rounds};
-use crate::ui::{tournament_brackets_lines, ui_key};
+use crate::ui::button::Button;
+use crate::ui::clickable_list::ClickableListState;
+use crate::ui::panels::tournament_brackets_lines;
+use crate::ui::ui_callback::UiCallback;
+use crate::ui::ui_frame::UiFrame;
+use crate::ui::ui_key;
+use crate::ui::ui_screen::{tab_link, UiTab};
+use crate::ui::{
+    constants::*,
+    widgets::{default_block, selectable_list},
+};
 use core::fmt::Debug;
 use itertools::Itertools;
 use ratatui::crossterm;
@@ -715,54 +716,47 @@ impl Screen for TournamentPanel {
         ]
     }
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        render_help_block(
-            frame,
-            area,
-            vec![
-                Line::from(" Track running tournaments, browse past brackets, register"),
-                Line::from(" your team, or organize a new quick or big tournament from"),
-                Line::from(" your home planet."),
-                Line::from(""),
-                Line::from(" Watch live or finished tournament games in Games."),
-                Line::from(" Tune your roster before registering in My Team."),
-                Line::from(" Scout potential opponents in Crews."),
-            ],
-            vec![
+}
+
+impl HelpPanel for TournamentPanel {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: [
+                " Track running tournaments and register your team or browse past tournaments.",
+                "",
+                "Watch live or finished tournament games in Games.",
+                "Tune your roster before registering in My Team.",
+                "Scout potential opponents in Crews.",
+            ]
+            .join("\n"),
+            links: vec![
                 tab_link("Games", UiTab::Games),
                 tab_link("My Team", UiTab::MyTeam),
                 tab_link("Crews", UiTab::Crews),
             ],
-            vec![
+            controls: vec![
                 Line::from(" Controls:"),
                 Line::from(format!(
-                    "   {}        Cycle view (All / Active / Past)",
+                    "  {}        Cycle view (All / Active / Past)",
                     ui_key::CYCLE_VIEW
                 )),
-                Line::from("   ↑/↓        Move highlight in tournament list"),
+                Line::from("  ↑/↓        Move highlight in tournament list"),
                 Line::from(format!(
-                    "   {} / {}      Scroll the inner roster preview",
+                    "  {} / {}      Scroll the inner roster preview",
                     ui_key::PREVIOUS_SELECTION,
                     ui_key::NEXT_SELECTION
                 )),
                 Line::from(format!(
-                    "   {}          Register your team for the highlighted tournament",
+                    "  {}          Register your team for the highlighted tournament",
                     ui_key::REGISTER_TO_TOURNAMENT
                 )),
                 Line::from(format!(
-                    "   {} / {}      Organize a quick / big tournament",
+                    "  {} / {}      Organize a quick / big tournament",
                     ui_key::ORGANIZE_QUICK_TOURNAMENT,
                     ui_key::ORGANIZE_BIG_TOURNAMENT
                 )),
             ],
-        );
-        Ok(())
+        }
     }
 }
 

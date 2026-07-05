@@ -1,6 +1,3 @@
-use std::collections::HashSet;
-use std::iter::zip;
-
 use super::ui_frame::UiFrame;
 use super::{
     button::Button,
@@ -44,11 +41,12 @@ use ratatui::{
     text::Span,
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
+use std::collections::{HashMap, HashSet};
+use std::iter::zip;
 use std::sync::LazyLock;
 use strum::Display;
 
-// This is used as a convenience value so that the bars are colored green if at max value.
-pub const GREEN_STYLE_SKILL: f32 = 16.0;
+const SPACES: &str = "                    ";
 
 pub static UP_ARROW_SPAN: LazyLock<Span<'static>> =
     LazyLock::new(|| Span::styled("↑", MAX_SKILL.style()));
@@ -378,7 +376,10 @@ pub fn render_challenge_button(
         };
         let mut b = Button::new(
             format!("Playing - {game_text}"),
-            UiCallback::GoToGame { game_id },
+            UiCallback::GoToGame {
+                game_id,
+                from_popup: false,
+            },
         )
         .set_hover_text("Go to team's game")
         .set_hotkey(ui_key::GO_TO_GAME);
@@ -639,7 +640,7 @@ pub fn get_storage_spans(
             )),
         ]
     } else {
-        vec![Span::raw("")]
+        vec![Span::default()]
     }
 }
 
@@ -1564,7 +1565,7 @@ pub fn render_market_on_planet(
     .enumerate()
     {
         let resource_split = layout.split(button_split[button_split_idx + 1]);
-        let merchant_bonus = TeamBonus::TradePrice.current_team_bonus(world, &own_team.id)?;
+        let merchant_bonus = TeamBonus::Bargaining.current_team_bonus(world, &own_team.id)?;
         let buy_unit_cost = planet.resource_buy_price(*resource, merchant_bonus);
         let sell_unit_cost = planet.resource_sell_price(*resource, merchant_bonus);
         frame.render_widget(
@@ -1658,6 +1659,7 @@ pub fn render_market_on_planet(
 
 pub fn render_player_description(
     player: &Player,
+    players_scouting: &HashMap<PlayerId, Skill>,
     view: PlayerWidgetView,
     gif_map: &mut GifMap,
     tick: usize,
@@ -1695,13 +1697,13 @@ pub fn render_player_description(
     }
 
     let trait_span = player.special_trait.map_or_else(
-        || Span::raw(""),
+        || Span::default(),
         |t| Span::styled(format!("{t}"), t.style()),
     );
 
     let drunkenness = player.current_drunkenness(world);
     let drunkenness_span = Player::drunkenness_description(drunkenness).map_or_else(
-        || Span::raw(""),
+        || Span::default(),
         |desc| {
             let style = ((MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL).style();
             Span::styled(format!(" {desc}"), style)
@@ -1806,7 +1808,7 @@ pub fn render_player_description(
 
     match view {
         PlayerWidgetView::Skills => frame.render_widget(
-            Paragraph::new(format_player_skills(player)),
+            Paragraph::new(format_player_skills(player, players_scouting)),
             header_body_stats[6],
         ),
         PlayerWidgetView::Stats => frame.render_widget(
@@ -1871,127 +1873,126 @@ fn improvement_indicator<'a>(skill: f32, previous: f32) -> Span<'a> {
     }
 }
 
-fn format_player_skills(player: &'_ Player) -> Vec<Line<'_>> {
-    let skills = player.current_skill_array();
-    let mut text = vec![];
-    let mut roles = (0..NUM_GAME_POSITIONS)
-        .map(|i: GamePosition| {
-            (
-                i.as_role().to_string(),
-                player.game_position_fitness[i as usize],
-                player.previous_game_position_fitness[i as usize],
-            )
-        })
-        .collect::<Vec<(String, Skill, Skill)>>();
-    roles.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+fn scouted_player_skill_spans<'a>(player: &Player, scouting: Skill, i: usize) -> Vec<Span<'a>> {
+    const PADDING: usize = 3;
+    let skill = player.skill_at_index(i);
 
-    let mut spans = vec![];
-    spans.push(Span::styled(
-        format!("{:<2} {:<5} ", roles[0].0, roles[0].1.stars()),
-        roles[0].1.style(),
-    ));
-    spans.push(improvement_indicator(roles[0].1, roles[0].2));
-    spans.push(Span::raw("        "));
-    spans.push(Span::styled(
-        format!("Athletics {:<5}", player.athletics.stars()),
-        player.athletics.rating().style(),
+    if scouting == MAX_SKILL {
+        return vec![
+            Span::styled(
+                format!("{:10} {:02} ", SKILL_NAMES[i], skill.value()),
+                skill.style(),
+            ),
+            improvement_indicator(skill, player.previous_skills[i]),
+            Span::raw(&SPACES[..PADDING]),
+        ];
+    }
+
+    if player.is_skill_scouted(scouting, i) {
+        return vec![
+            Span::styled(
+                format!("{:10} {:02}", SKILL_NAMES[i], skill.value()),
+                skill.style(),
+            ),
+            Span::raw(&SPACES[..PADDING + 2]),
+        ];
+    }
+
+    vec![
+        Span::styled(format!("{:10} --", SKILL_NAMES[i]), UiStyle::DEFAULT),
+        Span::raw(&SPACES[..PADDING + 2]),
+    ]
+}
+
+fn scouted_player_skill_summary_span<'a, R: Rated>(name: &'a str, value: R) -> Span<'a> {
+    let padding = MAX_NAME_LENGTH.saturating_sub(name.len());
+    let stars = value.stars();
+
+    Span::styled(
+        format!("{name} {}{}", stars, &SPACES[..padding]),
+        value.rating().style(),
+    )
+}
+
+fn scouted_player_role_spans<'a>(player: &Player, scouting: Skill, i: usize) -> Vec<Span<'a>> {
+    const PADDING: usize = 9;
+
+    let value = player.game_position_fitness[i];
+    let role = (i as GamePosition).as_role().to_string();
+
+    if scouting == MAX_SKILL {
+        return vec![
+            Span::styled(
+                format!("{:2} {}", role, value.stars()),
+                value.rating().style(),
+            ),
+            improvement_indicator(value, player.previous_game_position_fitness[i]),
+            Span::raw(&SPACES[..PADDING]),
+        ];
+    }
+
+    // Stronger roles are visualized first
+    if player.is_role_scouted(scouting, value) {
+        return vec![
+            Span::styled(
+                format!("{:2} {}", role, value.stars()),
+                value.rating().style(),
+            ),
+            Span::raw(&SPACES[..PADDING + 1]),
+        ];
+    }
+
+    vec![Span::raw(&SPACES[..PADDING + 9])]
+}
+
+fn format_player_skills<'a>(
+    player: &'a Player,
+    players_scouting: &'a HashMap<PlayerId, Skill>,
+) -> Vec<Line<'a>> {
+    let scouting = players_scouting
+        .get(&player.id)
+        .copied()
+        .unwrap_or_default();
+    let mut text = vec![];
+    let sorted_roles = (0..NUM_GAME_POSITIONS as usize)
+        .sorted_by(|&a, &b| {
+            player.game_position_fitness[b].total_cmp(&player.game_position_fitness[a])
+        })
+        .collect_vec();
+
+    let mut spans = scouted_player_role_spans(player, scouting, sorted_roles[0]);
+    spans.push(scouted_player_skill_summary_span(
+        "Athletics",
+        player.athletics,
     ));
     text.push(Line::from(spans));
 
-    for i in 0..NUM_GAME_POSITIONS as usize - 1 {
-        let mut spans = vec![];
-        spans.push(Span::styled(
-            format!("{:<2} {:<5} ", roles[i + 1].0, roles[i + 1].1.stars()),
-            roles[i + 1].1.style(),
-        ));
-        spans.push(improvement_indicator(roles[i].1, roles[i].2));
-        spans.push(Span::raw("     "));
-        spans.push(Span::styled(
-            format!(
-                "   {:<MAX_NAME_LENGTH$}{:02} ",
-                SKILL_NAMES[i],
-                skills[i].value(),
-            ),
-            skills[i].style(),
-        ));
-        spans.push(improvement_indicator(skills[i], player.previous_skills[i]));
-
+    for i in 1..sorted_roles.len() {
+        let mut spans = scouted_player_role_spans(player, scouting, sorted_roles[i]);
+        spans.extend(scouted_player_skill_spans(player, scouting, i));
         text.push(Line::from(spans));
     }
-    text.push(Line::default());
 
+    text.push(Line::default());
     text.push(Line::from(vec![
-        Span::styled(
-            format!("{} {:<5}     ", "Offense", player.offense.stars()),
-            player.offense.rating().style(),
-        ),
-        Span::styled(
-            format!("{} {}", "Defense", player.defense.stars()),
-            player.defense.rating().style(),
-        ),
+        scouted_player_skill_summary_span("Offense", player.offense),
+        scouted_player_skill_summary_span("Defense", player.defense),
     ]));
     for i in 0..4 {
-        let mut spans = vec![];
-        spans.push(Span::styled(
-            format!("{:<10}{:02} ", SKILL_NAMES[i + 4], skills[i + 4].value(),),
-            skills[i + 4].style(),
-        ));
-        spans.push(improvement_indicator(
-            skills[i + 4],
-            player.previous_skills[i + 4],
-        ));
-
-        spans.push(Span::styled(
-            format!(
-                "    {:<MAX_NAME_LENGTH$}{:02} ",
-                SKILL_NAMES[i + 8],
-                skills[i + 8].value(),
-            ),
-            skills[i + 8].style(),
-        ));
-        spans.push(improvement_indicator(
-            skills[i + 8],
-            player.previous_skills[i + 8],
-        ));
-
+        let mut spans = scouted_player_skill_spans(player, scouting, i + 4);
+        spans.extend(scouted_player_skill_spans(player, scouting, i + 8));
         text.push(Line::from(spans));
     }
+
     text.push(Line::default());
     text.push(Line::from(vec![
-        Span::styled(
-            format!("{} {:<5}   ", "Technical", player.technical.stars()),
-            player.technical.rating().style(),
-        ),
-        Span::styled(
-            format!("{} {}", "Mental", player.mental.stars()),
-            player.mental.rating().style(),
-        ),
+        scouted_player_skill_summary_span("Technical", player.technical),
+        scouted_player_skill_summary_span("Mental", player.mental),
     ]));
 
     for i in 0..4 {
-        let mut spans = vec![];
-        spans.push(Span::styled(
-            format!("{:<10}{:02} ", SKILL_NAMES[i + 12], skills[i + 12].value(),),
-            skills[i + 12].style(),
-        ));
-        spans.push(improvement_indicator(
-            skills[i + 12],
-            player.previous_skills[i + 12],
-        ));
-
-        spans.push(Span::styled(
-            format!(
-                "    {:<MAX_NAME_LENGTH$}{:02} ",
-                SKILL_NAMES[i + 16],
-                skills[i + 16].value(),
-            ),
-            skills[i + 16].style(),
-        ));
-        spans.push(improvement_indicator(
-            skills[i + 16],
-            player.previous_skills[i + 16],
-        ));
-
+        let mut spans = scouted_player_skill_spans(player, scouting, i + 12);
+        spans.extend(scouted_player_skill_spans(player, scouting, i + 16));
         text.push(Line::from(spans));
     }
 

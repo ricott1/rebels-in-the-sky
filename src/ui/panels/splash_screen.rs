@@ -1,15 +1,14 @@
-use super::button::Button;
-use super::gif_map::*;
-use super::ui_callback::UiCallback;
-use super::ui_frame::UiFrame;
-use super::utils::big_text;
-use super::{
-    traits::{Screen, SplitPanel},
-    widgets::default_block,
-};
+use super::traits::{HelpContent, HelpPanel, Screen};
 use crate::core::constants::{DEBUG_TIME_MULTIPLIER, SOL_ID};
 use crate::store::world_file_data;
 use crate::types::{AppResult, SystemTimeTick, Tick};
+use crate::ui::button::Button;
+use crate::ui::gif_map::*;
+use crate::ui::panels::SplitPanel;
+use crate::ui::ui_callback::UiCallback;
+use crate::ui::ui_frame::UiFrame;
+use crate::ui::utils::big_text;
+use crate::ui::widgets::default_block;
 use crate::AudioPlayerState;
 use crate::{core::world::World, store::save_game_exists};
 use core::fmt::Debug;
@@ -343,28 +342,21 @@ impl Screen for SplashScreen {
         ]
     }
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        let lines = vec![
-            Line::from(""),
-            Line::from(" Welcome to Rebels of the Sky - basketball among the stars."),
-            Line::from(""),
-            Line::from(" Controls:"),
-            Line::from("   ↑/↓     Move the highlight between options."),
-            Line::from("   Enter   Confirm the highlighted option."),
-            Line::from("   r       Roll a new quote."),
-            Line::from("   Esc     Quit the game."),
-            Line::from(""),
-            Line::from(" Pick 'Continue' to resume your saved game or"),
-            Line::from(" 'New Game' to start a new game."),
-        ];
-        frame.render_widget(Paragraph::new(lines), area);
-        Ok(())
+}
+
+impl HelpPanel for SplashScreen {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: "Welcome to Rebels of the Sky - basketball among the stars.".to_string(),
+            links: vec![],
+            controls: vec![
+                Line::from("Controls:"),
+                Line::from("  ↑/↓     Move the highlight between options."),
+                Line::from("  Enter   Confirm the highlighted option."),
+                Line::from("  r       Roll a new quote."),
+                Line::from("  Esc     Quit the game."),
+            ],
+        }
     }
 }
 

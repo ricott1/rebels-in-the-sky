@@ -1,13 +1,15 @@
-use super::constants::BARS_LENGTH;
-use super::traits::Screen;
-use super::ui_callback::UiCallback;
-use super::ui_frame::UiFrame;
-use super::utils::{big_text, img_to_lines};
-use super::widgets::{get_charge_spans, get_durability_spans, get_fuel_spans, get_storage_spans};
+use super::traits::{HelpContent, HelpPanel, Screen};
 use crate::core::world::World;
 use crate::space_adventure::ControllableSpaceship;
 use crate::types::AppResult;
+use crate::ui::constants::BARS_LENGTH;
+use crate::ui::ui_callback::UiCallback;
+use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
+use crate::ui::utils::{big_text, img_to_lines};
+use crate::ui::widgets::{
+    get_charge_spans, get_durability_spans, get_fuel_spans, get_storage_spans,
+};
 use core::fmt::Debug;
 use ratatui::crossterm;
 use ratatui::layout::{Constraint, Layout};
@@ -171,7 +173,7 @@ impl Screen for SpaceScreen {
         &mut self,
         key_event: crossterm::event::KeyEvent,
         _world: &World,
-    ) -> Option<super::ui_callback::UiCallback> {
+    ) -> Option<UiCallback> {
         if ui_key::space::ALL.contains(&key_event.code) {
             return Some(UiCallback::SpaceAdventurePlayerInput {
                 key_code: key_event.code,
@@ -192,40 +194,38 @@ impl Screen for SpaceScreen {
         ]
     }
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        let lines = vec![
-            Line::from(""),
-            Line::from(" Pilot your spaceship through asteroids and hostile traffic."),
-            Line::from(" Mine, fight, and head home alive. The HUD on the bottom"),
-            Line::from(" shows hull, shield, fuel, and cargo bars."),
-            Line::from(""),
-            Line::from(" Controls:"),
-            Line::from("   ↑/↓/←/→     Thrust your spaceship"),
-            Line::from(format!(
-                "   {}           Toggle autofire",
-                ui_key::space::AUTOFIRE
-            )),
-            Line::from(format!("   {}           Shoot", ui_key::space::SHOOT)),
-            Line::from(format!(
-                "   {}           Toggle shield (drains charge)",
-                ui_key::space::TOGGLE_SHIELD
-            )),
-            Line::from(format!(
-                "   {}           Release scraps as decoys",
-                ui_key::space::RELEASE_SCRAPS
-            )),
-            Line::from(format!(
-                "   {}           Return home, ending the adventure",
-                ui_key::space::BACK_TO_BASE
-            )),
-        ];
-        frame.render_widget(Paragraph::new(lines), area);
-        Ok(())
+}
+
+impl HelpPanel for SpaceScreen {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: [
+                "Pilot your spaceship through asteroids and hostile ships.",
+                "Survive long enough to discover new asteroids.",
+            ]
+            .join("\n"),
+            links: vec![],
+            controls: vec![
+                Line::from("Controls:"),
+                Line::from("  ↑/↓/←/→     Thrust your spaceship"),
+                Line::from(format!(
+                    "  {}           Toggle autofire",
+                    ui_key::space::AUTOFIRE
+                )),
+                Line::from(format!("  {}           Shoot", ui_key::space::SHOOT)),
+                Line::from(format!(
+                    "  {}           Toggle shield (drains charge)",
+                    ui_key::space::TOGGLE_SHIELD
+                )),
+                Line::from(format!(
+                    "  {}           Release scraps as decoys",
+                    ui_key::space::RELEASE_SCRAPS
+                )),
+                Line::from(format!(
+                    "  {}           Return home, ending the adventure",
+                    ui_key::space::BACK_TO_BASE
+                )),
+            ],
+        }
     }
 }

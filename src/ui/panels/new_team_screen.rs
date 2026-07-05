@@ -1,21 +1,20 @@
-use super::button::Button;
-use super::clickable_list::ClickableListState;
-use super::constants::*;
-use super::gif_map::GifMap;
-use super::traits::SplitPanel;
-use super::ui_callback::UiCallback;
-use super::ui_frame::UiFrame;
-use super::utils::{format_satoshi, validate_textarea_input};
-use super::widgets::{thick_block, PlayerWidgetView};
-use super::{
-    constants::UiStyle,
-    traits::Screen,
-    utils::{img_to_lines, input_from_key_event},
-    widgets::{default_block, render_player_description, selectable_list},
-};
+use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
 use crate::image::utils::LightMaskStyle;
 use crate::image::{color_map::ColorPreset, spaceship::SPACESHIP_IMAGE_WIDTH};
 use crate::types::HashMapWithResult;
+use crate::ui::button::Button;
+use crate::ui::clickable_list::ClickableListState;
+use crate::ui::constants::*;
+use crate::ui::gif_map::GifMap;
+use crate::ui::ui_callback::UiCallback;
+use crate::ui::ui_frame::UiFrame;
+use crate::ui::utils::{format_satoshi, validate_textarea_input};
+use crate::ui::widgets::{thick_block, PlayerWidgetView};
+use crate::ui::{
+    constants::UiStyle,
+    utils::{img_to_lines, input_from_key_event},
+    widgets::{default_block, render_player_description, selectable_list},
+};
 use crate::{
     core::*,
     image::color_map::ColorMap,
@@ -56,7 +55,7 @@ const INITIAL_PLANET_IDS: [PlanetId; 4] = [
 ];
 
 #[derive(Debug, Default, PartialOrd, PartialEq)]
-pub enum CreationState {
+enum CreationState {
     #[default]
     TeamName,
     ShipName,
@@ -188,11 +187,12 @@ impl NewTeamScreen {
         }
     }
 
-    pub fn clear_selected_players(&mut self) {
+    pub fn cancel_confirmation(&mut self) {
         self.selected_players.clear();
+        self.set_state(self.state.previous());
     }
 
-    pub fn set_state(&mut self, state: CreationState) {
+    fn set_state(&mut self, state: CreationState) {
         self.state = state;
         self.set_index(0);
     }
@@ -703,6 +703,7 @@ impl NewTeamScreen {
             .get_or_err(&planet_players[self.player_index].0)?;
         render_player_description(
             player,
+            &world.players_scouting,
             PlayerWidgetView::Skills,
             &mut self.gif_map,
             self.tick,
@@ -1137,8 +1138,7 @@ impl Screen for NewTeamScreen {
                             }
                         }
                         KeyCode::Backspace => {
-                            self.clear_selected_players();
-                            self.set_state(self.state.previous());
+                            self.cancel_confirmation();
                         }
 
                         _ => {}
@@ -1173,42 +1173,26 @@ impl Screen for NewTeamScreen {
         None
     }
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        let lines = vec![
-            Line::from(""),
-            Line::from(" Walk through team creation step by step:"),
-            Line::from("   - Pick a team name and a spaceship name."),
-            Line::from("   - Choose your home planet."),
-            Line::from("   - Select jersey colors and style."),
-            Line::from("   - Pick your starting spaceship model."),
-            Line::from("   - Hire your starting players."),
-            Line::from(""),
-            Line::from(format!(
-                " Budget: you start with {} sat. The 'Remaining balance' bar at",
+}
+
+impl HelpPanel for NewTeamScreen {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: format!(
+                "Walk through team creation step by step:\n  - Pick a team name and a spaceship name.\n  - Choose your home planet.\n  - Select jersey colors and style.\n  - Pick your starting spaceship model.\n  - Hire your starting players.\n\nBudget: you start with {} sat. The 'Remaining balance' bar at the top tracks your spending:\neach spaceship and each hired player costs satoshi.",
                 INITIAL_TEAM_BALANCE
-            )),
-            Line::from(" the top tracks your spending: each spaceship and each hired"),
-            Line::from(" player costs satoshi. Pricier ships and pricier pirates eat"),
-            Line::from(" your budget faster. The balance must stay non-negative to"),
-            Line::from(" confirm the team - if it turns red, drop a player or pick a"),
-            Line::from(" cheaper ship."),
-            Line::from(""),
-            Line::from(" Controls:"),
-            Line::from("   ↑/↓        Move highlight in lists."),
-            Line::from("   Enter      Confirm step / select."),
-            Line::from("   Backspace  Go back to the previous step."),
-            Line::from("   r/g/b      Cycle red/green/blue jersey color."),
-            Line::from("   R/G/B      Cycle backwards."),
-            Line::from("   Esc        Quit the game."),
-        ];
-        frame.render_widget(Paragraph::new(lines), area);
-        Ok(())
+            ),
+            links: vec![],
+            controls: vec![
+                Line::from("Controls:"),
+                Line::from("  ↑/↓        Move highlight in lists."),
+                Line::from("  Enter      Confirm step / select."),
+                Line::from("  Backspace  Go back to the previous step."),
+                Line::from("  r/g/b      Cycle red/green/blue jersey color."),
+                Line::from("  R/G/B      Cycle backwards."),
+                Line::from("  Esc        Quit the game."),
+            ],
+        }
     }
 }
 

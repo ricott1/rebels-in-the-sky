@@ -1,15 +1,15 @@
-use super::button::Button;
-use super::clickable_list::ClickableListState;
-use super::constants::*;
-use super::gif_map::GifMap;
-use super::ui_callback::UiCallback;
-use super::ui_frame::UiFrame;
-use super::ui_screen::{render_help_block, tab_link, UiTab};
-use super::utils::format_satoshi;
-use super::widgets::PlayerWidgetView;
-use super::{
+use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
+use crate::ui::button::Button;
+use crate::ui::clickable_list::ClickableListState;
+use crate::ui::constants::*;
+use crate::ui::gif_map::GifMap;
+use crate::ui::ui_callback::UiCallback;
+use crate::ui::ui_frame::UiFrame;
+use crate::ui::ui_screen::{tab_link, UiTab};
+use crate::ui::utils::format_satoshi;
+use crate::ui::widgets::PlayerWidgetView;
+use crate::ui::{
     constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
-    traits::{Screen, SplitPanel},
     widgets::{default_block, render_player_description, selectable_list},
 };
 use ratatui::text::Line;
@@ -295,6 +295,7 @@ impl PlayerListPanel {
 
         render_player_description(
             player,
+            &world.players_scouting,
             self.player_widget_view,
             &mut self.gif_map,
             self.tick,
@@ -311,6 +312,7 @@ impl PlayerListPanel {
             let locked_player = world.players.get_or_err(&locked_player_id)?;
             render_player_description(
                 locked_player,
+                &world.players_scouting,
                 self.player_widget_view,
                 &mut self.gif_map,
                 self.tick,
@@ -665,58 +667,51 @@ impl Screen for PlayerListPanel {
         ]
     }
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        render_help_block(
-            frame,
-            area,
-            vec![
-                Line::from(" Browse free pirates and players across the galaxy. Inspect"),
-                Line::from(" their skills and stats, lock favorites, and hire those that"),
-                Line::from(" fit your roster and your budget."),
-                Line::from(""),
-                Line::from(" Once hired, manage them in My Team."),
-                Line::from(" To see who plays for which side, browse Crews."),
-                Line::from(" Free pirates often hang around their home planet, see Galaxy."),
-            ],
-            vec![
+}
+
+impl HelpPanel for PlayerListPanel {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: [
+                "Browse pirates across the galaxy.",
+                "Find free pirates to hire that fit your roster and budget.",
+                "",
+                "Once hired, manage them in My Team.",
+                "To see who plays for which side, browse Crews.",
+            ]
+            .join("\n"),
+            links: vec![
                 tab_link("My Team", UiTab::MyTeam),
                 tab_link("Crews", UiTab::Crews),
                 tab_link("Galaxy", UiTab::Galaxy),
             ],
-            vec![
-                Line::from(" Controls:"),
+            controls: vec![
+                Line::from("Controls:"),
                 Line::from(format!(
-                    "   {}        Cycle view (All / FreePirates / OwnTeam)",
+                    "  {}        Cycle view (All / FreePirates / OwnTeam)",
                     ui_key::CYCLE_VIEW
                 )),
-                Line::from("   ↑/↓        Move highlight in the list"),
+                Line::from("  ↑/↓        Move highlight in the list"),
                 Line::from(format!(
-                    "   {} / {}      Hire / fire highlighted pirate",
+                    "  {} / {}      Hire / fire highlighted pirate",
                     ui_key::player::HIRE,
                     ui_key::player::FIRE
                 )),
                 Line::from(format!(
-                    "   {} / {}      Lock / unlock pirate (skip refresh)",
+                    "  {} / {}      Lock / unlock pirate (skip refresh)",
                     ui_key::player::LOCK_PLAYER,
                     ui_key::player::UNLOCK_PLAYER
                 )),
                 Line::from(format!(
-                    "   {}          Switch between skills view and stats view",
+                    "  {}          Switch between skills view and stats view",
                     ui_key::player::PLAYER_STATUS_VIEW
                 )),
                 Line::from(format!(
-                    "   {}          Open the home planet of highlighted pirate",
+                    "  {}          Open the home planet of highlighted pirate",
                     ui_key::ON_PLANET
                 )),
             ],
-        );
-        Ok(())
+        }
     }
 }
 
