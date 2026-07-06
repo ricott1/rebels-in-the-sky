@@ -756,7 +756,7 @@ impl Player {
     }
 
     pub fn is_skill_scouted(&self, scouting: Skill, skill_index: usize) -> bool {
-        const SKILLS_REVEALED_PER_SCOUTING: f32 = 1.15;
+        const SKILLS_REVEALED_PER_SCOUTING: f32 = 1.25;
         let known = ((SKILLS_REVEALED_PER_SCOUTING * scouting).bound() as usize)
             .min(self.scouted_skills.len());
         self.scouted_skills[..known].contains(&skill_index)
