@@ -19,14 +19,38 @@ pub mod tick_event_handler;
 pub mod tui;
 pub mod types;
 pub mod ui;
+use std::sync::OnceLock;
 
-#[must_use]
+use update_informer::Check;
+
+static LATEST_VERSION: OnceLock<Option<String>> = OnceLock::new();
+
 pub fn app_version() -> [usize; 3] {
     [
         env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or_default(),
         env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or_default(),
         env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or_default(),
     ]
+}
+
+pub fn spawn_update_check() {
+    std::thread::spawn(|| {
+        let latest = update_informer::new(
+            update_informer::registry::Crates,
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+        )
+        .interval(std::time::Duration::from_secs(60 * 60 * 24))
+        .check_version()
+        .ok()
+        .flatten()
+        .map(|v| v.to_string());
+        let _ = LATEST_VERSION.set(latest);
+    });
+}
+
+pub fn update_available() -> Option<&'static str> {
+    LATEST_VERSION.get()?.as_deref()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

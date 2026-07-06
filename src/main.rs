@@ -49,6 +49,8 @@ async fn main() -> AppResult<()> {
     }
 
     let ui_disabled = args.is_ui_disabled();
+
+    rebels::spawn_update_check();
     let mut app = App::new(args)?;
 
     if ui_disabled {

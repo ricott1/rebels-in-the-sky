@@ -711,9 +711,6 @@ impl NetworkCallback {
         Box::new(move |app: &mut App| {
             log::info!("Got seed info");
 
-            // Notify about new version (only once).
-            app.notify_seed_version(seed_info.version);
-
             let data = &mut app.world.network_store_data;
 
             data.update(&seed_info.network_store_data);

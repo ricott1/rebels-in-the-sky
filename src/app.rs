@@ -1,4 +1,3 @@
-use crate::app_version;
 use crate::args::AppArgs;
 #[cfg(feature = "audio")]
 use crate::audio::music_player::{MusicPlayer, MusicPlayerEvent};
@@ -53,7 +52,6 @@ pub struct App {
     #[cfg(feature = "audio")]
     pub audio_player: Option<MusicPlayer>,
     pub network_handler: NetworkHandler,
-    new_version_notified: bool,
     cancellation_token: CancellationToken,
 }
 
@@ -220,7 +218,6 @@ impl App {
             #[cfg(feature = "audio")]
             audio_player,
             network_handler,
-            new_version_notified: false,
             cancellation_token: CancellationToken::new(),
         })
     }
@@ -355,31 +352,6 @@ impl App {
         log::info!("Game loop closed");
         tui.exit().await?;
         Ok(())
-    }
-
-    pub fn notify_seed_version(&mut self, seed_version: [usize; 3]) {
-        if !self.new_version_notified {
-            let [own_version_major, own_version_minor, own_version_patch] = app_version();
-            let [version_major, version_minor, version_patch] = seed_version;
-            if version_major > own_version_major
-                || (version_major == own_version_major && version_minor > own_version_minor)
-                || (version_major == own_version_major
-                    && version_minor == own_version_minor
-                    && version_patch > own_version_patch)
-            {
-                let message = format!(
-                    "New version {version_major}.{version_minor}.{version_patch} available. \nDownload at https://rebels.frittura.org",
-                );
-                self.ui.push_popup(PopupMessage::Message {
-                    message,
-                    links: vec![],
-                    level: log::Level::Info,
-                    is_skippable: false,
-                    timestamp: Tick::now(),
-                });
-                self.new_version_notified = true;
-            }
-        }
     }
 
     pub fn new_world(&mut self) {

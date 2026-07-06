@@ -180,8 +180,11 @@ impl Screen for SplashScreen {
         .split(split[1]);
 
         frame.render_widget(&self.title, title[1]);
-        frame.render_widget(
-            Paragraph::new(format!(
+        let version_line = match crate::update_available() {
+            Some(latest) => {
+                format!("Version {VERSION} · v{latest} available — cargo install rebels")
+            }
+            None => format!(
                 "Version {} {}",
                 VERSION,
                 if DEBUG_TIME_MULTIPLIER == 1 {
@@ -189,8 +192,10 @@ impl Screen for SplashScreen {
                 } else {
                     "DEBUG MODE"
                 }
-            ))
-            .centered(),
+            ),
+        };
+        frame.render_widget(
+            Paragraph::new(version_line).centered(),
             split[2].inner(Margin {
                 vertical: 1,
                 horizontal: 0,
@@ -341,7 +346,6 @@ impl Screen for SplashScreen {
             " Confirm ".to_string(),
         ]
     }
-
 }
 
 impl HelpPanel for SplashScreen {
