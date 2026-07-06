@@ -12,7 +12,7 @@ use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
 use crate::ui::{
     big_numbers::{hyphen, BigNumberFont},
-    constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
+    constants::LEFT_PANEL_WIDTH,
     renders::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
     ui_screen::{tab_link, UiTab},
     utils::img_to_lines,
@@ -129,11 +129,8 @@ impl GamePanel {
 
     fn build_top_panel(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         // Split into left and right panels
-        let split = Layout::horizontal([
-            Constraint::Length(LEFT_PANEL_WIDTH),
-            Constraint::Min(IMG_FRAME_WIDTH),
-        ])
-        .split(area);
+        let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Fill(1)])
+            .split(area);
 
         let game_button_split =
             Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).split(split[0]);
@@ -149,14 +146,10 @@ impl GamePanel {
         self.build_score_panel(frame, world, split[1])?;
 
         // Render game buttons on top of score panel.
-        let gbv_split = Layout::vertical([
-            Constraint::Fill(1),
-            Constraint::Length(3),
-            Constraint::Length(1),
-        ])
-        .split(split[1]);
+        let gbv_split =
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).split(split[1]);
 
-        self.build_game_buttons(frame, gbv_split[1]);
+        self.render_game_buttons(frame, gbv_split[1]);
 
         Ok(())
     }
@@ -254,16 +247,15 @@ impl GamePanel {
         }
     }
 
-    fn build_game_buttons(&self, frame: &mut UiFrame, area: Rect) {
+    fn render_game_buttons(&self, frame: &mut UiFrame, area: Rect) {
         if self.index.is_none() {
             return;
         };
         let b_split = Layout::horizontal([
-            Constraint::Fill(3),
+            Constraint::Fill(1),
             Constraint::Length(18),
-            Constraint::Fill(2),
             Constraint::Length(18),
-            Constraint::Fill(3),
+            Constraint::Fill(1),
         ])
         .split(area);
         let text = if self.pitch_view {
@@ -300,7 +292,7 @@ impl GamePanel {
             ))
             .set_hotkey(ui_key::game::PLAYER_STATUS_VIEW);
 
-        frame.render_interactive_widget(player_status_button, b_split[3]);
+        frame.render_interactive_widget(player_status_button, b_split[2]);
     }
 
     fn build_score_panel(
@@ -335,10 +327,11 @@ impl GamePanel {
 
         let central_split = Layout::vertical([
             Constraint::Fill(1),
+            Constraint::Length(1), // teams
             Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(2),
-            Constraint::Length(8),
+            Constraint::Length(2), // location
+            Constraint::Length(7), // score
+            Constraint::Length(2), //timer
             Constraint::Fill(1),
         ])
         .split(top_split[2]);
@@ -481,6 +474,7 @@ impl GamePanel {
 
         let timer_lines = self.build_timer_lines(world, game);
         frame.render_widget(Paragraph::new(timer_lines).centered(), central_split[5]);
+
         match home_score {
             x if x < 10 => frame.render_widget((home_score % 10).big_font(), digit_split[4]),
             x if x < 100 => {

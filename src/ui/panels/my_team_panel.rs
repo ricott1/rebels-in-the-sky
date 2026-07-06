@@ -1,11 +1,13 @@
 use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
 use crate::game_engine::timer::Period;
+use crate::image::utils::open_image;
 use crate::types::{HashMapWithResult, Tick};
 use crate::ui::checkbox::Checkbox;
-use crate::ui::PopupMessage;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
 use crate::ui::ui_screen::{tab_link, UiTab};
+use crate::ui::utils::img_to_lines;
+use crate::ui::PopupMessage;
 use crate::ui::{
     button::Button,
     clickable_list::ClickableListState,
@@ -106,11 +108,20 @@ pub struct MyTeamPanel {
     game_list_state: ClickableListState,
     spaceship_upgrade_list_state: ClickableListState,
     asteroid_list_state: ClickableListState,
+    game_roster_widget: Paragraph<'static>,
 }
 
 impl MyTeamPanel {
     pub fn new() -> Self {
-        Self::default()
+        let game_roster_widget = {
+            let img = open_image("game/half_court.png")
+                .expect("Should be able to create half_court image");
+            Paragraph::new(img_to_lines(&img))
+        };
+        Self {
+            game_roster_widget,
+            ..Default::default()
+        }
     }
 
     fn render_view_buttons(&self, frame: &mut UiFrame, area: Rect) -> AppResult<()> {
@@ -484,9 +495,15 @@ impl MyTeamPanel {
         area: Rect,
     ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
-        let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
+        let split = Layout::horizontal([
+            Constraint::Length(48),
+            Constraint::Length(1),
+            Constraint::Length(41),
+            Constraint::Fill(1),
+        ])
+        .split(area);
 
-        frame.render_widget(default_block().title("Team"), split[0]);
+        frame.render_widget(default_block().title("Team Settings"), area);
 
         let btm_split = Layout::vertical([
             Constraint::Length(3),
@@ -602,6 +619,7 @@ impl MyTeamPanel {
         frame.render_interactive_widget(network_challenge_button, challenges_split[2]);
 
         // Render team in game positions
+        frame.render_widget(&self.game_roster_widget, split[2].inner(Margin::new(1, 1)));
 
         Ok(())
     }
@@ -660,7 +678,7 @@ impl MyTeamPanel {
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
-        frame.render_widget(default_block().title("Recent Games".to_string()), area);
+        frame.render_widget(default_block().title("Recent Games"), area);
 
         if self.past_game_ids.is_empty() {
             return Ok(());
