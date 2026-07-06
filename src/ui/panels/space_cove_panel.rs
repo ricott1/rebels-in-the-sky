@@ -10,13 +10,13 @@ use crate::ui::button::Button;
 use crate::ui::checkbox::Checkbox;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::panels::traits::{normalize_index, HelpContent, HelpPanel, IndexBound, Screen};
+use crate::ui::renders::{
+    default_block, go_to_planet_button, render_available_upgrades, selectable_list, teleport_button,
+};
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_screen::{tab_link, UiTab};
 use crate::ui::utils::img_to_lines;
-use crate::ui::widgets::{
-    default_block, go_to_planet_button, render_available_upgrades, selectable_list, teleport_button,
-};
 use crate::ui::{constants::*, ui_key};
 use crate::{core::*, types::AppResult};
 use core::fmt::Debug;
@@ -1183,7 +1183,6 @@ impl Screen for SpaceCovePanel {
             " Cycle view ".to_string(),
         ]
     }
-
 }
 
 impl HelpPanel for SpaceCovePanel {

@@ -1,8 +1,8 @@
-use super::button::Button;
-use super::constants::UiStyle;
-use super::ui_callback::UiCallback;
-use super::ui_frame::UiFrame;
-use super::utils::wrap_text;
+use crate::ui::button::Button;
+use crate::ui::constants::UiStyle;
+use crate::ui::ui_callback::UiCallback;
+use crate::ui::ui_frame::UiFrame;
+use crate::ui::utils::wrap_text;
 use ratatui::layout::Rect;
 use ratatui::style::Styled;
 use ratatui::widgets::Paragraph;

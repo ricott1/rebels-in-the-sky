@@ -1,4 +1,4 @@
-use super::utils::big_text;
+use crate::ui::utils::big_text;
 use ratatui::widgets::Paragraph;
 
 pub fn dots() -> Paragraph<'static> {

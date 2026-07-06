@@ -2,11 +2,11 @@ use super::button::Button;
 use super::constants::UiStyle;
 use super::panels::*;
 use super::panels::{Screen, SplitPanel};
-use super::popup_message::PopupMessage;
+use super::PopupMessage;
+use super::renders::{default_block, thick_block};
 use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::ui_frame::UiFrame;
 use super::ui_key;
-use super::widgets::{default_block, thick_block};
 
 #[cfg(feature = "audio")]
 use crate::audio::music_player::MusicPlayer;

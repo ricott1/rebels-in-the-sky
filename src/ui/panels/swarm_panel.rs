@@ -8,15 +8,15 @@ use crate::ui::clickable_list::ClickableListState;
 use crate::ui::clickable_list::{ClickableList, ClickableListItem};
 use crate::ui::constants::*;
 use crate::ui::gif_map::GifMap;
+use crate::ui::renders::{
+    render_player_description, render_spaceship_description, selectable_list, PlayerWidgetView,
+};
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
 use crate::ui::ui_screen::{tab_link, UiTab};
 use crate::ui::utils::wrap_text;
-use crate::ui::widgets::{
-    render_player_description, render_spaceship_description, selectable_list, PlayerWidgetView,
-};
-use crate::ui::{utils::input_from_key_event, widgets::default_block};
+use crate::ui::{renders::default_block, utils::input_from_key_event};
 use anyhow::Error;
 use core::fmt::Debug;
 use itertools::Itertools;
@@ -1168,7 +1168,6 @@ impl Screen for SwarmPanel {
     fn is_capturing_text(&self) -> bool {
         self.view == SwarmView::Chat
     }
-
 }
 
 impl HelpPanel for SwarmPanel {

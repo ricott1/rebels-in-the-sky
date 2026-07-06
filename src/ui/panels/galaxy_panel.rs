@@ -3,14 +3,14 @@ use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamI
 use crate::ui::button::Button;
 use crate::ui::constants::{UiStyle, LEFT_PANEL_WIDTH};
 use crate::ui::gif_map::{GifMap, ImageResizeInGalaxyGif};
+use crate::ui::renders::default_block;
+use crate::ui::renders::{
+    render_navigable_list, space_adventure_button, thick_block, travel_or_teleport_button,
+};
 use crate::ui::traits::UiStyled;
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_screen::{tab_link, UiTab};
-use crate::ui::widgets::default_block;
-use crate::ui::widgets::{
-    render_navigable_list, space_adventure_button, thick_block, travel_or_teleport_button,
-};
 use crate::ui::{constants::*, ui_key};
 use crate::{
     core::*,
@@ -691,7 +691,6 @@ impl Screen for GalaxyPanel {
             ],
         }
     }
-
 }
 
 impl HelpPanel for GalaxyPanel {

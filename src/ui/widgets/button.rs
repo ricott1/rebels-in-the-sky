@@ -1,29 +1,27 @@
-use super::{
-    constants::UiStyle,
-    traits::InteractiveWidget,
-    ui_callback::{CallbackRegistry, UiCallback},
-    widgets::default_block,
-};
-use ratatui::crossterm;
+use crate::ui::constants::UiStyle;
+use crate::ui::renders::default_block;
+use crate::ui::traits::InteractiveWidget;
+use crate::ui::ui_callback::{CallbackRegistry, UiCallback};
 use ratatui::crossterm::event::KeyCode;
+use ratatui::{crossterm, layout::Alignment};
 use ratatui::{
     layout::{Margin, Rect},
-    style::{Color, Style, Styled},
+    style::{Style, Styled},
     symbols::border,
     text::{Line, Span, Text},
     widgets::{Block, Paragraph, Widget},
 };
 
 #[derive(Debug, Default, Clone)]
-pub struct Checkbox<'a> {
+pub struct Button<'a> {
     text: Text<'a>,
-    state: bool,
     hotkey: Option<KeyCode>,
     on_click: UiCallback,
     disabled: bool,
+    selected: bool,
     is_hovered: bool,
     disabled_text: Option<Text<'a>>,
-    text_alignemnt: ratatui::layout::Alignment,
+    text_alignemnt: Alignment,
     style: Style,
     hover_style: Style,
     block: Option<Block<'a>>,
@@ -32,18 +30,74 @@ pub struct Checkbox<'a> {
     layer: usize,
 }
 
-impl<'a> Checkbox<'a> {
-    pub fn new(text: impl Into<Text<'a>>, on_click: UiCallback, initial_state: bool) -> Self {
+impl<'a> Button<'a> {
+    pub fn new(text: impl Into<Text<'a>>, on_click: UiCallback) -> Self {
+        Self::no_box(text, on_click)
+            .hover_block(default_block())
+            .block(default_block())
+    }
+
+    pub fn box_on_hover(text: impl Into<Text<'a>>, on_click: UiCallback) -> Self {
+        Self::no_box(text, on_click).hover_block(default_block())
+    }
+
+    pub fn no_box(text: impl Into<Text<'a>>, on_click: UiCallback) -> Self {
         Self {
             text: text.into(),
-            state: initial_state,
             on_click,
             text_alignemnt: ratatui::layout::Alignment::Center,
             hover_style: UiStyle::HIGHLIGHT,
-            block: Some(default_block()),
-            hover_block: Some(default_block()),
             ..Default::default()
         }
+    }
+
+    pub fn set_text(mut self, text: impl Into<Text<'a>>) -> Self {
+        self.text = text.into();
+        self
+    }
+
+    pub fn set_text_alignemnt(mut self, text_alignemnt: Alignment) -> Self {
+        self.text_alignemnt = text_alignemnt;
+        self
+    }
+
+    pub fn disable(&mut self, text: Option<impl Into<Text<'a>>>) {
+        self.disabled = true;
+        self.disabled_text = text.map(|t| t.into());
+    }
+
+    pub fn disabled(mut self, text: Option<impl Into<Text<'a>>>) -> Self {
+        self.disable(text);
+        self
+    }
+
+    pub const fn select(&mut self) {
+        self.selected = true;
+    }
+
+    pub const fn selected(mut self) -> Self {
+        self.select();
+        self
+    }
+
+    pub const fn set_hover_style(mut self, style: Style) -> Self {
+        self.hover_style = style;
+        self
+    }
+
+    pub fn block(mut self, block: Block<'a>) -> Self {
+        self.block = Some(block);
+        self
+    }
+
+    pub fn hover_block(mut self, block: Block<'a>) -> Self {
+        self.hover_block = Some(block);
+        self
+    }
+
+    pub fn no_hover_block(mut self) -> Self {
+        self.hover_block = None;
+        self
     }
 
     pub fn set_hover_text(mut self, text: impl Into<Text<'a>>) -> Self {
@@ -55,10 +109,19 @@ impl<'a> Checkbox<'a> {
         self.hotkey = Some(k);
         self
     }
+
+    pub const fn set_layer(mut self, layer: usize) -> Self {
+        self.layer = layer;
+        self
+    }
+
+    pub fn text_width(&self) -> usize {
+        self.text.width()
+    }
 }
 
-impl<'a> Styled for Checkbox<'a> {
-    type Item = Checkbox<'a>;
+impl<'a> Styled for Button<'a> {
+    type Item = Button<'a>;
 
     fn style(&self) -> Style {
         self.style
@@ -71,7 +134,7 @@ impl<'a> Styled for Checkbox<'a> {
     }
 }
 
-impl<'a> Widget for Checkbox<'a> {
+impl<'a> Widget for Button<'a> {
     fn render(self, area: ratatui::layout::Rect, buf: &mut ratatui::buffer::Buffer) {
         let inner = if area.height >= 3 {
             area.inner(Margin {
@@ -82,62 +145,34 @@ impl<'a> Widget for Checkbox<'a> {
             area
         };
 
-        // Label is the first text line, with the hotkey character underlined.
-        let mut spans: Vec<Span> = match self.text.lines.first() {
-            Some(first_line) => {
-                if let Some(u) = self.hotkey {
-                    let first_line_string = first_line.to_string();
-                    if let Some((before, after)) = first_line_string.split_once(&u.to_string()) {
-                        vec![
-                            Span::raw(before.to_owned()),
-                            Span::styled(u.to_string(), UiStyle::DEFAULT.underlined()),
-                            Span::raw(after.to_owned()),
-                        ]
-                    } else {
-                        first_line.spans.clone()
-                    }
-                } else {
-                    first_line.spans.clone()
-                }
+        let paragraph = if let Some(u) = self.hotkey {
+            // The hotkey is displayed as an underscored character,
+            // only if it is on the first text line.
+            let first_line = &self.text.lines[0];
+            let first_line_string = first_line.to_string();
+
+            if let Some((before, after)) = first_line_string.split_once(&u.to_string()) {
+                let highlighted = Line::from(vec![
+                    Span::raw(before.to_owned()),
+                    Span::styled(u.to_string(), UiStyle::DEFAULT.underlined()),
+                    Span::raw(after.to_owned()),
+                ]);
+
+                let mut lines = self.text.lines.clone();
+                lines[0] = highlighted;
+
+                Paragraph::new(lines)
+            } else {
+                Paragraph::new(self.text)
             }
-            None => vec![],
-        };
-
-        // Switch glyph: a coloured track with a knob on the right when on,
-        // on the left when off.
-        let track_color = if self.disabled {
-            Color::DarkGray
-        } else if self.state {
-            Color::Green
         } else {
-            Color::Rgb(70, 70, 86)
-        };
-        let knob_color = if self.disabled {
-            Color::Gray
-        } else {
-            Color::White
-        };
-
-        let switch = if self.state {
-            vec![
-                Span::styled("■■", Style::default().fg(track_color)),
-                Span::styled("■", Style::default().fg(knob_color)),
-            ]
-        } else {
-            vec![
-                Span::styled("■", Style::default().fg(knob_color)),
-                Span::styled("■■", Style::default().fg(track_color)),
-            ]
-        };
-
-        if !spans.is_empty() {
-            spans.push(Span::raw(" "));
+            Paragraph::new(self.text)
         }
-        spans.extend(switch);
+        .alignment(self.text_alignemnt);
 
-        let paragraph = Paragraph::new(Line::from(spans)).alignment(self.text_alignemnt);
-
-        let paragraph_style = if self.disabled {
+        let paragraph_style = if self.selected {
+            UiStyle::SELECTED_BUTTON
+        } else if self.disabled {
             UiStyle::UNSELECTABLE
         } else if self.is_hovered {
             self.hover_style
@@ -154,7 +189,9 @@ impl<'a> Widget for Checkbox<'a> {
         if area.height < 3 {
             paragraph.set_style(paragraph_style).render(area, buf);
         } else if let Some(mut block) = maybe_block {
-            block = if self.disabled {
+            block = if self.selected {
+                block.border_set(border::THICK)
+            } else if self.disabled {
                 block
                     .border_style(UiStyle::UNSELECTABLE)
                     .border_set(border::Set::default())
@@ -172,7 +209,7 @@ impl<'a> Widget for Checkbox<'a> {
     }
 }
 
-impl InteractiveWidget for Checkbox<'_> {
+impl InteractiveWidget for Button<'_> {
     fn layer(&self) -> usize {
         self.layer
     }

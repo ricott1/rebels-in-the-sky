@@ -13,9 +13,9 @@ use crate::ui::ui_key;
 use crate::ui::{
     big_numbers::{hyphen, BigNumberFont},
     constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
+    renders::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
     ui_screen::{tab_link, UiTab},
     utils::img_to_lines,
-    widgets::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
 };
 use crate::{
     core::*,
@@ -1323,7 +1323,6 @@ impl Screen for GamePanel {
         };
         v
     }
-
 }
 
 impl HelpPanel for GamePanel {

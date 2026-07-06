@@ -3,13 +3,13 @@ use crate::core::world::World;
 use crate::space_adventure::ControllableSpaceship;
 use crate::types::AppResult;
 use crate::ui::constants::BARS_LENGTH;
+use crate::ui::renders::{
+    get_charge_spans, get_durability_spans, get_fuel_spans, get_storage_spans,
+};
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
 use crate::ui::utils::{big_text, img_to_lines};
-use crate::ui::widgets::{
-    get_charge_spans, get_durability_spans, get_fuel_spans, get_storage_spans,
-};
 use core::fmt::Debug;
 use ratatui::crossterm;
 use ratatui::layout::{Constraint, Layout};
@@ -193,7 +193,6 @@ impl Screen for SpaceScreen {
             format!(" Entity count {:<4} ", self.entity_count),
         ]
     }
-
 }
 
 impl HelpPanel for SpaceScreen {

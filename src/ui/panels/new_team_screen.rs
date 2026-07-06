@@ -6,14 +6,14 @@ use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::constants::*;
 use crate::ui::gif_map::GifMap;
+use crate::ui::renders::{thick_block, PlayerWidgetView};
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::utils::{format_satoshi, validate_textarea_input};
-use crate::ui::widgets::{thick_block, PlayerWidgetView};
 use crate::ui::{
     constants::UiStyle,
+    renders::{default_block, render_player_description, selectable_list},
     utils::{img_to_lines, input_from_key_event},
-    widgets::{default_block, render_player_description, selectable_list},
 };
 use crate::{
     core::*,
@@ -1172,7 +1172,6 @@ impl Screen for NewTeamScreen {
 
         None
     }
-
 }
 
 impl HelpPanel for NewTeamScreen {

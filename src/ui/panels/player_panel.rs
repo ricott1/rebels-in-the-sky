@@ -3,14 +3,14 @@ use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::constants::*;
 use crate::ui::gif_map::GifMap;
+use crate::ui::renders::PlayerWidgetView;
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_screen::{tab_link, UiTab};
 use crate::ui::utils::format_satoshi;
-use crate::ui::widgets::PlayerWidgetView;
 use crate::ui::{
     constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
-    widgets::{default_block, render_player_description, selectable_list},
+    renders::{default_block, render_player_description, selectable_list},
 };
 use ratatui::text::Line;
 
@@ -666,7 +666,6 @@ impl Screen for PlayerListPanel {
             " Next tab ".to_string(),
         ]
     }
-
 }
 
 impl HelpPanel for PlayerListPanel {

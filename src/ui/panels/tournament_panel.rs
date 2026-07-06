@@ -13,7 +13,7 @@ use crate::ui::ui_key;
 use crate::ui::ui_screen::{tab_link, UiTab};
 use crate::ui::{
     constants::*,
-    widgets::{default_block, selectable_list},
+    renders::{default_block, selectable_list},
 };
 use core::fmt::Debug;
 use itertools::Itertools;
@@ -715,7 +715,6 @@ impl Screen for TournamentPanel {
             " Select player ".to_string(),
         ]
     }
-
 }
 
 impl HelpPanel for TournamentPanel {

@@ -6,17 +6,17 @@ use crate::types::{AppResult, HashMapWithResult};
 use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::gif_map::GifMap;
+use crate::ui::renders::{
+    go_to_team_current_planet_button, render_challenge_button, render_spaceship_description,
+};
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
 use crate::ui::ui_screen::{tab_link, UiTab};
-use crate::ui::widgets::{
-    go_to_team_current_planet_button, render_challenge_button, render_spaceship_description,
-};
 use crate::ui::{
     constants::*,
+    renders::{default_block, selectable_list},
     utils::img_to_lines,
-    widgets::{default_block, selectable_list},
 };
 use crate::{
     core::{
@@ -582,7 +582,6 @@ impl Screen for TeamListPanel {
             " Select player ".to_string(),
         ]
     }
-
 }
 
 impl HelpPanel for TeamListPanel {

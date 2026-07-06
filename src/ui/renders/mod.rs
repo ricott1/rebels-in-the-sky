@@ -1,3 +1,6 @@
+mod links;
+pub(crate) use links::{render_lines_with_links, LinkAlign};
+
 use super::ui_frame::UiFrame;
 use super::{
     button::Button,
@@ -2382,7 +2385,7 @@ mod tests {
     use super::{AppResult, BARS_LENGTH};
     use crate::{
         core::{resources::Resource, spaceship::SpaceshipPrefab, team::Team},
-        ui::widgets::get_storage_lengths,
+        ui::renders::get_storage_lengths,
     };
 
     #[test]

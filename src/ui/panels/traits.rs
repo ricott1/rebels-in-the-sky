@@ -1,6 +1,6 @@
 use crate::core::world::World;
 use crate::types::AppResult;
-use crate::ui::link_lines::{render_lines_with_links, LinkAlign};
+use crate::ui::renders::{render_lines_with_links, LinkAlign};
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::utils::wrap_text;
 use crate::ui::UiCallback;

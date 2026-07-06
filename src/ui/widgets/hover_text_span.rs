@@ -1,4 +1,5 @@
-use super::{traits::InteractiveWidget, ui_callback::CallbackRegistry};
+use crate::ui::traits::InteractiveWidget;
+use crate::ui::ui_callback::CallbackRegistry;
 use ratatui::{prelude::*, widgets::Widget};
 
 /// A ratatui Paragraph that can display hover text when the mouse hovers over it.

@@ -1,6 +1,6 @@
 use super::{
     constants::{UiStyle, MAX_NAME_LENGTH, MIN_NAME_LENGTH},
-    widgets::default_block,
+    renders::default_block,
 };
 use crate::core::{AU, LIGHT_YEAR, SATOSHI_PER_BITCOIN};
 use image::RgbaImage;

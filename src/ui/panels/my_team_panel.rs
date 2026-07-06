@@ -2,7 +2,7 @@ use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
 use crate::game_engine::timer::Period;
 use crate::types::{HashMapWithResult, Tick};
 use crate::ui::checkbox::Checkbox;
-use crate::ui::popup_message::PopupMessage;
+use crate::ui::PopupMessage;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
 use crate::ui::ui_screen::{tab_link, UiTab};
@@ -12,10 +12,10 @@ use crate::ui::{
     clickable_table::{ClickableCell, ClickableRow, ClickableTable, ClickableTableState},
     constants::*,
     gif_map::GifMap,
+    renders::*,
     traits::{PercentageRating, UiStyled},
     ui_callback::UiCallback,
     utils::format_satoshi,
-    widgets::*,
 };
 use crate::{
     core::*,
@@ -2454,7 +2454,6 @@ impl Screen for MyTeamPanel {
             " Next tab ".to_string(),
         ]
     }
-
 }
 
 impl HelpPanel for MyTeamPanel {

@@ -1,8 +1,6 @@
-use super::{
-    constants::UiStyle,
-    traits::InteractiveStatefulWidget,
-    ui_callback::{CallbackRegistry, UiCallback},
-};
+use crate::ui::constants::UiStyle;
+use crate::ui::traits::InteractiveStatefulWidget;
+use crate::ui::ui_callback::{CallbackRegistry, UiCallback};
 use ratatui::crossterm;
 use ratatui::{
     buffer::Buffer,
