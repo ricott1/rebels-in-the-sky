@@ -11,7 +11,7 @@ mod utils;
 mod widgets;
 
 pub(crate) use widgets::{
-    big_numbers, button, checkbox, clickable_list, clickable_table, hover_text_line,
+    big_numbers, button, checkbox, clickable_list, clickable_table, dropdown, hover_text_line,
     hover_text_span,
 };
 

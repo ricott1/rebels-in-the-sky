@@ -7,7 +7,7 @@ use ratatui::{
     layout::{Constraint, Rect},
     style::Style,
     text::Text,
-    widgets::{Block, Cell, HighlightSpacing, Row, StatefulWidget, Table, TableState, Widget},
+    widgets::{Block, Cell, HighlightSpacing, Row, StatefulWidget, Table, TableState},
 };
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
@@ -227,13 +227,6 @@ impl StatefulWidget for ClickableTable<'_> {
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         StatefulWidget::render(&self, area, buf, state);
-    }
-}
-
-impl Widget for ClickableTable<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        let mut state = ClickableTableState::default();
-        StatefulWidget::render(&self, area, buf, &mut state);
     }
 }
 

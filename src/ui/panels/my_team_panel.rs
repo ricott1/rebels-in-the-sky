@@ -3,6 +3,7 @@ use crate::game_engine::timer::Period;
 use crate::image::utils::open_image;
 use crate::types::{HashMapWithResult, Tick};
 use crate::ui::checkbox::Checkbox;
+use crate::ui::dropdown::{Dropdown, DropdownState, OpenDirection};
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
 use crate::ui::ui_screen::{tab_link, UiTab};
@@ -22,6 +23,8 @@ use crate::ui::{
 use crate::{
     core::*,
     game_engine::game::Game,
+    game_engine::tactic::Tactic,
+    game_engine::types::{GamePositionFluidity, InGameDrinking, SubstitutionTendency},
     store::load_game,
     types::{AppResult, GameId, PlanetId, StorableResourceMap, SystemTimeTick, TeamId},
 };
@@ -31,6 +34,7 @@ use itertools::Itertools;
 use ratatui::crossterm;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::style::Stylize;
+use ratatui::text::Text;
 use ratatui::{
     layout::Margin,
     prelude::{Constraint, Layout, Rect},
@@ -39,6 +43,20 @@ use ratatui::{
 };
 use std::collections::HashMap;
 use strum::IntoEnumIterator;
+
+const DROPDOWN_WIDTH: u16 = MAX_NAME_LENGTH as u16 + 2;
+// (col, row) offset of each position's dropdown within the court image.
+const DROPDOWN_OFFSETS: [(u16, u16); NUM_GAME_POSITIONS as usize] = [
+    (7, 2),   // PG
+    (25, 4),  // SG
+    (2, 8),   // SF
+    (24, 10), // PF
+    (10, 12), // C
+];
+const TACTIC_DROPDOWN_ID: usize = usize::MAX;
+const SUBSTITUTION_DROPDOWN_ID: usize = usize::MAX - 1;
+const FLUIDITY_DROPDOWN_ID: usize = usize::MAX - 2;
+const DRINKING_DROPDOWN_ID: usize = usize::MAX - 3;
 
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub enum MyTeamView {
@@ -109,6 +127,8 @@ pub struct MyTeamPanel {
     spaceship_upgrade_list_state: ClickableListState,
     asteroid_list_state: ClickableListState,
     game_roster_widget: Paragraph<'static>,
+    position_dropdowns: Vec<DropdownState>,
+    setting_dropdowns: HashMap<usize, DropdownState>,
 }
 
 impl MyTeamPanel {
@@ -120,6 +140,9 @@ impl MyTeamPanel {
         };
         Self {
             game_roster_widget,
+            position_dropdowns: (0..NUM_GAME_POSITIONS as usize)
+                .map(DropdownState::new)
+                .collect(),
             ..Default::default()
         }
     }
@@ -496,7 +519,7 @@ impl MyTeamPanel {
     ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
         let split = Layout::horizontal([
-            Constraint::Length(48),
+            Constraint::Length(27),
             Constraint::Length(1),
             Constraint::Length(41),
             Constraint::Fill(1),
@@ -510,116 +533,251 @@ impl MyTeamPanel {
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Length(3),
+            Constraint::Length(4),
         ])
         .split(split[0].inner(Margin::new(1, 1)));
 
         let can_change_team_settings = own_team.can_change_team_settings();
 
-        let mut tactic_button = Button::new(
-            format!("tactic: {}", own_team.game_tactic),
-            UiCallback::SetTeamTactic {
-                tactic: own_team.game_tactic.next(),
-            },
-        )
-        .set_hover_text(format!(
-            "{}: {}",
-            own_team.game_tactic,
-            own_team.game_tactic.description()
-        ))
-        .set_hotkey(ui_key::team::SET_TACTIC);
+        frame.render_widget(default_block().title("Accept challenges"), btm_split[4]);
 
-        if let Err(err) = can_change_team_settings.as_ref() {
-            tactic_button.disable(Some(err.to_string()));
-        }
-
-        frame.render_interactive_widget(tactic_button, btm_split[0]);
-
-        let mut sub_tendency_button = Button::new(
-            format!("Substitutions: {}", own_team.substitution_tendency),
-            UiCallback::SetTeamSubstitutionTendency {
-                substitution_tendency: own_team.substitution_tendency.next(),
-            },
-        )
-        .set_hover_text(format!(
-            "{}: {}",
-            own_team.substitution_tendency,
-            own_team.substitution_tendency.description()
-        ))
-        .set_hotkey(ui_key::team::SET_SUBSTITUTION_TENDENCY);
-
-        if let Err(err) = can_change_team_settings.as_ref() {
-            sub_tendency_button.disable(Some(err.to_string()));
-        }
-
-        frame.render_interactive_widget(sub_tendency_button, btm_split[1]);
-
-        let mut game_position_fluidity_button = Button::new(
-            format!(
-                "Game position fluidity: {}",
-                own_team.game_position_fluidity
-            ),
-            UiCallback::SetTeamGamePositionFluidity {
-                game_position_fluidity: own_team.game_position_fluidity.next(),
-            },
-        )
-        .set_hover_text(format!(
-            "{}: {}",
-            own_team.game_position_fluidity,
-            own_team.game_position_fluidity.description()
-        ))
-        .set_hotkey(ui_key::team::SET_GAME_POSITION_FLUIDITY);
-
-        if let Err(err) = can_change_team_settings.as_ref() {
-            game_position_fluidity_button.disable(Some(err.to_string()));
-        }
-
-        frame.render_interactive_widget(game_position_fluidity_button, btm_split[2]);
-
-        let mut in_game_drinking_button = Button::new(
-            format!("In-game drinking: {}", own_team.in_game_drinking),
-            UiCallback::SetTeamInGameDrinking {
-                in_game_drinking: own_team.in_game_drinking.next(),
-            },
-        )
-        .set_hover_text(format!(
-            "{}: {}",
-            own_team.in_game_drinking,
-            own_team.in_game_drinking.description()
-        ))
-        .set_hotkey(ui_key::team::SET_IN_GAME_DRINKING);
-
-        if let Err(err) = can_change_team_settings.as_ref() {
-            in_game_drinking_button.disable(Some(err.to_string()));
-        }
-
-        frame.render_interactive_widget(in_game_drinking_button, btm_split[3]);
-
-        let challenges_split = Layout::horizontal([22, 12, 14]).split(btm_split[4]);
-        frame.render_widget(
-            Paragraph::new("Accept challenges").centered(),
-            challenges_split[0].inner(Margin::new(0, 1)),
-        );
-        let local_challenge_button = Checkbox::new(
-            "local",
+        let cb_split = Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)])
+            .split(btm_split[4].inner(Margin::new(1, 1)));
+        let local_challenge_button = Checkbox::no_box(
+            "local  ",
             UiCallback::ToggleTeamAutonomousStrategyForLocalChallenges,
             own_team.autonomous_strategy.challenge_local,
         )
         .set_hover_text("Accept challenges from local teams automatically.".to_string())
         .set_hotkey(ui_key::team::TOGGLE_ACCEPT_LOCAL_CHALLENGES);
-        frame.render_interactive_widget(local_challenge_button, challenges_split[1]);
+        frame.render_interactive_widget(local_challenge_button, cb_split[0]);
 
-        let network_challenge_button = Checkbox::new(
+        let network_challenge_button = Checkbox::no_box(
             "network",
             UiCallback::ToggleTeamAutonomousStrategyForNetworkChallenges,
             own_team.autonomous_strategy.challenge_network,
         )
         .set_hover_text("Accept challenges from network teams automatically.".to_string())
         .set_hotkey(ui_key::team::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
-        frame.render_interactive_widget(network_challenge_button, challenges_split[2]);
+        frame.render_interactive_widget(network_challenge_button, cb_split[1]);
 
         // Render team in game positions
-        frame.render_widget(&self.game_roster_widget, split[2].inner(Margin::new(1, 1)));
+        let game_roster_area = split[2].inner(Margin::new(0, 1));
+        frame.render_widget(&self.game_roster_widget, game_roster_area);
+
+        let options = own_team
+            .player_ids
+            .iter()
+            .map(|id| {
+                let player = world.players.get_or_err(id)?;
+                Ok(Text::from(player.info.short_name()))
+            })
+            .collect::<AppResult<Vec<Text>>>()?;
+
+        // Bench/out dropdowns stack in the fill area to the right of the court image.
+        let bench_area = split[3].inner(Margin::new(1, 1));
+        let court = NUM_GAME_POSITIONS as usize;
+        let num_dropdowns = self.position_dropdowns.len();
+
+        // Render closed dropdowns first, then the open one last so it draws on top.
+        let open_idx = (0..num_dropdowns).find(|&i| self.position_dropdowns[i].is_open());
+        let mut order: Vec<usize> = (0..num_dropdowns)
+            .filter(|&i| Some(i) != open_idx)
+            .collect();
+        order.extend(open_idx);
+
+        for idx in order {
+            let (rect, direction, title) = if idx < court {
+                let (ox, oy) = DROPDOWN_OFFSETS[idx];
+                let rect = Rect::new(
+                    game_roster_area.x + ox,
+                    game_roster_area.y + oy,
+                    DROPDOWN_WIDTH,
+                    3,
+                );
+                let direction = if idx < 3 {
+                    OpenDirection::Down
+                } else {
+                    OpenDirection::Up
+                };
+                (
+                    rect,
+                    direction,
+                    format!("Set {}", (idx as GamePosition).as_role()),
+                )
+            } else {
+                let slot = (idx - court) as u16; // 0-based bench/out slot
+                let rect = Rect::new(
+                    bench_area.x,
+                    bench_area.y + slot * 3,
+                    DROPDOWN_WIDTH.min(bench_area.width),
+                    3,
+                );
+                let title = if idx < MAX_PLAYERS_PER_GAME {
+                    format!("Set B{}", idx - court + 1)
+                } else {
+                    "Set Out".to_string()
+                };
+                (rect, OpenDirection::Down, title)
+            };
+
+            let is_open = self.position_dropdowns[idx].is_open();
+            let player_ids = own_team.player_ids.clone();
+            let dropdown = Dropdown::new(
+                idx,
+                options.clone(),
+                Box::new(move |index| UiCallback::SwapPlayerPositions {
+                    player_id: player_ids[index],
+                    position: idx,
+                }),
+            )
+            .open_direction(direction)
+            .layer(if is_open { 1 } else { 0 })
+            .block(default_block().title(title));
+            frame.render_stateful_interactive_widget(
+                dropdown,
+                rect,
+                &mut self.position_dropdowns[idx],
+            );
+        }
+
+        // Rendered bottom-to-top so an open list draws over the rows below it.
+        let drinking_variants: Vec<InGameDrinking> = InGameDrinking::iter().collect();
+        let drinking_options: Vec<Text> = drinking_variants
+            .iter()
+            .map(|t| Text::from(t.to_string()))
+            .collect();
+        let drinking_is_open = self
+            .setting_dropdowns
+            .get(&DRINKING_DROPDOWN_ID)
+            .map_or(false, |d| d.is_open());
+        let drinking_dropdown = Dropdown::new(
+            DRINKING_DROPDOWN_ID,
+            drinking_options,
+            Box::new(move |index| UiCallback::SetTeamInGameDrinking {
+                in_game_drinking: drinking_variants[index],
+            }),
+        )
+        .hotkey(ui_key::team::SET_IN_GAME_DRINKING)
+        .title("In-game drinking")
+        .set_hover_text(format!(
+            "{}: {}",
+            own_team.in_game_drinking,
+            own_team.in_game_drinking.description()
+        ))
+        .open_direction(OpenDirection::Down)
+        .layer(if drinking_is_open { 1 } else { 0 })
+        .disabled(can_change_team_settings.is_err())
+        .block(default_block());
+        frame.render_stateful_interactive_widget(
+            drinking_dropdown,
+            btm_split[3],
+            self.setting_dropdowns
+                .entry(DRINKING_DROPDOWN_ID)
+                .or_default(),
+        );
+
+        let fluidity_variants: Vec<GamePositionFluidity> = GamePositionFluidity::iter().collect();
+        let fluidity_options: Vec<Text> = fluidity_variants
+            .iter()
+            .map(|t| Text::from(t.to_string()))
+            .collect();
+        let fluidity_is_open = self
+            .setting_dropdowns
+            .get(&FLUIDITY_DROPDOWN_ID)
+            .map_or(false, |d| d.is_open());
+        let fluidity_dropdown = Dropdown::new(
+            FLUIDITY_DROPDOWN_ID,
+            fluidity_options,
+            Box::new(move |index| UiCallback::SetTeamGamePositionFluidity {
+                game_position_fluidity: fluidity_variants[index],
+            }),
+        )
+        .hotkey(ui_key::team::SET_GAME_POSITION_FLUIDITY)
+        .title("Position fluidity")
+        .set_hover_text(format!(
+            "{}: {}",
+            own_team.game_position_fluidity,
+            own_team.game_position_fluidity.description()
+        ))
+        .open_direction(OpenDirection::Down)
+        .layer(if fluidity_is_open { 1 } else { 0 })
+        .disabled(can_change_team_settings.is_err())
+        .block(default_block());
+        frame.render_stateful_interactive_widget(
+            fluidity_dropdown,
+            btm_split[2],
+            self.setting_dropdowns
+                .entry(FLUIDITY_DROPDOWN_ID)
+                .or_default(),
+        );
+
+        let sub_variants: Vec<SubstitutionTendency> = SubstitutionTendency::iter().collect();
+        let sub_options: Vec<Text> = sub_variants
+            .iter()
+            .map(|t| Text::from(t.to_string()))
+            .collect();
+        let sub_is_open = self
+            .setting_dropdowns
+            .get(&SUBSTITUTION_DROPDOWN_ID)
+            .map_or(false, |d| d.is_open());
+        let substitution_dropdown = Dropdown::new(
+            SUBSTITUTION_DROPDOWN_ID,
+            sub_options,
+            Box::new(move |index| UiCallback::SetTeamSubstitutionTendency {
+                substitution_tendency: sub_variants[index],
+            }),
+        )
+        .hotkey(ui_key::team::SET_SUBSTITUTION_TENDENCY)
+        .title("Substitutions")
+        .set_hover_text(format!(
+            "{}: {}",
+            own_team.substitution_tendency,
+            own_team.substitution_tendency.description()
+        ))
+        .open_direction(OpenDirection::Down)
+        .layer(if sub_is_open { 1 } else { 0 })
+        .disabled(can_change_team_settings.is_err())
+        .block(default_block());
+        frame.render_stateful_interactive_widget(
+            substitution_dropdown,
+            btm_split[1],
+            self.setting_dropdowns
+                .entry(SUBSTITUTION_DROPDOWN_ID)
+                .or_default(),
+        );
+
+        let tactics: Vec<Tactic> = Tactic::iter().collect();
+        let tactic_options: Vec<Text> = tactics.iter().map(|t| Text::from(t.to_string())).collect();
+        let tactic_is_open = self
+            .setting_dropdowns
+            .get(&TACTIC_DROPDOWN_ID)
+            .map_or(false, |d| d.is_open());
+        let tactic_dropdown = Dropdown::new(
+            TACTIC_DROPDOWN_ID,
+            tactic_options,
+            Box::new(move |index| UiCallback::SetTeamTactic {
+                tactic: tactics[index],
+            }),
+        )
+        .hotkey(ui_key::team::SET_TACTIC)
+        .title("tactic")
+        .set_hover_text(format!(
+            "{}: {}",
+            own_team.game_tactic,
+            own_team.game_tactic.description()
+        ))
+        .open_direction(OpenDirection::Down)
+        .layer(if tactic_is_open { 1 } else { 0 })
+        .disabled(can_change_team_settings.is_err())
+        .block(default_block());
+        frame.render_stateful_interactive_widget(
+            tactic_dropdown,
+            btm_split[0],
+            self.setting_dropdowns
+                .entry(TACTIC_DROPDOWN_ID)
+                .or_default(),
+        );
 
         Ok(())
     }
@@ -2276,6 +2434,32 @@ impl Screen for MyTeamPanel {
         self.tick += 1;
     }
 
+    fn dropdown(&mut self, id: usize) -> Option<&mut DropdownState> {
+        for (idx, dropdown) in self.position_dropdowns.iter_mut().enumerate() {
+            if id != idx {
+                dropdown.close();
+            }
+        }
+        for (other_id, dropdown) in self.setting_dropdowns.iter_mut() {
+            if *other_id != id {
+                dropdown.close();
+            }
+        }
+
+        if self.setting_dropdowns.contains_key(&id) {
+            self.setting_dropdowns.get_mut(&id)
+        } else {
+            self.position_dropdowns.get_mut(id)
+        }
+    }
+
+    fn has_open_dropdown(&self) -> Option<usize> {
+        if let Some((id, _)) = self.setting_dropdowns.iter().find(|(_, d)| d.is_open()) {
+            return Some(*id);
+        }
+        self.position_dropdowns.iter().position(|d| d.is_open())
+    }
+
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.own_team_id = world.own_team_id;
         let own_team = world.get_own_team()?;
@@ -2330,6 +2514,51 @@ impl Screen for MyTeamPanel {
         self.max_player_index = own_team.player_ids.len();
 
         if world.dirty_ui {
+            // Add a dropdown for a hired player, drop one for a fired player,
+            // then fix selections if they diverged.
+            let num_players = own_team.player_ids.len();
+            self.position_dropdowns.truncate(num_players);
+            while self.position_dropdowns.len() < num_players {
+                let idx = self.position_dropdowns.len();
+                self.position_dropdowns.push(DropdownState::new(idx));
+            }
+            for (index, dropdown) in self.position_dropdowns.iter_mut().enumerate() {
+                dropdown.select(index);
+            }
+
+            let current_settings = [
+                (
+                    TACTIC_DROPDOWN_ID,
+                    Tactic::iter()
+                        .position(|t| t == own_team.game_tactic)
+                        .unwrap_or(0),
+                ),
+                (
+                    SUBSTITUTION_DROPDOWN_ID,
+                    SubstitutionTendency::iter()
+                        .position(|t| t == own_team.substitution_tendency)
+                        .unwrap_or(0),
+                ),
+                (
+                    FLUIDITY_DROPDOWN_ID,
+                    GamePositionFluidity::iter()
+                        .position(|t| t == own_team.game_position_fluidity)
+                        .unwrap_or(0),
+                ),
+                (
+                    DRINKING_DROPDOWN_ID,
+                    InGameDrinking::iter()
+                        .position(|t| t == own_team.in_game_drinking)
+                        .unwrap_or(0),
+                ),
+            ];
+            for (id, index) in current_settings {
+                let dropdown = self.setting_dropdowns.entry(id).or_default();
+                if !dropdown.is_open() {
+                    dropdown.select(index);
+                }
+            }
+
             let mut games = vec![];
             if let Some(current_game) = own_team.current_game {
                 games.push(current_game);

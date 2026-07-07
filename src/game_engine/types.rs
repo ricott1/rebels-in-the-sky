@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::sync::LazyLock;
 use std::{collections::HashMap, ops::Not};
-use strum::Display;
+use strum::{Display, EnumIter};
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GameStats {
@@ -309,7 +309,7 @@ impl Rated for TeamInGame {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Display, PartialEq, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, Clone, Copy, Default, Display, EnumIter, PartialEq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum SubstitutionTendency {
     Low,
@@ -344,7 +344,7 @@ impl SubstitutionTendency {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Display, PartialEq, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, Clone, Copy, Default, Display, EnumIter, PartialEq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum GamePositionFluidity {
     Low,
@@ -379,7 +379,7 @@ impl GamePositionFluidity {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Display, PartialEq, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, Clone, Copy, Default, Display, EnumIter, PartialEq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum InGameDrinking {
     None,

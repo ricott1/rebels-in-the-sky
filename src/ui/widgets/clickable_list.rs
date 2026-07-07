@@ -7,7 +7,7 @@ use ratatui::{
     layout::Rect,
     style::Style,
     text::Text,
-    widgets::{Block, HighlightSpacing, List, ListItem, ListState, StatefulWidget, Widget},
+    widgets::{Block, HighlightSpacing, List, ListItem, ListState, StatefulWidget},
 };
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
@@ -178,13 +178,6 @@ impl StatefulWidget for ClickableList<'_> {
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         StatefulWidget::render(&self, area, buf, state);
-    }
-}
-
-impl Widget for ClickableList<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        let mut state = ClickableListState::default();
-        StatefulWidget::render(&self, area, buf, &mut state);
     }
 }
 

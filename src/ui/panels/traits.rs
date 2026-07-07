@@ -1,5 +1,6 @@
 use crate::core::world::World;
 use crate::types::AppResult;
+use crate::ui::dropdown::DropdownState;
 use crate::ui::renders::{render_lines_with_links, LinkAlign};
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::utils::wrap_text;
@@ -88,6 +89,14 @@ pub trait Screen: HelpPanel {
     /// shortcuts (currently '?' for help) so the user can type those characters.
     fn is_capturing_text(&self) -> bool {
         false
+    }
+
+    fn dropdown(&mut self, _id: usize) -> Option<&mut DropdownState> {
+        None
+    }
+
+    fn has_open_dropdown(&self) -> Option<usize> {
+        None
     }
 }
 

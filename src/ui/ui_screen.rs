@@ -2,11 +2,11 @@ use super::button::Button;
 use super::constants::UiStyle;
 use super::panels::*;
 use super::panels::{Screen, SplitPanel};
-use super::PopupMessage;
 use super::renders::{default_block, thick_block};
 use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::ui_frame::UiFrame;
 use super::ui_key;
+use super::PopupMessage;
 
 #[cfg(feature = "audio")]
 use crate::audio::music_player::MusicPlayer;
@@ -320,7 +320,7 @@ impl UiScreen {
         }
     }
 
-    fn get_active_screen_mut(&mut self) -> &mut dyn Screen {
+    pub fn get_active_screen_mut(&mut self) -> &mut dyn Screen {
         match self.state {
             UiState::Splash => &mut self.splash_screen,
             UiState::NewTeam => &mut self.new_team_screen,
@@ -449,6 +449,7 @@ impl UiScreen {
         #[cfg(feature = "audio")] audio_player: Option<&MusicPlayer>,
     ) -> AppResult<()> {
         self.inner_registry.clear();
+
         match self.state {
             UiState::Splash => {
                 #[cfg(feature = "audio")]
@@ -521,13 +522,21 @@ impl UiScreen {
     ) {
         let mut ui_frame = UiFrame::new(frame);
         ui_frame.set_hovering(self.inner_registry.hovering());
-        if !self.popup_messages.is_empty() || self.show_help {
-            ui_frame.set_active_layer(1);
-        } else {
-            ui_frame.set_active_layer(0);
-        }
+
+        let overlay = !self.popup_messages.is_empty()
+            || self.show_help
+            || self.get_active_screen_mut().has_open_dropdown().is_some();
+        ui_frame.set_active_layer(if overlay { 1 } else { 0 });
 
         let screen_area = ui_frame.screen_area();
+
+        if let Some(id) = self.get_active_screen_mut().has_open_dropdown() {
+            ui_frame.register_mouse_callback(
+                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                None,
+                UiCallback::ToggleDropdown { id },
+            );
+        }
 
         let split = Layout::vertical([
             Constraint::Min(6),    // body

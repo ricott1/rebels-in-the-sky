@@ -44,6 +44,17 @@ impl<'a> Checkbox<'a> {
         }
     }
 
+    pub fn no_box(text: impl Into<Text<'a>>, on_click: UiCallback, initial_state: bool) -> Self {
+        Self {
+            text: text.into(),
+            state: initial_state,
+            on_click,
+            text_alignemnt: ratatui::layout::Alignment::Center,
+            hover_style: UiStyle::HIGHLIGHT,
+            ..Default::default()
+        }
+    }
+
     pub fn set_hover_text(mut self, text: impl Into<Text<'a>>) -> Self {
         self.hover_text = Some(text.into());
         self

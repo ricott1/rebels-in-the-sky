@@ -40,6 +40,14 @@ pub enum UiCallback {
     SetPanelIndex {
         index: usize,
     },
+    ToggleDropdown {
+        id: usize,
+    },
+    SelectDropdown {
+        id: usize,
+        index: usize,
+        on_select: Option<Box<UiCallback>>,
+    },
     GoToTeam {
         team_id: TeamId,
     },
@@ -1309,6 +1317,26 @@ impl UiCallback {
                 }
                 Ok(None)
             }
+            Self::ToggleDropdown { id } => {
+                if let Some(dropdown) = app.ui.get_active_screen_mut().dropdown(*id) {
+                    dropdown.toggle();
+                }
+
+                Ok(None)
+            }
+            Self::SelectDropdown {
+                id,
+                index,
+                on_select,
+            } => {
+                if let Some(dropdown) = app.ui.get_active_screen_mut().dropdown(*id) {
+                    dropdown.select(*index);
+                }
+                if let Some(action) = on_select {
+                    return action.call(app);
+                }
+                Ok(None)
+            }
             Self::GoToTeam { team_id } => Self::go_to_team(*team_id)(app),
             Self::TutorialGoToChat => {
                 app.ui.swarm_panel.set_view(SwarmView::Chat);
@@ -2183,19 +2211,21 @@ impl CallbackRegistry {
     }
 
     pub fn handle_mouse_event(&self, event: &MouseEvent) -> Option<UiCallback> {
-        if let Some(mouse_callbacks) = self.mouse_callbacks.get(&event.kind) {
-            for (rect, callback) in mouse_callbacks.iter() {
-                if let Some(r) = rect {
-                    if Self::contains(r, event.column, event.row) {
-                        return Some(callback.clone());
-                    }
-                } else {
-                    // Callbacks with no rect are global callbacks.
+        let mouse_callbacks = self.mouse_callbacks.get(&event.kind)?;
+
+        let mut global: Option<&UiCallback> = None;
+        for (rect, callback) in mouse_callbacks.iter() {
+            match rect {
+                Some(r) if Self::contains(r, event.column, event.row) => {
                     return Some(callback.clone());
                 }
+                // Callbacks with no rect are global fallbacks, tried after rects.
+                None => global = Some(callback),
+                _ => {}
             }
         }
-        None
+
+        global.cloned()
     }
 
     pub fn handle_keyboard_event(&self, key_code: &KeyCode) -> Option<UiCallback> {
