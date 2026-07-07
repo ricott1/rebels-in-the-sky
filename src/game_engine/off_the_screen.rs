@@ -19,7 +19,7 @@ pub(crate) fn execute(
 
     let play_idx = match input.attackers.len() {
         0 => {
-            let weights = [50, 20, 25, 2, 1];
+            let weights = [50, 30, 25, 2, 1];
             if let Some(idx) = sample_player_index(action_rng, weights, attacking_players_array) {
                 idx
             } else {
@@ -44,7 +44,7 @@ pub(crate) fn execute(
     let target_idx = match input.attackers.len() {
         2 => input.attackers[1],
         _ => {
-            let mut weights = [1, 2, 3, 3, 2];
+            let mut weights = [4, 5, 3, 2, 1];
             weights[play_idx] = 0;
             if let Some(idx) = sample_player_index(action_rng, weights, attacking_players_array) {
                 idx

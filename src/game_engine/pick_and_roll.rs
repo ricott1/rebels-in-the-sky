@@ -41,7 +41,7 @@ pub(crate) fn execute(
 
     let target_idx = match input.attackers.len() {
         0 | 1 => {
-            let weights = [1, 2, 3, 3, 2];
+            let weights = [1, 2, 4, 3, 2];
             sample_player_index(action_rng, weights, attacking_players_array)
                 .expect("Since we reached this selection, there should be at least one player.")
         }

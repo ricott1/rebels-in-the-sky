@@ -17,7 +17,7 @@ pub(crate) fn execute(
     let attacking_players_array = game.attacking_players_array();
     let defending_players_array = game.defending_players_array();
 
-    let weights = [4, 5, 4, 3, 1];
+    let weights = [4, 5, 3, 2, 1];
     let iso_idx = if let Some(idx) =
         sample_player_index(action_rng, weights, attacking_players_array)
     {

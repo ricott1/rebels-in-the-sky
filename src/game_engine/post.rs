@@ -20,7 +20,7 @@ pub(crate) fn execute(
 
     let post_idx = match input.attackers.len() {
         0 => {
-            let weights = [1, 2, 15, 30, 40];
+            let weights = [1, 2, 10, 30, 45];
             if let Some(idx) = sample_player_index(action_rng, weights, attacking_players_array) {
                 idx
             } else {
