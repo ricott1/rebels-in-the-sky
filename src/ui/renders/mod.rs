@@ -1918,7 +1918,7 @@ fn scouted_player_skill_summary_span<'a, R: Rated>(name: &'a str, value: R) -> S
 }
 
 fn scouted_player_role_spans<'a>(player: &Player, scouting: Skill, i: usize) -> Vec<Span<'a>> {
-    const PADDING: usize = 9;
+    const PADDING: usize = 8;
 
     let value = player.game_position_fitness[i];
     let role = (i as GamePosition).as_role().to_string();
@@ -1926,7 +1926,7 @@ fn scouted_player_role_spans<'a>(player: &Player, scouting: Skill, i: usize) -> 
     if scouting == MAX_SKILL {
         return vec![
             Span::styled(
-                format!("{:2} {}", role, value.stars()),
+                format!("{:2} {} ", role, value.stars()),
                 value.rating().style(),
             ),
             improvement_indicator(value, player.previous_game_position_fitness[i]),
@@ -1938,7 +1938,7 @@ fn scouted_player_role_spans<'a>(player: &Player, scouting: Skill, i: usize) -> 
     if player.is_role_scouted(scouting, value) {
         return vec![
             Span::styled(
-                format!("{:2} {}", role, value.stars()),
+                format!("{:2} {} ", role, value.stars()),
                 value.rating().style(),
             ),
             Span::raw(&SPACES[..PADDING + 1]),

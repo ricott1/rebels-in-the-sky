@@ -120,7 +120,7 @@ pub mod team {
     pub const SET_ENGINEER: KeyCode = KeyCode::Char('e');
     pub const SET_PILOT: KeyCode = KeyCode::Char('p');
     pub const SET_SUBSTITUTION_TENDENCY: KeyCode = KeyCode::Char('S');
-    pub const SET_GAME_POSITION_FLUIDITY: KeyCode = KeyCode::Char('G');
+    pub const SET_GAME_POSITION_FLUIDITY: KeyCode = KeyCode::Char('P');
     pub const SET_IN_GAME_DRINKING: KeyCode = KeyCode::Char('r');
 
     pub const fn set_player_position(position: GamePosition) -> KeyCode {
