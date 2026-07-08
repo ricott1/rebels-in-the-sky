@@ -86,18 +86,22 @@ impl PercentageRating for f32 {
 }
 
 pub trait InteractiveWidget: Widget {
-    fn layer(&self) -> usize;
-    fn before_rendering(&mut self, area: Rect, callback_registry: &mut CallbackRegistry);
+    fn before_rendering(
+        &mut self,
+        area: Rect,
+        callback_registry: &mut CallbackRegistry,
+        layer: usize,
+    );
     fn hover_text(&self) -> Text<'_>;
 }
 
 pub trait InteractiveStatefulWidget: StatefulWidget {
-    fn layer(&self) -> usize;
     fn before_rendering(
         &self,
         area: Rect,
         callback_registry: &mut CallbackRegistry,
         state: &mut Self::State,
+        layer: usize,
     );
     fn hover_text(&self) -> Text<'_>;
 }

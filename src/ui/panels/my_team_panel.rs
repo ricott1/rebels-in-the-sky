@@ -33,7 +33,7 @@ use core::fmt::Debug;
 use itertools::Itertools;
 use ratatui::crossterm;
 use ratatui::crossterm::event::KeyCode;
-use ratatui::style::Stylize;
+use ratatui::style::{Styled, Stylize};
 use ratatui::text::Text;
 use ratatui::{
     layout::Margin,
@@ -518,51 +518,18 @@ impl MyTeamPanel {
         area: Rect,
     ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
-        let split = Layout::horizontal([
-            Constraint::Length(27),
-            Constraint::Length(1),
-            Constraint::Length(41),
-            Constraint::Fill(1),
-        ])
-        .split(area);
+        let split = Layout::horizontal([Constraint::Length(60), Constraint::Fill(1)]).split(area);
 
-        frame.render_widget(default_block().title("Team Settings"), area);
+        frame.render_widget(default_block().title("Game Roster"), split[0]);
+        let pitch_split = Layout::horizontal([Constraint::Length(41), Constraint::Length(17)])
+            .split(split[0].inner(Margin::new(1, 1)));
 
-        let btm_split = Layout::vertical([
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(4),
-        ])
-        .split(split[0].inner(Margin::new(1, 1)));
-
-        let can_change_team_settings = own_team.can_change_team_settings();
-
-        frame.render_widget(default_block().title("Accept challenges"), btm_split[4]);
-
-        let cb_split = Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)])
-            .split(btm_split[4].inner(Margin::new(1, 1)));
-        let local_challenge_button = Checkbox::no_box(
-            "local  ",
-            UiCallback::ToggleTeamAutonomousStrategyForLocalChallenges,
-            own_team.autonomous_strategy.challenge_local,
-        )
-        .set_hover_text("Accept challenges from local teams automatically.".to_string())
-        .set_hotkey(ui_key::team::TOGGLE_ACCEPT_LOCAL_CHALLENGES);
-        frame.render_interactive_widget(local_challenge_button, cb_split[0]);
-
-        let network_challenge_button = Checkbox::no_box(
-            "network",
-            UiCallback::ToggleTeamAutonomousStrategyForNetworkChallenges,
-            own_team.autonomous_strategy.challenge_network,
-        )
-        .set_hover_text("Accept challenges from network teams automatically.".to_string())
-        .set_hotkey(ui_key::team::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
-        frame.render_interactive_widget(network_challenge_button, cb_split[1]);
+        frame.render_widget(default_block().title("Team Settings"), split[1]);
+        let settings_split = Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)])
+            .split(split[1].inner(Margin::new(1, 1)));
 
         // Render team in game positions
-        let game_roster_area = split[2].inner(Margin::new(0, 1));
+        let game_roster_area = pitch_split[0];
         frame.render_widget(&self.game_roster_widget, game_roster_area);
 
         let options = own_team
@@ -575,18 +542,11 @@ impl MyTeamPanel {
             .collect::<AppResult<Vec<Text>>>()?;
 
         // Bench/out dropdowns stack in the fill area to the right of the court image.
-        let bench_area = split[3].inner(Margin::new(1, 1));
+        let bench_area = pitch_split[1].inner(Margin::new(1, 0));
         let court = NUM_GAME_POSITIONS as usize;
         let num_dropdowns = self.position_dropdowns.len();
 
-        // Render closed dropdowns first, then the open one last so it draws on top.
-        let open_idx = (0..num_dropdowns).find(|&i| self.position_dropdowns[i].is_open());
-        let mut order: Vec<usize> = (0..num_dropdowns)
-            .filter(|&i| Some(i) != open_idx)
-            .collect();
-        order.extend(open_idx);
-
-        for idx in order {
+        for idx in 0..num_dropdowns {
             let (rect, direction, title) = if idx < court {
                 let (ox, oy) = DROPDOWN_OFFSETS[idx];
                 let rect = Rect::new(
@@ -632,16 +592,24 @@ impl MyTeamPanel {
                 }),
             )
             .open_direction(direction)
-            .layer(if is_open { 1 } else { 0 })
             .block(default_block().title(title));
-            frame.render_stateful_interactive_widget(
+            frame.render_layered_stateful_interactive_widget(
                 dropdown,
                 rect,
                 &mut self.position_dropdowns[idx],
+                if is_open { 1 } else { 0 },
             );
         }
 
-        // Rendered bottom-to-top so an open list draws over the rows below it.
+        let can_change_team_settings = own_team.can_change_team_settings();
+        let btm_split = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+        ])
+        .split(settings_split[0]);
+
         let drinking_variants: Vec<InGameDrinking> = InGameDrinking::iter().collect();
         let drinking_options: Vec<Text> = drinking_variants
             .iter()
@@ -666,15 +634,15 @@ impl MyTeamPanel {
             own_team.in_game_drinking.description()
         ))
         .open_direction(OpenDirection::Down)
-        .layer(if drinking_is_open { 1 } else { 0 })
         .disabled(can_change_team_settings.is_err())
         .block(default_block());
-        frame.render_stateful_interactive_widget(
+        frame.render_layered_stateful_interactive_widget(
             drinking_dropdown,
             btm_split[3],
             self.setting_dropdowns
                 .entry(DRINKING_DROPDOWN_ID)
                 .or_default(),
+            if drinking_is_open { 1 } else { 0 },
         );
 
         let fluidity_variants: Vec<GamePositionFluidity> = GamePositionFluidity::iter().collect();
@@ -701,15 +669,15 @@ impl MyTeamPanel {
             own_team.game_position_fluidity.description()
         ))
         .open_direction(OpenDirection::Down)
-        .layer(if fluidity_is_open { 1 } else { 0 })
         .disabled(can_change_team_settings.is_err())
         .block(default_block());
-        frame.render_stateful_interactive_widget(
+        frame.render_layered_stateful_interactive_widget(
             fluidity_dropdown,
             btm_split[2],
             self.setting_dropdowns
                 .entry(FLUIDITY_DROPDOWN_ID)
                 .or_default(),
+            if fluidity_is_open { 1 } else { 0 },
         );
 
         let sub_variants: Vec<SubstitutionTendency> = SubstitutionTendency::iter().collect();
@@ -736,15 +704,15 @@ impl MyTeamPanel {
             own_team.substitution_tendency.description()
         ))
         .open_direction(OpenDirection::Down)
-        .layer(if sub_is_open { 1 } else { 0 })
         .disabled(can_change_team_settings.is_err())
         .block(default_block());
-        frame.render_stateful_interactive_widget(
+        frame.render_layered_stateful_interactive_widget(
             substitution_dropdown,
             btm_split[1],
             self.setting_dropdowns
                 .entry(SUBSTITUTION_DROPDOWN_ID)
                 .or_default(),
+            if sub_is_open { 1 } else { 0 },
         );
 
         let tactics: Vec<Tactic> = Tactic::iter().collect();
@@ -768,16 +736,48 @@ impl MyTeamPanel {
             own_team.game_tactic.description()
         ))
         .open_direction(OpenDirection::Down)
-        .layer(if tactic_is_open { 1 } else { 0 })
         .disabled(can_change_team_settings.is_err())
         .block(default_block());
-        frame.render_stateful_interactive_widget(
+        frame.render_layered_stateful_interactive_widget(
             tactic_dropdown,
             btm_split[0],
             self.setting_dropdowns
                 .entry(TACTIC_DROPDOWN_ID)
                 .or_default(),
+            if tactic_is_open { 1 } else { 0 },
         );
+
+        let right_btm_split = Layout::vertical([4, 3]).split(settings_split[1]);
+        frame.render_widget(
+            default_block().title("Accept challenges"),
+            right_btm_split[0],
+        );
+
+        let cb_split = Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)])
+            .split(right_btm_split[0].inner(Margin::new(1, 1)));
+        let local_challenge_button = Checkbox::no_box(
+            "local  ",
+            UiCallback::ToggleTeamAutonomousStrategyForLocalChallenges,
+            own_team.autonomous_strategy.challenge_local,
+        )
+        .set_hover_text("Accept challenges from local teams automatically.".to_string())
+        .set_hotkey(ui_key::team::TOGGLE_ACCEPT_LOCAL_CHALLENGES);
+        frame.render_interactive_widget(local_challenge_button, cb_split[0]);
+
+        let network_challenge_button = Checkbox::no_box(
+            "network",
+            UiCallback::ToggleTeamAutonomousStrategyForNetworkChallenges,
+            own_team.autonomous_strategy.challenge_network,
+        )
+        .set_hover_text("Accept challenges from network teams automatically.".to_string())
+        .set_hotkey(ui_key::team::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
+        frame.render_interactive_widget(network_challenge_button, cb_split[1]);
+
+        let auto_assign_button =
+            Button::new("Auto-assign positions", UiCallback::AssignBestTeamPositions)
+                .set_hover_text("Auto-assign players' initial position.")
+                .set_hotkey(ui_key::team::AUTO_ASSIGN);
+        frame.render_interactive_widget(auto_assign_button, right_btm_split[1]);
 
         Ok(())
     }
@@ -1681,7 +1681,8 @@ impl MyTeamPanel {
                         planet_id: parent.id,
                     },
                 )
-                .set_hover_text(format!("Go to {}", parent.name)),
+                .set_hover_text(format!("Go to {}", parent.name))
+                .set_style(UiStyle::HELP_LINK),
             );
         }
         let constraints = parent_buttons
@@ -1947,28 +1948,28 @@ impl MyTeamPanel {
                         let skill = TeamBonus::SpaceshipSpeed.as_skill(player);
                         Span::styled(
                             format!("{} +{}%", TeamBonus::SpaceshipSpeed, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Captain => {
                         let skill = TeamBonus::Reputation.as_skill(player);
                         Span::styled(
                             format!("{} +{}%", TeamBonus::Reputation, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Doctor => {
                         let skill = TeamBonus::TirednessRecovery.as_skill(player);
                         Span::styled(
                             format!("{} +{}%", TeamBonus::TirednessRecovery, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Engineer => {
                         let skill = TeamBonus::Weapons.as_skill(player);
                         Span::styled(
                             format!("{} +{}%", TeamBonus::Weapons, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Mozzo => Span::default(),
@@ -1979,28 +1980,28 @@ impl MyTeamPanel {
                         let skill = TeamBonus::Scouting.as_skill(player);
                         Span::styled(
                             format!(" {} +{}%", TeamBonus::Scouting, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Captain => {
                         let skill = TeamBonus::Bargaining.as_skill(player);
                         Span::styled(
                             format!(" {} +{}%", TeamBonus::Bargaining, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Doctor => {
                         let skill = TeamBonus::Training.as_skill(player);
                         Span::styled(
                             format!(" {} +{}%", TeamBonus::Training, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Engineer => {
                         let skill = TeamBonus::Upgrades.as_skill(player);
                         Span::styled(
                             format!(" {} +{}%", TeamBonus::Upgrades, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Mozzo => Span::default(),

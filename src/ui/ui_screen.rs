@@ -523,10 +523,14 @@ impl UiScreen {
         let mut ui_frame = UiFrame::new(frame);
         ui_frame.set_hovering(self.inner_registry.hovering());
 
-        let overlay = !self.popup_messages.is_empty()
-            || self.show_help
-            || self.get_active_screen_mut().has_open_dropdown().is_some();
-        ui_frame.set_active_layer(if overlay { 1 } else { 0 });
+        let active_layer = if !self.popup_messages.is_empty() {
+            2
+        } else if self.show_help || self.get_active_screen_mut().has_open_dropdown().is_some() {
+            1
+        } else {
+            0
+        };
+        ui_frame.set_active_layer(active_layer);
 
         let screen_area = ui_frame.screen_area();
 
@@ -578,9 +582,10 @@ impl UiScreen {
                 ui_frame.render_widget(default_block(), tab_main_split[0]);
                 let tab_split = Layout::horizontal(constraints).split(tab_main_split[0]);
 
+                let tab_layer = if self.show_help { 1 } else { 0 };
                 for (idx, &tab) in self.ui_tabs.iter().enumerate() {
                     let selected = idx == self.tab_index;
-                    let mut button = if let Some(variants) = CONSTANT_TAB_BUTTONS.get(&tab) {
+                    let button = if let Some(variants) = CONSTANT_TAB_BUTTONS.get(&tab) {
                         variants[selected as usize].clone()
                     } else {
                         let tab_name = if tab == UiTab::MyTeam {
@@ -608,11 +613,7 @@ impl UiScreen {
                         }
                     };
 
-                    if self.show_help && self.popup_messages.is_empty() {
-                        button = button.set_layer(1);
-                    }
-
-                    ui_frame.render_interactive_widget(button, tab_split[idx]);
+                    ui_frame.render_interactive_widget_on_layer(button, tab_split[idx], tab_layer);
                 }
 
                 active_render
@@ -631,6 +632,19 @@ impl UiScreen {
                 log::Level::Error,
             );
         }
+
+        // Render footer
+        self.render_footer(
+            &mut ui_frame,
+            world,
+            #[cfg(feature = "audio")]
+            audio_player,
+            split[1],
+        );
+
+        // Draw the deferred widgets before the help popup and the popup messages,
+        // which are rendered on higher layers.
+        ui_frame.render_layered_widgets();
 
         if self.show_help {
             let popup_rect = help_popup_rect(screen_area);
@@ -671,19 +685,9 @@ impl UiScreen {
             let close_button = Button::new(super::constants::UiText::YES, UiCallback::CloseHelp)
                 .set_hover_text("Close help")
                 .set_hotkey(ui_key::YES_TO_DIALOG)
-                .block(default_block().border_style(UiStyle::OK))
-                .set_layer(1);
-            ui_frame.render_interactive_widget(close_button, button_split[1]);
+                .block(default_block().border_style(UiStyle::OK));
+            ui_frame.render_interactive_widget_on_layer(close_button, button_split[1], 1);
         }
-
-        // Render footer
-        self.render_footer(
-            &mut ui_frame,
-            world,
-            #[cfg(feature = "audio")]
-            audio_player,
-            split[1],
-        );
 
         if let Err(err) = self.render_popup_messages(&mut ui_frame, screen_area) {
             self.push_log_event(
@@ -700,9 +704,8 @@ impl UiScreen {
     }
 
     fn render_popup_messages(&mut self, frame: &mut UiFrame, area: Rect) -> AppResult<()> {
-        // Render popup message
-        if !self.popup_messages.is_empty() {
-            self.popup_messages[0].render(frame, area, &mut self.popup_input)?;
+        if let Some(popup) = self.popup_messages.first() {
+            popup.render(frame, area, &mut self.popup_input)?;
         }
         Ok(())
     }

@@ -632,7 +632,10 @@ impl NetworkCallback {
                         planet.name,
                         (tournament.starting_at() - Tick::now()).formatted_as_time()
                     ),
-                    links: vec![("tournament".to_string(), UiCallback::GoToTournaments)],
+                    links: vec![(
+                        "tournament".to_string(),
+                        UiCallback::GoToTournaments { from_popup: true },
+                    )],
                     level: log::Level::Info,
                     is_skippable: true,
                     timestamp: Tick::now(),
@@ -769,7 +772,10 @@ impl NetworkCallback {
 
                     app.ui.push_popup(PopupMessage::Message {
                         message: "Trade offer received.\nCheck the swarm panel".to_string(),
-                        links: vec![("swarm panel".to_string(), UiCallback::GoToSwarmRequests)],
+                        links: vec![(
+                            "swarm panel".to_string(),
+                            UiCallback::GoToSwarmRequests { from_popup: true },
+                        )],
                         level: log::Level::Info,
                         is_skippable: true,
                         timestamp,
@@ -1026,7 +1032,10 @@ impl NetworkCallback {
                     }
                     app.ui.push_popup(PopupMessage::Message {
                         message: "Challenge received.\nCheck the swarm panel".to_string(),
-                        links: vec![("swarm panel".to_string(), UiCallback::GoToSwarmRequests)],
+                        links: vec![(
+                            "swarm panel".to_string(),
+                            UiCallback::GoToSwarmRequests { from_popup: true },
+                        )],
                         level: log::Level::Info,
                         is_skippable: true,
                         timestamp,
@@ -1099,7 +1108,10 @@ impl NetworkCallback {
 
                         app.ui.push_popup(PopupMessage::Message {
                             message: "Challenge accepted, game is starting.".to_string(),
-                            links: vec![("game".to_string(), UiCallback::GoToGames)],
+                            links: vec![(
+                                "game".to_string(),
+                                UiCallback::GoToGames { from_popup: true },
+                            )],
                             level: log::Level::Info,
                             is_skippable: false,
                             timestamp: Tick::now(),
@@ -1179,7 +1191,10 @@ impl NetworkCallback {
 
                         app.ui.push_popup(PopupMessage::Message {
                             message: "Challenge accepted, game is starting.".to_string(),
-                            links: vec![("game".to_string(), UiCallback::GoToGames)],
+                            links: vec![(
+                                "game".to_string(),
+                                UiCallback::GoToGames { from_popup: true },
+                            )],
                             level: log::Level::Info,
                             is_skippable: false,
                             timestamp: Tick::now(),

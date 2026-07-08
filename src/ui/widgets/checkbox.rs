@@ -27,7 +27,6 @@ pub struct Checkbox<'a> {
     block: Option<Block<'a>>,
     hover_block: Option<Block<'a>>,
     hover_text: Option<Text<'a>>,
-    layer: usize,
 }
 
 impl<'a> Checkbox<'a> {
@@ -182,13 +181,14 @@ impl<'a> Widget for Checkbox<'a> {
 }
 
 impl InteractiveWidget for Checkbox<'_> {
-    fn layer(&self) -> usize {
-        self.layer
-    }
-
-    fn before_rendering(&mut self, area: Rect, callback_registry: &mut CallbackRegistry) {
-        self.is_hovered = callback_registry.is_hovering(area)
-            && callback_registry.get_active_layer() == self.layer();
+    fn before_rendering(
+        &mut self,
+        area: Rect,
+        callback_registry: &mut CallbackRegistry,
+        layer: usize,
+    ) {
+        self.is_hovered =
+            callback_registry.is_hovering(area) && callback_registry.get_active_layer() == layer;
 
         if !self.disabled {
             if self.is_hovered {

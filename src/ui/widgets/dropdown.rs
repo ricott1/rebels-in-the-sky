@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::ui::constants::UiStyle;
 use crate::ui::traits::InteractiveStatefulWidget;
 use crate::ui::ui_callback::{CallbackRegistry, UiCallback};
@@ -13,7 +12,6 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph, Widget},
 };
 
-const OPEN_LAYER: usize = 1;
 const CLOSED_MARKER: char = '▾';
 const OPEN_MARKER: char = '▴';
 
@@ -73,7 +71,6 @@ pub struct Dropdown<'a> {
     style: Style,
     selected_style: Style,
     hover_style: Style,
-    layer: usize,
     title: Option<String>,
     disabled: bool,
     hover_text: Text<'a>,
@@ -91,7 +88,6 @@ impl<'a> Dropdown<'a> {
             style: UiStyle::DEFAULT,
             selected_style: UiStyle::SELECTED,
             hover_style: UiStyle::HIGHLIGHT,
-            layer: 0,
             title: None,
             disabled: false,
             hover_text: Text::default(),
@@ -100,11 +96,6 @@ impl<'a> Dropdown<'a> {
 
     pub const fn hotkey(mut self, key: KeyCode) -> Self {
         self.hotkey = Some(key);
-        self
-    }
-
-    pub const fn layer(mut self, layer: usize) -> Self {
-        self.layer = layer;
         self
     }
 
@@ -250,15 +241,12 @@ impl StatefulWidget for Dropdown<'_> {
     }
 }
 impl InteractiveStatefulWidget for &Dropdown<'_> {
-    fn layer(&self) -> usize {
-        self.layer
-    }
-
     fn before_rendering(
         &self,
         area: Rect,
         callback_registry: &mut CallbackRegistry,
         state: &mut Self::State,
+        layer: usize,
     ) {
         state.hovered = Rect::default();
 
@@ -271,7 +259,7 @@ impl InteractiveStatefulWidget for &Dropdown<'_> {
             return;
         }
 
-        if callback_registry.get_active_layer() != self.layer() {
+        if callback_registry.get_active_layer() != layer {
             return;
         }
 
@@ -342,10 +330,6 @@ impl InteractiveStatefulWidget for &Dropdown<'_> {
 }
 
 impl InteractiveStatefulWidget for Dropdown<'_> {
-    fn layer(&self) -> usize {
-        self.layer
-    }
-
     fn hover_text(&self) -> Text<'_> {
         self.hover_text.clone()
     }
@@ -355,34 +339,15 @@ impl InteractiveStatefulWidget for Dropdown<'_> {
         area: Rect,
         callback_registry: &mut CallbackRegistry,
         state: &mut Self::State,
+        layer: usize,
     ) {
-        InteractiveStatefulWidget::before_rendering(&self, area, callback_registry, state);
+        InteractiveStatefulWidget::before_rendering(&self, area, callback_registry, state, layer);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-
-    fn options() -> Vec<Text<'static>> {
-        vec![Text::from("Alpha"), Text::from("Beta"), Text::from("Gamma")]
-    }
-
-    fn row_string(buf: &Buffer, y: u16, width: u16) -> String {
-        (0..width)
-            .filter_map(|x| buf.cell((x, y)).map(|c| c.symbol().to_string()))
-            .collect()
-    }
-
-    fn left_click(column: u16, row: u16) -> MouseEvent {
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column,
-            row,
-            modifiers: KeyModifiers::empty(),
-        }
-    }
 
     #[test]
     fn state_toggle_and_select() {

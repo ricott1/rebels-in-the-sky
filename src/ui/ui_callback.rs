@@ -88,17 +88,36 @@ pub enum UiCallback {
         amount: i32,
         unit_cost: u32,
     },
-    TutorialGoToChat,
-    TutorialGoToChallenges,
-    TutorialGoToMarket,
-    TutorialGoToShipyard,
-    TutorialGoToFreePirates,
-    TutorialGoToSpaceAdventure,
-    TutorialGoToAsteroids,
-    GoToSwarmRequests,
-    GoToFreePirates,
-    GoToGames,
-    GoToTournaments,
+    GoToChat {
+        from_popup: bool,
+    },
+    GoToChallenges {
+        from_popup: bool,
+    },
+    GoToMarket {
+        from_popup: bool,
+    },
+    GoToShipyard {
+        from_popup: bool,
+    },
+    GoToFreePirates {
+        from_popup: bool,
+    },
+    GoToSpaceAdventure {
+        from_popup: bool,
+    },
+    GoToAsteroids {
+        from_popup: bool,
+    },
+    GoToSwarmRequests {
+        from_popup: bool,
+    },
+    GoToGames {
+        from_popup: bool,
+    },
+    GoToTournaments {
+        from_popup: bool,
+    },
     GoToTournament {
         tournament_id: TournamentId,
     },
@@ -287,8 +306,6 @@ pub enum UiCallback {
     UpgradeSpaceCove {
         target: SpaceCoveUpgradeTarget,
     },
-    GoToMarket,
-    GoToAsteroids,
     AddRumToCove {
         amount: u32,
     },
@@ -763,7 +780,7 @@ impl UiCallback {
                     planet.name,
                     tournament.max_participants
                 ),
-                links: vec![("tournament".to_string(), Self::GoToTournaments)],
+                links: vec![("tournament".to_string(), Self::GoToTournaments {from_popup:true})],
                 level: log::Level::Info,
                 is_skippable: true,
                 timestamp: Tick::now(),
@@ -1188,7 +1205,10 @@ impl UiCallback {
             let links = if upgrade.target == PlanetUpgradeTarget::SpaceCove {
                 vec![("Space cove".to_string(), UiCallback::GoToSpaceCove)]
             } else {
-                vec![("Asteroid".to_string(), UiCallback::GoToAsteroids)]
+                vec![(
+                    "Asteroid".to_string(),
+                    UiCallback::GoToAsteroids { from_popup: true },
+                )]
             };
             app.ui.push_popup(PopupMessage::Message {
                 message,
@@ -1338,82 +1358,100 @@ impl UiCallback {
                 Ok(None)
             }
             Self::GoToTeam { team_id } => Self::go_to_team(*team_id)(app),
-            Self::TutorialGoToChat => {
+            Self::GoToChat { from_popup } => {
                 app.ui.swarm_panel.set_view(SwarmView::Chat);
                 app.ui.swarm_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Swarm);
 
+                if *from_popup {
+                    app.ui.close_popup()
+                }
+
                 Ok(None)
             }
-            Self::TutorialGoToChallenges => {
+            Self::GoToChallenges { from_popup } => {
                 app.ui.team_panel.set_view(TeamView::OpenToChallenge);
                 app.ui.team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Crews);
-
+                if *from_popup {
+                    app.ui.close_popup()
+                }
                 Ok(None)
             }
-            Self::TutorialGoToMarket => {
+            Self::GoToMarket { from_popup } => {
                 app.ui.my_team_panel.set_view(MyTeamView::Market);
                 app.ui.my_team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
-
+                if *from_popup {
+                    app.ui.close_popup()
+                }
                 Ok(None)
             }
-            Self::TutorialGoToShipyard => {
+
+            Self::GoToShipyard { from_popup } => {
                 app.ui.my_team_panel.set_view(MyTeamView::Shipyard);
                 app.ui.my_team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
-
+                if *from_popup {
+                    app.ui.close_popup()
+                }
                 Ok(None)
             }
-            Self::TutorialGoToFreePirates => {
+            Self::GoToFreePirates { from_popup } => {
                 app.ui.player_panel.set_view(PlayerView::FreePirates);
                 app.ui.player_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Pirates);
-
+                if *from_popup {
+                    app.ui.close_popup()
+                }
                 Ok(None)
             }
-            Self::TutorialGoToSpaceAdventure => {
+
+            Self::GoToSpaceAdventure { from_popup } => {
                 app.ui.my_team_panel.set_view(MyTeamView::Info);
                 app.ui.my_team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
-
+                if *from_popup {
+                    app.ui.close_popup()
+                }
                 Ok(None)
             }
-            Self::TutorialGoToAsteroids => {
+            Self::GoToAsteroids { from_popup } => {
                 app.ui.my_team_panel.set_view(MyTeamView::Asteroids);
                 app.ui.my_team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
-
+                if *from_popup {
+                    app.ui.close_popup();
+                }
                 Ok(None)
             }
-            Self::GoToSwarmRequests => {
+
+            Self::GoToSwarmRequests { from_popup } => {
                 app.ui.swarm_panel.set_view(SwarmView::Requests);
                 app.ui.swarm_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Swarm);
-                app.ui.close_popup();
+                if *from_popup {
+                    app.ui.close_popup();
+                }
 
                 Ok(None)
             }
-            Self::GoToFreePirates => {
-                app.ui.player_panel.set_view(PlayerView::FreePirates);
-                app.ui.player_panel.update(&app.world)?;
-                app.ui.switch_to(super::ui_screen::UiTab::Pirates);
-                app.ui.close_popup();
 
-                Ok(None)
-            }
-            Self::GoToGames => {
+            Self::GoToGames { from_popup } => {
                 app.ui.game_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Games);
-                app.ui.close_popup();
+                if *from_popup {
+                    app.ui.close_popup();
+                }
 
                 Ok(None)
             }
-            Self::GoToTournaments => {
+            Self::GoToTournaments { from_popup } => {
                 app.ui.tournament_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Tournaments);
-                app.ui.close_popup();
+                if *from_popup {
+                    app.ui.close_popup();
+                }
 
                 Ok(None)
             }
@@ -2072,18 +2110,6 @@ impl UiCallback {
             }
 
             Self::UpgradeSpaceCove { target } => Self::upgrade_space_cove(*target)(app),
-
-            Self::GoToMarket => {
-                app.ui.my_team_panel.set_view(MyTeamView::Market);
-                app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
-                Ok(None)
-            }
-
-            Self::GoToAsteroids => {
-                app.ui.my_team_panel.set_view(MyTeamView::Asteroids);
-                app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
-                Ok(None)
-            }
 
             Self::AddRumToCove { amount } => Self::add_rum_to_cove(*amount)(app),
 

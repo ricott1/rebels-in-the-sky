@@ -34,7 +34,7 @@ pub const REGISTER_TO_TOURNAMENT: KeyCode = KeyCode::Char('R');
 
 pub const GO_TO_TEAM: KeyCode = KeyCode::Backspace;
 pub const GO_TO_TEAM_ALT: KeyCode = KeyCode::Char('t');
-pub const GO_TO_GAME: KeyCode = KeyCode::Char('g');
+pub const GO_TO_GAME: KeyCode = KeyCode::Char('G');
 pub const GO_TO_CURRENT_GAME: KeyCode = KeyCode::Char('C');
 
 pub const GO_TO_PIRATE: KeyCode = KeyCode::Char('p');

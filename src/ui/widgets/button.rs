@@ -27,7 +27,6 @@ pub struct Button<'a> {
     block: Option<Block<'a>>,
     hover_block: Option<Block<'a>>,
     hover_text: Option<Text<'a>>,
-    layer: usize,
 }
 
 impl<'a> Button<'a> {
@@ -107,11 +106,6 @@ impl<'a> Button<'a> {
 
     pub const fn set_hotkey(mut self, k: KeyCode) -> Self {
         self.hotkey = Some(k);
-        self
-    }
-
-    pub const fn set_layer(mut self, layer: usize) -> Self {
-        self.layer = layer;
         self
     }
 
@@ -210,13 +204,14 @@ impl<'a> Widget for Button<'a> {
 }
 
 impl InteractiveWidget for Button<'_> {
-    fn layer(&self) -> usize {
-        self.layer
-    }
-
-    fn before_rendering(&mut self, area: Rect, callback_registry: &mut CallbackRegistry) {
-        self.is_hovered = callback_registry.is_hovering(area)
-            && callback_registry.get_active_layer() == self.layer();
+    fn before_rendering(
+        &mut self,
+        area: Rect,
+        callback_registry: &mut CallbackRegistry,
+        layer: usize,
+    ) {
+        self.is_hovered =
+            callback_registry.is_hovering(area) && callback_registry.get_active_layer() == layer;
 
         if !self.disabled {
             if self.is_hovered {

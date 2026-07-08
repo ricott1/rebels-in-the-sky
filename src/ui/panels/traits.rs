@@ -126,6 +126,7 @@ pub fn render_help_content(frame: &mut UiFrame, area: Rect, content: HelpContent
         &content.description,
         &content.links,
         LinkAlign::Left,
+        1,
     );
     frame.render_widget(Paragraph::new(content.controls), split[1]);
 }

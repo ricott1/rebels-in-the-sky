@@ -2167,7 +2167,7 @@ impl World {
                                 message,
                                 links: vec![(
                                     "tournament".to_string(),
-                                    UiCallback::GoToTournaments,
+                                    UiCallback::GoToTournaments { from_popup: true },
                                 )],
                                 level: log::Level::Info,
                                 is_skippable: false,
@@ -2584,7 +2584,10 @@ impl World {
         Ok(UiCallback::PushUiPopup {
             popup_message: PopupMessage::Message {
                 message: "Free pirates refreshed".into(),
-                links: vec![("Free pirates".to_string(), UiCallback::GoToFreePirates)],
+                links: vec![(
+                    "Free pirates".to_string(),
+                    UiCallback::GoToFreePirates { from_popup: true },
+                )],
                 level: log::Level::Info,
                 is_skippable: false,
                 timestamp: current_tick,

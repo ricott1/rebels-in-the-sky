@@ -1945,7 +1945,7 @@ fn scouted_player_role_spans<'a>(player: &Player, scouting: Skill, i: usize) -> 
         ];
     }
 
-    vec![Span::raw(&SPACES[..PADDING + 9])]
+    vec![Span::raw(&SPACES[..PADDING + 10])]
 }
 
 fn format_player_skills<'a>(
