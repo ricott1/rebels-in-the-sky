@@ -36,11 +36,8 @@ mod tests {
     struct GameSample {
         rating_diff: f32,
         winner: Option<Possession>,
-        home_stats: GameStatsMap,
-        away_stats: GameStatsMap,
-        home_players: PlayerMap,
-        away_players: PlayerMap,
-        action_outputs: Vec<ActionOutput>,
+        home_values: Vec<f32>,
+        away_values: Vec<f32>,
     }
 
     fn process_stats(samples: &[GameSample], bin_size: f32) -> Vec<BinResult> {
@@ -67,25 +64,7 @@ mod tests {
             *loss_counts.entry(bin).or_default() += 1;
         }
 
-        // Compute selector stats (points, 2pt, 3pt, rebounds, assists, etc.)
-        let selectors = vec![
-            |s: &GameStats, _: &Player| 2.0 * s.made_2pt as f32 + 3.0 * s.made_3pt as f32,
-            |s: &GameStats, _: &Player| s.made_2pt as f32,
-            |s: &GameStats, _: &Player| s.attempted_2pt as f32,
-            |s: &GameStats, _: &Player| s.made_3pt as f32,
-            |s: &GameStats, _: &Player| s.attempted_3pt as f32,
-            |s: &GameStats, _: &Player| s.defensive_rebounds as f32,
-            |s: &GameStats, _: &Player| s.offensive_rebounds as f32,
-            |s: &GameStats, _: &Player| s.assists as f32,
-            |s: &GameStats, _: &Player| s.turnovers as f32,
-            |s: &GameStats, _: &Player| s.steals as f32,
-            |s: &GameStats, _: &Player| s.blocks as f32,
-            |s: &GameStats, _: &Player| s.brawls[0] as f32 + 0.5 * s.brawls[1] as f32,
-            |_: &GameStats, p: &Player| p.tiredness,
-            |_: &GameStats, p: &Player| p.morale,
-        ];
-
-        let binned = compute_binned_stats(samples, bin_size, selectors);
+        let binned = compute_binned_stats(samples, bin_size);
 
         let mut bins = Vec::new();
 
@@ -123,6 +102,67 @@ mod tests {
                 selector(stat, player)
             })
             .sum()
+    }
+
+    /// Compute the per-team entry vector for a finished game:
+    /// 14 stat selectors, then attack/neutral/defense advantage counts,
+    /// fastbreak count and substitution count.
+    fn team_values(
+        stats: &GameStatsMap,
+        players: &PlayerMap,
+        action_outputs: &[ActionOutput],
+        possession: Possession,
+    ) -> Vec<f32> {
+        let selectors: Vec<fn(&GameStats, &Player) -> f32> = vec![
+            |s: &GameStats, _: &Player| 2.0 * s.made_2pt as f32 + 3.0 * s.made_3pt as f32,
+            |s: &GameStats, _: &Player| s.made_2pt as f32,
+            |s: &GameStats, _: &Player| s.attempted_2pt as f32,
+            |s: &GameStats, _: &Player| s.made_3pt as f32,
+            |s: &GameStats, _: &Player| s.attempted_3pt as f32,
+            |s: &GameStats, _: &Player| s.defensive_rebounds as f32,
+            |s: &GameStats, _: &Player| s.offensive_rebounds as f32,
+            |s: &GameStats, _: &Player| s.assists as f32,
+            |s: &GameStats, _: &Player| s.turnovers as f32,
+            |s: &GameStats, _: &Player| s.steals as f32,
+            |s: &GameStats, _: &Player| s.blocks as f32,
+            |s: &GameStats, _: &Player| s.brawls[0] as f32 + 0.5 * s.brawls[1] as f32,
+            |_: &GameStats, p: &Player| p.tiredness,
+            |_: &GameStats, p: &Player| p.morale,
+        ];
+
+        let mut values: Vec<f32> = selectors
+            .iter()
+            .map(|&selector| team_stat_sum(stats, players, selector))
+            .collect();
+
+        for &advantage in [Advantage::Attack, Advantage::Neutral, Advantage::Defense].iter() {
+            let advantage_count = action_outputs
+                .iter()
+                .filter(|output| output.possession == possession && output.advantage == advantage)
+                .count() as f32;
+            values.push(advantage_count);
+        }
+
+        let fastbreak_count = action_outputs
+            .iter()
+            .filter(|output| {
+                output.possession == possession && output.situation == ActionSituation::Fastbreak
+            })
+            .count() as f32;
+        values.push(fastbreak_count);
+
+        let substitution_count = action_outputs
+            .iter()
+            .filter(|output| {
+                output.situation == ActionSituation::AfterSubstitution
+                    && ((output.attack_stats_update.is_some() && output.possession == possession)
+                        || (output.defense_stats_update.is_some()
+                            && output.possession == !possession))
+            })
+            .count() as f32;
+        values.push(substitution_count);
+
+        values
     }
 
     fn generate_team_in_game(
@@ -193,20 +233,21 @@ mod tests {
     ) -> Vec<GameSample> {
         let mut samples = Vec::with_capacity(n_games);
         for i in 0..n_games {
+            let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
             let home_team_base_level =
                 if max_delta_rating > 0.0 && i <= n_games / (2 * max_delta_rating as usize) {
                     0.0
                 } else {
-                    max_delta_rating * i as f32 / n_games as f32
+                    sign * max_delta_rating * i as f32 / n_games as f32
                 };
             let away_team_base_level =
                 if max_delta_rating > 0.0 && i <= n_games / (2 * max_delta_rating as usize) {
                     0.0
                 } else {
-                    -max_delta_rating * i as f32 / n_games as f32
+                    -sign * max_delta_rating * i as f32 / n_games as f32
                 };
 
-            let (home_team_in_game, away_team_in_game) =
+            let (mut home_team_in_game, mut away_team_in_game) =
                 if home_team_base_level == away_team_base_level {
                     generate_identical_team_in_game(home_team_base_level, with_fixed_stamina)
                 } else {
@@ -216,24 +257,7 @@ mod tests {
                     )
                 };
 
-            let home_rating = home_team_in_game.rating();
-            let away_rating = away_team_in_game.rating();
-
-            // Reorder so home team is always higher rated one.
-            let (mut home_team_in_game, mut away_team_in_game, rating_diff) =
-                if home_rating >= away_rating {
-                    (
-                        home_team_in_game,
-                        away_team_in_game,
-                        (home_rating - away_rating) as f32,
-                    )
-                } else {
-                    (
-                        away_team_in_game,
-                        home_team_in_game,
-                        (away_rating - home_rating) as f32,
-                    )
-                };
+            let rating_diff = home_team_in_game.rating() - away_team_in_game.rating();
 
             home_team_in_game.tactic = home_team_settings.0;
             home_team_in_game.substitution_tendency = home_team_settings.1;
@@ -259,224 +283,76 @@ mod tests {
                 _ => unreachable!(),
             };
 
-            let action_outputs = game.action_results;
+            let home_values = team_values(
+                &game.home_team_in_game.stats,
+                &game.home_team_in_game.players,
+                &game.action_results,
+                Possession::Home,
+            );
+            let away_values = team_values(
+                &game.away_team_in_game.stats,
+                &game.away_team_in_game.players,
+                &game.action_results,
+                Possession::Away,
+            );
 
             samples.push(GameSample {
                 rating_diff,
                 winner,
-                home_stats: game.home_team_in_game.stats,
-                away_stats: game.away_team_in_game.stats,
-                home_players: game.home_team_in_game.players,
-                away_players: game.away_team_in_game.players,
-                action_outputs,
+                home_values,
+                away_values,
             })
         }
 
         samples
     }
 
-    fn compute_binned_stats<F>(
-        samples: &[GameSample], // (rating_diff, home_stats, away_stats)
+    fn compute_binned_stats(
+        samples: &[GameSample],
         bin_size: f32,
-        selectors: Vec<F>,
     ) -> BTreeMap<i32, ((Vec<f32>, Vec<f32>), (Vec<f32>, Vec<f32>), usize)>
-    // Returns bin_center --> ((home mean, home stddev) for each selector, (away mean, away stddev) for each selector, count)
-    where
-        F: Fn(&GameStats, &Player) -> f32,
+    // Returns bin_center --> ((home mean, home stddev) for each entry, (away mean, away stddev) for each entry, count)
     {
-        let entry_length = selectors.len() + 3 + 1 + 1; // +3 for advantages + 1 for fastbreak +1 for substitution
+        let entry_length = match samples.first() {
+            Some(sample) => sample.home_values.len(),
+            None => return BTreeMap::new(),
+        };
 
-        // First pass: sum and count for each selector
+        // First pass: sum and count for each entry
         let default_entry = (
-            vec![0.0f32].repeat(entry_length),
-            vec![0.0f32].repeat(entry_length),
+            vec![0.0f32; entry_length],
+            vec![0.0f32; entry_length],
             0usize,
         );
         let mut sums: BTreeMap<i32, (Vec<f32>, Vec<f32>, usize)> = BTreeMap::new();
         for sample in samples {
-            let bin = ((sample.rating_diff) / bin_size).round() as i32;
+            let bin = (sample.rating_diff / bin_size).round() as i32;
             let entry = sums.entry(bin).or_insert(default_entry.clone());
-            for (idx, selector) in selectors.iter().enumerate() {
-                entry.0[idx] += team_stat_sum(&sample.home_stats, &sample.home_players, selector);
-                entry.1[idx] += team_stat_sum(&sample.away_stats, &sample.away_players, selector);
+            for idx in 0..entry_length {
+                entry.0[idx] += sample.home_values[idx];
+                entry.1[idx] += sample.away_values[idx];
             }
-
-            // Push data from sample.action_outputs
-            for &possession in [Possession::Home, Possession::Away].iter() {
-                for (idx, &advantage) in [Advantage::Attack, Advantage::Neutral, Advantage::Defense]
-                    .iter()
-                    .enumerate()
-                {
-                    let advantage_count = sample
-                        .action_outputs
-                        .iter()
-                        .filter(|output| {
-                            output.possession == possession && output.advantage == advantage
-                        })
-                        .count() as f32;
-                    if possession == Possession::Home {
-                        entry.0[selectors.len() + idx] += advantage_count;
-                    } else {
-                        entry.1[selectors.len() + idx] += advantage_count;
-                    }
-                }
-
-                let fastbreak_count = sample
-                    .action_outputs
-                    .iter()
-                    .filter(|output| {
-                        output.possession == possession
-                            && output.situation == ActionSituation::Fastbreak
-                    })
-                    .count() as f32;
-                if possession == Possession::Home {
-                    entry.0[selectors.len() + 3] += fastbreak_count;
-                } else {
-                    entry.1[selectors.len() + 3] += fastbreak_count;
-                }
-
-                let home_sub_count = sample
-                    .action_outputs
-                    .iter()
-                    .filter(|output| {
-                        output.situation == ActionSituation::AfterSubstitution
-                            && ((output.attack_stats_update.is_some()
-                                && output.possession == Possession::Home)
-                                || (output.defense_stats_update.is_some()
-                                    && output.possession == Possession::Away))
-                    })
-                    .count() as f32;
-
-                let away_sub_count = sample
-                    .action_outputs
-                    .iter()
-                    .filter(|output| {
-                        output.situation == ActionSituation::AfterSubstitution
-                            && ((output.attack_stats_update.is_some()
-                                && output.possession == Possession::Away)
-                                || (output.defense_stats_update.is_some()
-                                    && output.possession == Possession::Home))
-                    })
-                    .count() as f32;
-
-                if possession == Possession::Home {
-                    entry.0[selectors.len() + 4] += home_sub_count;
-                } else {
-                    entry.1[selectors.len() + 4] += away_sub_count;
-                }
-            }
-
-            // Increase count
             entry.2 += 1;
         }
 
         // Means
         let mut means: BTreeMap<i32, (Vec<f32>, Vec<f32>)> = BTreeMap::new();
         for (bin, (home_sums, away_sums, count)) in &sums {
-            let home_means = (0..entry_length)
-                .map(|idx| home_sums[idx] / *count as f32)
-                .collect();
-
-            let away_means = (0..entry_length)
-                .map(|idx| away_sums[idx] / *count as f32)
-                .collect();
-
+            let home_means = home_sums.iter().map(|s| s / *count as f32).collect();
+            let away_means = away_sums.iter().map(|s| s / *count as f32).collect();
             means.insert(*bin, (home_means, away_means));
         }
 
         // Second pass: sum squared deviations
-
-        let default_entry = (
-            vec![0.0f32].repeat(entry_length),
-            vec![0.0f32].repeat(entry_length),
-        );
-
-        assert!(default_entry.0.len() > selectors.len());
-
+        let default_entry = (vec![0.0f32; entry_length], vec![0.0f32; entry_length]);
         let mut sqdevs: BTreeMap<i32, (Vec<f32>, Vec<f32>)> = BTreeMap::new();
         for sample in samples {
             let bin = (sample.rating_diff / bin_size).round() as i32;
-            let (home_means, away_means) = means[&bin].clone();
+            let (home_means, away_means) = &means[&bin];
             let entry = sqdevs.entry(bin).or_insert(default_entry.clone());
-
-            for (idx, selector) in selectors.iter().enumerate() {
-                entry.0[idx] += (team_stat_sum(&sample.home_stats, &sample.home_players, selector)
-                    - home_means[idx])
-                    .powi(2);
-                entry.1[idx] += (team_stat_sum(&sample.away_stats, &sample.away_players, selector)
-                    - away_means[idx])
-                    .powi(2);
-            }
-
-            // Push data from sample.action_outputs
-            for &possession in [Possession::Home, Possession::Away].iter() {
-                for (idx, &advantage) in [Advantage::Attack, Advantage::Neutral, Advantage::Defense]
-                    .iter()
-                    .enumerate()
-                {
-                    let advantage_count = sample
-                        .action_outputs
-                        .iter()
-                        .filter(|output| {
-                            output.possession == possession && output.advantage == advantage
-                        })
-                        .count() as f32;
-                    if possession == Possession::Home {
-                        entry.0[selectors.len() + idx] +=
-                            (advantage_count - home_means[selectors.len() + idx]).powi(2);
-                    } else {
-                        entry.1[selectors.len() + idx] +=
-                            (advantage_count - away_means[selectors.len() + idx]).powi(2);
-                    }
-                }
-
-                let fastbreak_count = sample
-                    .action_outputs
-                    .iter()
-                    .filter(|output| {
-                        output.possession == possession
-                            && output.situation == ActionSituation::Fastbreak
-                    })
-                    .count() as f32;
-                if possession == Possession::Home {
-                    entry.0[selectors.len() + 3] +=
-                        (fastbreak_count - home_means[selectors.len() + 3]).powi(2);
-                } else {
-                    entry.1[selectors.len() + 3] +=
-                        (fastbreak_count - away_means[selectors.len() + 3]).powi(2);
-                }
-
-                let home_sub_count = sample
-                    .action_outputs
-                    .iter()
-                    .filter(|output| {
-                        output.situation == ActionSituation::AfterSubstitution
-                            && ((output.attack_stats_update.is_some()
-                                && output.possession == Possession::Home)
-                                || (output.defense_stats_update.is_some()
-                                    && output.possession == Possession::Away))
-                    })
-                    .count() as f32;
-
-                let away_sub_count = sample
-                    .action_outputs
-                    .iter()
-                    .filter(|output| {
-                        output.situation == ActionSituation::AfterSubstitution
-                            && ((output.attack_stats_update.is_some()
-                                && output.possession == Possession::Away)
-                                || (output.defense_stats_update.is_some()
-                                    && output.possession == Possession::Home))
-                    })
-                    .count() as f32;
-
-                if possession == Possession::Home {
-                    entry.0[selectors.len() + 4] +=
-                        (home_sub_count - home_means[selectors.len() + 4]).powi(2);
-                } else {
-                    entry.1[selectors.len() + 4] +=
-                        (away_sub_count - away_means[selectors.len() + 4]).powi(2);
-                }
+            for idx in 0..entry_length {
+                entry.0[idx] += (sample.home_values[idx] - home_means[idx]).powi(2);
+                entry.1[idx] += (sample.away_values[idx] - away_means[idx]).powi(2);
             }
         }
 
@@ -485,7 +361,7 @@ mod tests {
         for (bin, (_, _, count)) in sums {
             let (home_means, away_means) = means[&bin].clone();
             let (home_ss, away_ss) = sqdevs.get(&bin).unwrap();
-            let home_variances = home_ss
+            let home_stds = home_ss
                 .iter()
                 .map(|s| {
                     if count > 1 {
@@ -495,7 +371,7 @@ mod tests {
                     }
                 })
                 .collect_vec();
-            let away_variances = away_ss
+            let away_stds = away_ss
                 .iter()
                 .map(|s| {
                     if count > 1 {
@@ -509,11 +385,7 @@ mod tests {
             let bin_center = (bin as f32 * bin_size) as i32;
             out.insert(
                 bin_center,
-                (
-                    (home_means, home_variances),
-                    (away_means, away_variances),
-                    count,
-                ),
+                ((home_means, home_stds), (away_means, away_stds), count),
             );
         }
         out
@@ -672,7 +544,7 @@ mod tests {
     #[ignore]
     #[test]
     fn test_multiple_games() -> AppResult<()> {
-        const N: usize = 10_000;
+        const N: usize = 30_000;
         const BIN_SIZE: f32 = 1.0;
         let max_delta_rating: f32 = 2.0;
         let with_fixed_stamina = None; //Some(10.0);
@@ -693,12 +565,12 @@ mod tests {
                 let home_team_settings = (
                     home_tactic,
                     SubstitutionTendency::Normal,
-                    GamePositionFluidity::High,
+                    GamePositionFluidity::Normal,
                 );
                 let away_team_settings = (
                     away_tactic,
                     SubstitutionTendency::Normal,
-                    GamePositionFluidity::Low,
+                    GamePositionFluidity::Normal,
                 );
                 let samples = get_simulated_game_samples(
                     N,

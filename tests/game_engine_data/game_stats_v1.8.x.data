@@ -14,436 +14,606 @@ test tests::test_multiple_games has been running for over 60 seconds
 Result for (
     Balanced,
     Normal,
-    High,
+    Normal,
 ) vs (
     Balanced,
     Normal,
-    Low,
+    Normal,
 )
-Δrating=+0 (4769 samples)
-  Win% = 50.7 ± 0.7 (2420/4769)
-  Loss% = 49.3 ± 0.7 (2349/4769)
-  Draw% = 0.0 ± 0.0 (0/4769)
-  points = 63.9 ± 9.4 vs 63.6 ± 9.4
-  2pt = 24.5/52.1 ± 4.0/4.8 vs 24.4/52.1 ± 4.1/4.7
-  3pt = 5.0/12.4 ± 2.2/3.3 vs 5.0/12.4 ± 2.1/3.2
-  Def/Off Rebounds = 25.5/9.2 ± 4.3/3.1 vs 25.4/9.2 ± 4.3/3.1
-  Assists/Turnovers = 10.8/20.6 ± 3.1/4.5 vs 10.7/20.6 ± 3.0/4.5
-  Steals/Blocks = 9.1/9.6 ± 3.2/3.0 vs 9.0/9.6 ± 3.1/3.0
+Δrating=-1 (6758 samples)
+  Win% = 39.1 ± 0.6 (2641/6758)
+  Loss% = 60.9 ± 0.6 (4117/6758)
+  Draw% = 0.0 ± 0.0 (0/6758)
+  points = 61.4 ± 9.6 vs 65.9 ± 9.7
+  2pt = 23.4/51.2 ± 4.1/4.7 vs 25.2/52.7 ± 4.2/4.8
+  3pt = 4.8/12.2 ± 2.2/3.2 vs 5.2/12.7 ± 2.2/3.3
+  Def/Off Rebounds = 25.0/8.7 ± 4.4/3.1 vs 26.0/9.7 ± 4.4/3.3
+  Assists/Turnovers = 10.5/21.3 ± 3.0/4.7 vs 11.1/20.3 ± 3.1/4.5
+  Steals/Blocks = 8.8/9.5 ± 3.1/3.0 vs 9.7/9.9 ± 3.3/3.1
   Brawls = 2.8 ± 1.6 vs 2.8 ± 1.6
-  Fastbreaks = 4.1 ± 2.1 vs 4.0 ± 2.1
-  Substitutions = 11.1 ± 2.7 vs 11.2 ± 2.7
-  Tiredness = 10.9 ± 0.9 vs 11.0 ± 0.9
-  Morale = 12.8 ± 4.0 vs 12.8 ± 4.1
-  Advantage = 24.1/131.0/45.4 vs 24.0/128.8/45.6
+  Fastbreaks = 3.9 ± 2.0 vs 4.3 ± 2.2
+  Substitutions = 11.2 ± 2.7 vs 10.7 ± 2.7
+  Tiredness = 11.0 ± 0.9 vs 10.6 ± 0.9
+  Morale = 12.2 ± 4.1 vs 13.3 ± 3.9
+  Advantage = 23.2/130.0/46.1 vs 24.8/129.5/45.2
 
-Δrating=+1 (4444 samples)
-  Win% = 62.3 ± 0.7 (2767/4444)
-  Loss% = 37.7 ± 0.7 (1677/4444)
-  Draw% = 0.0 ± 0.0 (0/4444)
-  points = 66.2 ± 9.6 vs 61.4 ± 9.5
-  2pt = 25.3/52.8 ± 4.3/4.9 vs 23.4/51.1 ± 4.1/4.7
-  3pt = 5.2/12.7 ± 2.2/3.3 vs 4.9/12.2 ± 2.1/3.3
-  Def/Off Rebounds = 26.0/9.7 ± 4.3/3.3 vs 24.9/8.7 ± 4.4/3.2
-  Assists/Turnovers = 11.1/19.9 ± 3.0/4.6 vs 10.4/21.1 ± 3.0/4.6
-  Steals/Blocks = 9.6/9.9 ± 3.2/3.0 vs 8.5/9.4 ± 3.1/2.9
-  Brawls = 2.9 ± 1.6 vs 2.8 ± 1.6
-  Fastbreaks = 4.3 ± 2.1 vs 3.8 ± 2.0
-  Substitutions = 10.9 ± 2.7 vs 11.4 ± 2.7
-  Tiredness = 10.8 ± 0.9 vs 11.1 ± 0.9
-  Morale = 13.2 ± 3.9 vs 12.4 ± 4.1
-  Advantage = 24.8/131.6/45.0 vs 23.3/127.9/46.0
+Δrating=+0 (14060 samples)
+  Win% = 50.3 ± 0.4 (7072/14060)
+  Loss% = 49.7 ± 0.4 (6988/14060)
+  Draw% = 0.0 ± 0.0 (0/14060)
+  points = 63.6 ± 9.4 vs 63.5 ± 9.4
+  2pt = 24.3/52.1 ± 4.1/4.7 vs 24.2/52.0 ± 4.1/4.8
+  3pt = 5.0/12.4 ± 2.2/3.3 vs 5.0/12.4 ± 2.2/3.3
+  Def/Off Rebounds = 25.6/9.2 ± 4.4/3.1 vs 25.6/9.2 ± 4.3/3.1
+  Assists/Turnovers = 10.8/20.7 ± 3.0/4.6 vs 10.8/20.8 ± 3.0/4.6
+  Steals/Blocks = 9.2/9.7 ± 3.2/3.0 vs 9.2/9.7 ± 3.2/3.0
+  Brawls = 2.8 ± 1.6 vs 2.8 ± 1.6
+  Fastbreaks = 4.1 ± 2.1 vs 4.1 ± 2.1
+  Substitutions = 10.9 ± 2.7 vs 10.9 ± 2.7
+  Tiredness = 10.8 ± 0.9 vs 10.8 ± 0.9
+  Morale = 12.8 ± 4.0 vs 12.7 ± 4.0
+  Advantage = 23.9/130.8/45.8 vs 23.9/128.7/45.8
+
+Δrating=+1 (6821 samples)
+  Win% = 62.7 ± 0.6 (4276/6821)
+  Loss% = 37.3 ± 0.6 (2545/6821)
+  Draw% = 0.0 ± 0.0 (0/6821)
+  points = 66.1 ± 9.7 vs 61.3 ± 9.4
+  2pt = 25.3/52.9 ± 4.2/4.8 vs 23.4/51.2 ± 4.0/4.7
+  3pt = 5.2/12.7 ± 2.2/3.3 vs 4.8/12.1 ± 2.1/3.2
+  Def/Off Rebounds = 26.1/9.8 ± 4.3/3.3 vs 24.9/8.7 ± 4.4/3.2
+  Assists/Turnovers = 11.1/20.2 ± 3.1/4.6 vs 10.4/21.3 ± 3.0/4.7
+  Steals/Blocks = 9.7/10.0 ± 3.3/3.0 vs 8.8/9.5 ± 3.1/3.0
+  Brawls = 2.8 ± 1.6 vs 2.8 ± 1.6
+  Fastbreaks = 4.4 ± 2.2 vs 3.9 ± 2.0
+  Substitutions = 10.6 ± 2.7 vs 11.2 ± 2.7
+  Tiredness = 10.6 ± 0.9 vs 11.0 ± 0.9
+  Morale = 13.1 ± 3.9 vs 12.4 ± 4.1
+  Advantage = 24.8/131.5/45.3 vs 23.0/127.9/46.3
 
 Result for (
     Balanced,
     Normal,
-    High,
+    Normal,
 ) vs (
     BigPirates,
     Normal,
-    Low,
+    Normal,
 )
-Δrating=+0 (4715 samples)
-  Win% = 44.8 ± 0.7 (2113/4715)
-  Loss% = 55.2 ± 0.7 (2602/4715)
-  Draw% = 0.0 ± 0.0 (0/4715)
-  points = 60.8 ± 9.4 vs 62.6 ± 9.0
-  2pt = 23.0/49.3 ± 4.1/4.5 vs 27.1/56.6 ± 4.1/4.4
-  3pt = 4.9/12.3 ± 2.1/3.2 vs 2.8/7.2 ± 1.6/2.5
-  Def/Off Rebounds = 23.3/7.8 ± 4.2/2.9 vs 25.5/10.1 ± 4.2/3.2
-  Assists/Turnovers = 10.5/19.1 ± 3.0/4.4 vs 8.0/19.1 ± 2.6/4.5
-  Steals/Blocks = 8.7/9.2 ± 3.1/2.9 vs 8.1/9.0 ± 3.0/2.8
-  Brawls = 3.6 ± 1.8 vs 3.6 ± 1.8
-  Fastbreaks = 3.9 ± 2.1 vs 2.6 ± 1.7
-  Substitutions = 11.1 ± 2.8 vs 11.8 ± 2.8
-  Tiredness = 10.7 ± 0.9 vs 11.4 ± 1.0
-  Morale = 12.3 ± 4.0 vs 13.0 ± 4.0
-  Advantage = 23.5/126.2/43.0 vs 24.4/126.4/43.4
+Δrating=-1 (6785 samples)
+  Win% = 33.8 ± 0.6 (2293/6785)
+  Loss% = 66.2 ± 0.6 (4492/6785)
+  Draw% = 0.0 ± 0.0 (0/6785)
+  points = 58.6 ± 9.2 vs 64.8 ± 9.0
+  2pt = 22.1/48.6 ± 3.9/4.6 vs 28.0/57.3 ± 4.2/4.6
+  3pt = 4.8/12.0 ± 2.1/3.2 vs 3.0/7.4 ± 1.7/2.6
+  Def/Off Rebounds = 22.7/7.3 ± 4.3/2.8 vs 26.0/10.7 ± 4.3/3.4
+  Assists/Turnovers = 10.2/19.5 ± 2.9/4.4 vs 8.3/18.7 ± 2.7/4.4
+  Steals/Blocks = 8.4/8.9 ± 3.0/2.9 vs 8.6/9.3 ± 3.0/2.9
+  Brawls = 3.6 ± 1.8 vs 3.7 ± 1.8
+  Fastbreaks = 3.6 ± 2.0 vs 2.7 ± 1.7
+  Substitutions = 11.2 ± 2.8 vs 11.6 ± 2.8
+  Tiredness = 10.8 ± 1.0 vs 11.2 ± 1.0
+  Morale = 11.8 ± 4.1 vs 13.5 ± 3.8
+  Advantage = 22.7/125.3/43.5 vs 25.2/127.3/42.9
 
-Δrating=+1 (4445 samples)
-  Win% = 58.4 ± 0.7 (2598/4445)
-  Loss% = 41.6 ± 0.7 (1847/4445)
-  Draw% = 0.0 ± 0.0 (0/4445)
-  points = 63.2 ± 9.5 vs 60.2 ± 9.0
-  2pt = 23.9/49.9 ± 4.1/4.7 vs 26.0/55.7 ± 4.2/4.5
-  3pt = 5.2/12.6 ± 2.2/3.3 vs 2.7/7.0 ± 1.6/2.5
-  Def/Off Rebounds = 24.0/8.2 ± 4.4/3.1 vs 25.0/9.6 ± 4.3/3.3
-  Assists/Turnovers = 10.9/18.6 ± 3.1/4.3 vs 7.6/19.7 ± 2.6/4.5
-  Steals/Blocks = 9.2/9.3 ± 3.2/2.9 vs 7.6/8.9 ± 2.9/2.9
+Δrating=+0 (14090 samples)
+  Win% = 45.0 ± 0.4 (6345/14090)
+  Loss% = 55.0 ± 0.4 (7745/14090)
+  Draw% = 0.0 ± 0.0 (0/14090)
+  points = 60.8 ± 9.2 vs 62.4 ± 8.9
+  2pt = 23.0/49.3 ± 4.0/4.6 vs 26.9/56.5 ± 4.1/4.5
+  3pt = 4.9/12.2 ± 2.2/3.2 vs 2.9/7.3 ± 1.7/2.6
+  Def/Off Rebounds = 23.4/7.7 ± 4.2/2.9 vs 25.5/10.2 ± 4.3/3.2
+  Assists/Turnovers = 10.5/19.0 ± 3.0/4.3 vs 8.0/19.2 ± 2.7/4.4
+  Steals/Blocks = 8.8/9.2 ± 3.1/2.9 vs 8.1/9.1 ± 3.0/2.9
+  Brawls = 3.6 ± 1.8 vs 3.6 ± 1.8
+  Fastbreaks = 3.9 ± 2.0 vs 2.5 ± 1.6
+  Substitutions = 10.8 ± 2.8 vs 11.8 ± 2.8
+  Tiredness = 10.6 ± 0.9 vs 11.4 ± 1.0
+  Morale = 12.4 ± 4.0 vs 12.9 ± 4.0
+  Advantage = 23.4/126.0/43.2 vs 24.4/126.5/43.5
+
+Δrating=+1 (6814 samples)
+  Win% = 58.7 ± 0.6 (4001/6814)
+  Loss% = 41.3 ± 0.6 (2813/6814)
+  Draw% = 0.0 ± 0.0 (0/6814)
+  points = 63.3 ± 9.4 vs 60.0 ± 8.9
+  2pt = 24.0/50.1 ± 4.1/4.6 vs 25.9/55.6 ± 4.1/4.5
+  3pt = 5.1/12.5 ± 2.2/3.3 vs 2.8/7.1 ± 1.6/2.6
+  Def/Off Rebounds = 24.0/8.2 ± 4.3/3.0 vs 24.9/9.6 ± 4.3/3.2
+  Assists/Turnovers = 10.8/18.5 ± 3.0/4.3 vs 7.6/19.8 ± 2.6/4.5
+  Steals/Blocks = 9.3/9.5 ± 3.2/2.9 vs 7.7/8.9 ± 2.9/2.9
   Brawls = 3.6 ± 1.8 vs 3.6 ± 1.8
   Fastbreaks = 4.1 ± 2.1 vs 2.4 ± 1.6
-  Substitutions = 10.8 ± 2.8 vs 12.1 ± 2.8
-  Tiredness = 10.6 ± 0.9 vs 11.6 ± 1.0
-  Morale = 12.8 ± 3.9 vs 12.5 ± 4.1
-  Advantage = 24.4/126.8/42.5 vs 23.6/125.8/43.9
+  Substitutions = 10.6 ± 2.8 vs 12.1 ± 2.8
+  Tiredness = 10.4 ± 0.9 vs 11.6 ± 1.0
+  Morale = 12.8 ± 3.9 vs 12.4 ± 4.1
+  Advantage = 24.3/126.8/42.6 vs 23.4/125.8/44.1
 
 Result for (
     Balanced,
     Normal,
-    High,
+    Normal,
 ) vs (
     Arrembaggio,
     Normal,
-    Low,
+    Normal,
 )
-Δrating=+0 (4666 samples)
-  Win% = 43.0 ± 0.7 (2007/4666)
-  Loss% = 57.0 ± 0.7 (2659/4666)
-  Draw% = 0.0 ± 0.0 (0/4666)
-  points = 63.2 ± 9.2 vs 65.7 ± 9.2
-  2pt = 23.7/51.2 ± 4.0/4.8 vs 28.1/56.4 ± 4.3/4.6
-  3pt = 5.2/12.9 ± 2.2/3.3 vs 3.2/8.2 ± 1.8/2.8
-  Def/Off Rebounds = 24.3/9.4 ± 4.2/3.2 vs 25.3/8.5 ± 4.3/3.0
-  Assists/Turnovers = 11.0/20.3 ± 3.0/4.5 vs 10.3/19.1 ± 3.0/4.4
-  Steals/Blocks = 8.3/9.2 ± 3.0/2.9 vs 8.9/9.6 ± 3.1/3.0
-  Brawls = 5.5 ± 2.2 vs 5.7 ± 2.3
-  Fastbreaks = 3.7 ± 2.0 vs 8.2 ± 3.0
-  Substitutions = 13.5 ± 3.2 vs 15.5 ± 3.2
-  Tiredness = 11.6 ± 1.1 vs 13.6 ± 1.2
-  Morale = 12.3 ± 4.1 vs 13.4 ± 3.9
-  Advantage = 23.8/134.3/45.6 vs 25.0/130.4/43.3
+Δrating=-1 (6631 samples)
+  Win% = 32.1 ± 0.6 (2129/6631)
+  Loss% = 67.9 ± 0.6 (4502/6631)
+  Draw% = 0.0 ± 0.0 (0/6631)
+  points = 60.8 ± 9.4 vs 68.0 ± 9.3
+  2pt = 22.9/50.4 ± 4.0/4.7 vs 29.0/57.1 ± 4.3/4.7
+  3pt = 5.0/12.6 ± 2.1/3.3 vs 3.3/8.4 ± 1.8/2.7
+  Def/Off Rebounds = 23.7/8.8 ± 4.3/3.2 vs 25.9/9.0 ± 4.4/3.2
+  Assists/Turnovers = 10.7/21.1 ± 3.0/4.6 vs 10.8/18.9 ± 3.0/4.4
+  Steals/Blocks = 8.1/9.0 ± 3.0/2.9 vs 9.5/9.9 ± 3.2/3.0
+  Brawls = 5.5 ± 2.2 vs 5.8 ± 2.3
+  Fastbreaks = 3.6 ± 2.0 vs 8.7 ± 3.1
+  Substitutions = 13.6 ± 3.3 vs 15.4 ± 3.2
+  Tiredness = 11.7 ± 1.1 vs 13.4 ± 1.2
+  Morale = 11.7 ± 4.2 vs 14.0 ± 3.7
+  Advantage = 23.0/133.6/45.9 vs 25.5/131.2/43.1
 
-Δrating=+1 (4536 samples)
-  Win% = 54.2 ± 0.7 (2457/4536)
-  Loss% = 45.8 ± 0.7 (2079/4536)
-  Draw% = 0.0 ± 0.0 (0/4536)
-  points = 65.2 ± 9.4 vs 63.6 ± 9.1
-  2pt = 24.6/51.9 ± 4.1/4.7 vs 27.2/55.7 ± 4.2/4.7
-  3pt = 5.3/13.1 ± 2.2/3.3 vs 3.1/8.0 ± 1.7/2.7
-  Def/Off Rebounds = 24.9/9.9 ± 4.3/3.3 vs 24.7/8.2 ± 4.4/3.0
-  Assists/Turnovers = 11.3/20.0 ± 3.1/4.6 vs 10.1/19.5 ± 2.9/4.5
-  Steals/Blocks = 8.7/9.4 ± 3.1/2.9 vs 8.5/9.4 ± 3.1/3.0
-  Brawls = 5.6 ± 2.2 vs 5.8 ± 2.3
-  Fastbreaks = 3.9 ± 2.1 vs 7.7 ± 3.0
-  Substitutions = 13.3 ± 3.3 vs 15.8 ± 3.3
-  Tiredness = 11.4 ± 1.1 vs 13.8 ± 1.3
-  Morale = 12.9 ± 4.0 vs 12.9 ± 4.0
-  Advantage = 24.6/134.8/44.8 vs 24.4/130.0/43.9
+Δrating=+0 (14139 samples)
+  Win% = 44.6 ± 0.4 (6311/14139)
+  Loss% = 55.4 ± 0.4 (7828/14139)
+  Draw% = 0.0 ± 0.0 (0/14139)
+  points = 63.2 ± 9.2 vs 65.2 ± 9.1
+  2pt = 23.8/51.2 ± 4.0/4.7 vs 27.8/56.2 ± 4.2/4.6
+  3pt = 5.2/12.9 ± 2.2/3.3 vs 3.2/8.2 ± 1.7/2.7
+  Def/Off Rebounds = 24.5/9.3 ± 4.3/3.1 vs 25.4/8.6 ± 4.3/3.0
+  Assists/Turnovers = 11.0/20.5 ± 3.0/4.5 vs 10.4/19.4 ± 3.0/4.4
+  Steals/Blocks = 8.5/9.3 ± 3.1/2.9 vs 9.0/9.6 ± 3.1/3.0
+  Brawls = 5.5 ± 2.2 vs 5.8 ± 2.3
+  Fastbreaks = 3.8 ± 2.0 vs 8.2 ± 3.0
+  Substitutions = 13.3 ± 3.3 vs 15.6 ± 3.2
+  Tiredness = 11.5 ± 1.1 vs 13.6 ± 1.2
+  Morale = 12.5 ± 4.1 vs 13.3 ± 3.9
+  Advantage = 23.7/134.2/45.5 vs 24.8/130.7/43.7
+
+Δrating=+1 (6710 samples)
+  Win% = 57.4 ± 0.6 (3851/6710)
+  Loss% = 42.6 ± 0.6 (2859/6710)
+  Draw% = 0.0 ± 0.0 (0/6710)
+  points = 65.7 ± 9.5 vs 62.8 ± 9.2
+  2pt = 24.8/52.0 ± 4.1/4.7 vs 26.8/55.5 ± 4.3/4.6
+  3pt = 5.4/13.1 ± 2.2/3.4 vs 3.0/8.0 ± 1.7/2.7
+  Def/Off Rebounds = 25.1/9.8 ± 4.3/3.3 vs 24.6/8.2 ± 4.3/3.0
+  Assists/Turnovers = 11.4/20.0 ± 3.1/4.5 vs 10.0/19.9 ± 2.9/4.5
+  Steals/Blocks = 8.9/9.6 ± 3.2/3.0 vs 8.4/9.3 ± 3.1/3.0
+  Brawls = 5.5 ± 2.2 vs 5.7 ± 2.3
+  Fastbreaks = 4.0 ± 2.1 vs 7.7 ± 2.9
+  Substitutions = 13.1 ± 3.3 vs 15.8 ± 3.2
+  Tiredness = 11.3 ± 1.1 vs 13.9 ± 1.2
+  Morale = 13.0 ± 4.0 vs 12.7 ± 4.1
+  Advantage = 24.7/134.7/44.8 vs 23.9/130.1/44.4
 
 Result for (
     Balanced,
     Normal,
-    High,
+    Normal,
 ) vs (
     Shooters,
     Normal,
-    Low,
+    Normal,
 )
-Δrating=+0 (4739 samples)
-  Win% = 46.2 ± 0.7 (2191/4739)
-  Loss% = 53.8 ± 0.7 (2548/4739)
-  Draw% = 0.0 ± 0.0 (0/4739)
-  points = 64.8 ± 9.3 vs 66.5 ± 10.1
-  2pt = 25.2/53.3 ± 4.1/4.7 vs 18.6/41.3 ± 3.7/4.7
-  3pt = 4.8/12.1 ± 2.1/3.2 vs 9.8/23.8 ± 2.9/4.2
-  Def/Off Rebounds = 28.1/10.7 ± 4.4/3.3 vs 24.3/8.3 ± 4.3/3.0
-  Assists/Turnovers = 10.6/20.6 ± 3.0/4.6 vs 16.7/18.5 ± 3.5/4.3
-  Steals/Blocks = 8.4/9.3 ± 3.0/2.9 vs 9.1/9.7 ± 3.2/3.0
-  Brawls = 3.0 ± 1.6 vs 2.9 ± 1.6
-  Fastbreaks = 3.8 ± 2.0 vs 4.1 ± 2.1
-  Substitutions = 11.7 ± 2.8 vs 13.1 ± 2.8
-  Tiredness = 11.3 ± 1.0 vs 12.6 ± 1.1
-  Morale = 13.8 ± 4.0 vs 11.8 ± 4.2
-  Advantage = 24.3/132.7/45.8 vs 25.5/130.0/45.0
+Δrating=-1 (6699 samples)
+  Win% = 33.9 ± 0.6 (2273/6699)
+  Loss% = 66.1 ± 0.6 (4426/6699)
+  Draw% = 0.0 ± 0.0 (0/6699)
+  points = 62.5 ± 9.3 vs 68.9 ± 10.4
+  2pt = 24.2/52.5 ± 4.1/4.7 vs 19.1/41.6 ± 3.9/4.8
+  3pt = 4.7/11.8 ± 2.1/3.2 vs 10.2/24.6 ± 2.9/4.2
+  Def/Off Rebounds = 27.7/10.1 ± 4.5/3.4 vs 24.9/8.9 ± 4.4/3.1
+  Assists/Turnovers = 10.3/21.3 ± 3.0/4.7 vs 17.3/18.1 ± 3.6/4.4
+  Steals/Blocks = 8.0/9.1 ± 3.0/2.9 vs 9.5/9.9 ± 3.3/3.1
+  Brawls = 3.0 ± 1.6 vs 3.0 ± 1.6
+  Fastbreaks = 3.6 ± 2.0 vs 4.3 ± 2.2
+  Substitutions = 11.8 ± 2.8 vs 12.7 ± 2.8
+  Tiredness = 11.4 ± 1.0 vs 12.3 ± 1.0
+  Morale = 13.4 ± 4.0 vs 12.3 ± 4.0
+  Advantage = 23.4/131.8/46.4 vs 26.3/131.0/44.8
 
-Δrating=+1 (4452 samples)
-  Win% = 57.5 ± 0.7 (2559/4452)
-  Loss% = 42.5 ± 0.7 (1893/4452)
-  Draw% = 0.0 ± 0.0 (0/4452)
-  points = 67.1 ± 9.1 vs 64.4 ± 10.2
-  2pt = 26.1/53.9 ± 4.1/4.7 vs 18.0/40.8 ± 3.8/4.7
-  3pt = 5.0/12.3 ± 2.2/3.3 vs 9.5/23.4 ± 2.9/4.2
-  Def/Off Rebounds = 28.5/11.1 ± 4.5/3.5 vs 23.7/7.8 ± 4.3/2.9
-  Assists/Turnovers = 10.9/20.2 ± 3.0/4.5 vs 16.3/19.0 ± 3.5/4.5
-  Steals/Blocks = 8.9/9.5 ± 3.2/3.0 vs 8.6/9.4 ± 3.1/3.0
+Δrating=+0 (14112 samples)
+  Win% = 46.0 ± 0.4 (6495/14112)
+  Loss% = 54.0 ± 0.4 (7617/14112)
+  Draw% = 0.0 ± 0.0 (0/14112)
+  points = 64.7 ± 9.2 vs 66.3 ± 10.1
+  2pt = 25.1/53.3 ± 4.0/4.7 vs 18.5/41.2 ± 3.8/4.8
+  3pt = 4.8/12.1 ± 2.1/3.2 vs 9.8/24.0 ± 2.9/4.2
+  Def/Off Rebounds = 28.2/10.6 ± 4.4/3.3 vs 24.4/8.4 ± 4.2/3.0
+  Assists/Turnovers = 10.6/20.7 ± 3.0/4.5 vs 16.7/18.6 ± 3.5/4.3
+  Steals/Blocks = 8.5/9.3 ± 3.1/2.9 vs 9.0/9.7 ± 3.1/3.0
+  Brawls = 3.0 ± 1.6 vs 2.9 ± 1.6
+  Fastbreaks = 3.8 ± 2.0 vs 4.0 ± 2.0
+  Substitutions = 11.5 ± 2.8 vs 13.0 ± 2.8
+  Tiredness = 11.2 ± 1.0 vs 12.6 ± 1.0
+  Morale = 13.8 ± 3.9 vs 11.8 ± 4.1
+  Advantage = 24.2/132.5/46.0 vs 25.5/130.2/45.1
+
+Δrating=+1 (6738 samples)
+  Win% = 57.5 ± 0.6 (3873/6738)
+  Loss% = 42.5 ± 0.6 (2865/6738)
+  Draw% = 0.0 ± 0.0 (0/6738)
+  points = 67.1 ± 9.4 vs 64.2 ± 10.0
+  2pt = 26.1/54.1 ± 4.1/4.8 vs 17.8/40.6 ± 3.7/4.8
+  3pt = 5.0/12.4 ± 2.2/3.3 vs 9.6/23.6 ± 2.9/4.1
+  Def/Off Rebounds = 28.6/11.3 ± 4.4/3.5 vs 23.7/7.9 ± 4.3/3.0
+  Assists/Turnovers = 10.9/20.2 ± 3.1/4.6 vs 16.3/19.1 ± 3.5/4.4
+  Steals/Blocks = 8.9/9.5 ± 3.2/3.0 vs 8.5/9.5 ± 3.1/3.0
   Brawls = 3.0 ± 1.6 vs 2.9 ± 1.6
   Fastbreaks = 4.0 ± 2.1 vs 3.8 ± 2.0
-  Substitutions = 11.6 ± 2.8 vs 13.3 ± 2.8
-  Tiredness = 11.1 ± 0.9 vs 12.8 ± 1.0
-  Morale = 14.2 ± 3.8 vs 11.3 ± 4.2
-  Advantage = 24.9/133.4/45.2 vs 24.8/129.5/45.4
+  Substitutions = 11.3 ± 2.8 vs 13.4 ± 2.8
+  Tiredness = 11.0 ± 0.9 vs 12.8 ± 1.0
+  Morale = 14.3 ± 3.7 vs 11.2 ± 4.2
+  Advantage = 25.0/133.4/45.4 vs 24.7/129.5/45.4
 
 Result for (
     BigPirates,
     Normal,
-    High,
+    Normal,
 ) vs (
     BigPirates,
     Normal,
-    Low,
+    Normal,
 )
-Δrating=+0 (4700 samples)
-  Win% = 50.0 ± 0.7 (2348/4700)
-  Loss% = 50.0 ± 0.7 (2352/4700)
-  Draw% = 0.0 ± 0.0 (0/4700)
-  points = 59.0 ± 8.8 vs 59.0 ± 8.8
-  2pt = 25.3/53.6 ± 4.0/4.4 vs 25.3/53.6 ± 4.1/4.4
-  3pt = 2.8/7.2 ± 1.6/2.6 vs 2.8/7.2 ± 1.7/2.6
-  Def/Off Rebounds = 23.7/8.5 ± 4.2/3.0 vs 23.8/8.6 ± 4.1/3.0
-  Assists/Turnovers = 7.7/18.7 ± 2.6/4.3 vs 7.7/18.7 ± 2.6/4.3
-  Steals/Blocks = 8.7/8.9 ± 3.0/2.8 vs 8.6/8.9 ± 3.0/2.9
-  Brawls = 4.4 ± 2.0 vs 4.4 ± 2.0
+Δrating=-1 (6750 samples)
+  Win% = 37.3 ± 0.6 (2517/6750)
+  Loss% = 62.7 ± 0.6 (4233/6750)
+  Draw% = 0.0 ± 0.0 (0/6750)
+  points = 57.0 ± 8.6 vs 61.4 ± 8.9
+  2pt = 24.3/52.8 ± 4.0/4.5 vs 26.2/54.4 ± 4.1/4.5
+  3pt = 2.8/7.1 ± 1.6/2.6 vs 3.0/7.3 ± 1.7/2.6
+  Def/Off Rebounds = 23.1/8.1 ± 4.2/3.1 vs 24.3/9.0 ± 4.2/3.2
+  Assists/Turnovers = 7.5/19.2 ± 2.6/4.4 vs 8.1/18.2 ± 2.7/4.3
+  Steals/Blocks = 8.3/8.7 ± 3.0/2.9 vs 9.1/9.2 ± 3.1/2.9
+  Brawls = 4.3 ± 2.0 vs 4.4 ± 2.0
+  Fastbreaks = 2.5 ± 1.6 vs 2.9 ± 1.8
+  Substitutions = 12.2 ± 3.0 vs 11.6 ± 3.0
+  Tiredness = 11.4 ± 1.0 vs 11.0 ± 1.0
+  Morale = 12.0 ± 4.1 vs 13.0 ± 3.9
+  Advantage = 22.5/124.0/42.7 vs 24.0/123.6/41.5
+
+Δrating=+0 (14096 samples)
+  Win% = 49.6 ± 0.4 (6985/14096)
+  Loss% = 50.4 ± 0.4 (7111/14096)
+  Draw% = 0.0 ± 0.0 (0/14096)
+  points = 59.0 ± 8.7 vs 59.2 ± 8.8
+  2pt = 25.2/53.5 ± 4.0/4.5 vs 25.3/53.7 ± 4.0/4.5
+  3pt = 2.9/7.2 ± 1.7/2.6 vs 2.9/7.2 ± 1.7/2.6
+  Def/Off Rebounds = 23.8/8.6 ± 4.2/3.0 vs 23.7/8.6 ± 4.2/3.0
+  Assists/Turnovers = 7.8/18.8 ± 2.6/4.3 vs 7.8/18.6 ± 2.6/4.3
+  Steals/Blocks = 8.6/8.9 ± 3.0/2.9 vs 8.7/8.9 ± 3.0/2.9
+  Brawls = 4.3 ± 2.0 vs 4.3 ± 2.0
   Fastbreaks = 2.7 ± 1.7 vs 2.7 ± 1.7
   Substitutions = 11.9 ± 3.0 vs 11.9 ± 3.0
   Tiredness = 11.2 ± 1.0 vs 11.3 ± 1.0
-  Morale = 12.5 ± 3.9 vs 12.5 ± 3.9
-  Advantage = 23.1/124.8/42.2 vs 23.1/122.7/42.3
+  Morale = 12.5 ± 4.0 vs 12.5 ± 4.0
+  Advantage = 23.2/124.8/42.1 vs 23.1/122.8/42.3
 
-Δrating=+1 (4500 samples)
-  Win% = 62.2 ± 0.7 (2800/4500)
-  Loss% = 37.8 ± 0.7 (1700/4500)
-  Draw% = 0.0 ± 0.0 (0/4500)
-  points = 61.3 ± 9.0 vs 56.9 ± 8.7
-  2pt = 26.2/54.5 ± 4.1/4.5 vs 24.4/52.8 ± 4.0/4.4
-  3pt = 2.9/7.3 ± 1.7/2.6 vs 2.7/7.0 ± 1.6/2.6
-  Def/Off Rebounds = 24.2/9.1 ± 4.2/3.2 vs 23.2/8.2 ± 4.3/3.0
-  Assists/Turnovers = 8.1/18.2 ± 2.7/4.3 vs 7.5/19.3 ± 2.6/4.3
-  Steals/Blocks = 9.1/9.2 ± 3.1/2.9 vs 8.2/8.7 ± 2.9/2.9
-  Brawls = 4.3 ± 2.0 vs 4.2 ± 1.9
-  Fastbreaks = 2.8 ± 1.7 vs 2.5 ± 1.6
-  Substitutions = 11.6 ± 3.0 vs 12.1 ± 3.0
-  Tiredness = 11.0 ± 1.0 vs 11.4 ± 1.0
-  Morale = 12.9 ± 3.9 vs 12.0 ± 4.1
-  Advantage = 23.9/125.5/41.7 vs 22.4/122.1/42.7
+Δrating=+1 (6795 samples)
+  Win% = 62.3 ± 0.6 (4235/6795)
+  Loss% = 37.7 ± 0.6 (2560/6795)
+  Draw% = 0.0 ± 0.0 (0/6795)
+  points = 61.5 ± 8.8 vs 57.0 ± 8.8
+  2pt = 26.3/54.3 ± 4.1/4.5 vs 24.4/52.8 ± 4.1/4.5
+  3pt = 3.0/7.4 ± 1.7/2.7 vs 2.7/7.0 ± 1.6/2.6
+  Def/Off Rebounds = 24.2/9.0 ± 4.3/3.2 vs 23.1/8.1 ± 4.2/3.0
+  Assists/Turnovers = 8.2/18.3 ± 2.7/4.3 vs 7.5/19.3 ± 2.5/4.4
+  Steals/Blocks = 9.2/9.2 ± 3.1/2.9 vs 8.3/8.6 ± 3.0/2.8
+  Brawls = 4.4 ± 2.0 vs 4.3 ± 2.0
+  Fastbreaks = 2.9 ± 1.8 vs 2.6 ± 1.6
+  Substitutions = 11.7 ± 3.0 vs 12.2 ± 3.0
+  Tiredness = 11.1 ± 1.0 vs 11.4 ± 1.0
+  Morale = 13.0 ± 3.8 vs 12.0 ± 4.0
+  Advantage = 24.0/125.5/41.4 vs 22.4/122.2/42.6
 
 Result for (
     BigPirates,
     Normal,
-    High,
+    Normal,
 ) vs (
     Arrembaggio,
     Normal,
-    Low,
+    Normal,
 )
-Δrating=+0 (4733 samples)
-  Win% = 46.3 ± 0.7 (2191/4733)
-  Loss% = 53.7 ± 0.7 (2542/4733)
-  Draw% = 0.0 ± 0.0 (0/4733)
-  points = 61.4 ± 8.7 vs 62.9 ± 9.0
-  2pt = 26.3/55.7 ± 4.1/4.5 vs 26.9/53.8 ± 4.2/4.4
-  3pt = 2.9/7.5 ± 1.7/2.7 vs 3.1/8.0 ± 1.7/2.8
-  Def/Off Rebounds = 24.3/10.4 ± 4.2/3.2 vs 23.1/7.2 ± 4.2/2.8
-  Assists/Turnovers = 8.0/19.0 ± 2.7/4.4 vs 10.0/17.2 ± 2.9/4.3
-  Steals/Blocks = 7.1/8.6 ± 2.9/2.8 vs 8.5/9.0 ± 3.0/2.9
+Δrating=-1 (6699 samples)
+  Win% = 33.0 ± 0.6 (2208/6699)
+  Loss% = 67.0 ± 0.6 (4491/6699)
+  Draw% = 0.0 ± 0.0 (0/6699)
+  points = 59.2 ± 8.8 vs 65.6 ± 9.1
+  2pt = 25.4/54.8 ± 4.1/4.5 vs 27.9/54.7 ± 4.2/4.5
+  3pt = 2.8/7.2 ± 1.7/2.6 vs 3.3/8.1 ± 1.8/2.7
+  Def/Off Rebounds = 23.6/9.7 ± 4.2/3.2 vs 23.8/7.7 ± 4.3/2.9
+  Assists/Turnovers = 7.8/19.4 ± 2.6/4.4 vs 10.4/16.8 ± 2.9/4.2
+  Steals/Blocks = 6.6/8.4 ± 2.7/2.8 vs 9.0/9.4 ± 3.1/2.9
   Brawls = 6.3 ± 2.4 vs 6.6 ± 2.5
-  Fastbreaks = 2.2 ± 1.5 vs 7.8 ± 2.9
-  Substitutions = 14.4 ± 3.4 vs 15.6 ± 3.4
-  Tiredness = 12.0 ± 1.2 vs 13.3 ± 1.3
-  Morale = 12.4 ± 4.1 vs 13.1 ± 3.9
-  Advantage = 24.1/131.7/43.1 vs 24.7/125.7/40.7
+  Fastbreaks = 2.0 ± 1.5 vs 8.3 ± 3.0
+  Substitutions = 14.5 ± 3.4 vs 15.5 ± 3.3
+  Tiredness = 12.2 ± 1.2 vs 13.2 ± 1.2
+  Morale = 12.0 ± 4.2 vs 13.4 ± 3.8
+  Advantage = 23.2/130.9/43.7 vs 25.7/126.5/40.0
 
-Δrating=+1 (4469 samples)
-  Win% = 58.2 ± 0.7 (2601/4469)
-  Loss% = 41.8 ± 0.7 (1868/4469)
-  Draw% = 0.0 ± 0.0 (0/4469)
-  points = 64.0 ± 8.7 vs 61.1 ± 9.0
-  2pt = 27.4/56.4 ± 4.1/4.5 vs 26.0/53.1 ± 4.1/4.4
-  3pt = 3.0/7.6 ± 1.7/2.6 vs 3.0/7.8 ± 1.7/2.6
-  Def/Off Rebounds = 24.7/10.8 ± 4.2/3.4 vs 22.3/6.8 ± 4.2/2.8
-  Assists/Turnovers = 8.3/18.4 ± 2.7/4.3 vs 9.8/17.6 ± 2.8/4.2
-  Steals/Blocks = 7.4/8.8 ± 2.9/2.8 vs 8.1/8.7 ± 2.9/2.8
+Δrating=+0 (14217 samples)
+  Win% = 46.5 ± 0.4 (6615/14217)
+  Loss% = 53.5 ± 0.4 (7602/14217)
+  Draw% = 0.0 ± 0.0 (0/14217)
+  points = 61.6 ± 8.7 vs 63.0 ± 9.0
+  2pt = 26.4/55.7 ± 4.0/4.5 vs 26.8/53.8 ± 4.2/4.5
+  3pt = 2.9/7.4 ± 1.7/2.6 vs 3.1/8.0 ± 1.7/2.7
+  Def/Off Rebounds = 24.3/10.2 ± 4.2/3.3 vs 23.1/7.3 ± 4.2/2.8
+  Assists/Turnovers = 8.0/18.9 ± 2.7/4.4 vs 10.0/17.3 ± 2.9/4.2
+  Steals/Blocks = 7.0/8.6 ± 2.8/2.8 vs 8.5/9.1 ± 3.1/2.9
   Brawls = 6.4 ± 2.4 vs 6.6 ± 2.5
-  Fastbreaks = 2.3 ± 1.5 vs 7.4 ± 2.8
-  Substitutions = 14.2 ± 3.5 vs 15.9 ± 3.3
-  Tiredness = 11.9 ± 1.2 vs 13.6 ± 1.2
-  Morale = 12.9 ± 4.0 vs 12.6 ± 4.0
-  Advantage = 24.8/132.2/42.4 vs 24.2/125.1/41.1
+  Fastbreaks = 2.2 ± 1.5 vs 7.8 ± 3.0
+  Substitutions = 14.3 ± 3.5 vs 15.8 ± 3.3
+  Tiredness = 12.0 ± 1.2 vs 13.4 ± 1.2
+  Morale = 12.4 ± 4.1 vs 13.0 ± 3.9
+  Advantage = 24.0/131.6/43.2 vs 24.8/125.9/40.7
+
+Δrating=+1 (6739 samples)
+  Win% = 59.1 ± 0.6 (3982/6739)
+  Loss% = 40.9 ± 0.6 (2757/6739)
+  Draw% = 0.0 ± 0.0 (0/6739)
+  points = 64.0 ± 8.8 vs 60.8 ± 9.0
+  2pt = 27.4/56.4 ± 4.1/4.6 vs 25.8/53.0 ± 4.1/4.5
+  3pt = 3.1/7.6 ± 1.7/2.7 vs 3.0/7.9 ± 1.7/2.6
+  Def/Off Rebounds = 24.8/10.8 ± 4.2/3.4 vs 22.4/6.9 ± 4.2/2.8
+  Assists/Turnovers = 8.3/18.5 ± 2.7/4.4 vs 9.7/17.7 ± 2.8/4.3
+  Steals/Blocks = 7.5/8.8 ± 2.9/2.9 vs 8.1/8.8 ± 3.0/2.8
+  Brawls = 6.4 ± 2.5 vs 6.6 ± 2.5
+  Fastbreaks = 2.4 ± 1.6 vs 7.4 ± 2.9
+  Substitutions = 14.2 ± 3.5 vs 16.0 ± 3.3
+  Tiredness = 11.8 ± 1.2 vs 13.7 ± 1.3
+  Morale = 13.0 ± 4.0 vs 12.5 ± 4.0
+  Advantage = 24.9/132.2/42.5 vs 24.0/125.4/41.3
 
 Result for (
     BigPirates,
     Normal,
-    High,
+    Normal,
 ) vs (
     Shooters,
     Normal,
-    Low,
+    Normal,
 )
-Δrating=+0 (4725 samples)
-  Win% = 51.1 ± 0.7 (2414/4725)
-  Loss% = 48.9 ± 0.7 (2311/4725)
-  Draw% = 0.0 ± 0.0 (0/4725)
-  points = 64.3 ± 8.7 vs 63.6 ± 10.0
-  2pt = 28.1/58.0 ± 4.1/4.5 vs 17.2/38.5 ± 3.5/4.5
-  3pt = 2.7/7.0 ± 1.6/2.6 vs 9.7/23.5 ± 2.9/4.1
-  Def/Off Rebounds = 27.8/11.7 ± 4.2/3.4 vs 22.0/6.9 ± 4.2/2.7
-  Assists/Turnovers = 7.8/18.6 ± 2.6/4.3 vs 16.2/16.9 ± 3.5/4.1
-  Steals/Blocks = 7.3/8.6 ± 2.9/2.8 vs 8.2/9.1 ± 2.9/3.0
-  Brawls = 3.8 ± 1.9 vs 3.7 ± 1.8
-  Fastbreaks = 2.3 ± 1.6 vs 3.6 ± 2.0
-  Substitutions = 12.5 ± 2.9 vs 13.1 ± 2.9
+Δrating=-1 (6693 samples)
+  Win% = 39.5 ± 0.6 (2645/6693)
+  Loss% = 60.5 ± 0.6 (4048/6693)
+  Draw% = 0.0 ± 0.0 (0/6693)
+  points = 61.9 ± 8.8 vs 66.1 ± 10.3
+  2pt = 27.1/57.1 ± 4.1/4.5 vs 17.9/39.0 ± 3.7/4.7
+  3pt = 2.6/6.8 ± 1.6/2.5 vs 10.1/24.1 ± 2.9/4.1
+  Def/Off Rebounds = 27.2/11.1 ± 4.4/3.5 vs 22.7/7.5 ± 4.3/2.9
+  Assists/Turnovers = 7.4/19.0 ± 2.6/4.3 vs 16.8/16.3 ± 3.6/4.1
+  Steals/Blocks = 6.8/8.4 ± 2.7/2.8 vs 8.4/9.3 ± 3.0/2.9
+  Brawls = 3.7 ± 1.9 vs 3.7 ± 1.8
+  Fastbreaks = 2.1 ± 1.5 vs 3.8 ± 2.0
+  Substitutions = 12.7 ± 2.8 vs 12.8 ± 2.9
+  Tiredness = 11.9 ± 1.0 vs 12.1 ± 1.1
+  Morale = 13.7 ± 3.9 vs 11.7 ± 4.0
+  Advantage = 24.4/129.2/43.6 vs 26.0/125.9/41.5
+
+Δrating=+0 (14135 samples)
+  Win% = 53.3 ± 0.4 (7539/14135)
+  Loss% = 46.7 ± 0.4 (6596/14135)
+  Draw% = 0.0 ± 0.0 (0/14135)
+  points = 64.4 ± 8.7 vs 63.3 ± 10.0
+  2pt = 28.1/58.1 ± 4.1/4.5 vs 17.1/38.5 ± 3.7/4.7
+  3pt = 2.7/7.0 ± 1.6/2.5 vs 9.7/23.5 ± 2.9/4.1
+  Def/Off Rebounds = 27.8/11.7 ± 4.3/3.5 vs 22.1/7.0 ± 4.2/2.7
+  Assists/Turnovers = 7.7/18.4 ± 2.6/4.3 vs 16.2/16.8 ± 3.5/4.1
+  Steals/Blocks = 7.3/8.6 ± 2.8/2.8 vs 7.9/9.0 ± 2.9/2.9
+  Brawls = 3.8 ± 1.8 vs 3.7 ± 1.8
+  Fastbreaks = 2.3 ± 1.6 vs 3.5 ± 1.9
+  Substitutions = 12.4 ± 2.8 vs 13.0 ± 2.9
   Tiredness = 11.7 ± 1.0 vs 12.3 ± 1.1
-  Morale = 14.1 ± 3.8 vs 11.3 ± 4.0
-  Advantage = 25.1/130.0/43.3 vs 25.1/125.1/41.9
+  Morale = 14.0 ± 3.8 vs 11.3 ± 4.1
+  Advantage = 25.3/129.9/43.0 vs 25.0/125.0/42.1
 
-Δrating=+1 (4458 samples)
-  Win% = 63.4 ± 0.7 (2826/4458)
-  Loss% = 36.6 ± 0.7 (1632/4458)
-  Draw% = 0.0 ± 0.0 (0/4458)
-  points = 66.6 ± 8.7 vs 61.5 ± 9.8
-  2pt = 29.1/58.6 ± 4.1/4.7 vs 16.6/38.0 ± 3.6/4.6
-  3pt = 2.8/7.2 ± 1.7/2.6 vs 9.4/23.1 ± 2.8/4.1
-  Def/Off Rebounds = 28.3/12.2 ± 4.4/3.6 vs 21.3/6.5 ± 4.1/2.7
-  Assists/Turnovers = 8.0/18.2 ± 2.7/4.3 vs 15.8/17.3 ± 3.5/4.2
-  Steals/Blocks = 7.7/8.8 ± 3.0/2.9 vs 7.8/8.8 ± 2.9/2.8
+Δrating=+1 (6759 samples)
+  Win% = 66.2 ± 0.6 (4472/6759)
+  Loss% = 33.8 ± 0.6 (2287/6759)
+  Draw% = 0.0 ± 0.0 (0/6759)
+  points = 66.9 ± 8.8 vs 61.0 ± 10.1
+  2pt = 29.2/58.9 ± 4.1/4.6 vs 16.5/37.9 ± 3.6/4.6
+  3pt = 2.8/7.1 ± 1.7/2.6 vs 9.4/23.2 ± 2.9/4.1
+  Def/Off Rebounds = 28.3/12.2 ± 4.4/3.6 vs 21.4/6.6 ± 4.2/2.7
+  Assists/Turnovers = 8.0/17.9 ± 2.7/4.2 vs 15.7/17.2 ± 3.5/4.2
+  Steals/Blocks = 7.7/8.8 ± 3.0/2.9 vs 7.4/8.8 ± 2.8/2.9
   Brawls = 3.8 ± 1.8 vs 3.6 ± 1.8
-  Fastbreaks = 2.4 ± 1.6 vs 3.4 ± 1.9
-  Substitutions = 12.2 ± 2.8 vs 13.2 ± 2.9
+  Fastbreaks = 2.4 ± 1.6 vs 3.3 ± 1.8
+  Substitutions = 12.1 ± 2.9 vs 13.3 ± 2.9
   Tiredness = 11.5 ± 1.0 vs 12.5 ± 1.1
-  Morale = 14.5 ± 3.7 vs 10.8 ± 4.2
-  Advantage = 25.9/130.5/42.4 vs 24.4/124.6/42.4
+  Morale = 14.5 ± 3.6 vs 10.7 ± 4.1
+  Advantage = 26.1/130.4/42.4 vs 24.3/124.6/42.5
 
 Result for (
     Arrembaggio,
     Normal,
-    High,
+    Normal,
 ) vs (
     Arrembaggio,
     Normal,
-    Low,
+    Normal,
 )
-Δrating=+0 (4648 samples)
-  Win% = 51.5 ± 0.7 (2394/4648)
-  Loss% = 48.5 ± 0.7 (2254/4648)
-  Draw% = 0.0 ± 0.0 (0/4648)
-  points = 64.7 ± 9.1 vs 64.3 ± 8.9
-  2pt = 27.4/55.6 ± 4.2/4.6 vs 27.1/55.3 ± 4.1/4.6
-  3pt = 3.3/8.5 ± 1.8/2.7 vs 3.3/8.5 ± 1.8/2.8
-  Def/Off Rebounds = 24.3/8.8 ± 4.1/3.1 vs 24.2/8.6 ± 4.3/3.0
-  Assists/Turnovers = 10.7/19.1 ± 3.0/4.4 vs 10.6/19.2 ± 3.0/4.4
-  Steals/Blocks = 8.4/9.3 ± 3.1/2.9 vs 8.3/9.3 ± 3.0/3.0
+Δrating=-1 (6713 samples)
+  Win% = 35.2 ± 0.6 (2362/6713)
+  Loss% = 64.8 ± 0.6 (4351/6713)
+  Draw% = 0.0 ± 0.0 (0/6713)
+  points = 61.8 ± 9.1 vs 67.3 ± 9.1
+  2pt = 26.2/54.6 ± 4.1/4.6 vs 28.5/56.2 ± 4.2/4.6
+  3pt = 3.2/8.3 ± 1.7/2.8 vs 3.5/8.7 ± 1.8/2.8
+  Def/Off Rebounds = 23.4/8.2 ± 4.3/3.1 vs 24.9/9.2 ± 4.3/3.2
+  Assists/Turnovers = 10.3/19.8 ± 2.9/4.5 vs 11.0/18.8 ± 3.0/4.4
+  Steals/Blocks = 7.8/8.9 ± 3.0/2.9 vs 9.0/9.5 ± 3.2/2.9
+  Brawls = 8.7 ± 2.9 vs 8.9 ± 2.9
+  Fastbreaks = 7.1 ± 2.9 vs 8.3 ± 3.1
+  Substitutions = 18.6 ± 3.7 vs 18.2 ± 3.8
+  Tiredness = 14.7 ± 1.5 vs 14.2 ± 1.4
+  Morale = 12.0 ± 4.4 vs 13.3 ± 4.0
+  Advantage = 23.5/135.7/44.4 vs 25.2/134.5/42.9
+
+Δrating=+0 (14072 samples)
+  Win% = 50.0 ± 0.4 (7040/14072)
+  Loss% = 50.0 ± 0.4 (7032/14072)
+  Draw% = 0.0 ± 0.0 (0/14072)
+  points = 64.5 ± 9.0 vs 64.5 ± 9.1
+  2pt = 27.3/55.4 ± 4.2/4.6 vs 27.3/55.4 ± 4.2/4.6
+  3pt = 3.3/8.5 ± 1.8/2.8 vs 3.3/8.5 ± 1.8/2.8
+  Def/Off Rebounds = 24.3/8.7 ± 4.3/3.1 vs 24.2/8.7 ± 4.3/3.1
+  Assists/Turnovers = 10.6/19.2 ± 3.0/4.4 vs 10.6/19.2 ± 3.0/4.4
+  Steals/Blocks = 8.3/9.3 ± 3.0/2.9 vs 8.3/9.2 ± 3.1/2.9
   Brawls = 8.8 ± 2.9 vs 8.8 ± 2.9
-  Fastbreaks = 7.7 ± 2.9 vs 7.6 ± 2.9
-  Substitutions = 18.5 ± 3.8 vs 18.4 ± 3.8
-  Tiredness = 14.4 ± 1.4 vs 14.4 ± 1.5
+  Fastbreaks = 7.6 ± 2.9 vs 7.6 ± 3.0
+  Substitutions = 18.5 ± 3.7 vs 18.4 ± 3.7
+  Tiredness = 14.5 ± 1.4 vs 14.5 ± 1.4
   Morale = 12.7 ± 4.2 vs 12.6 ± 4.2
-  Advantage = 24.4/136.2/43.7 vs 24.3/133.8/43.8
+  Advantage = 24.2/136.1/43.8 vs 24.3/134.2/43.8
 
-Δrating=+1 (4553 samples)
-  Win% = 62.3 ± 0.7 (2835/4553)
-  Loss% = 37.7 ± 0.7 (1718/4553)
-  Draw% = 0.0 ± 0.0 (0/4553)
-  points = 67.0 ± 9.1 vs 62.3 ± 9.0
-  2pt = 28.4/56.3 ± 4.2/4.7 vs 26.3/54.6 ± 4.2/4.6
-  3pt = 3.4/8.6 ± 1.8/2.8 vs 3.2/8.3 ± 1.7/2.7
-  Def/Off Rebounds = 24.8/9.2 ± 4.3/3.3 vs 23.5/8.3 ± 4.2/3.0
-  Assists/Turnovers = 10.9/18.7 ± 3.0/4.4 vs 10.3/19.7 ± 2.9/4.5
-  Steals/Blocks = 8.9/9.5 ± 3.1/3.0 vs 7.9/9.1 ± 2.9/2.9
-  Brawls = 8.9 ± 3.0 vs 8.7 ± 2.9
-  Fastbreaks = 8.2 ± 3.0 vs 7.2 ± 2.8
-  Substitutions = 18.2 ± 3.7 vs 18.6 ± 3.8
-  Tiredness = 14.1 ± 1.4 vs 14.7 ± 1.4
-  Morale = 13.3 ± 4.0 vs 12.1 ± 4.3
-  Advantage = 25.1/136.6/43.2 vs 23.6/133.4/44.2
+Δrating=+1 (6767 samples)
+  Win% = 65.6 ± 0.6 (4438/6767)
+  Loss% = 34.4 ± 0.6 (2329/6767)
+  Draw% = 0.0 ± 0.0 (0/6767)
+  points = 67.5 ± 9.1 vs 61.7 ± 9.0
+  2pt = 28.5/56.4 ± 4.3/4.7 vs 26.1/54.5 ± 4.2/4.6
+  3pt = 3.5/8.7 ± 1.8/2.9 vs 3.2/8.3 ± 1.7/2.7
+  Def/Off Rebounds = 24.9/9.3 ± 4.2/3.2 vs 23.4/8.2 ± 4.3/3.0
+  Assists/Turnovers = 11.0/18.6 ± 3.1/4.3 vs 10.2/19.9 ± 2.9/4.5
+  Steals/Blocks = 8.9/9.6 ± 3.2/3.0 vs 7.8/8.9 ± 3.0/2.9
+  Brawls = 8.9 ± 2.9 vs 8.8 ± 2.9
+  Fastbreaks = 8.2 ± 3.1 vs 7.1 ± 2.9
+  Substitutions = 18.2 ± 3.8 vs 18.7 ± 3.7
+  Tiredness = 14.2 ± 1.4 vs 14.7 ± 1.4
+  Morale = 13.2 ± 4.0 vs 12.0 ± 4.4
+  Advantage = 25.2/136.6/43.0 vs 23.4/133.6/44.3
 
 Result for (
     Arrembaggio,
     Normal,
-    High,
+    Normal,
 ) vs (
     Shooters,
     Normal,
-    Low,
+    Normal,
 )
-Δrating=+0 (4659 samples)
-  Win% = 50.7 ± 0.7 (2363/4659)
-  Loss% = 49.3 ± 0.7 (2296/4659)
-  Draw% = 0.0 ± 0.0 (0/4659)
-  points = 66.5 ± 9.0 vs 66.4 ± 9.9
-  2pt = 28.6/57.2 ± 4.2/4.6 vs 18.1/40.3 ± 3.7/4.7
-  3pt = 3.1/8.1 ± 1.7/2.7 vs 10.1/24.6 ± 2.9/4.2
-  Def/Off Rebounds = 28.0/10.1 ± 4.5/3.3 vs 23.1/8.4 ± 4.2/3.0
-  Assists/Turnovers = 10.4/19.3 ± 3.0/4.5 vs 16.9/17.9 ± 3.5/4.2
-  Steals/Blocks = 7.9/9.1 ± 3.0/2.9 vs 8.5/9.3 ± 3.1/2.9
-  Brawls = 5.8 ± 2.4 vs 5.5 ± 2.2
-  Fastbreaks = 7.2 ± 2.8 vs 3.8 ± 2.0
-  Substitutions = 16.1 ± 3.2 vs 15.4 ± 3.3
-  Tiredness = 13.9 ± 1.2 vs 13.3 ± 1.2
-  Morale = 14.4 ± 3.8 vs 11.2 ± 4.2
-  Advantage = 25.1/134.0/43.8 vs 25.7/133.5/44.4
+Δrating=-1 (6763 samples)
+  Win% = 33.9 ± 0.6 (2291/6763)
+  Loss% = 66.1 ± 0.6 (4472/6763)
+  Draw% = 0.0 ± 0.0 (0/6763)
+  points = 62.9 ± 9.1 vs 69.7 ± 10.0
+  2pt = 26.9/56.0 ± 4.2/4.6 vs 19.0/41.1 ± 3.8/4.8
+  3pt = 3.0/8.0 ± 1.7/2.7 vs 10.5/25.3 ± 3.0/4.2
+  Def/Off Rebounds = 27.3/9.5 ± 4.4/3.2 vs 24.2/9.2 ± 4.3/3.3
+  Assists/Turnovers = 10.0/20.1 ± 2.9/4.5 vs 17.6/17.3 ± 3.6/4.2
+  Steals/Blocks = 7.2/8.8 ± 2.9/2.9 vs 8.9/9.6 ± 3.1/3.0
+  Brawls = 5.8 ± 2.3 vs 5.5 ± 2.2
+  Fastbreaks = 6.6 ± 2.8 vs 4.0 ± 2.1
+  Substitutions = 16.4 ± 3.2 vs 15.1 ± 3.3
+  Tiredness = 14.3 ± 1.3 vs 13.0 ± 1.2
+  Morale = 13.5 ± 4.0 vs 12.0 ± 4.1
+  Advantage = 23.8/133.6/44.8 vs 26.7/134.3/43.9
 
-Δrating=+1 (4520 samples)
-  Win% = 61.0 ± 0.7 (2756/4520)
-  Loss% = 39.0 ± 0.7 (1764/4520)
-  Draw% = 0.0 ± 0.0 (0/4520)
-  points = 68.8 ± 9.2 vs 64.3 ± 10.1
-  2pt = 29.5/57.9 ± 4.3/4.7 vs 17.4/40.0 ± 3.7/4.7
-  3pt = 3.3/8.3 ± 1.7/2.7 vs 9.8/24.2 ± 2.9/4.2
-  Def/Off Rebounds = 28.5/10.5 ± 4.5/3.4 vs 22.5/8.0 ± 4.2/3.0
-  Assists/Turnovers = 10.6/18.8 ± 3.0/4.4 vs 16.5/18.3 ± 3.6/4.3
-  Steals/Blocks = 8.2/9.3 ± 3.0/2.9 vs 8.0/8.9 ± 3.0/2.9
+Δrating=+0 (14128 samples)
+  Win% = 46.7 ± 0.4 (6594/14128)
+  Loss% = 53.3 ± 0.4 (7534/14128)
+  Draw% = 0.0 ± 0.0 (0/14128)
+  points = 65.4 ± 8.9 vs 66.7 ± 10.1
+  2pt = 28.0/57.1 ± 4.2/4.7 vs 18.1/40.4 ± 3.7/4.7
+  3pt = 3.1/8.1 ± 1.7/2.7 vs 10.2/24.8 ± 3.0/4.2
+  Def/Off Rebounds = 28.0/10.1 ± 4.4/3.3 vs 23.5/8.5 ± 4.2/3.0
+  Assists/Turnovers = 10.4/19.6 ± 2.9/4.4 vs 17.0/18.0 ± 3.6/4.3
+  Steals/Blocks = 7.8/9.1 ± 3.0/2.9 vs 8.4/9.4 ± 3.1/3.0
+  Brawls = 5.9 ± 2.3 vs 5.5 ± 2.2
+  Fastbreaks = 7.1 ± 2.8 vs 3.8 ± 2.0
+  Substitutions = 16.2 ± 3.2 vs 15.4 ± 3.3
+  Tiredness = 14.0 ± 1.2 vs 13.3 ± 1.2
+  Morale = 14.1 ± 3.9 vs 11.3 ± 4.2
+  Advantage = 24.6/134.4/44.4 vs 25.8/133.7/44.5
+
+Δrating=+1 (6619 samples)
+  Win% = 60.1 ± 0.6 (3981/6619)
+  Loss% = 39.9 ± 0.6 (2638/6619)
+  Draw% = 0.0 ± 0.0 (0/6619)
+  points = 68.1 ± 9.1 vs 64.2 ± 10.1
+  2pt = 29.2/57.9 ± 4.3/4.7 vs 17.5/40.0 ± 3.7/4.7
+  3pt = 3.3/8.3 ± 1.8/2.8 vs 9.8/24.2 ± 2.9/4.2
+  Def/Off Rebounds = 28.5/10.6 ± 4.5/3.4 vs 22.7/8.1 ± 4.2/3.0
+  Assists/Turnovers = 10.8/19.0 ± 3.0/4.4 vs 16.5/18.4 ± 3.5/4.3
+  Steals/Blocks = 8.3/9.3 ± 3.1/3.0 vs 7.8/9.1 ± 3.0/2.9
   Brawls = 6.0 ± 2.4 vs 5.5 ± 2.2
-  Fastbreaks = 7.6 ± 2.9 vs 3.5 ± 1.9
-  Substitutions = 16.0 ± 3.3 vs 15.6 ± 3.4
-  Tiredness = 13.7 ± 1.2 vs 13.5 ± 1.2
-  Morale = 14.8 ± 3.7 vs 10.7 ± 4.4
-  Advantage = 25.8/134.7/43.1 vs 25.0/132.9/45.0
+  Fastbreaks = 7.6 ± 3.0 vs 3.5 ± 1.9
+  Substitutions = 15.9 ± 3.3 vs 15.6 ± 3.3
+  Tiredness = 13.8 ± 1.2 vs 13.5 ± 1.2
+  Morale = 14.6 ± 3.6 vs 10.8 ± 4.3
+  Advantage = 25.5/134.8/43.6 vs 25.0/133.1/45.1
 
 Result for (
     Shooters,
     Normal,
-    High,
+    Normal,
 ) vs (
     Shooters,
     Normal,
-    Low,
+    Normal,
 )
-Δrating=+0 (4725 samples)
-  Win% = 52.6 ± 0.7 (2483/4725)
-  Loss% = 47.4 ± 0.7 (2242/4725)
-  Draw% = 0.0 ± 0.0 (0/4725)
-  points = 67.7 ± 10.2 vs 67.1 ± 10.1
-  2pt = 19.4/42.6 ± 3.8/4.9 vs 19.2/42.5 ± 3.8/4.7
-  3pt = 9.7/23.5 ± 2.9/4.2 vs 9.5/23.4 ± 2.9/4.2
-  Def/Off Rebounds = 27.1/9.7 ± 4.3/3.1 vs 27.1/9.7 ± 4.4/3.2
-  Assists/Turnovers = 16.7/19.0 ± 3.5/4.4 vs 16.4/19.2 ± 3.5/4.4
-  Steals/Blocks = 9.0/9.5 ± 3.2/2.9 vs 8.8/9.4 ± 3.1/3.0
+Δrating=-1 (6591 samples)
+  Win% = 36.8 ± 0.6 (2423/6591)
+  Loss% = 63.2 ± 0.6 (4168/6591)
+  Draw% = 0.0 ± 0.0 (0/6591)
+  points = 64.6 ± 10.1 vs 69.9 ± 10.2
+  2pt = 18.5/42.0 ± 3.8/4.8 vs 20.1/43.2 ± 3.9/4.9
+  3pt = 9.2/22.9 ± 2.8/4.1 vs 9.9/23.9 ± 2.9/4.3
+  Def/Off Rebounds = 26.4/9.1 ± 4.4/3.2 vs 27.7/10.3 ± 4.4/3.5
+  Assists/Turnovers = 16.0/19.9 ± 3.5/4.5 vs 17.1/18.8 ± 3.6/4.4
+  Steals/Blocks = 8.4/9.2 ± 3.0/2.9 vs 9.4/9.8 ± 3.2/3.0
+  Brawls = 3.0 ± 1.6 vs 3.0 ± 1.6
+  Fastbreaks = 3.7 ± 2.0 vs 4.3 ± 2.2
+  Substitutions = 13.9 ± 2.8 vs 13.3 ± 2.7
+  Tiredness = 13.2 ± 1.1 vs 12.8 ± 1.0
+  Morale = 12.3 ± 4.2 vs 13.3 ± 3.9
+  Advantage = 24.3/133.5/46.5 vs 26.0/133.1/45.6
+
+Δrating=+0 (14238 samples)
+  Win% = 49.5 ± 0.4 (7049/14238)
+  Loss% = 50.5 ± 0.4 (7189/14238)
+  Draw% = 0.0 ± 0.0 (0/14238)
+  points = 67.0 ± 10.0 vs 67.1 ± 10.1
+  2pt = 19.1/42.5 ± 3.8/4.8 vs 19.2/42.6 ± 3.8/4.8
+  3pt = 9.6/23.5 ± 2.9/4.2 vs 9.6/23.5 ± 2.9/4.1
+  Def/Off Rebounds = 27.2/9.7 ± 4.4/3.2 vs 27.1/9.7 ± 4.4/3.2
+  Assists/Turnovers = 16.6/19.4 ± 3.5/4.5 vs 16.6/19.2 ± 3.6/4.4
+  Steals/Blocks = 8.8/9.6 ± 3.1/3.0 vs 8.9/9.5 ± 3.2/3.0
   Brawls = 3.0 ± 1.6 vs 3.0 ± 1.6
   Fastbreaks = 4.0 ± 2.1 vs 4.0 ± 2.1
-  Substitutions = 13.7 ± 2.8 vs 13.6 ± 2.9
-  Tiredness = 12.9 ± 1.1 vs 13.0 ± 1.1
-  Morale = 12.9 ± 4.0 vs 12.8 ± 4.0
-  Advantage = 25.3/134.2/46.0 vs 25.2/132.1/46.0
+  Substitutions = 13.6 ± 2.8 vs 13.6 ± 2.8
+  Tiredness = 13.0 ± 1.1 vs 13.0 ± 1.1
+  Morale = 12.8 ± 4.1 vs 12.8 ± 4.0
+  Advantage = 25.0/134.2/46.1 vs 25.2/132.4/46.3
 
-Δrating=+1 (4452 samples)
-  Win% = 63.0 ± 0.7 (2804/4452)
-  Loss% = 37.0 ± 0.7 (1648/4452)
-  Draw% = 0.0 ± 0.0 (0/4452)
-  points = 69.9 ± 10.2 vs 64.6 ± 10.2
-  2pt = 20.1/43.1 ± 3.9/4.8 vs 18.6/42.2 ± 3.8/4.8
-  3pt = 9.9/24.0 ± 2.9/4.2 vs 9.2/22.9 ± 2.8/4.1
-  Def/Off Rebounds = 27.7/10.3 ± 4.5/3.4 vs 26.4/9.2 ± 4.4/3.2
-  Assists/Turnovers = 17.0/18.8 ± 3.6/4.3 vs 15.9/19.7 ± 3.5/4.5
-  Steals/Blocks = 9.4/9.8 ± 3.2/3.1 vs 8.5/9.3 ± 3.1/3.0
-  Brawls = 3.0 ± 1.6 vs 3.0 ± 1.6
-  Fastbreaks = 4.2 ± 2.1 vs 3.8 ± 2.0
-  Substitutions = 13.4 ± 2.8 vs 13.8 ± 2.8
+Δrating=+1 (6722 samples)
+  Win% = 64.0 ± 0.6 (4305/6722)
+  Loss% = 36.0 ± 0.6 (2417/6722)
+  Draw% = 0.0 ± 0.0 (0/6722)
+  points = 70.0 ± 10.2 vs 64.4 ± 10.1
+  2pt = 20.0/43.1 ± 3.9/4.9 vs 18.4/42.0 ± 3.8/4.8
+  3pt = 10.0/24.1 ± 3.0/4.2 vs 9.2/22.9 ± 2.9/4.1
+  Def/Off Rebounds = 27.7/10.3 ± 4.5/3.4 vs 26.4/9.1 ± 4.5/3.2
+  Assists/Turnovers = 17.2/18.8 ± 3.6/4.4 vs 16.0/19.9 ± 3.6/4.6
+  Steals/Blocks = 9.5/9.9 ± 3.3/3.1 vs 8.4/9.3 ± 3.1/3.0
+  Brawls = 3.0 ± 1.6 vs 2.9 ± 1.6
+  Fastbreaks = 4.3 ± 2.1 vs 3.7 ± 2.1
+  Substitutions = 13.3 ± 2.8 vs 13.8 ± 2.8
   Tiredness = 12.7 ± 1.1 vs 13.2 ± 1.1
-  Morale = 13.3 ± 4.0 vs 12.4 ± 4.2
-  Advantage = 26.0/135.0/45.5 vs 24.3/131.5/46.8
+  Morale = 13.3 ± 3.9 vs 12.3 ± 4.2
+  Advantage = 26.0/135.1/45.6 vs 24.2/131.6/46.8
 
 test tests::test_multiple_games ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 105.34s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 152.81s
 
 
 running 0 tests
