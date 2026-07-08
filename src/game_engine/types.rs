@@ -309,7 +309,9 @@ impl Rated for TeamInGame {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Display, EnumIter, PartialEq, Serialize_repr, Deserialize_repr)]
+#[derive(
+    Debug, Clone, Copy, Default, Display, EnumIter, PartialEq, Serialize_repr, Deserialize_repr,
+)]
 #[repr(u8)]
 pub enum SubstitutionTendency {
     Low,
@@ -344,7 +346,9 @@ impl SubstitutionTendency {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Display, EnumIter, PartialEq, Serialize_repr, Deserialize_repr)]
+#[derive(
+    Debug, Clone, Copy, Default, Display, EnumIter, PartialEq, Serialize_repr, Deserialize_repr,
+)]
 #[repr(u8)]
 pub enum GamePositionFluidity {
     Low,
@@ -372,14 +376,16 @@ impl GamePositionFluidity {
 
     pub const fn fitness_exponent(&self) -> f32 {
         match self {
-            Self::Low => 1.5,
+            Self::Low => 1.75,
             Self::Normal => 1.0,
             Self::High => 0.6,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Display, EnumIter, PartialEq, Serialize_repr, Deserialize_repr)]
+#[derive(
+    Debug, Clone, Copy, Default, Display, EnumIter, PartialEq, Serialize_repr, Deserialize_repr,
+)]
 #[repr(u8)]
 pub enum InGameDrinking {
     None,

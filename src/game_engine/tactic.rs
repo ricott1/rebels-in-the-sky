@@ -93,9 +93,9 @@ impl Tactic {
 
     pub fn playing_tiredness_modifier(&self) -> f32 {
         match self {
-            Self::Balanced => 0.85,
+            Self::Balanced => 0.825,
             Self::BigPirates => 1.0,
-            Self::Arrembaggio => 1.15,
+            Self::Arrembaggio => 1.16,
             Self::Shooters => 1.1,
         }
     }
@@ -139,7 +139,7 @@ impl Tactic {
                 Action::Post => 6,
                 Action::Brawl => 18,
                 Action::Rebound => 10,
-                Action::Fastbreak => 20,
+                Action::Fastbreak => 18,
                 _ => unreachable!(),
             },
             Self::Shooters => match action {
@@ -159,13 +159,13 @@ impl Tactic {
         // How does the tactic affect the outcome of the action from the defenders perspective?
         match self {
             Self::Balanced => match action {
-                Action::Isolation => 10,
+                Action::Isolation => 12,
                 Action::PickAndRoll => 10,
                 Action::OffTheScreen => 10,
                 Action::Post => 10,
                 Action::Brawl => 10,
                 Action::Rebound => 10,
-                Action::Fastbreak => 2,
+                Action::Fastbreak => 6,
                 _ => unreachable!(),
             },
             Self::BigPirates => match action {
@@ -192,10 +192,10 @@ impl Tactic {
                 Action::Isolation => 10,
                 Action::PickAndRoll => 12,
                 Action::OffTheScreen => 14,
-                Action::Post => 4,
+                Action::Post => 2,
                 Action::Brawl => 8,
                 Action::Rebound => 6,
-                Action::Fastbreak => 2,
+                Action::Fastbreak => 13,
                 _ => unreachable!(),
             },
         }
