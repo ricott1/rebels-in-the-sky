@@ -863,7 +863,7 @@ impl Player {
     }
 
     pub fn hire_cost(&self) -> u32 {
-        const COST_PER_VALUE: f32 = 700.0;
+        const COST_PER_VALUE: f32 = 725.0;
         let hire_age_modifier_at_birth: f32 =
             (1.25_f32).powf(1.0 + 2.1 * self.potential / MAX_SKILL);
         const HIRE_AGE_MODIFIER_AT_PEAK: f32 = 1.0;

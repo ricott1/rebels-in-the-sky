@@ -73,7 +73,7 @@ pub const BASE_DISTANCES: [u64; 5] = [
     1_000 * KILOMETERS,
 ];
 pub const BASE_TANK_CAPACITY: u32 = 60;
-pub const SPACESHIP_BASE_COST_MULTIPLIER: f32 = 1.1;
+pub const SPACESHIP_BASE_COST_MULTIPLIER: f32 = 1.15;
 
 pub const LIGHT_SPEED: f32 = 1_079_252_848.8 * KILOMETERS as f32 / HOURS as f32;
 pub const BASE_SPEED: f32 = 0.55 * LIGHT_SPEED; // Very fast ;)

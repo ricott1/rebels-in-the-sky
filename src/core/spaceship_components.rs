@@ -225,8 +225,8 @@ impl SpaceshipComponent for Hull {
 
     fn value(&self) -> u32 {
         match self {
-            Self::ShuttleSmall => 15_000,
-            Self::ShuttleStandard => 25_000,
+            Self::ShuttleSmall => 19_000,
+            Self::ShuttleStandard => 26_000,
             Self::ShuttleLarge => 45_000,
             Self::PincherStandard => 22_150,
             Self::PincherLarge => 42_000,
