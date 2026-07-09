@@ -376,7 +376,7 @@ impl GamePositionFluidity {
 
     pub const fn fitness_exponent(&self) -> f32 {
         match self {
-            Self::Low => 1.75,
+            Self::Low => 2.0,
             Self::Normal => 1.0,
             Self::High => 0.6,
         }
