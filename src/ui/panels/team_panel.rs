@@ -29,6 +29,7 @@ use crate::{
     types::{PlayerId, TeamId},
 };
 use core::fmt::Debug;
+use itertools::Itertools;
 use ratatui::crossterm;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::Margin;
@@ -141,7 +142,12 @@ impl TeamListPanel {
             % self.current_team_players_length;
     }
 
-    fn build_left_panel(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn build_left_panel(
+        &mut self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         let split = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
@@ -159,8 +165,18 @@ impl TeamListPanel {
         .bold()
         .set_hover_text("View all crews.");
 
+        let own_team = world.get_own_team()?;
+        let num_open_to_challenge = world
+            .teams
+            .values()
+            .filter(|team| {
+                own_team.can_challenge_local_team(team).is_ok()
+                    || own_team.can_challenge_network_team(team).is_ok()
+            })
+            .collect_vec()
+            .len();
         let mut filter_challenge_button = Button::new(
-            TeamView::OpenToChallenge.to_string(),
+            format!("{} ({})", TeamView::OpenToChallenge, num_open_to_challenge),
             UiCallback::SetTeamPanelView {
                 view: TeamView::OpenToChallenge,
             },
@@ -221,6 +237,8 @@ impl TeamListPanel {
         } else {
             frame.render_widget(default_block().title("Crews"), split[3]);
         }
+
+        Ok(())
     }
 
     fn build_right_panel(
@@ -529,7 +547,7 @@ impl Screen for TeamListPanel {
             Constraint::Min(IMG_FRAME_WIDTH),
         ])
         .split(area);
-        self.build_left_panel(frame, world, left_right_split[0]);
+        self.build_left_panel(frame, world, left_right_split[0])?;
         if self.all_team_ids.is_empty() {
             frame.render_widget(
                 Paragraph::new(" No crews yet!"),

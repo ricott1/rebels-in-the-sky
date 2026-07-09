@@ -62,7 +62,7 @@ const DRINKING_DROPDOWN_ID: usize = usize::MAX - 3;
 pub enum MyTeamView {
     #[default]
     Info,
-    TeamSettings,
+    GameSettings,
     Games,
     Market,
     Shipyard,
@@ -72,8 +72,8 @@ pub enum MyTeamView {
 impl MyTeamView {
     const fn next(&self) -> Self {
         match self {
-            Self::Info => Self::TeamSettings,
-            Self::TeamSettings => Self::Games,
+            Self::Info => Self::GameSettings,
+            Self::GameSettings => Self::Games,
             Self::Games => Self::Market,
             Self::Market => Self::Shipyard,
             Self::Shipyard => Self::Asteroids,
@@ -84,8 +84,8 @@ impl MyTeamView {
     const fn previous(&self) -> Self {
         match self {
             Self::Info => Self::Asteroids,
-            Self::TeamSettings => Self::Info,
-            Self::Games => Self::TeamSettings,
+            Self::GameSettings => Self::Info,
+            Self::Games => Self::GameSettings,
             Self::Market => Self::Games,
             Self::Shipyard => Self::Market,
             Self::Asteroids => Self::Shipyard,
@@ -158,9 +158,9 @@ impl MyTeamPanel {
         .set_hover_text("View crew information.");
 
         let mut view_team_button = Button::new(
-            "Team Settings",
+            "Game Settings",
             UiCallback::SetMyTeamPanelView {
-                view: MyTeamView::TeamSettings,
+                view: MyTeamView::GameSettings,
             },
         )
         .bold()
@@ -212,7 +212,7 @@ impl MyTeamPanel {
 
         match self.view {
             MyTeamView::Info => view_info_button.select(),
-            MyTeamView::TeamSettings => view_team_button.select(),
+            MyTeamView::GameSettings => view_team_button.select(),
             MyTeamView::Games => view_games_button.select(),
             MyTeamView::Market => view_market_button.select(),
             MyTeamView::Shipyard => view_shipyard_button.select(),
@@ -524,7 +524,7 @@ impl MyTeamPanel {
         let pitch_split = Layout::horizontal([Constraint::Length(41), Constraint::Length(17)])
             .split(split[0].inner(Margin::new(1, 1)));
 
-        frame.render_widget(default_block().title("Team Settings"), split[1]);
+        frame.render_widget(default_block().title("Game Settings"), split[1]);
         let settings_split = Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)])
             .split(split[1].inner(Margin::new(1, 1)));
 
@@ -2656,7 +2656,7 @@ impl Screen for MyTeamPanel {
 
         match self.view {
             MyTeamView::Info => self.render_info(frame, world, bottom_split[1])?,
-            MyTeamView::TeamSettings => self.render_team_settings(frame, world, bottom_split[1])?,
+            MyTeamView::GameSettings => self.render_team_settings(frame, world, bottom_split[1])?,
             MyTeamView::Games => self.render_games(frame, world, bottom_split[1])?,
             MyTeamView::Market => self.render_market(frame, world, bottom_split[1])?,
             MyTeamView::Shipyard => self.render_shipyard(frame, world, bottom_split[1])?,
