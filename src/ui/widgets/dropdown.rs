@@ -1,4 +1,5 @@
 use crate::ui::constants::UiStyle;
+use crate::ui::renders::default_block;
 use crate::ui::traits::InteractiveStatefulWidget;
 use crate::ui::ui_callback::{CallbackRegistry, UiCallback};
 use ratatui::crossterm;
@@ -66,6 +67,7 @@ pub struct Dropdown<'a> {
     options: Vec<Text<'a>>,
     on_select: DropdownCallback,
     hotkey: Option<KeyCode>,
+    hotkey_index: Option<usize>,
     open_direction: OpenDirection,
     block: Option<Block<'a>>,
     style: Style,
@@ -83,6 +85,7 @@ impl<'a> Dropdown<'a> {
             on_select,
             options,
             hotkey: None,
+            hotkey_index: None,
             open_direction: OpenDirection::Down,
             block: None,
             style: UiStyle::DEFAULT,
@@ -96,6 +99,12 @@ impl<'a> Dropdown<'a> {
 
     pub const fn hotkey(mut self, key: KeyCode) -> Self {
         self.hotkey = Some(key);
+        self
+    }
+
+    pub const fn hotkey_select(mut self, key: KeyCode, index: usize) -> Self {
+        self.hotkey = Some(key);
+        self.hotkey_index = Some(index);
         self
     }
 
@@ -119,7 +128,7 @@ impl<'a> Dropdown<'a> {
         self
     }
 
-    pub fn set_hover_text(mut self, hover_text: impl Into<Text<'a>>) -> Self {
+    pub fn hover_text(mut self, hover_text: impl Into<Text<'a>>) -> Self {
         self.hover_text = hover_text.into();
         self
     }
@@ -128,25 +137,40 @@ impl<'a> Dropdown<'a> {
         super::underline_hotkey(title, self.hotkey)
     }
 
+    fn border_offset(&self) -> u16 {
+        if self.block.is_some() {
+            1
+        } else {
+            0
+        }
+    }
+
     fn full_rect(&self, area: Rect) -> Rect {
-        // top border + header + one row per option + bottom border
+        // header + one row per option, plus borders when boxed
         let n = self.options.len() as u16;
         let y = match self.open_direction {
             OpenDirection::Down => area.y,
             OpenDirection::Up => area.y.saturating_sub(n),
         };
-        Rect::new(area.x, y, area.width, n.saturating_add(3))
+        let height = n.saturating_add(1 + 2 * self.border_offset());
+        Rect::new(area.x, y, area.width, height)
     }
 
     fn row_rect(&self, area: Rect, index: usize) -> Rect {
-        // Rows sit inside the borders (x + 1, width - 2) and below the header row.
+        // Rows sit inside the borders (if any) and below the header row.
         let n = self.options.len() as u16;
         let i = index as u16;
+        let b = self.border_offset();
         let y = match self.open_direction {
-            OpenDirection::Down => area.y.saturating_add(2).saturating_add(i),
-            OpenDirection::Up => area.y.saturating_sub(n).saturating_add(1).saturating_add(i),
+            OpenDirection::Down => area.y.saturating_add(1 + b).saturating_add(i),
+            OpenDirection::Up => area.y.saturating_sub(n).saturating_add(b).saturating_add(i),
         };
-        Rect::new(area.x.saturating_add(1), y, area.width.saturating_sub(2), 1)
+        Rect::new(
+            area.x.saturating_add(b),
+            y,
+            area.width.saturating_sub(2 * b),
+            1,
+        )
     }
 
     fn inner_area(&self, area: Rect) -> Rect {
@@ -164,12 +188,27 @@ impl StatefulWidget for &Dropdown<'_> {
     type State = DropdownState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        let b = self.border_offset();
         let box_area = if state.is_open {
             self.full_rect(area)
         } else {
             area
         };
-        Clear.render(box_area, buf);
+        let frame_area = if self.block.is_some() {
+            box_area
+        } else {
+            Rect::new(
+                box_area.x.saturating_sub(1),
+                box_area.y.saturating_sub(1),
+                box_area.width + 2,
+                box_area.height + 2,
+            )
+            .intersection(buf.area)
+        };
+
+        if self.block.is_some() || state.is_open {
+            Clear.render(frame_area, buf);
+        }
 
         if state.is_open {
             for (i, option) in self.options.iter().enumerate() {
@@ -192,10 +231,12 @@ impl StatefulWidget for &Dropdown<'_> {
             if let Some(title) = &self.title {
                 block = block.title(self.styled_title(title));
             }
-            block.render(box_area, buf);
+            block.render(frame_area, buf);
+        } else if state.is_open {
+            default_block().render(frame_area, buf);
         }
 
-        let header = Rect::new(area.x + 1, area.y + 1, area.width.saturating_sub(2), 1);
+        let header = Rect::new(area.x + b, area.y + b, area.width.saturating_sub(2 * b), 1);
         let is_closed_and_hovered = !state.is_open && state.hovered == area;
         if header.width > 0 {
             let marker = if state.is_open {
@@ -209,8 +250,10 @@ impl StatefulWidget for &Dropdown<'_> {
                 self.selected_style
             } else if is_closed_and_hovered {
                 self.hover_style
-            } else {
+            } else if self.block.is_some() {
                 self.style
+            } else {
+                Style::default()
             };
 
             let label = self
@@ -265,13 +308,15 @@ impl InteractiveStatefulWidget for &Dropdown<'_> {
 
         // Hotkey fires whenever this dropdown's layer is active, not only on hover.
         if let Some(key) = self.hotkey {
-            let next = (state.selected + 1) % self.options.len();
+            let index = self
+                .hotkey_index
+                .unwrap_or((state.selected + 1) % self.options.len());
             callback_registry.register_keyboard_callback(
                 key,
                 UiCallback::SelectDropdown {
                     id: self.id,
-                    index: next,
-                    on_select: Some(Box::new((self.on_select)(next))),
+                    index,
+                    on_select: Some(Box::new((self.on_select)(index))),
                 },
             );
         }
@@ -295,7 +340,7 @@ impl InteractiveStatefulWidget for &Dropdown<'_> {
             // When open, only the header row toggles (closes) so it doesn't
             // collide with the first option row.
             let toggle_rect = if state.is_open {
-                Rect::new(area.x, area.y + 1, area.width, 1)
+                Rect::new(area.x, area.y + self.border_offset(), area.width, 1)
             } else {
                 area
             };

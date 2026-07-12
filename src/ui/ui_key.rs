@@ -123,7 +123,7 @@ pub mod team {
     pub const SET_GAME_POSITION_FLUIDITY: KeyCode = KeyCode::Char('P');
     pub const SET_IN_GAME_DRINKING: KeyCode = KeyCode::Char('r');
 
-    pub const fn set_player_position(position: GamePosition) -> KeyCode {
+    pub fn set_player_position(position: GamePosition) -> KeyCode {
         match position {
             0 => KeyCode::Char('1'),
             1 => KeyCode::Char('2'),
@@ -132,7 +132,7 @@ pub mod team {
             4 => KeyCode::Char('5'),
             5 => KeyCode::Char('6'),
             6 => KeyCode::Char('7'),
-            _ => panic!("Invalid position for SET_PLAYER_POSITION"),
+            _ => panic!("Invalid position for SET_PLAYER_POSITION: {position}"),
         }
     }
 }

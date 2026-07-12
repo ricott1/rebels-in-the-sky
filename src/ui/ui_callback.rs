@@ -257,13 +257,14 @@ pub enum UiCallback {
     AssignBestTeamPositions,
     SwapPlayerPositions {
         player_id: PlayerId,
-        position: usize,
+        position: GamePosition,
     },
     TogglePitchView,
     TogglePlayerStatusView,
     TogglePlayerWidgetView,
-    NextTrainingFocus {
+    SetTrainingFocus {
         player_id: PlayerId,
+        training_focus: Option<TrainingFocus>,
     },
     TravelToPlanet {
         planet_id: PlanetId,
@@ -833,10 +834,10 @@ impl UiCallback {
         })
     }
 
-    fn swap_player_positions(player_id: PlayerId, position: usize) -> AppCallback {
+    fn swap_player_positions(player_id: PlayerId, position: GamePosition) -> AppCallback {
         Box::new(move |app: &mut App| {
             let team = app.world.get_own_team_mut()?;
-            if position >= team.player_ids.len() {
+            if position as usize >= team.player_ids.len() {
                 return Err(anyhow!(
                     "Invalid position {position}: team has only {} players.",
                     team.player_ids.len()
@@ -847,31 +848,27 @@ impl UiCallback {
                 .iter()
                 .position(|&id| id == player_id)
                 .ok_or_else(|| anyhow!("Could not find player with id {player_id}."))?;
-            team.player_ids.swap(position, current_player_position);
+            team.player_ids
+                .swap(position as usize, current_player_position);
             app.world.dirty = true;
             app.world.dirty_ui = true;
             Ok(None)
         })
     }
 
-    fn next_training_focus(player_id: PlayerId) -> AppCallback {
+    fn set_training_focus(
+        player_id: PlayerId,
+        training_focus: Option<TrainingFocus>,
+    ) -> AppCallback {
         Box::new(move |app: &mut App| {
             let player = app.world.players.get_mut_or_err(&player_id)?;
-            let team_id = if let Some(id) = player.team {
-                id
-            } else {
-                return Err(anyhow!(
-                    "Player should have a team to change training focus."
-                ));
-            };
+            let team_id = player
+                .team
+                .ok_or_else(|| anyhow!("Player should have a team to change training focus."))?;
             let team = app.world.teams.get_mut_or_err(&team_id)?;
             team.can_change_team_settings()?;
 
-            let new_focus = match player.training_focus {
-                Some(focus) => focus.next(),
-                None => Some(TrainingFocus::default()),
-            };
-            player.training_focus = new_focus;
+            player.training_focus = training_focus;
             app.world.dirty = true;
             app.world.dirty_ui = true;
             Ok(None)
@@ -2079,7 +2076,10 @@ impl UiCallback {
                 player_id,
                 position,
             } => Self::swap_player_positions(*player_id, *position)(app),
-            Self::NextTrainingFocus { player_id } => Self::next_training_focus(*player_id)(app),
+            Self::SetTrainingFocus {
+                player_id,
+                training_focus,
+            } => Self::set_training_focus(*player_id, *training_focus)(app),
             Self::TravelToPlanet { planet_id } => Self::travel_to_planet(*planet_id)(app),
             Self::ExploreAroundPlanet { duration } => Self::explore_around_planet(*duration)(app),
             Self::ZoomToPlanet {
@@ -2246,11 +2246,14 @@ impl CallbackRegistry {
     pub fn handle_mouse_event(&self, event: &MouseEvent) -> Option<UiCallback> {
         let mouse_callbacks = self.mouse_callbacks.get(&event.kind)?;
 
+        let mut best: Option<(&Rect, &UiCallback)> = None;
         let mut global: Option<&UiCallback> = None;
         for (rect, callback) in mouse_callbacks.iter() {
             match rect {
                 Some(r) if Self::contains(r, event.column, event.row) => {
-                    return Some(callback.clone());
+                    if best.map_or(true, |(b, _)| r.area() < b.area()) {
+                        best = Some((r, callback));
+                    }
                 }
                 // Callbacks with no rect are global fallbacks, tried after rects.
                 None => global = Some(callback),
@@ -2258,7 +2261,7 @@ impl CallbackRegistry {
             }
         }
 
-        global.cloned()
+        best.map(|(_, callback)| callback).or(global).cloned()
     }
 
     pub fn handle_keyboard_event(&self, key_code: &KeyCode) -> Option<UiCallback> {

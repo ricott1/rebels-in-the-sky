@@ -45,6 +45,8 @@ use std::collections::HashMap;
 use strum::IntoEnumIterator;
 
 const DROPDOWN_WIDTH: u16 = MAX_NAME_LENGTH as u16 + 2;
+const TRAINING_COLUMN_WIDTH: u16 = 10;
+const TRAINING_COLUMN_RIGHT_OFFSET: u16 = 9 + 15 + 20 + 3;
 // (col, row) offset of each position's dropdown within the court image.
 const DROPDOWN_OFFSETS: [(u16, u16); NUM_GAME_POSITIONS as usize] = [
     (7, 2),   // PG
@@ -57,6 +59,7 @@ const TACTIC_DROPDOWN_ID: usize = usize::MAX;
 const SUBSTITUTION_DROPDOWN_ID: usize = usize::MAX - 1;
 const FLUIDITY_DROPDOWN_ID: usize = usize::MAX - 2;
 const DRINKING_DROPDOWN_ID: usize = usize::MAX - 3;
+const TRAINING_DROPDOWN_ID: usize = usize::MAX - 4;
 
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub enum MyTeamView {
@@ -155,7 +158,7 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hover_text("View crew information.");
+        .hover_text("View crew information.");
 
         let mut view_team_button = Button::new(
             "Game Settings",
@@ -164,7 +167,7 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hover_text("View team information.");
+        .hover_text("View team information.");
 
         let mut view_games_button = Button::new(
             "Games",
@@ -173,7 +176,7 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hover_text("View recent games.");
+        .hover_text("View recent games.");
 
         let mut view_market_button = Button::new(
             "Market",
@@ -182,7 +185,7 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hover_text("View market, buy and sell resources.");
+        .hover_text("View market, buy and sell resources.");
 
         let mut view_shipyard_button = Button::new(
             "Shipyard",
@@ -191,7 +194,7 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hover_text("View shipyard, improve your spaceship.");
+        .hover_text("View shipyard, improve your spaceship.");
 
         let mut view_asteroids_button = Button::new(
             format!(
@@ -208,7 +211,7 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hover_text("View asteorids found during exploration.");
+        .hover_text("View asteorids found during exploration.");
 
         match self.view {
             MyTeamView::Info => view_info_button.select(),
@@ -525,8 +528,12 @@ impl MyTeamPanel {
             .split(split[0].inner(Margin::new(1, 1)));
 
         frame.render_widget(default_block().title("Game Settings"), split[1]);
-        let settings_split = Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)])
-            .split(split[1].inner(Margin::new(1, 1)));
+        let settings_split = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(1),
+            Constraint::Fill(1),
+        ])
+        .split(split[1].inner(Margin::new(2, 1)));
 
         // Render team in game positions
         let game_roster_area = pitch_split[0];
@@ -546,6 +553,17 @@ impl MyTeamPanel {
         let court = NUM_GAME_POSITIONS as usize;
         let num_dropdowns = self.position_dropdowns.len();
 
+        let selected_player_index = self.player_index.and_then(|index| {
+            let sorted_players = own_team
+                .player_ids
+                .iter()
+                .map(|id| world.players.get(id).unwrap())
+                .collect_vec()
+                .sort_by_rating();
+            let player = sorted_players[index.min(sorted_players.len() - 1)];
+            own_team.player_ids.iter().position(|id| *id == player.id)
+        });
+
         for idx in 0..num_dropdowns {
             let (rect, direction, title) = if idx < court {
                 let (ox, oy) = DROPDOWN_OFFSETS[idx];
@@ -563,7 +581,7 @@ impl MyTeamPanel {
                 (
                     rect,
                     direction,
-                    format!("Set {}", (idx as GamePosition).as_role()),
+                    format!("{}:{}", idx + 1, (idx as GamePosition).as_role()),
                 )
             } else {
                 let slot = (idx - court) as u16; // 0-based bench/out slot
@@ -574,25 +592,37 @@ impl MyTeamPanel {
                     3,
                 );
                 let title = if idx < MAX_PLAYERS_PER_GAME {
-                    format!("Set B{}", idx - court + 1)
+                    format!("{}:{}", idx + 1, (idx as GamePosition).as_role())
                 } else {
-                    "Set Out".to_string()
+                    "Out".to_string()
                 };
                 (rect, OpenDirection::Down, title)
             };
 
             let is_open = self.position_dropdowns[idx].is_open();
             let player_ids = own_team.player_ids.clone();
-            let dropdown = Dropdown::new(
+            let position = idx as GamePosition;
+            let mut dropdown = Dropdown::new(
                 idx,
                 options.clone(),
                 Box::new(move |index| UiCallback::SwapPlayerPositions {
                     player_id: player_ids[index],
-                    position: idx,
+                    position,
                 }),
             )
             .open_direction(direction)
-            .block(default_block().title(title));
+            .hover_text(format!(
+                "Set player initial position to {}.",
+                position.as_role()
+            ))
+            .title(title)
+            .block(default_block());
+            if idx < MAX_PLAYERS_PER_GAME {
+                if let Some(index) = selected_player_index {
+                    dropdown =
+                        dropdown.hotkey_select(ui_key::team::set_player_position(position), index);
+                }
+            }
             frame.render_layered_stateful_interactive_widget(
                 dropdown,
                 rect,
@@ -628,7 +658,7 @@ impl MyTeamPanel {
         )
         .hotkey(ui_key::team::SET_IN_GAME_DRINKING)
         .title("In-game drinking")
-        .set_hover_text(format!(
+        .hover_text(format!(
             "{}: {}",
             own_team.in_game_drinking,
             own_team.in_game_drinking.description()
@@ -663,7 +693,7 @@ impl MyTeamPanel {
         )
         .hotkey(ui_key::team::SET_GAME_POSITION_FLUIDITY)
         .title("Position fluidity")
-        .set_hover_text(format!(
+        .hover_text(format!(
             "{}: {}",
             own_team.game_position_fluidity,
             own_team.game_position_fluidity.description()
@@ -698,7 +728,7 @@ impl MyTeamPanel {
         )
         .hotkey(ui_key::team::SET_SUBSTITUTION_TENDENCY)
         .title("Substitutions")
-        .set_hover_text(format!(
+        .hover_text(format!(
             "{}: {}",
             own_team.substitution_tendency,
             own_team.substitution_tendency.description()
@@ -730,7 +760,7 @@ impl MyTeamPanel {
         )
         .hotkey(ui_key::team::SET_TACTIC)
         .title("tactic")
-        .set_hover_text(format!(
+        .hover_text(format!(
             "{}: {}",
             own_team.game_tactic,
             own_team.game_tactic.description()
@@ -747,7 +777,7 @@ impl MyTeamPanel {
             if tactic_is_open { 1 } else { 0 },
         );
 
-        let right_btm_split = Layout::vertical([4, 3]).split(settings_split[1]);
+        let right_btm_split = Layout::vertical([4, 3]).split(settings_split[2]);
         frame.render_widget(
             default_block().title("Accept challenges"),
             right_btm_split[0],
@@ -760,8 +790,8 @@ impl MyTeamPanel {
             UiCallback::ToggleTeamAutonomousStrategyForLocalChallenges,
             own_team.autonomous_strategy.challenge_local,
         )
-        .set_hover_text("Accept challenges from local teams automatically.".to_string())
-        .set_hotkey(ui_key::team::TOGGLE_ACCEPT_LOCAL_CHALLENGES);
+        .hover_text("Accept challenges from local teams automatically.".to_string())
+        .hotkey(ui_key::team::TOGGLE_ACCEPT_LOCAL_CHALLENGES);
         frame.render_interactive_widget(local_challenge_button, cb_split[0]);
 
         let network_challenge_button = Checkbox::no_box(
@@ -769,14 +799,14 @@ impl MyTeamPanel {
             UiCallback::ToggleTeamAutonomousStrategyForNetworkChallenges,
             own_team.autonomous_strategy.challenge_network,
         )
-        .set_hover_text("Accept challenges from network teams automatically.".to_string())
-        .set_hotkey(ui_key::team::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
+        .hover_text("Accept challenges from network teams automatically.".to_string())
+        .hotkey(ui_key::team::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
         frame.render_interactive_widget(network_challenge_button, cb_split[1]);
 
         let auto_assign_button =
             Button::new("Auto-assign positions", UiCallback::AssignBestTeamPositions)
-                .set_hover_text("Auto-assign players' initial position.")
-                .set_hotkey(ui_key::team::AUTO_ASSIGN);
+                .hover_text("Auto-assign players' initial position.")
+                .hotkey(ui_key::team::AUTO_ASSIGN);
         frame.render_interactive_widget(auto_assign_button, right_btm_split[1]);
 
         Ok(())
@@ -921,8 +951,8 @@ impl MyTeamPanel {
                     from_popup: false,
                 },
             )
-            .set_hotkey(ui_key::GO_TO_GAME)
-            .set_hover_text("Go to game");
+            .hotkey(ui_key::GO_TO_GAME)
+            .hover_text("Go to game");
 
             frame.render_interactive_widget(button, v_split[1]);
         } else if let Some(loaded_game) = self.loaded_games.get(&game_id) {
@@ -931,12 +961,12 @@ impl MyTeamPanel {
                     "Go to game",
                     UiCallback::GoToLoadedGame { game: game.clone() },
                 )
-                .set_hotkey(ui_key::GO_TO_GAME)
-                .set_hover_text("Go to game"),
+                .hotkey(ui_key::GO_TO_GAME)
+                .hover_text("Go to game"),
 
                 Err(err) => Button::new("Go to game", UiCallback::None)
-                    .set_hotkey(ui_key::GO_TO_GAME)
-                    .set_hover_text("Go to game")
+                    .hotkey(ui_key::GO_TO_GAME)
+                    .hover_text("Go to game")
                     .disabled(Some(err.to_string())),
             };
 
@@ -1466,8 +1496,8 @@ impl MyTeamPanel {
             };
 
             let mut upgrade_button = Button::new(text, UiCallback::SetSpaceshipUpgrade { upgrade })
-                .set_hotkey(hotkey)
-                .set_hover_text(upgrade.target.description());
+                .hotkey(hotkey)
+                .hover_text(upgrade.target.description());
 
             let can_upgrade_spaceship = own_team.can_upgrade_spaceship(&upgrade);
             if let Err(e) = can_upgrade_spaceship.as_ref() {
@@ -1681,7 +1711,7 @@ impl MyTeamPanel {
                         planet_id: parent.id,
                     },
                 )
-                .set_hover_text(format!("Go to {}", parent.name))
+                .hover_text(format!("Go to {}", parent.name))
                 .set_style(UiStyle::HELP_LINK),
             );
         }
@@ -1736,8 +1766,8 @@ impl MyTeamPanel {
 
         let abandon_asteroid_button =
             Button::new("Abandon", UiCallback::PushUiPopup { popup_message })
-                .set_hotkey(ui_key::ABANDON_ASTEROID)
-                .set_hover_text("Abandon this asteroid (there's no way back!)")
+                .hotkey(ui_key::ABANDON_ASTEROID)
+                .hover_text("Abandon this asteroid (there's no way back!)")
                 .block(default_block().border_style(UiStyle::WARNING));
 
         frame.render_interactive_widget(abandon_asteroid_button, b_split[1]);
@@ -1746,7 +1776,7 @@ impl MyTeamPanel {
     }
 
     fn render_player_buttons(
-        &self,
+        &mut self,
         players: &[&Player],
         frame: &mut UiFrame,
         world: &World,
@@ -1761,114 +1791,84 @@ impl MyTeamPanel {
 
         let player = players[player_index % players.len()];
         let player_id = player.id;
-        let button_splits = Layout::horizontal([
-            Constraint::Length(12),
-            Constraint::Length(12),
-            Constraint::Length(12),
-            Constraint::Length(12),
-            Constraint::Length(24),
+        let split = Layout::horizontal([
+            Constraint::Length(26),
             Constraint::Length(24),
             Constraint::Fill(1),
         ])
         .split(area.inner(Margin::new(1, 0)));
 
+        let crew_role_block = default_block().title("Crew role");
+        let role_area = crew_role_block.inner(split[0]);
+        frame.render_widget(crew_role_block, split[0]);
+
+        let role_rows = Layout::vertical([3, 1, 3]).split(role_area);
+        let top_role_split = Layout::horizontal([Constraint::Length(12), Constraint::Length(12)])
+            .split(role_rows[0]);
+        let bottom_role_split =
+            Layout::horizontal([Constraint::Length(12), Constraint::Length(12)])
+                .split(role_rows[2]);
+
         let can_set_crew_role = own_team.can_set_crew_role(player);
 
-        let mut captain_button = Button::new(
-            "captain",
-            UiCallback::SetCrewRole {
-                player_id,
-                role: CrewRole::Captain,
-            },
-        )
-        .set_hover_text(format!(
-            "Set player to captain role: {} +{}%, {} {}%",
-            TeamBonus::Reputation,
-            TeamBonus::Reputation.as_skill(player).percentage(),
-            TeamBonus::Bargaining,
-            TeamBonus::Bargaining.as_skill(player).percentage()
-        ))
-        .set_hotkey(ui_key::team::SET_CAPTAIN);
-        if own_team.crew_roles.captain == Some(player.id) {
-            captain_button = captain_button
-                .set_hover_text("Remove player from captain role".to_string())
-                .selected();
-        } else if let Err(e) = can_set_crew_role.as_ref() {
-            captain_button.disable(Some(e.to_string()));
-        }
-        frame.render_interactive_widget(captain_button, button_splits[0]);
+        let role_buttons = [
+            (
+                "captain",
+                CrewRole::Captain,
+                TeamBonus::Reputation,
+                TeamBonus::Bargaining,
+                own_team.crew_roles.captain,
+                ui_key::team::SET_CAPTAIN,
+                top_role_split[0],
+            ),
+            (
+                "pilot",
+                CrewRole::Pilot,
+                TeamBonus::SpaceshipSpeed,
+                TeamBonus::Scouting,
+                own_team.crew_roles.pilot,
+                ui_key::team::SET_PILOT,
+                top_role_split[1],
+            ),
+            (
+                "doctor",
+                CrewRole::Doctor,
+                TeamBonus::TirednessRecovery,
+                TeamBonus::Training,
+                own_team.crew_roles.doctor,
+                ui_key::team::SET_DOCTOR,
+                bottom_role_split[0],
+            ),
+            (
+                "engineer",
+                CrewRole::Engineer,
+                TeamBonus::Weapons,
+                TeamBonus::Upgrades,
+                own_team.crew_roles.engineer,
+                ui_key::team::SET_ENGINEER,
+                bottom_role_split[1],
+            ),
+        ];
 
-        let mut pilot_button = Button::new(
-            "pilot",
-            UiCallback::SetCrewRole {
-                player_id,
-                role: CrewRole::Pilot,
-            },
-        )
-        .set_hover_text(format!(
-            "Set player to pilot role: {} +{}%, {} {}%",
-            TeamBonus::SpaceshipSpeed,
-            TeamBonus::SpaceshipSpeed.as_skill(player).percentage(),
-            TeamBonus::Scouting,
-            TeamBonus::Scouting.as_skill(player).percentage()
-        ))
-        .set_hotkey(ui_key::team::SET_PILOT);
-        if own_team.crew_roles.pilot == Some(player.id) {
-            pilot_button = pilot_button
-                .set_hover_text("Remove player from pilot role".to_string())
-                .selected();
-        } else if let Err(e) = can_set_crew_role.as_ref() {
-            pilot_button.disable(Some(e.to_string()));
+        for (label, role, bonus1, bonus2, assigned, hotkey, rect) in role_buttons {
+            let mut button = Button::new(label, UiCallback::SetCrewRole { player_id, role })
+                .hover_text(format!(
+                    "Set player to {label} role: {} +{}%, {} {}%",
+                    bonus1,
+                    bonus1.as_skill(player).percentage(),
+                    bonus2,
+                    bonus2.as_skill(player).percentage()
+                ))
+                .hotkey(hotkey);
+            if assigned == Some(player.id) {
+                button = button
+                    .hover_text(format!("Remove player from {label} role"))
+                    .selected();
+            } else if let Err(e) = can_set_crew_role.as_ref() {
+                button.disable(Some(e.to_string()));
+            }
+            frame.render_interactive_widget(button, rect);
         }
-        frame.render_interactive_widget(pilot_button, button_splits[1]);
-
-        let mut doctor_button = Button::new(
-            "doctor",
-            UiCallback::SetCrewRole {
-                player_id,
-                role: CrewRole::Doctor,
-            },
-        )
-        .set_hover_text(format!(
-            "Set player to doctor role: {} +{}%, {} {}%",
-            TeamBonus::TirednessRecovery,
-            TeamBonus::TirednessRecovery.as_skill(player).percentage(),
-            TeamBonus::Training,
-            TeamBonus::Training.as_skill(player).percentage()
-        ))
-        .set_hotkey(ui_key::team::SET_DOCTOR);
-        if own_team.crew_roles.doctor == Some(player.id) {
-            doctor_button = doctor_button
-                .set_hover_text("Remove player from doctor role".to_string())
-                .selected();
-        } else if let Err(e) = can_set_crew_role.as_ref() {
-            doctor_button.disable(Some(e.to_string()));
-        }
-        frame.render_interactive_widget(doctor_button, button_splits[2]);
-
-        let mut engineer_button = Button::new(
-            "engineer",
-            UiCallback::SetCrewRole {
-                player_id,
-                role: CrewRole::Engineer,
-            },
-        )
-        .set_hover_text(format!(
-            "Set player to engineer role: {} +{}%, {} {}%",
-            TeamBonus::Weapons,
-            TeamBonus::Weapons.as_skill(player).percentage(),
-            TeamBonus::Upgrades,
-            TeamBonus::Upgrades.as_skill(player).percentage()
-        ))
-        .set_hotkey(ui_key::team::SET_ENGINEER);
-        if own_team.crew_roles.engineer == Some(player.id) {
-            engineer_button = engineer_button
-                .set_hover_text("Remove player from engineer role".to_string())
-                .selected();
-        } else if let Err(e) = can_set_crew_role.as_ref() {
-            engineer_button.disable(Some(e.to_string()));
-        }
-        frame.render_interactive_widget(engineer_button, button_splits[3]);
 
         let can_release = own_team.can_release_player(player);
         let popup_message = PopupMessage::ReleasePlayer {
@@ -1881,65 +1881,51 @@ impl MyTeamPanel {
             format!("Fire {}", player.info.short_name()),
             UiCallback::PushUiPopup { popup_message },
         )
-        .set_hover_text("Fire pirate from the crew!")
-        .set_hotkey(ui_key::player::FIRE);
+        .hover_text("Fire pirate from the crew!")
+        .hotkey(ui_key::player::FIRE);
         if let Err(err) = can_release {
             release_button.disable(Some(err.to_string()));
         } else {
             release_button = release_button.block(default_block().border_style(UiStyle::WARNING));
         }
 
-        frame.render_interactive_widget(release_button, button_splits[4]);
+        let side_split = Layout::vertical([3, 3]).split(split[1]);
+
+        frame.render_interactive_widget(release_button, side_split[0]);
 
         if let Ok(drink_button) = drink_button(world, &player_id) {
-            frame.render_interactive_widget(drink_button, button_splits[5]);
+            frame.render_interactive_widget(drink_button, side_split[1]);
         }
 
         Ok(())
     }
 
-    fn build_players_table<'a>(
-        players: &'a Vec<&Player>,
-        world: &'a World,
+    fn build_players_table(
+        players: &Vec<&Player>,
         table_width: u16,
     ) -> AppResult<ClickableTable<'static>> {
-        let own_team = world.get_own_team()?;
-        let header_cells = [
-            "Name",
-            "Overall",
-            "Potential",
-            "Current",
-            "Best",
-            "Role",
-            "Crew bonus",
-        ]
-        .iter()
-        .map(|h| ClickableCell::from(*h).style(UiStyle::HEADER.bold()));
-        let header = ClickableRow::new(header_cells);
+        let header_style = UiStyle::HEADER.bold();
+        let header = ClickableRow::new(vec![
+            ClickableCell::from("Name").style(header_style),
+            ClickableCell::from("Overall").style(header_style),
+            ClickableCell::from("Potential").style(header_style),
+            ClickableCell::from(Line::from(vec![
+                Span::styled("T", header_style.underlined()),
+                Span::styled("raining", header_style),
+            ])),
+            ClickableCell::from("Role").style(header_style),
+            ClickableCell::from("Crew bonus").style(header_style),
+        ]);
 
         // Calculate the available space for the players name in order to display the
         // full or shortened version.
         let name_header_width = table_width
-            .saturating_sub(9 + 10 + 10 + 10 + 9 + 15 + 20)
+            .saturating_sub(9 + 10 + 3 + TRAINING_COLUMN_WIDTH + TRAINING_COLUMN_RIGHT_OFFSET)
             .max(1);
 
         let rows = players
             .iter()
             .map(|player| {
-                let current_role = match own_team.player_ids.iter().position(|id| *id == player.id)
-                {
-                    Some(idx) => format!(
-                        "{:<2} {:<5}",
-                        (idx as GamePosition).as_role(),
-                        if (idx as GamePosition) < NUM_GAME_POSITIONS {
-                            player.position_rating(idx as GamePosition).stars()
-                        } else {
-                            "".to_string()
-                        }
-                    ),
-                    None => unreachable!("Player in MyTeam should have a position."),
-                };
-                let best_role = player.best_position();
                 let overall = player.average_skill().stars();
                 let potential = player.potential.stars();
 
@@ -2012,16 +1998,15 @@ impl MyTeamPanel {
                 } else {
                     player.info.short_name()
                 };
+                let training = match player.training_focus {
+                    Some(focus) => focus.to_string(),
+                    None => "General".to_string(),
+                };
                 let cells = [
                     ClickableCell::from(name),
                     ClickableCell::from(overall),
                     ClickableCell::from(potential),
-                    ClickableCell::from(current_role),
-                    ClickableCell::from(format!(
-                        "{:<2} {:<5}",
-                        best_role.as_role(),
-                        player.position_rating(best_role).stars()
-                    )),
+                    ClickableCell::from(training),
                     ClickableCell::from(player.info.crew_role.to_string()),
                     ClickableCell::from(bonus_string_1),
                     ClickableCell::from(bonus_string_2),
@@ -2032,13 +2017,12 @@ impl MyTeamPanel {
 
         let table = ClickableTable::new(rows?)
             .header(header)
-            .column_spacing(0)
+            .column_spacing(1)
             .widths(&[
                 Constraint::Min(MAX_NAME_LENGTH as u16 + 2),
                 Constraint::Length(9),
                 Constraint::Length(10),
-                Constraint::Length(10),
-                Constraint::Length(10),
+                Constraint::Length(TRAINING_COLUMN_WIDTH),
                 Constraint::Length(9),
                 Constraint::Length(15),
                 Constraint::Length(20),
@@ -2071,10 +2055,16 @@ impl MyTeamPanel {
         let top_split =
             Layout::horizontal([Constraint::Fill(1), Constraint::Length(60)]).split(area);
 
+        let table_split = Layout::vertical([
+            Constraint::Length(MAX_CREW_SIZE as u16 + 3),
+            Constraint::Fill(1),
+        ])
+        .split(top_split[0]);
+
         self.players_table_state.select(self.player_index);
         frame.render_stateful_interactive_widget(
             &self.players_table,
-            top_split[0],
+            table_split[0],
             &mut self.players_table_state,
         );
 
@@ -2091,7 +2081,7 @@ impl MyTeamPanel {
 
         if let Some(game_id) = own_team.current_game {
             let game = world.games.get_or_err(&game_id)?;
-            let game_text = format!(
+            let text = format!(
                 "{:>} {:>3}-{:<3} {:<}",
                 game.home_team_in_game.name,
                 if let Some(action) = game.action_results.last() {
@@ -2112,15 +2102,14 @@ impl MyTeamPanel {
                 UiStyle::OWN_TEAM
             };
 
-            let table_bottom = Layout::vertical([Constraint::Fill(1), Constraint::Length(6)])
-                .split(top_split[0].inner(Margin::new(1, 1)));
-
             frame.render_interactive_widget(
                 Button::new(
                     vec![
+                        Line::default(),
+                        Line::default(),
                         Line::from("Currently playing".to_string()).centered(),
                         Line::default(),
-                        Line::from(game_text).centered(),
+                        Line::from(text).centered(),
                         Line::from(game.timer.format()).centered(),
                     ],
                     UiCallback::GoToGame {
@@ -2128,102 +2117,112 @@ impl MyTeamPanel {
                         from_popup: false,
                     },
                 )
-                .set_hover_text("Go to current game")
-                .set_hotkey(ui_key::GO_TO_CURRENT_GAME)
+                .hover_text("Go to current game")
+                .hotkey(ui_key::GO_TO_CURRENT_GAME)
                 .block(default_block().border_style(border_style)),
-                table_bottom[1],
+                table_split[1],
             );
             return Ok(());
         }
 
-        let table_bottom = Layout::vertical([
-            Constraint::Fill(1),
-            Constraint::Length(3), //position buttons
-            Constraint::Length(3), // role buttons
-        ])
-        .split(top_split[0].inner(Margin::new(1, 1)));
-        let position_button_splits = Layout::horizontal([
-            Constraint::Length(6),  //pg
-            Constraint::Length(6),  //sg
-            Constraint::Length(6),  //sf
-            Constraint::Length(6),  //pf
-            Constraint::Length(6),  //c
-            Constraint::Length(6),  //bench
-            Constraint::Length(6),  //bench
-            Constraint::Length(30), //auto-assign
-            Constraint::Length(24), //training
-            Constraint::Fill(1),
-        ])
-        .split(table_bottom[1].inner(Margin {
-            vertical: 0,
-            horizontal: 1,
-        }));
+        if let Some(tournament_id) = own_team.playing_in_tournament() {
+            let tournament = world.tournaments.get_or_err(&tournament_id)?;
 
+            frame.render_interactive_widget(
+                Button::new(
+                    vec![
+                        Line::default(),
+                        Line::default(),
+                        Line::from("Currently in tournament".to_string()).centered(),
+                        Line::default(),
+                        Line::from(tournament.name()).centered(),
+                    ],
+                    UiCallback::GoToTournament {
+                        tournament_id,
+                        from_popup: false,
+                    },
+                )
+                .hover_text("Go to current tournament")
+                .hotkey(ui_key::GO_TO_CURRENT_GAME)
+                .block(default_block().border_style(UiStyle::NETWORK)),
+                table_split[1],
+            );
+            return Ok(());
+        }
+
+        frame.render_widget(
+            default_block().title(format!("{}", player.info.full_name())),
+            table_split[1],
+        );
+
+        // If this is error, we should have branched before
+        assert!(own_team.can_change_team_settings().is_ok());
+
+        let mut training_variants: Vec<Option<TrainingFocus>> = vec![None];
+        let mut focus = Some(TrainingFocus::default());
+        while let Some(f) = focus {
+            training_variants.push(Some(f));
+            focus = f.next();
+        }
+        let training_options: Vec<Text> = training_variants
+            .iter()
+            .map(|f| {
+                Text::from(match f {
+                    Some(focus) => focus.to_string(),
+                    None => "General".to_string(),
+                })
+            })
+            .collect();
+        let selected_focus = training_variants
+            .iter()
+            .position(|f| *f == player.training_focus)
+            .unwrap_or_default();
+        let training_is_open = self
+            .setting_dropdowns
+            .get(&TRAINING_DROPDOWN_ID)
+            .map_or(false, |d| d.is_open());
         let player_id = player.id;
-        for idx in 0..MAX_PLAYERS_PER_GAME {
-            if idx >= own_team.player_ids.len() {
-                break;
-            }
-            let position = idx as GamePosition;
-            let rect = position_button_splits[idx];
-            let mut button = Button::new(
-                format!(
-                    "{}:{:<2}",
-                    (idx + 1),
-                    if position == 5 {
-                        "B1"
-                    } else if position == 6 {
-                        "B2"
-                    } else {
-                        position.as_role()
-                    }
-                ),
-                UiCallback::SwapPlayerPositions {
-                    player_id,
-                    position: idx,
-                },
-            )
-            .set_hover_text(format!(
-                "Set player initial position to {}.",
-                position.as_role()
-            ))
-            .set_hotkey(ui_key::team::set_player_position(position));
-
-            let position = own_team.player_ids.iter().position(|id| *id == player.id);
-            if position.is_some() && position.unwrap() == idx {
-                button.select();
-            }
-            frame.render_interactive_widget(button, rect);
-        }
-
-        let auto_assign_button =
-            Button::new("Auto-assign positions", UiCallback::AssignBestTeamPositions)
-                .set_hover_text("Auto-assign players' initial position.")
-                .set_hotkey(ui_key::team::AUTO_ASSIGN);
-        frame.render_interactive_widget(auto_assign_button, position_button_splits[7]);
-
-        let can_change_team_settings = own_team.can_change_team_settings();
-        let mut training_button = Button::new(
-            format!(
-                "Training: {}",
-                if let Some(focus) = player.training_focus {
-                    focus.to_string()
-                } else {
-                    "General".to_string()
-                }
-            ),
-            UiCallback::NextTrainingFocus {
-                player_id: player.id,
-            },
+        let training_dropdown = Dropdown::new(
+            TRAINING_DROPDOWN_ID,
+            training_options,
+            Box::new(move |index| UiCallback::SetTrainingFocus {
+                player_id,
+                training_focus: training_variants[index],
+            }),
         )
-        .set_hover_text("Change the training focus to change skills increase faster.")
-        .set_hotkey(ui_key::player::TRAINING_FOCUS);
-        if let Err(err) = can_change_team_settings {
-            training_button.disable(Some(err.to_string()));
-        }
-        frame.render_interactive_widget(training_button, position_button_splits[8]);
+        .hotkey(ui_key::player::TRAINING_FOCUS)
+        .hover_text("Change the training focus to change skills increase faster.")
+        .open_direction(OpenDirection::Down);
 
-        self.render_player_buttons(&sorted_players, frame, world, table_bottom[2])?;
+        let training_rect = Rect::new(
+            table_split[0].x + table_split[0].width
+                - 1
+                - TRAINING_COLUMN_RIGHT_OFFSET
+                - TRAINING_COLUMN_WIDTH,
+            table_split[0].y + 2 + player_index as u16,
+            TRAINING_COLUMN_WIDTH,
+            1,
+        );
+        let training_state = self
+            .setting_dropdowns
+            .entry(TRAINING_DROPDOWN_ID)
+            .or_default();
+        if !training_state.is_open() {
+            training_state.select(selected_focus);
+        }
+        frame.render_layered_stateful_interactive_widget(
+            training_dropdown,
+            training_rect,
+            training_state,
+            if training_is_open { 1 } else { 0 },
+        );
+
+        self.render_player_buttons(
+            &sorted_players,
+            frame,
+            world,
+            table_split[1].inner(Margin::new(1, 1)),
+        )?;
 
         Ok(())
     }
@@ -2611,12 +2610,13 @@ impl Screen for MyTeamPanel {
                 .sort_by_rating();
 
             let table_width = UI_SCREEN_SIZE.0 - 60;
-            self.players_table = Self::build_players_table(&sorted_players, world, table_width)?
-                .block(default_block().title(format!(
+            self.players_table = Self::build_players_table(&sorted_players, table_width)?.block(
+                default_block().title(format!(
                     "{} {} ↓/↑",
                     own_team.name,
                     world.team_rating(&own_team.id).unwrap_or_default().stars()
-                )));
+                )),
+            );
         }
 
         self.game_index = if !self.past_game_ids.is_empty() {
@@ -2726,21 +2726,20 @@ impl HelpPanel for MyTeamPanel {
             controls: vec![
                 Line::from("Controls:"),
                 Line::from(format!(
-                    "  {}        Cycle view (Info/Team/Games/Market/Shipyard/Asteroids)",
+                    "  {}        Cycle view (Info/Game Settings/Games/Market/Shipyard/Asteroids)",
                     ui_key::CYCLE_VIEW
                 )),
                 Line::from("  ↑/↓        Move highlight in the active list"),
                 Line::from(format!(
-                    "  {}/{}/{}/{}    Set captain/doctor/engineer/pilot",
+                    "  {}/{}/{}/{}    Set highlighted pirate as captain/doctor/engineer/pilot",
                     ui_key::team::SET_CAPTAIN,
                     ui_key::team::SET_DOCTOR,
                     ui_key::team::SET_ENGINEER,
                     ui_key::team::SET_PILOT,
                 )),
-                Line::from("  1-7        Place highlighted player in that game position"),
+                Line::from("  1-7        Place highlighted pirate in that game position"),
                 Line::from(format!(
-                    "  {} / {}      Hire / fire highlighted pirate",
-                    ui_key::player::HIRE,
+                    "  {}      Fire highlighted pirate",
                     ui_key::player::FIRE
                 )),
                 Line::from(format!(
