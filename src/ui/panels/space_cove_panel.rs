@@ -310,7 +310,7 @@ impl SpaceCovePanel {
             },
         )
         .bold()
-        .set_hover_text("Manage your own space cove.");
+        .hover_text("Manage your own space cove.");
         if own_team.space_cove.is_none() {
             own_button.disable(Some("You don't have a space cove yet".to_string()));
         }
@@ -322,7 +322,7 @@ impl SpaceCovePanel {
             },
         )
         .bold()
-        .set_hover_text("Browse coves owned by other crews.");
+        .hover_text("Browse coves owned by other crews.");
 
         match self.view {
             SpaceCoveView::OwnCove => own_button.select(),
@@ -458,8 +458,8 @@ impl SpaceCovePanel {
         let hover = format!("Organize on {}. {blurb}", asteroid.name);
 
         let mut button = Button::new(label, UiCallback::OrganizeNewTournament { tournament_type })
-            .set_hotkey(hotkey)
-            .set_hover_text(hover);
+            .hotkey(hotkey)
+            .hover_text(hover);
 
         if let Err(err) = own_team.can_organize_tournament() {
             button.disable(Some(err.to_string()));
@@ -537,8 +537,8 @@ impl SpaceCovePanel {
         .split(area);
 
         let button = Button::new("Go to market", UiCallback::GoToMarket { from_popup: false })
-            .set_hover_text("Trade resources at the cove market.")
-            .set_hotkey(ui_key::GO_TO_MARKET);
+            .hover_text("Trade resources at the cove market.")
+            .hotkey(ui_key::GO_TO_MARKET);
         frame.render_interactive_widget(button, layout[0]);
 
         Ok(())
@@ -585,7 +585,7 @@ impl SpaceCovePanel {
                 format!("Build {} ({})", building, upgrade.duration.formatted()),
                 UiCallback::SetSpaceCovePendingUpgrade { upgrade },
             )
-            .set_hover_text(building.description());
+            .hover_text(building.description());
             if let Err(e) = own_team.can_upgrade_space_cove(*building) {
                 button.disable(Some(e.to_string()));
             }
@@ -615,7 +615,7 @@ impl SpaceCovePanel {
             },
             asteroid.allow_external_teleport,
         )
-        .set_hover_text("Let other crews teleport to this asteroid.");
+        .hover_text("Let other crews teleport to this asteroid.");
         frame.render_interactive_widget(checkbox, layout[0]);
         frame.render_interactive_widget(teleport_button(world, asteroid.id)?, layout[1]);
 
@@ -710,7 +710,7 @@ impl SpaceCovePanel {
         for (idx, amount) in [1_u32, 10].iter().enumerate() {
             let amount = (*amount).min(available_rum);
             let mut button = Button::new(format!("+{amount}"), UiCallback::AddRumToCove { amount })
-                .set_hover_text(format!(
+                .hover_text(format!(
                     "Store {amount} rum in the tavern (you have {available_rum})."
                 ))
                 .block(default_block().border_style(UiStyle::OK));
@@ -738,7 +738,7 @@ impl SpaceCovePanel {
             rum_per_day_split[0],
         );
         let mut less = Button::new("-1", UiCallback::ChangeTavernRumPerDay { delta: -1 })
-            .set_hover_text("Serve one less rum per day.")
+            .hover_text("Serve one less rum per day.")
             .block(default_block().border_style(UiStyle::ERROR));
         if rum_per_day == 0 {
             less.disable(Some("Already zero"));
@@ -746,7 +746,7 @@ impl SpaceCovePanel {
         frame.render_interactive_widget(less, rum_per_day_split[1]);
 
         let more = Button::new("+1", UiCallback::ChangeTavernRumPerDay { delta: 1 })
-            .set_hover_text("Serve one more rum per day.")
+            .hover_text("Serve one more rum per day.")
             .block(default_block().border_style(UiStyle::OK));
         frame.render_interactive_widget(more, rum_per_day_split[2]);
 
@@ -1163,7 +1163,10 @@ impl Screen for SpaceCovePanel {
                     }
                     ActiveSelection::Tournament => {
                         let tournament_id = *self.tournament_ids.get(self.tournament_index?)?;
-                        Some(UiCallback::GoToTournament { tournament_id })
+                        Some(UiCallback::GoToTournament {
+                            tournament_id,
+                            from_popup: false,
+                        })
                     }
                     ActiveSelection::TavernPirate => {
                         let player_id = *self.tavern_pirate_ids.get(self.tavern_pirate_index?)?;

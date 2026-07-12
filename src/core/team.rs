@@ -300,7 +300,7 @@ impl Team {
         }
     }
 
-    pub fn playing_in_tournament(&self) -> Option<PlanetId> {
+    pub fn playing_in_tournament(&self) -> Option<TournamentId> {
         match self.tournament_registration_state {
             TournamentRegistrationState::None
             | TournamentRegistrationState::Pending { .. }
@@ -309,7 +309,7 @@ impl Team {
         }
     }
 
-    pub fn committed_to_tournament(&self) -> Option<PlanetId> {
+    pub fn committed_to_tournament(&self) -> Option<TournamentId> {
         match self.tournament_registration_state {
             TournamentRegistrationState::None => None,
             TournamentRegistrationState::Pending { tournament_id }

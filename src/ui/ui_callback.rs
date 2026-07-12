@@ -120,6 +120,7 @@ pub enum UiCallback {
     },
     GoToTournament {
         tournament_id: TournamentId,
+        from_popup: bool,
     },
     ChallengeTeam {
         team_id: TeamId,
@@ -364,12 +365,15 @@ impl UiCallback {
         })
     }
 
-    fn go_to_tournament(tournament_id: TournamentId) -> AppCallback {
+    fn go_to_tournament(tournament_id: TournamentId, from_popup: bool) -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui
                 .tournament_panel
                 .set_active_tournament(tournament_id, &app.world)?;
             app.ui.switch_to(super::ui_screen::UiTab::Tournaments);
+            if from_popup {
+                app.ui.close_popup();
+            }
             Ok(None)
         })
     }
@@ -1455,7 +1459,10 @@ impl UiCallback {
 
                 Ok(None)
             }
-            Self::GoToTournament { tournament_id } => Self::go_to_tournament(*tournament_id)(app),
+            Self::GoToTournament {
+                tournament_id,
+                from_popup,
+            } => Self::go_to_tournament(*tournament_id, *from_popup)(app),
             Self::GoToPlayer { player_id } => Self::go_to_player(*player_id)(app),
             Self::GoToPlayerTeam { player_id } => Self::go_to_player_team(*player_id)(app),
             Self::GoToLoadedGame { game } => Self::go_to_loaded_game(game.clone())(app),
