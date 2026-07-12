@@ -631,7 +631,7 @@ pub fn get_storage_spans(
         get_storage_lengths(resources, storage_capacity, bars_length)[..4]
     {
         vec![
-            Span::raw("Stiva  ".to_string()),
+            Span::raw("Cargo  ".to_string()),
             Span::styled("▰".repeat(gold_length), Resource::GOLD.style()),
             Span::styled("▰".repeat(scraps_length), Resource::SCRAPS.style()),
             Span::styled("▰".repeat(rum_length), Resource::RUM.style()),
@@ -1539,7 +1539,7 @@ pub fn render_market_on_planet(
 
     frame.render_widget(
         Paragraph::new(Span::styled(
-            "        Key        Buy               Sell         Prices    In Stiva".to_string(),
+            "        Key        Buy               Sell         Prices     Cargo".to_string(),
             UiStyle::HEADER.bold(),
         )),
         button_split[0],
@@ -2296,7 +2296,7 @@ fn spaceship_component_description_lines<'a, C: SpaceshipComponent>(component: C
             .unwrap_or_default();
     if storage != 0 {
         lines.push(Line::from(vec![
-            Span::raw("Stiva "),
+            Span::raw("Cargo "),
             Span::styled(
                 format!("{storage:+}"),
                 if storage > 0 {
