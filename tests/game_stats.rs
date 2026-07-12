@@ -311,7 +311,7 @@ mod tests {
         samples: &[GameSample],
         bin_size: f32,
     ) -> BTreeMap<i32, ((Vec<f32>, Vec<f32>), (Vec<f32>, Vec<f32>), usize)>
-    // Returns bin_center --> ((home mean, home stddev) for each entry, (away mean, away stddev) for each entry, count)
+// Returns bin_center --> ((home mean, home stddev) for each entry, (away mean, away stddev) for each entry, count)
     {
         let entry_length = match samples.first() {
             Some(sample) => sample.home_values.len(),

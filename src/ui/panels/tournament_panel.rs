@@ -116,7 +116,7 @@ impl TournamentPanel {
             },
         )
         .bold()
-        .set_hover_text("View all tournaments.");
+        .hover_text("View all tournaments.");
 
         let mut filter_open_button = Button::new(
             TournamentView::Open.to_string(),
@@ -125,7 +125,7 @@ impl TournamentPanel {
             },
         )
         .bold()
-        .set_hover_text("View all tournaments yet to start.");
+        .hover_text("View all tournaments yet to start.");
 
         let mut filter_past_button = Button::new(
             TournamentView::Past.to_string(),
@@ -134,7 +134,7 @@ impl TournamentPanel {
             },
         )
         .bold()
-        .set_hover_text("View all past tournaments.");
+        .hover_text("View all past tournaments.");
 
         match self.view {
             TournamentView::All => filter_all_button.select(),
@@ -332,8 +332,8 @@ impl TournamentPanel {
                 tournament_id: tournament.id,
             },
         )
-        .set_hotkey(ui_key::REGISTER_TO_TOURNAMENT)
-        .set_hover_text(format!(
+        .hotkey(ui_key::REGISTER_TO_TOURNAMENT)
+        .hover_text(format!(
             "Register to {}. Participation will be confirmed on {} at {}.",
             tournament.name(),
             tournament.registrations_closing_at.formatted_as_date(),

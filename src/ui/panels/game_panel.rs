@@ -264,7 +264,7 @@ impl GamePanel {
             "Game view"
         };
         let pitch_button = Button::new(text, UiCallback::TogglePitchView)
-            .set_hover_text(format!(
+            .hover_text(format!(
                 "Change to {} view",
                 if self.pitch_view {
                     "commentary"
@@ -272,7 +272,7 @@ impl GamePanel {
                     "pitch"
                 }
             ))
-            .set_hotkey(ui_key::game::PITCH_VIEW);
+            .hotkey(ui_key::game::PITCH_VIEW);
 
         frame.render_interactive_widget(pitch_button, b_split[1]);
 
@@ -282,7 +282,7 @@ impl GamePanel {
             "Player status"
         };
         let player_status_button = Button::new(text, UiCallback::TogglePlayerStatusView)
-            .set_hover_text(format!(
+            .hover_text(format!(
                 "Change to {} view",
                 if self.player_status_view {
                     "game box"
@@ -290,7 +290,7 @@ impl GamePanel {
                     "player status"
                 }
             ))
-            .set_hotkey(ui_key::game::PLAYER_STATUS_VIEW);
+            .hotkey(ui_key::game::PLAYER_STATUS_VIEW);
 
         frame.render_interactive_widget(player_status_button, b_split[2]);
     }
@@ -426,7 +426,7 @@ impl GamePanel {
             )
             .set_text_alignemnt(Alignment::Right)
             .set_style(UiStyle::HELP_LINK)
-            .set_hover_text(format!("Go to {} team", game.home_team_in_game.name));
+            .hover_text(format!("Go to {} team", game.home_team_in_game.name));
 
             let name_split = Layout::horizontal([
                 Constraint::Fill(1),
@@ -449,7 +449,7 @@ impl GamePanel {
             )
             .set_text_alignemnt(Alignment::Left)
             .set_style(UiStyle::HELP_LINK)
-            .set_hover_text(format!("Go to {} team", game.away_team_in_game.name));
+            .hover_text(format!("Go to {} team", game.away_team_in_game.name));
 
             let name_split = Layout::horizontal([
                 Constraint::Length(game.away_team_in_game.name.len() as u16),

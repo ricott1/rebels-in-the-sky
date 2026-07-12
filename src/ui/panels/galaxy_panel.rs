@@ -326,7 +326,7 @@ impl GalaxyPanel {
                             planet_id: planet.id,
                         },
                     )
-                    .set_hover_text(format!("Travel to {}", planet.name))
+                    .hover_text(format!("Travel to {}", planet.name))
                     .disabled(Some("Team is travelling"));
 
                     buttons.push(travel_to_planet_button);
@@ -338,7 +338,7 @@ impl GalaxyPanel {
                             planet_id: planet.id,
                         },
                     )
-                    .set_hover_text(format!("Travel to {}", planet.name))
+                    .hover_text(format!("Travel to {}", planet.name))
                     .disabled(Some("Team is exploring"));
 
                     buttons.push(travel_to_planet_button);
@@ -351,7 +351,7 @@ impl GalaxyPanel {
                             planet_id: planet.id,
                         },
                     )
-                    .set_hover_text(format!("Travel to {}", planet.name))
+                    .hover_text(format!("Travel to {}", planet.name))
                     .disabled(Some("Team is on space adventure"));
 
                     buttons.push(travel_to_planet_button);

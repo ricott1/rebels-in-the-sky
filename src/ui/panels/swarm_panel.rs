@@ -410,7 +410,7 @@ impl SwarmPanel {
             },
         )
         .bold()
-        .set_hover_text("View the chat. Just type and press Enter to message the network.");
+        .hover_text("View the chat. Just type and press Enter to message the network.");
 
         let mut requests_button = Button::new(
             "Requests",
@@ -419,7 +419,7 @@ impl SwarmPanel {
             },
         )
         .bold()
-        .set_hover_text("View challenges received from the network.");
+        .hover_text("View challenges received from the network.");
 
         let mut log_button = Button::new(
             "Log",
@@ -428,7 +428,7 @@ impl SwarmPanel {
             },
         )
         .bold()
-        .set_hover_text("View log and system info from the network.");
+        .hover_text("View log and system info from the network.");
 
         let mut ranking_button = Button::new(
             "Ranking",
@@ -437,7 +437,7 @@ impl SwarmPanel {
             },
         )
         .bold()
-        .set_hover_text("View ranking of best pirates and crews in the network.");
+        .hover_text("View ranking of best pirates and crews in the network.");
 
         match self.view {
             SwarmView::Chat => chat_button.select(),
@@ -571,12 +571,12 @@ impl SwarmPanel {
                     },
                 )
                 .block(default_block().border_style(UiStyle::OK))
-                .set_hover_text(format!(
+                .hover_text(format!(
                     "Accept the challenge from {} and start a game.",
                     team.name
                 ));
                 if idx == 0 {
-                    accept_button = accept_button.set_hotkey(ui_key::YES_TO_DIALOG);
+                    accept_button = accept_button.hotkey(ui_key::YES_TO_DIALOG);
                 }
                 frame.render_interactive_widget(accept_button, line_split[1]);
                 let mut decline_button = Button::new(
@@ -586,9 +586,9 @@ impl SwarmPanel {
                     },
                 )
                 .block(default_block().border_style(UiStyle::ERROR))
-                .set_hover_text(format!("Decline the challenge from {}.", team.name));
+                .hover_text(format!("Decline the challenge from {}.", team.name));
                 if idx == 0 {
-                    decline_button = decline_button.set_hotkey(ui_key::NO_TO_DIALOG);
+                    decline_button = decline_button.hotkey(ui_key::NO_TO_DIALOG);
                 }
                 frame.render_interactive_widget(decline_button, line_split[2]);
             }
@@ -658,13 +658,13 @@ impl SwarmPanel {
                     },
                 )
                 .block(default_block().border_style(UiStyle::OK))
-                .set_hover_text(format!(
+                .hover_text(format!(
                     "Accept to trade {} for {}.",
                     target_player.info.short_name(),
                     proposer_player.info.short_name()
                 ));
                 if idx == 0 {
-                    accept_button = accept_button.set_hotkey(ui_key::YES_TO_DIALOG);
+                    accept_button = accept_button.hotkey(ui_key::YES_TO_DIALOG);
                 }
                 frame.render_interactive_widget(accept_button, line_split[1]);
                 let mut decline_button = Button::new(
@@ -674,13 +674,13 @@ impl SwarmPanel {
                     },
                 )
                 .block(default_block().border_style(UiStyle::ERROR))
-                .set_hover_text(format!(
+                .hover_text(format!(
                     "Decline to trade {} for {}.",
                     target_player.info.short_name(),
                     proposer_player.info.short_name()
                 ));
                 if idx == 0 {
-                    decline_button = decline_button.set_hotkey(ui_key::NO_TO_DIALOG);
+                    decline_button = decline_button.hotkey(ui_key::NO_TO_DIALOG);
                 }
                 frame.render_interactive_widget(decline_button, line_split[2]);
             }

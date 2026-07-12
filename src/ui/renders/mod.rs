@@ -119,14 +119,14 @@ pub fn go_to_planet_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<
         format!("Go to planet: {planet_name}"),
         UiCallback::GoToPlanet { planet_id },
     )
-    .set_hover_text(format!("Go to planet {planet_name}"))
-    .set_hotkey(ui_key::GO_TO_PLANET))
+    .hover_text(format!("Go to planet {planet_name}"))
+    .hotkey(ui_key::GO_TO_PLANET))
 }
 
 pub fn go_to_space_cove_button<'a>() -> AppResult<Button<'a>> {
     Ok(Button::new("Go to space cove", UiCallback::GoToSpaceCove)
-        .set_hover_text("Go to space cove panel".to_string())
-        .set_hotkey(ui_key::GO_TO_SPACE_COVE))
+        .hover_text("Go to space cove panel".to_string())
+        .hotkey(ui_key::GO_TO_SPACE_COVE))
 }
 
 pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Button<'a>> {
@@ -141,7 +141,7 @@ pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Butt
     };
 
     let mut teleport_button = Button::new(button_label, UiCallback::TravelToPlanet { planet_id })
-        .set_hover_text(format!(
+        .hover_text(format!(
             "Travel instantaneously to {}{}",
             planet.name,
             if rum_cost == 0 {
@@ -150,7 +150,7 @@ pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Butt
                 format!(" for {} Rum", rum_cost)
             }
         ))
-        .set_hotkey(ui_key::TRAVEL);
+        .hotkey(ui_key::TRAVEL);
 
     if let Err(e) = own_team.can_travel_to_planet(planet, TELEPORT_TRAVEL_DURATION) {
         teleport_button.disable(Some(e.to_string()));
@@ -186,8 +186,8 @@ pub fn travel_or_teleport_button<'a>(
         format!("Travel ({formatted_duration})"),
         UiCallback::TravelToPlanet { planet_id },
     )
-    .set_hotkey(ui_key::TRAVEL)
-    .set_hover_text(hover_text);
+    .hotkey(ui_key::TRAVEL)
+    .hover_text(hover_text);
 
     if let Err(e) = own_team.can_travel_to_planet(planet, duration) {
         button.disable(Some(e.to_string()));
@@ -203,8 +203,8 @@ pub fn go_to_team_home_planet_button<'a>(world: &World, team_id: &TeamId) -> App
         format!("Home planet {planet_name}"),
         UiCallback::GoToHomePlanet { team_id: team.id },
     )
-    .set_hover_text(format!("Go to team home planet {planet_name}",))
-    .set_hotkey(ui_key::GO_TO_HOME_PLANET))
+    .hover_text(format!("Go to team home planet {planet_name}",))
+    .hotkey(ui_key::GO_TO_HOME_PLANET))
 }
 
 pub fn go_to_team_current_planet_button<'a>(
@@ -217,11 +217,11 @@ pub fn go_to_team_current_planet_button<'a>(
             format!("On planet {}", world.planets.get_or_err(&planet_id)?.name),
             UiCallback::GoToCurrentTeamPlanet { team_id: team.id },
         )
-        .set_hover_text(format!(
+        .hover_text(format!(
             "Go to planet {}",
             world.planets.get_or_err(&planet_id)?.name
         ))
-        .set_hotkey(ui_key::ON_PLANET),
+        .hotkey(ui_key::ON_PLANET),
 
         TeamLocation::Travelling {
             from: _from,
@@ -276,8 +276,8 @@ pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button
             player_id: *player_id,
         },
     )
-    .set_hotkey(ui_key::player::DRINK)
-    .set_hover_text(
+    .hotkey(ui_key::player::DRINK)
+    .hover_text(
         "Drink a liter of rum, increasing morale and drunkenness. Drink too much and the pirate could get wasted!",
     );
 
@@ -326,7 +326,7 @@ pub fn render_challenge_button(
             },
         )
         .block(default_block().border_style(UiStyle::OK))
-        .set_hover_text(format!(
+        .hover_text(format!(
             "Accept the challenge from {} and start a game.",
             team.name
         ));
@@ -343,7 +343,7 @@ pub fn render_challenge_button(
             },
         )
         .block(default_block().border_style(UiStyle::ERROR))
-        .set_hover_text(format!("Decline the challenge from {}.", team.name));
+        .hover_text(format!("Decline the challenge from {}.", team.name));
 
         frame.render_widget(
             Paragraph::new("Challenged!")
@@ -384,18 +384,18 @@ pub fn render_challenge_button(
                 from_popup: false,
             },
         )
-        .set_hover_text("Go to team's game")
-        .set_hotkey(ui_key::GO_TO_GAME);
+        .hover_text("Go to team's game")
+        .hotkey(ui_key::GO_TO_GAME);
         if world.games.get_or_err(&game_id).is_err() {
             b.disable(Some("Game is not visible"));
         }
         b
     } else {
         let mut button = Button::new("Challenge", UiCallback::ChallengeTeam { team_id: team.id })
-            .set_hover_text(format!("Challenge {} to a game", team.name));
+            .hover_text(format!("Challenge {} to a game", team.name));
 
         if hotkey {
-            button = button.set_hotkey(ui_key::game::CHALLENGE_TEAM)
+            button = button.hotkey(ui_key::game::CHALLENGE_TEAM)
         }
 
         if let Err(err) = can_challenge {
@@ -445,7 +445,7 @@ pub fn trade_resource_button<'a>(
         button.disable(disabled_text);
     }
 
-    let mut button = button.set_hover_text(format!(
+    let mut button = button.hover_text(format!(
         "{} {} {} for {}.",
         if amount > 0 { "Buy" } else { "Sell" },
         amount.abs(),
@@ -453,7 +453,7 @@ pub fn trade_resource_button<'a>(
         format_satoshi(amount.unsigned_abs() * unit_cost),
     ));
     if let Some(key) = hotkey {
-        button = button.set_hotkey(key);
+        button = button.hotkey(key);
     }
 
     Ok(button)
@@ -465,13 +465,13 @@ pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
         format!("Explore ({})", duration.formatted()),
         UiCallback::ExploreAroundPlanet { duration },
     )
-    .set_hotkey(ui_key::EXPLORE);
+    .hotkey(ui_key::EXPLORE);
 
     match team.current_location {
         TeamLocation::OnPlanet { planet_id } => {
             let planet = world.planets.get_or_err(&planet_id)?;
             let needed_fuel = (duration as f32 * team.spaceship_fuel_consumption_per_tick()) as u32;
-            button = button.set_hover_text(
+            button = button.hover_text(
                 format!(
                     "Explore the space around {} on autopilot (need {} t of fuel). Hope to find resources, free pirates or more...",
                     planet.name,
@@ -486,7 +486,7 @@ pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
         TeamLocation::Travelling {
             from: _from, to, ..
         } => {
-            button = button.set_hover_text(
+            button = button.hover_text(
                 "Explore the space on autopilot. Hope to find resources, free pirates or more..."
                     .to_string(),
             );
@@ -494,7 +494,7 @@ pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
             button.disable(Some(format!("Travelling to planet {to}")));
         }
         TeamLocation::Exploring { around, .. } => {
-            button = button.set_hover_text(
+            button = button.hover_text(
                 "Explore the space on autopilot. Hope to find resources, free pirates or more..."
                     .to_string(),
             );
@@ -518,13 +518,13 @@ pub fn space_adventure_button<'a>(world: &World, team: &Team) -> AppResult<Butto
         timestamp: Tick::now(),
     };
     let mut button = Button::new("Space Adventure", UiCallback::PushUiPopup { popup_message })
-        .set_hotkey(ui_key::SPACE_ADVENTURE)
+        .hotkey(ui_key::SPACE_ADVENTURE)
         .block(default_block().border_style(UiStyle::WARNING));
 
     match team.current_location {
         TeamLocation::OnPlanet { planet_id } => {
             let planet = world.planets.get_or_err(&planet_id)?;
-            button = button.set_hover_text(format!(
+            button = button.hover_text(format!(
                 "Start a space adventure around {} to collect resources and more...",
                 planet.name,
             ));
@@ -536,14 +536,14 @@ pub fn space_adventure_button<'a>(world: &World, team: &Team) -> AppResult<Butto
         TeamLocation::Travelling {
             from: _from, to, ..
         } => {
-            button = button.set_hover_text(
+            button = button.hover_text(
                 "Start a space adventure to manually collect resources and more...".to_string(),
             );
             let to = world.planets.get_or_err(&to)?.name.to_string();
             button.disable(Some(format!("Travelling to planet {to}")));
         }
         TeamLocation::Exploring { around, .. } => {
-            button = button.set_hover_text(
+            button = button.hover_text(
                 "Start a space adventure to manually collect resources and more...".to_string(),
             );
             let around_planet = world.planets.get_or_err(&around)?.name.to_string();
@@ -1096,7 +1096,7 @@ pub fn render_build_asteroid_upgrade_button(
             format!("Building {}", pending_upgrade.target),
             UiCallback::None,
         )
-        .set_hover_text(format!(
+        .hover_text(format!(
             "Building {} on {}",
             pending_upgrade.target, asteroid.name
         ))
@@ -1127,8 +1127,8 @@ pub fn render_build_asteroid_upgrade_button(
             ),
             on_click,
         )
-        .set_hotkey(ui_key::BUILD_ASTEROID_UPGRADE)
-        .set_hover_text(upgrade.target.description());
+        .hotkey(ui_key::BUILD_ASTEROID_UPGRADE)
+        .hover_text(upgrade.target.description());
 
         if upgrade.target == PlanetUpgradeTarget::SpaceCove {
             build_button = build_button.block(default_block().border_style(UiStyle::WARNING));

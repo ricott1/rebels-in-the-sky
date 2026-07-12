@@ -163,7 +163,7 @@ impl TeamListPanel {
             },
         )
         .bold()
-        .set_hover_text("View all crews.");
+        .hover_text("View all crews.");
 
         let own_team = world.get_own_team()?;
         let num_open_to_challenge = world
@@ -182,7 +182,7 @@ impl TeamListPanel {
             },
         )
         .bold()
-        .set_hover_text("View all crews that can be currently challenged to a game.");
+        .hover_text("View all crews that can be currently challenged to a game.");
 
         let mut filter_peers_button = Button::new(
             TeamView::Peers.to_string(),
@@ -191,7 +191,7 @@ impl TeamListPanel {
             },
         ).bold()
 
-        .set_hover_text(
+        .hover_text(
             "View all crews received from the network (i.e. crews controlled by other players online)."
                 ,
         );

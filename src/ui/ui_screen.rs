@@ -683,8 +683,8 @@ impl UiScreen {
             ])
             .split(popup_split[2]);
             let close_button = Button::new(super::constants::UiText::YES, UiCallback::CloseHelp)
-                .set_hover_text("Close help")
-                .set_hotkey(ui_key::YES_TO_DIALOG)
+                .hover_text("Close help")
+                .hotkey(ui_key::YES_TO_DIALOG)
                 .block(default_block().border_style(UiStyle::OK));
             ui_frame.render_interactive_widget_on_layer(close_button, button_split[1], 1);
         }
@@ -806,7 +806,7 @@ impl UiScreen {
                 ),
                 UiCallback::ToggleAudio,
             )
-            .set_hotkey(ui_key::radio::TOGGLE_AUDIO);
+            .hotkey(ui_key::radio::TOGGLE_AUDIO);
 
             if audio_player.is_buffering() {
                 audio_button.disable(Some("Buffering..."));
@@ -819,7 +819,7 @@ impl UiScreen {
                     format!(" {} ", ui_key::radio::PREVIOUS_RADIO),
                     UiCallback::PreviousRadio,
                 )
-                .set_hotkey(ui_key::radio::PREVIOUS_RADIO),
+                .hotkey(ui_key::radio::PREVIOUS_RADIO),
                 split[2],
             );
 
@@ -828,7 +828,7 @@ impl UiScreen {
                     format!(" {} ", ui_key::radio::NEXT_RADIO),
                     UiCallback::NextRadio,
                 )
-                .set_hotkey(ui_key::radio::NEXT_RADIO),
+                .hotkey(ui_key::radio::NEXT_RADIO),
                 split[3],
             );
             if let Some(currently_playing) = audio_player.currently_playing() {

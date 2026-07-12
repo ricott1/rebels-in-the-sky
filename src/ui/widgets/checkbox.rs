@@ -54,12 +54,12 @@ impl<'a> Checkbox<'a> {
         }
     }
 
-    pub fn set_hover_text(mut self, text: impl Into<Text<'a>>) -> Self {
+    pub fn hover_text(mut self, text: impl Into<Text<'a>>) -> Self {
         self.hover_text = Some(text.into());
         self
     }
 
-    pub const fn set_hotkey(mut self, k: KeyCode) -> Self {
+    pub const fn hotkey(mut self, k: KeyCode) -> Self {
         self.hotkey = Some(k);
         self
     }
