@@ -569,7 +569,7 @@ impl AutonomousStrategy {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumIter)]
 pub enum TeamBonus {
     Scouting,          //pilot
     SpaceshipSpeed,    //pilot

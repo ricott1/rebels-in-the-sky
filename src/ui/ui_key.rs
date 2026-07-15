@@ -19,7 +19,7 @@ pub const NO_TO_DIALOG: KeyCode = KeyCode::Backspace;
 
 pub const GO_TO_CHAT: KeyCode = KeyCode::Char('C');
 pub const GO_TO_CHALLENGES: KeyCode = KeyCode::Char('C');
-pub const GO_TO_MARKET: KeyCode = KeyCode::Char('m');
+pub const GO_TO_MARKET: KeyCode = KeyCode::Char('M');
 pub const GO_TO_SPACE_ADVENTURE: KeyCode = KeyCode::Char('A');
 pub const GO_TO_SHIPYARD: KeyCode = KeyCode::Char('S');
 pub const GO_TO_FREE_PIRATES: KeyCode = KeyCode::Char('F');
@@ -106,7 +106,7 @@ pub mod player {
 }
 
 pub mod team {
-    use crate::core::GamePosition;
+    use crate::core::{CrewRole, GamePosition};
 
     use super::KeyCode;
     pub const AUTO_ASSIGN: KeyCode = KeyCode::Char('a');
@@ -118,6 +118,7 @@ pub mod team {
     pub const SET_CAPTAIN: KeyCode = KeyCode::Char('c');
     pub const SET_DOCTOR: KeyCode = KeyCode::Char('d');
     pub const SET_ENGINEER: KeyCode = KeyCode::Char('e');
+    pub const SET_MOZZO: KeyCode = KeyCode::Char('m');
     pub const SET_PILOT: KeyCode = KeyCode::Char('p');
     pub const SET_SUBSTITUTION_TENDENCY: KeyCode = KeyCode::Char('S');
     pub const SET_GAME_POSITION_FLUIDITY: KeyCode = KeyCode::Char('P');
@@ -133,6 +134,16 @@ pub mod team {
             5 => KeyCode::Char('6'),
             6 => KeyCode::Char('7'),
             _ => panic!("Invalid position for SET_PLAYER_POSITION: {position}"),
+        }
+    }
+
+    pub const fn set_crew_role(role: CrewRole) -> KeyCode {
+        match role {
+            CrewRole::Captain => SET_CAPTAIN,
+            CrewRole::Doctor => SET_DOCTOR,
+            CrewRole::Pilot => SET_PILOT,
+            CrewRole::Engineer => SET_ENGINEER,
+            CrewRole::Mozzo => SET_MOZZO,
         }
     }
 }

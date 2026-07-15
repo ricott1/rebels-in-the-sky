@@ -536,7 +536,7 @@ impl SpaceCovePanel {
         ])
         .split(area);
 
-        let button = Button::new("Go to market", UiCallback::GoToMarket { from_popup: false })
+        let button = Button::new("Go to Market", UiCallback::GoToMarket { from_popup: false })
             .hover_text("Trade resources at the cove market.")
             .hotkey(ui_key::GO_TO_MARKET);
         frame.render_interactive_widget(button, layout[0]);

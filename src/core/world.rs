@@ -431,14 +431,12 @@ impl World {
         Ok(())
     }
 
-    fn remove_player_from_role(&mut self, role: CrewRole, player_id: PlayerId) -> AppResult<()> {
-        // cannot be demoted from Mozzo
-        if role == CrewRole::Mozzo {
-            return Ok(());
-        }
-
+    fn remove_player_from_role(&mut self, player_id: PlayerId) -> AppResult<()> {
         let mut player = self.players.get_or_err(&player_id)?.clone();
         let player_previous_role = player.info.crew_role;
+        if player_previous_role == CrewRole::Mozzo {
+            return Ok(());
+        }
 
         let team_id = if let Some(team_id) = player.team {
             team_id
@@ -489,7 +487,7 @@ impl World {
         self.players.insert(player.id, player);
         self.teams.insert(team.id, team);
 
-        if role == CrewRole::Pilot {
+        if player_previous_role == CrewRole::Pilot {
             // Grab team again. We need to do this to ensure that the speed bonus is calculated correctly.
             let mut team = self.teams.get_or_err(&team_id)?.clone();
             // If team is travelling and pilot was updated recalculate travel duration.
@@ -509,7 +507,7 @@ impl World {
                     (duration - time_elapsed) as f32 * previous_spaceship_speed_bonus / bonus;
 
                 log::debug!(
-                    "Update {role}: old speed {previous_spaceship_speed_bonus}, new speed {bonus}"
+                    "Update {player_previous_role}: old speed {previous_spaceship_speed_bonus}, new speed {bonus}"
                 );
 
                 team.current_location = TeamLocation::Travelling {
@@ -521,7 +519,7 @@ impl World {
                 };
             }
             self.teams.insert(team.id, team);
-        } else if role == CrewRole::Engineer {
+        } else if player_previous_role == CrewRole::Engineer {
             // Grab team again. We need to do this to ensure that the upgrade bonus is calculated correctly.
             let mut team = self.teams.get_or_err(&team_id)?.clone();
             // If spaceship or any asteroid has a pending upgrade and engineer was updated recalculate upgrade duration.
@@ -552,7 +550,7 @@ impl World {
                         (upgrade.duration - time_elapsed) as f32 * previous_upgrade_bonus / bonus;
 
                     log::debug!(
-                        "Update {role}: old upgrade {previous_upgrade_bonus}, new upgrade {bonus}"
+                        "Update {player_previous_role}: old upgrade {previous_upgrade_bonus}, new upgrade {bonus}"
                     );
 
                     let mut asteroid = asteroid.clone();
@@ -574,13 +572,16 @@ impl World {
     }
 
     pub fn set_team_crew_role(&mut self, role: CrewRole, player_id: PlayerId) -> AppResult<()> {
-        let mut player = self.players.get_or_err(&player_id)?.clone();
-        // If role is current player role, than we are removing the player from that role.
-        if player.info.crew_role == role {
-            return self.remove_player_from_role(role, player_id);
+        let player_previous_role = self.players.get_or_err(&player_id)?.info.crew_role;
+        if player_previous_role == role {
+            return Ok(());
         }
 
-        let player_previous_role = player.info.crew_role;
+        if role == CrewRole::Mozzo {
+            return self.remove_player_from_role(player_id);
+        }
+
+        let mut player = self.players.get_or_err(&player_id)?.clone();
 
         let team_id = if let Some(team_id) = player.team {
             team_id
@@ -611,8 +612,7 @@ impl World {
             CrewRole::Pilot => team.crew_roles.pilot,
             CrewRole::Doctor => team.crew_roles.doctor,
             CrewRole::Engineer => team.crew_roles.engineer,
-            //We don't need to check for mozzo because we can have several mozzos.
-            CrewRole::Mozzo => None,
+            CrewRole::Mozzo => unreachable!(),
         };
 
         // Empty previous role of player.
@@ -659,9 +659,7 @@ impl World {
             CrewRole::Engineer => {
                 team.crew_roles.engineer = Some(player_id);
             }
-            CrewRole::Mozzo => {
-                team.crew_roles.mozzo.push(player_id);
-            }
+            CrewRole::Mozzo => unreachable!(),
         }
         player.info.crew_role = role;
         player.set_jersey(&jersey);

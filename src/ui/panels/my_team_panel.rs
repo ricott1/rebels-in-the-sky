@@ -45,8 +45,10 @@ use std::collections::HashMap;
 use strum::IntoEnumIterator;
 
 const DROPDOWN_WIDTH: u16 = MAX_NAME_LENGTH as u16 + 2;
+const ROLE_COLUMN_WIDTH: u16 = 9;
+const ROLE_COLUMN_RIGHT_OFFSET: u16 = 15 + 20 + 2;
 const TRAINING_COLUMN_WIDTH: u16 = 10;
-const TRAINING_COLUMN_RIGHT_OFFSET: u16 = 9 + 15 + 20 + 3;
+const TRAINING_COLUMN_RIGHT_OFFSET: u16 = ROLE_COLUMN_RIGHT_OFFSET + ROLE_COLUMN_WIDTH + 1;
 // (col, row) offset of each position's dropdown within the court image.
 const DROPDOWN_OFFSETS: [(u16, u16); NUM_GAME_POSITIONS as usize] = [
     (7, 2),   // PG
@@ -60,6 +62,7 @@ const SUBSTITUTION_DROPDOWN_ID: usize = usize::MAX - 1;
 const FLUIDITY_DROPDOWN_ID: usize = usize::MAX - 2;
 const DRINKING_DROPDOWN_ID: usize = usize::MAX - 3;
 const TRAINING_DROPDOWN_ID: usize = usize::MAX - 4;
+const ROLE_DROPDOWN_ID: usize = usize::MAX - 5;
 
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub enum MyTeamView {
@@ -1775,7 +1778,7 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_player_buttons(
+    fn render_selected_player(
         &mut self,
         players: &[&Player],
         frame: &mut UiFrame,
@@ -1784,7 +1787,7 @@ impl MyTeamPanel {
     ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
         let player_index = if let Some(index) = self.player_index {
-            index.min(players.len() - 1)
+            index
         } else {
             return Ok(());
         };
@@ -1792,83 +1795,47 @@ impl MyTeamPanel {
         let player = players[player_index % players.len()];
         let player_id = player.id;
         let split = Layout::horizontal([
-            Constraint::Length(26),
-            Constraint::Length(24),
             Constraint::Fill(1),
+            Constraint::Length(24),
+            Constraint::Length(24),
         ])
-        .split(area.inner(Margin::new(1, 0)));
+        .split(area);
 
-        let crew_role_block = default_block().title("Crew role");
-        let role_area = crew_role_block.inner(split[0]);
-        frame.render_widget(crew_role_block, split[0]);
+        let info_lines = {
+            let drunkenness = player.current_drunkenness(world);
+            let value = (MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL;
+            let style = UiStyled::style(&value);
+            let drunkenness_span =
+                Span::styled(Player::drunkenness_description(drunkenness), style);
+            vec![
+                Line::from(format!(
+                    "Joined the crew on {}",
+                    player
+                        .joined_team_on
+                        .unwrap_or_default()
+                        .formatted_as_date()
+                )),
+                Line::from(drunkenness_span),
+            ]
+        };
 
-        let role_rows = Layout::vertical([3, 1, 3]).split(role_area);
-        let top_role_split = Layout::horizontal([Constraint::Length(12), Constraint::Length(12)])
-            .split(role_rows[0]);
-        let bottom_role_split =
-            Layout::horizontal([Constraint::Length(12), Constraint::Length(12)])
-                .split(role_rows[2]);
+        frame.render_widget(Paragraph::new(info_lines), split[0]);
 
-        let can_set_crew_role = own_team.can_set_crew_role(player);
-
-        let role_buttons = [
-            (
-                "captain",
-                CrewRole::Captain,
-                TeamBonus::Reputation,
-                TeamBonus::Bargaining,
-                own_team.crew_roles.captain,
-                ui_key::team::SET_CAPTAIN,
-                top_role_split[0],
-            ),
-            (
-                "pilot",
-                CrewRole::Pilot,
-                TeamBonus::SpaceshipSpeed,
-                TeamBonus::Scouting,
-                own_team.crew_roles.pilot,
-                ui_key::team::SET_PILOT,
-                top_role_split[1],
-            ),
-            (
-                "doctor",
-                CrewRole::Doctor,
-                TeamBonus::TirednessRecovery,
-                TeamBonus::Training,
-                own_team.crew_roles.doctor,
-                ui_key::team::SET_DOCTOR,
-                bottom_role_split[0],
-            ),
-            (
-                "engineer",
-                CrewRole::Engineer,
-                TeamBonus::Weapons,
-                TeamBonus::Upgrades,
-                own_team.crew_roles.engineer,
-                ui_key::team::SET_ENGINEER,
-                bottom_role_split[1],
-            ),
-        ];
-
-        for (label, role, bonus1, bonus2, assigned, hotkey, rect) in role_buttons {
-            let mut button = Button::new(label, UiCallback::SetCrewRole { player_id, role })
-                .hover_text(format!(
-                    "Set player to {label} role: {} +{}%, {} {}%",
-                    bonus1,
-                    bonus1.as_skill(player).percentage(),
-                    bonus2,
-                    bonus2.as_skill(player).percentage()
-                ))
-                .hotkey(hotkey);
-            if assigned == Some(player.id) {
-                button = button
-                    .hover_text(format!("Remove player from {label} role"))
-                    .selected();
-            } else if let Err(e) = can_set_crew_role.as_ref() {
-                button.disable(Some(e.to_string()));
+        let crew_lines = {
+            let mut l = vec![Line::from(Span::styled(
+                "Crew bonus",
+                UiStyle::HEADER.bold(),
+            ))];
+            for bonus in TeamBonus::iter() {
+                let skill = bonus.as_skill(player);
+                l.push(Line::from(Span::styled(
+                    format!("{} +{}%", bonus, skill.percentage()),
+                    UiStyled::style(&skill),
+                )));
             }
-            frame.render_interactive_widget(button, rect);
-        }
+            l
+        };
+        frame.render_widget(Paragraph::new(crew_lines), split[1]);
 
         let can_release = own_team.can_release_player(player);
         let popup_message = PopupMessage::ReleasePlayer {
@@ -1889,7 +1856,7 @@ impl MyTeamPanel {
             release_button = release_button.block(default_block().border_style(UiStyle::WARNING));
         }
 
-        let side_split = Layout::vertical([3, 3]).split(split[1]);
+        let side_split = Layout::vertical([3, 3]).split(split[2]);
 
         frame.render_interactive_widget(release_button, side_split[0]);
 
@@ -1898,6 +1865,31 @@ impl MyTeamPanel {
         }
 
         Ok(())
+    }
+
+    fn render_roster_dropdown(
+        &mut self,
+        frame: &mut UiFrame,
+        dropdown: Dropdown<'static>,
+        id: usize,
+        table_area: Rect,
+        row: u16,
+        right_offset: u16,
+        width: u16,
+        selected: usize,
+    ) {
+        let rect = Rect::new(
+            table_area.x + table_area.width - 1 - right_offset - width,
+            table_area.y + 2 + row,
+            width,
+            1,
+        );
+        let state = self.setting_dropdowns.entry(id).or_default();
+        if !state.is_open() {
+            state.select(selected);
+        }
+        let layer = if state.is_open() { 1 } else { 0 };
+        frame.render_layered_stateful_interactive_widget(dropdown, rect, state, layer);
     }
 
     fn build_players_table(
@@ -2023,7 +2015,7 @@ impl MyTeamPanel {
                 Constraint::Length(9),
                 Constraint::Length(10),
                 Constraint::Length(TRAINING_COLUMN_WIDTH),
-                Constraint::Length(9),
+                Constraint::Length(ROLE_COLUMN_WIDTH),
                 Constraint::Length(15),
                 Constraint::Length(20),
             ]);
@@ -2177,10 +2169,6 @@ impl MyTeamPanel {
             .iter()
             .position(|f| *f == player.training_focus)
             .unwrap_or_default();
-        let training_is_open = self
-            .setting_dropdowns
-            .get(&TRAINING_DROPDOWN_ID)
-            .map_or(false, |d| d.is_open());
         let player_id = player.id;
         let training_dropdown = Dropdown::new(
             TRAINING_DROPDOWN_ID,
@@ -2194,34 +2182,57 @@ impl MyTeamPanel {
         .hover_text("Change the training focus to change skills increase faster.")
         .open_direction(OpenDirection::Down);
 
-        let training_rect = Rect::new(
-            table_split[0].x + table_split[0].width
-                - 1
-                - TRAINING_COLUMN_RIGHT_OFFSET
-                - TRAINING_COLUMN_WIDTH,
-            table_split[0].y + 2 + player_index as u16,
-            TRAINING_COLUMN_WIDTH,
-            1,
-        );
-        let training_state = self
-            .setting_dropdowns
-            .entry(TRAINING_DROPDOWN_ID)
-            .or_default();
-        if !training_state.is_open() {
-            training_state.select(selected_focus);
-        }
-        frame.render_layered_stateful_interactive_widget(
+        self.render_roster_dropdown(
+            frame,
             training_dropdown,
-            training_rect,
-            training_state,
-            if training_is_open { 1 } else { 0 },
+            TRAINING_DROPDOWN_ID,
+            table_split[0],
+            player_index as u16,
+            TRAINING_COLUMN_RIGHT_OFFSET,
+            TRAINING_COLUMN_WIDTH,
+            selected_focus,
         );
 
-        self.render_player_buttons(
+        let role_variants = CrewRole::iter().collect_vec();
+        let role_options: Vec<Text> = role_variants
+            .iter()
+            .map(|role| Text::from(role.to_string()))
+            .collect();
+        let selected_role = role_variants
+            .iter()
+            .position(|role| *role == player.info.crew_role)
+            .unwrap_or_default();
+        let on_select_variants = role_variants.clone();
+        let mut role_dropdown = Dropdown::new(
+            ROLE_DROPDOWN_ID,
+            role_options,
+            Box::new(move |index| UiCallback::SetCrewRole {
+                player_id,
+                role: on_select_variants[index],
+            }),
+        )
+        .hover_text("Set the pirate's crew role.")
+        .open_direction(OpenDirection::Down);
+        for (index, role) in role_variants.iter().enumerate() {
+            role_dropdown = role_dropdown.hotkey_select(ui_key::team::set_crew_role(*role), index);
+        }
+
+        self.render_roster_dropdown(
+            frame,
+            role_dropdown,
+            ROLE_DROPDOWN_ID,
+            table_split[0],
+            player_index as u16,
+            ROLE_COLUMN_RIGHT_OFFSET,
+            ROLE_COLUMN_WIDTH,
+            selected_role,
+        );
+
+        self.render_selected_player(
             &sorted_players,
             frame,
             world,
-            table_split[1].inner(Margin::new(1, 1)),
+            table_split[1].inner(Margin::new(2, 1)),
         )?;
 
         Ok(())
@@ -2731,11 +2742,12 @@ impl HelpPanel for MyTeamPanel {
                 )),
                 Line::from("  ↑/↓        Move highlight in the active list"),
                 Line::from(format!(
-                    "  {}/{}/{}/{}    Set highlighted pirate as captain/doctor/engineer/pilot",
+                    "  {}/{}/{}/{}/{}  Set highlighted pirate as captain/doctor/engineer/pilot/mozzo",
                     ui_key::team::SET_CAPTAIN,
                     ui_key::team::SET_DOCTOR,
                     ui_key::team::SET_ENGINEER,
                     ui_key::team::SET_PILOT,
+                    ui_key::team::SET_MOZZO,
                 )),
                 Line::from("  1-7        Place highlighted pirate in that game position"),
                 Line::from(format!(

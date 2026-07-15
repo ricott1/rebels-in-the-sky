@@ -66,8 +66,7 @@ pub struct Dropdown<'a> {
     id: usize,
     options: Vec<Text<'a>>,
     on_select: DropdownCallback,
-    hotkey: Option<KeyCode>,
-    hotkey_index: Option<usize>,
+    hotkeys: Vec<(KeyCode, Option<usize>)>,
     open_direction: OpenDirection,
     block: Option<Block<'a>>,
     style: Style,
@@ -84,8 +83,7 @@ impl<'a> Dropdown<'a> {
             id,
             on_select,
             options,
-            hotkey: None,
-            hotkey_index: None,
+            hotkeys: Vec::new(),
             open_direction: OpenDirection::Down,
             block: None,
             style: UiStyle::DEFAULT,
@@ -97,14 +95,13 @@ impl<'a> Dropdown<'a> {
         }
     }
 
-    pub const fn hotkey(mut self, key: KeyCode) -> Self {
-        self.hotkey = Some(key);
+    pub fn hotkey(mut self, key: KeyCode) -> Self {
+        self.hotkeys.push((key, None));
         self
     }
 
-    pub const fn hotkey_select(mut self, key: KeyCode, index: usize) -> Self {
-        self.hotkey = Some(key);
-        self.hotkey_index = Some(index);
+    pub fn hotkey_select(mut self, key: KeyCode, index: usize) -> Self {
+        self.hotkeys.push((key, Some(index)));
         self
     }
 
@@ -134,7 +131,7 @@ impl<'a> Dropdown<'a> {
     }
 
     fn styled_title(&self, title: &str) -> Line<'static> {
-        super::underline_hotkey(title, self.hotkey)
+        super::underline_hotkey(title, self.hotkeys.first().map(|(key, _)| *key))
     }
 
     fn border_offset(&self) -> u16 {
@@ -306,13 +303,11 @@ impl InteractiveStatefulWidget for &Dropdown<'_> {
             return;
         }
 
-        // Hotkey fires whenever this dropdown's layer is active, not only on hover.
-        if let Some(key) = self.hotkey {
-            let index = self
-                .hotkey_index
-                .unwrap_or((state.selected + 1) % self.options.len());
+        // Hotkeys fire whenever this dropdown's layer is active, not only on hover.
+        for (key, index) in &self.hotkeys {
+            let index = index.unwrap_or((state.selected + 1) % self.options.len());
             callback_registry.register_keyboard_callback(
-                key,
+                *key,
                 UiCallback::SelectDropdown {
                     id: self.id,
                     index,
