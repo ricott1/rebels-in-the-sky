@@ -781,6 +781,10 @@ impl Player {
         scouting >= MAX_SKILL - role_value
     }
 
+    pub fn is_special_trait_scouted(&self, scouting: Skill) -> bool {
+        scouting >= 0.5 * MAX_SKILL
+    }
+
     // If the player is currently playing a game, returns the in-game copy of the player,
     // which carries the live tiredness, morale and drunkenness.
     fn in_game_copy<'a>(&self, world: &'a World) -> Option<&'a Player> {
@@ -866,14 +870,14 @@ impl Player {
         false
     }
 
-    // Returns None when the player is sober (nothing worth displaying).
-    pub fn drunkenness_description(drunkenness: Skill) -> Option<&'static str> {
+    pub fn drunkenness_description(drunkenness: Skill) -> &'static str {
         match drunkenness {
-            x if x < 4.0 => None,
-            x if x < 8.0 => Some("Tipsy"),
-            x if x < 12.0 => Some("Merry"),
-            x if x < 16.0 => Some("Inebriated"),
-            _ => Some("Sloshed"),
+            x if x == MIN_SKILL => "Completely sober",
+            x if x < 4.0 => "Dignifiedly tipsy",
+            x if x < 8.0 => "Respectably buzzed",
+            x if x < 12.0 => "Pretty merry",
+            x if x < 16.0 => "Undignifiedly inebriated",
+            _ => "Sloshed",
         }
     }
 

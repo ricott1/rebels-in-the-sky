@@ -1670,6 +1670,11 @@ pub fn render_player_description(
     frame: &mut UiFrame,
     area: Rect,
 ) {
+    let scouting = players_scouting
+        .get(&player.id)
+        .copied()
+        .unwrap_or_default();
+
     let h_split = Layout::horizontal([
         Constraint::Length(PLAYER_IMAGE_WIDTH as u16 + 4),
         Constraint::Min(2),
@@ -1699,20 +1704,16 @@ pub fn render_player_description(
         frame.render_widget(paragraph, header_body_img[1]);
     }
 
-    let trait_span = player.special_trait.map_or_else(
-        || Span::default(),
-        |t| Span::styled(format!("{t}"), t.style()),
-    );
+    let trait_span = if player.is_special_trait_scouted(scouting) {
+        player.special_trait.map_or_else(
+            || Span::default(),
+            |t| Span::styled(format!("{t}"), t.style()),
+        )
+    } else {
+        Span::default()
+    };
 
     let drunkenness = player.current_drunkenness(world);
-    let drunkenness_span = Player::drunkenness_description(drunkenness).map_or_else(
-        || Span::default(),
-        |desc| {
-            let style = ((MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL).style();
-            Span::styled(format!(" {desc}"), style)
-        },
-    );
-
     let line = HoverTextLine::from(vec![
         HoverTextSpan::new(
             Span::raw(format!(
@@ -1725,7 +1726,6 @@ pub fn render_player_description(
             trait_span,
             player.special_trait.map_or_else(String::new, |t| t.description(player)),
         ),
-        HoverTextSpan::new(drunkenness_span, String::new()),
     ]);
     frame.render_interactive_widget(line, header_body_stats[1]);
 
@@ -1811,7 +1811,7 @@ pub fn render_player_description(
 
     match view {
         PlayerWidgetView::Skills => frame.render_widget(
-            Paragraph::new(format_player_skills(player, players_scouting)),
+            Paragraph::new(format_player_skills(player, scouting)),
             header_body_stats[6],
         ),
         PlayerWidgetView::Stats => frame.render_widget(
@@ -1948,14 +1948,7 @@ fn scouted_player_role_spans<'a>(player: &Player, scouting: Skill, i: usize) -> 
     vec![Span::raw(&SPACES[..PADDING + 10])]
 }
 
-fn format_player_skills<'a>(
-    player: &'a Player,
-    players_scouting: &'a HashMap<PlayerId, Skill>,
-) -> Vec<Line<'a>> {
-    let scouting = players_scouting
-        .get(&player.id)
-        .copied()
-        .unwrap_or_default();
+fn format_player_skills<'a>(player: &'a Player, scouting: Skill) -> Vec<Line<'a>> {
     let mut text = vec![];
     let sorted_roles = (0..NUM_GAME_POSITIONS as usize)
         .sorted_by(|&a, &b| {
