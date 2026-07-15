@@ -146,7 +146,7 @@ mod tests {
         core::{
             Honour, Planet, Player, Population, Region, Resource, Team, MAX_NUM_ASTEROID_PER_TEAM,
         },
-        types::AppResult,
+        types::{AppResult, SystemTimeTick, Tick},
     };
 
     #[test]
@@ -184,7 +184,8 @@ mod tests {
         }
 
         for player_id in player_ids.iter() {
-            app.world.hire_player_for_team(player_id, &team_id)?;
+            app.world
+                .hire_player_for_team(player_id, &team_id, Tick::now())?;
         }
 
         let team = app.world.teams.get(&team_id).unwrap();
@@ -231,7 +232,8 @@ mod tests {
         }
 
         for player_id in player_ids.iter() {
-            app.world.hire_player_for_team(player_id, &team_id)?;
+            app.world
+                .hire_player_for_team(player_id, &team_id, Tick::now())?;
         }
 
         let team = app.world.teams.get(&team_id).unwrap();

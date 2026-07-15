@@ -168,6 +168,16 @@ pub fn load_world(store_prefix: &str) -> AppResult<World> {
         }
     }
 
+    // 2. populate players joined_team_on with team creation time
+    for player in w.players.values_mut() {
+        if player.joined_team_on.is_none() {
+            if let Some(team_id) = player.team {
+                let team = w.teams.get_or_err(&team_id)?;
+                player.joined_team_on = Some(team.creation_time);
+            }
+        }
+    }
+
     Ok(w)
 }
 

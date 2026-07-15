@@ -203,6 +203,7 @@ impl World {
 
         let mut planet = self.planets.get_or_err(&team.home_planet_id)?.clone();
         planet.team_ids.push(team_id);
+        let current_tick = team.creation_time;
 
         self.teams.insert(team.id, team);
 
@@ -216,13 +217,13 @@ impl World {
                 None,
                 None,
             )?;
-            self.add_player_to_team(&player_id, &team_id)?;
+            self.add_player_to_team(&player_id, &team_id, current_tick)?;
         }
 
         loop {
             let player_id =
                 self.generate_random_pirate(rng, &planet, None, Some(team_base_level), None, None)?;
-            self.add_player_to_team(&player_id, &team_id)?;
+            self.add_player_to_team(&player_id, &team_id, current_tick)?;
             let team = self.teams.get_or_err(&team_id)?;
             if team.player_ids.len() == team.spaceship.crew_capacity() as usize {
                 break;
@@ -272,10 +273,12 @@ impl World {
             autonomous_strategy: AutonomousStrategy::new_for_own_team(),
             ..Default::default()
         };
+
+        let current_tick = team.creation_time;
         self.teams.insert(team.id, team);
 
         for player_id in players {
-            self.add_player_to_team(&player_id, &team_id)?;
+            self.add_player_to_team(&player_id, &team_id, current_tick)?;
         }
 
         let player_ids = self.teams.get_or_err(&team_id)?.player_ids.clone();
@@ -531,7 +534,7 @@ impl World {
                     (upgrade.duration - time_elapsed) as f32 * previous_upgrade_bonus / bonus;
 
                 log::debug!(
-                    "Update {role}: old upgrade {previous_upgrade_bonus}, new upgrade {bonus}"
+                    "Update {player_previous_role}: old upgrade {previous_upgrade_bonus}, new upgrade {bonus}"
                 );
                 let new_upgrade =
                     Upgrade::new(upgrade.target, bonus).with_duration(new_duration as Tick);
@@ -756,7 +759,12 @@ impl World {
         next_refresh.saturating_sub(self.last_tick_short_interval)
     }
 
-    fn add_player_to_team(&mut self, player_id: &PlayerId, team_id: &TeamId) -> AppResult<()> {
+    fn add_player_to_team(
+        &mut self,
+        player_id: &PlayerId,
+        team_id: &TeamId,
+        current_tick: Tick,
+    ) -> AppResult<()> {
         let mut player = self.players.get_or_err(player_id)?.clone();
         let mut team = self.teams.get_or_err(team_id)?.clone();
         let is_in_space_cove = self.player_is_in_space_cove_on(&player);
@@ -773,6 +781,7 @@ impl World {
         team.version += 1;
 
         player.team = Some(team.id);
+        player.joined_team_on = Some(current_tick);
         player.current_location = PlayerLocation::WithTeam;
         player.set_jersey(&team.jersey);
         player.peer_id = team.peer_id;
@@ -802,6 +811,7 @@ impl World {
         &mut self,
         player_id: &PlayerId,
         team_id: &TeamId,
+        current_tick: Tick,
     ) -> AppResult<()> {
         let player = self.players.get_or_err(player_id)?;
         let mut team = self.teams.get_or_err(team_id)?.clone();
@@ -810,7 +820,7 @@ impl World {
         team.sub_resource(Resource::SATOSHI, player.hire_cost())?;
         self.teams.insert(team.id, team);
 
-        self.add_player_to_team(player_id, team_id)?;
+        self.add_player_to_team(player_id, team_id, current_tick)?;
 
         Ok(())
     }
@@ -819,6 +829,7 @@ impl World {
         &mut self,
         player_id1: PlayerId,
         player_id2: PlayerId,
+        current_tick: Tick,
     ) -> AppResult<()> {
         let team_id1 = self
             .players
@@ -833,8 +844,8 @@ impl World {
 
         self.release_player_from_team(player_id1)?;
         self.release_player_from_team(player_id2)?;
-        self.add_player_to_team(&player_id1, &team_id2)?;
-        self.add_player_to_team(&player_id2, &team_id1)?;
+        self.add_player_to_team(&player_id1, &team_id2, current_tick)?;
+        self.add_player_to_team(&player_id2, &team_id1, current_tick)?;
         Ok(())
     }
 
@@ -1629,7 +1640,7 @@ impl World {
 
             // Local teams hire free pirates just before refreshing team,
             // so own team has had already time to hire them.
-            self.tick_auto_hire_free_pirates()?;
+            self.tick_auto_hire_free_pirates(current_tick)?;
 
             // Create free pirates only if this is the last time window to do so.
             // This will run also during a simulation, but only once.
@@ -2595,7 +2606,7 @@ impl World {
         })
     }
 
-    fn tick_auto_hire_free_pirates(&mut self) -> AppResult<()> {
+    fn tick_auto_hire_free_pirates(&mut self, current_tick: Tick) -> AppResult<()> {
         let free_pirates = self
             .players
             .values()
@@ -2704,7 +2715,7 @@ impl World {
         for idx in 0..hired_player_ids.len() {
             let player_id = hired_player_ids[idx];
             let team_id = hiring_team_ids[idx];
-            self.hire_player_for_team(&player_id, &team_id)?;
+            self.hire_player_for_team(&player_id, &team_id, current_tick)?;
         }
 
         Ok(())
@@ -3942,7 +3953,7 @@ mod test {
             prev_worst_rating
         );
 
-        app.world.tick_auto_hire_free_pirates()?;
+        app.world.tick_auto_hire_free_pirates(Tick::now())?;
 
         let team = app.world.teams.get_or_err(&team_id)?;
         let players = team
@@ -3991,7 +4002,7 @@ mod test {
 
         app.world.teams.insert(team.id, team);
 
-        app.world.tick_auto_hire_free_pirates()?;
+        app.world.tick_auto_hire_free_pirates(Tick::now())?;
 
         let team = app.world.teams.get_or_err(&team_id)?;
         assert!(team.player_ids.len() >= MIN_PLAYERS_PER_GAME);

@@ -824,8 +824,11 @@ impl NetworkCallback {
                             target_team,
                         )?;
 
-                        app.world
-                            .swap_players_team(trade.proposer_player.id, trade.target_player.id)?;
+                        app.world.swap_players_team(
+                            trade.proposer_player.id,
+                            trade.target_player.id,
+                            timestamp,
+                        )?;
 
                         let own_team = app.world.get_own_team_mut()?;
                         own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
@@ -913,8 +916,11 @@ impl NetworkCallback {
                             own_team,
                         )?;
 
-                        app.world
-                            .swap_players_team(trade.proposer_player.id, trade.target_player.id)?;
+                        app.world.swap_players_team(
+                            trade.proposer_player.id,
+                            trade.target_player.id,
+                            timestamp,
+                        )?;
 
                         let own_team = app.world.get_own_team_mut()?;
                         own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);

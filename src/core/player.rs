@@ -12,7 +12,7 @@ use super::{
 use crate::{
     game_engine::types::GameStats,
     image::{player::PlayerImage, utils::Gif},
-    types::{AppResult, HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, TeamId},
+    types::{AppResult, HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, TeamId, Tick},
 };
 use anyhow::anyhow;
 
@@ -48,6 +48,7 @@ pub struct Player {
     pub version: u64,
     pub info: InfoStats,
     pub team: Option<TeamId>,
+    pub joined_team_on: Option<Tick>,
     pub special_trait: Option<Trait>,
     pub reputation: Skill,
     pub potential: Skill,
@@ -80,6 +81,7 @@ impl Default for Player {
             version: 0,
             info: InfoStats::default(),
             team: None,
+            joined_team_on: None,
             special_trait: None,
             reputation: Skill::default(),
             potential: Skill::default(),
@@ -112,12 +114,13 @@ impl Serialize for Player {
         // and serialize them in a vector which is then deserialized
         // into the corresponding fields
         let compact_skills = self.current_skill_array().to_vec();
-        let mut state = serializer.serialize_struct("Player", 19)?;
+        let mut state = serializer.serialize_struct("Player", 22)?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("peer_id", &self.peer_id)?;
         state.serialize_field("version", &self.version)?;
         state.serialize_field("info", &self.info)?;
         state.serialize_field("team", &self.team)?;
+        state.serialize_field("joined_team_on", &self.joined_team_on)?;
         state.serialize_field("special_trait", &self.special_trait)?;
         state.serialize_field("reputation", &self.reputation)?;
         state.serialize_field("potential", &self.potential)?;
@@ -155,6 +158,7 @@ impl<'de> Deserialize<'de> for Player {
             Version,
             Info,
             Team,
+            JoinedTeamOn,
             SpecialTrait,
             Reputation,
             Potential,
@@ -194,6 +198,7 @@ impl<'de> Deserialize<'de> for Player {
                             "version" => Ok(Field::Version),
                             "info" => Ok(Field::Info),
                             "team" => Ok(Field::Team),
+                            "joined_team_on" => Ok(Field::JoinedTeamOn),
                             "special_trait" => Ok(Field::SpecialTrait),
                             "reputation" => Ok(Field::Reputation),
                             "potential" => Ok(Field::Potential),
@@ -241,6 +246,7 @@ impl<'de> Deserialize<'de> for Player {
                 let mut version = None;
                 let mut info = None;
                 let mut team = None;
+                let mut joined_team_on = None;
                 let mut special_trait = None;
                 let mut reputation = None;
                 let mut potential = None;
@@ -289,6 +295,12 @@ impl<'de> Deserialize<'de> for Player {
                                 return Err(serde::de::Error::duplicate_field("team"));
                             }
                             team = Some(map.next_value()?);
+                        }
+                        Field::JoinedTeamOn => {
+                            if joined_team_on.is_some() {
+                                return Err(serde::de::Error::duplicate_field("joined_team_on"));
+                            }
+                            joined_team_on = Some(map.next_value()?);
                         }
                         Field::SpecialTrait => {
                             if special_trait.is_some() {
@@ -401,6 +413,7 @@ impl<'de> Deserialize<'de> for Player {
                 let version = version.ok_or_else(|| serde::de::Error::missing_field("version"))?;
                 let info = info.ok_or_else(|| serde::de::Error::missing_field("info"))?;
                 let team = team.ok_or_else(|| serde::de::Error::missing_field("team"))?;
+                let joined_team_on = joined_team_on.unwrap_or_default();
                 let special_trait = special_trait
                     .ok_or_else(|| serde::de::Error::missing_field("special_trait"))?;
                 let reputation =
@@ -437,6 +450,7 @@ impl<'de> Deserialize<'de> for Player {
                     version,
                     info,
                     team,
+                    joined_team_on,
                     special_trait,
                     reputation,
                     potential,
@@ -511,6 +525,7 @@ impl<'de> Deserialize<'de> for Player {
             "version",
             "info",
             "team",
+            "joined_team_on",
             "special_trait",
             "reputation",
             "potential",

@@ -684,7 +684,7 @@ impl UiCallback {
             // Local trade
             if proposer_player.hire_cost() >= target_player.hire_cost() {
                 app.world
-                    .swap_players_team(proposer_player_id, target_player_id)?;
+                    .swap_players_team(proposer_player_id, target_player_id, Tick::now())?;
 
                 let locked_id = app.ui.player_panel.locked_player_id;
                 let selected_id = app.ui.player_panel.selected_player_id;
@@ -1715,7 +1715,8 @@ impl UiCallback {
             }
             Self::HirePlayer { player_id } => {
                 let own_team_id = app.world.own_team_id;
-                app.world.hire_player_for_team(player_id, &own_team_id)?;
+                app.world
+                    .hire_player_for_team(player_id, &own_team_id, Tick::now())?;
                 app.world.players_scouting.insert(*player_id, MAX_SKILL);
                 app.world.dirty_ui = true;
                 app.ui.player_panel.update(&app.world)?;
