@@ -56,8 +56,8 @@ pub struct GamePanel {
     pitch_view_filter: Option<Period>,
     player_status_view: bool,
     commentary_index: usize,
-    // action_results: Vec<ActionOutput>,
     action_results_len: usize,
+    shot_gif: Option<(GameId, usize, Possession, Tick)>,
     tick: usize,
     gif_map: GifMap,
     games_list_state: ClickableListState,
@@ -625,32 +625,16 @@ impl GamePanel {
             return Ok(());
         };
         let mut shot_img = None;
-        // Display shot gif if the last action was a made 3 or if it was a substitution and the second last was a made 3.
-        if let Some(last_action) = game.action_results.last() {
-            let mut should_display_shot_gif_for = None;
-
-            if last_action.score_change == 3 {
-                should_display_shot_gif_for = Some(last_action.possession);
-            } else if last_action.situation == ActionSituation::AfterSubstitution
-                && game.action_results.len() > 1
-            {
-                let second_last_action = &game.action_results[game.action_results.len() - 2];
-                if second_last_action.score_change == 3 {
-                    should_display_shot_gif_for = Some(second_last_action.possession);
-                }
-            }
-
-            if let Some(side) = should_display_shot_gif_for {
-                let shot_tick = game.starting_at + last_action.start_at.as_tick();
-                let now = Tick::now();
-                let shot_frame = now.saturating_sub(shot_tick) as usize / 140;
+        if let Some((game_id, _, side, started_at)) = self.shot_gif {
+            if game_id == game.id {
+                let shot_frame = Tick::now().saturating_sub(started_at) as usize / 140;
                 if shot_frame < RIGHT_SHOT_GIF.len() {
                     // After scoring the possesion is flipped, so the opposite team scored.
-                    if side == Possession::Home {
-                        shot_img = Some(&RIGHT_SHOT_GIF[shot_frame]);
+                    shot_img = if side == Possession::Home {
+                        Some(&RIGHT_SHOT_GIF[shot_frame])
                     } else {
-                        shot_img = Some(&LEFT_SHOT_GIF[shot_frame]);
-                    }
+                        Some(&LEFT_SHOT_GIF[shot_frame])
+                    };
                 }
             }
         }
@@ -1224,6 +1208,32 @@ impl Screen for GamePanel {
             &self.loaded_games,
         ) {
             self.action_results_len = game.action_results.len();
+
+            // Trigger the shot gif if the last action was a made 3 or if it was a substitution and the second last was a made 3.
+            let mut trigger = None;
+            if let Some(last_action) = game.action_results.last() {
+                let last_idx = game.action_results.len() - 1;
+                if last_action.score_change == 3 {
+                    trigger = Some((last_idx, last_action.possession));
+                } else if last_action.situation == ActionSituation::AfterSubstitution
+                    && last_idx > 0
+                {
+                    let second_last_action = &game.action_results[last_idx - 1];
+                    if second_last_action.score_change == 3 {
+                        trigger = Some((last_idx - 1, second_last_action.possession));
+                    }
+                }
+            }
+
+            self.shot_gif = match trigger {
+                Some((idx, side)) => match self.shot_gif {
+                    Some((game_id, prev_idx, _, _)) if game_id == game.id && prev_idx == idx => {
+                        self.shot_gif
+                    }
+                    _ => Some((game.id, idx, side, Tick::now())),
+                },
+                None => None,
+            };
         }
 
         Ok(())
