@@ -4,12 +4,17 @@ use crate::{
         constants::{MoraleModifier, TirednessCost},
         player::Trait,
         skill::GameSkill,
+        Skill,
     },
     game_engine::constants::ADV_NEUTRAL_LIMIT,
 };
 use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
+
+const LOSER_MORALE_MOD: Skill = MoraleModifier::SEVERE_MALUS + MoraleModifier::HIGH_MALUS;
+const WINNER_MORALE_MOD: Skill = MoraleModifier::SEVERE_BONUS;
+const DRAW_MORALE_MOD: Skill = MoraleModifier::MEDIUM_MALUS;
 
 pub(crate) fn execute(
     input: &ActionOutput,
@@ -128,8 +133,8 @@ pub(crate) fn execute(
 
     let description = match atk_result - def_result {
         x if x > ADV_NEUTRAL_LIMIT => {
-            defender_update.extra_morale += MoraleModifier::SEVERE_MALUS;
-            attacker_update.extra_morale += MoraleModifier::SEVERE_BONUS;
+            defender_update.extra_morale += LOSER_MORALE_MOD;
+            attacker_update.extra_morale += WINNER_MORALE_MOD;
             attacker_update.brawls = [1, 0, 0];
             defender_update.brawls = [0, 1, 0];
 
@@ -194,8 +199,8 @@ pub(crate) fn execute(
         0 => {
             attacker_update.extra_tiredness += TirednessCost::HIGH;
             defender_update.extra_tiredness += TirednessCost::HIGH;
-            defender_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
-            attacker_update.extra_morale += MoraleModifier::MEDIUM_MALUS;
+            defender_update.extra_morale += DRAW_MORALE_MOD;
+            attacker_update.extra_morale += DRAW_MORALE_MOD;
 
             attacker_update.brawls = [0, 0, 1];
             defender_update.brawls = [0, 0, 1];
@@ -237,8 +242,8 @@ pub(crate) fn execute(
             .clone()
         }
         _ => {
-            defender_update.extra_morale += MoraleModifier::SEVERE_BONUS;
-            attacker_update.extra_morale += MoraleModifier::SEVERE_MALUS;
+            defender_update.extra_morale += WINNER_MORALE_MOD;
+            attacker_update.extra_morale += LOSER_MORALE_MOD;
             attacker_update.brawls = [0, 1, 0];
             defender_update.brawls = [1, 0, 0];
 
