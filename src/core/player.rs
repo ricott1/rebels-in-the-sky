@@ -546,13 +546,6 @@ impl<'de> Deserialize<'de> for Player {
                     charisma: compact_skills[19],
                 };
 
-                // FIXME: remove me in next version
-                if player.game_position_fitness == [Skill::default(); NUM_GAME_POSITIONS as usize] {
-                    player.set_initial_game_position_fitness(None);
-                    // FIXME: when we want to stop this migration, we can return an error here as:
-                    // return Err(anyhow!("Missing game_position_fitness. You probably need to download version 1.6.2 and load the file once to initialize it."))
-                }
-
                 Ok(player)
             }
         }

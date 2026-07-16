@@ -1,6 +1,7 @@
 #[cfg(feature = "relayer")]
 use crate::network::network_store_data::NetworkStoreData;
 use crate::{
+    app_version,
     core::{world::World, MAX_SKILL},
     game_engine::{game::Game, Tournament, TournamentId},
     types::*,
@@ -154,26 +155,34 @@ pub fn save_world(
 
 pub fn load_world(store_prefix: &str) -> AppResult<World> {
     let mut w = load_from_json::<World>(&prefixed_world_filename(store_prefix))?;
+    let w_version = w.app_version;
+    w.app_version = app_version();
 
     // Migration passes
-    // 1. populate players_scouting
-    let own = w.own_team_id;
-    if w.players_scouting.is_empty() {
-        for (id, player) in &w.players {
-            if player.team == Some(own) {
-                w.players_scouting.insert(*id, MAX_SKILL);
-            } else {
-                w.players_scouting.insert(*id, player.reputation);
+    if w_version < [1, 8, 0] {
+        // 1. populate players_scouting
+        if w.players_scouting.is_empty() {
+            for (id, player) in &w.players {
+                if player.team == Some(w.own_team_id) {
+                    w.players_scouting.insert(*id, MAX_SKILL);
+                } else {
+                    w.players_scouting.insert(*id, player.reputation);
+                }
             }
         }
-    }
 
-    // 2. populate players joined_team_on with team creation time
-    for player in w.players.values_mut() {
-        if player.joined_team_on.is_none() {
-            if let Some(team_id) = player.team {
-                let team = w.teams.get_or_err(&team_id)?;
-                player.joined_team_on = Some(team.creation_time);
+        for player in w.players.values_mut() {
+            // 2. populate players joined_team_on with team creation time
+            if player.joined_team_on.is_none() {
+                if let Some(team_id) = player.team {
+                    let team = w.teams.get_or_err(&team_id)?;
+                    player.joined_team_on = Some(team.creation_time);
+                }
+            }
+
+            // 3. populate player opinions
+            if player.opinions.is_empty() {
+                player.set_initial_opinions();
             }
         }
     }

@@ -26,8 +26,8 @@ use crate::network::types::{NetworkGame, NetworkTeam};
 use crate::space_adventure::ControllableSpaceship;
 use crate::space_adventure::SpaceAdventure;
 use crate::store::{save_game, save_tournament};
-use crate::types::*;
 use crate::ui::{PopupMessage, UiCallback};
+use crate::{app_version, types::*};
 use anyhow::anyhow;
 use itertools::Itertools;
 use libp2p::PeerId;
@@ -42,6 +42,9 @@ use strum::IntoEnumIterator;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct World {
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub app_version: [usize; 3],
     #[serde(skip)]
     pub dirty: bool, // Whether anything relevant for the world state has changed and thus should be stored.
     #[serde(skip)]
@@ -110,6 +113,7 @@ impl World {
         }
 
         Self {
+            app_version: app_version(),
             seed: seed.unwrap_or(rand::random()),
             planets,
             ..Default::default()
@@ -3289,6 +3293,7 @@ impl World {
     pub fn to_store(&self) -> AppResult<World> {
         // FIXME: this can be optimized by not cloning and filtering directly
         let mut w = World {
+            app_version: self.app_version,
             seed: self.seed,
             last_tick_short_interval: self.last_tick_short_interval,
             last_tick_medium_interval: self.last_tick_medium_interval,
