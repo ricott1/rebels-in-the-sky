@@ -780,6 +780,7 @@ impl World {
 
         player.team = Some(team.id);
         player.joined_team_on = Some(current_tick);
+        player.satisfaction = MAX_SKILL;
         player.current_location = PlayerLocation::WithTeam;
         player.set_jersey(&team.jersey);
         player.peer_id = team.peer_id;
@@ -1062,6 +1063,12 @@ impl World {
         }
 
         let asteroid_type = space.asteroid_planet_found();
+
+        // for player_id in own_team.player_ids {
+        //     let p = self.players.get_mut_or_err(&player_id)?;
+
+        //     let adventure_opinion = p.opinions.get(&PlayerOpinion::Adventures);
+        // }
 
         self.teams.insert(own_team.id, own_team);
         self.dirty = true;
@@ -2894,9 +2901,10 @@ impl World {
             }
 
             let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
-            if player.morale < MORALE_THRESHOLD_FOR_LEAVING
+            if player.satisfaction < SATISFACTION_THRESHOLD_FOR_LEAVING
                 && rng.random_bool(
-                    (1.0 - player.morale / MAX_SKILL) as f64 * LEAVING_PROBABILITY_MORALE_MODIFIER,
+                    (1.0 - player.satisfaction / MAX_SKILL) as f64
+                        * LEAVING_PROBABILITY_SATISFACTION_MODIFIER,
                 )
             {
                 releasing_player_ids.push(player_id);
@@ -2905,10 +2913,12 @@ impl World {
                     messages.push(UiCallback::PushUiPopup {
                         popup_message: PopupMessage::Message {
                             message: format!(
-                                "{} {} left the crew!\n{} morale was too low...",
+                                "{} {} left the crew!\n{} {} {}...",
                                 player.info.first_name,
                                 player.info.last_name,
-                                player.info.pronouns.as_possessive()
+                                player.info.pronouns.as_subject(),
+                                player.info.pronouns.to_be(),
+                                player.satisfaction_description(),
                             ),
                             links: vec![],
                             level: log::Level::Info,

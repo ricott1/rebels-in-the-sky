@@ -10,9 +10,13 @@ use super::{
     world::World,
 };
 use crate::{
+    core::{PlayerOpinion, PlayerOpinionMap},
     game_engine::types::GameStats,
     image::{player::PlayerImage, utils::Gif},
-    types::{AppResult, HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, TeamId, Tick},
+    types::{
+        AppResult, HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, SystemTimeTick,
+        TeamId, Tick,
+    },
 };
 use anyhow::anyhow;
 
@@ -71,6 +75,8 @@ pub struct Player {
     pub historical_stats: GameStats,
     build_data: PlayerBuildData, // Intermediate state used to build the random player. Not serialized
     pub scouted_skills: [usize; 20], // Cached order of scouted skill. Not serialized
+    pub opinions: PlayerOpinionMap,
+    pub satisfaction: Skill,
 }
 
 impl Default for Player {
@@ -104,6 +110,8 @@ impl Default for Player {
             historical_stats: GameStats::default(),
             build_data: PlayerBuildData::default(),
             scouted_skills: [usize::default(); 20],
+            opinions: PlayerOpinionMap::default(),
+            satisfaction: Skill::default(),
         }
     }
 }
@@ -143,6 +151,8 @@ impl Serialize for Player {
         )?;
         state.serialize_field("training_focus", &self.training_focus)?;
         state.serialize_field("historical_stats", &self.historical_stats)?;
+        state.serialize_field("opinions", &self.opinions.iter().collect_vec())?;
+        state.serialize_field("satisfaction", &self.satisfaction)?;
         state.end()
     }
 }
@@ -175,6 +185,8 @@ impl<'de> Deserialize<'de> for Player {
             Drunkenness,
             CompactSkills,
             HistoricalStats,
+            Opinions,
+            Satisfaction,
         }
 
         impl<'de> Deserialize<'de> for Field {
@@ -219,6 +231,8 @@ impl<'de> Deserialize<'de> for Player {
                             "drunkenness" => Ok(Field::Drunkenness),
                             "compact_skills" => Ok(Field::CompactSkills),
                             "historical_stats" => Ok(Field::HistoricalStats),
+                            "opinions" => Ok(Field::Opinions),
+                            "satisfaction" => Ok(Field::Satisfaction),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -263,6 +277,8 @@ impl<'de> Deserialize<'de> for Player {
                 let mut drunkenness = None;
                 let mut compact_skills: Option<Vec<Skill>> = None;
                 let mut historical_stats = None;
+                let mut opinions = None;
+                let mut satisfaction = None;
 
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -405,6 +421,24 @@ impl<'de> Deserialize<'de> for Player {
                             }
                             historical_stats = Some(map.next_value()?);
                         }
+
+                        Field::Opinions => {
+                            if opinions.is_some() {
+                                return Err(serde::de::Error::duplicate_field("opinions"));
+                            }
+                            opinions = Some(
+                                map.next_value::<Vec<(PlayerOpinion, (Tick, Skill))>>()?
+                                    .into_iter()
+                                    .collect(),
+                            );
+                        }
+
+                        Field::Satisfaction => {
+                            if satisfaction.is_some() {
+                                return Err(serde::de::Error::duplicate_field("satisfaction"));
+                            }
+                            satisfaction = Some(map.next_value()?);
+                        }
                     }
                 }
 
@@ -443,6 +477,8 @@ impl<'de> Deserialize<'de> for Player {
                 let compact_skills = compact_skills
                     .ok_or_else(|| serde::de::Error::missing_field("compact_skills"))?;
                 let historical_stats = historical_stats.unwrap_or_default();
+                let opinions = opinions.unwrap_or_default();
+                let satisfaction = satisfaction.unwrap_or(MAX_SKILL);
 
                 let mut player = Player {
                     id,
@@ -473,6 +509,8 @@ impl<'de> Deserialize<'de> for Player {
                     historical_stats,
                     build_data: PlayerBuildData::default(),
                     scouted_skills: [usize::default(); 20],
+                    opinions,
+                    satisfaction,
                 };
 
                 player.set_initial_scouted_skill();
@@ -541,6 +579,7 @@ impl<'de> Deserialize<'de> for Player {
             "drunkenness",
             "compact_skills",
             "historical_stats",
+            "opinions",
         ];
         deserializer.deserialize_struct("Player", FIELDS, PlayerVisitor)
     }
@@ -619,6 +658,7 @@ impl Player {
         self.set_initial_game_position_fitness(Some(rng));
         self.previous_game_position_fitness = self.game_position_fitness;
         self.set_initial_scouted_skill();
+        self.set_initial_opinions();
 
         let extra_potential = {
             // Extra potential has a variance that depends on current age
@@ -691,6 +731,35 @@ impl Player {
             .expect("Should convert");
         scouted_skills.shuffle(rng);
         self.scouted_skills = scouted_skills;
+    }
+
+    pub fn set_initial_opinions(&mut self) {
+        let rng = &mut ChaCha8Rng::seed_from_u64(self.id.as_u64_pair().1);
+        let value = match self.info.population {
+            Population::Galdari => MAX_SKILL,
+            Population::Human { .. } => 10.0,
+            _ => 18.0,
+        };
+        self.opinions.insert(
+            PlayerOpinion::Populations {
+                population: self.info.population,
+            },
+            (Tick::now(), value),
+        );
+
+        let std_dev = 3.0;
+        let mut values = [2.0, 8.0, 14.0].map(|mean| {
+            let normal =
+                Normal::new(mean, std_dev).expect("Should create valid normal distribution");
+            normal.sample(rng).bound()
+        });
+        values.shuffle(rng);
+        self.opinions
+            .insert(PlayerOpinion::Adventures, (Tick::now(), values[0]));
+        self.opinions
+            .insert(PlayerOpinion::Drinking, (Tick::now(), values[1]));
+        self.opinions
+            .insert(PlayerOpinion::Gold, (Tick::now(), values[2]));
     }
 
     fn set_initial_game_position_fitness(&mut self, rng: Option<&mut ChaCha8Rng>) {
@@ -872,12 +941,25 @@ impl Player {
 
     pub fn drunkenness_description(drunkenness: Skill) -> &'static str {
         match drunkenness {
-            x if x == MIN_SKILL => "Completely sober",
-            x if x < 4.0 => "Dignifiedly tipsy",
-            x if x < 8.0 => "Respectably buzzed",
-            x if x < 12.0 => "Pretty merry",
-            x if x < 16.0 => "Undignifiedly inebriated",
-            _ => "Sloshed",
+            x if x < MIN_SKILL => "completely drunk",
+            x if x == MIN_SKILL => "completely sober",
+            x if x < 4.0 => "dignifiedly tipsy",
+            x if x < 8.0 => "respectably buzzed",
+            x if x < 12.0 => "pretty merry",
+            x if x < 16.0 => "undignifiedly inebriated",
+            _ => "sloshed",
+        }
+    }
+
+    pub fn satisfaction_description(&self) -> &'static str {
+        match self.satisfaction {
+            x if x == MIN_SKILL => "disgusted by the crew",
+            x if x < 4.0 => "strongly opposed to the crew ",
+            x if x < 8.0 => "somewhat unhappy about the crew",
+            x if x < 12.0 => "overall satisfied with the crew",
+            x if x < 16.0 => "pretty happy with the crew",
+            x if x < 16.0 => "in love with the crew",
+            _ => "esthatic about the crew",
         }
     }
 
@@ -1118,11 +1200,16 @@ impl Player {
         let mod_morale = if morale >= 0.0 {
             morale
         } else {
-            // If morale is a malus, the player charisma reduces the malus (up to a factor 2).
-            morale / (1.0 + self.mental.charisma / MAX_SKILL)
+            // If morale is a malus, the player satisfaction reduces the malus (up to 2/3).
+            morale / (1.0 + 0.5 * self.satisfaction / MAX_SKILL)
         };
 
+        let morale_was_not_minimum = self.morale > MIN_SKILL;
+
         self.morale = (self.morale + mod_morale).max(min_morale).bound();
+        if self.morale == MIN_SKILL && morale_was_not_minimum {
+            self.satisfaction = (self.satisfaction - SATISFACTION_MALUS_FOR_MORALE_DROP).bound();
+        }
     }
 
     pub fn age_modifier_to_skill_update(&self, idx: usize) -> f32 {
