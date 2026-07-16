@@ -288,6 +288,26 @@ pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button
     Ok(button)
 }
 
+pub fn gold_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button<'a>> {
+    let player = world.players.get_or_err(player_id)?;
+    let can_receive_gold = player.can_receive_gold(world);
+
+    let mut button = Button::new(
+        "Give gold! (-1 Gold)",
+        UiCallback::GiveGold {
+            player_id: *player_id,
+        },
+    )
+    .hotkey(ui_key::player::GIVE_GOLD)
+    .hover_text("Give a piece of gold, the right way to cheer any pirate!");
+
+    if let Err(err) = can_receive_gold {
+        button.disable(Some(err.to_string()));
+    }
+
+    Ok(button)
+}
+
 pub fn render_challenge_button(
     world: &World,
     team: &Team,

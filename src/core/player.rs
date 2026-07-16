@@ -27,7 +27,10 @@ use rand::{
     RngExt, SeedableRng,
 };
 use rand_chacha::ChaCha8Rng;
-use rand_distr::{num_traits::Signed, Distribution, Normal};
+use rand_distr::{
+    num_traits::{Signed, Zero},
+    Distribution, Normal,
+};
 use serde::{de::Visitor, ser::SerializeStruct, Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::IntoEnumIterator;
@@ -891,8 +894,32 @@ impl Player {
             return Err(anyhow!("Too wasted to drink"));
         }
 
-        if team.resources.value(&Resource::RUM) == 0 {
+        if team.resources.value(&Resource::RUM).is_zero() {
             return Err(anyhow!("No rum to drink"));
+        }
+
+        Ok(())
+    }
+
+    pub fn can_receive_gold(&self, world: &World) -> AppResult<()> {
+        if self.team.is_none() {
+            return Err(anyhow!("Player has no team, so no gold to get"));
+        }
+
+        let team = world
+            .teams
+            .get_or_err(&self.team.expect("Player should have team"))?;
+
+        if team.current_game.is_some() {
+            return Err(anyhow!("Can't get gold during game"));
+        }
+
+        if self.is_knocked_out() {
+            return Err(anyhow!("Too wasted to get gold"));
+        }
+
+        if team.resources.value(&Resource::GOLD).is_zero() {
+            return Err(anyhow!("No gold to get"));
         }
 
         Ok(())

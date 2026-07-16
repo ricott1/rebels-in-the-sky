@@ -224,6 +224,10 @@ pub enum UiCallback {
         player_id: PlayerId,
     },
 
+    GiveGold {
+        player_id: PlayerId,
+    },
+
     OrganizeNewTournament {
         tournament_type: TournamentType,
     },
@@ -1848,6 +1852,25 @@ impl UiCallback {
 
                 app.world.players.insert(player.id, player);
                 app.world.teams.insert(team.id, team);
+                app.world.dirty_network = true;
+                app.world.dirty_ui = true;
+                app.world.dirty = true;
+
+                Ok(None)
+            }
+            Self::GiveGold { player_id } => {
+                let player = app.world.players.get_or_err(player_id)?;
+                player.can_receive_gold(&app.world)?;
+
+                // let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
+
+                let team = app
+                    .world
+                    .teams
+                    .get_mut_or_err(&player.team.expect("Player should have team"))?;
+
+                team.sub_resource(Resource::GOLD, 1)?;
+
                 app.world.dirty_network = true;
                 app.world.dirty_ui = true;
                 app.world.dirty = true;

@@ -101,6 +101,7 @@ pub mod player {
     pub const LOCK_PLAYER: KeyCode = KeyCode::Char('L');
     pub const UNLOCK_PLAYER: KeyCode = KeyCode::Char('U');
     pub const DRINK: KeyCode = KeyCode::Char('D');
+    pub const GIVE_GOLD: KeyCode = KeyCode::Char('g');
     pub const PLAYER_STATUS_VIEW: KeyCode = KeyCode::Char('s');
     pub const TRAINING_FOCUS: KeyCode = KeyCode::Char('T');
 }
