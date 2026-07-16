@@ -31,6 +31,7 @@ use crate::{
 use anyhow::anyhow;
 use core::fmt::Debug;
 use itertools::Itertools;
+use rand_distr::num_traits::Signed;
 use ratatui::crossterm;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::style::{Styled, Stylize};
@@ -38,8 +39,9 @@ use ratatui::text::Text;
 use ratatui::{
     layout::Margin,
     prelude::{Constraint, Layout, Rect},
+    symbols::{border, line},
     text::{Line, Span},
-    widgets::{Paragraph, Wrap},
+    widgets::{Borders, Paragraph, Wrap},
 };
 use std::collections::HashMap;
 use strum::IntoEnumIterator;
@@ -1780,33 +1782,65 @@ impl MyTeamPanel {
 
     fn render_selected_player(
         &mut self,
-        players: &[&Player],
+        player: &Player,
         frame: &mut UiFrame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
-        let player_index = if let Some(index) = self.player_index {
-            index
-        } else {
-            return Ok(());
-        };
 
-        let player = players[player_index % players.len()];
         let player_id = player.id;
         let split = Layout::horizontal([
             Constraint::Fill(1),
-            Constraint::Length(24),
-            Constraint::Length(24),
+            Constraint::Length(26),
+            Constraint::Length(26),
         ])
         .split(area);
 
-        let info_lines = {
+        let separator_set = border::Set {
+            top_left: line::NORMAL.horizontal_down,
+            bottom_left: line::NORMAL.horizontal_up,
+            ..border::PLAIN
+        };
+
+        frame.render_widget(
+            default_block()
+                .borders(Borders::TOP | Borders::LEFT | Borders::BOTTOM)
+                .title(format!("{}", player.info.full_name())),
+            split[0],
+        );
+        frame.render_widget(
+            default_block()
+                .borders(Borders::TOP | Borders::LEFT | Borders::BOTTOM)
+                .border_set(separator_set),
+            split[1],
+        );
+        frame.render_widget(default_block().border_set(separator_set), split[2]);
+
+        let mut info_lines = {
             let drunkenness = player.current_drunkenness(world);
-            let value = (MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL;
-            let style = UiStyled::style(&value);
-            let drunkenness_span =
-                Span::styled(Player::drunkenness_description(drunkenness), style);
+            let drunkenness_style = if drunkenness.is_negative() {
+                UiStyle::DRUNK
+            } else {
+                UiStyled::style(&((MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL))
+            };
+
+            let info_line = Line::from(vec![
+                Span::raw(format!(
+                    "{} {} ",
+                    player.info.full_name(),
+                    player.info.pronouns.to_be()
+                )),
+                Span::styled(
+                    Player::drunkenness_description(drunkenness),
+                    drunkenness_style,
+                ),
+                Span::raw(" and "),
+                Span::styled(
+                    player.satisfaction_description(),
+                    UiStyled::style(&(player.satisfaction)),
+                ),
+            ]);
             vec![
                 Line::from(format!(
                     "Joined the crew on {}",
@@ -1815,11 +1849,20 @@ impl MyTeamPanel {
                         .unwrap_or_default()
                         .formatted_as_date()
                 )),
-                Line::from(drunkenness_span),
+                info_line,
+                Line::default(),
+                Line::from(Span::styled("Opinions", UiStyle::HEADER.bold())),
             ]
         };
 
-        frame.render_widget(Paragraph::new(info_lines), split[0]);
+        for text in player.opinions.description() {
+            info_lines.push(Line::from(format!(" - {text}")));
+        }
+
+        frame.render_widget(
+            Paragraph::new(info_lines).wrap(Wrap::default()),
+            split[0].inner(Margin::new(2, 1)),
+        );
 
         let crew_lines = {
             let mut l = vec![Line::from(Span::styled(
@@ -1835,7 +1878,10 @@ impl MyTeamPanel {
             }
             l
         };
-        frame.render_widget(Paragraph::new(crew_lines), split[1]);
+        frame.render_widget(
+            Paragraph::new(crew_lines),
+            split[1].inner(Margin::new(2, 1)),
+        );
 
         let can_release = own_team.can_release_player(player);
         let popup_message = PopupMessage::ReleasePlayer {
@@ -1856,12 +1902,16 @@ impl MyTeamPanel {
             release_button = release_button.block(default_block().border_style(UiStyle::WARNING));
         }
 
-        let side_split = Layout::vertical([3, 3]).split(split[2]);
+        let side_split = Layout::vertical([3, 3, 3]).split(split[2].inner(Margin::new(2, 1)));
 
         frame.render_interactive_widget(release_button, side_split[0]);
 
         if let Ok(drink_button) = drink_button(world, &player_id) {
             frame.render_interactive_widget(drink_button, side_split[1]);
+        }
+
+        if let Ok(gold_button) = gold_button(world, &player_id) {
+            frame.render_interactive_widget(gold_button, side_split[2]);
         }
 
         Ok(())
@@ -2142,11 +2192,6 @@ impl MyTeamPanel {
             return Ok(());
         }
 
-        frame.render_widget(
-            default_block().title(format!("{}", player.info.full_name())),
-            table_split[1],
-        );
-
         // If this is error, we should have branched before
         assert!(own_team.can_change_team_settings().is_ok());
 
@@ -2228,12 +2273,7 @@ impl MyTeamPanel {
             selected_role,
         );
 
-        self.render_selected_player(
-            &sorted_players,
-            frame,
-            world,
-            table_split[1].inner(Margin::new(2, 1)),
-        )?;
+        self.render_selected_player(player, frame, world, table_split[1])?;
 
         Ok(())
     }

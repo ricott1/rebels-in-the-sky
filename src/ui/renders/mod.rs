@@ -1782,7 +1782,6 @@ pub fn render_player_description(
             "▰".repeat(drunkenness_length),
             "▱".repeat(BARS_LENGTH.saturating_sub(drunkenness_length)),
         );
-        let style = UiStyle::ERROR;
 
         frame.render_interactive_widget(
         HoverTextLine::from(vec![
@@ -1790,7 +1789,7 @@ pub fn render_player_description(
                 Span::raw("Drunk  ".to_string()),
                 format!("{} is drunk! While {} {} getting sober, tiredness is not recovered (current value {:.2})", player.info.full_name(), player.info.pronouns.as_subject().to_lowercase(), player.info.pronouns.to_be(), -drunkenness),
             ),
-            HoverTextSpan::new(Span::styled( drunkenness_string, style),"", 
+            HoverTextSpan::new(Span::styled( drunkenness_string, UiStyle::DRUNK),"", 
            ),
         ]),
         header_body_stats[3],

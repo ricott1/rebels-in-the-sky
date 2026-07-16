@@ -34,6 +34,7 @@ impl UiStyle {
     pub const SELECTED_BUTTON: Style = Self::DEFAULT.fg(Color::Rgb(118, 213, 192));
     pub const UNSELECTABLE: Style = Self::DEFAULT.fg(Color::DarkGray);
     pub const ERROR: Style = Self::DEFAULT.fg(Color::Red);
+    pub const DRUNK: Style = Self::DEFAULT.fg(Color::Red);
     pub const OWN_TEAM: Style = Self::DEFAULT.fg(Color::Rgb(185, 225, 125));
     pub const HEADER: Style = Self::DEFAULT.fg(Color::LightBlue);
     pub const NETWORK: Style = Self::DEFAULT.fg(Color::Rgb(204, 144, 184));
