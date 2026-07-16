@@ -1,7 +1,7 @@
 use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
 use crate::game_engine::timer::Period;
 use crate::image::utils::open_image;
-use crate::types::{HashMapWithResult, Tick};
+use crate::types::{HashMapWithResult, PlayerId, Tick};
 use crate::ui::checkbox::Checkbox;
 use crate::ui::dropdown::{Dropdown, DropdownState, OpenDirection};
 use crate::ui::ui_frame::UiFrame;
@@ -48,9 +48,11 @@ use strum::IntoEnumIterator;
 
 const DROPDOWN_WIDTH: u16 = MAX_NAME_LENGTH as u16 + 2;
 const ROLE_COLUMN_WIDTH: u16 = 9;
-const ROLE_COLUMN_RIGHT_OFFSET: u16 = 15 + 20 + 2;
+const ROLE_COLUMN_RIGHT_OFFSET: u16 = 15 + 17 + 2;
 const TRAINING_COLUMN_WIDTH: u16 = 10;
 const TRAINING_COLUMN_RIGHT_OFFSET: u16 = ROLE_COLUMN_RIGHT_OFFSET + ROLE_COLUMN_WIDTH + 1;
+const POSITION_COLUMN_WIDTH: u16 = 9;
+const POSITION_COLUMN_RIGHT_OFFSET: u16 = TRAINING_COLUMN_RIGHT_OFFSET + TRAINING_COLUMN_WIDTH + 4;
 // (col, row) offset of each position's dropdown within the court image.
 const DROPDOWN_OFFSETS: [(u16, u16); NUM_GAME_POSITIONS as usize] = [
     (7, 2),   // PG
@@ -65,6 +67,7 @@ const FLUIDITY_DROPDOWN_ID: usize = usize::MAX - 2;
 const DRINKING_DROPDOWN_ID: usize = usize::MAX - 3;
 const TRAINING_DROPDOWN_ID: usize = usize::MAX - 4;
 const ROLE_DROPDOWN_ID: usize = usize::MAX - 5;
+const POSITION_DROPDOWN_ID: usize = usize::MAX - 6;
 
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub enum MyTeamView {
@@ -1944,6 +1947,7 @@ impl MyTeamPanel {
 
     fn build_players_table(
         players: &Vec<&Player>,
+        player_ids: &Vec<PlayerId>,
         table_width: u16,
     ) -> AppResult<ClickableTable<'static>> {
         let header_style = UiStyle::HEADER.bold();
@@ -1951,6 +1955,7 @@ impl MyTeamPanel {
             ClickableCell::from("Name").style(header_style),
             ClickableCell::from("Overall").style(header_style),
             ClickableCell::from("Potential").style(header_style),
+            ClickableCell::from("Position").style(header_style),
             ClickableCell::from(Line::from(vec![
                 Span::styled("T", header_style.underlined()),
                 Span::styled("raining", header_style),
@@ -1962,7 +1967,13 @@ impl MyTeamPanel {
         // Calculate the available space for the players name in order to display the
         // full or shortened version.
         let name_header_width = table_width
-            .saturating_sub(9 + 10 + 3 + TRAINING_COLUMN_WIDTH + TRAINING_COLUMN_RIGHT_OFFSET)
+            .saturating_sub(
+                7 + 10
+                    + POSITION_COLUMN_WIDTH
+                    + 4
+                    + TRAINING_COLUMN_WIDTH
+                    + TRAINING_COLUMN_RIGHT_OFFSET,
+            )
             .max(1);
 
         let rows = players
@@ -1970,6 +1981,12 @@ impl MyTeamPanel {
             .map(|player| {
                 let overall = player.average_skill().stars();
                 let potential = player.potential.stars();
+                let (position_index, _) = player_ids
+                    .iter()
+                    .enumerate()
+                    .find(|(_, id)| **id == player.id)
+                    .expect("Player id should be in player ids");
+                let position = (position_index as GamePosition).as_role().to_string();
 
                 let bonus_string_1 = match player.info.crew_role {
                     CrewRole::Pilot => {
@@ -2048,6 +2065,7 @@ impl MyTeamPanel {
                     ClickableCell::from(name),
                     ClickableCell::from(overall),
                     ClickableCell::from(potential),
+                    ClickableCell::from(position),
                     ClickableCell::from(training),
                     ClickableCell::from(player.info.crew_role.to_string()),
                     ClickableCell::from(bonus_string_1),
@@ -2062,12 +2080,13 @@ impl MyTeamPanel {
             .column_spacing(1)
             .widths(&[
                 Constraint::Min(MAX_NAME_LENGTH as u16 + 2),
-                Constraint::Length(9),
+                Constraint::Length(7),
                 Constraint::Length(10),
+                Constraint::Length(POSITION_COLUMN_WIDTH),
                 Constraint::Length(TRAINING_COLUMN_WIDTH),
                 Constraint::Length(ROLE_COLUMN_WIDTH),
                 Constraint::Length(15),
-                Constraint::Length(20),
+                Constraint::Length(17),
             ]);
 
         Ok(table)
@@ -2271,6 +2290,41 @@ impl MyTeamPanel {
             ROLE_COLUMN_RIGHT_OFFSET,
             ROLE_COLUMN_WIDTH,
             selected_role,
+        );
+
+        let num_positions = own_team.player_ids.len();
+        let position_options: Vec<Text> = (0..num_positions)
+            .map(|idx| Text::from((idx as GamePosition).as_role().to_string()))
+            .collect();
+        let selected_position = own_team
+            .player_ids
+            .iter()
+            .position(|id| *id == player.id)
+            .unwrap_or_default();
+        let mut position_dropdown = Dropdown::new(
+            POSITION_DROPDOWN_ID,
+            position_options,
+            Box::new(move |index| UiCallback::SwapPlayerPositions {
+                player_id,
+                position: index as GamePosition,
+            }),
+        )
+        .hover_text("Set the pirate's game position.")
+        .open_direction(OpenDirection::Down);
+        for idx in 0..num_positions.min(MAX_PLAYERS_PER_GAME) {
+            position_dropdown = position_dropdown
+                .hotkey_select(ui_key::team::set_player_position(idx as GamePosition), idx);
+        }
+
+        self.render_roster_dropdown(
+            frame,
+            position_dropdown,
+            POSITION_DROPDOWN_ID,
+            table_split[0],
+            player_index as u16,
+            POSITION_COLUMN_RIGHT_OFFSET,
+            6,
+            selected_position,
         );
 
         self.render_selected_player(player, frame, world, table_split[1])?;
@@ -2661,13 +2715,13 @@ impl Screen for MyTeamPanel {
                 .sort_by_rating();
 
             let table_width = UI_SCREEN_SIZE.0 - 60;
-            self.players_table = Self::build_players_table(&sorted_players, table_width)?.block(
-                default_block().title(format!(
-                    "{} {} ↓/↑",
-                    own_team.name,
-                    world.team_rating(&own_team.id).unwrap_or_default().stars()
-                )),
-            );
+            self.players_table =
+                Self::build_players_table(&sorted_players, &own_team.player_ids, table_width)?
+                    .block(default_block().title(format!(
+                        "{} {} ↓/↑",
+                        own_team.name,
+                        world.team_rating(&own_team.id).unwrap_or_default().stars()
+                    )));
         }
 
         self.game_index = if !self.past_game_ids.is_empty() {
