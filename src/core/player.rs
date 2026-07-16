@@ -1447,13 +1447,13 @@ impl InfoStats {
         let p_data = PLAYER_DATA
             .get(&self.population)
             .unwrap_or_else(|| panic!("Player data should exist for {}", self.population));
-        let pronouns =
+        self.pronouns =
             if self.population == Population::Polpett || self.population == Population::Octopulp {
                 Pronoun::They
             } else {
                 Pronoun::random(rng)
             };
-        self.first_name = match pronouns {
+        self.first_name = match self.pronouns {
             Pronoun::He => p_data
                 .first_names_he
                 .choose(rng)

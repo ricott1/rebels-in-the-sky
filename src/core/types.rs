@@ -375,7 +375,7 @@ pub enum Pronoun {
 
 impl Pronoun {
     pub fn random(rng: &mut ChaCha8Rng) -> Self {
-        if let Ok(dist) = WeightedIndex::new([10, 10, 1]) {
+        if let Ok(dist) = WeightedIndex::new([40, 40, 1]) {
             return Self::from_repr(dist.sample(rng) as u8).unwrap_or_default();
         }
 
