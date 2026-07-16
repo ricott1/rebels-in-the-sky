@@ -2731,6 +2731,7 @@ impl World {
     }
 
     fn tick_players_update(&mut self) {
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
         for (_, player) in self.players.iter_mut() {
             //TODO: once we remove local teams, we can remove this loop and only apply to own_team
             if player.peer_id.is_some() {
@@ -2791,7 +2792,8 @@ impl World {
                 player.modify_skill(idx, SKILL_DECREMENT_PER_LONG_TICK * age_modifier.bound());
 
                 // Increase player skills from training
-                player.modify_skill(idx, player.skills_training[idx]);
+                let value = (rng.random_range(0.9..1.1) * player.skills_training[idx]).bound();
+                player.modify_skill(idx, value);
             }
             player.game_position_fitness_training = [Skill::default(); NUM_GAME_POSITIONS as usize];
             player.skills_training = [Skill::default(); 20];
