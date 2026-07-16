@@ -2848,6 +2848,8 @@ impl HelpPanel for MyTeamPanel {
                     "  {}      Fire highlighted pirate",
                     ui_key::player::FIRE
                 )),
+                Line::default(),
+                Line::from("  Game settings view"),
                 Line::from(format!(
                     "  {} / {}      Set training focus / cycle tactic",
                     ui_key::player::TRAINING_FOCUS,
@@ -2857,6 +2859,22 @@ impl HelpPanel for MyTeamPanel {
                     "  {} / {}      Cycle substitution tendency / game position fluidity",
                     ui_key::team::SET_SUBSTITUTION_TENDENCY,
                     ui_key::team::SET_GAME_POSITION_FLUIDITY
+                )),
+                Line::default(),
+                Line::from("  Market view"),
+                Line::from(format!(
+                    "  {}/{}/{}/{}    Buy gold/scraps/fuel/rum",
+                    ui_key::market::BUY_GOLD,
+                    ui_key::market::BUY_SCRAPS,
+                    ui_key::market::BUY_FUEL,
+                    ui_key::market::BUY_RUM,
+                )),
+                Line::from(format!(
+                    "  {}/{}/{}/{}    Sell gold/scraps/fuel/rum",
+                    ui_key::market::SELL_GOLD,
+                    ui_key::market::SELL_SCRAPS,
+                    ui_key::market::SELL_FUEL,
+                    ui_key::market::SELL_RUM,
                 )),
             ],
         }

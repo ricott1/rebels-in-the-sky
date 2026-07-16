@@ -1546,7 +1546,7 @@ pub fn render_market_on_planet(
     .split(inner_area.inner(Margin::new(central_pad, 0)));
 
     let layout = Layout::horizontal([
-        Constraint::Length(12), // name
+        Constraint::Length(7),  // name
         Constraint::Max(6),     // buy 1
         Constraint::Max(6),     // buy 10
         Constraint::Max(6),     // buy 100
@@ -1559,7 +1559,7 @@ pub fn render_market_on_planet(
 
     frame.render_widget(
         Paragraph::new(Span::styled(
-            "        Key        Buy               Sell         Prices     Cargo".to_string(),
+            "              Buy               Sell         Prices     Cargo".to_string(),
             UiStyle::HEADER.bold(),
         )),
         button_split[0],
@@ -1592,15 +1592,10 @@ pub fn render_market_on_planet(
         let buy_unit_cost = planet.resource_buy_price(*resource, merchant_bonus);
         let sell_unit_cost = planet.resource_sell_price(*resource, merchant_bonus);
         frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(format!("{:<6} ", resource.to_string()), resource.style()),
-                Span::styled(format!("{}", buy_ui_keys[button_split_idx]), UiStyle::OK),
-                Span::raw("/".to_string()),
-                Span::styled(
-                    format!("{}", sell_ui_keys[button_split_idx]),
-                    UiStyle::ERROR,
-                ),
-            ])),
+            Paragraph::new(Line::from(vec![Span::styled(
+                format!("{:<6} ", resource.to_string()),
+                resource.style(),
+            )])),
             resource_split[0].inner(Margin::new(1, 1)),
         );
         frame.render_widget(
