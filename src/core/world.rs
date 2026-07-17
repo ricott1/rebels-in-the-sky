@@ -11,8 +11,9 @@ use super::team::Team;
 use super::types::{PlayerLocation, TeamBonus, TeamLocation};
 use super::utils::{is_default, PLANET_DATA, TEAM_DATA};
 use crate::core::{
-    AutonomousStrategy, GameResult, Honour, PlanetUpgradeTarget, Rated, RatedPlayers, Skill,
-    SpaceCove, SpaceCoveUpgradeTarget, Tavern, TournamentRegistrationState, Upgrade, MIN_SKILL,
+    AutonomousStrategy, GameResult, Honour, PlanetUpgradeTarget, PlayerOpinion, Rated,
+    RatedPlayers, Skill, SpaceCove, SpaceCoveUpgradeTarget, Tavern, TournamentRegistrationState,
+    Upgrade, MIN_SKILL,
 };
 use crate::game_engine::game::{Game, GameSummary};
 use crate::game_engine::tactic::Tactic;
@@ -36,6 +37,7 @@ use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 use strum::IntoEnumIterator;
 
 // const GAME_CLEANUP_TIME: Tick = 10 * SECONDS;
@@ -844,14 +846,18 @@ impl World {
             .team
             .ok_or_else(|| anyhow!("Player swapped should have a team"))?;
 
-        self.release_player_from_team(player_id1)?;
-        self.release_player_from_team(player_id2)?;
+        self.release_player_from_team(player_id1, false)?;
+        self.release_player_from_team(player_id2, false)?;
         self.add_player_to_team(&player_id1, &team_id2, current_tick)?;
         self.add_player_to_team(&player_id2, &team_id1, current_tick)?;
         Ok(())
     }
 
-    pub fn release_player_from_team(&mut self, player_id: PlayerId) -> AppResult<()> {
+    pub fn release_player_from_team(
+        &mut self,
+        player_id: PlayerId,
+        is_fired: bool,
+    ) -> AppResult<()> {
         let mut player = self.players.get_or_err(&player_id)?.clone();
 
         let team_id = if let Some(team_id) = player.team {
@@ -886,6 +892,22 @@ impl World {
                 player.current_location = PlayerLocation::OnPlanet { planet_id };
             }
             _ => return Err(anyhow!("Cannot release player while travelling")),
+        }
+
+        if is_fired {
+            player
+                .opinions
+                .entry(PlayerOpinion::Team { team_id })
+                .and_modify(|(last_event, value)| {
+                    *last_event = Tick::now();
+                    *value = (*value + PLAYER_OPINION_RELEASE_FROM_TEAM).bound();
+                })
+                .or_insert_with(|| {
+                    (
+                        self.last_tick_short_interval,
+                        OPINION_NEUTRAL_VALUE + PLAYER_OPINION_RELEASE_FROM_TEAM,
+                    )
+                });
         }
         player.version += 1;
 
@@ -1002,12 +1024,12 @@ impl World {
     pub fn return_from_space_adventure(&mut self) -> AppResult<(String, Option<usize>)> {
         let mut own_team = self.get_own_team()?.clone();
 
-        let space = self
+        let space_adventure = self
             .space_adventure
             .take()
             .ok_or_else(|| anyhow!("World should have a space adventure"))?;
 
-        let player = space
+        let player = space_adventure
             .get_player()
             .ok_or_else(|| anyhow!("Space adventure should have a player entity."))?;
 
@@ -1065,13 +1087,21 @@ impl World {
             }
         }
 
-        let asteroid_type = space.asteroid_planet_found();
+        let asteroid_type = space_adventure.asteroid_planet_found();
 
-        // for player_id in own_team.player_ids {
-        //     let p = self.players.get_mut_or_err(&player_id)?;
+        let space_adventure_duration = space_adventure.duration();
 
-        //     let adventure_opinion = p.opinions.get(&PlayerOpinion::Adventures);
-        // }
+        for player_id in own_team.player_ids.iter() {
+            let p = self.players.get_mut_or_err(&player_id)?;
+            if let Some((last_event, value)) = p.opinions.get_mut(&PlayerOpinion::Adventures) {
+                // Set last_event, i.e. satisfy player opinion on space adventures, only if duration is long enough.
+                if space_adventure_duration
+                    > Duration::from_secs((*value * SPACE_ADVENTURE_OPINION_MOD) as u64)
+                {
+                    *last_event = Tick::now();
+                }
+            }
+        }
 
         self.teams.insert(own_team.id, own_team);
         self.dirty = true;
@@ -2717,7 +2747,7 @@ impl World {
         assert!(hired_player_ids.len() == hiring_team_ids.len());
 
         for &player_id in released_player_ids.iter() {
-            self.release_player_from_team(player_id)?;
+            self.release_player_from_team(player_id, true)?;
         }
 
         for idx in 0..hired_player_ids.len() {
@@ -2936,7 +2966,7 @@ impl World {
         }
 
         for &player_id in releasing_player_ids.iter() {
-            self.release_player_from_team(player_id)?;
+            self.release_player_from_team(player_id, false)?;
         }
 
         if !releasing_player_ids.is_empty() {
@@ -2999,7 +3029,7 @@ impl World {
         }
 
         for &player_id in releasing_player_ids.iter() {
-            self.release_player_from_team(player_id)?;
+            self.release_player_from_team(player_id, false)?;
         }
 
         if !releasing_player_ids.is_empty() {

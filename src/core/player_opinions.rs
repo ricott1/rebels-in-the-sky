@@ -1,6 +1,6 @@
 use crate::{
     core::{Population, Skill, MAX_SKILL},
-    types::Tick,
+    types::{TeamId, TeamMap, Tick},
 };
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -13,11 +13,11 @@ const OPINION_DESCRIPTION_THRESHOLD: Skill = 3.0;
 const STRONG_OPINION_DESCRIPTION_THRESHOLD: Skill = 7.0;
 
 pub trait PlayerOpinionMapDescription {
-    fn description(&self) -> Vec<String>;
+    fn description(&self, teams: &TeamMap) -> Vec<String>;
 }
 
 impl PlayerOpinionMapDescription for PlayerOpinionMap {
-    fn description(&self) -> Vec<String> {
+    fn description(&self, teams: &TeamMap) -> Vec<String> {
         self.iter()
             .filter_map(|(opinion, (_, value))| {
                 let deviation = value - MAX_SKILL / 2.0;
@@ -38,6 +38,10 @@ impl PlayerOpinionMapDescription for PlayerOpinionMap {
                     PlayerOpinion::Games => "games".to_string(),
                     PlayerOpinion::Gold => "gold".to_string(),
                     PlayerOpinion::Populations { population } => population.to_string(),
+                    PlayerOpinion::Team { team_id } => teams
+                        .get(team_id)
+                        .map(|t| t.name.clone())
+                        .unwrap_or("an unknown crew".to_string()),
                 };
                 Some((*value, format!("{verb} {object}")))
             })
@@ -54,4 +58,5 @@ pub enum PlayerOpinion {
     Games,
     Gold,
     Populations { population: Population },
+    Team { team_id: TeamId },
 }

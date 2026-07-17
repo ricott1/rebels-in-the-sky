@@ -15,7 +15,7 @@ use crate::{
     image::{player::PlayerImage, utils::Gif},
     types::{
         AppResult, HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, SystemTimeTick,
-        TeamId, Tick,
+        TeamId, TeamMap, Tick,
     },
 };
 use anyhow::anyhow;
@@ -733,7 +733,7 @@ impl Player {
         let rng = &mut ChaCha8Rng::seed_from_u64(self.id.as_u64_pair().1);
         let value = match self.info.population {
             Population::Galdari => MAX_SKILL,
-            Population::Human { .. } => 10.0,
+            Population::Human { .. } => OPINION_NEUTRAL_VALUE,
             _ => 18.0,
         };
         self.opinions.insert(
@@ -754,8 +754,10 @@ impl Player {
             .insert(PlayerOpinion::Adventures, (Tick::now(), values[0]));
         self.opinions
             .insert(PlayerOpinion::Drinking, (Tick::now(), values[1]));
-        self.opinions
-            .insert(PlayerOpinion::Gold, (Tick::now(), values[2]));
+        self.opinions.insert(
+            PlayerOpinion::Gold,
+            (Tick::now(), (OPINION_NEUTRAL_VALUE + values[2]).bound()),
+        );
     }
 
     fn set_initial_game_position_fitness(&mut self, rng: Option<&mut ChaCha8Rng>) {
@@ -877,14 +879,12 @@ impl Player {
             .map_or(self.drunkenness, |p| p.drunkenness)
     }
 
-    pub fn can_drink(&self, world: &World) -> AppResult<()> {
+    pub fn can_drink(&self, teams: &TeamMap) -> AppResult<()> {
         if self.team.is_none() {
             return Err(anyhow!("Player has no team, so no rum to drink"));
         }
 
-        let team = world
-            .teams
-            .get_or_err(&self.team.expect("Player should have team"))?;
+        let team = teams.get_or_err(&self.team.expect("Player should have team"))?;
 
         if team.current_game.is_some() {
             return Err(anyhow!("Can't drink during game"));
@@ -901,14 +901,12 @@ impl Player {
         Ok(())
     }
 
-    pub fn can_receive_gold(&self, world: &World) -> AppResult<()> {
+    pub fn can_receive_gold(&self, teams: &TeamMap) -> AppResult<()> {
         if self.team.is_none() {
             return Err(anyhow!("Player has no team, so no gold to get"));
         }
 
-        let team = world
-            .teams
-            .get_or_err(&self.team.expect("Player should have team"))?;
+        let team = teams.get_or_err(&self.team.expect("Player should have team"))?;
 
         if team.current_game.is_some() {
             return Err(anyhow!("Can't get gold during game"));
@@ -938,6 +936,10 @@ impl Player {
         };
         self.drunkenness = (self.drunkenness + amount).bound();
 
+        if let Some((last_event, _)) = self.opinions.get_mut(&PlayerOpinion::Drinking) {
+            *last_event = Tick::now();
+        }
+
         // Probability equal to the new drunkenness over MAX_SKILL,
         // mitigated by stamina: high-stamina players hold their liquor.
         let drunk_probability = BASE_DRUNK_PROBABILITY
@@ -957,6 +959,14 @@ impl Player {
 
         self.add_morale(MORALE_DRINK_BONUS);
         false
+    }
+
+    pub fn get_gold(&mut self) {
+        if let Some((last_event, _)) = self.opinions.get_mut(&PlayerOpinion::Gold) {
+            *last_event = Tick::now();
+        }
+
+        self.add_morale(MORALE_GOLD_BONUS);
     }
 
     pub fn drunkenness_description(drunkenness: Skill) -> &'static str {

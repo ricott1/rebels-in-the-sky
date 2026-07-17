@@ -1727,7 +1727,7 @@ impl UiCallback {
                 Ok(None)
             }
             Self::ReleasePlayer { player_id } => {
-                app.world.release_player_from_team(*player_id)?;
+                app.world.release_player_from_team(*player_id, true)?;
                 app.ui.close_popup();
                 app.ui.swarm_panel.remove_player_from_ranking(*player_id);
                 app.world.dirty_ui = true;
@@ -1751,7 +1751,7 @@ impl UiCallback {
 
             Self::Drink { player_id } => {
                 let mut player = app.world.players.get_or_err(player_id)?.clone();
-                player.can_drink(&app.world)?;
+                player.can_drink(&app.world.teams)?;
 
                 let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
                 let got_drunk = player.drink(rng);
@@ -1859,10 +1859,10 @@ impl UiCallback {
                 Ok(None)
             }
             Self::GiveGold { player_id } => {
-                let player = app.world.players.get_or_err(player_id)?;
-                player.can_receive_gold(&app.world)?;
+                let player = app.world.players.get_mut_or_err(player_id)?;
+                player.can_receive_gold(&app.world.teams)?;
 
-                // let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
+                player.get_gold();
 
                 let team = app
                     .world

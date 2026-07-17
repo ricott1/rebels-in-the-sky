@@ -1858,7 +1858,7 @@ impl MyTeamPanel {
             ]
         };
 
-        for text in player.opinions.description() {
+        for text in player.opinions.description(&world.teams) {
             info_lines.push(Line::from(format!(" - {text}")));
         }
 

@@ -86,6 +86,16 @@ impl SpaceAdventure {
         5 + time.elapsed().as_secs() as usize
     }
 
+    pub fn duration(&self) -> Duration {
+        let time = match self.state {
+            SpaceAdventureState::Starting { time }
+            | SpaceAdventureState::Running { time }
+            | SpaceAdventureState::Ending { time } => time,
+        };
+
+        time.elapsed()
+    }
+
     fn draw_entity(base: &mut RgbaImage, entity: &Entity, debug_view: bool) {
         let pos = entity.position();
         let x = pos.x as i32;

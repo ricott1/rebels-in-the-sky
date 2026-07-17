@@ -268,7 +268,7 @@ pub fn go_to_team_current_planet_button<'a>(
 
 pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button<'a>> {
     let player = world.players.get_or_err(player_id)?;
-    let can_drink = player.can_drink(world);
+    let can_drink = player.can_drink(&world.teams);
 
     let mut button = Button::new(
         "Drink! (-1 Rum)",
@@ -290,7 +290,7 @@ pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button
 
 pub fn gold_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button<'a>> {
     let player = world.players.get_or_err(player_id)?;
-    let can_receive_gold = player.can_receive_gold(world);
+    let can_receive_gold = player.can_receive_gold(&world.teams);
 
     let mut button = Button::new(
         "Give gold! (-1 Gold)",
