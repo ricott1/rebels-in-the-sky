@@ -644,8 +644,7 @@ impl World {
             current_role_player.info.crew_role = CrewRole::Mozzo;
             team.crew_roles.mozzo.push(current_role_player.id);
             // Demoted player is a bit demoralized :(
-            current_role_player.morale =
-                (current_role_player.morale + MORALE_DEMOTION_MALUS).bound();
+            current_role_player.add_morale(MORALE_DEMOTION_MALUS);
             current_role_player.set_jersey(&jersey);
         }
 
@@ -1612,7 +1611,7 @@ impl World {
         if current_tick >= self.last_tick_medium_interval + TickInterval::MEDIUM {
             self.tick_tiredness_recovery()?;
 
-            for cb in self.tick_player_leaving_team_for_low_morale(current_tick)? {
+            for cb in self.tick_player_leaving_team_for_low_satisfaction(current_tick)? {
                 callbacks.push(cb);
             }
 
@@ -2880,7 +2879,7 @@ impl World {
         Ok(())
     }
 
-    fn tick_player_leaving_team_for_low_morale(
+    fn tick_player_leaving_team_for_low_satisfaction(
         &mut self,
         current_tick: Tick,
     ) -> AppResult<Vec<UiCallback>> {
@@ -3384,7 +3383,7 @@ mod test {
             types::TeamLocation,
             utils::PLANET_DATA,
             world::{TickInterval, AU, EXPLORATION_DURATION},
-            RatedPlayers, DEFAULT_PLANET_ID, MAX_SKILL, MIN_PLAYERS_PER_GAME,
+            RatedPlayers, DEFAULT_PLANET_ID, MAX_SKILL, MIN_PLAYERS_PER_GAME, MIN_SKILL,
             PORTAL_TRAVEL_DURATION, SPUGNA_DRUNKENNESS_ON_GETTING_DRUNK,
         },
         game_engine::types::TeamInGame,
@@ -3906,23 +3905,22 @@ mod test {
     }
 
     #[test]
-    fn test_tick_player_leaving_own_team_for_morale() -> AppResult<()> {
+    fn test_tick_player_leaving_own_team_for_satisfaction() -> AppResult<()> {
         let mut app = App::test_default()?;
 
         let world = &mut app.world;
 
         let own_team = world.get_own_team()?;
         let player_id = own_team.player_ids[0];
-        let mut player = world.players.get_or_err(&player_id)?.clone();
+        let player = world.players.get_mut_or_err(&player_id)?;
         assert!(player.team.is_some());
 
-        player.morale = 0.0;
-        world.players.insert(player_id, player);
+        player.satisfaction = MIN_SKILL;
 
-        // Players with low morale quit a team randomly
+        // Players with low satisfaction quit a team randomly
         let mut idx = 0;
         loop {
-            world.tick_player_leaving_team_for_low_morale(Tick::now())?;
+            world.tick_player_leaving_team_for_low_satisfaction(Tick::now())?;
             let player: &crate::core::player::Player = world.players.get_or_err(&player_id)?;
             if player.team.is_none() {
                 break;
