@@ -1818,6 +1818,19 @@ impl World {
                     );
                     self.players.insert(player.id, player);
                 }
+
+                if let Some(world_team) = self.teams.get(&team.team_id) {
+                    for player_id in world_team
+                        .player_ids
+                        .iter()
+                        .filter(|id| !team.players.contains_key(id))
+                    {
+                        if let Some(player) = self.players.get_mut(player_id) {
+                            player.satisfaction =
+                                (player.satisfaction - SATISFACTION_MALUS_FOR_SITTING_OUT).bound();
+                        }
+                    }
+                }
             }
 
             let game_summary = GameSummary::from_game(game);
