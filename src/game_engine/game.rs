@@ -12,7 +12,7 @@ use crate::{
         position::NUM_GAME_POSITIONS,
         skill::{GameSkill, MAX_SKILL},
         utils::is_default,
-        CrewRole, Skill, TeamBonus, DEFAULT_PLANET_ID,
+        CrewRole, PlayerOpinion, PlayerOpinionMapDescription, Skill, TeamBonus, DEFAULT_PLANET_ID,
     },
     game_engine::{end_of_quarter, substitution, TournamentId},
     types::*,
@@ -595,9 +595,7 @@ impl Game {
                 };
                 player_stats.position = update.position;
 
-                // The player subbed out (and only them, so that at most one rng roll
-                // happens per team and network replays stay deterministic) can take
-                // a swig of rum on the bench, at most bottles_per_player times per game.
+                // The player subbed out can drink, at most bottles_per_player times per game.
                 if update.position.is_some()
                     || team.rum == 0
                     || player_stats.rum_drunk as u32 >= team.in_game_drinking.bottles_per_player()
@@ -612,9 +610,15 @@ impl Game {
                     continue;
                 }
 
-                // Pirates with low morale are more likely to drink.
-                let drink_probability = ((MAX_SKILL - player.morale) / MAX_SKILL) as f64
-                    * team.in_game_drinking.drink_probability_modifier();
+                let drink_probability = {
+                    // Pirates with low morale are more likely to drink.
+                    let morale_mod = ((MAX_SKILL - player.morale) / MAX_SKILL) as f64;
+                    let team_mod = team.in_game_drinking.drink_probability_modifier();
+                    let opinion_mod =
+                        1.0 + player.opinions.modifier(PlayerOpinion::Drinking) as f64;
+
+                    morale_mod * team_mod * opinion_mod
+                };
                 if action_rng.random_bool(drink_probability.clamp(0.0, 1.0)) {
                     team.rum -= 1;
                     player_stats.rum_drunk += 1;
