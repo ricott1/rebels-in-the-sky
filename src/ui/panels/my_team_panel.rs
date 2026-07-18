@@ -1831,7 +1831,7 @@ impl MyTeamPanel {
             let info_line = Line::from(vec![
                 Span::raw(format!(
                     "{} {} ",
-                    player.info.full_name(),
+                    player.info.pronouns.as_subject(),
                     player.info.pronouns.to_be()
                 )),
                 Span::styled(
@@ -1858,7 +1858,7 @@ impl MyTeamPanel {
             ]
         };
 
-        for text in player.opinions.description(&world.teams) {
+        for text in player.opinions.description() {
             info_lines.push(Line::from(format!(" - {text}")));
         }
 

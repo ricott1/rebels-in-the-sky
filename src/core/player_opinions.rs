@@ -1,6 +1,6 @@
 use crate::{
-    core::{Population, Skill, MAX_SKILL},
-    types::{TeamId, TeamMap, Tick},
+    core::{Population, Skill, MAX_SKILL, OPINION_NEUTRAL_VALUE},
+    types::{TeamId, Tick},
 };
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -13,14 +13,22 @@ const OPINION_DESCRIPTION_THRESHOLD: Skill = 3.0;
 const STRONG_OPINION_DESCRIPTION_THRESHOLD: Skill = 7.0;
 
 pub trait PlayerOpinionMapDescription {
-    fn description(&self, teams: &TeamMap) -> Vec<String>;
+    fn modifier(&self, opinion: PlayerOpinion) -> f32;
+    fn description(&self) -> Vec<String>;
 }
 
 impl PlayerOpinionMapDescription for PlayerOpinionMap {
-    fn description(&self, teams: &TeamMap) -> Vec<String> {
+    fn modifier(&self, opinion: PlayerOpinion) -> f32 {
+        if let Some((_, value)) = self.get(&opinion) {
+            (value - OPINION_NEUTRAL_VALUE) / MAX_SKILL
+        } else {
+            0.0
+        }
+    }
+    fn description(&self) -> Vec<String> {
         self.iter()
             .filter_map(|(opinion, (_, value))| {
-                let deviation = value - MAX_SKILL / 2.0;
+                let deviation = value - OPINION_NEUTRAL_VALUE;
                 let verb = if deviation >= STRONG_OPINION_DESCRIPTION_THRESHOLD {
                     "really likes"
                 } else if deviation >= OPINION_DESCRIPTION_THRESHOLD {
@@ -38,10 +46,7 @@ impl PlayerOpinionMapDescription for PlayerOpinionMap {
                     PlayerOpinion::Games => "games".to_string(),
                     PlayerOpinion::Gold => "gold".to_string(),
                     PlayerOpinion::Populations { population } => population.to_string(),
-                    PlayerOpinion::Team { team_id } => teams
-                        .get(team_id)
-                        .map(|t| t.name.clone())
-                        .unwrap_or("an unknown crew".to_string()),
+                    PlayerOpinion::Team { name, .. } => name.clone(),
                 };
                 Some((*value, format!("{verb} {object}")))
             })
@@ -58,5 +63,5 @@ pub enum PlayerOpinion {
     Games,
     Gold,
     Populations { population: Population },
-    Team { team_id: TeamId },
+    Team { team_id: TeamId, name: String },
 }

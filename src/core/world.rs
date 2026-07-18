@@ -897,7 +897,10 @@ impl World {
         if is_fired {
             player
                 .opinions
-                .entry(PlayerOpinion::Team { team_id })
+                .entry(PlayerOpinion::Team {
+                    team_id,
+                    name: team.name.clone(),
+                })
                 .and_modify(|(last_event, value)| {
                     *last_event = Tick::now();
                     *value = (*value + PLAYER_OPINION_RELEASE_FROM_TEAM).bound();
