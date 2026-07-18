@@ -37,7 +37,6 @@ use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::time::Duration;
 use strum::IntoEnumIterator;
 
 // const GAME_CLEANUP_TIME: Tick = 10 * SECONDS;
@@ -1096,14 +1095,7 @@ impl World {
 
         for player_id in own_team.player_ids.iter() {
             let p = self.players.get_mut_or_err(&player_id)?;
-            if let Some((last_event, value)) = p.opinions.get_mut(&PlayerOpinion::Adventures) {
-                // Set last_event, i.e. satisfy player opinion on space adventures, only if duration is long enough.
-                if space_adventure_duration
-                    > Duration::from_secs((*value * SPACE_ADVENTURE_OPINION_MOD) as u64)
-                {
-                    *last_event = Tick::now();
-                }
-            }
+            p.satisfy_adventure_opinion(space_adventure_duration);
         }
 
         self.teams.insert(own_team.id, own_team);
@@ -1766,6 +1758,8 @@ impl World {
                         .stats
                         .get(&player.id)
                         .ok_or_else(|| anyhow!("Player {:?} not found in team stats", player.id))?;
+
+                    player.satisfy_opinion(PlayerOpinion::Games);
 
                     // Update player global stats, but remove position, shots and last action shot
                     player.historical_stats.update(stats);

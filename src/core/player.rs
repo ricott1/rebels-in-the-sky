@@ -18,6 +18,7 @@ use crate::{
         TeamId, TeamMap, Tick,
     },
 };
+use std::time::Duration;
 use anyhow::anyhow;
 
 use itertools::Itertools;
@@ -744,7 +745,7 @@ impl Player {
         );
 
         let std_dev = 3.0;
-        let mut values = [2.0, 8.0, 14.0].map(|mean| {
+        let mut values = [2.0, 6.0, 10.0, 14.0].map(|mean| {
             let normal =
                 Normal::new(mean, std_dev).expect("Should create valid normal distribution");
             normal.sample(rng).bound()
@@ -754,9 +755,11 @@ impl Player {
             .insert(PlayerOpinion::Adventures, (Tick::now(), values[0]));
         self.opinions
             .insert(PlayerOpinion::Drinking, (Tick::now(), values[1]));
+        self.opinions
+            .insert(PlayerOpinion::Games, (Tick::now(), values[2]));
         self.opinions.insert(
             PlayerOpinion::Gold,
-            (Tick::now(), (OPINION_NEUTRAL_VALUE + values[2]).bound()),
+            (Tick::now(), (OPINION_NEUTRAL_VALUE + values[3]).bound()),
         );
     }
 
@@ -923,6 +926,40 @@ impl Player {
         Ok(())
     }
 
+    pub fn satisfy_opinion(&mut self, opinion: PlayerOpinion) {
+        let Some((last_event, value)) = self.opinions.get_mut(&opinion) else {
+            return;
+        };
+        let now = Tick::now();
+        let recency = now
+            .saturating_sub(*last_event)
+            .min(SATISFACTION_OPINION_RECOVERY_TIME) as f32
+            / SATISFACTION_OPINION_RECOVERY_TIME as f32;
+        *last_event = now;
+
+        let modifier = (*value - OPINION_NEUTRAL_VALUE) / MAX_SKILL;
+        let factor = 1.0 + SATISFACTION_OPINION_MODIFIER_WEIGHT * modifier;
+        let bonus = if factor > 0.0 {
+            factor * recency
+        } else {
+            factor
+        };
+        self.satisfaction = (self.satisfaction + SATISFACTION_PER_OPINION_EVENT * bonus).bound();
+    }
+
+    /// Satisfy the opinion on space adventures, only if the duration was long enough.
+    pub fn satisfy_adventure_opinion(&mut self, duration: Duration) {
+        let satisfied = self
+            .opinions
+            .get(&PlayerOpinion::Adventures)
+            .is_some_and(|(_, value)| {
+                duration > Duration::from_secs((*value * SPACE_ADVENTURE_OPINION_MOD) as u64)
+            });
+        if satisfied {
+            self.satisfy_opinion(PlayerOpinion::Adventures);
+        }
+    }
+
     /// Drink one liter of rum, increasing drunkenness and boosting morale.
     /// There is a chance, growing with drunkenness, that the player gets fully drunk:
     /// in that case tiredness goes to max (the player is wasted), drunkenness resets
@@ -936,9 +973,7 @@ impl Player {
         };
         self.drunkenness = (self.drunkenness + amount).bound();
 
-        if let Some((last_event, _)) = self.opinions.get_mut(&PlayerOpinion::Drinking) {
-            *last_event = Tick::now();
-        }
+        self.satisfy_opinion(PlayerOpinion::Drinking);
 
         // Probability equal to the new drunkenness over MAX_SKILL,
         // mitigated by stamina: high-stamina players hold their liquor.
@@ -962,10 +997,7 @@ impl Player {
     }
 
     pub fn get_gold(&mut self) {
-        if let Some((last_event, _)) = self.opinions.get_mut(&PlayerOpinion::Gold) {
-            *last_event = Tick::now();
-        }
-
+        self.satisfy_opinion(PlayerOpinion::Gold);
         self.add_morale(MORALE_GOLD_BONUS);
     }
 
