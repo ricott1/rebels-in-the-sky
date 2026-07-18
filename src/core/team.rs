@@ -383,6 +383,10 @@ impl Team {
             return Err(anyhow!("Already in a team"));
         }
 
+        if self.current_game.is_some() {
+            return Err(anyhow!("Can't hire during a game"));
+        }
+
         if self.player_ids.len() >= self.spaceship.crew_capacity() as usize {
             return Err(anyhow!("Team is full"));
         }
