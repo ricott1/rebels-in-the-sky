@@ -723,29 +723,12 @@ impl Team {
             return Err(anyhow!("Target player is not part of the team"));
         }
 
-        if target_player.team.unwrap() == self.id {
-            return Err(anyhow!("Target player is in team"));
-        }
-
         if self.is_on_planet() != target_team.is_on_planet() {
             return Err(anyhow!("Not on the same planet"));
         }
 
-        if self.current_game.is_some() {
-            return Err(anyhow!("{} is playing", self.name));
-        }
-
-        if target_team.current_game.is_some() {
-            return Err(anyhow!("{} is playing", target_team.name));
-        }
-
-        if self.playing_in_tournament().is_some() {
-            return Err(anyhow!("{} is playing in a tournament", self.name));
-        }
-
-        if target_team.playing_in_tournament().is_some() {
-            return Err(anyhow!("{} is playing in a tournament", target_team.name));
-        }
+        self.can_release_player(proposer_player)?;
+        target_team.can_release_player(target_player)?;
 
         Ok(())
     }
