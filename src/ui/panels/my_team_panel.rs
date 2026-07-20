@@ -572,6 +572,8 @@ impl MyTeamPanel {
             own_team.player_ids.iter().position(|id| *id == player.id)
         });
 
+        let can_change_team_settings = own_team.can_change_team_settings();
+
         for idx in 0..num_dropdowns {
             let (rect, direction, title) = if idx < court {
                 let (ox, oy) = DROPDOWN_OFFSETS[idx];
@@ -624,6 +626,7 @@ impl MyTeamPanel {
                 position.as_role()
             ))
             .title(title)
+            .disabled(can_change_team_settings.is_err())
             .block(default_block());
             if idx < MAX_PLAYERS_PER_GAME {
                 if let Some(index) = selected_player_index {
@@ -639,7 +642,6 @@ impl MyTeamPanel {
             );
         }
 
-        let can_change_team_settings = own_team.can_change_team_settings();
         let btm_split = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),

@@ -21,7 +21,7 @@ pub struct Button<'a> {
     selected: bool,
     is_hovered: bool,
     disabled_text: Option<Text<'a>>,
-    text_alignemnt: Alignment,
+    text_alignment: Alignment,
     style: Style,
     hover_style: Style,
     block: Option<Block<'a>>,
@@ -44,7 +44,7 @@ impl<'a> Button<'a> {
         Self {
             text: text.into(),
             on_click,
-            text_alignemnt: ratatui::layout::Alignment::Center,
+            text_alignment: ratatui::layout::Alignment::Center,
             hover_style: UiStyle::HIGHLIGHT,
             ..Default::default()
         }
@@ -55,8 +55,8 @@ impl<'a> Button<'a> {
         self
     }
 
-    pub fn set_text_alignemnt(mut self, text_alignemnt: Alignment) -> Self {
-        self.text_alignemnt = text_alignemnt;
+    pub fn set_text_alignment(mut self, text_alignment: Alignment) -> Self {
+        self.text_alignment = text_alignment;
         self
     }
 
@@ -162,7 +162,7 @@ impl<'a> Widget for Button<'a> {
         } else {
             Paragraph::new(self.text)
         }
-        .alignment(self.text_alignemnt);
+        .alignment(self.text_alignment);
 
         let paragraph_style = if self.selected {
             UiStyle::SELECTED_BUTTON

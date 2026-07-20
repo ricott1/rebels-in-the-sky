@@ -774,10 +774,9 @@ mod tests {
         let mut player = Player::default();
 
         assert!(TeamBonus::Scouting.as_skill(&player) == 0.0);
-        player.athletics.stamina = 10.0;
-        player.defense.steal = 6.0;
         player.mental.vision = 2.0;
-        assert!(TeamBonus::Scouting.as_skill(&player) == 0.15 * 10.0 + 0.15 * 6.0 + 0.7 * 2.0);
+        player.mental.intuition = 6.0;
+        assert!(TeamBonus::Scouting.as_skill(&player) == 0.5 * 2.0 + 0.2 * 6.0);
 
         assert!(TeamBonus::Weapons.as_skill(&player) == 0.0);
         player.technical.ball_handling = 8.5;

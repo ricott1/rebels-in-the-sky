@@ -1820,8 +1820,7 @@ impl World {
                         .filter(|id| !team.players.contains_key(id))
                     {
                         if let Some(player) = self.players.get_mut(player_id) {
-                            player.satisfaction =
-                                (player.satisfaction - SATISFACTION_MALUS_FOR_SITTING_OUT).bound();
+                            player.add_satisfaction(SATISFACTION_MALUS_FOR_SITTING_OUT);
                         }
                     }
                 }
@@ -2627,7 +2626,7 @@ impl World {
             .ok()
             .map(|t| t.reputation / 5.0)
             .unwrap_or_default();
-        let extra_potential = Some(0.25 + rng.random_range(0.0..max_extra_potential));
+        let extra_potential = Some(0.25 + rng.random_range(0.0..max_extra_potential + 0.01));
         let extra_scouting = Some(6.0 + rng.random_range(0.0..8.0));
         for asteroid in &cove_asteroids {
             self.populate_planet(rng, asteroid, extra_potential, extra_scouting)?;
@@ -2791,8 +2790,7 @@ impl World {
             }
 
             // Pirates slightly dislike being part of a team.
-            // This is counteracted by the morale boost pirates get by playing games.
-            player.add_morale(MORALE_DECREASE_PER_LONG_TICK);
+            player.add_satisfaction(SATISFACTION_DECREASE_PER_LONG_TICK);
             player.reputation = (player.reputation + REPUTATION_DECREASE_PER_LONG_TICK).bound();
 
             // All game position fitness have decrease by a small amount

@@ -18,8 +18,8 @@ use crate::{
         TeamId, TeamMap, Tick,
     },
 };
-use std::time::Duration;
 use anyhow::anyhow;
+use std::time::Duration;
 
 use itertools::Itertools;
 use libp2p::PeerId;
@@ -944,7 +944,7 @@ impl Player {
         } else {
             factor
         };
-        self.satisfaction = (self.satisfaction + SATISFACTION_PER_OPINION_EVENT * bonus).bound();
+        self.add_satisfaction(SATISFACTION_PER_OPINION_EVENT * bonus);
     }
 
     /// Satisfy the opinion on space adventures, only if the duration was long enough.
@@ -1014,14 +1014,18 @@ impl Player {
     }
 
     pub fn satisfaction_description(&self) -> &'static str {
+        // Thresholds mirror the color bands in `UiStyled for Skill` so wording and color agree.
         match self.satisfaction {
-            x if x == MIN_SKILL => "disgusted by the crew",
-            x if x < 4.0 => "strongly opposed to the crew ",
-            x if x < 8.0 => "somewhat unhappy about the crew",
-            x if x < 12.0 => "overall satisfied with the crew",
-            x if x < 16.0 => "pretty happy with the crew",
-            x if x < 16.0 => "in love with the crew",
-            _ => "esthatic about the crew",
+            x if x < 1.0 => "disgusted by the crew",
+            x if x < 3.0 => "fed up with the crew",
+            x if x < 5.0 => "strongly opposed to the crew",
+            x if x < 7.0 => "unhappy about the crew",
+            x if x < 9.0 => "lukewarm about the crew",
+            x if x < 13.0 => "content with the crew",
+            x if x < 15.0 => "pleased with the crew",
+            x if x < 17.0 => "happy with the crew",
+            x if x < 19.0 => "delighted with the crew",
+            _ => "ecstatic about the crew",
         }
     }
 
@@ -1252,6 +1256,18 @@ impl Player {
         }
     }
 
+    pub fn add_satisfaction(&mut self, satisfaction: f32) {
+        let min_satisfaction = if self.special_trait == Some(Trait::Crumiro) {
+            SATISFACTION_THRESHOLD_FOR_LEAVING
+        } else {
+            MIN_SKILL
+        };
+
+        self.satisfaction = (self.satisfaction + satisfaction)
+            .max(min_satisfaction)
+            .bound();
+    }
+
     pub fn add_morale(&mut self, morale: f32) {
         let min_morale = if self.special_trait == Some(Trait::Crumiro) {
             0.15 * MAX_SKILL
@@ -1275,7 +1291,7 @@ impl Player {
             .max(min_morale)
             .bound();
         if self.morale == MIN_SKILL && morale_was_not_minimum {
-            self.satisfaction = (self.satisfaction - SATISFACTION_MALUS_FOR_MORALE_DROP).bound();
+            self.add_satisfaction(SATISFACTION_MALUS_FOR_MORALE_DROP);
         }
     }
 
@@ -1591,8 +1607,10 @@ mod test {
         let rng = &mut ChaCha8Rng::seed_from_u64(0);
 
         // Drinking increases drunkenness and boosts morale, but does not drain energy.
+        // Morale is capped by satisfaction, so the player must be satisfied to gain any.
         let mut player = Player::default();
         player.athletics.stamina = MAX_SKILL;
+        player.satisfaction = MAX_SKILL;
         let got_drunk = player.drink(rng);
         assert!(!got_drunk);
         assert!(player.drunkenness == DRUNKENNESS_PER_DRINK);

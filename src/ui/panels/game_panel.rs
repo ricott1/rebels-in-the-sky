@@ -424,7 +424,7 @@ impl GamePanel {
                     team_id: game.home_team_in_game.team_id,
                 },
             )
-            .set_text_alignemnt(Alignment::Right)
+            .set_text_alignment(Alignment::Right)
             .set_style(UiStyle::HELP_LINK)
             .hover_text(format!("Go to {} team", game.home_team_in_game.name));
 
@@ -435,7 +435,10 @@ impl GamePanel {
             .split(spans_split[1]);
             frame.render_interactive_widget(home_button, name_split[1]);
         } else {
-            frame.render_widget(format!("{:>}", game.home_team_in_game.name), spans_split[1]);
+            frame.render_widget(
+                Paragraph::new(format!("{:>}", game.home_team_in_game.name)).right_aligned(),
+                spans_split[1],
+            );
         }
 
         frame.render_widget(Paragraph::default(), spans_split[3]);
@@ -447,7 +450,7 @@ impl GamePanel {
                     team_id: game.away_team_in_game.team_id,
                 },
             )
-            .set_text_alignemnt(Alignment::Left)
+            .set_text_alignment(Alignment::Left)
             .set_style(UiStyle::HELP_LINK)
             .hover_text(format!("Go to {} team", game.away_team_in_game.name));
 

@@ -3,7 +3,7 @@ use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     player::Player,
     skill::GameSkill,
-    GamePosition,
+    GamePosition, PlayerOpinion, PlayerOpinionMapDescription,
 };
 use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
@@ -20,7 +20,7 @@ pub(crate) fn execute(
 
     let post_idx = match input.attackers.len() {
         0 => {
-            let weights = [1, 2, 10, 30, 45];
+            let weights: [u8; 5] = [1, 2, 10, 30, 45];
             if let Some(idx) = sample_player_index(action_rng, weights, attacking_players_array) {
                 idx
             } else {
@@ -170,8 +170,22 @@ pub(crate) fn execute(
                 && (0.75 * poster.mental.vision + 0.25 * poster.technical.passing).game_value() + x
                     > ADV_NEUTRAL_LIMIT
             {
-                let mut weights = [3, 3, 2, 2, 1];
-                weights[post_idx] = 0;
+                let weights = {
+                    let mut base = [3.0, 3.0, 2.0, 2.0, 1.0];
+                    base[post_idx] = 0.0;
+
+                    // Opinion on population affects probability.
+                    for (idx, target) in attacking_players_array.iter().enumerate() {
+                        let population = target.info.population;
+                        base[idx] *= 1.0
+                            + poster
+                                .opinions
+                                .modifier(PlayerOpinion::Populations { population })
+                    }
+
+                    base
+                };
+                //FIXME: hook up player opinion on populations
                 let target_idx = sample_player_index(action_rng, weights, attacking_players_array)
                     .expect("There should be another ok player");
                 let target: &Player = attacking_players_array[target_idx];

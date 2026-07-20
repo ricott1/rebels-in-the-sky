@@ -935,6 +935,7 @@ impl PopupMessage {
                     split[0],
                 );
 
+                // Note: here we set from_popup:false cause we don't want to close the tutorial popup
                 let pages: [(&str, Vec<(&str, UiCallback)>); Self::MAX_TUTORIAL_PAGE + 1] = [
                     (
                         "Hello pirate! This is a brief tutorial to get you started. Check the wiki at wiki.rebels.frittura.org",
@@ -946,30 +947,30 @@ impl PopupMessage {
                     ),
                     (
                         "To start, you can try to challenge another team to a game.",
-                        vec![("challenge", UiCallback::GoToChallenges{from_popup:true})],
+                        vec![("challenge", UiCallback::GoToChallenges{from_popup:false})],
                     ),
                     (
                         "You can also explore around your planet to gather resources which you can then sell at the market.",
-                        vec![("market", UiCallback::GoToMarket{from_popup:true})],
+                        vec![("market", UiCallback::GoToMarket{from_popup:false})],
                     ),
                     (
                         "Once you have enough resources, you can upgrade your spaceship in the Shipyard.",
-                        vec![("Shipyard", UiCallback::GoToShipyard{from_popup:true})],
+                        vec![("Shipyard", UiCallback::GoToShipyard{from_popup:false})],
                     ),
                     (
                         "You can hire free pirates from the Pirates panel in exchange for satoshi.",
-                        vec![("Pirates", UiCallback::GoToFreePirates{from_popup:true})],
+                        vec![("Pirates", UiCallback::GoToFreePirates{from_popup:false})],
                     ),
                     (
                         "After you add shooters to your spaceship, you can embark on a Space Adventure and try to find Asteroids.",
                         vec![
-                            ("Space Adventure", UiCallback::GoToSpaceAdventure{from_popup:true}),
-                            ("Asteroids", UiCallback::GoToAsteroids{from_popup:true}),
+                            ("Space Adventure", UiCallback::GoToSpaceAdventure{from_popup:false}),
+                            ("Asteroids", UiCallback::GoToAsteroids{from_popup:false}),
                         ],
                     ),
                     (
                         "Be sure to check out the Chat in the Swarm panel from time to time.\nHave fun!",
-                        vec![("Chat", UiCallback::GoToChat{from_popup:true})],
+                        vec![("Chat", UiCallback::GoToChat{from_popup:false})],
                     ),
                 ];
 
