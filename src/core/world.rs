@@ -2097,13 +2097,6 @@ impl World {
         let mut callbacks = vec![];
         let mut new_games = vec![];
         for (&tournament_id, tournament) in self.tournaments.iter_mut() {
-            // Failsafe condition: if current tick is larger than max_ending_time, the tournament should definetely have been canceled
-            if current_tick > tournament.max_ending_time() {
-                let error_message = "Tournament is beyond max time.".to_string();
-                log::warn!("Tournament {tournament_id}: {error_message}");
-                continue;
-            }
-
             match tournament.state(current_tick) {
                 TournamentState::Canceled => {}
                 TournamentState::Registration => {}

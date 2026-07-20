@@ -239,14 +239,6 @@ impl Tournament {
             + Self::SYNCING_STATE_DURATION
     }
 
-    pub fn max_ending_time(&self) -> Tick {
-        let n = self.max_participants;
-        let game_duration = timer::MAX_TIME_IN_SECONDS as Tick * SECONDS;
-        let rounds = (n as u32 - 1).ilog2() as Tick + 1; // ceil(log2(n))
-        let interval_rounds = (n as u32).ilog2() as Tick; // floor(log2(n))
-        self.starting_at() + rounds * game_duration + interval_rounds * self.game_time_interval
-    }
-
     pub fn new(organizer: &Team, tournament_type: TournamentType) -> AppResult<Self> {
         organizer.can_organize_tournament()?;
 
@@ -1016,11 +1008,7 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_tournament_max_participants_cup() -> AppResult<()> {
-        let max = TournamentType::Cup.max_participants(); // 4
-        let mut tournament = Tournament::test(max, max);
-        tournament.registrations_closing_at = 0;
+    fn play_tournament_on_schedule(tournament: &mut Tournament) -> AppResult<()> {
         let mut games = GameMap::new();
         let mut past_game_summaries = GameSummaryMap::new();
 
@@ -1028,10 +1016,18 @@ mod tests {
             games.insert(game.id, game);
         }
 
-        let mut current_tick: Tick = 0;
+        let start = tournament.starting_at();
+        let mut current_tick = start - start % TickInterval::SHORT;
+        let mut ticks = 0;
         while !tournament.has_ended() {
+            current_tick += TickInterval::SHORT;
+            ticks += 1;
+            assert!(ticks < 100_000, "tournament did not finish");
+
             for game in games.values_mut() {
-                game.tick(current_tick);
+                if game.has_started(current_tick) {
+                    game.tick(current_tick);
+                }
             }
 
             let new_games =
@@ -1040,16 +1036,20 @@ mod tests {
             for game in games.values().filter(|g| g.has_ended()) {
                 past_game_summaries.insert(game.id, GameSummary::from_game(game));
             }
-
             games.retain(|_, g| !g.has_ended());
 
             for game in new_games {
                 games.insert(game.id, game);
             }
-
-            current_tick += TickInterval::SHORT;
         }
+        Ok(())
+    }
 
+    #[test]
+    fn test_tournament_max_participants_cup() -> AppResult<()> {
+        let max = TournamentType::Cup.max_participants(); // 4
+        let mut tournament = Tournament::test(max, max);
+        play_tournament_on_schedule(&mut tournament)?;
         assert!(tournament.winner.is_some());
         assert_eq!(tournament.games.len(), max - 1);
         Ok(())
@@ -1059,36 +1059,7 @@ mod tests {
     fn test_tournament_max_participants_supercup() -> AppResult<()> {
         let max = TournamentType::Supercup.max_participants(); // 8
         let mut tournament = Tournament::test(max, max);
-        tournament.registrations_closing_at = 0;
-        let mut games = GameMap::new();
-        let mut past_game_summaries = GameSummaryMap::new();
-
-        for game in tournament.initialize() {
-            games.insert(game.id, game);
-        }
-
-        let mut current_tick: Tick = 0;
-        while !tournament.has_ended() {
-            for game in games.values_mut() {
-                game.tick(current_tick);
-            }
-
-            let new_games =
-                tournament.generate_next_games(current_tick, &games, &past_game_summaries)?;
-
-            for game in games.values().filter(|g| g.has_ended()) {
-                past_game_summaries.insert(game.id, GameSummary::from_game(game));
-            }
-
-            games.retain(|_, g| !g.has_ended());
-
-            for game in new_games {
-                games.insert(game.id, game);
-            }
-
-            current_tick += TickInterval::SHORT;
-        }
-
+        play_tournament_on_schedule(&mut tournament)?;
         assert!(tournament.winner.is_some());
         assert_eq!(tournament.games.len(), max - 1);
         Ok(())
