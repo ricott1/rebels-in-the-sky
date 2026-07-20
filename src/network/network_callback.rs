@@ -642,22 +642,32 @@ impl NetworkCallback {
                 });
             }
 
-            let received_tournament_is_latest =
-                if app.world.past_tournaments.contains_key(&tournament.id) {
+            // If we've already played out every game this tournament contains, it's finished on our
+            // side. Don't let a peer's rebroadcast resurrect it (re-simulating it, or - when its games
+            // are already archived - immediately re-cancelling it with the "no pending team" error).
+            let already_finished_locally = !tournament.games.is_empty()
+                && tournament
+                    .games
+                    .iter()
+                    .all(|g| app.world.past_games.contains_key(&g.id));
+
+            let received_tournament_is_latest = if already_finished_locally {
+                false
+            } else if app.world.past_tournaments.contains_key(&tournament.id) {
+                false
+            } else if let Some(previous_t) = app.world.tournaments.get(&tournament.id) {
+                // Try to keep most recent tournament. This is important to avoid recreating same games twice.
+                // If previous tournament is already initialized, then no need to update
+                if previous_t.is_initialized() {
                     false
-                } else if let Some(previous_t) = app.world.tournaments.get(&tournament.id) {
-                    // Try to keep most recent tournament. This is important to avoid recreating same games twice.
-                    // If previous tournament is already initialized, then no need to update
-                    if previous_t.is_initialized() {
-                        false
-                    } else {
-                        tournament.is_initialized()
-                            || tournament.is_canceled()
-                            || tournament.registered_teams.len() > previous_t.registered_teams.len()
-                    }
                 } else {
-                    true
-                };
+                    tournament.is_initialized()
+                        || tournament.is_canceled()
+                        || tournament.registered_teams.len() > previous_t.registered_teams.len()
+                }
+            } else {
+                true
+            };
 
             if received_tournament_is_latest {
                 if !tournament.is_canceled() {
