@@ -1014,7 +1014,6 @@ impl Player {
     }
 
     pub fn satisfaction_description(&self) -> &'static str {
-        // Thresholds mirror the color bands in `UiStyled for Skill` so wording and color agree.
         match self.satisfaction {
             x if x < 1.0 => "disgusted by the crew",
             x if x < 3.0 => "fed up with the crew",

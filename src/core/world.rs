@@ -2945,12 +2945,10 @@ impl World {
                     messages.push(UiCallback::PushUiPopup {
                         popup_message: PopupMessage::Message {
                             message: format!(
-                                "{} {} left the crew!\n{} {} {}...",
+                                "{} {} left the crew!\n{} had enough...",
                                 player.info.first_name,
                                 player.info.last_name,
                                 player.info.pronouns.as_subject(),
-                                player.info.pronouns.to_be(),
-                                player.satisfaction_description(),
                             ),
                             links: vec![],
                             level: log::Level::Info,
