@@ -177,7 +177,7 @@ pub const OPINION_NEUTRAL_VALUE: Skill = 0.5 * MAX_SKILL;
 pub const PLAYER_OPINION_RELEASE_FROM_TEAM: Skill = MoraleModifier::SEVERE_MALUS;
 pub const SPACE_ADVENTURE_OPINION_MOD: f32 = 2.0;
 
-pub const BASE_DRUNK_PROBABILITY: f64 = 0.875;
+pub const BASE_DRUNK_PROBABILITY: f64 = 0.725;
 pub const DRUNKENNESS_PER_DRINK: f32 = 2.5;
 pub const DRUNKENNESS_ON_GETTING_DRUNK: f32 = -3.0;
 // Spugna players hold their liquor: they accrue drunkenness more slowly and are

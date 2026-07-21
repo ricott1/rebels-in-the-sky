@@ -1797,8 +1797,8 @@ impl MyTeamPanel {
         let player_id = player.id;
         let split = Layout::horizontal([
             Constraint::Fill(1),
-            Constraint::Length(26),
-            Constraint::Length(26),
+            Constraint::Length(22),
+            Constraint::Length(28),
         ])
         .split(area);
 
