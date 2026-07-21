@@ -139,11 +139,9 @@ pub enum TournamentState {
     Ended,
 }
 
-// Note: all clients will run the same tournament deterministically,
-// but teams can be registered only with a network message sent to the organizer,
-// which will respond with the updated tournament state.
-// This means that clients are responsible for updating their team state
-// to reflect the fact that they will be playing in the tournament.
+// Note: all clients will run the same tournament deterministically, but teams can be registered
+// only with a network message sent to the organizer which will respond with the updated tournament state.
+// This means that clients are responsible for updating their team state to reflect the fact that they will be playing in the tournament.
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Tournament {
@@ -354,6 +352,12 @@ impl Tournament {
         !self.games.is_empty()
     }
 
+    fn shuffled_participant_ids(&self, rng: &mut ChaCha8Rng) -> Vec<TeamId> {
+        let mut ids = self.participants.keys().copied().sorted().collect_vec();
+        ids.shuffle(rng);
+        ids
+    }
+
     pub fn initialize(&mut self) -> Vec<Game> {
         let mut new_games = vec![];
         assert!(!self.has_ended());
@@ -362,36 +366,34 @@ impl Tournament {
 
         let rng = &mut self.get_rng(self.starting_at());
 
-        // Initialize initial games.
-        // We shuffle the indecies of the participants, then pair them.
-        // If the number of teams is odd, simply set pending_team_for_next_game (it's like a bye).
-        let mut pairings = self
-            .participants
-            .values()
-            .sorted_by(|a, b| a.team_id.cmp(&b.team_id))
-            .collect_vec();
-        pairings.shuffle(rng);
-
+        // Shuffle the participants and pair them up; an odd one out is left as pending_team_for_next_game (a bye).
+        let pairings = self.shuffled_participant_ids(rng);
         assert!(pairings.len() == self.participants.len());
 
-        for (idx, &team_in_game) in pairings.iter().enumerate() {
+        for (idx, &team_id) in pairings.iter().enumerate() {
             if let Some(pending_team_id) = self.pending_team_for_next_game.take() {
                 let pending_team = self
                     .participants
                     .get(&pending_team_id)
-                    .expect("Team should be a participant");
+                    .expect("Team should be a participant")
+                    .clone();
+                let team_in_game = self
+                    .participants
+                    .get(&team_id)
+                    .expect("Team should be a participant")
+                    .clone();
 
                 let game = self.new_game(
                     rng,
-                    pending_team.clone(),
-                    team_in_game.clone(),
+                    pending_team,
+                    team_in_game,
                     self.starting_at()
                         + self.game_time_interval * (idx + 1) as u64 / pairings.len() as u64,
                 );
                 self.games.push(game.clone());
                 new_games.push(game);
             } else {
-                self.pending_team_for_next_game = Some(team_in_game.team_id);
+                self.pending_team_for_next_game = Some(team_id);
             }
         }
 
@@ -402,6 +404,14 @@ impl Tournament {
         }
 
         new_games
+    }
+
+    fn initial_bye(&self) -> Option<TeamId> {
+        if self.participants.len() % 2 == 0 {
+            return None;
+        }
+        let rng = &mut self.get_rng(self.starting_at());
+        self.shuffled_participant_ids(rng).last().copied()
     }
 
     pub fn generate_next_games(
@@ -430,92 +440,84 @@ impl Tournament {
             )
         }
 
-        let mut tournament_games = vec![];
-        let mut generated_past_games = 0;
+        // Winner of every finished game, taken from `games` or `past_games` alike:
+        // advancement must not depend on which one holds it, since a spectator receives finished games straight into past_games.
+        let mut completed: Vec<(TeamId, Tick, GameId)> = vec![];
         for game in self.games.iter() {
-            if let Some(world_game) = games.get(&game.id) {
-                tournament_games.push(world_game);
-            } else if past_games.contains_key(&game.id) {
-                // Game completed and was cleaned up - this is expected
-                generated_past_games += 1;
+            // A result may sit in `games` (just ended, not yet archived) or `past_games`;
+            // a game with no result yet is skipped (we wait, we don't cancel).
+            let result = match games.get(&game.id) {
+                Some(active) => {
+                    active
+                        .has_ended()
+                        .then_some((active.winner, active.starting_at, active.id))
+                }
+                None => past_games
+                    .get(&game.id)
+                    .map(|s| (s.winner, s.starting_at, s.id)),
+            };
+            if let Some((winner, starting_at, id)) = result {
+                let winner =
+                    winner.ok_or_else(|| anyhow!("Tournament game should have a winner."))?;
+                completed.push((winner, starting_at, id));
+            }
+        }
+
+        // Rebuild the pairing queue from scratch each call so a repeated call can't advance it twice.
+        // Winners pair up in the order games finish.
+        completed.sort_by_key(|&(_, tick, id)| (tick, id));
+        let mut pending = self.initial_bye();
+        let mut required: Vec<(TeamId, TeamId, Tick)> = vec![];
+        for &(winner, starting_at, _) in &completed {
+            if let Some(other) = pending.take() {
+                required.push((other, winner, starting_at));
             } else {
-                log::warn!(
-                    "Tournament game {} not found in games or past_games",
-                    game.id
-                );
-                generated_past_games += 1;
+                pending = Some(winner);
             }
         }
 
-        // This is some sort of extra stop to ensure we don't generate extra games.
-        // FIXME: Not sure why this is necessary...
-        if generated_past_games == self.participants.len() - 1 {
-            if self.pending_team_for_next_game.is_none() {
-                return Err(anyhow!(
-                    "There should be a pending team if there are no available tournament games."
-                ));
-            }
-            self.winner = self.pending_team_for_next_game;
+        // Every game played: the team left without an opponent is the champion.
+        if completed.len() == self.participants.len() - 1 {
+            self.winner =
+                Some(pending.ok_or_else(|| anyhow!("Finished tournament should have a winner."))?);
             self.ended_at = Some(current_tick);
-            log::info!(
-                "Tournament {} is over: reached max number of games.",
-                self.id
-            );
+            log::info!("Tournament {} is over.", self.id);
             return Ok(vec![]);
         }
 
-        // At this point, tournament_games can be empty only if the last game was the final,
-        // in which case the pending_team_for_next_game is the tournament winner
-        if tournament_games.is_empty() {
-            if self.pending_team_for_next_game.is_none() {
-                return Err(anyhow!(
-                    "There should be a pending team if there are no available tournament games."
-                ));
-            }
-            self.winner = self.pending_team_for_next_game;
-            self.ended_at = Some(current_tick);
-            log::info!("Tournament {} is over: no available games.", self.id);
-            return Ok(vec![]);
-        }
-
-        let rng = &mut self.get_rng(self.games.len() as u64 + 1);
+        // Schedule only the next-round games that don't exist yet: two teams meet at most once,
+        // so an existing matchup was already created on an earlier tick.
         let mut new_games = vec![];
-        for game in tournament_games {
-            // Game could have ended because we process tournaments AFTER ticking games and BEFORE removing ended games.
-            if !game.has_ended() {
+        for (home_id, away_id, after_starting_at) in required {
+            let exists = self.games.iter().any(|g| {
+                let pair = [g.home_team_in_game.team_id, g.away_team_in_game.team_id];
+                pair.contains(&home_id) && pair.contains(&away_id)
+            });
+            if exists {
                 continue;
             }
 
-            let winner_team_id = if let Some(team_id) = game.winner {
-                team_id
-            } else {
-                return Err(anyhow!("Tournament game should have a winner."));
-            };
-            if let Some(other_team_id) = self.pending_team_for_next_game {
-                let home_team_in_game = self
-                    .participants
-                    .get(&other_team_id)
-                    .expect("Team should be a participant");
-                let away_team_in_game = self
-                    .participants
-                    .get(&winner_team_id)
-                    .expect("Team should be a participant");
-
-                let new_game = self.new_game(
-                    rng,
-                    home_team_in_game.clone(),
-                    away_team_in_game.clone(),
-                    game.starting_at
-                        + timer::MAX_TIME_IN_SECONDS as Tick * SECONDS
-                        + self.game_time_interval,
-                );
-                self.games.push(new_game.clone());
-                new_games.push(new_game);
-
-                self.pending_team_for_next_game = None;
-            } else {
-                self.pending_team_for_next_game = Some(winner_team_id)
-            }
+            let home = self
+                .participants
+                .get(&home_id)
+                .expect("Team should be a participant")
+                .clone();
+            let away = self
+                .participants
+                .get(&away_id)
+                .expect("Team should be a participant")
+                .clone();
+            let rng = &mut self.get_rng(self.games.len() as u64 + 1);
+            let new_game = self.new_game(
+                rng,
+                home,
+                away,
+                after_starting_at
+                    + timer::MAX_TIME_IN_SECONDS as Tick * SECONDS
+                    + self.game_time_interval,
+            );
+            self.games.push(new_game.clone());
+            new_games.push(new_game);
         }
 
         Ok(new_games)
@@ -562,7 +564,7 @@ impl Rated for Tournament {
 mod tests {
 
     use crate::core::{Player, Team, TeamLocation, TickInterval, MAX_PLAYERS_PER_GAME, SECONDS};
-    use crate::game_engine::game::GameSummary;
+    use crate::game_engine::game::{Game, GameSummary};
     use crate::game_engine::{Tournament, TournamentState, TournamentType};
     use crate::types::{
         AppResult, GameMap, GameSummaryMap, PlanetId, PlayerMap, SystemTimeTick, TeamId, Tick,
@@ -1005,6 +1007,136 @@ mod tests {
                 num_participants - 1
             );
         }
+        Ok(())
+    }
+
+    fn play_to_end(mut game: Game) -> Game {
+        let mut current_tick = game.starting_at;
+        let mut ticks = 0;
+        while !game.has_ended() {
+            if game.has_started(current_tick) {
+                game.tick(current_tick);
+            }
+            current_tick += TickInterval::SHORT;
+            ticks += 1;
+            assert!(ticks < 100_000, "game did not finish");
+        }
+        game
+    }
+
+    // The bracket must advance identically whether a result is seen via `games` or arrives already-ended via `past_games`.
+    #[test]
+    fn test_bracket_advances_regardless_of_result_routing() -> AppResult<()> {
+        let base = Tournament::test(4, 4);
+
+        let mut proto = base.clone();
+        proto.registrations_closing_at = 0;
+        let semis = proto.initialize();
+        assert_eq!(semis.len(), 2, "4 participants -> 2 semifinals");
+
+        let sf0 = play_to_end(semis[0].clone());
+        let sf1 = play_to_end(semis[1].clone());
+        let end_tick = sf0.starting_at.max(sf1.starting_at) + 100 * TickInterval::SHORT;
+
+        // Participant path: both ended semis are visible via `games` in one pass.
+        let mut part = base.clone();
+        part.registrations_closing_at = 0;
+        part.initialize();
+        {
+            let mut games = GameMap::new();
+            games.insert(sf0.id, sf0.clone());
+            games.insert(sf1.id, sf1.clone());
+            let past = GameSummaryMap::new();
+            part.generate_next_games(end_tick, &games, &past)?;
+        }
+        assert_eq!(
+            part.games.len(),
+            3,
+            "participant path should schedule the final (2 semis + 1 final)"
+        );
+
+        // Spectator path: sf0 seen via `games`, sf1 arrives already-ended via `past_games`
+        // (network_callback routes ended games straight to past_games, bypassing pairing).
+        let mut spec = base.clone();
+        spec.registrations_closing_at = 0;
+        spec.initialize();
+        {
+            let mut games = GameMap::new();
+            let mut past = GameSummaryMap::new();
+
+            games.insert(sf0.id, sf0.clone());
+            spec.generate_next_games(end_tick, &games, &past)?;
+            past.insert(sf0.id, GameSummary::from_game(&sf0));
+            games.retain(|_, g| !g.has_ended());
+
+            past.insert(sf1.id, GameSummary::from_game(&sf1));
+            spec.generate_next_games(end_tick, &games, &past)?;
+        }
+
+        assert_eq!(
+            spec.games.len(),
+            part.games.len(),
+            "spectator bracket should match the participant bracket (both 3 games)"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_next_games_is_idempotent() -> AppResult<()> {
+        let mut tournament = Tournament::test(4, 4);
+        tournament.registrations_closing_at = 0;
+        let semis = tournament.initialize();
+        let sf0 = play_to_end(semis[0].clone());
+        let sf1 = play_to_end(semis[1].clone());
+        let end_tick = sf0.starting_at.max(sf1.starting_at) + 100 * TickInterval::SHORT;
+
+        let mut games = GameMap::new();
+        games.insert(sf0.id, sf0.clone());
+        games.insert(sf1.id, sf1.clone());
+        let past = GameSummaryMap::new();
+
+        tournament.generate_next_games(end_tick, &games, &past)?;
+        assert_eq!(tournament.games.len(), 3, "2 semis + 1 final");
+
+        tournament.generate_next_games(end_tick, &games, &past)?;
+        assert_eq!(
+            tournament.games.len(),
+            3,
+            "reprocessing the same results must not duplicate the final (now {} games)",
+            tournament.games.len()
+        );
+        Ok(())
+    }
+
+    // A spectator whose peer disconnects still finishes the tournament from the results it already has.
+    #[test]
+    fn test_bracket_completes_with_all_results_via_past_games() -> AppResult<()> {
+        let mut tournament = Tournament::test(4, 4);
+        tournament.registrations_closing_at = 0;
+        let games = GameMap::new();
+        let mut past = GameSummaryMap::new();
+
+        for game in tournament.initialize() {
+            past.insert(game.id, GameSummary::from_game(&play_to_end(game)));
+        }
+        let end_tick =
+            past.values().map(|g| g.starting_at).max().unwrap() + 100 * TickInterval::SHORT;
+
+        // First pass pairs the two semifinal winners into the final.
+        let final_games = tournament.generate_next_games(end_tick, &games, &past)?;
+        assert_eq!(final_games.len(), 1, "the final should be scheduled");
+
+        // Play the final (still only via past_games) and finish.
+        past.insert(
+            final_games[0].id,
+            GameSummary::from_game(&play_to_end(final_games[0].clone())),
+        );
+        tournament.generate_next_games(end_tick, &games, &past)?;
+
+        assert!(tournament.has_ended());
+        assert!(tournament.winner.is_some());
+        assert_eq!(tournament.games.len(), 3);
         Ok(())
     }
 

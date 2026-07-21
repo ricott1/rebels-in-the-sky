@@ -2269,8 +2269,10 @@ impl World {
                     save_tournament(tournament)?;
                 }
 
-                self.past_tournaments
-                    .insert(tournament.id, TournamentSummary::from_tournament(tournament));
+                self.past_tournaments.insert(
+                    tournament.id,
+                    TournamentSummary::from_tournament(tournament),
+                );
 
                 for team_id in tournament.participants.keys() {
                     let team = if let Some(team) = self.teams.get_mut(team_id) {
