@@ -95,8 +95,6 @@ pub struct World {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub tournaments: TournamentMap,
-    #[serde(skip)]
-    pub recently_finished_tournaments: TournamentMap, // Holds finished tournaments for the session, but are not persisted.
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub past_tournaments: TournamentSummaryMap, // Holds summary of finished tournaments, persisted.
@@ -2268,13 +2266,11 @@ impl World {
 
             if tournament.has_ended() {
                 if tournament.is_team_participating(&self.own_team_id) {
-                    let summary = TournamentSummary::from_tournament(tournament);
-                    self.past_tournaments.insert(summary.id, summary);
-                    self.recently_finished_tournaments
-                        .insert(tournament.id, tournament.clone());
-
                     save_tournament(tournament)?;
                 }
+
+                self.past_tournaments
+                    .insert(tournament.id, TournamentSummary::from_tournament(tournament));
 
                 for team_id in tournament.participants.keys() {
                     let team = if let Some(team) = self.teams.get_mut(team_id) {
@@ -3339,7 +3335,12 @@ impl World {
             tournaments: self.tournaments.clone(),
             kartoffeln: self.kartoffeln.clone(),
             past_games: self.past_games.clone(),
-            past_tournaments: self.past_tournaments.clone(),
+            past_tournaments: self
+                .past_tournaments
+                .iter()
+                .filter(|(_, t)| t.participant_ids.contains(&self.own_team_id))
+                .map(|(id, t)| (*id, t.clone()))
+                .collect(),
             serialized_size: self.serialized_size,
             network_store_data: self.network_store_data.to_store(),
             ..Default::default()

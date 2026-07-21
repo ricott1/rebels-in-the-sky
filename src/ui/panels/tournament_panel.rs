@@ -62,11 +62,7 @@ impl TournamentView {
                 .get(tournament_id)
                 .map(|t| !t.has_started(Tick::now()))
                 .unwrap_or_default(),
-            Self::Past => world
-                .past_tournaments
-                .get(tournament_id)
-                .map(|_| true)
-                .unwrap_or_default(),
+            Self::Past => world.past_tournaments.get(tournament_id).is_some(),
         }
     }
 }
