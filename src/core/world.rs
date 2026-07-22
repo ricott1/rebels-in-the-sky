@@ -1382,6 +1382,9 @@ impl World {
         }
 
         let db_team = self.teams.get(&team.id).cloned();
+        let version_changed = db_team
+            .as_ref()
+            .is_some_and(|previous| previous.version < team.version);
 
         // Stitch network asteroids into their parent planet's satellites so they show in the
         // galaxy. Dangling satellite ids are pruned later in filter_peer_data.
@@ -1446,7 +1449,7 @@ impl World {
         self.teams.insert(team.id, team);
         self.dirty_ui = true;
 
-        Ok(true)
+        Ok(version_changed)
     }
 
     pub fn space_cove_on(&self, planet_id: PlanetId) -> Option<&SpaceCove> {

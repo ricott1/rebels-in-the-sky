@@ -129,7 +129,7 @@ impl NetworkCallback {
         network_team: NetworkTeam,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let applied = app
+            let version_changed = app
                 .world
                 .add_network_team(network_team.clone(), timestamp)?;
 
@@ -137,7 +137,7 @@ impl NetworkCallback {
                 app.ui.swarm_panel.add_peer_id(id, network_team.team.id);
             }
 
-            if applied {
+            if version_changed {
                 app.ui.push_log_event(
                     timestamp,
                     peer_id,
