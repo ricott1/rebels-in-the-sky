@@ -37,14 +37,23 @@ impl NetworkStoreData {
     }
 
     pub fn update(&mut self, other: &Self) {
+        // Rankings can arrive from any peer's seed, so keep the most recent entry per id.
         for (id, team) in other.team_ranking.iter() {
-            if !self.team_ranking.contains_key(id) {
+            if self
+                .team_ranking
+                .get(id)
+                .map_or(true, |cur| team.timestamp > cur.timestamp)
+            {
                 self.team_ranking.insert(*id, team.clone());
             }
         }
 
         for (id, player) in other.player_ranking.iter() {
-            if !self.player_ranking.contains_key(id) {
+            if self
+                .player_ranking
+                .get(id)
+                .map_or(true, |cur| player.timestamp > cur.timestamp)
+            {
                 self.player_ranking.insert(*id, player.clone());
             }
         }
