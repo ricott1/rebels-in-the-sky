@@ -149,7 +149,18 @@ impl GamePanel {
         let gbv_split =
             Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).split(split[1]);
 
-        self.render_game_buttons(frame, gbv_split[1]);
+        let has_selected_game = Self::selected_game(
+            world,
+            self.index,
+            &self.game_ids,
+            &self.recent_game_ids,
+            &self.loaded_game_ids,
+            &self.loaded_games,
+        )
+        .is_some();
+        if has_selected_game {
+            self.render_game_buttons(frame, gbv_split[1]);
+        }
 
         Ok(())
     }
@@ -248,9 +259,6 @@ impl GamePanel {
     }
 
     fn render_game_buttons(&self, frame: &mut UiFrame, area: Rect) {
-        if self.index.is_none() {
-            return;
-        };
         let b_split = Layout::horizontal([
             Constraint::Fill(1),
             Constraint::Length(18),

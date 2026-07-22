@@ -70,6 +70,8 @@ pub struct World {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub teams: TeamMap,
+    #[serde(skip)]
+    pub network_team_timestamps: HashMap<TeamId, Tick>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub players: PlayerMap,
@@ -1299,6 +1301,16 @@ impl World {
             ));
         }
 
+        // A tournament game only makes sense with its tournament; without it the game would
+        // just be dropped again on the next tick. The tournament broadcast re-sends the game.
+        if let Some(tournament_id) = network_game.part_of_tournament {
+            if !self.tournaments.contains_key(&tournament_id) {
+                return Err(anyhow!(
+                    "Cannot receive tournament game whose tournament is not present."
+                ));
+            }
+        }
+
         if !self.games.contains_key(&network_game.id) {
             let planet = self.planets.get_or_err(&network_game.location)?;
             let mut game = Game::new(
@@ -1323,7 +1335,11 @@ impl World {
         Ok(())
     }
 
-    pub fn add_network_team(&mut self, network_team: NetworkTeam) -> AppResult<bool> {
+    pub fn add_network_team(
+        &mut self,
+        network_team: NetworkTeam,
+        timestamp: Tick,
+    ) -> AppResult<bool> {
         let NetworkTeam {
             team,
             players,
@@ -1358,6 +1374,15 @@ impl World {
             }
         }
 
+        // Ignore updates not newer than the last one applied for this team; wire delivery is unordered.
+        if self
+            .network_team_timestamps
+            .get(&team.id)
+            .is_some_and(|&prev| prev >= timestamp)
+        {
+            return Ok(false);
+        }
+
         let db_team = self.teams.get(&team.id).cloned();
 
         // Stitch network asteroids into their parent planet's satellites so they show in the
@@ -1385,8 +1410,6 @@ impl World {
             self.planets.insert(asteroid.id, asteroid);
         }
 
-        let mut team_version_updated = false;
-
         if let Some(previous_version_team) = db_team.as_ref() {
             if let TeamLocation::OnPlanet { planet_id } = previous_version_team.current_location {
                 // Remove team from previous planet
@@ -1397,10 +1420,6 @@ impl World {
             // Remove players from db_team that are not in the new team to clean up fired players
             for player_id in &previous_version_team.player_ids {
                 self.players.remove(player_id);
-            }
-
-            if previous_version_team.version < team.version {
-                team_version_updated = true;
             }
         }
 
@@ -1425,10 +1444,11 @@ impl World {
             self.players.insert(player.id, player);
         }
 
+        self.network_team_timestamps.insert(team.id, timestamp);
         self.teams.insert(team.id, team);
         self.dirty_ui = true;
 
-        Ok(team_version_updated)
+        Ok(true)
     }
 
     pub fn space_cove_on(&self, planet_id: PlanetId) -> Option<&SpaceCove> {
@@ -2073,12 +2093,17 @@ impl World {
 
     fn tick_games(&mut self, current_tick: Tick) -> AppResult<()> {
         // Fallback to ensure we don't add games with no corresponding tournament
+        let before = self.games.len();
         self.games.retain(|_, game| {
             if let Some(id) = game.part_of_tournament {
                 return self.tournaments.contains_key(&id);
             }
             true
         });
+        // Refresh panels if we dropped a game so they don't keep a stale id.
+        if self.games.len() != before {
+            self.dirty_ui = true;
+        }
         // NOTE!!: we do not set the world to dirty so we don't save on every tick.
         //         the idea is that the game is completely determined at the beginning,
         //         so we can similuate it through.

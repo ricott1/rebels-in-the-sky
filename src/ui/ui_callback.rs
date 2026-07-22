@@ -333,8 +333,8 @@ pub enum UiCallback {
 impl UiCallback {
     fn go_to_team(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.team_panel.update(&app.world)?;
             app.ui.team_panel.reset_view();
+            app.ui.team_panel.update(&app.world)?;
             if let Some(index) = app
                 .ui
                 .team_panel
@@ -385,8 +385,8 @@ impl UiCallback {
 
     fn go_to_trade(trade: Trade) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.player_panel.update(&app.world)?;
             app.ui.player_panel.reset_view();
+            app.ui.player_panel.update(&app.world)?;
 
             // Display trade differently depending on who is the proposer.
             let (selected_player_id, locked_player_id) =
@@ -417,6 +417,7 @@ impl UiCallback {
 
     fn go_to_player_team(player_id: PlayerId) -> AppCallback {
         Box::new(move |app: &mut App| {
+            app.ui.team_panel.reset_view();
             app.ui.team_panel.update(&app.world)?;
             let team_id = app
                 .world
@@ -424,8 +425,6 @@ impl UiCallback {
                 .get_or_err(&player_id)?
                 .team
                 .ok_or_else(|| anyhow!("Player {player_id:?} has no team"))?;
-
-            app.ui.team_panel.reset_view();
 
             if let Some(index) = app
                 .ui
