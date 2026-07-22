@@ -685,6 +685,16 @@ impl Team {
     }
 
     pub fn can_challenge_network_team(&self, team: &Team) -> AppResult<()> {
+        if self.sent_challenges.contains_key(&team.id) {
+            return Err(anyhow!("Already challenged {}", team.name));
+        }
+
+        self.can_still_challenge_network_team(team)
+    }
+
+    // Same as can_challenge_network_team but without the already-challenged guard, so a challenge
+    // being resent is not dropped just because it is still in sent_challenges.
+    pub fn can_still_challenge_network_team(&self, team: &Team) -> AppResult<()> {
         if team.peer_id.is_none() {
             return Err(anyhow!("{} is not from network", team.name));
         }
@@ -695,10 +705,6 @@ impl Team {
 
         if team.current_game.is_some() {
             return Err(anyhow!("{} is already playing", team.name));
-        }
-
-        if self.sent_challenges.contains_key(&team.id) {
-            return Err(anyhow!("Already challenged {}", team.name));
         }
 
         self.can_play_game_with_team(team, None)

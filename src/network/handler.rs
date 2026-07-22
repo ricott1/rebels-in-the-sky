@@ -788,7 +788,7 @@ impl NetworkHandler {
                 continue;
             };
 
-            if own_team.can_challenge_network_team(team).is_err() {
+            if own_team.can_still_challenge_network_team(team).is_err() {
                 to_remove.push(team_id);
                 continue;
             }
