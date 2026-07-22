@@ -129,7 +129,9 @@ impl NetworkCallback {
         network_team: NetworkTeam,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let applied = app.world.add_network_team(network_team.clone(), timestamp)?;
+            let applied = app
+                .world
+                .add_network_team(network_team.clone(), timestamp)?;
 
             if let Some(id) = peer_id {
                 app.ui.swarm_panel.add_peer_id(id, network_team.team.id);
@@ -747,12 +749,10 @@ impl NetworkCallback {
                 log::Level::Debug,
             );
 
-            // Dial the peers advertised by the seed. We only dial here; addresses are
-            // persisted once a connection actually succeeds (see
-            // HandleConnectionEstablished), so we never store peers we merely tried.
+            // Dial the peers advertised by the seed.
+            //  We only dial here; addresses are persisted once a connection actually succeeds.
             app.network_handler
                 .dial_known_peers(&seed_info.network_store_data.peer_addresses)?;
-            app.world.dirty_network = true;
             Ok(None)
         })
     }
