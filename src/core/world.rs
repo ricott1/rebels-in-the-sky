@@ -1324,9 +1324,7 @@ impl World {
                 network_game.part_of_tournament,
             );
 
-            while game.timer.value < network_game.timer.value && !game.timer.has_ended() {
-                game.tick(Tick::now());
-            }
+            game.catch_up(Tick::now());
 
             self.games.insert(game.id, game);
             self.dirty_ui = true;
@@ -2109,7 +2107,7 @@ impl World {
         //         so we can similuate it through.
         for game in self.games.values_mut() {
             if game.has_started(current_tick) {
-                game.tick(current_tick);
+                game.catch_up(current_tick);
             }
         }
         Ok(())

@@ -7,7 +7,7 @@ use super::{
 use crate::{
     app_version,
     core::{
-        constants::TirednessCost,
+        constants::{TickInterval, TirednessCost},
         player::{Player, Trait},
         position::NUM_GAME_POSITIONS,
         skill::{GameSkill, MAX_SKILL},
@@ -842,6 +842,15 @@ impl Game {
 
     pub fn has_ended(&self) -> bool {
         self.ended_at.is_some()
+    }
+
+    // Advance to the position implied by wall-clock time.
+    pub fn catch_up(&mut self, current_tick: Tick) {
+        let target = (current_tick.saturating_sub(self.starting_at) / TickInterval::SHORT)
+            .min(u16::MAX as Tick) as u16;
+        while self.timer.value < target && !self.has_ended() {
+            self.tick(current_tick);
+        }
     }
 
     pub fn tick(&mut self, current_tick: Tick) {
