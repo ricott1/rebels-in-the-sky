@@ -65,7 +65,6 @@ impl App {
     }
 
     pub async fn simulate_loaded_world<W: WriterProxy>(&mut self, tui: &mut Tui<W>) {
-        let mut callbacks = vec![];
         let mut last_tui_update = Tick::now();
         log::info!(
             "Simulation started, must simulate {}",
@@ -115,14 +114,30 @@ impl App {
                 self.draw(tui).await;
             }
 
-            let mut cb = match self
+            let cb = match self
                 .world
                 .handle_slow_tick_events(self.world.last_tick_short_interval + TickInterval::SHORT)
             {
                 Ok(callbacks) => callbacks,
                 Err(e) => panic!("Failed to simulate world: {e}"),
             };
-            callbacks.append(&mut cb);
+            for callback in cb.iter() {
+                match callback.call(self) {
+                    Ok(Some(message)) => {
+                        self.ui.push_popup(PopupMessage::Message {
+                            message,
+                            links: vec![],
+                            level: log::Level::Info,
+                            is_skippable: true,
+                            timestamp: Tick::now(),
+                        });
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        panic!("Failed to simulate world: {e}");
+                    }
+                }
+            }
         }
 
         self.world.serialized_size =
@@ -130,24 +145,6 @@ impl App {
 
         self.state = AppState::Running;
         self.ui.set_state(UiState::Main);
-
-        for callback in callbacks.iter() {
-            match callback.call(self) {
-                Ok(Some(message)) => {
-                    self.ui.push_popup(PopupMessage::Message {
-                        message,
-                        links: vec![],
-                        level: log::Level::Info,
-                        is_skippable: true,
-                        timestamp: Tick::now(),
-                    });
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    panic!("Failed to simulate world: {e}");
-                }
-            }
-        }
     }
 
     pub fn test_default() -> AppResult<Self> {
