@@ -1761,6 +1761,8 @@ impl UiCallback {
                     .get_or_err(&player.team.expect("Player should have team"))?
                     .clone();
 
+                let its_own_team = team.id == app.world.own_team_id;
+
                 team.sub_resource(Resource::RUM, 1)?;
 
                 if got_drunk {
@@ -1777,13 +1779,15 @@ impl UiCallback {
                     .expect("There should be one option")
                     .clone();
 
-                    app.ui.push_popup(PopupMessage::Message {
-                        message: format!("{} {}", player.info.short_name(), description),
-                        links: vec![],
-                        level: log::Level::Info,
-                        is_skippable: true,
-                        timestamp: Tick::now(),
-                    });
+                    if its_own_team {
+                        app.ui.push_popup(PopupMessage::Message {
+                            message: format!("{} {}", player.info.short_name(), description),
+                            links: vec![],
+                            level: log::Level::Info,
+                            is_skippable: true,
+                            timestamp: Tick::now(),
+                        });
+                    }
                 }
 
                 // If a spugna pilot gets drunk while the team is travelling or exploring,
@@ -1841,17 +1845,21 @@ impl UiCallback {
                             distance,
                         };
 
-                        app.ui.push_popup(PopupMessage::PortalFound {
-                            player_name: player.info.short_name(),
-                            portal_target: portal_target.name.to_string(),
-                            timestamp: Tick::now(),
-                        });
+                        if its_own_team {
+                            app.ui.push_popup(PopupMessage::PortalFound {
+                                player_name: player.info.short_name(),
+                                portal_target: portal_target.name.to_string(),
+                                timestamp: Tick::now(),
+                            });
+                        }
                     }
                 }
 
                 app.world.players.insert(player.id, player);
                 app.world.teams.insert(team.id, team);
-                app.world.dirty_network = true;
+                if its_own_team {
+                    app.world.dirty_network = true;
+                }
                 app.world.dirty_ui = true;
                 app.world.dirty = true;
 

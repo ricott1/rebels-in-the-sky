@@ -35,6 +35,8 @@ use libp2p::PeerId;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use rand_distr::weighted::WeightedIndex;
+use rand_distr::Distribution;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use strum::IntoEnumIterator;
@@ -1653,6 +1655,9 @@ impl World {
         let is_simulating = self.is_simulating();
 
         if current_tick >= self.last_tick_medium_interval + TickInterval::MEDIUM {
+            for cb in self.tick_pirates_drinking()? {
+                callbacks.push(cb);
+            }
             self.tick_tiredness_recovery()?;
 
             for cb in self.tick_player_leaving_team_for_low_satisfaction(current_tick)? {
@@ -2551,11 +2556,55 @@ impl World {
         Ok(None)
     }
 
+    fn tick_pirates_drinking(&mut self) -> AppResult<Vec<UiCallback>> {
+        let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
+        let mut callbacks = vec![];
+        let teams = self
+            .teams
+            .values()
+            .filter(|team| {
+                team.current_game.is_none()
+                    && team.playing_in_tournament().is_none()
+                    && team.peer_id.is_none()
+            })
+            .collect::<Vec<&Team>>();
+        for team in teams {
+            let weights: Vec<f64> = team
+                .player_ids
+                .iter()
+                .map(|id| {
+                    let Some(player) = self.players.get(id) else {
+                        return 0.0;
+                    };
+                    if player.can_drink(&self.teams).is_err() {
+                        return 0.0;
+                    }
+                    BASE_TEAM_DRINKING_PROBABILITY
+                        * (1.0 + player.opinions.modifier(PlayerOpinion::Drinking) as f64)
+                })
+                .collect();
+
+            let team_drinks_probability: f64 = weights.iter().sum();
+            if rng.random_bool(team_drinks_probability.clamp(0.0, 1.0)) {
+                if let Ok(distribution) = WeightedIndex::new(&weights) {
+                    let drinker_idx = distribution.sample(rng);
+                    let player_id = team.player_ids[drinker_idx];
+                    callbacks.push(UiCallback::Drink { player_id });
+                }
+            }
+        }
+        Ok(callbacks)
+    }
+
     fn tick_tiredness_recovery(&mut self) -> AppResult<()> {
         let teams = self
             .teams
             .values()
-            .filter(|team| team.current_game.is_none() && team.peer_id.is_none())
+            .filter(|team| {
+                team.current_game.is_none()
+                    && team.playing_in_tournament().is_none()
+                    && team.peer_id.is_none()
+            })
             .collect::<Vec<&Team>>();
 
         for team in teams {

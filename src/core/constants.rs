@@ -197,6 +197,8 @@ pub const POLOSIUS_TEAM_ID: TeamId = uuid!("7eb1bb55-3bac-49ea-a480-44b581680167
 pub const TREND_WINDOW_DAYS: f32 = 3.0;
 pub const TREND_SMOOTHING: f32 = 1.0 / (TREND_WINDOW_DAYS + 1.0);
 
+pub const BASE_TEAM_DRINKING_PROBABILITY: f64 = 0.0005;
+
 pub const MAX_TAVERN_POPULATION: u32 = 3;
 
 pub const PLAYER_SCOUTING_PER_GAME: Skill = 0.85;
