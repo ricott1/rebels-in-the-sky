@@ -10,7 +10,7 @@ use super::{
     world::World,
 };
 use crate::{
-    core::{PlayerOpinion, PlayerOpinionMap},
+    core::{PlayerOpinion, PlayerOpinionMap, PlayerOpinionMapDescription},
     game_engine::types::GameStats,
     image::{player::PlayerImage, utils::Gif},
     types::{
@@ -34,7 +34,6 @@ use rand_distr::{
 };
 use serde::{de::Visitor, ser::SerializeStruct, Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use strum::IntoEnumIterator;
 use strum_macros::Display;
 
 const HOOK_MAX_BALL_HANDLING: f32 = 4.0;
@@ -80,7 +79,6 @@ pub struct Player {
     build_data: PlayerBuildData, // Intermediate state used to build the random player. Not serialized
     pub scouted_skills: [usize; 20], // Cached order of scouted skill. Not serialized
     pub opinions: PlayerOpinionMap,
-    pub satisfaction: Skill,
 }
 
 impl Default for Player {
@@ -115,7 +113,6 @@ impl Default for Player {
             build_data: PlayerBuildData::default(),
             scouted_skills: [usize::default(); 20],
             opinions: PlayerOpinionMap::default(),
-            satisfaction: Skill::default(),
         }
     }
 }
@@ -156,7 +153,6 @@ impl Serialize for Player {
         state.serialize_field("training_focus", &self.training_focus)?;
         state.serialize_field("historical_stats", &self.historical_stats)?;
         state.serialize_field("opinions", &self.opinions.iter().collect_vec())?;
-        state.serialize_field("satisfaction", &self.satisfaction)?;
         state.end()
     }
 }
@@ -190,7 +186,6 @@ impl<'de> Deserialize<'de> for Player {
             CompactSkills,
             HistoricalStats,
             Opinions,
-            Satisfaction,
         }
 
         impl<'de> Deserialize<'de> for Field {
@@ -236,7 +231,6 @@ impl<'de> Deserialize<'de> for Player {
                             "compact_skills" => Ok(Field::CompactSkills),
                             "historical_stats" => Ok(Field::HistoricalStats),
                             "opinions" => Ok(Field::Opinions),
-                            "satisfaction" => Ok(Field::Satisfaction),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -282,7 +276,6 @@ impl<'de> Deserialize<'de> for Player {
                 let mut compact_skills: Option<Vec<Skill>> = None;
                 let mut historical_stats = None;
                 let mut opinions = None;
-                let mut satisfaction = None;
 
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -436,13 +429,6 @@ impl<'de> Deserialize<'de> for Player {
                                     .collect(),
                             );
                         }
-
-                        Field::Satisfaction => {
-                            if satisfaction.is_some() {
-                                return Err(serde::de::Error::duplicate_field("satisfaction"));
-                            }
-                            satisfaction = Some(map.next_value()?);
-                        }
                     }
                 }
 
@@ -482,7 +468,6 @@ impl<'de> Deserialize<'de> for Player {
                     .ok_or_else(|| serde::de::Error::missing_field("compact_skills"))?;
                 let historical_stats = historical_stats.unwrap_or_default();
                 let opinions = opinions.unwrap_or_default();
-                let satisfaction = satisfaction.unwrap_or(MAX_SKILL);
 
                 let mut player = Player {
                     id,
@@ -514,7 +499,6 @@ impl<'de> Deserialize<'de> for Player {
                     build_data: PlayerBuildData::default(),
                     scouted_skills: [usize::default(); 20],
                     opinions,
-                    satisfaction,
                 };
 
                 player.set_initial_scouted_skill();
@@ -600,7 +584,12 @@ impl Player {
         self.info.population = self
             .build_data
             .population
-            .unwrap_or_else(|| Population::iter().choose(rng).unwrap_or_default());
+            .unwrap_or_else(|| {
+                Population::all_peoples()
+                    .into_iter()
+                    .choose(rng)
+                    .unwrap_or_default()
+            });
 
         self.info.randomize_for_position(position, rng);
 
@@ -731,36 +720,58 @@ impl Player {
     }
 
     pub fn set_initial_opinions(&mut self) {
+        const MAX_INITIAL_OPINIONS: usize = 4;
         let rng = &mut ChaCha8Rng::seed_from_u64(self.id.as_u64_pair().1);
-        let value = match self.info.population {
-            Population::Galdari => MAX_SKILL,
-            Population::Human { .. } => OPINION_NEUTRAL_VALUE,
-            _ => 18.0,
-        };
-        self.opinions.insert(
-            PlayerOpinion::Populations {
-                population: self.info.population,
-            },
-            (Tick::now(), value),
-        );
+
+        let mut candidates: Vec<(PlayerOpinion, Skill)> = vec![];
+
+        for population in Population::all_peoples() {
+            let value = if population == self.info.population {
+                match self.info.population {
+                    Population::Galdari => MAX_SKILL,
+                    Population::Human { .. } => OPINION_NEUTRAL_VALUE,
+                    _ => 18.0,
+                }
+            } else if self.info.population == Population::Galdari {
+                OPINION_NEUTRAL_VALUE - rng.random_range(0.0..4.0)
+            } else {
+                continue;
+            };
+            candidates.push((PlayerOpinion::Populations { population }, value));
+        }
 
         let std_dev = 3.0;
-        let mut values = [2.0, 6.0, 10.0, 14.0].map(|mean| {
-            let normal =
-                Normal::new(mean, std_dev).expect("Should create valid normal distribution");
-            normal.sample(rng).bound()
+        let mut values = [5.0, 10.0, 10.0, 15.0].map(|mean| {
+            Normal::new(mean, std_dev)
+                .expect("Should create valid normal distribution")
+                .sample(rng)
+                .bound()
         });
         values.shuffle(rng);
-        self.opinions
-            .insert(PlayerOpinion::Adventures, (Tick::now(), values[0]));
-        self.opinions
-            .insert(PlayerOpinion::Drinking, (Tick::now(), values[1]));
-        self.opinions
-            .insert(PlayerOpinion::Games, (Tick::now(), values[2]));
-        self.opinions.insert(
-            PlayerOpinion::Gold,
-            (Tick::now(), (OPINION_NEUTRAL_VALUE + values[3]).bound()),
-        );
+        candidates.push((PlayerOpinion::Adventures, values[0]));
+        candidates.push((PlayerOpinion::Drinking, values[1]));
+        candidates.push((PlayerOpinion::Games, values[2]));
+        candidates.push((PlayerOpinion::Gold, values[3]));
+
+        let money_value = {
+            let normal = Normal::new(2.0, 2.0).expect("Should create valid normal distribution");
+            (OPINION_NEUTRAL_VALUE + normal.sample(rng)).bound()
+        };
+        candidates.push((PlayerOpinion::Money, money_value));
+
+        candidates.sort_by(|(_, a), (_, b)| {
+            (b - OPINION_NEUTRAL_VALUE)
+                .abs()
+                .total_cmp(&(a - OPINION_NEUTRAL_VALUE).abs())
+        });
+        for (opinion, value) in candidates.into_iter().take(MAX_INITIAL_OPINIONS) {
+            self.opinions.insert(opinion, (Tick::now(), value));
+        }
+
+        if self.team.is_some() {
+            self.opinions
+                .insert(PlayerOpinion::OwnTeam, (Tick::now(), OPINION_NEUTRAL_VALUE));
+        }
     }
 
     fn set_initial_game_position_fitness(&mut self, rng: Option<&mut ChaCha8Rng>) {
@@ -937,14 +948,15 @@ impl Player {
             / SATISFACTION_OPINION_RECOVERY_TIME as f32;
         *last_event = now;
 
-        let modifier = (*value - OPINION_NEUTRAL_VALUE) / MAX_SKILL;
-        let factor = 1.0 + SATISFACTION_OPINION_MODIFIER_WEIGHT * modifier;
+        let factor = 1.0
+            + SATISFACTION_OPINION_MODIFIER_WEIGHT * (*value - OPINION_NEUTRAL_VALUE) / MAX_SKILL;
         let bonus = if factor > 0.0 {
             factor * recency
         } else {
             factor
         };
-        self.add_satisfaction(SATISFACTION_PER_OPINION_EVENT * bonus);
+        let opinion_modifier = opinion.satisfaction_modifier();
+        self.add_team_satisfaction(SATISFACTION_PER_OPINION_EVENT * bonus * opinion_modifier);
     }
 
     /// Satisfy the opinion on space adventures, only if the duration was long enough.
@@ -1265,16 +1277,32 @@ impl Player {
         }
     }
 
-    pub fn add_satisfaction(&mut self, satisfaction: f32) {
+    pub fn add_team_satisfaction(&mut self, satisfaction: f32) {
+        if self.team.is_none() {
+            return;
+        }
         let min_satisfaction = if self.special_trait == Some(Trait::Crumiro) {
             SATISFACTION_THRESHOLD_FOR_LEAVING
         } else {
             MIN_SKILL
         };
+        let entry = self
+            .opinions
+            .entry(PlayerOpinion::OwnTeam)
+            .or_insert((Tick::now(), OPINION_NEUTRAL_VALUE));
+        entry.1 = (entry.1 + satisfaction).max(min_satisfaction).bound();
+    }
 
-        self.satisfaction = (self.satisfaction + satisfaction)
-            .max(min_satisfaction)
-            .bound();
+    pub fn reset_team_satisfaction_on_hire(&mut self) {
+        let Some(team_id) = self.team else {
+            return;
+        };
+        let value = match self.opinions.remove(&PlayerOpinion::Team { team_id }) {
+            Some((_, remembered)) => (remembered + PLAYER_OPINION_REHIRE_FROM_TEAM).bound(),
+            None => MAX_SKILL,
+        };
+        self.opinions
+            .insert(PlayerOpinion::OwnTeam, (Tick::now(), value));
     }
 
     pub fn add_morale(&mut self, morale: f32) {
@@ -1284,13 +1312,15 @@ impl Player {
             MIN_SKILL
         };
 
-        let max_morale = (self.satisfaction + 0.5 * self.mental.charisma).bound();
+        let satisfaction = self.team_satisfaction().unwrap_or(MAX_SKILL);
+
+        let max_morale = (satisfaction + 0.5 * self.mental.charisma).bound();
 
         let mod_morale = if morale >= 0.0 {
             morale
         } else {
             // If morale is a malus, the player satisfaction reduces the malus (up to 2/3).
-            morale / (1.0 + 0.5 * self.satisfaction / MAX_SKILL)
+            morale / (1.0 + 0.5 * satisfaction / MAX_SKILL)
         };
 
         let morale_was_not_minimum = self.morale > MIN_SKILL;
@@ -1300,7 +1330,7 @@ impl Player {
             .max(min_morale)
             .bound();
         if self.morale == MIN_SKILL && morale_was_not_minimum {
-            self.add_satisfaction(SATISFACTION_MALUS_FOR_MORALE_DROP);
+            self.add_team_satisfaction(SATISFACTION_MALUS_FOR_MORALE_DROP);
         }
     }
 
@@ -1605,7 +1635,7 @@ mod test {
             },
             skill::{Rated, MAX_SKILL, MIN_SKILL},
         },
-        types::{AppResult, HashMapWithResult},
+        types::{AppResult, HashMapWithResult, TeamId},
     };
     use itertools::Itertools;
     use rand::SeedableRng;
@@ -1619,7 +1649,8 @@ mod test {
         // Morale is capped by satisfaction, so the player must be satisfied to gain any.
         let mut player = Player::default();
         player.athletics.stamina = MAX_SKILL;
-        player.satisfaction = MAX_SKILL;
+        player.team = Some(TeamId::new_v4());
+        player.reset_team_satisfaction_on_hire();
         let got_drunk = player.drink(rng);
         assert!(!got_drunk);
         assert!(player.drunkenness == DRUNKENNESS_PER_DRINK);

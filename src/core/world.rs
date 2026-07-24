@@ -11,9 +11,9 @@ use super::team::Team;
 use super::types::{PlayerLocation, TeamBonus, TeamLocation};
 use super::utils::{is_default, PLANET_DATA, TEAM_DATA};
 use crate::core::{
-    AutonomousStrategy, GameResult, Honour, PlanetUpgradeTarget, PlayerOpinion, Rated,
-    RatedPlayers, Skill, SpaceCove, SpaceCoveUpgradeTarget, Tavern, TournamentRegistrationState,
-    Upgrade, MIN_SKILL,
+    AutonomousStrategy, GameResult, Honour, PlanetUpgradeTarget, PlayerOpinion,
+    PlayerOpinionMapDescription, Rated, RatedPlayers, Skill, SpaceCove, SpaceCoveUpgradeTarget,
+    Tavern, TournamentRegistrationState, Upgrade, MIN_SKILL,
 };
 use crate::game_engine::game::{Game, GameSummary};
 use crate::game_engine::tactic::Tactic;
@@ -780,7 +780,7 @@ impl World {
 
         player.team = Some(team.id);
         player.joined_team_on = Some(current_tick);
-        player.satisfaction = MAX_SKILL;
+        player.reset_team_satisfaction_on_hire();
         player.current_location = PlayerLocation::WithTeam;
         player.set_jersey(&team.jersey);
         player.peer_id = team.peer_id;
@@ -889,24 +889,18 @@ impl World {
             _ => return Err(anyhow!("Cannot release player while travelling")),
         }
 
-        if is_fired {
-            player
-                .opinions
-                .entry(PlayerOpinion::Team {
-                    team_id,
-                    name: team.name.clone(),
-                })
-                .and_modify(|(last_event, value)| {
-                    *last_event = Tick::now();
-                    *value = (*value + PLAYER_OPINION_RELEASE_FROM_TEAM).bound();
-                })
-                .or_insert_with(|| {
-                    (
-                        self.last_tick_short_interval,
-                        OPINION_NEUTRAL_VALUE + PLAYER_OPINION_RELEASE_FROM_TEAM,
-                    )
-                });
-        }
+        let satisfaction = player.opinions.remove(&PlayerOpinion::OwnTeam);
+        let base = satisfaction
+            .map(|(_, value)| value)
+            .unwrap_or(OPINION_NEUTRAL_VALUE);
+        let value = if is_fired {
+            (base + SATISFACTION_MALUS_RELEASE_FROM_TEAM).bound()
+        } else {
+            base
+        };
+        player
+            .opinions
+            .insert(PlayerOpinion::Team { team_id }, (Tick::now(), value));
         player.version += 1;
 
         self.dirty = true;
@@ -1841,7 +1835,7 @@ impl World {
                         .filter(|id| !team.players.contains_key(id))
                     {
                         if let Some(player) = self.players.get_mut(player_id) {
-                            player.add_satisfaction(SATISFACTION_MALUS_FOR_SITTING_OUT);
+                            player.add_team_satisfaction(SATISFACTION_MALUS_FOR_SITTING_OUT);
                         }
                     }
                 }
@@ -2900,7 +2894,7 @@ impl World {
             }
 
             // Pirates slightly dislike being part of a team.
-            player.add_satisfaction(SATISFACTION_DECREASE_PER_LONG_TICK);
+            player.add_team_satisfaction(SATISFACTION_DECREASE_PER_LONG_TICK);
             player.reputation = (player.reputation + REPUTATION_DECREASE_PER_LONG_TICK).bound();
 
             // All game position fitness have decrease by a small amount
@@ -3047,9 +3041,12 @@ impl World {
             }
 
             let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
-            if player.satisfaction < SATISFACTION_THRESHOLD_FOR_LEAVING
+            let Some(satisfaction) = player.team_satisfaction() else {
+                continue;
+            };
+            if satisfaction < SATISFACTION_THRESHOLD_FOR_LEAVING
                 && rng.random_bool(
-                    (1.0 - player.satisfaction / MAX_SKILL) as f64
+                    (1.0 - satisfaction / MAX_SKILL) as f64
                         * LEAVING_PROBABILITY_SATISFACTION_MODIFIER,
                 )
             {
@@ -3527,7 +3524,7 @@ mod test {
             types::TeamLocation,
             utils::PLANET_DATA,
             world::{TickInterval, AU, EXPLORATION_DURATION},
-            RatedPlayers, DEFAULT_PLANET_ID, MAX_SKILL, MIN_PLAYERS_PER_GAME, MIN_SKILL,
+            RatedPlayers, DEFAULT_PLANET_ID, MAX_SKILL, MIN_PLAYERS_PER_GAME,
             PORTAL_TRAVEL_DURATION, SPUGNA_DRUNKENNESS_ON_GETTING_DRUNK,
         },
         game_engine::types::TeamInGame,
@@ -4059,7 +4056,7 @@ mod test {
         let player = world.players.get_mut_or_err(&player_id)?;
         assert!(player.team.is_some());
 
-        player.satisfaction = MIN_SKILL;
+        player.add_team_satisfaction(-MAX_SKILL);
 
         // Players with low satisfaction quit a team randomly
         let mut idx = 0;

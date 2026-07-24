@@ -613,6 +613,8 @@ impl UiCallback {
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.add_sent_challenge(challenge);
 
+                app.ui.team_panel.update(&app.world)?;
+
                 return Ok(Some("Challenge sent".to_string()));
             }
 

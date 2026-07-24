@@ -417,6 +417,7 @@ impl MyTeamPanel {
         let own_team = world.get_own_team()?;
         let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
 
+        let total_salary = own_team.total_salary(&world.players);
         let info = Paragraph::new(vec![
             Line::default(),
             Line::from(format!(
@@ -1871,6 +1872,8 @@ impl MyTeamPanel {
         );
         frame.render_widget(default_block().border_set(separator_set), split[2]);
 
+        let potential_description = format!("Potential {}", player.potential.stars());
+
         let mut info_lines = {
             let drunkenness = player.current_drunkenness(world);
             let drunkenness_style = if drunkenness.is_negative() {
@@ -1878,22 +1881,15 @@ impl MyTeamPanel {
             } else {
                 UiStyled::style(&((MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL))
             };
+            let satisfaction = player.team_satisfaction().unwrap_or_default();
 
             let info_line = Line::from(vec![
-                Span::raw(format!(
-                    "{} {} ",
-                    player.info.pronouns.as_subject(),
-                    player.info.pronouns.to_be()
-                )),
                 Span::styled(
                     Player::drunkenness_description(drunkenness),
                     drunkenness_style,
                 ),
                 Span::raw(" and "),
-                Span::styled(
-                    player.satisfaction_description(),
-                    UiStyled::style(&(player.satisfaction)),
-                ),
+                Span::styled(player.opinions.team_mood(), UiStyled::style(&satisfaction)),
             ]);
             vec![
                 Line::from(format!(
@@ -1901,16 +1897,17 @@ impl MyTeamPanel {
                     player
                         .joined_team_on
                         .unwrap_or_default()
-                        .formatted_as_date()
+                        .formatted_as_date(),
                 )),
                 info_line,
+                Line::from(potential_description),
                 Line::default(),
                 Line::from(Span::styled("Opinions", UiStyle::HEADER.bold())),
             ]
         };
 
-        for text in player.opinions.description() {
-            info_lines.push(Line::from(format!(" - {text}")));
+        for text in player.opinions.describe_opinions() {
+            info_lines.push(Line::from(format!(" • {text}")));
         }
 
         frame.render_widget(

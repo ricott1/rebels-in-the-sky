@@ -20,7 +20,8 @@ use strum::{Display, FromRepr};
 use strum_macros::EnumIter;
 
 #[derive(
-    Debug, Default, PartialEq, Eq, Clone, Copy, EnumIter, Serialize_repr, Deserialize_repr, Hash,
+    Debug, Default, PartialEq, Eq, Clone, Copy, Display, EnumIter, Serialize_repr, Deserialize_repr,
+    Hash,
 )]
 #[repr(u8)]
 pub enum Region {
@@ -131,6 +132,21 @@ impl Population {
         Self::iter()
             .choose(rng)
             .expect("There should be at lease one Population to choose from.")
+    }
+
+    pub fn all_peoples() -> Vec<Population> {
+        let mut peoples = vec![];
+        for population in Population::iter() {
+            match population {
+                Population::Human { .. } => {
+                    for region in Region::iter() {
+                        peoples.push(Population::Human { region });
+                    }
+                }
+                other => peoples.push(other),
+            }
+        }
+        peoples
     }
 
     pub fn relative_age(&self, age: f32) -> f32 {
