@@ -250,14 +250,6 @@ impl Team {
         self.resources.saturating_sub(resource, amount);
     }
 
-    // Register the team to a game. The rum brought to the game is debited upfront
-    // and (if not drunk) returned at the end, so that trading rum during the game
-    // cannot influence the game.
-    pub fn enter_game(&mut self, game_id: GameId, brought_rum: u32) {
-        self.current_game = Some(game_id);
-        self.saturating_sub_resource(Resource::RUM, brought_rum);
-    }
-
     pub fn fuel(&self) -> u32 {
         self.resources.value(&Resource::FUEL)
     }
@@ -298,6 +290,23 @@ impl Team {
     pub fn spaceship_fuel_consumption_per_kilometer(&self) -> f32 {
         self.spaceship
             .fuel_consumption_per_kilometer(self.used_storage_capacity())
+    }
+
+    // Register the team to a game. The rum brought to the game is debited upfront and (if not drunk) returned at the end,
+    // so that trading rum during the game cannot influence the game.
+    pub fn enter_game(&mut self, game_id: GameId, brought_rum: u32) {
+        self.current_game = Some(game_id);
+        self.saturating_sub_resource(Resource::RUM, brought_rum);
+    }
+
+    pub fn get_crew_role(&self, role: CrewRole) -> Option<PlayerId> {
+        match role {
+            CrewRole::Captain => self.crew_roles.captain,
+            CrewRole::Doctor => self.crew_roles.doctor,
+            CrewRole::Pilot => self.crew_roles.pilot,
+            CrewRole::Mozzo => None, // we should not get_crew_role for the Mozzo
+            CrewRole::Engineer => self.crew_roles.engineer,
+        }
     }
 
     pub fn is_on_planet(&self) -> Option<PlanetId> {

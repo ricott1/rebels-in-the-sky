@@ -836,7 +836,6 @@ pub fn render_spaceship_description(
     }
 
     if full_info {
-        let average_tiredness = team.average_tiredness(world);
         let speed_bonus = TeamBonus::SpaceshipSpeed
             .current_team_bonus(world, &team.id)
             .unwrap_or(1.0);
@@ -849,7 +848,6 @@ pub fn render_spaceship_description(
                 team.player_ids.len(),
                 team.spaceship.crew_capacity() as usize,
             )),
-            Line::from(get_energy_spans(average_tiredness)),
             Line::from(get_durability_spans(
                 team.spaceship.current_durability(),
                 team.spaceship.max_durability(),
@@ -873,6 +871,7 @@ pub fn render_spaceship_description(
                 team.spaceship.storage_capacity(),
                 BARS_LENGTH,
             )),
+            Line::default(),
             Line::from(format!(
                 "Speed {:.3} AU/h",
                 team.spaceship_speed() * speed_bonus * HOURS as f32 / AU as f32

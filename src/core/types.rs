@@ -5,7 +5,7 @@ use super::{
     world::World,
 };
 use crate::{
-    core::{GamePosition, GamePositionUtils, Rated, Resource, Trait, NUM_GAME_POSITIONS},
+    core::{CrewRole, GamePosition, GamePositionUtils, Rated, Resource, Trait, NUM_GAME_POSITIONS},
     image::color_map::SkinColorMap,
     types::{AppResult, HashMapWithResult, PlanetId, SystemTimeTick, TeamId, Tick},
 };
@@ -597,20 +597,22 @@ impl Display for TeamBonus {
 }
 
 impl TeamBonus {
-    pub const BASE_BONUS: f32 = 1.0;
-    const BONUS_PER_SKILL: f32 = 1.0 / MAX_SKILL;
+    pub fn crew_role(&self) -> CrewRole {
+        match self {
+            Self::Scouting => CrewRole::Pilot,
+            Self::SpaceshipSpeed => CrewRole::Pilot,
+            Self::Training => CrewRole::Doctor,
+            Self::TirednessRecovery => CrewRole::Doctor,
+            Self::Bargaining => CrewRole::Captain,
+            Self::Reputation => CrewRole::Captain,
+            Self::Weapons => CrewRole::Engineer,
+            Self::Upgrades => CrewRole::Engineer,
+        }
+    }
+
     pub fn current_team_bonus(&self, world: &World, team_id: &TeamId) -> AppResult<f32> {
         let team = world.teams.get_or_err(team_id)?;
-        let player_id = match self {
-            Self::Scouting => team.crew_roles.pilot,
-            Self::SpaceshipSpeed => team.crew_roles.pilot,
-            Self::Training => team.crew_roles.doctor,
-            Self::TirednessRecovery => team.crew_roles.doctor,
-            Self::Bargaining => team.crew_roles.captain,
-            Self::Reputation => team.crew_roles.captain,
-            Self::Weapons => team.crew_roles.engineer,
-            Self::Upgrades => team.crew_roles.engineer,
-        };
+        let player_id = team.get_crew_role(self.crew_role());
 
         let skill = if let Some(id) = player_id {
             let player = world.players.get_or_err(&id)?;
@@ -619,12 +621,12 @@ impl TeamBonus {
             0.0
         };
 
-        Ok(Self::BASE_BONUS + Self::BONUS_PER_SKILL * skill)
+        Ok(1.0 + skill / MAX_SKILL)
     }
 
     pub fn current_player_bonus(&self, player: &Player) -> f32 {
         let skill = self.as_skill(player);
-        Self::BASE_BONUS + Self::BONUS_PER_SKILL * skill
+        1.0 + skill / MAX_SKILL
     }
 
     pub fn as_skill(&self, player: &Player) -> f32 {

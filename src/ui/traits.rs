@@ -60,7 +60,7 @@ impl UiStyled for Resource {
         let [r, g, b] = match self {
             Self::GOLD => [240, 230, 140],
             Self::SCRAPS => [192, 192, 192],
-            Self::RUM => [114, 47, 55],
+            Self::RUM => [144, 67, 75],
             Self::FUEL => [64, 224, 208],
             Self::SATOSHI => [255, 255, 255],
         };

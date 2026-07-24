@@ -291,13 +291,12 @@ impl MyTeamPanel {
         area: Rect,
     ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
-        frame.render_widget(default_block().title("Planet Markets"), area);
-        let split = Layout::horizontal([Constraint::Length(20), Constraint::Length(30)]).split(
-            area.inner(Margin {
-                horizontal: 1,
-                vertical: 1,
-            }),
-        );
+        let split = Layout::vertical([Constraint::Fill(1), Constraint::Length(6)]).split(area);
+        frame.render_widget(default_block().title("Planet Markets"), split[0]);
+        frame.render_widget(default_block().title("Cargo"), split[1]);
+
+        let top_split = Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)])
+            .split(split[0].inner(Margin::new(1, 1)));
 
         let mut options = vec![];
         for id in self.planet_markets.iter() {
@@ -318,24 +317,22 @@ impl MyTeamPanel {
 
         let list = selectable_list(options);
         self.planet_list_state.select(self.planet_index);
-        frame.render_stateful_interactive_widget(
-            list,
-            split[0].inner(Margin {
-                horizontal: 0,
-                vertical: 1,
-            }),
-            &mut self.planet_list_state,
-        );
+        frame.render_stateful_interactive_widget(list, top_split[0], &mut self.planet_list_state);
 
         let planet_id =
             self.planet_markets[self.planet_index.unwrap_or_default() % self.planet_markets.len()];
         let planet = world.planets.get_or_err(&planet_id)?;
         let merchant_bonus = TeamBonus::Bargaining.current_team_bonus(world, &own_team.id)?;
 
-        let mut lines = vec![Line::from(Span::styled(
-            format!("{:<8} {:>4}/{:<4}", "Resource", "Buy", "Sell"),
-            UiStyle::HEADER.bold(),
-        ))];
+        let mut lines = vec![
+            Line::default(),
+            Line::default(),
+            Line::default(),
+            Line::from(Span::styled(
+                format!("{:<8} {:>4}/{:<4}", "Resource", "Buy", "Sell"),
+                UiStyle::HEADER.bold(),
+            )),
+        ];
         for resource in Resource::iter() {
             if resource == Resource::SATOSHI {
                 continue;
@@ -359,13 +356,59 @@ impl MyTeamPanel {
             lines.push(line.into());
         }
 
-        frame.render_widget(
-            Paragraph::new(lines),
-            split[1].inner(Margin {
-                horizontal: 1,
-                vertical: 1,
-            }),
-        );
+        frame.render_widget(Paragraph::new(lines), top_split[1]);
+
+        let lines = vec![
+            Line::from(vec![
+                Span::styled(
+                    format!("{:<6} ", Resource::GOLD.to_string()),
+                    Resource::GOLD.style(),
+                ),
+                Span::raw(format!(
+                    "{:>4} Kg * {:>2} u/Kg = {:>4} u",
+                    own_team.resources.value(&Resource::GOLD),
+                    Resource::GOLD.to_storing_space(),
+                    own_team.resources.value(&Resource::GOLD) * Resource::GOLD.to_storing_space()
+                )),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("{:<6} ", Resource::SCRAPS.to_string()),
+                    Resource::SCRAPS.style(),
+                ),
+                Span::raw(format!(
+                    "{:>4} t  * {:>2} u/t  = {:>4} u",
+                    own_team.resources.value(&Resource::SCRAPS),
+                    Resource::SCRAPS.to_storing_space(),
+                    own_team.resources.value(&Resource::SCRAPS)
+                        * Resource::SCRAPS.to_storing_space()
+                )),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("{:<6} ", Resource::RUM.to_string()),
+                    Resource::RUM.style(),
+                ),
+                Span::raw(format!(
+                    "{:>4} l  * {:>2} u/l  = {:>4} u",
+                    own_team.resources.value(&Resource::RUM),
+                    Resource::RUM.to_storing_space(),
+                    own_team.resources.value(&Resource::RUM) * Resource::RUM.to_storing_space()
+                )),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("{:<6} ", Resource::FUEL.to_string()),
+                    Resource::FUEL.style(),
+                ),
+                Span::raw(format!(
+                    "{:>4} l",
+                    own_team.resources.value(&Resource::FUEL),
+                )),
+            ]),
+        ];
+
+        frame.render_widget(Paragraph::new(lines), split[1].inner(Margin::new(1, 1)));
 
         Ok(())
     }
@@ -395,17 +438,20 @@ impl MyTeamPanel {
                 "Treasury {:<10}",
                 format_satoshi(own_team.balance()),
             )),
+            Line::from(Span::styled(
+                format!("Salaries {}/day", format_satoshi(total_salary)),
+                if total_salary > own_team.balance() {
+                    UiStyle::ERROR
+                } else {
+                    UiStyle::DEFAULT
+                },
+            )),
+            Line::default(),
             Line::from(get_crew_spans(
                 own_team.player_ids.len(),
                 own_team.spaceship.crew_capacity() as usize,
             )),
-            Line::from(get_durability_spans(
-                own_team.spaceship.current_durability(),
-                own_team.spaceship.max_durability(),
-                own_team.spaceship.shield_max_durability() as u32,
-                own_team.spaceship.shield_max_durability() as u32,
-                BARS_LENGTH,
-            )),
+            Line::from(get_energy_spans(own_team.average_tiredness(world))),
             Line::from(get_fuel_spans(
                 own_team.fuel(),
                 own_team.fuel_capacity(),
@@ -813,10 +859,13 @@ impl MyTeamPanel {
         .hotkey(ui_key::team::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
         frame.render_interactive_widget(network_challenge_button, cb_split[1]);
 
-        let auto_assign_button =
+        let mut auto_assign_button =
             Button::new("Auto-assign positions", UiCallback::AssignBestTeamPositions)
                 .hover_text("Auto-assign players' initial position.")
                 .hotkey(ui_key::team::AUTO_ASSIGN);
+        if let Err(err) = can_change_team_settings {
+            auto_assign_button = auto_assign_button.disabled(Some(err.to_string()));
+        }
         frame.render_interactive_widget(auto_assign_button, right_btm_split[1]);
 
         Ok(())
@@ -1876,9 +1925,15 @@ impl MyTeamPanel {
             ))];
             for bonus in TeamBonus::iter() {
                 let skill = bonus.as_skill(player);
+                let style = if matches!(own_team.get_crew_role(bonus.crew_role()), Some(id) if id==player.id)
+                {
+                    UiStyled::style(&skill).underlined().bold()
+                } else {
+                    UiStyled::style(&skill)
+                };
                 l.push(Line::from(Span::styled(
                     format!("{} +{}%", bonus, skill.percentage()),
-                    UiStyled::style(&skill),
+                    style,
                 )));
             }
             l

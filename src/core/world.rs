@@ -614,13 +614,7 @@ impl World {
             team.jersey.clone()
         };
 
-        let current_role_player_id = match role {
-            CrewRole::Captain => team.crew_roles.captain,
-            CrewRole::Pilot => team.crew_roles.pilot,
-            CrewRole::Doctor => team.crew_roles.doctor,
-            CrewRole::Engineer => team.crew_roles.engineer,
-            CrewRole::Mozzo => unreachable!(),
-        };
+        let current_role_player_id = team.get_crew_role(role);
 
         // Empty previous role of player.
         match player_previous_role {
