@@ -229,10 +229,9 @@ impl Game {
         let seed = game.get_rng_seed();
         let mut rng = ChaCha8Rng::from_seed(seed);
 
-        let attendance = (BASE_ATTENDANCE
-            + (total_reputation.value() as u32).pow(2) * planet_total_population)
-            as f32
-            * rng.random_range(0.75..=1.25)
+        let attendance = (BASE_ATTENDANCE as f32
+            + (total_reputation.value() as f32).powf(1.5) * planet_total_population as f32)
+            * rng.random_range(0.8..=1.2)
             * (1.0 + bonus_attendance);
         game.attendance = attendance as u32;
         let mut default_output = ActionOutput::default();
