@@ -1686,6 +1686,9 @@ impl World {
         }
 
         if current_tick >= self.last_tick_long_interval + TickInterval::LONG {
+            if let Some(callback) = self.tick_players_salary()? {
+                callbacks.push(callback);
+            }
             self.tick_players_update();
 
             for cb in self.tick_player_retirement(current_tick)? {
@@ -2832,6 +2835,46 @@ impl World {
         }
 
         Ok(())
+    }
+
+    fn tick_players_salary(&mut self) -> AppResult<Option<UiCallback>> {
+        let mut callback = None;
+        let teams = self
+            .teams
+            .values_mut()
+            .filter(|team| team.peer_id.is_none());
+        for team in teams {
+            let total_salary = team.total_salary(&self.players);
+            let balance = team.balance();
+
+            if balance >= total_salary {
+                team.sub_resource(Resource::SATOSHI, total_salary)?;
+            } else {
+                let delta_modifier = (total_salary - balance) as f32 / total_salary as f32;
+                team.sub_resource(Resource::SATOSHI, balance)?;
+                for player_id in team.player_ids.iter() {
+                    let player = self.players.get_mut_or_err(player_id)?;
+                    player
+                        .add_team_satisfaction(SATISFACTION_MALUS_UNPAID_SALARIES * delta_modifier);
+                }
+
+                if team.id == self.own_team_id {
+                    callback = Some(UiCallback::PushUiPopup {
+                        popup_message: PopupMessage::Message {
+                            message:
+                                "You couldn't pay the full salaries, pirates are getting angry..."
+                                    .to_string(),
+                            links: vec![],
+                            level: log::Level::Warn,
+                            is_skippable: false,
+                            timestamp: Tick::now(),
+                        },
+                    });
+                }
+            }
+        }
+
+        Ok(callback)
     }
 
     fn tick_players_update(&mut self) {

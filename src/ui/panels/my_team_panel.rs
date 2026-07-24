@@ -1956,7 +1956,7 @@ impl MyTeamPanel {
         let header = ClickableRow::new(vec![
             ClickableCell::from("Name").style(header_style),
             ClickableCell::from("Overall").style(header_style),
-            ClickableCell::from("Potential").style(header_style),
+            ClickableCell::from("Salary").style(header_style),
             ClickableCell::from("Position").style(header_style),
             ClickableCell::from(Line::from(vec![
                 Span::styled("T", header_style.underlined()),
@@ -1982,7 +1982,7 @@ impl MyTeamPanel {
             .iter()
             .map(|player| {
                 let overall = player.average_skill().stars();
-                let potential = player.potential.stars();
+                let salary = player.salary().to_string();
                 let (position_index, _) = player_ids
                     .iter()
                     .enumerate()
@@ -2066,7 +2066,7 @@ impl MyTeamPanel {
                 let cells = [
                     ClickableCell::from(name),
                     ClickableCell::from(overall),
-                    ClickableCell::from(potential),
+                    ClickableCell::from(salary),
                     ClickableCell::from(position),
                     ClickableCell::from(training),
                     ClickableCell::from(player.info.crew_role.to_string()),

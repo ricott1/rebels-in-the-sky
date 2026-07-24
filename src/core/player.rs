@@ -1013,30 +1013,29 @@ impl Player {
         }
     }
 
-    pub fn satisfaction_description(&self) -> &'static str {
-        match self.satisfaction {
-            x if x < 1.0 => "disgusted by the crew",
-            x if x < 3.0 => "fed up with the crew",
-            x if x < 5.0 => "strongly opposed to the crew",
-            x if x < 7.0 => "unhappy about the crew",
-            x if x < 9.0 => "lukewarm about the crew",
-            x if x < 13.0 => "content with the crew",
-            x if x < 15.0 => "pleased with the crew",
-            x if x < 17.0 => "happy with the crew",
-            x if x < 19.0 => "delighted with the crew",
-            _ => "ecstatic about the crew",
-        }
+    pub fn team_satisfaction(&self) -> Option<Skill> {
+        self.opinions
+            .get(&PlayerOpinion::OwnTeam)
+            .map(|(_, value)| *value)
+    }
+
+    pub fn salary(&self) -> u32 {
+        const SALARY_MOD: f32 = 0.075;
+        let opinion_modifier = 1.0 + self.opinions.modifier(PlayerOpinion::Money);
+        let avg_skill_modifier = (1.0 + self.average_skill() / MAX_SKILL).powf(1.25);
+        (SALARY_MOD * self.hire_cost() as f32 * opinion_modifier * avg_skill_modifier) as u32
     }
 
     pub fn hire_cost(&self) -> u32 {
-        const COST_PER_VALUE: f32 = 725.0;
-        let hire_age_modifier_at_birth: f32 =
-            (1.25_f32).powf(1.0 + 2.1 * self.potential / MAX_SKILL);
+        const COST_PER_VALUE: f32 = 700.0;
+
         const HIRE_AGE_MODIFIER_AT_PEAK: f32 = 1.0;
         const HIRE_AGE_MODIFIER_AT_RETIREMENT: f32 = 0.425;
         const SPECIAL_TRAIT_VALUE_BONUS: f32 = 1.45;
 
         let bare_value = {
+            let hire_age_modifier_at_birth: f32 =
+                (1.25_f32).powf(1.0 + 2.1 * self.potential / MAX_SKILL);
             // Age modifier: linear between birth, peak, and retirement values.
             let relative_age = self.info.relative_age();
             let age_modifier = if relative_age <= PEAK_PERFORMANCE_RELATIVE_AGE {
@@ -1057,9 +1056,20 @@ impl Player {
             };
 
             let reputation_modifier = 1.0 + self.reputation / MAX_SKILL;
+            let avg_skill = self.average_skill();
+            let avg_skill_modifier = (1.0 + avg_skill / MAX_SKILL).powf(2.5);
 
-            self.average_skill()
-                * (1.0 + self.average_skill() / MAX_SKILL).powf(2.35)
+            let mut sorted_fitness = self.game_position_fitness;
+            sorted_fitness.sort_unstable_by(f32::total_cmp);
+
+            let position_modifier = sorted_fitness[0] / MAX_SKILL
+                + 0.2 * sorted_fitness[1] / MAX_SKILL
+                + 0.04 * sorted_fitness[2] / MAX_SKILL
+                + 0.008 * sorted_fitness[3] / MAX_SKILL;
+
+            avg_skill
+                * avg_skill_modifier
+                * position_modifier
                 * age_modifier
                 * special_trait_extra
                 * reputation_modifier

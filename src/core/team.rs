@@ -215,6 +215,13 @@ impl Team {
         self.resources.value(&Resource::SATOSHI)
     }
 
+    pub fn total_salary(&self, players: &PlayerMap) -> u32 {
+        self.player_ids
+            .iter()
+            .map(|id| players.get(id).map(|p| p.salary()).unwrap_or_default())
+            .sum()
+    }
+
     pub fn add_resource(&mut self, resource: Resource, amount: u32) -> AppResult<()> {
         if resource == Resource::FUEL {
             self.resources.add(resource, amount, self.fuel_capacity())?;
