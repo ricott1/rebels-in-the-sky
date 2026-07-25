@@ -19,8 +19,6 @@ use crate::{
     },
 };
 use anyhow::anyhow;
-use std::time::Duration;
-
 use itertools::Itertools;
 use libp2p::PeerId;
 use rand::{
@@ -46,6 +44,7 @@ struct PlayerBuildData {
     base_level: f32,
     extra_potential: Skill,
     population: Option<Population>,
+    opinions: PlayerOpinionMap,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -581,15 +580,12 @@ impl Player {
             rng.random_range(0..NUM_GAME_POSITIONS)
         };
 
-        self.info.population = self
-            .build_data
-            .population
-            .unwrap_or_else(|| {
-                Population::all_peoples()
-                    .into_iter()
-                    .choose(rng)
-                    .unwrap_or_default()
-            });
+        self.info.population = self.build_data.population.unwrap_or_else(|| {
+            Population::all_peoples()
+                .into_iter()
+                .choose(rng)
+                .unwrap_or_default()
+        });
 
         self.info.randomize_for_position(position, rng);
 
@@ -674,6 +670,13 @@ impl Player {
         self
     }
 
+    pub fn with_opinion(mut self, opinion: PlayerOpinion, value: Skill) -> Self {
+        self.build_data
+            .opinions
+            .insert(opinion, (Tick::now(), value));
+        self
+    }
+
     pub fn with_current_location_on_planet(mut self, planet_id: PlanetId) -> Self {
         self.current_location = if self.team.is_some() {
             PlayerLocation::WithTeam
@@ -741,31 +744,35 @@ impl Player {
         }
 
         let std_dev = 3.0;
-        let mut values = [5.0, 10.0, 10.0, 15.0].map(|mean| {
+        let mut values = [5.0, 10.0, 15.0].map(|mean| {
             Normal::new(mean, std_dev)
                 .expect("Should create valid normal distribution")
                 .sample(rng)
                 .bound()
         });
         values.shuffle(rng);
-        candidates.push((PlayerOpinion::Adventures, values[0]));
+        candidates.push((PlayerOpinion::Space, values[0]));
         candidates.push((PlayerOpinion::Drinking, values[1]));
         candidates.push((PlayerOpinion::Games, values[2]));
-        candidates.push((PlayerOpinion::Gold, values[3]));
 
         let money_value = {
             let normal = Normal::new(2.0, 2.0).expect("Should create valid normal distribution");
             (OPINION_NEUTRAL_VALUE + normal.sample(rng)).bound()
         };
-        candidates.push((PlayerOpinion::Money, money_value));
+        candidates.push((PlayerOpinion::Gold, money_value));
 
         candidates.sort_by(|(_, a), (_, b)| {
             (b - OPINION_NEUTRAL_VALUE)
                 .abs()
                 .total_cmp(&(a - OPINION_NEUTRAL_VALUE).abs())
         });
+
         for (opinion, value) in candidates.into_iter().take(MAX_INITIAL_OPINIONS) {
             self.opinions.insert(opinion, (Tick::now(), value));
+        }
+
+        for (opinion, (_, value)) in self.build_data.opinions.iter() {
+            self.opinions.insert(opinion.clone(), (Tick::now(), *value));
         }
 
         if self.team.is_some() {
@@ -959,19 +966,6 @@ impl Player {
         self.add_team_satisfaction(SATISFACTION_PER_OPINION_EVENT * bonus * opinion_modifier);
     }
 
-    /// Satisfy the opinion on space adventures, only if the duration was long enough.
-    pub fn satisfy_adventure_opinion(&mut self, duration: Duration) {
-        let satisfied = self
-            .opinions
-            .get(&PlayerOpinion::Adventures)
-            .is_some_and(|(_, value)| {
-                duration > Duration::from_secs((*value * SPACE_ADVENTURE_OPINION_MOD) as u64)
-            });
-        if satisfied {
-            self.satisfy_opinion(PlayerOpinion::Adventures);
-        }
-    }
-
     /// Drink one liter of rum, increasing drunkenness and boosting morale.
     /// There is a chance, growing with drunkenness, that the player gets fully drunk:
     /// in that case tiredness goes to max (the player is wasted), drunkenness resets
@@ -1032,18 +1026,27 @@ impl Player {
     }
 
     pub fn salary(&self) -> u32 {
-        const SALARY_MOD: f32 = 0.075;
-        let opinion_modifier = 1.0 + self.opinions.modifier(PlayerOpinion::Money);
-        let avg_skill_modifier = (1.0 + self.average_skill() / MAX_SKILL).powf(1.25);
-        (SALARY_MOD * self.hire_cost() as f32 * opinion_modifier * avg_skill_modifier) as u32
+        // Crumiros work for free
+        if matches!(self.special_trait, Some(Trait::Crumiro)) {
+            return 0;
+        }
+        const SALARY_MOD: f32 = 0.04;
+        let opinion_modifier = 1.0 + self.opinions.modifier(PlayerOpinion::Gold);
+        let avg_skill_modifier = (1.0 + self.average_skill() / MAX_SKILL).powf(1.35);
+        let reputation_modifier = 1.0 + self.reputation / MAX_SKILL;
+        (SALARY_MOD
+            * self.hire_cost() as f32
+            * opinion_modifier
+            * avg_skill_modifier
+            * reputation_modifier) as u32
     }
 
     pub fn hire_cost(&self) -> u32 {
-        const COST_PER_VALUE: f32 = 700.0;
+        const COST_PER_VALUE: f32 = 815.0;
 
         const HIRE_AGE_MODIFIER_AT_PEAK: f32 = 1.0;
         const HIRE_AGE_MODIFIER_AT_RETIREMENT: f32 = 0.425;
-        const SPECIAL_TRAIT_VALUE_BONUS: f32 = 1.45;
+        const SPECIAL_TRAIT_VALUE_BONUS: f32 = 1.4;
 
         let bare_value = {
             let hire_age_modifier_at_birth: f32 =
@@ -1069,15 +1072,15 @@ impl Player {
 
             let reputation_modifier = 1.0 + self.reputation / MAX_SKILL;
             let avg_skill = self.average_skill();
-            let avg_skill_modifier = (1.0 + avg_skill / MAX_SKILL).powf(2.5);
+            let avg_skill_modifier = (1.0 + avg_skill / MAX_SKILL).powf(2.6);
 
             let mut sorted_fitness = self.game_position_fitness;
             sorted_fitness.sort_unstable_by(f32::total_cmp);
 
             let position_modifier = sorted_fitness[0] / MAX_SKILL
-                + 0.2 * sorted_fitness[1] / MAX_SKILL
-                + 0.04 * sorted_fitness[2] / MAX_SKILL
-                + 0.008 * sorted_fitness[3] / MAX_SKILL;
+                + 0.25 * sorted_fitness[1] / MAX_SKILL
+                + 0.05 * sorted_fitness[2] / MAX_SKILL
+                + 0.01 * sorted_fitness[3] / MAX_SKILL;
 
             avg_skill
                 * avg_skill_modifier
@@ -1298,8 +1301,8 @@ impl Player {
             return;
         };
         let value = match self.opinions.remove(&PlayerOpinion::Team { team_id }) {
-            Some((_, remembered)) => (remembered + PLAYER_OPINION_REHIRE_FROM_TEAM).bound(),
-            None => MAX_SKILL,
+            Some((_, remembered)) => (remembered + PLAYER_OPINION_ON_HIRE).bound(),
+            None => OPINION_NEUTRAL_VALUE + PLAYER_OPINION_ON_HIRE,
         };
         self.opinions
             .insert(PlayerOpinion::OwnTeam, (Tick::now(), value));

@@ -92,7 +92,7 @@ pub enum PopupMessage {
 }
 
 impl PopupMessage {
-    const MAX_TUTORIAL_PAGE: usize = 7;
+    const MAX_TUTORIAL_PAGE: usize = 8;
 
     pub fn error(message: String) -> Self {
         Self::Message {
@@ -948,6 +948,10 @@ impl PopupMessage {
                     (
                         "To start, you can try to challenge another team to a game.",
                         vec![("challenge", UiCallback::GoToChallenges{from_popup:false})],
+                    ),
+                    (
+                        "Your team's strategy and tactics can be set in the game settings",
+                        vec![("game settings", UiCallback::GoToGameSettings{from_popup:false})],
                     ),
                     (
                         "You can also explore around your planet to gather resources which you can then sell at the market.",

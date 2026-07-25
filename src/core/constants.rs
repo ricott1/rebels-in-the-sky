@@ -57,7 +57,7 @@ pub const AGE_INCREASE_PER_LONG_TICK: f32 = 0.1; // 1 year every 10 LONG_TICK
 pub const INCOME_PER_ATTENDEE_HOME: u32 = 21;
 pub const INCOME_PER_ATTENDEE_AWAY: u32 = 21;
 
-pub const INITIAL_TEAM_BALANCE: u32 = 100_000;
+pub const INITIAL_TEAM_BALANCE: u32 = 90_000;
 
 pub const AUTO_GENERATE_GAMES_NUMBER: usize = 9;
 pub const MAX_AVG_TIREDNESS_PER_AUTO_GAME: f32 = 4.0;
@@ -73,7 +73,7 @@ pub const BASE_DISTANCES: [u64; 5] = [
     1_000 * KILOMETERS,
 ];
 pub const BASE_TANK_CAPACITY: u32 = 60;
-pub const SPACESHIP_BASE_COST_MULTIPLIER: f32 = 1.15;
+pub const SPACESHIP_BASE_COST_MULTIPLIER: f32 = 1.2;
 
 pub const LIGHT_SPEED: f32 = 1_079_252_848.8 * KILOMETERS as f32 / HOURS as f32;
 pub const BASE_SPEED: f32 = 0.55 * LIGHT_SPEED; // Very fast ;)
@@ -177,7 +177,7 @@ pub const MORALE_GOLD_BONUS: Skill = MoraleModifier::CRITICAL_BONUS;
 pub const MORALE_HIRE_BONUS: Skill = MoraleModifier::CRITICAL_BONUS;
 
 pub const OPINION_NEUTRAL_VALUE: Skill = 0.5 * MAX_SKILL;
-pub const PLAYER_OPINION_REHIRE_FROM_TEAM: Skill = 2.5;
+pub const PLAYER_OPINION_ON_HIRE: Skill = 2.5;
 pub const SPACE_ADVENTURE_OPINION_MOD: f32 = 2.0;
 
 pub const BASE_DRUNK_PROBABILITY: f64 = 0.725;

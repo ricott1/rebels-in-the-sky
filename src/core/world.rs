@@ -1080,12 +1080,11 @@ impl World {
         }
 
         let asteroid_type = space_adventure.asteroid_planet_found();
-
-        let space_adventure_duration = space_adventure.duration();
-
         for player_id in own_team.player_ids.iter() {
-            let p = self.players.get_mut_or_err(&player_id)?;
-            p.satisfy_adventure_opinion(space_adventure_duration);
+            let player = self.players.get_mut_or_err(&player_id)?;
+            if asteroid_type.is_some() {
+                player.satisfy_opinion(PlayerOpinion::Space);
+            }
         }
 
         self.teams.insert(own_team.id, own_team);
@@ -2384,6 +2383,10 @@ impl World {
                         own_team.total_travelled += distance;
                         let reputation_bonus = Self::team_reputation_bonus_per_distance(distance);
                         own_team.reputation = (own_team.reputation + reputation_bonus).bound();
+                        for player_id in own_team.player_ids.iter() {
+                            let player = self.players.get_mut_or_err(&player_id)?;
+                            player.satisfy_opinion(PlayerOpinion::Space);
+                        }
                     }
 
                     self.dirty = true;
@@ -2481,6 +2484,11 @@ impl World {
                                 .clone()
                         })
                         .collect_vec();
+
+                    for player_id in team.player_ids.iter() {
+                        let player = self.players.get_mut_or_err(&player_id)?;
+                        player.satisfy_opinion(PlayerOpinion::Space);
+                    }
 
                     callbacks.push(UiCallback::PushUiPopup {
                         popup_message: PopupMessage::ExplorationResult {

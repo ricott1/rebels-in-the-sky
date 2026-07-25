@@ -84,17 +84,16 @@ impl PlayerOpinionMapDescription for PlayerOpinionMap {
                 continue;
             };
             match opinion {
-                PlayerOpinion::Adventures => objects[i].push("space adventures".to_string()),
                 PlayerOpinion::Drinking => objects[i].push("drinking".to_string()),
                 PlayerOpinion::Games => objects[i].push("games".to_string()),
                 PlayerOpinion::Gold => objects[i].push("gold".to_string()),
-                PlayerOpinion::Money => objects[i].push("money".to_string()),
-                PlayerOpinion::Team { .. } => objects[i].push("a former crew".to_string()),
+                PlayerOpinion::OwnTeam => {}
                 PlayerOpinion::Populations { population } => match population {
                     Population::Human { region } => human_regions[i].push(*region),
                     other => objects[i].push(other.to_string()),
                 },
-                PlayerOpinion::OwnTeam => {}
+                PlayerOpinion::Space => objects[i].push("space".to_string()),
+                PlayerOpinion::Team { .. } => objects[i].push("a former crew".to_string()),
             }
         }
 
@@ -117,20 +116,20 @@ impl PlayerOpinionMapDescription for PlayerOpinionMap {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Display, PartialEq, Eq, Hash)]
 pub enum PlayerOpinion {
-    Adventures,
     Drinking,
     Games,
     Gold,
-    Money,
     OwnTeam,
     Populations { population: Population },
+    Space,
     Team { team_id: TeamId },
 }
 
 impl PlayerOpinion {
     pub fn satisfaction_modifier(&self) -> f32 {
         match self {
-            Self::Adventures => 1.75,
+            Self::Drinking => 0.85,
+            Self::Space => 1.25,
             Self::Gold => 1.5,
             _ => 1.0,
         }

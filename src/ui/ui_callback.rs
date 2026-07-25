@@ -94,6 +94,9 @@ pub enum UiCallback {
     GoToChallenges {
         from_popup: bool,
     },
+    GoToGameSettings {
+        from_popup: bool,
+    },
     GoToMarket {
         from_popup: bool,
     },
@@ -1384,6 +1387,17 @@ impl UiCallback {
                 }
                 Ok(None)
             }
+
+            Self::GoToGameSettings { from_popup } => {
+                app.ui.my_team_panel.set_view(MyTeamView::GameSettings);
+                app.ui.my_team_panel.update(&app.world)?;
+                app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
+                if *from_popup {
+                    app.ui.close_popup()
+                }
+                Ok(None)
+            }
+
             Self::GoToMarket { from_popup } => {
                 app.ui.my_team_panel.set_view(MyTeamView::Market);
                 app.ui.my_team_panel.update(&app.world)?;
