@@ -947,7 +947,11 @@ impl Screen for NewTeamScreen {
                 match self.state {
                     CreationState::TeamName => match key_event.code {
                         KeyCode::Enter => {
-                            if !validate_textarea_input(&mut self.team_name_textarea, "Team name") {
+                            if !validate_textarea_input(
+                                &mut self.team_name_textarea,
+                                "Team name",
+                                MAX_NAME_LENGTH,
+                            ) {
                                 return None;
                             }
                             let mut name = self.team_name_textarea.lines()[0].trim().to_string();
@@ -980,7 +984,11 @@ impl Screen for NewTeamScreen {
                         _ => {
                             self.team_name_textarea
                                 .input(input_from_key_event(key_event));
-                            validate_textarea_input(&mut self.team_name_textarea, "Team name");
+                            validate_textarea_input(
+                                &mut self.team_name_textarea,
+                                "Team name",
+                                MAX_NAME_LENGTH,
+                            );
                         }
                     },
                     CreationState::ShipName => match key_event.code {
@@ -988,6 +996,7 @@ impl Screen for NewTeamScreen {
                             if !validate_textarea_input(
                                 &mut self.ship_name_textarea,
                                 "Spaceship name",
+                                MAX_NAME_LENGTH,
                             ) {
                                 return None;
                             }
@@ -1031,13 +1040,18 @@ impl Screen for NewTeamScreen {
                                 validate_textarea_input(
                                     &mut self.ship_name_textarea,
                                     "Spaceship name",
+                                    MAX_NAME_LENGTH,
                                 );
                             }
                         }
                         _ => {
                             self.ship_name_textarea
                                 .input(input_from_key_event(key_event));
-                            validate_textarea_input(&mut self.ship_name_textarea, "Spaceship name");
+                            validate_textarea_input(
+                                &mut self.ship_name_textarea,
+                                "Spaceship name",
+                                MAX_NAME_LENGTH,
+                            );
                         }
                     },
                     CreationState::Planet => match key_event.code {

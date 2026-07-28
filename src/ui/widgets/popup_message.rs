@@ -4,8 +4,8 @@ use crate::core::MAX_SKILL;
 use crate::core::{player::Player, resources::Resource, skill::Rated};
 use crate::image::utils::open_gif;
 use crate::types::*;
-use crate::ui::constants::MAX_NAME_LENGTH;
 use crate::ui::constants::{UiStyle, UiText};
+use crate::ui::constants::{MAX_NAME_LENGTH, MAX_SPACE_COVE_NAME_LENGTH};
 use crate::ui::gif_map::PORTAL_GIFS;
 use crate::ui::gif_map::{self, GifMap, TREASURE_GIF};
 use crate::ui::renders::{default_block, render_lines_with_links, thick_block, LinkAlign};
@@ -13,7 +13,9 @@ use crate::ui::traits::PrintableGif;
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
-use crate::ui::utils::{img_to_lines, input_from_key_event, validate_textarea_input};
+use crate::ui::utils::{
+    img_to_lines, input_from_key_event, sanitized_name, validate_textarea_input,
+};
 use anyhow::anyhow;
 use core::fmt::Debug;
 use itertools::Itertools;
@@ -62,6 +64,11 @@ pub enum PopupMessage {
         timestamp: Tick,
         asteroid_type: usize,
     },
+    SpaceCoveNameDialog {
+        timestamp: Tick,
+        asteroid_name: String,
+        filename: String,
+    },
     BuildSpaceCove {
         asteroid_name: String,
         asteroid_id: PlanetId,
@@ -107,6 +114,7 @@ impl PopupMessage {
     fn rect(&self, area: Rect) -> Rect {
         let (width, height) = match self {
             Self::AsteroidNameDialog { .. } => (54, 28),
+            Self::SpaceCoveNameDialog { .. } => (54, 28),
             Self::PortalFound { .. } => (54, 44),
             Self::ExplorationResult { resources, .. } => {
                 if resources.value(&Resource::GOLD) > 0 {
@@ -163,14 +171,8 @@ impl PopupMessage {
         match self {
             Self::AsteroidNameDialog { timestamp, .. } => {
                 if key_event.code == ui_key::YES_TO_DIALOG {
-                    let mut name = popup_input.lines()[0].clone();
-                    name = name
-                        .chars()
-                        .enumerate()
-                        .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
-                        .take(MAX_NAME_LENGTH)
-                        .collect();
-                    if validate_textarea_input(popup_input, "Asteroid name") {
+                    let name = sanitized_name(&popup_input.lines()[0], MAX_NAME_LENGTH);
+                    if validate_textarea_input(popup_input, "Asteroid name", MAX_NAME_LENGTH) {
                         let filename = format!("asteroid{}", timestamp % 30);
                         return Some(UiCallback::NameAndAcceptAsteroid { name, filename });
                     }
@@ -179,6 +181,21 @@ impl PopupMessage {
                         return Some(UiCallback::CloseUiPopup);
                     }
                     popup_input.input(input_from_key_event(key_event));
+                } else {
+                    popup_input.input(input_from_key_event(key_event));
+                }
+            }
+
+            Self::SpaceCoveNameDialog { .. } => {
+                if key_event.code == ui_key::YES_TO_DIALOG {
+                    let name = sanitized_name(&popup_input.lines()[0], MAX_SPACE_COVE_NAME_LENGTH);
+                    if validate_textarea_input(
+                        popup_input,
+                        "Space cove name",
+                        MAX_SPACE_COVE_NAME_LENGTH,
+                    ) {
+                        return Some(UiCallback::NameSpaceCove { name });
+                    }
                 } else {
                     popup_input.input(input_from_key_event(key_event));
                 }
@@ -644,12 +661,7 @@ impl PopupMessage {
                     Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
                         .split(split[2]);
 
-                let mut name = popup_input.lines()[0].clone();
-                name = name
-                    .chars()
-                    .enumerate()
-                    .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
-                    .collect();
+                let name = sanitized_name(&popup_input.lines()[0], MAX_NAME_LENGTH);
 
                 let mut ok_button = Button::new(
                     UiText::YES,
@@ -659,7 +671,7 @@ impl PopupMessage {
                 .hotkey(ui_key::YES_TO_DIALOG)
                 .block(default_block().border_style(UiStyle::OK));
 
-                if !validate_textarea_input(popup_input, "Asteroid name") {
+                if !validate_textarea_input(popup_input, "Asteroid name", MAX_NAME_LENGTH) {
                     ok_button.disable(Some("Invalid asteroid name"));
                 }
 
@@ -671,6 +683,78 @@ impl PopupMessage {
                     .block(default_block().border_style(UiStyle::ERROR));
 
                 frame.render_interactive_widget_on_layer(no_button, buttons_split[1], 2);
+            }
+
+            Self::SpaceCoveNameDialog {
+                asteroid_name,
+                filename,
+                ..
+            } => {
+                frame.render_widget(
+                    Paragraph::new(format!("Space cove completed on {asteroid_name}!"))
+                        .bold()
+                        .block(default_block().border_style(UiStyle::HIGHLIGHT))
+                        .centered(),
+                    split[0],
+                );
+
+                let asteroid_img = img_to_lines(&gif_map::GifMap::asteroid_zoom_out(filename)?[0]);
+                if asteroid_img.is_empty() {
+                    return Err(anyhow!("Invalid asteroid image"));
+                }
+                let asteroid_image_height = asteroid_img.len() as u16;
+
+                let m_split = Layout::vertical([
+                    Constraint::Length(4), //message
+                    Constraint::Length(asteroid_image_height),
+                    Constraint::Min(0),
+                    Constraint::Length(3), //input
+                ])
+                .split(split[1]);
+
+                frame.render_widget(
+                    Paragraph::new("Your space cove is ready! Give it a name.")
+                        .centered()
+                        .wrap(Wrap { trim: true }),
+                    m_split[0].inner(Margin {
+                        horizontal: 1,
+                        vertical: 1,
+                    }),
+                );
+
+                frame.render_widget(Paragraph::new(asteroid_img).centered(), m_split[1]);
+
+                popup_input.set_cursor_style(UiStyle::SELECTED);
+                popup_input.set_block(
+                    default_block()
+                        .border_style(UiStyle::DEFAULT)
+                        .title("Space cove name"),
+                );
+
+                frame.render_widget(
+                    &popup_input.clone(),
+                    m_split[3].inner(Margin {
+                        horizontal: 1,
+                        vertical: 0,
+                    }),
+                );
+
+                let name = sanitized_name(&popup_input.lines()[0], MAX_SPACE_COVE_NAME_LENGTH);
+
+                let mut ok_button = Button::new(UiText::YES, UiCallback::NameSpaceCove { name })
+                    .hover_text("Name your space cove")
+                    .hotkey(ui_key::YES_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::OK));
+
+                if !validate_textarea_input(
+                    popup_input,
+                    "Space cove name",
+                    MAX_SPACE_COVE_NAME_LENGTH,
+                ) {
+                    ok_button.disable(Some("Invalid space cove name"));
+                }
+
+                frame.render_interactive_widget_on_layer(ok_button, split[2], 2);
             }
 
             Self::PortalFound {

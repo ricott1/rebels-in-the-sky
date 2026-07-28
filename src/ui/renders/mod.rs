@@ -16,7 +16,7 @@ use super::{
 use crate::core::skill::{Skill, MAX_SKILL, MIN_SKILL};
 use crate::core::types::TeamBonus;
 use crate::core::{
-    ChargeUnit, Honour, Planet, PlanetUpgradeTarget, Shield, Shooter, SpaceCoveUpgradeTarget,
+    ChargeUnit, Honour, Planet, PlanetUpgradeTarget, ScoutReport, Shield, Shooter,
     SpaceshipComponent, Upgrade, UpgradeableElement,
 };
 use crate::ui::utils::format_au;
@@ -804,6 +804,18 @@ pub fn get_fuel_spans<'a>(fuel: u32, fuel_capacity: u32, bars_length: usize) -> 
     ]
 }
 
+pub fn drunkenness_description(drunkenness: Skill) -> &'static str {
+    match drunkenness {
+        x if x < MIN_SKILL => "completely drunk",
+        x if x == MIN_SKILL => "completely sober",
+        x if x < 4.0 => "dignifiedly tipsy",
+        x if x < 8.0 => "respectably buzzed",
+        x if x < 12.0 => "pretty merry",
+        x if x < 16.0 => "undignifiedly inebriated",
+        _ => "sloshed",
+    }
+}
+
 pub fn render_spaceship_description(
     team: &Team,
     world: &World,
@@ -1489,194 +1501,9 @@ pub fn render_spaceship_upgrade(
     );
 }
 
-pub fn render_market_on_planet(
-    frame: &mut UiFrame,
-    world: &World,
-    own_team: &Team,
-    planet: &Planet,
-    area: Rect,
-) -> AppResult<()> {
-    let inner_area = area.inner(Margin {
-        horizontal: 1,
-        vertical: 1,
-    });
-
-    frame.render_widget(
-        default_block().title(format!("Planet {} Market", planet.name)),
-        area,
-    );
-
-    if let Some(cove) = own_team.space_cove.as_ref() {
-        if matches!(own_team.is_on_planet(), Some(id) if id == cove.planet_id)
-            && !cove.upgrades.contains(&SpaceCoveUpgradeTarget::Market)
-        {
-            frame.render_widget(
-                Paragraph::new(vec![Line::from(
-                    "There is no market available on the cove yet.",
-                )])
-                .centered(),
-                inner_area,
-            );
-            return Ok(());
-        }
-    }
-
-    if !planet.has_market(world.space_cove_on(planet.id)) {
-        frame.render_widget(
-            Paragraph::new(vec![
-                Line::from("There is no market available on this planet."),
-                Line::from("Try another planet with more population."),
-            ])
-            .centered(),
-            inner_area,
-        );
-        return Ok(());
-    }
-
-    let central_pad = (inner_area.width - 75) / 2;
-    let button_split = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(3),
-        Constraint::Length(3),
-        Constraint::Length(3),
-        Constraint::Length(3),
-        Constraint::Min(3),
-    ])
-    .split(inner_area.inner(Margin::new(central_pad, 0)));
-
-    let layout = Layout::horizontal([
-        Constraint::Length(7),  // name
-        Constraint::Max(6),     // buy 1
-        Constraint::Max(6),     // buy 10
-        Constraint::Max(6),     // buy 100
-        Constraint::Max(6),     // sell 1
-        Constraint::Max(6),     // sell 10
-        Constraint::Max(6),     // sell 100
-        Constraint::Length(11), // price
-        Constraint::Min(0),     // have
-    ]);
-
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "              Buy               Sell         Prices     Cargo".to_string(),
-            UiStyle::HEADER.bold(),
-        )),
-        button_split[0],
-    );
-
-    let buy_ui_keys = [
-        ui_key::market::BUY_GOLD,
-        ui_key::market::BUY_SCRAPS,
-        ui_key::market::BUY_FUEL,
-        ui_key::market::BUY_RUM,
-    ];
-    let sell_ui_keys = [
-        ui_key::market::SELL_GOLD,
-        ui_key::market::SELL_SCRAPS,
-        ui_key::market::SELL_FUEL,
-        ui_key::market::SELL_RUM,
-    ];
-
-    for (button_split_idx, resource) in [
-        Resource::GOLD,
-        Resource::SCRAPS,
-        Resource::FUEL,
-        Resource::RUM,
-    ]
-    .iter()
-    .enumerate()
-    {
-        let resource_split = layout.split(button_split[button_split_idx + 1]);
-        let merchant_bonus = TeamBonus::Bargaining.current_team_bonus(world, &own_team.id)?;
-        let buy_unit_cost = planet.resource_buy_price(*resource, merchant_bonus);
-        let sell_unit_cost = planet.resource_sell_price(*resource, merchant_bonus);
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![Span::styled(
-                format!("{:<6} ", resource.to_string()),
-                resource.style(),
-            )])),
-            resource_split[0].inner(Margin::new(1, 1)),
-        );
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(format!("{buy_unit_cost:>4}"), UiStyle::OK),
-                Span::raw("/".to_string()),
-                Span::styled(format!("{sell_unit_cost:<4}"), UiStyle::ERROR),
-            ])),
-            resource_split[7].inner(Margin::new(1, 1)),
-        );
-
-        frame.render_widget(
-            Paragraph::new(format!(
-                "{:^7}",
-                own_team.resources.value(resource).to_string()
-            )),
-            resource_split[8].inner(Margin::new(1, 1)),
-        );
-
-        let max_buy_amount = own_team.max_resource_buy_amount(*resource, buy_unit_cost);
-        for (idx, amount) in [1, 10, 100.min(max_buy_amount) as i32].iter().enumerate() {
-            if let Ok(btn) = trade_resource_button(
-                world,
-                *resource,
-                *amount,
-                buy_unit_cost,
-                if idx == 0 {
-                    Some(buy_ui_keys[button_split_idx])
-                } else {
-                    None
-                },
-                UiStyle::OK,
-            ) {
-                frame.render_interactive_widget(btn, resource_split[idx + 1]);
-            }
-        }
-
-        let max_sell_amount = own_team.max_resource_sell_amount(*resource);
-        for (idx, amount) in [1, 10, 100.min(max_sell_amount) as i32].iter().enumerate() {
-            if let Ok(btn) = trade_resource_button(
-                world,
-                *resource,
-                -*amount,
-                sell_unit_cost,
-                if idx == 0 {
-                    Some(sell_ui_keys[button_split_idx])
-                } else {
-                    None
-                },
-                UiStyle::ERROR,
-            ) {
-                frame.render_interactive_widget(btn, resource_split[idx + 4]);
-            }
-        }
-    }
-
-    frame.render_widget(
-        Paragraph::new(vec![
-            Line::from(format!("Treasury {}", format_satoshi(own_team.balance()))),
-            Line::from(get_fuel_spans(
-                own_team.fuel(),
-                own_team.fuel_capacity(),
-                BARS_LENGTH,
-            )),
-            Line::from(get_storage_spans(
-                &own_team.resources,
-                own_team.spaceship.storage_capacity(),
-                BARS_LENGTH,
-            )),
-        ]),
-        button_split[5].inner(Margin {
-            horizontal: 1,
-            vertical: 0,
-        }),
-    );
-
-    Ok(())
-}
-
 pub fn render_player_description(
     player: &Player,
-    players_scouting: &HashMap<PlayerId, Skill>,
+    players_scouting: &HashMap<PlayerId, ScoutReport>,
     view: PlayerWidgetView,
     gif_map: &mut GifMap,
     tick: usize,
@@ -1684,10 +1511,8 @@ pub fn render_player_description(
     frame: &mut UiFrame,
     area: Rect,
 ) {
-    let scouting = players_scouting
-        .get(&player.id)
-        .copied()
-        .unwrap_or_default();
+    let default_report = ScoutReport::default();
+    let report = players_scouting.get(&player.id).unwrap_or(&default_report);
 
     let h_split = Layout::horizontal([
         Constraint::Length(PLAYER_IMAGE_WIDTH as u16 + 4),
@@ -1718,7 +1543,7 @@ pub fn render_player_description(
         frame.render_widget(paragraph, header_body_img[1]);
     }
 
-    let trait_span = if player.is_special_trait_scouted(scouting) {
+    let trait_span = if report.is_special_trait_scouted() {
         player.special_trait.map_or_else(
             || Span::default(),
             |t| Span::styled(format!("{t}"), t.style()),
@@ -1824,7 +1649,7 @@ pub fn render_player_description(
 
     match view {
         PlayerWidgetView::Skills => frame.render_widget(
-            Paragraph::new(format_player_skills(player, scouting)),
+            Paragraph::new(format_player_skills(player, report)),
             header_body_stats[6],
         ),
         PlayerWidgetView::Stats => frame.render_widget(
@@ -1889,11 +1714,15 @@ fn improvement_indicator<'a>(skill: f32, previous: f32) -> Span<'a> {
     }
 }
 
-fn scouted_player_skill_spans<'a>(player: &Player, scouting: Skill, i: usize) -> Vec<Span<'a>> {
+fn scouted_player_skill_spans<'a>(
+    player: &Player,
+    report: &ScoutReport,
+    i: usize,
+) -> Vec<Span<'a>> {
     const PADDING: usize = 3;
     let skill = player.skill_at_index(i);
 
-    if scouting == MAX_SKILL {
+    if report.scouting() == MAX_SKILL {
         return vec![
             Span::styled(
                 format!("{:10} {:02} ", SKILL_NAMES[i], skill.value()),
@@ -1904,7 +1733,7 @@ fn scouted_player_skill_spans<'a>(player: &Player, scouting: Skill, i: usize) ->
         ];
     }
 
-    if player.is_skill_scouted(scouting, i) {
+    if report.is_skill_scouted(i) {
         return vec![
             Span::styled(
                 format!("{:10} {:02}", SKILL_NAMES[i], skill.value()),
@@ -1920,23 +1749,21 @@ fn scouted_player_skill_spans<'a>(player: &Player, scouting: Skill, i: usize) ->
     ]
 }
 
-fn scouted_player_skill_summary_span<'a, R: Rated>(name: &'a str, value: R) -> Span<'a> {
-    let padding = MAX_NAME_LENGTH.saturating_sub(name.len());
-    let stars = value.stars();
-
+fn skill_summary_span<'a>(name: &'a str) -> Span<'a> {
+    let padding = MAX_NAME_LENGTH.saturating_sub(name.len()) + 5;
     Span::styled(
-        format!("{name} {}{}", stars, &SPACES[..padding]),
-        value.rating().style(),
+        format!("{name} {}", &SPACES[..padding]),
+        UiStyle::HEADER.bold(),
     )
 }
 
-fn scouted_player_role_spans<'a>(player: &Player, scouting: Skill, i: usize) -> Vec<Span<'a>> {
+fn scouted_player_role_spans<'a>(player: &Player, report: &ScoutReport, i: usize) -> Vec<Span<'a>> {
     const PADDING: usize = 8;
 
     let value = player.game_position_fitness[i];
     let role = (i as GamePosition).as_role().to_string();
 
-    if scouting == MAX_SKILL {
+    if report.scouting() == MAX_SKILL {
         return vec![
             Span::styled(
                 format!("{:2} {} ", role, value.stars()),
@@ -1948,7 +1775,7 @@ fn scouted_player_role_spans<'a>(player: &Player, scouting: Skill, i: usize) -> 
     }
 
     // Stronger roles are visualized first
-    if player.is_role_scouted(scouting, value) {
+    if report.is_role_scouted(value) {
         return vec![
             Span::styled(
                 format!("{:2} {} ", role, value.stars()),
@@ -1961,7 +1788,7 @@ fn scouted_player_role_spans<'a>(player: &Player, scouting: Skill, i: usize) -> 
     vec![Span::raw(&SPACES[..PADDING + 10])]
 }
 
-fn format_player_skills<'a>(player: &'a Player, scouting: Skill) -> Vec<Line<'a>> {
+fn format_player_skills<'a>(player: &'a Player, report: &ScoutReport) -> Vec<Line<'a>> {
     let mut text = vec![];
     let sorted_roles = (0..NUM_GAME_POSITIONS as usize)
         .sorted_by(|&a, &b| {
@@ -1969,39 +1796,36 @@ fn format_player_skills<'a>(player: &'a Player, scouting: Skill) -> Vec<Line<'a>
         })
         .collect_vec();
 
-    let mut spans = scouted_player_role_spans(player, scouting, sorted_roles[0]);
-    spans.push(scouted_player_skill_summary_span(
-        "Athletics",
-        player.athletics,
-    ));
+    let mut spans = scouted_player_role_spans(player, report, sorted_roles[0]);
+    spans.push(skill_summary_span("Athletics"));
     text.push(Line::from(spans));
 
     for i in 1..sorted_roles.len() {
-        let mut spans = scouted_player_role_spans(player, scouting, sorted_roles[i]);
-        spans.extend(scouted_player_skill_spans(player, scouting, i));
+        let mut spans = scouted_player_role_spans(player, report, sorted_roles[i]);
+        spans.extend(scouted_player_skill_spans(player, report, i));
         text.push(Line::from(spans));
     }
 
     text.push(Line::default());
     text.push(Line::from(vec![
-        scouted_player_skill_summary_span("Offense", player.offense),
-        scouted_player_skill_summary_span("Defense", player.defense),
+        skill_summary_span("Offense"),
+        skill_summary_span("Defense"),
     ]));
     for i in 0..4 {
-        let mut spans = scouted_player_skill_spans(player, scouting, i + 4);
-        spans.extend(scouted_player_skill_spans(player, scouting, i + 8));
+        let mut spans = scouted_player_skill_spans(player, report, i + 4);
+        spans.extend(scouted_player_skill_spans(player, report, i + 8));
         text.push(Line::from(spans));
     }
 
     text.push(Line::default());
     text.push(Line::from(vec![
-        scouted_player_skill_summary_span("Technical", player.technical),
-        scouted_player_skill_summary_span("Mental", player.mental),
+        skill_summary_span("Technical"),
+        skill_summary_span("Mental"),
     ]));
 
     for i in 0..4 {
-        let mut spans = scouted_player_skill_spans(player, scouting, i + 12);
-        spans.extend(scouted_player_skill_spans(player, scouting, i + 16));
+        let mut spans = scouted_player_skill_spans(player, report, i + 12);
+        spans.extend(scouted_player_skill_spans(player, report, i + 16));
         text.push(Line::from(spans));
     }
 

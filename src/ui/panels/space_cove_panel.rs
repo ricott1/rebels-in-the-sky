@@ -291,15 +291,8 @@ impl SpaceCovePanel {
         other_coves_area: Rect,
     ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
-        let own_cove_label = match own_team.has_space_cove_on() {
-            Some(cove_planet) => {
-                let asteroid_name = world
-                    .planets
-                    .get(&cove_planet)
-                    .map(|p| p.name.as_str())
-                    .unwrap_or("???");
-                format!("Space cove on {}", asteroid_name)
-            }
+        let own_cove_label = match own_team.space_cove.as_ref() {
+            Some(cove) => cove.name.clone(),
             None => "No own space cove".to_string(),
         };
 
@@ -346,7 +339,7 @@ impl SpaceCovePanel {
         }
 
         let mut options = vec![];
-        for (team_id, asteroid_id) in self.cove_entries.iter() {
+        for (team_id, _) in self.cove_entries.iter() {
             let team = match world.teams.get(team_id) {
                 Some(t) => t,
                 None => continue,
@@ -358,13 +351,14 @@ impl SpaceCovePanel {
             } else {
                 UiStyle::DEFAULT
             };
-            let asteroid_name = world
-                .planets
-                .get(asteroid_id)
-                .map(|p| p.name.as_str())
-                .unwrap_or("???");
+
+            let cove_name = team
+                .space_cove
+                .as_ref()
+                .map(|cove| cove.name.as_str())
+                .unwrap_or("Unknown cove");
             // Pad team-name + parenthesised asteroid so stars align across rows.
-            let label = format!("{} ({})", team.name, asteroid_name);
+            let label = format!("{} ({})", cove_name, team.name);
             let text = format!(
                 "{:<width$} {}",
                 label,

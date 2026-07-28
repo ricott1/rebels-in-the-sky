@@ -259,7 +259,7 @@ impl MyTeamPanel {
         match own_team.current_location {
             TeamLocation::OnPlanet { planet_id } => {
                 let planet = world.planets.get_or_err(&planet_id)?;
-                render_market_on_planet(frame, world, own_team, planet, split[1])?;
+                Self::render_market_on_planet(frame, world, own_team, planet, split[1])?;
             }
             TeamLocation::Travelling { .. } => {
                 frame.render_widget(default_block().title("Market"), area);
@@ -284,6 +284,195 @@ impl MyTeamPanel {
         Ok(())
     }
 
+    fn render_market_on_planet(
+        frame: &mut UiFrame,
+        world: &World,
+        own_team: &Team,
+        planet: &Planet,
+        area: Rect,
+    ) -> AppResult<()> {
+        let inner_area = area.inner(Margin {
+            horizontal: 2,
+            vertical: 1,
+        });
+
+        frame.render_widget(
+            default_block().title(format!("Market on {}", planet.name)),
+            area,
+        );
+
+        if let Some(cove) = own_team.space_cove.as_ref() {
+            if matches!(own_team.is_on_planet(), Some(id) if id == cove.planet_id)
+                && !cove.upgrades.contains(&SpaceCoveUpgradeTarget::Market)
+            {
+                frame.render_widget(
+                    Paragraph::new(vec![Line::from(
+                        "There is no market available on the cove yet.",
+                    )])
+                    .centered(),
+                    inner_area,
+                );
+                return Ok(());
+            }
+        }
+
+        if !planet.has_market(world.space_cove_on(planet.id)) {
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from("There is no market available on this planet."),
+                    Line::from("Try another planet with more population."),
+                ])
+                .centered(),
+                inner_area,
+            );
+            return Ok(());
+        }
+
+        let central_pad = (inner_area.width.saturating_sub(75)) / 2;
+        let button_split = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(3),
+        ])
+        .split(inner_area.inner(Margin::new(central_pad, 0)));
+
+        let layout = Layout::horizontal([
+            Constraint::Length(7),  // name
+            Constraint::Length(6),  // buy 1
+            Constraint::Length(6),  // buy 10
+            Constraint::Length(6),  // buy 100
+            Constraint::Length(6),  // sell 1
+            Constraint::Length(6),  // sell 10
+            Constraint::Length(6),  // sell 100
+            Constraint::Length(11), // price
+            Constraint::Min(0),     // have
+        ]);
+
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "              Buy               Sell         Prices     Cargo".to_string(),
+                UiStyle::HEADER.bold(),
+            )),
+            button_split[0],
+        );
+
+        let buy_ui_keys = [
+            ui_key::market::BUY_GOLD,
+            ui_key::market::BUY_SCRAPS,
+            ui_key::market::BUY_FUEL,
+            ui_key::market::BUY_RUM,
+        ];
+        let sell_ui_keys = [
+            ui_key::market::SELL_GOLD,
+            ui_key::market::SELL_SCRAPS,
+            ui_key::market::SELL_FUEL,
+            ui_key::market::SELL_RUM,
+        ];
+
+        for (button_split_idx, resource) in [
+            Resource::GOLD,
+            Resource::SCRAPS,
+            Resource::FUEL,
+            Resource::RUM,
+        ]
+        .iter()
+        .enumerate()
+        {
+            let resource_split = layout.split(button_split[button_split_idx + 1]);
+            let merchant_bonus = TeamBonus::Bargaining.current_team_bonus(world, &own_team.id)?;
+            let buy_unit_cost = planet.resource_buy_price(*resource, merchant_bonus);
+            let sell_unit_cost = planet.resource_sell_price(*resource, merchant_bonus);
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![Span::styled(
+                    format!("{:<6} ", resource.to_string()),
+                    resource.style(),
+                )])),
+                resource_split[0].inner(Margin::new(1, 1)),
+            );
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled(format!("{buy_unit_cost:>4}"), UiStyle::OK),
+                    Span::raw("/".to_string()),
+                    Span::styled(format!("{sell_unit_cost:<4}"), UiStyle::ERROR),
+                ])),
+                resource_split[7].inner(Margin::new(1, 1)),
+            );
+
+            frame.render_widget(
+                Paragraph::new(format!(
+                    "{:>4} {:<2} * {:>2} u/{:<2} = {:>4} u",
+                    own_team.resources.value(resource),
+                    resource.units(),
+                    resource.to_storing_space(),
+                    resource.units(),
+                    own_team.resources.value(&resource) * resource.to_storing_space()
+                )),
+                resource_split[8].inner(Margin::new(1, 1)),
+            );
+
+            let max_buy_amount = own_team.max_resource_buy_amount(*resource, buy_unit_cost);
+            for (idx, amount) in [1, 10, 100.min(max_buy_amount) as i32].iter().enumerate() {
+                if let Ok(btn) = trade_resource_button(
+                    world,
+                    *resource,
+                    *amount,
+                    buy_unit_cost,
+                    if idx == 0 {
+                        Some(buy_ui_keys[button_split_idx])
+                    } else {
+                        None
+                    },
+                    UiStyle::OK,
+                ) {
+                    frame.render_interactive_widget(btn, resource_split[idx + 1]);
+                }
+            }
+
+            let max_sell_amount = own_team.max_resource_sell_amount(*resource);
+            for (idx, amount) in [1, 10, 100.min(max_sell_amount) as i32].iter().enumerate() {
+                if let Ok(btn) = trade_resource_button(
+                    world,
+                    *resource,
+                    -*amount,
+                    sell_unit_cost,
+                    if idx == 0 {
+                        Some(sell_ui_keys[button_split_idx])
+                    } else {
+                        None
+                    },
+                    UiStyle::ERROR,
+                ) {
+                    frame.render_interactive_widget(btn, resource_split[idx + 4]);
+                }
+            }
+        }
+
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(format!("Treasury {}", format_satoshi(own_team.balance()))),
+                Line::from(get_fuel_spans(
+                    own_team.fuel(),
+                    own_team.fuel_capacity(),
+                    BARS_LENGTH,
+                )),
+                Line::from(get_storage_spans(
+                    &own_team.resources,
+                    own_team.spaceship.storage_capacity(),
+                    BARS_LENGTH,
+                )),
+            ]),
+            button_split[5].inner(Margin {
+                horizontal: 1,
+                vertical: 0,
+            }),
+        );
+
+        Ok(())
+    }
+
     fn render_planet_markets(
         &mut self,
         frame: &mut UiFrame,
@@ -291,12 +480,10 @@ impl MyTeamPanel {
         area: Rect,
     ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
-        let split = Layout::vertical([Constraint::Fill(1), Constraint::Length(6)]).split(area);
-        frame.render_widget(default_block().title("Planet Markets"), split[0]);
-        frame.render_widget(default_block().title("Cargo"), split[1]);
+        frame.render_widget(default_block().title("Planet Markets"), area);
 
         let top_split = Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)])
-            .split(split[0].inner(Margin::new(1, 1)));
+            .split(area.inner(Margin::new(1, 1)));
 
         let mut options = vec![];
         for id in self.planet_markets.iter() {
@@ -357,58 +544,6 @@ impl MyTeamPanel {
         }
 
         frame.render_widget(Paragraph::new(lines), top_split[1]);
-
-        let lines = vec![
-            Line::from(vec![
-                Span::styled(
-                    format!("{:<6} ", Resource::GOLD.to_string()),
-                    Resource::GOLD.style(),
-                ),
-                Span::raw(format!(
-                    "{:>4} Kg * {:>2} u/Kg = {:>4} u",
-                    own_team.resources.value(&Resource::GOLD),
-                    Resource::GOLD.to_storing_space(),
-                    own_team.resources.value(&Resource::GOLD) * Resource::GOLD.to_storing_space()
-                )),
-            ]),
-            Line::from(vec![
-                Span::styled(
-                    format!("{:<6} ", Resource::SCRAPS.to_string()),
-                    Resource::SCRAPS.style(),
-                ),
-                Span::raw(format!(
-                    "{:>4} t  * {:>2} u/t  = {:>4} u",
-                    own_team.resources.value(&Resource::SCRAPS),
-                    Resource::SCRAPS.to_storing_space(),
-                    own_team.resources.value(&Resource::SCRAPS)
-                        * Resource::SCRAPS.to_storing_space()
-                )),
-            ]),
-            Line::from(vec![
-                Span::styled(
-                    format!("{:<6} ", Resource::RUM.to_string()),
-                    Resource::RUM.style(),
-                ),
-                Span::raw(format!(
-                    "{:>4} l  * {:>2} u/l  = {:>4} u",
-                    own_team.resources.value(&Resource::RUM),
-                    Resource::RUM.to_storing_space(),
-                    own_team.resources.value(&Resource::RUM) * Resource::RUM.to_storing_space()
-                )),
-            ]),
-            Line::from(vec![
-                Span::styled(
-                    format!("{:<6} ", Resource::FUEL.to_string()),
-                    Resource::FUEL.style(),
-                ),
-                Span::raw(format!(
-                    "{:>4} l",
-                    own_team.resources.value(&Resource::FUEL),
-                )),
-            ]),
-        ];
-
-        frame.render_widget(Paragraph::new(lines), split[1].inner(Margin::new(1, 1)));
 
         Ok(())
     }
@@ -1884,14 +2019,15 @@ impl MyTeamPanel {
             let satisfaction = player.team_satisfaction().unwrap_or_default();
 
             let info_line = Line::from(vec![
-                Span::styled(
-                    Player::drunkenness_description(drunkenness),
-                    drunkenness_style,
-                ),
+                Span::styled(drunkenness_description(drunkenness), drunkenness_style),
                 Span::raw(" and "),
-                Span::styled(player.opinions.team_mood(), UiStyled::style(&satisfaction)),
+                Span::styled(
+                    player.opinions.own_team_opinion(),
+                    UiStyled::style(&satisfaction),
+                ),
             ]);
             vec![
+                Line::from(potential_description),
                 Line::from(format!(
                     "Joined the crew on {}",
                     player
@@ -1900,14 +2036,13 @@ impl MyTeamPanel {
                         .formatted_as_date(),
                 )),
                 info_line,
-                Line::from(potential_description),
                 Line::default(),
                 Line::from(Span::styled("Opinions", UiStyle::HEADER.bold())),
             ]
         };
 
         for text in player.opinions.describe_opinions() {
-            info_lines.push(Line::from(format!(" • {text}")));
+            info_lines.push(Line::from(format!("• {text}")));
         }
 
         frame.render_widget(

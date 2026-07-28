@@ -8,6 +8,7 @@ pub const LEFT_PANEL_WIDTH: u16 = 36;
 pub const IMG_FRAME_WIDTH: u16 = 80;
 pub const MIN_NAME_LENGTH: usize = 3;
 pub const MAX_NAME_LENGTH: usize = 12;
+pub const MAX_SPACE_COVE_NAME_LENGTH: usize = 16;
 
 pub const BARS_LENGTH: usize = 25;
 

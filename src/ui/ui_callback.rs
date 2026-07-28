@@ -295,6 +295,9 @@ pub enum UiCallback {
         name: String,
         filename: String,
     },
+    NameSpaceCove {
+        name: String,
+    },
     SetSpaceshipUpgrade {
         upgrade: Upgrade<SpaceshipUpgradeTarget>,
     },
@@ -410,7 +413,7 @@ impl UiCallback {
                 app.ui.player_panel.set_index(index);
 
                 app.ui.player_panel.locked_player_id = Some(locked_player_id);
-                app.ui.player_panel.selected_player_id = selected_player_id;
+                app.ui.player_panel.selected_player_id = Some(selected_player_id);
                 app.ui.switch_to(super::ui_screen::UiTab::Pirates);
             }
 
@@ -696,9 +699,9 @@ impl UiCallback {
 
                 let locked_id = app.ui.player_panel.locked_player_id;
                 let selected_id = app.ui.player_panel.selected_player_id;
-                app.ui.player_panel.locked_player_id = Some(selected_id);
+                app.ui.player_panel.locked_player_id = selected_id;
                 if let Some(player_id) = locked_id {
-                    app.ui.player_panel.selected_player_id = player_id;
+                    app.ui.player_panel.selected_player_id = Some(player_id);
                 }
 
                 return Ok(Some("Trade accepted".to_string()));
@@ -1098,6 +1101,23 @@ impl UiCallback {
         })
     }
 
+    fn name_space_cove(name: String) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let own_team_id = app.world.own_team_id;
+            let own_team = app.world.teams.get_mut_or_err(&own_team_id)?;
+            if let Some(cove) = own_team.space_cove.as_mut() {
+                cove.name = name.clone();
+            }
+            own_team.version += 1;
+
+            app.world.dirty = true;
+            app.world.dirty_network = true;
+            app.world.dirty_ui = true;
+            app.ui.close_popup();
+            Ok(None)
+        })
+    }
+
     fn set_spaceship_upgrade(upgrade: Upgrade<SpaceshipUpgradeTarget>) -> AppCallback {
         Box::new(move |app: &mut App| {
             let mut team = app.world.get_own_team()?.clone();
@@ -1211,21 +1231,28 @@ impl UiCallback {
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
             let message = app.world.upgrade_asteroid(asteroid_id, upgrade)?;
-            let links = if upgrade.target == PlanetUpgradeTarget::SpaceCove {
-                vec![("Space cove".to_string(), UiCallback::GoToSpaceCove)]
+
+            if upgrade.target == PlanetUpgradeTarget::SpaceCove {
+                let asteroid = app.world.planets.get_or_err(&asteroid_id)?;
+                let asteroid_name = asteroid.name.clone();
+                let filename = asteroid.filename.clone();
+                app.ui.push_popup(PopupMessage::SpaceCoveNameDialog {
+                    timestamp: Tick::now(),
+                    asteroid_name,
+                    filename,
+                });
             } else {
-                vec![(
-                    "Asteroid".to_string(),
-                    UiCallback::GoToAsteroids { from_popup: true },
-                )]
-            };
-            app.ui.push_popup(PopupMessage::Message {
-                message,
-                links,
-                level: log::Level::Info,
-                is_skippable: true,
-                timestamp: Tick::now(),
-            });
+                app.ui.push_popup(PopupMessage::Message {
+                    message,
+                    links: vec![(
+                        "Asteroid".to_string(),
+                        UiCallback::GoToAsteroids { from_popup: true },
+                    )],
+                    level: log::Level::Info,
+                    is_skippable: true,
+                    timestamp: Tick::now(),
+                });
+            }
             Ok(None)
         })
     }
@@ -1736,7 +1763,9 @@ impl UiCallback {
                 let own_team_id = app.world.own_team_id;
                 app.world
                     .hire_player_for_team(player_id, &own_team_id, Tick::now())?;
-                app.world.players_scouting.insert(*player_id, MAX_SKILL);
+                app.world
+                    .players_scouting
+                    .insert(*player_id, ScoutReport::new(*player_id, MAX_SKILL));
                 app.world.dirty_ui = true;
                 app.ui.player_panel.update(&app.world)?;
                 Ok(None)
@@ -2145,6 +2174,8 @@ impl UiCallback {
                 Self::name_and_accept_asteroid(name.clone(), filename.clone())(app)
             }
 
+            Self::NameSpaceCove { name } => Self::name_space_cove(name.clone())(app),
+
             Self::SetSpaceshipUpgrade { upgrade } => Self::set_spaceship_upgrade(*upgrade)(app),
 
             Self::UpgradeSpaceship { upgrade } => Self::upgrade_spaceship(*upgrade)(app),
@@ -2338,7 +2369,7 @@ mod test {
 
         assert!(own_team.resources.value(&Resource::GOLD) == 0);
         assert!(own_team.resources.value(&Resource::FUEL) == 100);
-        assert!(own_team.resources.value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE);
+        assert!(own_team.resources.value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE + 10_000);
 
         let own_team_resources = own_team.resources.clone();
 
@@ -2372,7 +2403,7 @@ mod test {
 
         assert!(player.current_durability() == 0);
         assert!(player.resources().value(&Resource::GOLD) == 10);
-        assert!(player.resources().value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE);
+        assert!(player.resources().value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE + 10_000);
         assert!(player.resources().value(&Resource::FUEL) == 100);
 
         println!(
@@ -2399,7 +2430,7 @@ mod test {
 
         println!("Collected {:#?}", new_resources);
         assert!(new_resources.value(&Resource::GOLD) == 0);
-        assert!(new_resources.value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE);
+        assert!(new_resources.value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE + 10_000);
         assert!(new_resources.value(&Resource::FUEL) == 0);
 
         Ok(())

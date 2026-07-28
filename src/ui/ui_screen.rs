@@ -689,17 +689,18 @@ impl UiScreen {
             ui_frame.render_interactive_widget_on_layer(close_button, button_split[1], 1);
         }
 
-        if let Err(err) = self.render_popup_messages(&mut ui_frame, screen_area) {
-            self.push_log_event(
-                Tick::now(),
-                None,
-                format!("Popup render error\n{err}"),
-                log::Level::Error,
-            );
-            log::error!("Popup render error\n{err}");
+        if !world.is_simulating() {
+            if let Err(err) = self.render_popup_messages(&mut ui_frame, screen_area) {
+                self.push_log_event(
+                    Tick::now(),
+                    None,
+                    format!("Popup render error\n{err}"),
+                    log::Level::Error,
+                );
+                log::error!("Popup render error\n{err}");
+            }
         }
         self.last_render = Instant::now();
-
         self.inner_registry = ui_frame.callback_registry().clone();
     }
 

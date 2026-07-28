@@ -136,7 +136,7 @@ impl Display for PlayerView {
 pub struct PlayerListPanel {
     pub index: Option<usize>,
     pub locked_player_id: Option<PlayerId>,
-    pub selected_player_id: PlayerId,
+    pub selected_player_id: Option<PlayerId>,
     player_widget_view: PlayerWidgetView,
     pub selected_team_id: Option<TeamId>,
     pub all_players: Vec<PlayerId>,
@@ -270,7 +270,10 @@ impl PlayerListPanel {
         ])
         .split(v_split[1]);
 
-        let player = world.players.get_or_err(&self.selected_player_id)?;
+        let Some(selected_player_id) = self.selected_player_id else {
+            return Ok(());
+        };
+        let player = world.players.get_or_err(&selected_player_id)?;
         let own_team = world.get_own_team()?;
 
         // Display open trade if the selected and lock player are the two being traded.
@@ -303,7 +306,14 @@ impl PlayerListPanel {
             frame,
             h_split[0],
         );
-        self.render_buttons(player, open_trade, frame, world, button_split[0])?;
+        self.render_buttons(
+            player,
+            selected_player_id,
+            open_trade,
+            frame,
+            world,
+            button_split[0],
+        )?;
 
         // If there is an open trade for the locked and selected players,
         // display a button to accept
@@ -320,7 +330,14 @@ impl PlayerListPanel {
                 frame,
                 h_split[1],
             );
-            self.render_buttons(locked_player, open_trade, frame, world, button_split[1])?;
+            self.render_buttons(
+                locked_player,
+                selected_player_id,
+                open_trade,
+                frame,
+                world,
+                button_split[1],
+            )?;
         }
 
         Ok(())
@@ -329,6 +346,7 @@ impl PlayerListPanel {
     fn render_buttons(
         &self,
         player: &Player,
+        selected_player_id: PlayerId,
         open_trade: Option<&Trade>,
         frame: &mut UiFrame,
         world: &World,
@@ -406,7 +424,7 @@ impl PlayerListPanel {
                 Button::new(
                     "Lock",
                     UiCallback::LockPlayerPanel {
-                        player_id: self.selected_player_id,
+                        player_id: selected_player_id,
                     },
                 )
                 .hover_text("Lock the player panel to keep the info while browsing".to_string())
@@ -440,7 +458,7 @@ impl PlayerListPanel {
         else if let Some(trade) = open_trade {
             let proposer_player = &trade.proposer_player;
             let target_player = &trade.target_player;
-            if player.id == self.selected_player_id {
+            if player.id == selected_player_id {
                 let proposer_team = world
                     .teams
                     .get_or_err(&proposer_player.team.expect("Player should have a team"))?;
@@ -490,7 +508,7 @@ impl PlayerListPanel {
         // add button to propose a trade.
         else if let Some(locked_player_id) = self.locked_player_id {
             //If player is selected and part of own team
-            if own_team.player_ids.contains(&player.id) && player.id == self.selected_player_id {
+            if own_team.player_ids.contains(&player.id) && player.id == selected_player_id {
                 let proposer_player = world.players.get_or_err(&player.id)?;
                 let target_player = world.players.get_or_err(&locked_player_id)?;
                 if let Some(target_team_id) = target_player.team {
@@ -592,8 +610,11 @@ impl Screen for PlayerListPanel {
             }
 
             if index < self.players.len() && !self.players.is_empty() {
-                self.selected_player_id = self.players[index];
-                self.selected_team_id = world.players.get_or_err(&self.selected_player_id)?.team;
+                self.selected_player_id = Some(self.players[index]);
+                self.selected_team_id = world.players.get_or_err(&self.players[index])?.team;
+            } else {
+                self.selected_player_id = None;
+                self.selected_team_id = None;
             }
         } else if !self.players.is_empty() {
             self.set_index(0);
@@ -637,10 +658,10 @@ impl Screen for PlayerListPanel {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
             ui_key::GO_TO_TEAM => {
-                if self.selected_team_id.is_some() {
-                    return Some(UiCallback::GoToPlayerTeam {
-                        player_id: self.selected_player_id,
-                    });
+                if let Some(player_id) = self.selected_player_id {
+                    if self.selected_team_id.is_some() {
+                        return Some(UiCallback::GoToPlayerTeam { player_id });
+                    }
                 }
             }
             ui_key::CYCLE_VIEW => {
