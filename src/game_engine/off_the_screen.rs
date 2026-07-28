@@ -2,7 +2,7 @@ use super::{action::*, constants::*, game::Game, types::*};
 use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     skill::GameSkill,
-    GamePosition, PlayerOpinion, PlayerOpinionMapDescription,
+    GamePosition,
 };
 use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
@@ -52,11 +52,8 @@ pub(crate) fn execute(
 
                 // Opinion on population affects probability.
                 for (idx, target) in attacking_players_array.iter().enumerate() {
-                    let population = target.info.population;
                     base[idx] *= 1.0
-                        + playmaker
-                            .opinions
-                            .modifier(PlayerOpinion::Populations { population })
+                        + playmaker.population_opinion_modifier(target.info.population);
                 }
 
                 base

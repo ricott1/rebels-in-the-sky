@@ -76,7 +76,6 @@ pub struct Player {
     pub drunkenness: Skill,
     pub historical_stats: GameStats,
     build_data: PlayerBuildData, // Intermediate state used to build the random player. Not serialized
-    pub scouted_skills: [usize; 20], // Cached order of scouted skill. Not serialized
     pub opinions: PlayerOpinionMap,
 }
 
@@ -110,7 +109,6 @@ impl Default for Player {
             drunkenness: Skill::default(),
             historical_stats: GameStats::default(),
             build_data: PlayerBuildData::default(),
-            scouted_skills: [usize::default(); 20],
             opinions: PlayerOpinionMap::default(),
         }
     }
@@ -496,11 +494,8 @@ impl<'de> Deserialize<'de> for Player {
                     drunkenness,
                     historical_stats,
                     build_data: PlayerBuildData::default(),
-                    scouted_skills: [usize::default(); 20],
                     opinions,
                 };
-
-                player.set_initial_scouted_skill();
 
                 player.athletics = Athletics {
                     quickness: compact_skills[0],
@@ -639,7 +634,6 @@ impl Player {
 
         self.set_initial_game_position_fitness(Some(rng));
         self.previous_game_position_fitness = self.game_position_fitness;
-        self.set_initial_scouted_skill();
         self.set_initial_opinions();
 
         let extra_potential = {
@@ -712,16 +706,6 @@ impl Player {
         self
     }
 
-    fn set_initial_scouted_skill(&mut self) {
-        let rng = &mut ChaCha8Rng::seed_from_u64(self.id.as_u64_pair().0);
-        let mut scouted_skills: [usize; 20] = (0..20_usize)
-            .collect_vec()
-            .try_into()
-            .expect("Should convert");
-        scouted_skills.shuffle(rng);
-        self.scouted_skills = scouted_skills;
-    }
-
     pub fn set_initial_opinions(&mut self) {
         const MAX_INITIAL_OPINIONS: usize = 4;
         let rng = &mut ChaCha8Rng::seed_from_u64(self.id.as_u64_pair().1);
@@ -729,10 +713,12 @@ impl Player {
         let mut candidates: Vec<(PlayerOpinion, Skill)> = vec![];
 
         for population in Population::all_peoples() {
+            if matches!(population, Population::Human { .. }) {
+                continue;
+            }
             let value = if population == self.info.population {
                 match self.info.population {
                     Population::Galdari => MAX_SKILL,
-                    Population::Human { .. } => OPINION_NEUTRAL_VALUE,
                     _ => 18.0,
                 }
             } else if self.info.population == Population::Galdari {
@@ -741,6 +727,13 @@ impl Player {
                 continue;
             };
             candidates.push((PlayerOpinion::Populations { population }, value));
+        }
+
+        if self.info.population == Population::Galdari {
+            candidates.push((
+                PlayerOpinion::AllHumans,
+                OPINION_NEUTRAL_VALUE - rng.random_range(0.0..4.0),
+            ));
         }
 
         let std_dev = 3.0;
@@ -779,6 +772,15 @@ impl Player {
             self.opinions
                 .insert(PlayerOpinion::OwnTeam, (Tick::now(), OPINION_NEUTRAL_VALUE));
         }
+    }
+
+    pub fn population_opinion_modifier(&self, target: Population) -> f32 {
+        let opinion = if matches!(target, Population::Human { .. }) {
+            PlayerOpinion::AllHumans
+        } else {
+            PlayerOpinion::Populations { population: target }
+        };
+        self.opinions.modifier(opinion)
     }
 
     fn set_initial_game_position_fitness(&mut self, rng: Option<&mut ChaCha8Rng>) {
@@ -856,21 +858,6 @@ impl Player {
             .collect::<Vec<Skill>>()
             .try_into()
             .expect("There should be 20 skills")
-    }
-
-    pub fn is_skill_scouted(&self, scouting: Skill, skill_index: usize) -> bool {
-        const SKILLS_REVEALED_PER_SCOUTING: f32 = 1.25;
-        let known = ((SKILLS_REVEALED_PER_SCOUTING * scouting).bound() as usize)
-            .min(self.scouted_skills.len());
-        self.scouted_skills[..known].contains(&skill_index)
-    }
-
-    pub fn is_role_scouted(&self, scouting: Skill, role_value: Skill) -> bool {
-        scouting >= MAX_SKILL - role_value
-    }
-
-    pub fn is_special_trait_scouted(&self, scouting: Skill) -> bool {
-        scouting >= 0.5 * MAX_SKILL
     }
 
     // If the player is currently playing a game, returns the in-game copy of the player,
@@ -1007,18 +994,6 @@ impl Player {
         self.add_morale(MORALE_GOLD_BONUS);
     }
 
-    pub fn drunkenness_description(drunkenness: Skill) -> &'static str {
-        match drunkenness {
-            x if x < MIN_SKILL => "completely drunk",
-            x if x == MIN_SKILL => "completely sober",
-            x if x < 4.0 => "dignifiedly tipsy",
-            x if x < 8.0 => "respectably buzzed",
-            x if x < 12.0 => "pretty merry",
-            x if x < 16.0 => "undignifiedly inebriated",
-            _ => "sloshed",
-        }
-    }
-
     pub fn team_satisfaction(&self) -> Option<Skill> {
         self.opinions
             .get(&PlayerOpinion::OwnTeam)
@@ -1030,7 +1005,7 @@ impl Player {
         if matches!(self.special_trait, Some(Trait::Crumiro)) {
             return 0;
         }
-        const SALARY_MOD: f32 = 0.04;
+        const SALARY_MOD: f32 = 0.025;
         let opinion_modifier = 1.0 + self.opinions.modifier(PlayerOpinion::Gold);
         let avg_skill_modifier = (1.0 + self.average_skill() / MAX_SKILL).powf(1.35);
         let reputation_modifier = 1.0 + self.reputation / MAX_SKILL;

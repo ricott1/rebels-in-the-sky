@@ -3,7 +3,7 @@ use crate::core::{
     constants::{MoraleModifier, TirednessCost},
     player::Player,
     skill::GameSkill,
-    GamePosition, PlayerOpinion, PlayerOpinionMapDescription,
+    GamePosition,
 };
 use rand::{seq::IndexedRandom, RngExt};
 use rand_chacha::ChaCha8Rng;
@@ -176,16 +176,12 @@ pub(crate) fn execute(
 
                     // Opinion on population affects probability.
                     for (idx, target) in attacking_players_array.iter().enumerate() {
-                        let population = target.info.population;
                         base[idx] *= 1.0
-                            + poster
-                                .opinions
-                                .modifier(PlayerOpinion::Populations { population })
+                            + poster.population_opinion_modifier(target.info.population);
                     }
 
                     base
                 };
-                //FIXME: hook up player opinion on populations
                 let target_idx = sample_player_index(action_rng, weights, attacking_players_array)
                     .expect("There should be another ok player");
                 let target: &Player = attacking_players_array[target_idx];

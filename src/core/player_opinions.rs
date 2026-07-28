@@ -1,5 +1,5 @@
 use crate::{
-    core::{Population, Region, Skill, MAX_SKILL, OPINION_NEUTRAL_VALUE},
+    core::{Population, Skill, MAX_SKILL, OPINION_NEUTRAL_VALUE},
     types::{TeamId, Tick},
 };
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ fn join_and(items: &[String]) -> String {
 
 pub trait PlayerOpinionMapDescription {
     fn modifier(&self, opinion: PlayerOpinion) -> f32;
-    fn team_mood(&self) -> &'static str;
+    fn own_team_opinion(&self) -> &'static str;
     fn describe_opinions(&self) -> Vec<String>;
 }
 
@@ -35,7 +35,7 @@ impl PlayerOpinionMapDescription for PlayerOpinionMap {
         }
     }
 
-    fn team_mood(&self) -> &'static str {
+    fn own_team_opinion(&self) -> &'static str {
         let value = self
             .get(&PlayerOpinion::OwnTeam)
             .map(|(_, value)| *value)
@@ -77,21 +77,20 @@ impl PlayerOpinionMapDescription for PlayerOpinionMap {
         };
 
         let mut objects: [Vec<String>; 4] = [vec![], vec![], vec![], vec![]];
-        let mut human_regions: [Vec<Region>; 4] = [vec![], vec![], vec![], vec![]];
 
         for (opinion, (_, value)) in self.iter() {
             let Some(i) = verb_index(*value) else {
                 continue;
             };
             match opinion {
+                PlayerOpinion::AllHumans => objects[i].push("Humans".to_string()),
                 PlayerOpinion::Drinking => objects[i].push("drinking".to_string()),
                 PlayerOpinion::Games => objects[i].push("games".to_string()),
                 PlayerOpinion::Gold => objects[i].push("gold".to_string()),
                 PlayerOpinion::OwnTeam => {}
-                PlayerOpinion::Populations { population } => match population {
-                    Population::Human { region } => human_regions[i].push(*region),
-                    other => objects[i].push(other.to_string()),
-                },
+                PlayerOpinion::Populations { population } => {
+                    objects[i].push(population.to_string())
+                }
                 PlayerOpinion::Space => objects[i].push("space".to_string()),
                 PlayerOpinion::Team { .. } => objects[i].push("a former crew".to_string()),
             }
@@ -99,12 +98,6 @@ impl PlayerOpinionMapDescription for PlayerOpinionMap {
 
         let mut lines = vec![];
         for i in 0..VERBS.len() {
-            if !human_regions[i].is_empty() {
-                let mut regions: Vec<String> =
-                    human_regions[i].iter().map(|r| r.to_string()).collect();
-                regions.sort();
-                objects[i].push(format!("Humans from {}", join_and(&regions)));
-            }
             objects[i].sort();
             if !objects[i].is_empty() {
                 lines.push(format!("{} {}", VERBS[i], join_and(&objects[i])));
@@ -116,6 +109,7 @@ impl PlayerOpinionMapDescription for PlayerOpinionMap {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Display, PartialEq, Eq, Hash)]
 pub enum PlayerOpinion {
+    AllHumans,
     Drinking,
     Games,
     Gold,
