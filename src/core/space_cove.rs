@@ -78,6 +78,8 @@ fn default_upgrades() -> HashSet<SpaceCoveUpgradeTarget> {
 pub struct SpaceCove {
     state: SpaceCoveState,
     pub planet_id: PlanetId,
+    #[serde(default)]
+    pub name: String,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub pending_upgrade: Option<Upgrade<SpaceCoveUpgradeTarget>>,
@@ -97,6 +99,7 @@ impl SpaceCove {
         Self {
             state: SpaceCoveState::UnderConstruction,
             planet_id,
+            name: String::new(),
             pending_upgrade: None,
             upgrades: HashSet::default(),
             tavern: None,

@@ -164,6 +164,12 @@ impl Team {
         self
     }
 
+    pub fn with_balance(mut self, amount: u32) -> AppResult<Self> {
+        self.add_resource(Resource::SATOSHI, amount)?;
+
+        Ok(self)
+    }
+
     pub fn add_sent_challenge(&mut self, challenge: Challenge) {
         self.sent_challenges
             .insert(challenge.away_team_in_game.team_id, challenge);

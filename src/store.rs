@@ -2,9 +2,10 @@
 use crate::network::network_store_data::NetworkStoreData;
 use crate::{
     app_version,
-    core::{world::World, MAX_SKILL},
+    core::{world::World, ScoutReport, MAX_SKILL},
     game_engine::{game::Game, Tournament, TournamentId},
     types::*,
+    ui::{PopupMessage, UiCallback},
 };
 use anyhow::anyhow;
 use directories;
@@ -153,10 +154,12 @@ pub fn save_world(
     Ok(())
 }
 
-pub fn load_world(store_prefix: &str) -> AppResult<World> {
+pub fn load_world(store_prefix: &str) -> AppResult<(World, Vec<UiCallback>)> {
     let mut w = load_from_json::<World>(&prefixed_world_filename(store_prefix))?;
     let w_version = w.app_version;
     w.app_version = app_version();
+
+    let mut callbacks = vec![];
 
     // Migration passes
     if w_version < [1, 8, 0] {
@@ -164,9 +167,11 @@ pub fn load_world(store_prefix: &str) -> AppResult<World> {
         if w.players_scouting.is_empty() {
             for (id, player) in &w.players {
                 if player.team == Some(w.own_team_id) {
-                    w.players_scouting.insert(*id, MAX_SKILL);
+                    w.players_scouting
+                        .insert(*id, ScoutReport::new(*id, MAX_SKILL));
                 } else {
-                    w.players_scouting.insert(*id, player.reputation);
+                    w.players_scouting
+                        .insert(*id, ScoutReport::new(*id, player.reputation));
                 }
             }
         }
@@ -185,9 +190,45 @@ pub fn load_world(store_prefix: &str) -> AppResult<World> {
                 player.set_initial_opinions();
             }
         }
+
+        // 4. prompt to name a pre-existing space cove (naming didn't exist before 1.8.0)
+        let cove_planet = w
+            .get_own_team()
+            .ok()
+            .and_then(|team| team.space_cove.as_ref())
+            .filter(|cove| cove.name.is_empty())
+            .and_then(|cove| w.planets.get(&cove.planet_id));
+        if let Some(planet) = cove_planet {
+            callbacks.push(UiCallback::PushUiPopup {
+                popup_message: PopupMessage::SpaceCoveNameDialog {
+                    timestamp: Tick::now(),
+                    asteroid_name: planet.name.clone(),
+                    filename: planet.filename.clone(),
+                },
+            });
+        }
     }
 
-    Ok(w)
+    // Backfill team creation time (field added in 1.5.0) from the save file metadata.
+    if w_version < [1, 5, 0] {
+        if let Ok(own_team) = w.get_own_team_mut() {
+            if own_team.creation_time == Tick::default() {
+                let mut creation_time = Tick::now();
+                if let Ok(data) = world_file_data(store_prefix) {
+                    if let Ok(time) = data.created() {
+                        creation_time = Tick::from_system_time(time);
+                    }
+                }
+                own_team.creation_time = creation_time;
+            }
+        }
+    }
+
+    for report in w.players_scouting.values_mut() {
+        report.rebuild_caches();
+    }
+
+    Ok((w, callbacks))
 }
 
 pub fn save_game(game: &Game) -> AppResult<()> {

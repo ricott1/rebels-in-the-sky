@@ -6,7 +6,7 @@ use crate::network::handler::NetworkHandler;
 use crate::{
     core::*,
     crossterm_event_handler,
-    store::{get_world_size, load_world, reset_store, save_world, world_file_data},
+    store::{get_world_size, load_world, reset_store, save_world},
     tick_event_handler,
     tui::{TerminalEvent, Tui, WriterProxy},
     types::{AppResult, SystemTimeTick, Tick},
@@ -98,6 +98,7 @@ impl App {
         }
 
         const SIMULATION_UPDATE_INTERVAL: Tick = 250 * MILLISECONDS;
+
         while self.world.is_simulating() {
             // Give a visual feedback by drawing.
             let now = Tick::now();
@@ -114,30 +115,29 @@ impl App {
                 self.draw(tui).await;
             }
 
-            let cb = match self
+            match self
                 .world
                 .handle_slow_tick_events(self.world.last_tick_short_interval + TickInterval::SHORT)
             {
-                Ok(callbacks) => callbacks,
-                Err(e) => panic!("Failed to simulate world: {e}"),
-            };
-            for callback in cb.iter() {
-                match callback.call(self) {
-                    Ok(Some(message)) => {
-                        self.ui.push_popup(PopupMessage::Message {
-                            message,
-                            links: vec![],
-                            level: log::Level::Info,
-                            is_skippable: true,
-                            timestamp: Tick::now(),
-                        });
-                    }
-                    Ok(None) => {}
-                    Err(e) => {
-                        panic!("Failed to simulate world: {e}");
+                Ok(callbacks) => {
+                    for callback in callbacks.iter() {
+                        match callback.call(self) {
+                            Ok(Some(message)) => self.ui.push_popup(PopupMessage::Message {
+                                message,
+                                links: vec![],
+                                level: log::Level::Info,
+                                is_skippable: true,
+                                timestamp: self.world.last_tick_short_interval,
+                            }),
+                            Ok(None) => {}
+                            Err(e) => {
+                                panic!("Failed to simulate world: {e}");
+                            }
+                        }
                     }
                 }
-            }
+                Err(e) => panic!("Failed to simulate world: {e}"),
+            };
         }
 
         self.world.serialized_size =
@@ -359,44 +359,33 @@ impl App {
 
     pub fn continue_game(&mut self) {
         // Try to load an existing world.
-        match load_world(self.args.store_prefix()) {
-            Ok(mut w) => {
-                w.dirty_network = true;
-                w.dirty_ui = true;
-                self.world = w;
-
-                if self.args.reset_network_peers {
-                    self.world.reset_network_store_peers();
-                } else {
-                    let data = &self.world.network_store_data;
-                    self.ui
-                        .swarm_panel
-                        .update_team_ranking(&data.get_top_team_ranking());
-
-                    self.ui
-                        .swarm_panel
-                        .update_player_ranking(&data.get_top_player_ranking());
-
-                    self.ui.push_chat_history(&data.get_recent_chat_history());
-                }
-            }
+        let (mut w, pending_callbacks) = match load_world(self.args.store_prefix()) {
+            Ok(res) => res,
             Err(e) => panic!("Failed to load world: {e}"),
+        };
+        w.dirty_network = true;
+        w.dirty_ui = true;
+        self.world = w;
+
+        if self.args.reset_network_peers {
+            self.world.reset_network_store_peers();
+        } else {
+            let data = &self.world.network_store_data;
+            self.ui
+                .swarm_panel
+                .update_team_ranking(&data.get_top_team_ranking());
+
+            self.ui
+                .swarm_panel
+                .update_player_ranking(&data.get_top_player_ranking());
+
+            self.ui.push_chat_history(&data.get_recent_chat_history());
         }
 
-        let own_team = self
-            .world
-            .get_own_team_mut()
-            .expect("Loaded world should have an own team.");
-
-        if own_team.creation_time == Tick::default() {
-            let mut creation_time = Tick::now();
-            if let Ok(data) = world_file_data(self.args.store_prefix()) {
-                if let Ok(time) = data.created() {
-                    creation_time = Tick::from_system_time(time);
-                }
-            }
-            own_team.creation_time = creation_time;
+        for callback in pending_callbacks {
+            let _ = callback.call(self);
         }
+
         self.state = AppState::Simulating;
     }
 

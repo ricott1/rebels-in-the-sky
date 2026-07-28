@@ -26,6 +26,7 @@ use strum_macros::{Display, EnumIter};
 
 const TRADE_DELTA_SCARCITY: f32 = 3.25;
 const TRADE_DELTA_BUY_SELL: f32 = 0.05;
+const TRADE_DELTA_BUY_SELL_ASTEROID: f32 = 0.125;
 const RESOURCE_PRICE_REFRESH_RATE_MILLIS: Tick = 2 * HOURS;
 
 fn deserialize_upgrades<'de, D>(deserializer: D) -> Result<HashSet<PlanetUpgradeTarget>, D::Error>
@@ -102,11 +103,18 @@ pub struct Planet {
 
 impl Planet {
     fn price_delta(&self, merchant_bonus: f32) -> f32 {
-        (TRADE_DELTA_BUY_SELL + 1.0 / (10.0 + self.total_population() as f32)) / merchant_bonus
+        if self.planet_type == PlanetType::Asteroid {
+            (TRADE_DELTA_BUY_SELL_ASTEROID + 1.0 / (10.0 + self.total_population() as f32))
+                / merchant_bonus
+        } else {
+            (TRADE_DELTA_BUY_SELL + 1.0 / (10.0 + self.total_population() as f32)) / merchant_bonus
+        }
     }
+
     fn resource_price(&self, resource: Resource) -> f32 {
         // Resource price follows a hyperbolic tangent curve
-        let relative_amount = (self.resources.value(&resource) as f32).bound() / MAX_SKILL;
+        let relative_amount =
+            ((self.resources.value(&resource) as f32).bound() / MAX_SKILL).powf(2.0);
         let amount_modifier =
             relative_amount / TRADE_DELTA_SCARCITY + (1.0 - relative_amount) * TRADE_DELTA_SCARCITY;
 

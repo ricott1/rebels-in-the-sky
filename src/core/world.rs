@@ -9,11 +9,11 @@ use super::skill::{GameSkill, MAX_SKILL};
 use super::spaceship::Spaceship;
 use super::team::Team;
 use super::types::{PlayerLocation, TeamBonus, TeamLocation};
-use super::utils::{is_default, PLANET_DATA, TEAM_DATA};
+use super::utils::{is_default, PLANET_DATA};
 use crate::core::{
     AutonomousStrategy, GameResult, Honour, PlanetUpgradeTarget, PlayerOpinion,
-    PlayerOpinionMapDescription, Rated, RatedPlayers, Skill, SpaceCove, SpaceCoveUpgradeTarget,
-    Tavern, TournamentRegistrationState, Upgrade, MIN_SKILL,
+    PlayerOpinionMapDescription, Rated, RatedPlayers, ScoutReport, Skill, SpaceCove,
+    SpaceCoveUpgradeTarget, Tavern, TournamentRegistrationState, Upgrade, MIN_SKILL,
 };
 use crate::game_engine::game::{Game, GameSummary};
 use crate::game_engine::tactic::Tactic;
@@ -26,7 +26,7 @@ use crate::network::network_store_data::NetworkStoreData;
 use crate::network::types::{NetworkGame, NetworkTeam};
 use crate::space_adventure::ControllableSpaceship;
 use crate::space_adventure::SpaceAdventure;
-use crate::store::{save_game, save_tournament};
+use crate::store::{save_game, save_tournament, ASSETS_DIR};
 use crate::ui::{PopupMessage, UiCallback};
 use crate::{app_version, types::*};
 use anyhow::anyhow;
@@ -79,7 +79,7 @@ pub struct World {
     pub players: PlayerMap,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub players_scouting: HashMap<PlayerId, Skill>,
+    pub players_scouting: HashMap<PlayerId, ScoutReport>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub planets: PlanetMap,
@@ -110,8 +110,7 @@ pub struct World {
 impl World {
     pub fn new(seed: Option<u64>) -> Self {
         let mut planets = HashMap::new();
-        let data_planets: Vec<Planet> = PLANET_DATA.iter().cloned().collect();
-        for planet in data_planets.iter() {
+        for planet in PLANET_DATA.iter() {
             planets.insert(planet.id, planet.clone());
         }
 
@@ -176,8 +175,18 @@ impl World {
     }
 
     pub fn generate_local_world(&mut self, rng: &mut ChaCha8Rng) -> AppResult<()> {
-        let mut team_data = TEAM_DATA.clone();
-        team_data.shuffle(rng);
+        let team_data = {
+            let file = ASSETS_DIR
+                .get_file("data/teams_data.json")
+                .expect("Could not find teams_data.json");
+            let data = file
+                .contents_utf8()
+                .expect("Could not read teams_data.json");
+            let mut data: Vec<(String, String)> = serde_json::from_str(data)
+                .unwrap_or_else(|e| panic!("Could not parse teams_data.json: {e}"));
+            data.shuffle(rng);
+            data
+        };
 
         let home_planet_ids = self
             .planets
@@ -186,11 +195,11 @@ impl World {
             .map(|p| p.id)
             .collect::<Vec<PlanetId>>();
 
-        for idx in 0..team_data.len() {
-            let (team_name, ship_name) = team_data[idx].clone();
-            // Assign 2 teams to each planet
-            let home_planet_id = home_planet_ids[(idx / 2) % home_planet_ids.len()];
+        let mut planet_idx = 0;
+        for (team_name, ship_name) in team_data {
+            let home_planet_id = home_planet_ids[planet_idx % home_planet_ids.len()];
             self.generate_random_team(rng, home_planet_id, team_name, ship_name)?;
+            planet_idx += 1;
         }
         Ok(())
     }
@@ -205,7 +214,8 @@ impl World {
         let team = Team::random(Some(rng))
             .with_name(team_name)
             .with_spaceship_name(ship_name)
-            .with_home_planet(home_planet_id);
+            .with_home_planet(home_planet_id)
+            .with_balance(10_000)?;
         let team_id = team.id;
 
         let mut planet = self.planets.get_or_err(&team.home_planet_id)?.clone();
@@ -346,7 +356,10 @@ impl World {
         let player_id = player.id;
         self.players_scouting.insert(
             player.id,
-            (player.reputation + extra_scouting.unwrap_or_default()).bound(),
+            ScoutReport::new(
+                player.id,
+                (player.reputation + extra_scouting.unwrap_or_default()).bound(),
+            ),
         );
         self.players.insert(player.id, player);
 
@@ -1429,8 +1442,8 @@ impl World {
             }
             self.players_scouting
                 .entry(player.id)
-                .and_modify(|value| *value = (*value).max(player.reputation).bound())
-                .or_insert(player.reputation);
+                .and_modify(|report| report.raise_scouting_to(player.reputation))
+                .or_insert_with(|| ScoutReport::new(player.id, player.reputation));
             self.players.insert(player.id, player);
         }
 
@@ -1642,9 +1655,6 @@ impl World {
         let is_simulating = self.is_simulating();
 
         if current_tick >= self.last_tick_medium_interval + TickInterval::MEDIUM {
-            for cb in self.tick_pirates_drinking()? {
-                callbacks.push(cb);
-            }
             self.tick_tiredness_recovery()?;
 
             for cb in self.tick_player_leaving_team_for_low_satisfaction(current_tick)? {
@@ -1663,6 +1673,10 @@ impl World {
                 .len();
             if num_local_games < AUTO_GENERATE_GAMES_NUMBER {
                 self.generate_random_games(AUTO_GENERATE_GAMES_NUMBER - num_local_games)?;
+            }
+
+            for cb in self.tick_pirates_drinking()? {
+                callbacks.push(cb);
             }
 
             // Once every MEDIUM interval, set dirty_network flag,
@@ -1808,8 +1822,8 @@ impl World {
                     .bound();
                     self.players_scouting
                         .entry(player.id)
-                        .and_modify(|value| *value = (*value).max(player.reputation).bound())
-                        .or_insert(player.reputation);
+                        .and_modify(|report| report.raise_scouting_to(player.reputation))
+                        .or_insert_with(|| ScoutReport::new(player.id, player.reputation));
 
                     let mut training_bonus =
                         TeamBonus::Training.current_team_bonus(self, &team.team_id)?;
@@ -1865,8 +1879,10 @@ impl World {
                 for (&player_id, player) in scouted_players.iter() {
                     self.players_scouting
                         .entry(player_id)
-                        .and_modify(|value| *value = (*value + increase).bound())
-                        .or_insert((player.reputation + increase).bound());
+                        .and_modify(|report| report.add_scouting(increase))
+                        .or_insert_with(|| {
+                            ScoutReport::new(player_id, (player.reputation + increase).bound())
+                        });
                 }
 
                 own_team_game_notification = Some(UiCallback::PushUiPopup {

@@ -20,7 +20,16 @@ use strum::{Display, FromRepr};
 use strum_macros::EnumIter;
 
 #[derive(
-    Debug, Default, PartialEq, Eq, Clone, Copy, Display, EnumIter, Serialize_repr, Deserialize_repr,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Display,
+    EnumIter,
+    Serialize_repr,
+    Deserialize_repr,
     Hash,
 )]
 #[repr(u8)]
