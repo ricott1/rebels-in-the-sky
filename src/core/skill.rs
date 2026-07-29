@@ -112,6 +112,7 @@ impl GameSkill for Skill {
 
 pub trait RatedPlayers {
     fn sort_by_rating(self) -> Self;
+    fn sort_by_salary(self) -> Self;
 }
 
 impl RatedPlayers for Vec<&Player> {
@@ -124,6 +125,22 @@ impl RatedPlayers for Vec<&Player> {
             } else {
                 b.rating()
                     .partial_cmp(&a.rating())
+                    .expect("Skill value should exist")
+            }
+        });
+
+        self
+    }
+
+    fn sort_by_salary(mut self) -> Self {
+        self.sort_by(|a, b| {
+            if a.salary() == b.salary() {
+                a.average_skill()
+                    .partial_cmp(&b.average_skill())
+                    .expect("Skill value should exist")
+            } else {
+                b.salary()
+                    .partial_cmp(&a.salary())
                     .expect("Skill value should exist")
             }
         });

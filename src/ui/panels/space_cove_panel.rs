@@ -554,7 +554,8 @@ impl SpaceCovePanel {
         ])
         .split(area);
 
-        let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
+        let bonus =
+            TeamBonus::Upgrades.current_team_bonus(&own_team.id, &world.teams, &world.players)?;
         let upgrade = Upgrade::new(*building, bonus);
         let pending_upgrade = cove.pending_upgrade.filter(|u| u.target == *building);
 

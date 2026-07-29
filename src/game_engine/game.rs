@@ -843,16 +843,23 @@ impl Game {
         self.ended_at.is_some()
     }
 
+    fn end(&mut self) {
+        self.ended_at = Some(self.starting_at + self.timer.as_tick());
+        self.home_team_mvps = Some(self.team_mvps(Possession::Home));
+        self.away_team_mvps = Some(self.team_mvps(Possession::Away));
+    }
+
     // Advance to the position implied by wall-clock time.
     pub fn catch_up(&mut self, current_tick: Tick) {
         let target = (current_tick.saturating_sub(self.starting_at) / TickInterval::SHORT)
             .min(u16::MAX as Tick) as u16;
         while self.timer.value < target && !self.has_ended() {
-            self.tick(current_tick);
+            self.tick();
         }
     }
 
-    pub fn tick(&mut self, current_tick: Tick) {
+    // FIXME: remove current_tick. end time is always deterministic
+    pub fn tick(&mut self) {
         if self.has_ended() {
             return;
         }
@@ -865,9 +872,7 @@ impl Game {
         let description_rng = &mut ChaCha8Rng::from_seed(seed);
 
         if self.timer.has_ended() {
-            self.ended_at = Some(current_tick);
-            self.home_team_mvps = Some(self.team_mvps(Possession::Home));
-            self.away_team_mvps = Some(self.team_mvps(Possession::Away));
+            self.end();
 
             let description = match self.get_score() {
                 (home, away) if home > away => {
@@ -1001,9 +1006,7 @@ impl Game {
 
         match (home_knocked_out, away_knocked_out) {
             (true, true) => {
-                self.ended_at = Some(current_tick);
-                self.home_team_mvps = Some(self.team_mvps(Possession::Home));
-                self.away_team_mvps = Some(self.team_mvps(Possession::Away));
+                self.end();
                 self.winner = None;
 
                 let description = self.game_end_description(None);
@@ -1020,10 +1023,7 @@ impl Game {
                 });
             }
             (true, false) => {
-                self.ended_at = Some(current_tick);
-                self.home_team_mvps = Some(self.team_mvps(Possession::Home));
-                self.away_team_mvps = Some(self.team_mvps(Possession::Away));
-
+                self.end();
                 self.winner = Some(self.away_team_in_game.team_id);
                 let description = format!(
                     "The home team is completely wasted and lost! {}",
@@ -1040,10 +1040,7 @@ impl Game {
                 });
             }
             (false, true) => {
-                self.ended_at = Some(current_tick);
-                self.home_team_mvps = Some(self.team_mvps(Possession::Home));
-                self.away_team_mvps = Some(self.team_mvps(Possession::Away));
-
+                self.end();
                 self.winner = Some(self.home_team_in_game.team_id);
                 let description = format!(
                     "The away team is completely wasted and lost! {}",
@@ -1092,7 +1089,7 @@ mod tests {
     use super::Game;
     use crate::core::skill::MIN_SKILL;
     use crate::core::world::World;
-    use crate::core::{Rated, TickInterval};
+    use crate::core::{Rated, HOURS};
     use crate::game_engine::action::{ActionSituation, Advantage};
     use crate::game_engine::game::GameSummary;
     use crate::game_engine::types::{GameStatsMap, InGameDrinking, Possession, TeamInGame};
@@ -1117,10 +1114,8 @@ mod tests {
         }
 
         let mut game = Game::test(home_team_in_game, away_team_in_game);
-        let mut current_tick = game.starting_at;
         while !game.has_ended() {
-            game.tick(current_tick);
-            current_tick += TickInterval::SHORT;
+            game.tick();
         }
 
         let mut total_drunk_overall = 0;
@@ -1148,16 +1143,12 @@ mod tests {
     }
 
     #[test]
-    fn test_game_consistency() -> AppResult<()> {
+    fn test_game_consistency() {
         let home_team_in_game = TeamInGame::test();
         let away_team_in_game = TeamInGame::test();
         let mut game = Game::test(home_team_in_game, away_team_in_game);
 
-        let mut current_tick = game.starting_at;
-        while !game.has_ended() {
-            game.tick(current_tick);
-            current_tick += TickInterval::SHORT;
-        }
+        game.catch_up(Tick::now() + HOURS);
 
         let mut home_score = 0;
         let mut away_score = 0;
@@ -1171,14 +1162,12 @@ mod tests {
             }
             println!(
                 "+ {} -> {} - {} ",
-                action.score_change, home_score, away_score
+                action.score_change, action.home_score, action.away_score
             );
 
             home_score = action.home_score;
             away_score = action.away_score;
         }
-
-        Ok(())
     }
 
     #[test]
@@ -1206,7 +1195,7 @@ mod tests {
             let current_tick = Tick::now();
             for game in world.games.values_mut() {
                 if game.has_started(current_tick) && !game.has_ended() {
-                    game.tick(current_tick);
+                    game.tick();
                 }
 
                 if game.has_ended() {

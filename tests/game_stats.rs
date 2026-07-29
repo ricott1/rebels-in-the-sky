@@ -271,7 +271,7 @@ mod tests {
             // Simulate until finished
             while !game.has_ended() {
                 if game.has_started(current_tick) {
-                    game.tick(current_tick);
+                    game.tick();
                 }
                 current_tick += TickInterval::SHORT;
             }

@@ -587,11 +587,10 @@ mod tests {
             }
 
             let mut current_tick = tournament.registrations_closing_at;
-
             while !tournament.has_ended() {
                 for game in games.values_mut() {
                     if game.has_started(current_tick) {
-                        game.tick(current_tick);
+                        game.tick();
                     }
                 }
 
@@ -640,7 +639,7 @@ mod tests {
         let mut current_tick = 0;
         while !tournament.has_ended() {
             for game in games.values_mut() {
-                game.tick(current_tick);
+                game.tick();
             }
 
             let new_games =
@@ -805,7 +804,7 @@ mod tests {
 
         while !tournament.has_ended() {
             for game in games.values_mut() {
-                game.tick(current_tick);
+                game.tick();
             }
 
             // Call generate_next_games with current games + past_games
@@ -869,7 +868,7 @@ mod tests {
 
         while !tournament.has_ended() && !found_new_game {
             for game in games.values_mut() {
-                game.tick(current_tick);
+                game.tick();
             }
 
             // Collect starting_at for games that just ended (before generate_next_games consumes them)
@@ -938,7 +937,7 @@ mod tests {
         let mut current_tick: Tick = 0;
         while !tournament.has_ended() {
             for game in games.values_mut() {
-                game.tick(current_tick);
+                game.tick();
             }
 
             let new_games =
@@ -977,7 +976,7 @@ mod tests {
             let mut current_tick: Tick = 0;
             while !tournament.has_ended() {
                 for game in games.values_mut() {
-                    game.tick(current_tick);
+                    game.tick();
                 }
 
                 let new_games =
@@ -1015,7 +1014,7 @@ mod tests {
         let mut ticks = 0;
         while !game.has_ended() {
             if game.has_started(current_tick) {
-                game.tick(current_tick);
+                game.tick();
             }
             current_tick += TickInterval::SHORT;
             ticks += 1;
@@ -1158,7 +1157,7 @@ mod tests {
 
             for game in games.values_mut() {
                 if game.has_started(current_tick) {
-                    game.tick(current_tick);
+                    game.tick();
                 }
             }
 

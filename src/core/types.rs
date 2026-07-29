@@ -2,12 +2,13 @@ use super::{
     constants::{DEFAULT_PLANET_ID, KILOMETER},
     player::Player,
     skill::MAX_SKILL,
-    world::World,
 };
 use crate::{
     core::{CrewRole, GamePosition, GamePositionUtils, Rated, Resource, Trait, NUM_GAME_POSITIONS},
     image::color_map::SkinColorMap,
-    types::{AppResult, HashMapWithResult, PlanetId, SystemTimeTick, TeamId, Tick},
+    types::{
+        AppResult, HashMapWithResult, PlanetId, PlayerMap, SystemTimeTick, TeamId, TeamMap, Tick,
+    },
 };
 use rand::{seq::IteratorRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -635,12 +636,17 @@ impl TeamBonus {
         }
     }
 
-    pub fn current_team_bonus(&self, world: &World, team_id: &TeamId) -> AppResult<f32> {
-        let team = world.teams.get_or_err(team_id)?;
+    pub fn current_team_bonus(
+        &self,
+        team_id: &TeamId,
+        teams: &TeamMap,
+        players: &PlayerMap,
+    ) -> AppResult<f32> {
+        let team = teams.get_or_err(team_id)?;
         let player_id = team.get_crew_role(self.crew_role());
 
         let skill = if let Some(id) = player_id {
-            let player = world.players.get_or_err(&id)?;
+            let player = players.get_or_err(&id)?;
             self.as_skill(player)
         } else {
             0.0

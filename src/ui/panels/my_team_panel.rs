@@ -382,7 +382,11 @@ impl MyTeamPanel {
         .enumerate()
         {
             let resource_split = layout.split(button_split[button_split_idx + 1]);
-            let merchant_bonus = TeamBonus::Bargaining.current_team_bonus(world, &own_team.id)?;
+            let merchant_bonus = TeamBonus::Bargaining.current_team_bonus(
+                &own_team.id,
+                &world.teams,
+                &world.players,
+            )?;
             let buy_unit_cost = planet.resource_buy_price(*resource, merchant_bonus);
             let sell_unit_cost = planet.resource_sell_price(*resource, merchant_bonus);
             frame.render_widget(
@@ -509,7 +513,8 @@ impl MyTeamPanel {
         let planet_id =
             self.planet_markets[self.planet_index.unwrap_or_default() % self.planet_markets.len()];
         let planet = world.planets.get_or_err(&planet_id)?;
-        let merchant_bonus = TeamBonus::Bargaining.current_team_bonus(world, &own_team.id)?;
+        let merchant_bonus =
+            TeamBonus::Bargaining.current_team_bonus(&own_team.id, &world.teams, &world.players)?;
 
         let mut lines = vec![
             Line::default(),
@@ -1543,7 +1548,8 @@ impl MyTeamPanel {
 
         let available = available_upgrade_targets(&own_team.spaceship);
         let possible_upgrade_target = available[self.spaceship_upgrade_index % available.len()];
-        let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
+        let bonus =
+            TeamBonus::Upgrades.current_team_bonus(&own_team.id, &world.teams, &world.players)?;
         let possible_upgrade = possible_upgrade_target.map(|target| Upgrade::new(target, bonus));
 
         let lines = if let Some(target) = possible_upgrade_target {
@@ -1839,11 +1845,19 @@ impl MyTeamPanel {
                 .upgrades
                 .contains(&PlanetUpgradeTarget::TeleportationPad)
             {
-                let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
+                let bonus = TeamBonus::Upgrades.current_team_bonus(
+                    &own_team.id,
+                    &world.teams,
+                    &world.players,
+                )?;
                 Some(Upgrade::new(PlanetUpgradeTarget::TeleportationPad, bonus))
             } else if own_team.has_space_cove_on().is_none() {
                 // Build space cove button
-                let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
+                let bonus = TeamBonus::Upgrades.current_team_bonus(
+                    &own_team.id,
+                    &world.teams,
+                    &world.players,
+                )?;
                 Some(Upgrade::new(PlanetUpgradeTarget::SpaceCove, bonus))
             } else {
                 None

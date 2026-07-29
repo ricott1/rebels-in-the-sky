@@ -1005,10 +1005,10 @@ impl Player {
         if matches!(self.special_trait, Some(Trait::Crumiro)) {
             return 0;
         }
-        const SALARY_MOD: f32 = 0.025;
+        const SALARY_MOD: f32 = 0.02;
         let opinion_modifier = 1.0 + self.opinions.modifier(PlayerOpinion::Gold);
         let avg_skill_modifier = (1.0 + self.average_skill() / MAX_SKILL).powf(1.35);
-        let reputation_modifier = 1.0 + self.reputation / MAX_SKILL;
+        let reputation_modifier = (1.0 + self.reputation / MAX_SKILL).powf(1.25);
         (SALARY_MOD
             * self.hire_cost() as f32
             * opinion_modifier

@@ -1753,7 +1753,11 @@ impl UiCallback {
             }
             Self::BuildSpaceCove { asteroid_id } => {
                 let own_team = app.world.get_own_team()?;
-                let bonus = TeamBonus::Upgrades.current_team_bonus(&app.world, &own_team.id)?;
+                let bonus = TeamBonus::Upgrades.current_team_bonus(
+                    &own_team.id,
+                    &app.world.teams,
+                    &app.world.players,
+                )?;
                 let upgrade = Upgrade::new(PlanetUpgradeTarget::SpaceCove, bonus);
                 Self::set_asteroid_pending_upgrade(*asteroid_id, upgrade)(app)?;
                 app.ui.close_popup();

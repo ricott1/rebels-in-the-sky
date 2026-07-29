@@ -452,9 +452,18 @@ pub fn trade_resource_button<'a>(
     )
     .block(default_block().border_style(box_style));
 
-    let can_trade_resource = world
-        .get_own_team()?
-        .can_trade_resource(resource, amount, unit_cost);
+    let can_trade_resource = if amount == 0 {
+        Ok(())
+    } else if amount > 0 {
+        world
+            .get_own_team()?
+            .can_buy_resource(resource, amount as u32, unit_cost)
+    } else {
+        world
+            .get_own_team()?
+            .can_sell_resource(resource, amount.unsigned_abs())
+    };
+
     if let Err(e) = can_trade_resource {
         button.disable(Some(e.to_string()));
     }
@@ -849,10 +858,10 @@ pub fn render_spaceship_description(
 
     if full_info {
         let speed_bonus = TeamBonus::SpaceshipSpeed
-            .current_team_bonus(world, &team.id)
+            .current_team_bonus(&team.id, &world.teams, &world.players)
             .unwrap_or(1.0);
         let weapon_bonus = TeamBonus::Weapons
-            .current_team_bonus(world, &team.id)
+            .current_team_bonus(&team.id, &world.teams, &world.players)
             .unwrap_or(1.0);
         let widget = Paragraph::new(vec![
             Line::default(),

@@ -894,39 +894,42 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_trade_resource(
+    pub fn can_sell_resource(&self, resource: Resource, amount: u32) -> AppResult<()> {
+        // Selling. Check if enough resource
+        let current = self.resources.value(&resource);
+        if current < amount {
+            return Err(anyhow!("Not enough resource"));
+        }
+        Ok(())
+    }
+
+    pub fn can_buy_resource(
         &self,
         resource: Resource,
-        amount: i32,
+        amount: u32,
         unit_cost: u32,
     ) -> AppResult<()> {
         // Buying. Check if enough satoshi and if enough storing space
-        if amount > 0 {
-            let total_cost = amount as u32 * unit_cost;
-            if self.balance() < total_cost {
-                return Err(anyhow!("Not enough satoshi"));
-            }
 
-            if resource == Resource::FUEL {
-                let current = self.fuel();
-                let storage_capacity = self.spaceship.fuel_capacity();
-                if current + amount as u32 > storage_capacity {
-                    return Err(anyhow!("Not enough storage capacity"));
-                }
-            } else {
-                let current = self.resources.used_storage_capacity();
-                let storage_capacity = self.spaceship.storage_capacity();
-                if current + resource.to_storing_space() * amount as u32 > storage_capacity {
-                    return Err(anyhow!("Not enough storage capacity"));
-                }
+        let total_cost = amount as u32 * unit_cost;
+        if self.balance() < total_cost {
+            return Err(anyhow!("Not enough satoshi"));
+        }
+
+        if resource == Resource::FUEL {
+            let current = self.fuel();
+            let storage_capacity = self.spaceship.fuel_capacity();
+            if current + amount as u32 > storage_capacity {
+                return Err(anyhow!("Not enough storage capacity"));
             }
-        } else if amount < 0 {
-            // Selling. Check if enough resource
-            let current = self.resources.value(&resource);
-            if current < amount.unsigned_abs() {
-                return Err(anyhow!("Not enough resource"));
+        } else {
+            let current = self.resources.used_storage_capacity();
+            let storage_capacity = self.spaceship.storage_capacity();
+            if current + resource.to_storing_space() * amount as u32 > storage_capacity {
+                return Err(anyhow!("Not enough storage capacity"));
             }
         }
+
         Ok(())
     }
 
