@@ -107,7 +107,7 @@ impl PlayerOpinionMapDescription for PlayerOpinionMap {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Display, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Display, PartialEq, Eq, Hash)]
 pub enum PlayerOpinion {
     AllHumans,
     Drinking,

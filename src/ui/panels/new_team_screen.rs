@@ -598,7 +598,7 @@ impl NewTeamScreen {
         } else {
             0
         };
-        INITIAL_TEAM_BALANCE as i32 - hiring_costs - ship_cost as i32
+        INITIAL_OWN_TEAM_BALANCE as i32 - hiring_costs - ship_cost as i32
     }
 
     fn render_remaining_balance(&self, frame: &mut UiFrame, area: Rect) {
@@ -1193,7 +1193,7 @@ impl HelpPanel for NewTeamScreen {
         HelpContent {
             description: format!(
                 "Walk through team creation step by step:\n  - Pick a team name and a spaceship name.\n  - Choose your home planet.\n  - Select jersey colors and style.\n  - Pick your starting spaceship model.\n  - Hire your starting players.\n\nBudget: you start with {} sat. The 'Remaining balance' bar at the top tracks your spending:\neach spaceship and each hired player costs satoshi.",
-                INITIAL_TEAM_BALANCE
+                INITIAL_OWN_TEAM_BALANCE
             ),
             links: vec![],
             controls: vec![

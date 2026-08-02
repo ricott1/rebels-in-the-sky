@@ -932,7 +932,7 @@ impl Player {
     }
 
     pub fn satisfy_opinion(&mut self, opinion: PlayerOpinion) {
-        let Some((last_event, value)) = self.opinions.get_mut(&opinion) else {
+        let Some((last_event, _)) = self.opinions.get_mut(&opinion) else {
             return;
         };
         let now = Tick::now();
@@ -942,15 +942,13 @@ impl Player {
             / SATISFACTION_OPINION_RECOVERY_TIME as f32;
         *last_event = now;
 
-        let factor = 1.0
-            + SATISFACTION_OPINION_MODIFIER_WEIGHT * (*value - OPINION_NEUTRAL_VALUE) / MAX_SKILL;
+        let factor = 1.0 + SATISFACTION_OPINION_MODIFIER_WEIGHT * self.opinions.modifier(opinion);
         let bonus = if factor > 0.0 {
-            factor * recency
+            factor * recency * opinion.satisfaction_modifier()
         } else {
             factor
         };
-        let opinion_modifier = opinion.satisfaction_modifier();
-        self.add_team_satisfaction(SATISFACTION_PER_OPINION_EVENT * bonus * opinion_modifier);
+        self.add_team_satisfaction(SATISFACTION_PER_OPINION_EVENT * bonus);
     }
 
     /// Drink one liter of rum, increasing drunkenness and boosting morale.
@@ -1005,7 +1003,7 @@ impl Player {
         if matches!(self.special_trait, Some(Trait::Crumiro)) {
             return 0;
         }
-        const SALARY_MOD: f32 = 0.02;
+        const SALARY_MOD: f32 = 0.0175;
         let opinion_modifier = 1.0 + self.opinions.modifier(PlayerOpinion::Gold);
         let avg_skill_modifier = (1.0 + self.average_skill() / MAX_SKILL).powf(1.35);
         let reputation_modifier = (1.0 + self.reputation / MAX_SKILL).powf(1.25);

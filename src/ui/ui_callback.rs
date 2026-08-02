@@ -67,7 +67,10 @@ pub enum UiCallback {
     GoToPlanet {
         planet_id: PlanetId,
     },
-    GoToSpaceCove,
+    GoToOwnSpaceCove,
+    GoToSpaceCove {
+        team_id: TeamId,
+    },
     GoToHomePlanet {
         team_id: TeamId,
     },
@@ -488,10 +491,30 @@ impl UiCallback {
         })
     }
 
-    fn go_to_space_cove() -> AppCallback {
+    fn go_to_own_space_cove() -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.space_cove_panel.update(&app.world)?;
+            app.ui.space_cove_panel.set_view(SpaceCoveView::OwnCove);
             app.ui.switch_to(super::ui_screen::UiTab::SpaceCoves);
+
+            Ok(None)
+        })
+    }
+
+    fn go_to_space_cove(team_id: TeamId) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            if let Some(index) = app
+                .ui
+                .space_cove_panel
+                .all_coves
+                .iter()
+                .position(|&(x, _)| x == team_id)
+            {
+                app.ui.space_cove_panel.set_index(index);
+                app.ui.space_cove_panel.update(&app.world)?;
+                app.ui.space_cove_panel.set_view(SpaceCoveView::AllCoves);
+                app.ui.switch_to(super::ui_screen::UiTab::SpaceCoves);
+            }
 
             Ok(None)
         })
@@ -779,6 +802,10 @@ impl UiCallback {
                 .planets
                 .get(&planet_id)
                 .expect("Space cove planet should exist.");
+
+            own_team
+                .resources
+                .sub(Resource::GOLD, TOURNAMENT_ORGANIZATION_GOLD_COST)?;
 
             let tournament = Tournament::new(own_team, tournament_type)?.on_planet(planet);
 
@@ -1284,7 +1311,7 @@ impl UiCallback {
             app.world.upgrade_space_cove(target)?;
             app.ui.push_popup(PopupMessage::Message {
                 message: format!("{target} construction completed in the space cove!"),
-                links: vec![("space cove".to_string(), UiCallback::GoToSpaceCove)],
+                links: vec![("space cove".to_string(), UiCallback::GoToOwnSpaceCove)],
                 level: log::Level::Info,
                 is_skippable: true,
                 timestamp: Tick::now(),
@@ -1514,7 +1541,8 @@ impl UiCallback {
                 from_popup,
             } => Self::go_to_game(*game_id, *from_popup)(app),
             Self::GoToPlanet { planet_id } => Self::go_to_planet(*planet_id)(app),
-            Self::GoToSpaceCove => Self::go_to_space_cove()(app),
+            Self::GoToOwnSpaceCove => Self::go_to_own_space_cove()(app),
+            Self::GoToSpaceCove { team_id } => Self::go_to_space_cove(*team_id)(app),
             Self::GoToHomePlanet { team_id } => Self::go_to_home_planet(*team_id)(app),
             Self::GoToCurrentTeamPlanet { team_id } => {
                 Self::go_to_current_team_planet(*team_id)(app)
@@ -2356,10 +2384,9 @@ mod test {
     use super::UiCallback;
     use crate::{
         app::App,
-        core::resources::Resource,
+        core::{resources::Resource, INITIAL_RANDOM_TEAM_BALANCE},
         space_adventure::{ControllableSpaceship, GameEntity, SpaceCallback},
         types::{AppResult, ResourceMap, StorableResourceMap},
-        ui::ui_callback::INITIAL_TEAM_BALANCE,
     };
 
     #[test]
@@ -2373,7 +2400,7 @@ mod test {
 
         assert!(own_team.resources.value(&Resource::GOLD) == 0);
         assert!(own_team.resources.value(&Resource::FUEL) == 100);
-        assert!(own_team.resources.value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE + 10_000);
+        assert!(own_team.resources.value(&Resource::SATOSHI) == INITIAL_RANDOM_TEAM_BALANCE);
 
         let own_team_resources = own_team.resources.clone();
 
@@ -2407,7 +2434,7 @@ mod test {
 
         assert!(player.current_durability() == 0);
         assert!(player.resources().value(&Resource::GOLD) == 10);
-        assert!(player.resources().value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE + 10_000);
+        assert!(player.resources().value(&Resource::SATOSHI) == INITIAL_RANDOM_TEAM_BALANCE);
         assert!(player.resources().value(&Resource::FUEL) == 100);
 
         println!(
@@ -2434,7 +2461,7 @@ mod test {
 
         println!("Collected {:#?}", new_resources);
         assert!(new_resources.value(&Resource::GOLD) == 0);
-        assert!(new_resources.value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE + 10_000);
+        assert!(new_resources.value(&Resource::SATOSHI) == INITIAL_RANDOM_TEAM_BALANCE);
         assert!(new_resources.value(&Resource::FUEL) == 0);
 
         Ok(())

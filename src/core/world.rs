@@ -207,7 +207,7 @@ impl World {
             .with_name(team_name)
             .with_spaceship_name(ship_name)
             .with_home_planet(home_planet_id)
-            .with_balance(10_000)?;
+            .with_balance(INITIAL_RANDOM_TEAM_BALANCE)?;
         let team_id = team.id;
 
         let mut planet = self.planets.get_or_err(&team.home_planet_id)?.clone();
@@ -232,6 +232,11 @@ impl World {
         }
 
         loop {
+            let team = self.teams.get_or_err(&team_id)?;
+            if team.player_ids.len() == team.spaceship.crew_capacity() as usize - 1 {
+                break;
+            }
+
             let population = planet.random_population(rng).unwrap_or_default();
             let player_id = self.generate_random_pirate(
                 rng,
@@ -243,15 +248,27 @@ impl World {
                 None,
             )?;
             self.add_player_to_team(&player_id, &team_id, current_tick)?;
-            let team = self.teams.get_or_err(&team_id)?;
-            if team.player_ids.len() == team.spaceship.crew_capacity() as usize {
-                break;
-            }
         }
         self.planets.insert(planet.id, planet);
 
         let player_ids = self.teams.get_or_err(&team_id)?.player_ids.clone();
         self.auto_assign_crew_roles(player_ids)?;
+
+        // Set reputation so an average game roughly covers a day of salaries.
+        let total_salary = self.teams.get_or_err(&team_id)?.total_salary(&self.players) as f32;
+        let population = self
+            .planets
+            .get_or_err(&home_planet_id)?
+            .total_population()
+            .max(1) as f32;
+        let combined_reputation =
+            (((total_salary - BASE_INCOME as f32) / INCOME_PER_ATTENDEE as f32 - BASE_ATTENDANCE)
+                / population)
+                .max(0.0)
+                .powf(2.0 / 3.0)
+                * 3.0; // less than one game per day
+        self.teams.get_mut_or_err(&team_id)?.reputation =
+            (2.25 + combined_reputation / 2.0).bound();
 
         self.dirty = true;
         self.dirty_ui = true;
@@ -1161,6 +1178,7 @@ impl World {
         let planet = self.planets.get_or_err(&planet_id)?;
 
         // Give morale bonus to players based on planet populations
+        // Restore tiredness and morale, at least partially if it's a tournament game.
         for (_, player) in home_team_in_game.players.iter_mut() {
             let morale_bonus = planet
                 .populations
@@ -1169,6 +1187,11 @@ impl World {
                 .unwrap_or_default() as f32
                 * MORALE_GAME_POPULATION_MODIFIER;
             player.add_morale(morale_bonus);
+
+            if part_of_tournament.is_some() {
+                player.tiredness =
+                    (player.tiredness - TIREDNESS_DECREASE_BEFORE_TOURNAMENT_GAME).bound();
+            }
         }
 
         for (_, player) in away_team_in_game.players.iter_mut() {
@@ -1179,6 +1202,11 @@ impl World {
                 .unwrap_or_default() as f32
                 * MORALE_GAME_POPULATION_MODIFIER;
             player.add_morale(morale_bonus);
+
+            if part_of_tournament.is_some() {
+                player.tiredness =
+                    (player.tiredness - TIREDNESS_DECREASE_BEFORE_TOURNAMENT_GAME).bound();
+            }
         }
 
         let game = Game::new(
@@ -1804,11 +1832,11 @@ impl World {
 
                     // Restore tiredness and morale, at least partially if it's a tournament game.
                     // FIXME: this shouldnt be applied if the tournament is over, but we dont know it yet here.
-                    if is_tournament_game {
-                        player.add_morale(MORALE_INCREASE_AFTER_TOURNAMENT_GAME);
-                        player.tiredness =
-                            (player.tiredness - TIREDNESS_DECREASE_AFTER_TOURNAMENT_GAME).bound();
-                    }
+                    // if is_tournament_game {
+                    //     player.add_morale(MORALE_INCREASE_AFTER_TOURNAMENT_GAME);
+                    //     player.tiredness =
+                    //         (player.tiredness - TIREDNESS_DECREASE_AFTER_TOURNAMENT_GAME).bound();
+                    // }
 
                     let stats = team
                         .stats
@@ -1961,11 +1989,10 @@ impl World {
             }
 
             // Teams get money depending on game attendance.
-            // Home team gets a bonus for playing at home.
             // If a team is knocked out, money goes to the other team.
             // If both are knocked out, they get no money.
-            let mut home_team_income = 500 + game.attendance * INCOME_PER_ATTENDEE_HOME;
-            let mut away_team_income = 500 + game.attendance * INCOME_PER_ATTENDEE_AWAY;
+            let mut home_team_income = Game::income(game.attendance);
+            let mut away_team_income = Game::income(game.attendance);
             let home_knocked_out = game.is_team_knocked_out(Possession::Home);
             let away_knocked_out = game.is_team_knocked_out(Possession::Away);
 
@@ -1994,7 +2021,7 @@ impl World {
                         (1, game.away_team_in_game.players.len() as u32)
                     }
                 }
-                None => (1, 1),
+                None => unreachable!("There should be a winner"),
             };
 
             // On top of the bonus, teams get back the rum brought to the game that was not drunk.
@@ -2799,7 +2826,7 @@ impl World {
                 let amount = team
                     .resources
                     .value(&Resource::RUM)
-                    .saturating_sub(team.player_ids.len() as u32 * 5);
+                    .saturating_sub(team.player_ids.len() as u32 * 2);
                 if amount > 0 && team.can_sell_resource(Resource::RUM, amount).is_ok() {
                     team.sub_resource(Resource::RUM, amount)?;
                     team.add_resource(Resource::SATOSHI, sell_unit_cost * amount)?;
@@ -2813,6 +2840,7 @@ impl World {
     }
 
     fn tick_auto_hire_free_pirates(&mut self, current_tick: Tick) -> AppResult<()> {
+        const SALARY_MULTIPLIER_FOR_DECISION: u32 = 5;
         let free_pirates = self
             .players
             .values()
@@ -2846,7 +2874,7 @@ impl World {
                 continue;
             }
 
-            if team.balance() < team.total_salary(&self.players) {
+            if team.balance() < SALARY_MULTIPLIER_FOR_DECISION * team.total_salary(&self.players) {
                 // Remove most expensive player if enough players
                 if team.player_ids.len() > MIN_PLAYERS_PER_GAME {
                     if let Ok(pirates) = Self::get_team_players(&self.players, team) {
@@ -2865,7 +2893,7 @@ impl World {
                 .filter(|&player| {
                     !hired_player_ids.contains(&player.id)
                         && team.can_consider_hiring_player(player).is_ok()
-                        && team.balance() > player.salary() * 7 // buffer to ensure team can afford player
+                        && team.balance() >= (team.total_salary(&self.players) + player.salary() )* SALARY_MULTIPLIER_FOR_DECISION // buffer to ensure team can afford player
                         && team.is_on_player_planet(player)
                         && team
                             .can_hire_from_space_cove(pirate_cove_planet.get(&player.id).copied())
@@ -2954,6 +2982,10 @@ impl World {
 
             if balance >= total_salary {
                 team.sub_resource(Resource::SATOSHI, total_salary)?;
+                for player_id in team.player_ids.iter() {
+                    let player = self.players.get_mut_or_err(player_id)?;
+                    player.satisfy_opinion(PlayerOpinion::Gold); // Gold opinion is always positive
+                }
             } else {
                 let delta_modifier = (total_salary - balance) as f32 / total_salary as f32;
                 team.sub_resource(Resource::SATOSHI, balance)?;
@@ -3310,6 +3342,7 @@ impl World {
             if candidate_teams.len() < 2 {
                 continue;
             }
+
             let teams = candidate_teams.iter().sample(rng, 2);
             matchups.push((teams[0].id, teams[1].id));
         }

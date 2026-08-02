@@ -133,15 +133,12 @@ impl Team {
         };
         let jersey = Jersey::random(rng);
         let ship_color = jersey.color;
-        let mut resources = HashMap::new();
-        resources.insert(Resource::SATOSHI, INITIAL_TEAM_BALANCE);
         Self {
             id: TeamId::new_v4(),
             creation_time: Tick::now(),
             jersey,
             spaceship: Spaceship::random(rng).with_color_map(ship_color),
             game_tactic: Tactic::random(rng),
-            resources,
             ..Default::default()
         }
     }
@@ -161,6 +158,11 @@ impl Team {
         self.current_location = TeamLocation::OnPlanet {
             planet_id: home_planet_id,
         };
+        self
+    }
+
+    pub fn with_reputation(mut self, reputation: Skill) -> Self {
+        self.reputation = reputation;
         self
     }
 
@@ -591,7 +593,11 @@ impl Team {
             }
         }
 
-        // FIXME: add conditions on kartoffeln
+        if self.resources.value(&Resource::GOLD) < TOURNAMENT_ORGANIZATION_GOLD_COST {
+            return Err(anyhow!(
+                "To organize a tournament you need {TOURNAMENT_ORGANIZATION_GOLD_COST} gold"
+            ));
+        }
 
         Ok(())
     }

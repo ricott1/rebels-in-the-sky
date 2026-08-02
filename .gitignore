@@ -10,8 +10,6 @@
 .DS_Store
 desktop.ini
 
-*release.sh
-
 
 ## Editor
 *.swp
@@ -100,3 +98,4 @@ tests/player_evolution/*.png
 tests/player_generation/generation_data.json
 tests/player_generation/*.png
 TODO.md
+scripts

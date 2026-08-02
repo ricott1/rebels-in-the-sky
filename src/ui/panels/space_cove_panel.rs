@@ -1,8 +1,8 @@
 use super::traits::SplitPanel;
 use crate::game_engine::{TournamentId, TournamentType};
 use crate::image::player::PLAYER_IMAGE_WIDTH;
-use crate::image::utils::ExtraImageUtils;
 use crate::image::utils::{open_image, LightMaskStyle};
+use crate::image::utils::{ExtraImageUtils, UNIVERSE_BACKGROUND};
 use crate::types::{
     HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, SystemTimeTick, TeamId,
 };
@@ -94,10 +94,11 @@ pub struct SpaceCovePanel {
     tick: usize,
     view: SpaceCoveView,
     cove_index: Option<usize>,
-    cove_entries: Vec<(TeamId, PlanetId)>,
+    pub all_coves: Vec<(TeamId, PlanetId)>,
     cached_teams_len: usize,
     visiting_team_ids: Vec<TeamId>,
     cove_image_widgets: [Paragraph<'static>; 4], // no blinking, left, right, both
+    universe_background_widget: Paragraph<'static>,
     cove_list_state: ClickableListState,
     building_index: Option<usize>,
     tournament_index: Option<usize>,
@@ -114,7 +115,11 @@ pub struct SpaceCovePanel {
 
 impl SpaceCovePanel {
     pub fn new() -> Self {
-        let widgets = Self::build_image_widgets(&[]).expect("Should be able to create cove image");
+        let cove_image_widgets =
+            Self::build_image_widgets(&[]).expect("Should be able to create cove image");
+
+        let universe_background_widget = Paragraph::new(img_to_lines(&UNIVERSE_BACKGROUND));
+
         let tavern_widget = {
             let img =
                 Self::get_tavern_image(false, &[]).expect("Should be able to create tavern image");
@@ -139,7 +144,8 @@ impl SpaceCovePanel {
             Paragraph::new(img_to_lines(&base))
         };
         Self {
-            cove_image_widgets: widgets,
+            cove_image_widgets,
+            universe_background_widget,
             tavern_widget,
             market_widget,
             stadium_widget,
@@ -333,13 +339,13 @@ impl SpaceCovePanel {
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
-        if self.cove_entries.is_empty() {
+        if self.all_coves.is_empty() {
             frame.render_widget(default_block().title("No known coves"), area);
             return Ok(());
         }
 
         let mut options = vec![];
-        for (team_id, _) in self.cove_entries.iter() {
+        for (team_id, _) in self.all_coves.iter() {
             let team = match world.teams.get(team_id) {
                 Some(t) => t,
                 None => continue,
@@ -438,14 +444,24 @@ impl SpaceCovePanel {
     ) {
         let (label, hotkey, blurb) = match tournament_type {
             TournamentType::Cup => (
-                "Organize quick tournament",
+                format!(
+                    "Create quick tournament (-{TOURNAMENT_ORGANIZATION_GOLD_COST} Gold)"
+                ),
                 ui_key::ORGANIZE_QUICK_TOURNAMENT,
-                "Registrations close in 5 minutes, max 4 participants.",
+                format!(
+                    "Registrations close in 5 minutes, max 4 participants. Costs {TOURNAMENT_ORGANIZATION_GOLD_COST} gold.",
+                ),
             ),
             TournamentType::Supercup => (
-                "Organize big tournament",
+                format!(
+                    "Create big tournament (-{TOURNAMENT_ORGANIZATION_GOLD_COST} Gold)",
+                    
+                ),
                 ui_key::ORGANIZE_BIG_TOURNAMENT,
-                "Registrations close in 1 hour, max 8 participants.",
+                format!(
+                    "Registrations close in 1 hour, max 8 participants. Costs {TOURNAMENT_ORGANIZATION_GOLD_COST} gold.",
+                    
+                ),
             ),
         };
 
@@ -860,15 +876,15 @@ impl Screen for SpaceCovePanel {
             let new_entries: Vec<(TeamId, PlanetId)> =
                 decorated.into_iter().map(|(t, p, _)| (t, p)).collect();
 
-            entries_changed = new_entries != self.cove_entries;
-            self.cove_entries = new_entries;
+            entries_changed = new_entries != self.all_coves;
+            self.all_coves = new_entries;
             self.cached_teams_len = world.teams.len();
         }
 
         let prev_index = self.cove_index;
         self.cove_index = normalize_index(
             self.cove_index.unwrap_or(0),
-            self.cove_entries.len(),
+            self.all_coves.len(),
             IndexBound::Wrap,
         );
         let index_changed = prev_index != self.cove_index;
@@ -877,7 +893,7 @@ impl Screen for SpaceCovePanel {
             SpaceCoveView::OwnCove => own_team.has_space_cove_on(),
             SpaceCoveView::AllCoves => self
                 .cove_index
-                .and_then(|i| self.cove_entries.get(i).map(|(_, p)| *p)),
+                .and_then(|i| self.all_coves.get(i).map(|(_, p)| *p)),
         };
 
         match selected_asteroid_id.and_then(|id| world.planets.get(&id)) {
@@ -1101,13 +1117,13 @@ impl Screen for SpaceCovePanel {
                 ])
                 .split(layout[2]);
                 self.render_cove_list(frame, world, sub_layout[0])?;
-                self.render_visiting_teams(frame, world, sub_layout[3])?;
 
                 if let Some(asteroid) = self
                     .cove_index
-                    .and_then(|i| self.cove_entries.get(i).map(|(_, p)| *p))
+                    .and_then(|i| self.all_coves.get(i).map(|(_, p)| *p))
                     .and_then(|id| world.planets.get(&id))
                 {
+                    self.render_visiting_teams(frame, world, sub_layout[3])?;
                     frame.render_interactive_widget(
                         go_to_planet_button(world, asteroid.id)?,
                         sub_layout[1],
@@ -1116,18 +1132,23 @@ impl Screen for SpaceCovePanel {
                         teleport_button(world, asteroid.id)?,
                         sub_layout[2],
                     );
-                }
 
-                let t = self.tick % 60;
-                let left_eye_blinking = [2, 3, 5, 13, 33].contains(&t);
-                let right_eye_blinking = [2, 3, 6, 7, 41].contains(&t);
-                let widget = match (left_eye_blinking, right_eye_blinking) {
-                    (false, false) => &self.cove_image_widgets[0],
-                    (true, false) => &self.cove_image_widgets[1],
-                    (false, true) => &self.cove_image_widgets[2],
-                    (true, true) => &self.cove_image_widgets[3],
-                };
-                frame.render_widget(widget, split[1].inner(Margin::new(1, 1)));
+                    let t = self.tick % 60;
+                    let left_eye_blinking = [2, 3, 5, 13, 33].contains(&t);
+                    let right_eye_blinking = [2, 3, 6, 7, 41].contains(&t);
+                    let widget = match (left_eye_blinking, right_eye_blinking) {
+                        (false, false) => &self.cove_image_widgets[0],
+                        (true, false) => &self.cove_image_widgets[1],
+                        (false, true) => &self.cove_image_widgets[2],
+                        (true, true) => &self.cove_image_widgets[3],
+                    };
+                    frame.render_widget(widget, split[1].inner(Margin::new(1, 1)));
+                } else {
+                    frame.render_widget(
+                        &self.universe_background_widget,
+                        split[1].inner(Margin::new(1, 1)),
+                    );
+                }
             }
         }
 
@@ -1239,7 +1260,7 @@ impl SplitPanel for SpaceCovePanel {
     fn max_index(&self) -> usize {
         match self.active_selection() {
             ActiveSelection::Building => BUILDINGS.len(),
-            ActiveSelection::Cove => self.cove_entries.len(),
+            ActiveSelection::Cove => self.all_coves.len(),
             ActiveSelection::VisitingTeam => self.visiting_team_ids.len(),
             ActiveSelection::Tournament => self.tournament_ids.len(),
             ActiveSelection::TavernPirate => self.tavern_pirate_ids.len(),

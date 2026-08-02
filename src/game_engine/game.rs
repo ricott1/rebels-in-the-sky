@@ -12,7 +12,8 @@ use crate::{
         position::NUM_GAME_POSITIONS,
         skill::{GameSkill, MAX_SKILL},
         utils::is_default,
-        CrewRole, PlayerOpinion, PlayerOpinionMapDescription, Skill, TeamBonus, DEFAULT_PLANET_ID,
+        CrewRole, PlayerOpinion, PlayerOpinionMapDescription, Skill, TeamBonus, BASE_ATTENDANCE,
+        BASE_INCOME, DEFAULT_PLANET_ID, INCOME_PER_ATTENDEE,
     },
     game_engine::{end_of_quarter, substitution, TournamentId},
     types::*,
@@ -229,7 +230,7 @@ impl Game {
         let seed = game.get_rng_seed();
         let mut rng = ChaCha8Rng::from_seed(seed);
 
-        let attendance = (BASE_ATTENDANCE as f32
+        let attendance = (BASE_ATTENDANCE
             + (total_reputation.value() as f32).powf(1.5) * planet_total_population as f32)
             * rng.random_range(0.8..=1.2)
             * (1.0 + bonus_attendance);
@@ -779,6 +780,10 @@ impl Game {
         }
 
         (home_quarters_score, away_quarters_score)
+    }
+
+    pub fn income(attendance: u32) -> u32 {
+        BASE_INCOME + attendance * INCOME_PER_ATTENDEE
     }
 
     pub fn is_team_knocked_out(&self, side: Possession) -> bool {

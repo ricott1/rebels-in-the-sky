@@ -238,8 +238,6 @@ impl Tournament {
     }
 
     pub fn new(organizer: &Team, tournament_type: TournamentType) -> AppResult<Self> {
-        organizer.can_organize_tournament()?;
-
         let now = Tick::now();
         let registrations_closing_at = Tick::now() + tournament_type.registration_duration();
         if registrations_closing_at <= now {

@@ -7,6 +7,7 @@ use crate::core::role::CrewRole;
 use crate::core::types::{Population, Pronoun};
 use crate::image::utils::{Gif, LightMaskStyle};
 use crate::types::AppResult;
+use image::imageops::crop_imm;
 use image::RgbaImage;
 use rand::seq::IteratorRandom;
 use rand::{RngExt, SeedableRng};
@@ -374,7 +375,6 @@ impl PlayerImage {
         let size = Self::size_from_info(info);
         let mut base = RgbaImage::new(PLAYER_IMAGE_WIDTH, PLAYER_IMAGE_HEIGHT);
         let mut blinking_base = RgbaImage::new(PLAYER_IMAGE_WIDTH, PLAYER_IMAGE_HEIGHT);
-        let img_height = base.height();
         let mut offset_y = 0;
         let skin_color_map = self.skin_color_map;
         let hair_color_map = self.hair_color_map;
@@ -387,8 +387,8 @@ impl PlayerImage {
 
         offset_y += other.height();
         let x = (base.width() - other.width()) / 2;
-        base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
-        blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
+        base.copy_non_trasparent_from(&other, x, PLAYER_IMAGE_HEIGHT - offset_y)?;
+        blinking_base.copy_non_trasparent_from(&other, x, PLAYER_IMAGE_HEIGHT - offset_y)?;
 
         if let Some(shoes) = self.shoes.as_ref() {
             let mut other = shoes.image(size)?;
@@ -396,8 +396,12 @@ impl PlayerImage {
             if let Some(color_map) = jersey_color_map {
                 other.apply_color_map(color_map);
             }
-            base.copy_non_trasparent_from(&other, x, img_height - other.height())?;
-            blinking_base.copy_non_trasparent_from(&other, x, img_height - other.height())?;
+            base.copy_non_trasparent_from(&other, x, PLAYER_IMAGE_HEIGHT - other.height())?;
+            blinking_base.copy_non_trasparent_from(
+                &other,
+                x,
+                PLAYER_IMAGE_HEIGHT - other.height(),
+            )?;
         }
 
         if let Some(shorts) = self.shorts.as_ref() {
@@ -407,8 +411,8 @@ impl PlayerImage {
                 let mask = shorts.mask(size)?;
                 other.apply_color_map_with_shadow_mask(color_map, &mask);
             }
-            base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
-            blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
+            base.copy_non_trasparent_from(&other, x, PLAYER_IMAGE_HEIGHT - offset_y)?;
+            blinking_base.copy_non_trasparent_from(&other, x, PLAYER_IMAGE_HEIGHT - offset_y)?;
         }
 
         if let Some(wooden_leg) = self.wooden_leg.as_ref() {
@@ -443,7 +447,7 @@ impl PlayerImage {
             match wooden_leg {
                 WoodenLegImage::Left => {
                     for x in 0..base.width() / 2 {
-                        for y in img_height - other.height()..img_height {
+                        for y in PLAYER_IMAGE_HEIGHT - other.height()..PLAYER_IMAGE_HEIGHT {
                             base.put_pixel(x, y, image::Rgba([0, 0, 0, 0]));
                             blinking_base.put_pixel(x, y, image::Rgba([0, 0, 0, 0]));
                         }
@@ -451,7 +455,7 @@ impl PlayerImage {
                 }
                 WoodenLegImage::Right => {
                     for x in base.width() / 2..base.width() {
-                        for y in img_height - other.height()..img_height {
+                        for y in PLAYER_IMAGE_HEIGHT - other.height()..PLAYER_IMAGE_HEIGHT {
                             base.put_pixel(x, y, image::Rgba([0, 0, 0, 0]));
                             blinking_base.put_pixel(x, y, image::Rgba([0, 0, 0, 0]));
                         }
@@ -459,8 +463,12 @@ impl PlayerImage {
                 }
             }
 
-            base.copy_non_trasparent_from(&other, x, img_height - other.height())?;
-            blinking_base.copy_non_trasparent_from(&other, x, img_height - other.height())?;
+            base.copy_non_trasparent_from(&other, x, PLAYER_IMAGE_HEIGHT - other.height())?;
+            blinking_base.copy_non_trasparent_from(
+                &other,
+                x,
+                PLAYER_IMAGE_HEIGHT - other.height(),
+            )?;
         }
 
         let mut other = self.body.image(size)?;
@@ -468,8 +476,8 @@ impl PlayerImage {
         offset_y += other.height() - 1;
         let body_x = (base.width() - other.width()) / 2;
         other.apply_color_map_with_shadow_mask(skin_color_map, &mask);
-        base.copy_non_trasparent_from(&other, body_x, img_height - offset_y)?;
-        blinking_base.copy_non_trasparent_from(&other, body_x, img_height - offset_y)?;
+        base.copy_non_trasparent_from(&other, body_x, PLAYER_IMAGE_HEIGHT - offset_y)?;
+        blinking_base.copy_non_trasparent_from(&other, body_x, PLAYER_IMAGE_HEIGHT - offset_y)?;
 
         if let Some(hook) = self.hook.as_ref() {
             let mut hook_img = hook.image()?;
@@ -485,7 +493,7 @@ impl PlayerImage {
                 }
             };
 
-            let y = img_height - offset_y + other.height() - 4;
+            let y = PLAYER_IMAGE_HEIGHT - offset_y + other.height() - 4;
 
             // Clear the arm on the base
             for cx in x + 1..x + hook_img.width() {
@@ -506,8 +514,12 @@ impl PlayerImage {
                 let mask = shirt.mask(size)?;
                 other.apply_color_map_with_shadow_mask(color_map, &mask);
             }
-            base.copy_non_trasparent_from(&other, x, img_height - offset_y + 1)?;
-            blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y + 1)?;
+            base.copy_non_trasparent_from(&other, x, PLAYER_IMAGE_HEIGHT - offset_y + 1)?;
+            blinking_base.copy_non_trasparent_from(
+                &other,
+                x,
+                PLAYER_IMAGE_HEIGHT - offset_y + 1,
+            )?;
         }
 
         let mut other = self.head.image()?;
@@ -517,16 +529,16 @@ impl PlayerImage {
         let x = (base.width() - other.width()) / 2;
         let mut cm = skin_color_map;
         other.apply_color_map_with_shadow_mask(cm, &mask);
-        base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
+        base.copy_non_trasparent_from(&other, x, PLAYER_IMAGE_HEIGHT - offset_y)?;
         cm.blue = cm.red;
         blinking.apply_color_map_with_shadow_mask(cm, &mask);
-        blinking_base.copy_non_trasparent_from(&blinking, x, img_height - offset_y)?;
+        blinking_base.copy_non_trasparent_from(&blinking, x, PLAYER_IMAGE_HEIGHT - offset_y)?;
 
         if let Some(eye_patch) = self.eye_patch.as_ref() {
             let other = eye_patch.image()?;
             let x = (base.width() - other.width()) / 2;
-            base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
-            blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
+            base.copy_non_trasparent_from(&other, x, PLAYER_IMAGE_HEIGHT - offset_y)?;
+            blinking_base.copy_non_trasparent_from(&other, x, PLAYER_IMAGE_HEIGHT - offset_y)?;
         }
 
         if let Some(hair) = self.hair.as_ref() {
@@ -535,9 +547,9 @@ impl PlayerImage {
             other.apply_color_map(hair_color_map);
 
             let y = if info.population == Population::Pupparoll {
-                img_height - offset_y - 1
+                PLAYER_IMAGE_HEIGHT - offset_y - 1
             } else {
-                img_height - offset_y
+                PLAYER_IMAGE_HEIGHT - offset_y
             };
             if let Some(HatImage::Classic | HatImage::Infernal | HatImage::Hipster) =
                 self.hat.as_ref()
@@ -562,19 +574,22 @@ impl PlayerImage {
             } else {
                 other.apply_color_map(hair_color_map);
             }
-            base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
-            blinking_base.copy_non_trasparent_from(&other, x, img_height - offset_y)?;
+            base.copy_non_trasparent_from(&other, x, PLAYER_IMAGE_HEIGHT - offset_y)?;
+            blinking_base.copy_non_trasparent_from(&other, x, PLAYER_IMAGE_HEIGHT - offset_y)?;
         }
 
         if let Some(hat) = self.hat.as_ref() {
-            let other = open_image(hat.select_file().as_str())?;
+            let base_hat = open_image(hat.select_file().as_str())?;
+            // For pupparoll need to crop, otherwise it overflows
+            let other = if info.population == Population::Pupparoll {
+                crop_imm(&base_hat, 0, 1, other.width(), other.height() - 1).to_image()
+            } else {
+                base_hat
+            };
             let x = (base.width() - other.width()) / 2;
             offset_y += 2;
-            let y = if info.population == Population::Pupparoll {
-                img_height - offset_y - 1
-            } else {
-                img_height - offset_y
-            };
+            let y = PLAYER_IMAGE_HEIGHT - offset_y;
+
             base.copy_non_trasparent_from(&other, x, y)?;
             blinking_base.copy_non_trasparent_from(&other, x, y)?;
         }

@@ -46,7 +46,7 @@ use ratatui::{
 use std::collections::HashMap;
 use strum::IntoEnumIterator;
 
-const DROPDOWN_WIDTH: u16 = MAX_NAME_LENGTH as u16 + 2;
+const DROPDOWN_WIDTH: u16 = MAX_NAME_LENGTH as u16 + 3;
 const ROLE_COLUMN_WIDTH: u16 = 9;
 const ROLE_COLUMN_RIGHT_OFFSET: u16 = 15 + 17 + 2;
 const TRAINING_COLUMN_WIDTH: u16 = 10;
@@ -59,7 +59,7 @@ const DROPDOWN_OFFSETS: [(u16, u16); NUM_GAME_POSITIONS as usize] = [
     (25, 4),  // SG
     (2, 8),   // SF
     (24, 10), // PF
-    (10, 12), // C
+    (9, 12),  // C
 ];
 const TACTIC_DROPDOWN_ID: usize = usize::MAX;
 const SUBSTITUTION_DROPDOWN_ID: usize = usize::MAX - 1;
@@ -353,7 +353,7 @@ impl MyTeamPanel {
 
         frame.render_widget(
             Paragraph::new(Span::styled(
-                "              Buy               Sell         Prices     Cargo".to_string(),
+                "              Buy               Sell         Prices     Owned".to_string(),
                 UiStyle::HEADER.bold(),
             )),
             button_split[0],
@@ -406,14 +406,7 @@ impl MyTeamPanel {
             );
 
             frame.render_widget(
-                Paragraph::new(format!(
-                    "{:>4} {:<2} * {:>2} u/{:<2} = {:>4} u",
-                    own_team.resources.value(resource),
-                    resource.units(),
-                    resource.to_storing_space(),
-                    resource.units(),
-                    own_team.resources.value(&resource) * resource.to_storing_space()
-                )),
+                Paragraph::new(format!(" {:>4}", own_team.resources.value(resource),)),
                 resource_split[8].inner(Margin::new(1, 1)),
             );
 
@@ -467,9 +460,10 @@ impl MyTeamPanel {
                     own_team.spaceship.storage_capacity(),
                     BARS_LENGTH,
                 )),
-            ]),
+            ])
+            .centered(),
             button_split[5].inner(Margin {
-                horizontal: 1,
+                horizontal: 2,
                 vertical: 0,
             }),
         );
@@ -1958,7 +1952,7 @@ impl MyTeamPanel {
             let b_split = Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
                 .split(split[1]);
             frame.render_interactive_widget(teleport_button(world, asteroid_id)?, b_split[0]);
-            frame.render_interactive_widget(go_to_space_cove_button()?, b_split[1]);
+            frame.render_interactive_widget(go_to_own_space_cove_button()?, b_split[1]);
         } else {
             frame.render_interactive_widget(teleport_button(world, asteroid_id)?, split[1]);
         }
@@ -2108,16 +2102,18 @@ impl MyTeamPanel {
             release_button = release_button.block(default_block().border_style(UiStyle::WARNING));
         }
 
-        let side_split = Layout::vertical([3, 3, 3]).split(split[2].inner(Margin::new(2, 1)));
+        if own_team.can_change_team_settings().is_ok() {
+            let side_split = Layout::vertical([3, 3, 3]).split(split[2].inner(Margin::new(2, 1)));
 
-        frame.render_interactive_widget(release_button, side_split[0]);
+            frame.render_interactive_widget(release_button, side_split[0]);
 
-        if let Ok(drink_button) = drink_button(world, &player_id) {
-            frame.render_interactive_widget(drink_button, side_split[1]);
-        }
+            if let Ok(drink_button) = drink_button(world, &player_id) {
+                frame.render_interactive_widget(drink_button, side_split[1]);
+            }
 
-        if let Ok(gold_button) = gold_button(world, &player_id) {
-            frame.render_interactive_widget(gold_button, side_split[2]);
+            if let Ok(gold_button) = gold_button(world, &player_id) {
+                frame.render_interactive_widget(gold_button, side_split[2]);
+            }
         }
 
         Ok(())
@@ -2284,7 +2280,7 @@ impl MyTeamPanel {
             .widths(&[
                 Constraint::Min(MAX_NAME_LENGTH as u16 + 2),
                 Constraint::Length(7),
-                Constraint::Length(10),
+                Constraint::Length(7),
                 Constraint::Length(POSITION_COLUMN_WIDTH),
                 Constraint::Length(TRAINING_COLUMN_WIDTH),
                 Constraint::Length(ROLE_COLUMN_WIDTH),
@@ -2343,6 +2339,9 @@ impl MyTeamPanel {
             top_split[1],
         );
 
+        let split =
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(28)]).split(table_split[1]);
+
         if let Some(game_id) = own_team.current_game {
             let game = world.games.get_or_err(&game_id)?;
             let text = format!(
@@ -2384,12 +2383,9 @@ impl MyTeamPanel {
                 .hover_text("Go to current game")
                 .hotkey(ui_key::GO_TO_CURRENT_GAME)
                 .block(default_block().border_style(border_style)),
-                table_split[1],
+                split[1],
             );
-            return Ok(());
-        }
-
-        if let Some(tournament_id) = own_team.playing_in_tournament() {
+        } else if let Some(tournament_id) = own_team.playing_in_tournament() {
             let tournament = world.tournaments.get_or_err(&tournament_id)?;
 
             frame.render_interactive_widget(
@@ -2409,126 +2405,126 @@ impl MyTeamPanel {
                 .hover_text("Go to current tournament")
                 .hotkey(ui_key::GO_TO_CURRENT_GAME)
                 .block(default_block().border_style(UiStyle::NETWORK)),
-                table_split[1],
+                split[1],
             );
-            return Ok(());
-        }
+        } else {
+            // If this is error, we should have branched before
+            assert!(own_team.can_change_team_settings().is_ok());
 
-        // If this is error, we should have branched before
-        assert!(own_team.can_change_team_settings().is_ok());
-
-        let mut training_variants: Vec<Option<TrainingFocus>> = vec![None];
-        let mut focus = Some(TrainingFocus::default());
-        while let Some(f) = focus {
-            training_variants.push(Some(f));
-            focus = f.next();
-        }
-        let training_options: Vec<Text> = training_variants
-            .iter()
-            .map(|f| {
-                Text::from(match f {
-                    Some(focus) => focus.to_string(),
-                    None => "General".to_string(),
+            let mut training_variants: Vec<Option<TrainingFocus>> = vec![None];
+            let mut focus = Some(TrainingFocus::default());
+            while let Some(f) = focus {
+                training_variants.push(Some(f));
+                focus = f.next();
+            }
+            let training_options: Vec<Text> = training_variants
+                .iter()
+                .map(|f| {
+                    Text::from(match f {
+                        Some(focus) => focus.to_string(),
+                        None => "General".to_string(),
+                    })
                 })
-            })
-            .collect();
-        let selected_focus = training_variants
-            .iter()
-            .position(|f| *f == player.training_focus)
-            .unwrap_or_default();
-        let player_id = player.id;
-        let training_dropdown = Dropdown::new(
-            TRAINING_DROPDOWN_ID,
-            training_options,
-            Box::new(move |index| UiCallback::SetTrainingFocus {
-                player_id,
-                training_focus: training_variants[index],
-            }),
-        )
-        .hotkey(ui_key::player::TRAINING_FOCUS)
-        .hover_text("Change the training focus to change skills increase faster.")
-        .open_direction(OpenDirection::Down);
+                .collect();
+            let selected_focus = training_variants
+                .iter()
+                .position(|f| *f == player.training_focus)
+                .unwrap_or_default();
+            let player_id = player.id;
+            let training_dropdown = Dropdown::new(
+                TRAINING_DROPDOWN_ID,
+                training_options,
+                Box::new(move |index| UiCallback::SetTrainingFocus {
+                    player_id,
+                    training_focus: training_variants[index],
+                }),
+            )
+            .hotkey(ui_key::player::TRAINING_FOCUS)
+            .hover_text("Change the training focus to change skills increase faster.")
+            .open_direction(OpenDirection::Down);
 
-        self.render_roster_dropdown(
-            frame,
-            training_dropdown,
-            TRAINING_DROPDOWN_ID,
-            table_split[0],
-            player_index as u16,
-            TRAINING_COLUMN_RIGHT_OFFSET,
-            TRAINING_COLUMN_WIDTH,
-            selected_focus,
-        );
+            self.render_roster_dropdown(
+                frame,
+                training_dropdown,
+                TRAINING_DROPDOWN_ID,
+                table_split[0],
+                player_index as u16,
+                TRAINING_COLUMN_RIGHT_OFFSET,
+                TRAINING_COLUMN_WIDTH,
+                selected_focus,
+            );
 
-        let role_variants = CrewRole::iter().collect_vec();
-        let role_options: Vec<Text> = role_variants
-            .iter()
-            .map(|role| Text::from(role.to_string()))
-            .collect();
-        let selected_role = role_variants
-            .iter()
-            .position(|role| *role == player.info.crew_role)
-            .unwrap_or_default();
-        let on_select_variants = role_variants.clone();
-        let mut role_dropdown = Dropdown::new(
-            ROLE_DROPDOWN_ID,
-            role_options,
-            Box::new(move |index| UiCallback::SetCrewRole {
-                player_id,
-                role: on_select_variants[index],
-            }),
-        )
-        .hover_text("Set the pirate's crew role.")
-        .open_direction(OpenDirection::Down);
-        for (index, role) in role_variants.iter().enumerate() {
-            role_dropdown = role_dropdown.hotkey_select(ui_key::team::set_crew_role(*role), index);
+            let role_variants = CrewRole::iter().collect_vec();
+            let role_options: Vec<Text> = role_variants
+                .iter()
+                .map(|role| Text::from(role.to_string()))
+                .collect();
+            let selected_role = role_variants
+                .iter()
+                .position(|role| *role == player.info.crew_role)
+                .unwrap_or_default();
+            let on_select_variants = role_variants.clone();
+            let mut role_dropdown = Dropdown::new(
+                ROLE_DROPDOWN_ID,
+                role_options,
+                Box::new(move |index| UiCallback::SetCrewRole {
+                    player_id,
+                    role: on_select_variants[index],
+                }),
+            )
+            .hover_text("Set the pirate's crew role.")
+            .open_direction(OpenDirection::Down);
+            for (index, role) in role_variants.iter().enumerate() {
+                role_dropdown =
+                    role_dropdown.hotkey_select(ui_key::team::set_crew_role(*role), index);
+            }
+
+            self.render_roster_dropdown(
+                frame,
+                role_dropdown,
+                ROLE_DROPDOWN_ID,
+                table_split[0],
+                player_index as u16,
+                ROLE_COLUMN_RIGHT_OFFSET,
+                ROLE_COLUMN_WIDTH,
+                selected_role,
+            );
+
+            let num_positions = own_team.player_ids.len();
+            let position_options: Vec<Text> = (0..num_positions)
+                .map(|idx| Text::from((idx as GamePosition).as_role().to_string()))
+                .collect();
+            let selected_position = own_team
+                .player_ids
+                .iter()
+                .position(|id| *id == player.id)
+                .unwrap_or_default();
+            let mut position_dropdown = Dropdown::new(
+                POSITION_DROPDOWN_ID,
+                position_options,
+                Box::new(move |index| UiCallback::SwapPlayerPositions {
+                    player_id,
+                    position: index as GamePosition,
+                }),
+            )
+            .hover_text("Set the pirate's game position.")
+            .open_direction(OpenDirection::Down);
+            for idx in 0..num_positions.min(MAX_PLAYERS_PER_GAME) {
+                position_dropdown = position_dropdown
+                    .hotkey_select(ui_key::team::set_player_position(idx as GamePosition), idx);
+            }
+
+            self.render_roster_dropdown(
+                frame,
+                position_dropdown,
+                POSITION_DROPDOWN_ID,
+                table_split[0],
+                player_index as u16,
+                POSITION_COLUMN_RIGHT_OFFSET,
+                6,
+                selected_position,
+            );
         }
-
-        self.render_roster_dropdown(
-            frame,
-            role_dropdown,
-            ROLE_DROPDOWN_ID,
-            table_split[0],
-            player_index as u16,
-            ROLE_COLUMN_RIGHT_OFFSET,
-            ROLE_COLUMN_WIDTH,
-            selected_role,
-        );
-
-        let num_positions = own_team.player_ids.len();
-        let position_options: Vec<Text> = (0..num_positions)
-            .map(|idx| Text::from((idx as GamePosition).as_role().to_string()))
-            .collect();
-        let selected_position = own_team
-            .player_ids
-            .iter()
-            .position(|id| *id == player.id)
-            .unwrap_or_default();
-        let mut position_dropdown = Dropdown::new(
-            POSITION_DROPDOWN_ID,
-            position_options,
-            Box::new(move |index| UiCallback::SwapPlayerPositions {
-                player_id,
-                position: index as GamePosition,
-            }),
-        )
-        .hover_text("Set the pirate's game position.")
-        .open_direction(OpenDirection::Down);
-        for idx in 0..num_positions.min(MAX_PLAYERS_PER_GAME) {
-            position_dropdown = position_dropdown
-                .hotkey_select(ui_key::team::set_player_position(idx as GamePosition), idx);
-        }
-
-        self.render_roster_dropdown(
-            frame,
-            position_dropdown,
-            POSITION_DROPDOWN_ID,
-            table_split[0],
-            player_index as u16,
-            POSITION_COLUMN_RIGHT_OFFSET,
-            6,
-            selected_position,
-        );
 
         self.render_selected_player(player, frame, world, table_split[1])?;
 

@@ -123,10 +123,12 @@ pub fn go_to_planet_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<
     .hotkey(ui_key::GO_TO_PLANET))
 }
 
-pub fn go_to_space_cove_button<'a>() -> AppResult<Button<'a>> {
-    Ok(Button::new("Go to space cove", UiCallback::GoToSpaceCove)
-        .hover_text("Go to space cove panel".to_string())
-        .hotkey(ui_key::GO_TO_SPACE_COVE))
+pub fn go_to_own_space_cove_button<'a>() -> AppResult<Button<'a>> {
+    Ok(
+        Button::new("Go to space cove", UiCallback::GoToOwnSpaceCove)
+            .hover_text("Go to space cove panel".to_string())
+            .hotkey(ui_key::GO_TO_SPACE_COVE),
+    )
 }
 
 pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Button<'a>> {
@@ -398,7 +400,7 @@ pub fn render_challenge_button(
             "Local game".to_string()
         };
         let mut b = Button::new(
-            format!("Playing - {game_text}"),
+            format!("Game: {game_text}"),
             UiCallback::GoToGame {
                 game_id,
                 from_popup: false,
@@ -699,7 +701,7 @@ pub fn get_crew_spans<'a>(crew_size: usize, crew_capacity: usize) -> Vec<Span<'a
     ]
 }
 
-pub fn get_energy_spans<'a>(average_tiredness: f32) -> Vec<Span<'a>> {
+pub fn get_energy_spans<'a>(average_tiredness: Skill) -> Vec<Span<'a>> {
     let tiredness_length = (average_tiredness / MAX_SKILL * BARS_LENGTH as f32).round() as usize;
     let energy_string = format!(
         "{}{}",
@@ -923,14 +925,15 @@ pub fn render_spaceship_description(
     } else {
         let area = spaceship_split[1].inner(Margin {
             horizontal: 0,
-            vertical: 1,
+            vertical: 0,
         });
 
         let split = Layout::vertical([
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
-            Constraint::Min(0),
+            Constraint::Length(8),
+            Constraint::Length(3),
         ])
         .split(area);
 
@@ -991,8 +994,19 @@ pub fn render_spaceship_description(
         }
 
         let lines_split = Layout::vertical([1].repeat(lines.len())).split(split[3]);
-        for (line, &split) in zip(lines, lines_split.iter()) {
-            frame.render_interactive_widget(line, split);
+        for (line, &l_split) in zip(lines, lines_split.iter()) {
+            frame.render_interactive_widget(line, l_split);
+        }
+
+        if let Some(cove) = team.space_cove.as_ref() {
+            frame.render_interactive_widget(
+                Button::new(
+                    format!("Go to space cove {}", cove.name),
+                    UiCallback::GoToSpaceCove { team_id: team.id },
+                )
+                .hotkey(ui_key::GO_TO_SPACE_COVE),
+                split[4].inner(Margin::new(2, 0)),
+            );
         }
     }
 
