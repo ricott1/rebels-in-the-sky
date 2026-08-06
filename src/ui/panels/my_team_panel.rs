@@ -460,8 +460,7 @@ impl MyTeamPanel {
                     own_team.spaceship.storage_capacity(),
                     BARS_LENGTH,
                 )),
-            ])
-            .centered(),
+            ]),
             button_split[5].inner(Margin {
                 horizontal: 2,
                 vertical: 0,

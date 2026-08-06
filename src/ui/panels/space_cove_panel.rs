@@ -89,6 +89,12 @@ impl Display for SpaceCoveView {
 // Top-left of each 5x8 lamp slot in tavern.png.
 const TAVERN_LAMP_POSITIONS: [(u32, u32); 3] = [(40, 23), (88, 24), (108, 28)];
 
+// Ships are 30px wide with transparent padding,
+// so a 29px step packs 4 of them into the 122px cove.
+const MAX_COVE_SHIPS: usize = 4;
+const COVE_SHIP_ORIGIN: (u32, u32) = (5, 40);
+const COVE_SHIP_X_STEP: u32 = 29;
+
 #[derive(Debug, Default)]
 pub struct SpaceCovePanel {
     tick: usize,
@@ -206,15 +212,14 @@ impl SpaceCovePanel {
             base.copy_non_trasparent_from(&right_eye, RIGHT_EYE_POSITION.0, RIGHT_EYE_POSITION.1)?;
         }
 
-        let mut x = 5;
-        for team in teams.iter().take(4) {
+        let mut x = COVE_SHIP_ORIGIN.0;
+        for team in teams.iter().take(MAX_COVE_SHIPS) {
             let ship_img = &team.spaceship.compose_image_in_shipyard()?[0];
-            let y = 40;
-            base.copy_non_trasparent_from(ship_img, x, y)?;
-            x += ship_img.width();
             if x + ship_img.width() > base.width() {
                 break;
             }
+            base.copy_non_trasparent_from(ship_img, x, COVE_SHIP_ORIGIN.1)?;
+            x += COVE_SHIP_X_STEP;
         }
 
         if !is_blinking_left {
@@ -899,14 +904,19 @@ impl Screen for SpaceCovePanel {
         match selected_asteroid_id.and_then(|id| world.planets.get(&id)) {
             Some(asteroid) => {
                 let previous_visitors = std::mem::take(&mut self.visiting_team_ids);
-                let new_set: HashSet<TeamId> = asteroid.team_ids.iter().copied().collect();
+                let new_set: HashSet<TeamId> = asteroid
+                    .team_ids
+                    .iter()
+                    .copied()
+                    .filter(|id| world.teams.contains_key(id))
+                    .collect();
                 self.visiting_team_ids = previous_visitors
                     .iter()
                     .copied()
                     .filter(|id| new_set.contains(id))
                     .collect();
                 for id in &asteroid.team_ids {
-                    if !self.visiting_team_ids.contains(id) {
+                    if new_set.contains(id) && !self.visiting_team_ids.contains(id) {
                         self.visiting_team_ids.push(*id);
                     }
                 }
@@ -916,9 +926,8 @@ impl Screen for SpaceCovePanel {
                     let teams = self
                         .visiting_team_ids
                         .iter()
-                        .take(4)
-                        .filter(|id| world.teams.contains_key(id))
-                        .map(|id| world.teams.get(id).unwrap())
+                        .filter_map(|id| world.teams.get(id))
+                        .take(MAX_COVE_SHIPS)
                         .collect_vec();
                     self.cove_image_widgets = Self::build_image_widgets(&teams)?;
                 }
