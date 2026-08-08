@@ -266,9 +266,9 @@ impl World {
                 / population)
                 .max(0.0)
                 .powf(2.0 / 3.0)
-                * 3.0; // less than one game per day
+                * 3.5; // less than one game per day
         self.teams.get_mut_or_err(&team_id)?.reputation =
-            (2.25 + combined_reputation / 2.0).bound();
+            (3.75 + combined_reputation / 2.0).bound();
 
         self.dirty = true;
         self.dirty_ui = true;
@@ -2986,7 +2986,7 @@ impl World {
                     let player = self.players.get_mut_or_err(player_id)?;
                     player.satisfy_opinion(PlayerOpinion::Gold); // Gold opinion is always positive
                 }
-            } else {
+            } else if team.id == self.own_team_id {
                 let delta_modifier = (total_salary - balance) as f32 / total_salary as f32;
                 team.sub_resource(Resource::SATOSHI, balance)?;
                 for player_id in team.player_ids.iter() {
@@ -2995,19 +2995,22 @@ impl World {
                         .add_team_satisfaction(SATISFACTION_MALUS_UNPAID_SALARIES * delta_modifier);
                 }
 
-                if team.id == self.own_team_id {
-                    callback = Some(UiCallback::PushUiPopup {
-                        popup_message: PopupMessage::Message {
-                            message:
-                                "You couldn't pay the full salaries, pirates are getting angry..."
-                                    .to_string(),
-                            links: vec![],
-                            level: log::Level::Warn,
-                            is_skippable: true,
-                            timestamp: Tick::now(),
-                        },
-                    });
-                }
+                callback = Some(UiCallback::PushUiPopup {
+                    popup_message: PopupMessage::Message {
+                        message: "You couldn't pay the full salaries, pirates are getting angry..."
+                            .to_string(),
+                        links: vec![],
+                        level: log::Level::Warn,
+                        is_skippable: true,
+                        timestamp: Tick::now(),
+                    },
+                });
+            } else {
+                // FIXME: i wish we didnt need this, but local teams keep losing pirates, we cant afford that for now
+                log::warn!(
+                    "{} did not have enough money to keep up with the salaries",
+                    team.name
+                );
             }
         }
 
