@@ -1477,6 +1477,14 @@ impl World {
 
             // Remove players from db_team that are not in the new team to clean up fired players
             for player_id in &previous_version_team.player_ids {
+                if self
+                    .players
+                    .get(player_id)
+                    .is_some_and(|player| player.peer_id.is_none())
+                {
+                    continue;
+                }
+
                 self.players.remove(player_id);
             }
         }
@@ -2844,7 +2852,7 @@ impl World {
         let free_pirates = self
             .players
             .values()
-            .filter(|p| p.team.is_none())
+            .filter(|p| p.team.is_none() && p.peer_id.is_none())
             .collect_vec()
             .sort_by_rating();
 
@@ -3180,6 +3188,11 @@ impl World {
 
         for &player_id in self.players.keys() {
             let player = self.players.get_or_err(&player_id)?;
+
+            if player.peer_id.is_some() {
+                continue;
+            }
+
             if player.team.is_none() {
                 continue;
             }
@@ -3247,6 +3260,11 @@ impl World {
 
         for &player_id in self.players.keys() {
             let player = self.players.get_or_err(&player_id)?;
+
+            if player.peer_id.is_some() {
+                continue;
+            }
+
             if player.team.is_none() {
                 continue;
             }
