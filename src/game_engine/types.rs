@@ -528,7 +528,10 @@ pub trait EnginePlayer {
 
 impl EnginePlayer for Player {
     fn min_roll(&self) -> i16 {
-        self.morale.game_value()
+        let max_morale =
+            (self.team_satisfaction().unwrap_or_default() + 0.5 * self.mental.charisma).bound();
+
+        self.morale.min(max_morale).game_value()
     }
 
     fn max_roll(&self) -> i16 {

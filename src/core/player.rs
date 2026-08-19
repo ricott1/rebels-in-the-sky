@@ -1290,8 +1290,6 @@ impl Player {
 
         let satisfaction = self.team_satisfaction().unwrap_or(MAX_SKILL);
 
-        let max_morale = (satisfaction + 0.5 * self.mental.charisma).bound();
-
         let mod_morale = if morale >= 0.0 {
             morale
         } else {
@@ -1301,10 +1299,7 @@ impl Player {
 
         let morale_was_not_minimum = self.morale > MIN_SKILL;
 
-        self.morale = (self.morale + mod_morale)
-            .min(max_morale)
-            .max(min_morale)
-            .bound();
+        self.morale = (self.morale + mod_morale).max(min_morale).bound();
         if self.morale == MIN_SKILL && morale_was_not_minimum {
             self.add_team_satisfaction(SATISFACTION_MALUS_FOR_MORALE_DROP);
         }
