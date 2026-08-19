@@ -632,7 +632,7 @@ impl NetworkCallback {
                     message: format!(
                         "There is a tournament on {} starting in {} with available spots.",
                         planet.name,
-                        (tournament.starting_at() - Tick::now()).formatted_as_time()
+                        (tournament.starting_at() - Tick::now()).formatted()
                     ),
                     links: vec![(
                         "tournament".to_string(),
