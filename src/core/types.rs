@@ -2,12 +2,13 @@ use super::{
     constants::{DEFAULT_PLANET_ID, KILOMETER},
     player::Player,
     skill::MAX_SKILL,
-    world::World,
 };
 use crate::{
-    core::{GamePosition, GamePositionUtils, Resource, Trait, NUM_GAME_POSITIONS},
+    core::{CrewRole, GamePosition, GamePositionUtils, Rated, Resource, Trait, NUM_GAME_POSITIONS},
     image::color_map::SkinColorMap,
-    types::{AppResult, HashMapWithResult, PlanetId, SystemTimeTick, TeamId, Tick},
+    types::{
+        AppResult, HashMapWithResult, PlanetId, PlayerMap, SystemTimeTick, TeamId, TeamMap, Tick,
+    },
 };
 use rand::{seq::IteratorRandom, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -20,7 +21,17 @@ use strum::{Display, FromRepr};
 use strum_macros::EnumIter;
 
 #[derive(
-    Debug, Default, PartialEq, Eq, Clone, Copy, EnumIter, Serialize_repr, Deserialize_repr, Hash,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Display,
+    EnumIter,
+    Serialize_repr,
+    Deserialize_repr,
+    Hash,
 )]
 #[repr(u8)]
 pub enum Region {
@@ -131,6 +142,21 @@ impl Population {
         Self::iter()
             .choose(rng)
             .expect("There should be at lease one Population to choose from.")
+    }
+
+    pub fn all_peoples() -> Vec<Population> {
+        let mut peoples = vec![];
+        for population in Population::iter() {
+            match population {
+                Population::Human { .. } => {
+                    for region in Region::iter() {
+                        peoples.push(Population::Human { region });
+                    }
+                }
+                other => peoples.push(other),
+            }
+        }
+        peoples
     }
 
     pub fn relative_age(&self, age: f32) -> f32 {
@@ -375,7 +401,7 @@ pub enum Pronoun {
 
 impl Pronoun {
     pub fn random(rng: &mut ChaCha8Rng) -> Self {
-        if let Ok(dist) = WeightedIndex::new([10, 10, 1]) {
+        if let Ok(dist) = WeightedIndex::new([40, 40, 1]) {
             return Self::from_repr(dist.sample(rng) as u8).unwrap_or_default();
         }
 
@@ -569,13 +595,13 @@ impl AutonomousStrategy {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumIter)]
 pub enum TeamBonus {
-    Exploration,       //pilot
+    Scouting,          //pilot
     SpaceshipSpeed,    //pilot
     Training,          //doctor
     TirednessRecovery, //doctor
-    TradePrice,        //captain
+    Bargaining,        //captain
     Reputation,        //captain
     Weapons,           //engineer
     Upgrades,          //engineer
@@ -584,11 +610,11 @@ pub enum TeamBonus {
 impl Display for TeamBonus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Exploration => write!(f, "Exploration"),
+            Self::Scouting => write!(f, "Scouting"),
             Self::Reputation => write!(f, "Reputation"),
             Self::SpaceshipSpeed => write!(f, "Ship speed"),
             Self::TirednessRecovery => write!(f, "Recovery"),
-            Self::TradePrice => write!(f, "Trading"),
+            Self::Bargaining => write!(f, "Bargaining"),
             Self::Training => write!(f, "Training"),
             Self::Weapons => write!(f, "Weapons"),
             Self::Upgrades => write!(f, "Upgrades"),
@@ -597,34 +623,41 @@ impl Display for TeamBonus {
 }
 
 impl TeamBonus {
-    pub const BASE_BONUS: f32 = 1.0;
-    const BONUS_PER_SKILL: f32 = 1.0 / MAX_SKILL;
-    pub fn current_team_bonus(&self, world: &World, team_id: &TeamId) -> AppResult<f32> {
-        let team = world.teams.get_or_err(team_id)?;
-        let player_id = match self {
-            Self::Exploration => team.crew_roles.pilot,
-            Self::SpaceshipSpeed => team.crew_roles.pilot,
-            Self::Training => team.crew_roles.doctor,
-            Self::TirednessRecovery => team.crew_roles.doctor,
-            Self::TradePrice => team.crew_roles.captain,
-            Self::Reputation => team.crew_roles.captain,
-            Self::Weapons => team.crew_roles.engineer,
-            Self::Upgrades => team.crew_roles.engineer,
-        };
+    pub fn crew_role(&self) -> CrewRole {
+        match self {
+            Self::Scouting => CrewRole::Pilot,
+            Self::SpaceshipSpeed => CrewRole::Pilot,
+            Self::Training => CrewRole::Doctor,
+            Self::TirednessRecovery => CrewRole::Doctor,
+            Self::Bargaining => CrewRole::Captain,
+            Self::Reputation => CrewRole::Captain,
+            Self::Weapons => CrewRole::Engineer,
+            Self::Upgrades => CrewRole::Engineer,
+        }
+    }
+
+    pub fn current_team_bonus(
+        &self,
+        team_id: &TeamId,
+        teams: &TeamMap,
+        players: &PlayerMap,
+    ) -> AppResult<f32> {
+        let team = teams.get_or_err(team_id)?;
+        let player_id = team.get_crew_role(self.crew_role());
 
         let skill = if let Some(id) = player_id {
-            let player = world.players.get_or_err(&id)?;
+            let player = players.get_or_err(&id)?;
             self.as_skill(player)
         } else {
             0.0
         };
 
-        Ok(Self::BASE_BONUS + Self::BONUS_PER_SKILL * skill)
+        Ok(1.0 + skill / MAX_SKILL)
     }
 
     pub fn current_player_bonus(&self, player: &Player) -> f32 {
         let skill = self.as_skill(player);
-        Self::BASE_BONUS + Self::BONUS_PER_SKILL * skill
+        1.0 + skill / MAX_SKILL
     }
 
     pub fn as_skill(&self, player: &Player) -> f32 {
@@ -633,10 +666,11 @@ impl TeamBonus {
         }
 
         match self {
-            TeamBonus::Exploration => {
-                0.15 * player.athletics.stamina
-                    + 0.15 * player.defense.steal
-                    + 0.7 * player.mental.vision
+            TeamBonus::Scouting => {
+                0.15 * player.offense.rating()
+                    + 0.15 * player.defense.rating()
+                    + 0.5 * player.mental.vision
+                    + 0.2 * player.mental.intuition
             }
             TeamBonus::Reputation => {
                 let mut bonus = 0.75 * player.mental.charisma
@@ -657,10 +691,10 @@ impl TeamBonus {
                 }
                 bonus
             }
-            TeamBonus::TradePrice => {
-                0.5 * player.mental.charisma
+            TeamBonus::Bargaining => {
+                0.45 * player.mental.charisma
                     + 0.25 * player.mental.aggression
-                    + 0.25 * player.mental.intuition
+                    + 0.3 * player.reputation
             }
             TeamBonus::Training => {
                 0.25 * player.athletics.strength
@@ -772,11 +806,10 @@ mod tests {
     fn test_team_bonus() {
         let mut player = Player::default();
 
-        assert!(TeamBonus::Exploration.as_skill(&player) == 0.0);
-        player.athletics.stamina = 10.0;
-        player.defense.steal = 6.0;
+        assert!(TeamBonus::Scouting.as_skill(&player) == 0.0);
         player.mental.vision = 2.0;
-        assert!(TeamBonus::Exploration.as_skill(&player) == 0.15 * 10.0 + 0.15 * 6.0 + 0.7 * 2.0);
+        player.mental.intuition = 6.0;
+        assert!(TeamBonus::Scouting.as_skill(&player) == 0.5 * 2.0 + 0.2 * 6.0);
 
         assert!(TeamBonus::Weapons.as_skill(&player) == 0.0);
         player.technical.ball_handling = 8.5;

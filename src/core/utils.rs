@@ -1,8 +1,7 @@
-use std::collections::HashMap;
-
 use super::{planet::Planet, skill::GameSkill, types::Population};
 use crate::store::ASSETS_DIR;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 #[derive(Deserialize)]
@@ -36,17 +35,6 @@ pub static PLAYER_DATA: LazyLock<HashMap<Population, PlayerData>> = LazyLock::ne
         .contents_utf8()
         .expect("Could not read players_data.json");
     serde_json::from_str(data).unwrap_or_else(|e| panic!("Could not parse players_data.json: {e}"))
-});
-
-pub static TEAM_DATA: LazyLock<Vec<(String, String)>> = LazyLock::new(|| {
-    let file = ASSETS_DIR
-        .get_file("data/teams_data.json")
-        .expect("Could not find teams_data.json");
-
-    let data = file
-        .contents_utf8()
-        .expect("Could not read teams_data.json");
-    serde_json::from_str(data).unwrap_or_else(|e| panic!("Could not parse teams_data.json: {e}"))
 });
 
 pub static PLANET_DATA: LazyLock<Vec<Planet>> = LazyLock::new(|| {

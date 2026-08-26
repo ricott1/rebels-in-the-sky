@@ -4,7 +4,7 @@ use super::{
     types::{GameStatsMap, Possession},
 };
 use crate::{
-    core::{utils::is_default, GamePosition, Player, NUM_GAME_POSITIONS},
+    core::{utils::is_default, Player, NUM_GAME_POSITIONS},
     game_engine::{
         brawl, end_of_quarter, fastbreak, isolation, jump_ball, off_the_screen, pick_and_roll,
         post, rebound, shot, start_of_quarter, total_brawl,
@@ -152,15 +152,16 @@ impl Action {
     }
 }
 
-pub fn sample_player_index(
+pub fn sample_player_index<T: Into<f32>>(
     rng: &mut ChaCha8Rng,
-    mut weights: [GamePosition; NUM_GAME_POSITIONS as usize],
+    weights: [T; NUM_GAME_POSITIONS as usize],
     players: [&Player; NUM_GAME_POSITIONS as usize],
 ) -> Option<usize> {
+    let mut t_weights: [f32; 5] = weights.map(|w| w.into());
     for (idx, player) in players.iter().enumerate() {
         if player.is_knocked_out() {
-            weights[idx] = 0;
+            t_weights[idx] = 0.0;
         }
     }
-    Some(WeightedIndex::new(weights).ok()?.sample(rng))
+    Some(WeightedIndex::new(t_weights).ok()?.sample(rng))
 }

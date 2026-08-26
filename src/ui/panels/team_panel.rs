@@ -1,23 +1,23 @@
-use super::button::Button;
-use super::clickable_list::ClickableListState;
-use super::gif_map::GifMap;
-use super::ui_callback::UiCallback;
-use super::ui_frame::UiFrame;
-use super::ui_screen::{render_help_block, tab_link, UiTab};
-use super::widgets::{
-    go_to_team_current_planet_button, render_challenge_button, render_spaceship_description,
-};
-use super::{
-    constants::*,
-    traits::{Screen, SplitPanel},
-    utils::img_to_lines,
-    widgets::{default_block, selectable_list},
-};
+use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
 use crate::core::constants::MIN_PLAYERS_PER_GAME;
 use crate::core::team::Team;
 use crate::image::spaceship::{SPACESHIP_IMAGE_HEIGHT, SPACESHIP_IMAGE_WIDTH};
 use crate::types::{AppResult, HashMapWithResult};
+use crate::ui::button::Button;
+use crate::ui::clickable_list::ClickableListState;
+use crate::ui::gif_map::GifMap;
+use crate::ui::renders::{
+    go_to_team_current_planet_button, render_challenge_button, render_spaceship_description,
+};
+use crate::ui::ui_callback::UiCallback;
+use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
+use crate::ui::ui_screen::{tab_link, UiTab};
+use crate::ui::{
+    constants::*,
+    renders::{default_block, selectable_list},
+    utils::img_to_lines,
+};
 use crate::{
     core::{
         position::{GamePosition, GamePositionUtils},
@@ -29,6 +29,7 @@ use crate::{
     types::{PlayerId, TeamId},
 };
 use core::fmt::Debug;
+use itertools::Itertools;
 use ratatui::crossterm;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::Margin;
@@ -141,7 +142,12 @@ impl TeamListPanel {
             % self.current_team_players_length;
     }
 
-    fn build_left_panel(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
+    fn build_left_panel(
+        &mut self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         let split = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
@@ -157,16 +163,26 @@ impl TeamListPanel {
             },
         )
         .bold()
-        .set_hover_text("View all crews.");
+        .hover_text("View all crews.");
 
+        let own_team = world.get_own_team()?;
+        let num_open_to_challenge = world
+            .teams
+            .values()
+            .filter(|team| {
+                own_team.can_challenge_local_team(team).is_ok()
+                    || own_team.can_challenge_network_team(team).is_ok()
+            })
+            .collect_vec()
+            .len();
         let mut filter_challenge_button = Button::new(
-            TeamView::OpenToChallenge.to_string(),
+            format!("{} ({})", TeamView::OpenToChallenge, num_open_to_challenge),
             UiCallback::SetTeamPanelView {
                 view: TeamView::OpenToChallenge,
             },
         )
         .bold()
-        .set_hover_text("View all crews that can be currently challenged to a game.");
+        .hover_text("View all crews that can be currently challenged to a game.");
 
         let mut filter_peers_button = Button::new(
             TeamView::Peers.to_string(),
@@ -175,7 +191,7 @@ impl TeamListPanel {
             },
         ).bold()
 
-        .set_hover_text(
+        .hover_text(
             "View all crews received from the network (i.e. crews controlled by other players online)."
                 ,
         );
@@ -221,6 +237,8 @@ impl TeamListPanel {
         } else {
             frame.render_widget(default_block().title("Crews"), split[3]);
         }
+
+        Ok(())
     }
 
     fn build_right_panel(
@@ -529,7 +547,7 @@ impl Screen for TeamListPanel {
             Constraint::Min(IMG_FRAME_WIDTH),
         ])
         .split(area);
-        self.build_left_panel(frame, world, left_right_split[0]);
+        self.build_left_panel(frame, world, left_right_split[0])?;
         if self.all_team_ids.is_empty() {
             frame.render_widget(
                 Paragraph::new(" No crews yet!"),
@@ -582,55 +600,47 @@ impl Screen for TeamListPanel {
             " Select player ".to_string(),
         ]
     }
+}
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        render_help_block(
-            frame,
-            area,
-            vec![
-                Line::from(" Browse all the rival crews. Inspect their roster and ship,"),
-                Line::from(" check their rating, and challenge them to a match when they"),
-                Line::from(" are open and on the same planet as you."),
-                Line::from(""),
-                Line::from(" Manage your own crew in My Team."),
-                Line::from(" To inspect individual players, browse Pirates."),
-                Line::from(" To find a planet and travel there, see Galaxy."),
-            ],
-            vec![
+impl HelpPanel for TeamListPanel {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: [
+                "Browse all the rival crews. Inspect their roster and challenge them to a match.",
+                "",
+                "Manage your own crew in My Team.",
+                "To inspect individual players, browse Pirates.",
+                "To find a planet and travel there, see Galaxy.",
+            ]
+            .join("\n"),
+            links: vec![
                 tab_link("My Team", UiTab::MyTeam),
                 tab_link("Pirates", UiTab::Pirates),
                 tab_link("Galaxy", UiTab::Galaxy),
             ],
-            vec![
-                Line::from(" Controls:"),
+            controls: vec![
+                Line::from("Controls:"),
                 Line::from(format!(
-                    "   {}        Cycle view (All / OpenToChallenge / Peers)",
+                    "  {}        Cycle view (All / OpenToChallenge / Peers)",
                     ui_key::CYCLE_VIEW
                 )),
-                Line::from("   ↑/↓        Move highlight in the team list"),
+                Line::from("  ↑/↓        Move highlight in the team list"),
                 Line::from(format!(
-                    "   {} / {}      Scroll the player list inside the team",
+                    "  {} / {}      Scroll the player list inside the team",
                     ui_key::PREVIOUS_SELECTION,
                     ui_key::NEXT_SELECTION
                 )),
                 Line::from(format!(
-                    "   {}          Challenge highlighted team to a match",
+                    "  {}          Challenge highlighted team to a match",
                     ui_key::game::CHALLENGE_TEAM
                 )),
                 Line::from(format!(
-                    "   {}          Open home planet / {} current planet",
+                    "  {}          Open home planet / {} current planet",
                     ui_key::GO_TO_HOME_PLANET,
                     ui_key::ON_PLANET
                 )),
             ],
-        );
-        Ok(())
+        }
     }
 }
 

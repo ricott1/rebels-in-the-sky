@@ -17,7 +17,7 @@ pub(crate) fn execute(
     let attacking_players_array = game.attacking_players_array();
     let play_idx = match input.attackers.len() {
         0 => {
-            let weights = [70, 15, 25, 2, 1];
+            let weights: [u8; 5] = [70, 15, 25, 2, 1];
             if let Some(idx) = sample_player_index(action_rng, weights, attacking_players_array) {
                 idx
             } else {
@@ -41,7 +41,19 @@ pub(crate) fn execute(
 
     let target_idx = match input.attackers.len() {
         0 | 1 => {
-            let weights = [1, 2, 3, 3, 2];
+            let weights = {
+                let playmaker = attacking_players_array[play_idx];
+                let mut base = [1.0, 2.0, 4.0, 3.0, 2.0];
+                base[play_idx] = 0.0;
+
+                // Opinion on population affects probability.
+                for (idx, target) in attacking_players_array.iter().enumerate() {
+                    base[idx] *= 1.0
+                        + playmaker.population_opinion_modifier(target.info.population);
+                }
+
+                base
+            };
             sample_player_index(action_rng, weights, attacking_players_array)
                 .expect("Since we reached this selection, there should be at least one player.")
         }
@@ -98,7 +110,7 @@ fn playmaker_uses_the_screen(
 
     // Select a screener
     let screener_idx = {
-        let mut weights = [1, 2, 3, 3, 2];
+        let mut weights: [u8; 5] = [1, 2, 3, 3, 2];
         weights[play_idx] = 0;
         if let Some(idx) = sample_player_index(action_rng, weights, attacking_players_array) {
             idx
@@ -173,7 +185,7 @@ fn playmaker_uses_the_screen(
             ((0.5 * playmaker.mental.vision + 0.5 * playmaker.technical.passing) / MAX_SKILL)
                 as f64,
         ) {
-        let mut weights = [3, 3, 3, 3, 1];
+        let mut weights: [u8; 5] = [3, 3, 3, 3, 1];
         weights[play_idx] = 0;
         let off_screen_idx = sample_player_index(action_rng, weights, attacking_players_array)
             .expect("There should be another ok player");
@@ -566,7 +578,7 @@ fn playmaker_passes_to_target(
             if num_ok_players > 2 && (0.75 * playmaker.mental.vision + 0.25 * playmaker.technical.passing).game_value() + x
                 > ADV_NEUTRAL_LIMIT {
 
-                let mut weights = [3, 3, 2, 2, 1];
+                let mut weights: [u8; 5] = [3, 3, 2, 2, 1];
                 weights[play_idx] = 0;
                 weights[target_idx] = 0;
                 let off_screen_idx = sample_player_index(action_rng, weights, attacking_players_array)

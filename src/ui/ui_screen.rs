@@ -1,27 +1,19 @@
 use super::button::Button;
 use super::constants::UiStyle;
-use super::galaxy_panel::GalaxyPanel;
-use super::popup_message::{overlay_line_links, PopupMessage};
-use super::space_screen::SpaceScreen;
-use super::splash_screen::SplashScreen;
-use super::swarm_panel::SwarmPanel;
-use super::traits::SplitPanel;
+use super::panels::*;
+use super::panels::{Screen, SplitPanel};
+use super::renders::{default_block, thick_block};
 use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::ui_frame::UiFrame;
 use super::ui_key;
-use super::widgets::{default_block, thick_block};
-use super::{
-    game_panel::GamePanel, my_team_panel::MyTeamPanel, new_team_screen::NewTeamScreen,
-    player_panel::PlayerListPanel, team_panel::TeamListPanel, tournament_panel::TournamentPanel,
-    traits::Screen,
-};
+use super::PopupMessage;
+
 #[cfg(feature = "audio")]
 use crate::audio::music_player::MusicPlayer;
 use crate::core::world::World;
 use crate::network::types::ChatHistoryEntry;
 use crate::types::Tick;
 use crate::types::{AppResult, SystemTimeTick};
-use crate::ui::space_cove_panel::SpaceCovePanel;
 #[cfg(feature = "audio")]
 use crate::AudioPlayerState;
 use anyhow::Error;
@@ -79,47 +71,6 @@ fn help_popup_rect(screen_area: Rect) -> Rect {
     let x = screen_area.x + screen_area.width.saturating_sub(width) / 2;
     let y = screen_area.y + screen_area.height.saturating_sub(height) / 2;
     Rect::new(x, y, width, height)
-}
-
-/// Renders the standard help body: a description paragraph with optional inline
-/// links overlaid on the text (each `(label, callback)` makes every occurrence of
-/// `label` a clickable button), followed by a controls paragraph. Used by the
-/// main-tab panels' `render_help_widget` to avoid layout boilerplate.
-pub fn render_help_block(
-    frame: &mut UiFrame,
-    area: Rect,
-    description: Vec<Line<'static>>,
-    links: Vec<(String, UiCallback)>,
-    controls: Vec<Line<'static>>,
-) {
-    let desc_h = description.len().max(1) as u16;
-    let split = Layout::vertical([
-        Constraint::Length(desc_h),
-        Constraint::Length(1), // gap
-        Constraint::Min(5),    // controls
-    ])
-    .split(area);
-
-    let texts = description
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|s| s.content.as_ref())
-                .collect::<String>()
-        })
-        .collect_vec();
-
-    frame.render_widget(Paragraph::new(description), split[0]);
-    for (row, text) in texts.iter().enumerate() {
-        let y = split[0].y + row as u16;
-        if y >= split[0].bottom() {
-            break;
-        }
-        overlay_line_links(frame, text, split[0].x, y, &links);
-    }
-
-    frame.render_widget(Paragraph::new(controls), split[2]);
 }
 
 /// Convenience constructor for a help-block link that switches to `tab`,
@@ -369,7 +320,7 @@ impl UiScreen {
         }
     }
 
-    fn get_active_screen_mut(&mut self) -> &mut dyn Screen {
+    pub fn get_active_screen_mut(&mut self) -> &mut dyn Screen {
         match self.state {
             UiState::Splash => &mut self.splash_screen,
             UiState::NewTeam => &mut self.new_team_screen,
@@ -498,6 +449,7 @@ impl UiScreen {
         #[cfg(feature = "audio")] audio_player: Option<&MusicPlayer>,
     ) -> AppResult<()> {
         self.inner_registry.clear();
+
         match self.state {
             UiState::Splash => {
                 #[cfg(feature = "audio")]
@@ -570,13 +522,25 @@ impl UiScreen {
     ) {
         let mut ui_frame = UiFrame::new(frame);
         ui_frame.set_hovering(self.inner_registry.hovering());
-        if !self.popup_messages.is_empty() || self.show_help {
-            ui_frame.set_active_layer(1);
+
+        let active_layer = if !self.popup_messages.is_empty() {
+            2
+        } else if self.show_help || self.get_active_screen_mut().has_open_dropdown().is_some() {
+            1
         } else {
-            ui_frame.set_active_layer(0);
-        }
+            0
+        };
+        ui_frame.set_active_layer(active_layer);
 
         let screen_area = ui_frame.screen_area();
+
+        if let Some(id) = self.get_active_screen_mut().has_open_dropdown() {
+            ui_frame.register_mouse_callback(
+                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                None,
+                UiCallback::ToggleDropdown { id },
+            );
+        }
 
         let split = Layout::vertical([
             Constraint::Min(6),    // body
@@ -618,9 +582,10 @@ impl UiScreen {
                 ui_frame.render_widget(default_block(), tab_main_split[0]);
                 let tab_split = Layout::horizontal(constraints).split(tab_main_split[0]);
 
+                let tab_layer = if self.show_help { 1 } else { 0 };
                 for (idx, &tab) in self.ui_tabs.iter().enumerate() {
                     let selected = idx == self.tab_index;
-                    let mut button = if let Some(variants) = CONSTANT_TAB_BUTTONS.get(&tab) {
+                    let button = if let Some(variants) = CONSTANT_TAB_BUTTONS.get(&tab) {
                         variants[selected as usize].clone()
                     } else {
                         let tab_name = if tab == UiTab::MyTeam {
@@ -648,11 +613,7 @@ impl UiScreen {
                         }
                     };
 
-                    if self.show_help && self.popup_messages.is_empty() {
-                        button = button.set_layer(1);
-                    }
-
-                    ui_frame.render_interactive_widget(button, tab_split[idx]);
+                    ui_frame.render_interactive_widget_on_layer(button, tab_split[idx], tab_layer);
                 }
 
                 active_render
@@ -671,6 +632,19 @@ impl UiScreen {
                 log::Level::Error,
             );
         }
+
+        // Render footer
+        self.render_footer(
+            &mut ui_frame,
+            world,
+            #[cfg(feature = "audio")]
+            audio_player,
+            split[1],
+        );
+
+        // Draw the deferred widgets before the help popup and the popup messages,
+        // which are rendered on higher layers.
+        ui_frame.render_layered_widgets();
 
         if self.show_help {
             let popup_rect = help_popup_rect(screen_area);
@@ -699,20 +673,8 @@ impl UiScreen {
                 popup_split[0],
             );
 
-            let debug_view = self.debug_view;
-            if let Err(err) = self.get_active_screen().render_help_widget(
-                &mut ui_frame,
-                world,
-                popup_split[1],
-                debug_view,
-            ) {
-                self.push_log_event(
-                    Tick::now(),
-                    None,
-                    format!("Help render error\n{err}"),
-                    log::Level::Error,
-                );
-            }
+            let content = self.get_active_screen().help_content();
+            render_help_content(&mut ui_frame, popup_split[1], content);
 
             let button_split = Layout::horizontal([
                 Constraint::Min(0),
@@ -721,40 +683,30 @@ impl UiScreen {
             ])
             .split(popup_split[2]);
             let close_button = Button::new(super::constants::UiText::YES, UiCallback::CloseHelp)
-                .set_hover_text("Close help")
-                .set_hotkey(ui_key::YES_TO_DIALOG)
-                .block(default_block().border_style(UiStyle::OK))
-                .set_layer(1);
-            ui_frame.render_interactive_widget(close_button, button_split[1]);
+                .hover_text("Close help")
+                .hotkey(ui_key::YES_TO_DIALOG)
+                .block(default_block().border_style(UiStyle::OK));
+            ui_frame.render_interactive_widget_on_layer(close_button, button_split[1], 1);
         }
 
-        // Render footer
-        self.render_footer(
-            &mut ui_frame,
-            world,
-            #[cfg(feature = "audio")]
-            audio_player,
-            split[1],
-        );
-
-        if let Err(err) = self.render_popup_messages(&mut ui_frame, screen_area) {
-            self.push_log_event(
-                Tick::now(),
-                None,
-                format!("Popup render error\n{err}"),
-                log::Level::Error,
-            );
-            log::error!("Popup render error\n{err}");
+        if self.state == UiState::Main || self.state == UiState::SpaceAdventure {
+            if let Err(err) = self.render_popup_messages(&mut ui_frame, screen_area) {
+                self.push_log_event(
+                    Tick::now(),
+                    None,
+                    format!("Popup render error\n{err}"),
+                    log::Level::Error,
+                );
+                log::error!("Popup render error\n{err}");
+            }
         }
         self.last_render = Instant::now();
-
         self.inner_registry = ui_frame.callback_registry().clone();
     }
 
     fn render_popup_messages(&mut self, frame: &mut UiFrame, area: Rect) -> AppResult<()> {
-        // Render popup message
-        if !self.popup_messages.is_empty() {
-            self.popup_messages[0].render(frame, area, &mut self.popup_input)?;
+        if let Some(popup) = self.popup_messages.first() {
+            popup.render(frame, area, &mut self.popup_input)?;
         }
         Ok(())
     }
@@ -855,7 +807,7 @@ impl UiScreen {
                 ),
                 UiCallback::ToggleAudio,
             )
-            .set_hotkey(ui_key::radio::TOGGLE_AUDIO);
+            .hotkey(ui_key::radio::TOGGLE_AUDIO);
 
             if audio_player.is_buffering() {
                 audio_button.disable(Some("Buffering..."));
@@ -868,7 +820,7 @@ impl UiScreen {
                     format!(" {} ", ui_key::radio::PREVIOUS_RADIO),
                     UiCallback::PreviousRadio,
                 )
-                .set_hotkey(ui_key::radio::PREVIOUS_RADIO),
+                .hotkey(ui_key::radio::PREVIOUS_RADIO),
                 split[2],
             );
 
@@ -877,7 +829,7 @@ impl UiScreen {
                     format!(" {} ", ui_key::radio::NEXT_RADIO),
                     UiCallback::NextRadio,
                 )
-                .set_hotkey(ui_key::radio::NEXT_RADIO),
+                .hotkey(ui_key::radio::NEXT_RADIO),
                 split[3],
             );
             if let Some(currently_playing) = audio_player.currently_playing() {

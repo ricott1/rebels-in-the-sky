@@ -1,15 +1,13 @@
-use super::{
-    constants::UiStyle,
-    traits::InteractiveStatefulWidget,
-    ui_callback::{CallbackRegistry, UiCallback},
-};
+use crate::ui::constants::UiStyle;
+use crate::ui::traits::InteractiveStatefulWidget;
+use crate::ui::ui_callback::{CallbackRegistry, UiCallback};
 use ratatui::crossterm;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Rect},
     style::Style,
     text::Text,
-    widgets::{Block, Cell, HighlightSpacing, Row, StatefulWidget, Table, TableState, Widget},
+    widgets::{Block, Cell, HighlightSpacing, Row, StatefulWidget, Table, TableState},
 };
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
@@ -232,18 +230,7 @@ impl StatefulWidget for ClickableTable<'_> {
     }
 }
 
-impl Widget for ClickableTable<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        let mut state = ClickableTableState::default();
-        StatefulWidget::render(&self, area, buf, &mut state);
-    }
-}
-
 impl InteractiveStatefulWidget for &ClickableTable<'_> {
-    fn layer(&self) -> usize {
-        0
-    }
-
     fn hover_text(&self) -> Text<'_> {
         "".into()
     }
@@ -253,6 +240,7 @@ impl InteractiveStatefulWidget for &ClickableTable<'_> {
         area: Rect,
         callback_registry: &mut CallbackRegistry,
         state: &mut Self::State,
+        layer: usize,
     ) {
         state.hovered = Rect::default();
 
@@ -260,8 +248,8 @@ impl InteractiveStatefulWidget for &ClickableTable<'_> {
             return;
         }
 
-        let is_hovered = callback_registry.is_hovering(area)
-            && callback_registry.get_active_layer() == self.layer();
+        let is_hovered =
+            callback_registry.is_hovering(area) && callback_registry.get_active_layer() == layer;
 
         if !is_hovered {
             return;
@@ -292,10 +280,6 @@ impl InteractiveStatefulWidget for &ClickableTable<'_> {
 }
 
 impl InteractiveStatefulWidget for ClickableTable<'_> {
-    fn layer(&self) -> usize {
-        0
-    }
-
     fn hover_text(&self) -> Text<'_> {
         "".into()
     }
@@ -305,7 +289,8 @@ impl InteractiveStatefulWidget for ClickableTable<'_> {
         area: Rect,
         callback_registry: &mut CallbackRegistry,
         state: &mut Self::State,
+        layer: usize,
     ) {
-        InteractiveStatefulWidget::before_rendering(&self, area, callback_registry, state);
+        InteractiveStatefulWidget::before_rendering(&self, area, callback_registry, state, layer);
     }
 }

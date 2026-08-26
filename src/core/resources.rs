@@ -44,4 +44,14 @@ impl Resource {
             Resource::RUM => 1,
         }
     }
+
+    pub fn units(&self) -> &'static str {
+        match self {
+            Resource::SATOSHI => "",
+            Resource::GOLD => "Kg",
+            Resource::SCRAPS => "t",
+            Resource::FUEL => "l",
+            Resource::RUM => "l",
+        }
+    }
 }

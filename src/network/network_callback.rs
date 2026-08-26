@@ -129,13 +129,15 @@ impl NetworkCallback {
         network_team: NetworkTeam,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
-            let team_version_updated = app.world.add_network_team(network_team.clone())?;
+            let version_changed = app
+                .world
+                .add_network_team(network_team.clone(), timestamp)?;
 
             if let Some(id) = peer_id {
                 app.ui.swarm_panel.add_peer_id(id, network_team.team.id);
             }
 
-            if team_version_updated {
+            if version_changed {
                 app.ui.push_log_event(
                     timestamp,
                     peer_id,
@@ -630,31 +632,44 @@ impl NetworkCallback {
                     message: format!(
                         "There is a tournament on {} starting in {} with available spots.",
                         planet.name,
-                        (tournament.starting_at() - Tick::now()).formatted_as_time()
+                        (tournament.starting_at() - Tick::now()).formatted()
                     ),
-                    links: vec![("tournament".to_string(), UiCallback::GoToTournaments)],
+                    links: vec![(
+                        "tournament".to_string(),
+                        UiCallback::GoToTournaments { from_popup: true },
+                    )],
                     level: log::Level::Info,
                     is_skippable: true,
                     timestamp: Tick::now(),
                 });
             }
 
-            let received_tournament_is_latest =
-                if app.world.past_tournaments.contains_key(&tournament.id) {
+            // If we've already played out every game this tournament contains, it's finished on our
+            // side. Don't let a peer's rebroadcast resurrect it (re-simulating it, or - when its games
+            // are already archived - immediately re-cancelling it with the "no pending team" error).
+            let already_finished_locally = !tournament.games.is_empty()
+                && tournament
+                    .games
+                    .iter()
+                    .all(|g| app.world.past_games.contains_key(&g.id));
+
+            let received_tournament_is_latest = if already_finished_locally {
+                false
+            } else if app.world.past_tournaments.contains_key(&tournament.id) {
+                false
+            } else if let Some(previous_t) = app.world.tournaments.get(&tournament.id) {
+                // Try to keep most recent tournament. This is important to avoid recreating same games twice.
+                // If previous tournament is already initialized, then no need to update
+                if previous_t.is_initialized() {
                     false
-                } else if let Some(previous_t) = app.world.tournaments.get(&tournament.id) {
-                    // Try to keep most recent tournament. This is important to avoid recreating same games twice.
-                    // If previous tournament is already initialized, then no need to update
-                    if previous_t.is_initialized() {
-                        false
-                    } else {
-                        tournament.is_initialized()
-                            || tournament.is_canceled()
-                            || tournament.registered_teams.len() > previous_t.registered_teams.len()
-                    }
                 } else {
-                    true
-                };
+                    tournament.is_initialized()
+                        || tournament.is_canceled()
+                        || tournament.registered_teams.len() > previous_t.registered_teams.len()
+                }
+            } else {
+                true
+            };
 
             if received_tournament_is_latest {
                 if !tournament.is_canceled() {
@@ -711,9 +726,6 @@ impl NetworkCallback {
         Box::new(move |app: &mut App| {
             log::info!("Got seed info");
 
-            // Notify about new version (only once).
-            app.notify_seed_version(seed_info.version);
-
             let data = &mut app.world.network_store_data;
 
             data.update(&seed_info.network_store_data);
@@ -737,12 +749,10 @@ impl NetworkCallback {
                 log::Level::Debug,
             );
 
-            // Dial the peers advertised by the seed. We only dial here; addresses are
-            // persisted once a connection actually succeeds (see
-            // HandleConnectionEstablished), so we never store peers we merely tried.
+            // Dial the peers advertised by the seed.
+            //  We only dial here; addresses are persisted once a connection actually succeeds.
             app.network_handler
                 .dial_known_peers(&seed_info.network_store_data.peer_addresses)?;
-            app.world.dirty_network = true;
             Ok(None)
         })
     }
@@ -772,7 +782,10 @@ impl NetworkCallback {
 
                     app.ui.push_popup(PopupMessage::Message {
                         message: "Trade offer received.\nCheck the swarm panel".to_string(),
-                        links: vec![("swarm panel".to_string(), UiCallback::GoToSwarmRequests)],
+                        links: vec![(
+                            "swarm panel".to_string(),
+                            UiCallback::GoToSwarmRequests { from_popup: true },
+                        )],
                         level: log::Level::Info,
                         is_skippable: true,
                         timestamp,
@@ -821,8 +834,11 @@ impl NetworkCallback {
                             target_team,
                         )?;
 
-                        app.world
-                            .swap_players_team(trade.proposer_player.id, trade.target_player.id)?;
+                        app.world.swap_players_team(
+                            trade.proposer_player.id,
+                            trade.target_player.id,
+                            timestamp,
+                        )?;
 
                         let own_team = app.world.get_own_team_mut()?;
                         own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
@@ -910,8 +926,11 @@ impl NetworkCallback {
                             own_team,
                         )?;
 
-                        app.world
-                            .swap_players_team(trade.proposer_player.id, trade.target_player.id)?;
+                        app.world.swap_players_team(
+                            trade.proposer_player.id,
+                            trade.target_player.id,
+                            timestamp,
+                        )?;
 
                         let own_team = app.world.get_own_team_mut()?;
                         own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
@@ -1029,7 +1048,10 @@ impl NetworkCallback {
                     }
                     app.ui.push_popup(PopupMessage::Message {
                         message: "Challenge received.\nCheck the swarm panel".to_string(),
-                        links: vec![("swarm panel".to_string(), UiCallback::GoToSwarmRequests)],
+                        links: vec![(
+                            "swarm panel".to_string(),
+                            UiCallback::GoToSwarmRequests { from_popup: true },
+                        )],
                         level: log::Level::Info,
                         is_skippable: true,
                         timestamp,
@@ -1102,7 +1124,10 @@ impl NetworkCallback {
 
                         app.ui.push_popup(PopupMessage::Message {
                             message: "Challenge accepted, game is starting.".to_string(),
-                            links: vec![("game".to_string(), UiCallback::GoToGames)],
+                            links: vec![(
+                                "game".to_string(),
+                                UiCallback::GoToGames { from_popup: true },
+                            )],
                             level: log::Level::Info,
                             is_skippable: false,
                             timestamp: Tick::now(),
@@ -1182,7 +1207,10 @@ impl NetworkCallback {
 
                         app.ui.push_popup(PopupMessage::Message {
                             message: "Challenge accepted, game is starting.".to_string(),
-                            links: vec![("game".to_string(), UiCallback::GoToGames)],
+                            links: vec![(
+                                "game".to_string(),
+                                UiCallback::GoToGames { from_popup: true },
+                            )],
                             level: log::Level::Info,
                             is_skippable: false,
                             timestamp: Tick::now(),

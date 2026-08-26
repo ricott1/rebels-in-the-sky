@@ -17,7 +17,7 @@ pub(crate) fn execute(
     let attacking_players_array = game.attacking_players_array();
     let defending_players_array = game.defending_players_array();
 
-    let weights = [4, 5, 4, 3, 1];
+    let weights: [u8; 5] = [4, 5, 3, 2, 1];
     let iso_idx = if let Some(idx) =
         sample_player_index(action_rng, weights, attacking_players_array)
     {
@@ -200,7 +200,7 @@ pub(crate) fn execute(
                     && (0.5 * iso.mental.vision + 0.5 * iso.technical.passing).game_value() + x
                         > ADV_NEUTRAL_LIMIT
                 {
-                    let mut weights = [3, 3, 3, 3, 1];
+                    let mut weights: [u8; 5] = [3, 3, 3, 3, 1];
                     weights[iso_idx] = 0;
                     let off_screen_idx = sample_player_index(action_rng, weights, attacking_players_array)
                         .expect("There should be another ok player");

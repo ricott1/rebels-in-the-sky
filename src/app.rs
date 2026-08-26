@@ -1,4 +1,3 @@
-use crate::app_version;
 use crate::args::AppArgs;
 #[cfg(feature = "audio")]
 use crate::audio::music_player::{MusicPlayer, MusicPlayerEvent};
@@ -7,7 +6,7 @@ use crate::network::handler::NetworkHandler;
 use crate::{
     core::*,
     crossterm_event_handler,
-    store::{get_world_size, load_world, reset_store, save_world, world_file_data},
+    store::{get_world_size, load_world, reset_store, save_world},
     tick_event_handler,
     tui::{TerminalEvent, Tui, WriterProxy},
     types::{AppResult, SystemTimeTick, Tick},
@@ -53,7 +52,6 @@ pub struct App {
     #[cfg(feature = "audio")]
     pub audio_player: Option<MusicPlayer>,
     pub network_handler: NetworkHandler,
-    new_version_notified: bool,
     cancellation_token: CancellationToken,
 }
 
@@ -67,7 +65,6 @@ impl App {
     }
 
     pub async fn simulate_loaded_world<W: WriterProxy>(&mut self, tui: &mut Tui<W>) {
-        let mut callbacks = vec![];
         let mut last_tui_update = Tick::now();
         log::info!(
             "Simulation started, must simulate {}",
@@ -101,6 +98,7 @@ impl App {
         }
 
         const SIMULATION_UPDATE_INTERVAL: Tick = 250 * MILLISECONDS;
+
         while self.world.is_simulating() {
             // Give a visual feedback by drawing.
             let now = Tick::now();
@@ -117,14 +115,29 @@ impl App {
                 self.draw(tui).await;
             }
 
-            let mut cb = match self
+            match self
                 .world
                 .handle_slow_tick_events(self.world.last_tick_short_interval + TickInterval::SHORT)
             {
-                Ok(callbacks) => callbacks,
+                Ok(callbacks) => {
+                    for callback in callbacks.iter() {
+                        match callback.call(self) {
+                            Ok(Some(message)) => self.ui.push_popup(PopupMessage::Message {
+                                message,
+                                links: vec![],
+                                level: log::Level::Info,
+                                is_skippable: true,
+                                timestamp: self.world.last_tick_short_interval,
+                            }),
+                            Ok(None) => {}
+                            Err(e) => {
+                                panic!("Failed to simulate world: {e}");
+                            }
+                        }
+                    }
+                }
                 Err(e) => panic!("Failed to simulate world: {e}"),
             };
-            callbacks.append(&mut cb);
         }
 
         self.world.serialized_size =
@@ -132,24 +145,6 @@ impl App {
 
         self.state = AppState::Running;
         self.ui.set_state(UiState::Main);
-
-        for callback in callbacks.iter() {
-            match callback.call(self) {
-                Ok(Some(message)) => {
-                    self.ui.push_popup(PopupMessage::Message {
-                        message,
-                        links: vec![],
-                        level: log::Level::Info,
-                        is_skippable: true,
-                        timestamp: Tick::now(),
-                    });
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    panic!("Failed to simulate world: {e}");
-                }
-            }
-        }
     }
 
     pub fn test_default() -> AppResult<Self> {
@@ -220,7 +215,6 @@ impl App {
             #[cfg(feature = "audio")]
             audio_player,
             network_handler,
-            new_version_notified: false,
             cancellation_token: CancellationToken::new(),
         })
     }
@@ -357,31 +351,6 @@ impl App {
         Ok(())
     }
 
-    pub fn notify_seed_version(&mut self, seed_version: [usize; 3]) {
-        if !self.new_version_notified {
-            let [own_version_major, own_version_minor, own_version_patch] = app_version();
-            let [version_major, version_minor, version_patch] = seed_version;
-            if version_major > own_version_major
-                || (version_major == own_version_major && version_minor > own_version_minor)
-                || (version_major == own_version_major
-                    && version_minor == own_version_minor
-                    && version_patch > own_version_patch)
-            {
-                let message = format!(
-                    "New version {version_major}.{version_minor}.{version_patch} available. \nDownload at https://rebels.frittura.org",
-                );
-                self.ui.push_popup(PopupMessage::Message {
-                    message,
-                    links: vec![],
-                    level: log::Level::Info,
-                    is_skippable: false,
-                    timestamp: Tick::now(),
-                });
-                self.new_version_notified = true;
-            }
-        }
-    }
-
     pub fn new_world(&mut self) {
         if let Err(e) = self.world.initialize(self.args.generate_local_world) {
             panic!("Failed to initialize world: {e}");
@@ -390,44 +359,33 @@ impl App {
 
     pub fn continue_game(&mut self) {
         // Try to load an existing world.
-        match load_world(self.args.store_prefix()) {
-            Ok(mut w) => {
-                w.dirty_network = true;
-                w.dirty_ui = true;
-                self.world = w;
-
-                if self.args.reset_network_peers {
-                    self.world.reset_network_store_peers();
-                } else {
-                    let data = &self.world.network_store_data;
-                    self.ui
-                        .swarm_panel
-                        .update_team_ranking(&data.get_top_team_ranking());
-
-                    self.ui
-                        .swarm_panel
-                        .update_player_ranking(&data.get_top_player_ranking());
-
-                    self.ui.push_chat_history(&data.get_recent_chat_history());
-                }
-            }
+        let (mut w, pending_callbacks) = match load_world(self.args.store_prefix()) {
+            Ok(res) => res,
             Err(e) => panic!("Failed to load world: {e}"),
+        };
+        w.dirty_network = true;
+        w.dirty_ui = true;
+        self.world = w;
+
+        if self.args.reset_network_peers {
+            self.world.reset_network_store_peers();
+        } else {
+            let data = &self.world.network_store_data;
+            self.ui
+                .swarm_panel
+                .update_team_ranking(&data.get_top_team_ranking());
+
+            self.ui
+                .swarm_panel
+                .update_player_ranking(&data.get_top_player_ranking());
+
+            self.ui.push_chat_history(&data.get_recent_chat_history());
         }
 
-        let own_team = self
-            .world
-            .get_own_team_mut()
-            .expect("Loaded world should have an own team.");
-
-        if own_team.creation_time == Tick::default() {
-            let mut creation_time = Tick::now();
-            if let Ok(data) = world_file_data(self.args.store_prefix()) {
-                if let Ok(time) = data.created() {
-                    creation_time = Tick::from_system_time(time);
-                }
-            }
-            own_team.creation_time = creation_time;
+        for callback in pending_callbacks {
+            let _ = callback.call(self);
         }
+
         self.state = AppState::Simulating;
     }
 

@@ -1,6 +1,6 @@
 use super::{
-    constants::{UiStyle, MAX_NAME_LENGTH, MIN_NAME_LENGTH},
-    widgets::default_block,
+    constants::{UiStyle, MIN_NAME_LENGTH},
+    renders::default_block,
 };
 use crate::core::{AU, LIGHT_YEAR, SATOSHI_PER_BITCOIN};
 use image::RgbaImage;
@@ -41,21 +41,6 @@ pub const fn input_from_key_event(key: KeyEvent) -> Input {
         alt,
         shift,
     }
-}
-
-pub enum IndexBound {
-    Wrap,
-    Clamp,
-}
-
-pub fn normalize_index(index: usize, len: usize, bound: IndexBound) -> Option<usize> {
-    if len == 0 {
-        return None;
-    }
-    Some(match bound {
-        IndexBound::Wrap => index % len,
-        IndexBound::Clamp => index.min(len - 1),
-    })
 }
 
 pub fn img_to_lines<'a>(img: &RgbaImage) -> Vec<Line<'a>> {
@@ -140,6 +125,7 @@ where
 pub fn validate_textarea_input<'a>(
     textarea: &mut TextArea<'a>,
     title: impl Into<Line<'a>>,
+    max_len: usize,
 ) -> bool {
     let text = textarea.lines()[0].trim();
     let width = UnicodeWidthStr::width(text);
@@ -147,7 +133,7 @@ pub fn validate_textarea_input<'a>(
         textarea.set_style(UiStyle::ERROR);
         textarea.set_block(default_block().title(title).title("(too short)"));
         false
-    } else if width > MAX_NAME_LENGTH {
+    } else if width > max_len {
         textarea.set_style(UiStyle::ERROR);
         textarea.set_block(default_block().title(title).title("(too long)"));
         false
@@ -156,6 +142,14 @@ pub fn validate_textarea_input<'a>(
         textarea.set_block(default_block().title(title));
         true
     }
+}
+
+pub fn sanitized_name(name: &str, max_len: usize) -> String {
+    name.chars()
+        .enumerate()
+        .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
+        .take(max_len)
+        .collect()
 }
 
 pub fn format_satoshi(amount: u32) -> String {

@@ -86,6 +86,16 @@ impl SpaceAdventure {
         5 + time.elapsed().as_secs() as usize
     }
 
+    pub fn duration(&self) -> Duration {
+        let time = match self.state {
+            SpaceAdventureState::Starting { time }
+            | SpaceAdventureState::Running { time }
+            | SpaceAdventureState::Ending { time } => time,
+        };
+
+        time.elapsed()
+    }
+
     fn draw_entity(base: &mut RgbaImage, entity: &Entity, debug_view: bool) {
         let pos = entity.position();
         let x = pos.x as i32;
@@ -447,7 +457,7 @@ impl SpaceAdventure {
                         return Ok(vec![
                             UiCallback::PushUiPopup { popup_message:
                                 PopupMessage::Message {
-                                    message: "Danger! There's a breach in the hull.\nAll the resources in the stiva have been lost,\nyou need to go back to the base...".to_string(),
+                                    message: "Danger! There's a breach in the hull.\nAll the resources in the cargo hold have been lost,\nyou need to go back to the base...".to_string(),
                                     links: vec![], level: log::Level::Info,
                                     is_skippable:true, timestamp:Tick::now()}
                                 }

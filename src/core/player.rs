@@ -10,23 +10,28 @@ use super::{
     world::World,
 };
 use crate::{
+    core::{PlayerOpinion, PlayerOpinionMap, PlayerOpinionMapDescription},
     game_engine::types::GameStats,
     image::{player::PlayerImage, utils::Gif},
-    types::{AppResult, HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, TeamId},
+    types::{
+        AppResult, HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, SystemTimeTick,
+        TeamId, TeamMap, Tick,
+    },
 };
 use anyhow::anyhow;
-
 use itertools::Itertools;
 use libp2p::PeerId;
 use rand::{
-    seq::{IndexedRandom, IteratorRandom},
+    seq::{IndexedRandom, IteratorRandom, SliceRandom},
     RngExt, SeedableRng,
 };
 use rand_chacha::ChaCha8Rng;
-use rand_distr::{num_traits::Signed, Distribution, Normal};
+use rand_distr::{
+    num_traits::{Signed, Zero},
+    Distribution, Normal,
+};
 use serde::{de::Visitor, ser::SerializeStruct, Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use strum::IntoEnumIterator;
 use strum_macros::Display;
 
 const HOOK_MAX_BALL_HANDLING: f32 = 4.0;
@@ -39,6 +44,7 @@ struct PlayerBuildData {
     base_level: f32,
     extra_potential: Skill,
     population: Option<Population>,
+    opinions: PlayerOpinionMap,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,6 +54,7 @@ pub struct Player {
     pub version: u64,
     pub info: InfoStats,
     pub team: Option<TeamId>,
+    pub joined_team_on: Option<Tick>,
     pub special_trait: Option<Trait>,
     pub reputation: Skill,
     pub potential: Skill,
@@ -69,6 +76,7 @@ pub struct Player {
     pub drunkenness: Skill,
     pub historical_stats: GameStats,
     build_data: PlayerBuildData, // Intermediate state used to build the random player. Not serialized
+    pub opinions: PlayerOpinionMap,
 }
 
 impl Default for Player {
@@ -79,6 +87,7 @@ impl Default for Player {
             version: 0,
             info: InfoStats::default(),
             team: None,
+            joined_team_on: None,
             special_trait: None,
             reputation: Skill::default(),
             potential: Skill::default(),
@@ -100,6 +109,7 @@ impl Default for Player {
             drunkenness: Skill::default(),
             historical_stats: GameStats::default(),
             build_data: PlayerBuildData::default(),
+            opinions: PlayerOpinionMap::default(),
         }
     }
 }
@@ -110,12 +120,13 @@ impl Serialize for Player {
         // and serialize them in a vector which is then deserialized
         // into the corresponding fields
         let compact_skills = self.current_skill_array().to_vec();
-        let mut state = serializer.serialize_struct("Player", 19)?;
+        let mut state = serializer.serialize_struct("Player", 22)?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("peer_id", &self.peer_id)?;
         state.serialize_field("version", &self.version)?;
         state.serialize_field("info", &self.info)?;
         state.serialize_field("team", &self.team)?;
+        state.serialize_field("joined_team_on", &self.joined_team_on)?;
         state.serialize_field("special_trait", &self.special_trait)?;
         state.serialize_field("reputation", &self.reputation)?;
         state.serialize_field("potential", &self.potential)?;
@@ -138,6 +149,7 @@ impl Serialize for Player {
         )?;
         state.serialize_field("training_focus", &self.training_focus)?;
         state.serialize_field("historical_stats", &self.historical_stats)?;
+        state.serialize_field("opinions", &self.opinions.iter().collect_vec())?;
         state.end()
     }
 }
@@ -153,6 +165,7 @@ impl<'de> Deserialize<'de> for Player {
             Version,
             Info,
             Team,
+            JoinedTeamOn,
             SpecialTrait,
             Reputation,
             Potential,
@@ -169,6 +182,7 @@ impl<'de> Deserialize<'de> for Player {
             Drunkenness,
             CompactSkills,
             HistoricalStats,
+            Opinions,
         }
 
         impl<'de> Deserialize<'de> for Field {
@@ -192,6 +206,7 @@ impl<'de> Deserialize<'de> for Player {
                             "version" => Ok(Field::Version),
                             "info" => Ok(Field::Info),
                             "team" => Ok(Field::Team),
+                            "joined_team_on" => Ok(Field::JoinedTeamOn),
                             "special_trait" => Ok(Field::SpecialTrait),
                             "reputation" => Ok(Field::Reputation),
                             "potential" => Ok(Field::Potential),
@@ -212,6 +227,7 @@ impl<'de> Deserialize<'de> for Player {
                             "drunkenness" => Ok(Field::Drunkenness),
                             "compact_skills" => Ok(Field::CompactSkills),
                             "historical_stats" => Ok(Field::HistoricalStats),
+                            "opinions" => Ok(Field::Opinions),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -234,11 +250,12 @@ impl<'de> Deserialize<'de> for Player {
             where
                 V: serde::de::MapAccess<'de>,
             {
-                let mut id = None;
+                let mut id: Option<uuid::Uuid> = None;
                 let mut peer_id = None;
                 let mut version = None;
                 let mut info = None;
                 let mut team = None;
+                let mut joined_team_on = None;
                 let mut special_trait = None;
                 let mut reputation = None;
                 let mut potential = None;
@@ -255,6 +272,7 @@ impl<'de> Deserialize<'de> for Player {
                 let mut drunkenness = None;
                 let mut compact_skills: Option<Vec<Skill>> = None;
                 let mut historical_stats = None;
+                let mut opinions = None;
 
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -287,6 +305,12 @@ impl<'de> Deserialize<'de> for Player {
                                 return Err(serde::de::Error::duplicate_field("team"));
                             }
                             team = Some(map.next_value()?);
+                        }
+                        Field::JoinedTeamOn => {
+                            if joined_team_on.is_some() {
+                                return Err(serde::de::Error::duplicate_field("joined_team_on"));
+                            }
+                            joined_team_on = Some(map.next_value()?);
                         }
                         Field::SpecialTrait => {
                             if special_trait.is_some() {
@@ -391,6 +415,17 @@ impl<'de> Deserialize<'de> for Player {
                             }
                             historical_stats = Some(map.next_value()?);
                         }
+
+                        Field::Opinions => {
+                            if opinions.is_some() {
+                                return Err(serde::de::Error::duplicate_field("opinions"));
+                            }
+                            opinions = Some(
+                                map.next_value::<Vec<(PlayerOpinion, (Tick, Skill))>>()?
+                                    .into_iter()
+                                    .collect(),
+                            );
+                        }
                     }
                 }
 
@@ -399,6 +434,7 @@ impl<'de> Deserialize<'de> for Player {
                 let version = version.ok_or_else(|| serde::de::Error::missing_field("version"))?;
                 let info = info.ok_or_else(|| serde::de::Error::missing_field("info"))?;
                 let team = team.ok_or_else(|| serde::de::Error::missing_field("team"))?;
+                let joined_team_on = joined_team_on.unwrap_or_default();
                 let special_trait = special_trait
                     .ok_or_else(|| serde::de::Error::missing_field("special_trait"))?;
                 let reputation =
@@ -428,6 +464,7 @@ impl<'de> Deserialize<'de> for Player {
                 let compact_skills = compact_skills
                     .ok_or_else(|| serde::de::Error::missing_field("compact_skills"))?;
                 let historical_stats = historical_stats.unwrap_or_default();
+                let opinions = opinions.unwrap_or_default();
 
                 let mut player = Player {
                     id,
@@ -435,6 +472,7 @@ impl<'de> Deserialize<'de> for Player {
                     version,
                     info,
                     team,
+                    joined_team_on,
                     special_trait,
                     reputation,
                     potential,
@@ -456,6 +494,7 @@ impl<'de> Deserialize<'de> for Player {
                     drunkenness,
                     historical_stats,
                     build_data: PlayerBuildData::default(),
+                    opinions,
                 };
 
                 player.athletics = Athletics {
@@ -489,13 +528,6 @@ impl<'de> Deserialize<'de> for Player {
                     charisma: compact_skills[19],
                 };
 
-                // FIXME: remove me in next version
-                if player.game_position_fitness == [Skill::default(); NUM_GAME_POSITIONS as usize] {
-                    player.set_initial_game_position_fitness(None);
-                    // FIXME: when we want to stop this migration, we can return an error here as:
-                    // return Err(anyhow!("Missing game_position_fitness. You probably need to download version 1.6.2 and load the file once to initialize it."))
-                }
-
                 Ok(player)
             }
         }
@@ -506,6 +538,7 @@ impl<'de> Deserialize<'de> for Player {
             "version",
             "info",
             "team",
+            "joined_team_on",
             "special_trait",
             "reputation",
             "potential",
@@ -521,6 +554,7 @@ impl<'de> Deserialize<'de> for Player {
             "drunkenness",
             "compact_skills",
             "historical_stats",
+            "opinions",
         ];
         deserializer.deserialize_struct("Player", FIELDS, PlayerVisitor)
     }
@@ -541,10 +575,12 @@ impl Player {
             rng.random_range(0..NUM_GAME_POSITIONS)
         };
 
-        self.info.population = self
-            .build_data
-            .population
-            .unwrap_or_else(|| Population::iter().choose(rng).unwrap_or_default());
+        self.info.population = self.build_data.population.unwrap_or_else(|| {
+            Population::all_peoples()
+                .into_iter()
+                .choose(rng)
+                .unwrap_or_default()
+        });
 
         self.info.randomize_for_position(position, rng);
 
@@ -598,10 +634,11 @@ impl Player {
 
         self.set_initial_game_position_fitness(Some(rng));
         self.previous_game_position_fitness = self.game_position_fitness;
+        self.set_initial_opinions();
 
         let extra_potential = {
             // Extra potential has a variance that depends on current age
-            let mut std_dev = 1.5 + 3.0 * (1.0 - self.info.relative_age());
+            let mut std_dev = 1.0 + 2.0 * (1.0 - self.info.relative_age());
             if self.build_data.extra_potential > Skill::default() {
                 std_dev += self.build_data.extra_potential;
             }
@@ -610,7 +647,8 @@ impl Player {
             normal.sample(rng).abs()
         };
 
-        self.potential = (self.average_skill() + extra_potential).bound();
+        self.potential =
+            (self.average_skill() * AVG_SKILL_TO_POTENTIAL_MODIFIER + extra_potential).bound();
         self.reputation = (self.average_skill() / 6.0 + self.info.relative_age() * 4.5).bound();
 
         self
@@ -623,6 +661,13 @@ impl Player {
     ) -> Self {
         self.info.first_name = first_name.into();
         self.info.last_name = last_name.into();
+        self
+    }
+
+    pub fn with_opinion(mut self, opinion: PlayerOpinion, value: Skill) -> Self {
+        self.build_data
+            .opinions
+            .insert(opinion, (Tick::now(), value));
         self
     }
 
@@ -659,6 +704,83 @@ impl Player {
         self.build_data.extra_potential = extra_potential;
 
         self
+    }
+
+    pub fn set_initial_opinions(&mut self) {
+        const MAX_INITIAL_OPINIONS: usize = 4;
+        let rng = &mut ChaCha8Rng::seed_from_u64(self.id.as_u64_pair().1);
+
+        let mut candidates: Vec<(PlayerOpinion, Skill)> = vec![];
+
+        for population in Population::all_peoples() {
+            if matches!(population, Population::Human { .. }) {
+                continue;
+            }
+            let value = if population == self.info.population {
+                match self.info.population {
+                    Population::Galdari => MAX_SKILL,
+                    _ => 18.0,
+                }
+            } else if self.info.population == Population::Galdari {
+                OPINION_NEUTRAL_VALUE - rng.random_range(0.0..4.0)
+            } else {
+                continue;
+            };
+            candidates.push((PlayerOpinion::Populations { population }, value));
+        }
+
+        if self.info.population == Population::Galdari {
+            candidates.push((
+                PlayerOpinion::AllHumans,
+                OPINION_NEUTRAL_VALUE - rng.random_range(0.0..4.0),
+            ));
+        }
+
+        let std_dev = 3.0;
+        let mut values = [5.0, 10.0, 15.0].map(|mean| {
+            Normal::new(mean, std_dev)
+                .expect("Should create valid normal distribution")
+                .sample(rng)
+                .bound()
+        });
+        values.shuffle(rng);
+        candidates.push((PlayerOpinion::Space, values[0]));
+        candidates.push((PlayerOpinion::Drinking, values[1]));
+        candidates.push((PlayerOpinion::Games, values[2]));
+
+        let money_value = {
+            let normal = Normal::new(2.0, 2.0).expect("Should create valid normal distribution");
+            (OPINION_NEUTRAL_VALUE + normal.sample(rng)).bound()
+        };
+        candidates.push((PlayerOpinion::Gold, money_value));
+
+        candidates.sort_by(|(_, a), (_, b)| {
+            (b - OPINION_NEUTRAL_VALUE)
+                .abs()
+                .total_cmp(&(a - OPINION_NEUTRAL_VALUE).abs())
+        });
+
+        for (opinion, value) in candidates.into_iter().take(MAX_INITIAL_OPINIONS) {
+            self.opinions.insert(opinion, (Tick::now(), value));
+        }
+
+        for (opinion, (_, value)) in self.build_data.opinions.iter() {
+            self.opinions.insert(opinion.clone(), (Tick::now(), *value));
+        }
+
+        if self.team.is_some() {
+            self.opinions
+                .insert(PlayerOpinion::OwnTeam, (Tick::now(), OPINION_NEUTRAL_VALUE));
+        }
+    }
+
+    pub fn population_opinion_modifier(&self, target: Population) -> f32 {
+        let opinion = if matches!(target, Population::Human { .. }) {
+            PlayerOpinion::AllHumans
+        } else {
+            PlayerOpinion::Populations { population: target }
+        };
+        self.opinions.modifier(opinion)
     }
 
     fn set_initial_game_position_fitness(&mut self, rng: Option<&mut ChaCha8Rng>) {
@@ -765,14 +887,12 @@ impl Player {
             .map_or(self.drunkenness, |p| p.drunkenness)
     }
 
-    pub fn can_drink(&self, world: &World) -> AppResult<()> {
+    pub fn can_drink(&self, teams: &TeamMap) -> AppResult<()> {
         if self.team.is_none() {
             return Err(anyhow!("Player has no team, so no rum to drink"));
         }
 
-        let team = world
-            .teams
-            .get_or_err(&self.team.expect("Player should have team"))?;
+        let team = teams.get_or_err(&self.team.expect("Player should have team"))?;
 
         if team.current_game.is_some() {
             return Err(anyhow!("Can't drink during game"));
@@ -782,11 +902,53 @@ impl Player {
             return Err(anyhow!("Too wasted to drink"));
         }
 
-        if team.resources.value(&Resource::RUM) == 0 {
+        if team.resources.value(&Resource::RUM).is_zero() {
             return Err(anyhow!("No rum to drink"));
         }
 
         Ok(())
+    }
+
+    pub fn can_receive_gold(&self, teams: &TeamMap) -> AppResult<()> {
+        if self.team.is_none() {
+            return Err(anyhow!("Player has no team, so no gold to get"));
+        }
+
+        let team = teams.get_or_err(&self.team.expect("Player should have team"))?;
+
+        if team.current_game.is_some() {
+            return Err(anyhow!("Can't get gold during game"));
+        }
+
+        if self.is_knocked_out() {
+            return Err(anyhow!("Too wasted to get gold"));
+        }
+
+        if team.resources.value(&Resource::GOLD).is_zero() {
+            return Err(anyhow!("No gold to get"));
+        }
+
+        Ok(())
+    }
+
+    pub fn satisfy_opinion(&mut self, opinion: PlayerOpinion) {
+        let Some((last_event, _)) = self.opinions.get_mut(&opinion) else {
+            return;
+        };
+        let now = Tick::now();
+        let recency = now
+            .saturating_sub(*last_event)
+            .min(SATISFACTION_OPINION_RECOVERY_TIME) as f32
+            / SATISFACTION_OPINION_RECOVERY_TIME as f32;
+        *last_event = now;
+
+        let factor = 1.0 + SATISFACTION_OPINION_MODIFIER_WEIGHT * self.opinions.modifier(opinion);
+        let bonus = if factor > 0.0 {
+            factor * recency * opinion.satisfaction_modifier()
+        } else {
+            factor
+        };
+        self.add_team_satisfaction(SATISFACTION_PER_OPINION_EVENT * bonus);
     }
 
     /// Drink one liter of rum, increasing drunkenness and boosting morale.
@@ -801,6 +963,8 @@ impl Player {
             DRUNKENNESS_PER_DRINK
         };
         self.drunkenness = (self.drunkenness + amount).bound();
+
+        self.satisfy_opinion(PlayerOpinion::Drinking);
 
         // Probability equal to the new drunkenness over MAX_SKILL,
         // mitigated by stamina: high-stamina players hold their liquor.
@@ -823,42 +987,84 @@ impl Player {
         false
     }
 
-    // Returns None when the player is sober (nothing worth displaying).
-    pub fn drunkenness_description(drunkenness: Skill) -> Option<&'static str> {
-        match drunkenness {
-            x if x < 4.0 => None,
-            x if x < 8.0 => Some("Tipsy"),
-            x if x < 12.0 => Some("Merry"),
-            x if x < 16.0 => Some("Inebriated"),
-            _ => Some("Sloshed"),
+    pub fn get_gold(&mut self) {
+        self.satisfy_opinion(PlayerOpinion::Gold);
+        self.add_morale(MORALE_GOLD_BONUS);
+    }
+
+    pub fn team_satisfaction(&self) -> Option<Skill> {
+        self.opinions
+            .get(&PlayerOpinion::OwnTeam)
+            .map(|(_, value)| *value)
+    }
+
+    pub fn salary(&self) -> u32 {
+        // Crumiros work for free
+        if matches!(self.special_trait, Some(Trait::Crumiro)) {
+            return 0;
         }
+        const SALARY_MOD: f32 = 0.0175;
+        let opinion_modifier = 1.0 + self.opinions.modifier(PlayerOpinion::Gold);
+        let avg_skill_modifier = (1.0 + self.average_skill() / MAX_SKILL).powf(1.35);
+        let reputation_modifier = (1.0 + self.reputation / MAX_SKILL).powf(1.25);
+        (SALARY_MOD
+            * self.hire_cost() as f32
+            * opinion_modifier
+            * avg_skill_modifier
+            * reputation_modifier) as u32
     }
 
     pub fn hire_cost(&self) -> u32 {
+        const COST_PER_VALUE: f32 = 815.0;
+
+        const HIRE_AGE_MODIFIER_AT_PEAK: f32 = 1.0;
+        const HIRE_AGE_MODIFIER_AT_RETIREMENT: f32 = 0.425;
+        const SPECIAL_TRAIT_VALUE_BONUS: f32 = 1.4;
+
         let bare_value = {
-            // Age modifier: linear 1.5 at birth, 1.0 at peak, 0.5 at retirement.
+            let hire_age_modifier_at_birth: f32 =
+                (1.25_f32).powf(1.0 + 2.1 * self.potential / MAX_SKILL);
+            // Age modifier: linear between birth, peak, and retirement values.
             let relative_age = self.info.relative_age();
             let age_modifier = if relative_age <= PEAK_PERFORMANCE_RELATIVE_AGE {
-                1.5 - 0.5 * (relative_age / PEAK_PERFORMANCE_RELATIVE_AGE)
+                hire_age_modifier_at_birth
+                    - (hire_age_modifier_at_birth - HIRE_AGE_MODIFIER_AT_PEAK)
+                        * (relative_age / PEAK_PERFORMANCE_RELATIVE_AGE)
             } else {
                 let progress = (relative_age - PEAK_PERFORMANCE_RELATIVE_AGE)
                     / (1.0 - PEAK_PERFORMANCE_RELATIVE_AGE);
-                1.0 - 0.5 * progress
+                HIRE_AGE_MODIFIER_AT_PEAK
+                    - (HIRE_AGE_MODIFIER_AT_PEAK - HIRE_AGE_MODIFIER_AT_RETIREMENT) * progress
             };
 
             let special_trait_extra = if self.special_trait.is_some() {
-                SPECIAL_TRAIT_VALUE_BONUS * self.reputation.powf(1.0 / 3.0)
+                SPECIAL_TRAIT_VALUE_BONUS * (1.0 + self.reputation / MAX_SKILL).powf(0.5)
             } else {
                 1.0
             };
 
-            (self.average_skill() * age_modifier * special_trait_extra).max(0.0)
+            let reputation_modifier = 1.0 + self.reputation / MAX_SKILL;
+            let avg_skill = self.average_skill();
+            let avg_skill_modifier = (1.0 + avg_skill / MAX_SKILL).powf(2.6);
+
+            let mut sorted_fitness = self.game_position_fitness;
+            sorted_fitness.sort_unstable_by(|a, b| b.total_cmp(a));
+
+            let position_modifier = 0.75 / MAX_SKILL
+                * (sorted_fitness[0]
+                    + 0.25 * sorted_fitness[1]
+                    + 0.05 * sorted_fitness[2]
+                    + 0.01 * sorted_fitness[3]
+                    + 0.0025 * sorted_fitness[4]);
+
+            avg_skill
+                * avg_skill_modifier
+                * position_modifier
+                * age_modifier
+                * special_trait_extra
+                * reputation_modifier
         };
         (COST_PER_VALUE * bare_value).max(1.0) as u32
-    }
-
-    pub fn release_cost(&self) -> u32 {
-        0
     }
 
     fn apply_population_skill_modifiers(&mut self) {
@@ -963,7 +1169,7 @@ impl Player {
         );
     }
 
-    fn skill_at_index(&self, idx: usize) -> Skill {
+    pub fn skill_at_index(&self, idx: usize) -> Skill {
         match idx {
             0 => self.athletics.quickness,
             1 => self.athletics.vertical,
@@ -1049,6 +1255,34 @@ impl Player {
         }
     }
 
+    pub fn add_team_satisfaction(&mut self, satisfaction: f32) {
+        if self.team.is_none() {
+            return;
+        }
+        let min_satisfaction = if self.special_trait == Some(Trait::Crumiro) {
+            SATISFACTION_THRESHOLD_FOR_LEAVING
+        } else {
+            MIN_SKILL
+        };
+        let entry = self
+            .opinions
+            .entry(PlayerOpinion::OwnTeam)
+            .or_insert((Tick::now(), OPINION_NEUTRAL_VALUE));
+        entry.1 = (entry.1 + satisfaction).max(min_satisfaction).bound();
+    }
+
+    pub fn reset_team_satisfaction_on_hire(&mut self) {
+        let Some(team_id) = self.team else {
+            return;
+        };
+        let value = match self.opinions.remove(&PlayerOpinion::Team { team_id }) {
+            Some((_, remembered)) => (remembered + PLAYER_OPINION_ON_HIRE).bound(),
+            None => OPINION_NEUTRAL_VALUE + PLAYER_OPINION_ON_HIRE,
+        };
+        self.opinions
+            .insert(PlayerOpinion::OwnTeam, (Tick::now(), value));
+    }
+
     pub fn add_morale(&mut self, morale: f32) {
         let min_morale = if self.special_trait == Some(Trait::Crumiro) {
             0.15 * MAX_SKILL
@@ -1056,14 +1290,21 @@ impl Player {
             MIN_SKILL
         };
 
+        let satisfaction = self.team_satisfaction().unwrap_or(MAX_SKILL);
+
         let mod_morale = if morale >= 0.0 {
             morale
         } else {
-            // If morale is a malus, the player charisma reduces the malus (up to a factor 2).
-            morale / (1.0 + self.mental.charisma / MAX_SKILL)
+            // If morale is a malus, the player satisfaction reduces the malus (up to 2/3).
+            morale / (1.0 + 0.5 * satisfaction / MAX_SKILL)
         };
 
+        let morale_was_not_minimum = self.morale > MIN_SKILL;
+
         self.morale = (self.morale + mod_morale).max(min_morale).bound();
+        if self.morale == MIN_SKILL && morale_was_not_minimum {
+            self.add_team_satisfaction(SATISFACTION_MALUS_FOR_MORALE_DROP);
+        }
     }
 
     pub fn age_modifier_to_skill_update(&self, idx: usize) -> f32 {
@@ -1162,7 +1403,7 @@ impl Player {
         // genuinely far below their potential, avoiding the rubber-band
         // effect that a linear slope produced.
         // Above the cap, growth decays sharply via powf(30).
-        let tot_skill = TOT_SKILL_MODIFIER * self.average_skill();
+        let tot_skill = AVG_SKILL_TO_POTENTIAL_MODIFIER * self.average_skill();
         let potential_modifier = if tot_skill > self.potential {
             (1.0 + (self.potential - tot_skill) / MAX_SKILL)
                 .max(0.0)
@@ -1281,13 +1522,13 @@ impl InfoStats {
         let p_data = PLAYER_DATA
             .get(&self.population)
             .unwrap_or_else(|| panic!("Player data should exist for {}", self.population));
-        let pronouns =
+        self.pronouns =
             if self.population == Population::Polpett || self.population == Population::Octopulp {
                 Pronoun::They
             } else {
                 Pronoun::random(rng)
             };
-        self.first_name = match pronouns {
+        self.first_name = match self.pronouns {
             Pronoun::He => p_data
                 .first_names_he
                 .choose(rng)
@@ -1367,7 +1608,7 @@ mod test {
             },
             skill::{Rated, MAX_SKILL, MIN_SKILL},
         },
-        types::{AppResult, HashMapWithResult},
+        types::{AppResult, HashMapWithResult, TeamId},
     };
     use itertools::Itertools;
     use rand::SeedableRng;
@@ -1378,8 +1619,11 @@ mod test {
         let rng = &mut ChaCha8Rng::seed_from_u64(0);
 
         // Drinking increases drunkenness and boosts morale, but does not drain energy.
+        // Morale is capped by satisfaction, so the player must be satisfied to gain any.
         let mut player = Player::default();
         player.athletics.stamina = MAX_SKILL;
+        player.team = Some(TeamId::new_v4());
+        player.reset_team_satisfaction_on_hire();
         let got_drunk = player.drink(rng);
         assert!(!got_drunk);
         assert!(player.drunkenness == DRUNKENNESS_PER_DRINK);
@@ -1419,6 +1663,8 @@ mod test {
 
     #[test]
     fn test_bare_value() -> AppResult<()> {
+        use crate::core::constants::{AGE_INCREASE_PER_LONG_TICK, SKILL_DECREMENT_PER_LONG_TICK};
+
         let mut app = App::test_default()?;
 
         let world = &mut app.world;
@@ -1430,19 +1676,65 @@ mod test {
             .expect("There should be at least one player")
             .id;
 
-        let player = world.players.get_mut_or_err(&player_id)?;
+        let mut player = world.players.get_or_err(&player_id)?.clone();
         player.info.age = player.info.population.min_age();
+        player.skills_training = [0.0; 20];
 
-        for _ in 0..20 {
-            println!(
-                "Relative age {:02} - Overall {:02} {} - Bare value {:02}",
-                player.info.relative_age(),
-                player.average_skill(),
-                player.average_skill().stars(),
-                player.hire_cost()
-            );
-            player.info.age += 0.025 * player.info.population.max_age();
+        println!(
+            "Population {:?} - Potential {:.2} - Trait {}",
+            player.info.population,
+            player.potential,
+            player
+                .special_trait
+                .map(|t| t.to_string())
+                .unwrap_or("None".to_string())
+        );
+
+        let mut next_log = 0.0;
+        while player.info.relative_age() < 1.0 {
+            if player.info.relative_age() >= next_log {
+                println!(
+                    "Relative age {:5.2} - Overall {:5.2} {} - Hire cost {}",
+                    player.info.relative_age(),
+                    player.average_skill(),
+                    player.average_skill().stars(),
+                    player.hire_cost()
+                );
+                next_log += 0.05;
+            }
+
+            // One game per day, 32 minutes played, distributed by fitness rank
+            // as in test_player_evolution.
+            let mut ranked: Vec<usize> = (0..5).collect();
+            ranked.sort_by(|&a, &b| {
+                player.game_position_fitness[b]
+                    .partial_cmp(&player.game_position_fitness[a])
+                    .unwrap()
+            });
+            let mut experience_at_position = [0u32; 5];
+            experience_at_position[ranked[0]] = 1152;
+            experience_at_position[ranked[1]] = 256;
+            experience_at_position[ranked[2]] = 256;
+            experience_at_position[ranked[3]] = 256;
+            player.update_skills_training(experience_at_position, 1.5, None);
+
+            for idx in 0..player.skills_training.len() {
+                let age_modifier = player.age_modifier_to_skill_update(idx);
+                player.modify_skill(idx, SKILL_DECREMENT_PER_LONG_TICK * age_modifier);
+                let training = player.skills_training[idx];
+                player.modify_skill(idx, training);
+            }
+            player.skills_training = [0.0; 20];
+            player.info.age += AGE_INCREASE_PER_LONG_TICK;
         }
+
+        println!(
+            "Relative age {:5.2} - Overall {:5.2} {} - Hire cost {}",
+            player.info.relative_age(),
+            player.average_skill(),
+            player.average_skill().stars(),
+            player.hire_cost()
+        );
 
         Ok(())
     }

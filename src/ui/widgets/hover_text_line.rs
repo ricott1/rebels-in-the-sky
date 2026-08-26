@@ -1,4 +1,5 @@
-use super::{hover_text_span::HoverTextSpan, traits::InteractiveWidget};
+use super::hover_text_span::HoverTextSpan;
+use crate::ui::traits::InteractiveWidget;
 use itertools::Itertools;
 use ratatui::{prelude::*, widgets::Widget};
 
@@ -188,10 +189,6 @@ impl std::fmt::Display for HoverTextLine<'_> {
 }
 
 impl InteractiveWidget for HoverTextLine<'_> {
-    fn layer(&self) -> usize {
-        0
-    }
-
     fn hover_text(&self) -> Text<'_> {
         if self.hovered_span_index < self.spans.len() {
             self.spans[self.hovered_span_index].hover_text()
@@ -203,7 +200,8 @@ impl InteractiveWidget for HoverTextLine<'_> {
     fn before_rendering(
         &mut self,
         area: Rect,
-        callback_registry: &mut super::ui_callback::CallbackRegistry,
+        callback_registry: &mut crate::ui::ui_callback::CallbackRegistry,
+        _layer: usize,
     ) {
         let width = self.width() as u16;
         let offset = match self.alignment {

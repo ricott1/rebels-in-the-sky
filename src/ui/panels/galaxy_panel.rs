@@ -1,16 +1,16 @@
-use super::button::Button;
-use super::constants::{UiStyle, LEFT_PANEL_WIDTH};
-use super::gif_map::{GifMap, ImageResizeInGalaxyGif};
-use super::traits::SplitPanel;
-use super::ui_callback::UiCallback;
-use super::ui_frame::UiFrame;
-use super::ui_screen::{tab_link, UiTab};
-use super::widgets::{
+use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
+use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId};
+use crate::ui::button::Button;
+use crate::ui::constants::{UiStyle, LEFT_PANEL_WIDTH};
+use crate::ui::gif_map::{GifMap, ImageResizeInGalaxyGif};
+use crate::ui::renders::default_block;
+use crate::ui::renders::{
     render_navigable_list, space_adventure_button, thick_block, travel_or_teleport_button,
 };
-use super::{traits::Screen, widgets::default_block};
-use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId};
 use crate::ui::traits::UiStyled;
+use crate::ui::ui_callback::UiCallback;
+use crate::ui::ui_frame::UiFrame;
+use crate::ui::ui_screen::{tab_link, UiTab};
 use crate::ui::{constants::*, ui_key};
 use crate::{
     core::*,
@@ -326,7 +326,7 @@ impl GalaxyPanel {
                             planet_id: planet.id,
                         },
                     )
-                    .set_hover_text(format!("Travel to {}", planet.name))
+                    .hover_text(format!("Travel to {}", planet.name))
                     .disabled(Some("Team is travelling"));
 
                     buttons.push(travel_to_planet_button);
@@ -338,7 +338,7 @@ impl GalaxyPanel {
                             planet_id: planet.id,
                         },
                     )
-                    .set_hover_text(format!("Travel to {}", planet.name))
+                    .hover_text(format!("Travel to {}", planet.name))
                     .disabled(Some("Team is exploring"));
 
                     buttons.push(travel_to_planet_button);
@@ -351,7 +351,7 @@ impl GalaxyPanel {
                             planet_id: planet.id,
                         },
                     )
-                    .set_hover_text(format!("Travel to {}", planet.name))
+                    .hover_text(format!("Travel to {}", planet.name))
                     .disabled(Some("Team is on space adventure"));
 
                     buttons.push(travel_to_planet_button);
@@ -691,52 +691,45 @@ impl Screen for GalaxyPanel {
             ],
         }
     }
+}
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        super::ui_screen::render_help_block(
-            frame,
-            area,
-            vec![
-                Line::from(" Navigate the star map. Zoom out shows a planet and its"),
-                Line::from(" satellites; zoom in reveals surface details, asteroids, and"),
-                Line::from(" the teams that live there."),
-                Line::from(""),
-                Line::from(" To plan travel and refuel decisions, check My Team."),
-                Line::from(" To find rivals on a planet, browse Crews."),
-                Line::from(" To recruit free pirates from a planet, see Pirates."),
-            ],
-            vec![
+impl HelpPanel for GalaxyPanel {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: [
+                "Navigate the star map. Zoom out shows a planet and its satellites.",
+                "Zoom in reveals surface details, asteroids, and the teams that live there.",
+                "",
+                "To plan travel and refuel decisions, check My Team.",
+                "To find rivals on a planet, browse Crews.",
+                "To recruit free pirates from a planet, see Pirates.",
+            ]
+            .join("\n"),
+            links: vec![
                 tab_link("My Team", UiTab::MyTeam),
                 tab_link("Crews", UiTab::Crews),
                 tab_link("Pirates", UiTab::Pirates),
             ],
-            vec![
-                Line::from(" Controls:"),
-                Line::from("   ↑/↓        Move highlight between satellites"),
-                Line::from("   Enter      Zoom in on the highlighted body"),
-                Line::from("   Backspace  Zoom out one level"),
+            controls: vec![
+                Line::from("Controls:"),
+                Line::from("  ↑/↓        Move highlight between satellites"),
+                Line::from("  Enter      Zoom in on the highlighted body"),
+                Line::from("  Backspace  Zoom out one level"),
                 Line::from(format!(
-                    "   {} / {}      Travel to highlighted planet / Explore around it",
+                    "  {} / {}      Travel to highlighted planet / Explore around it",
                     ui_key::TRAVEL,
                     ui_key::EXPLORE
                 )),
                 Line::from(format!(
-                    "   {}          Teleport (costs Rum equal to crew size)",
+                    "  {}          Teleport (costs Rum equal to crew size)",
                     ui_key::GO_TO_PLANET
                 )),
                 Line::from(format!(
-                    "   {}          Start a space adventure mini-game",
+                    "  {}          Start a space adventure mini-game",
                     ui_key::SPACE_ADVENTURE
                 )),
             ],
-        );
-        Ok(())
+        }
     }
 }
 

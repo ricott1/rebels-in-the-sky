@@ -569,7 +569,7 @@ mod tests {
 
             while !tournament.has_ended() {
                 for game in games.values_mut() {
-                    game.tick(current_tick);
+                    game.tick();
                 }
 
                 let new_games =
@@ -641,7 +641,7 @@ mod tests {
 
             while !tournament.has_ended() {
                 for game in games.values_mut() {
-                    game.tick(current_tick);
+                    game.tick();
                 }
 
                 let new_games =
@@ -790,7 +790,7 @@ mod tests {
 
             while !tournament.has_ended() {
                 for game in games.values_mut() {
-                    game.tick(current_tick);
+                    game.tick();
                 }
 
                 let new_games =

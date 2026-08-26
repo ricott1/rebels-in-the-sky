@@ -95,8 +95,8 @@ impl SpaceshipComponent for ChargeUnit {
 
     fn value(&self) -> u32 {
         match self {
-            Self::Small => 1_000,
-            Self::Medium => 7_000,
+            Self::Small => 5_000,
+            Self::Medium => 15_000,
             Self::Large => 21_000,
         }
     }
@@ -225,12 +225,12 @@ impl SpaceshipComponent for Hull {
 
     fn value(&self) -> u32 {
         match self {
-            Self::ShuttleSmall => 15_000,
-            Self::ShuttleStandard => 25_000,
+            Self::ShuttleSmall => 25_500,
+            Self::ShuttleStandard => 31_000,
             Self::ShuttleLarge => 45_000,
-            Self::PincherStandard => 22_150,
+            Self::PincherStandard => 28_650,
             Self::PincherLarge => 42_000,
-            Self::JesterStandard => 30_000,
+            Self::JesterStandard => 32_000,
         }
     }
 }
@@ -340,10 +340,10 @@ impl SpaceshipComponent for Engine {
 
     fn value(&self) -> u32 {
         match self {
-            Self::ShuttleSingle => 4_500,
+            Self::ShuttleSingle => 6_250,
             Self::ShuttleDouble => 9_500,
             Self::ShuttleTriple => 15_300,
-            Self::PincherSingle => 6_250,
+            Self::PincherSingle => 7_250,
             Self::PincherDouble => 13_500,
             Self::PincherTriple => 19_750,
             Self::JesterDouble => 10_500,

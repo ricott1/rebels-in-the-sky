@@ -1,22 +1,22 @@
-use super::button::Button;
-use super::clickable_list::ClickableListState;
-use super::constants::UiStyle;
-use super::gif_map::*;
-use super::ui_callback::UiCallback;
-use super::ui_frame::UiFrame;
-use super::{
-    big_numbers::{hyphen, BigNumberFont},
-    constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
-    traits::{Screen, SplitPanel},
-    ui_screen::{tab_link, UiTab},
-    utils::img_to_lines,
-    widgets::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
-};
+use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
 use crate::store::load_game;
 use crate::types::HashMapWithResult;
+use crate::ui::button::Button;
+use crate::ui::clickable_list::ClickableListState;
+use crate::ui::constants::UiStyle;
+use crate::ui::constants::GREEN_STYLE_SKILL;
+use crate::ui::gif_map::*;
 use crate::ui::traits::UiStyled;
+use crate::ui::ui_callback::UiCallback;
+use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
-use crate::ui::widgets::GREEN_STYLE_SKILL;
+use crate::ui::{
+    big_numbers::{hyphen, BigNumberFont},
+    constants::LEFT_PANEL_WIDTH,
+    renders::{default_block, selectable_list, DOWN_ARROW_SPAN, SWITCH_ARROW_SPAN, UP_ARROW_SPAN},
+    ui_screen::{tab_link, UiTab},
+    utils::img_to_lines,
+};
 use crate::{
     core::*,
     game_engine::{
@@ -56,8 +56,8 @@ pub struct GamePanel {
     pitch_view_filter: Option<Period>,
     player_status_view: bool,
     commentary_index: usize,
-    // action_results: Vec<ActionOutput>,
     action_results_len: usize,
+    shot_gif: Option<(GameId, usize, Possession, Tick)>,
     tick: usize,
     gif_map: GifMap,
     games_list_state: ClickableListState,
@@ -129,11 +129,8 @@ impl GamePanel {
 
     fn build_top_panel(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         // Split into left and right panels
-        let split = Layout::horizontal([
-            Constraint::Length(LEFT_PANEL_WIDTH),
-            Constraint::Min(IMG_FRAME_WIDTH),
-        ])
-        .split(area);
+        let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Fill(1)])
+            .split(area);
 
         let game_button_split =
             Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).split(split[0]);
@@ -149,14 +146,21 @@ impl GamePanel {
         self.build_score_panel(frame, world, split[1])?;
 
         // Render game buttons on top of score panel.
-        let gbv_split = Layout::vertical([
-            Constraint::Fill(1),
-            Constraint::Length(3),
-            Constraint::Length(1),
-        ])
-        .split(split[1]);
+        let gbv_split =
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).split(split[1]);
 
-        self.build_game_buttons(frame, gbv_split[1]);
+        let has_selected_game = Self::selected_game(
+            world,
+            self.index,
+            &self.game_ids,
+            &self.recent_game_ids,
+            &self.loaded_game_ids,
+            &self.loaded_games,
+        )
+        .is_some();
+        if has_selected_game {
+            self.render_game_buttons(frame, gbv_split[1]);
+        }
 
         Ok(())
     }
@@ -254,16 +258,12 @@ impl GamePanel {
         }
     }
 
-    fn build_game_buttons(&self, frame: &mut UiFrame, area: Rect) {
-        if self.index.is_none() {
-            return;
-        };
+    fn render_game_buttons(&self, frame: &mut UiFrame, area: Rect) {
         let b_split = Layout::horizontal([
-            Constraint::Fill(3),
+            Constraint::Fill(1),
             Constraint::Length(18),
-            Constraint::Fill(2),
             Constraint::Length(18),
-            Constraint::Fill(3),
+            Constraint::Fill(1),
         ])
         .split(area);
         let text = if self.pitch_view {
@@ -272,7 +272,7 @@ impl GamePanel {
             "Game view"
         };
         let pitch_button = Button::new(text, UiCallback::TogglePitchView)
-            .set_hover_text(format!(
+            .hover_text(format!(
                 "Change to {} view",
                 if self.pitch_view {
                     "commentary"
@@ -280,7 +280,7 @@ impl GamePanel {
                     "pitch"
                 }
             ))
-            .set_hotkey(ui_key::game::PITCH_VIEW);
+            .hotkey(ui_key::game::PITCH_VIEW);
 
         frame.render_interactive_widget(pitch_button, b_split[1]);
 
@@ -290,7 +290,7 @@ impl GamePanel {
             "Player status"
         };
         let player_status_button = Button::new(text, UiCallback::TogglePlayerStatusView)
-            .set_hover_text(format!(
+            .hover_text(format!(
                 "Change to {} view",
                 if self.player_status_view {
                     "game box"
@@ -298,9 +298,9 @@ impl GamePanel {
                     "player status"
                 }
             ))
-            .set_hotkey(ui_key::game::PLAYER_STATUS_VIEW);
+            .hotkey(ui_key::game::PLAYER_STATUS_VIEW);
 
-        frame.render_interactive_widget(player_status_button, b_split[3]);
+        frame.render_interactive_widget(player_status_button, b_split[2]);
     }
 
     fn build_score_panel(
@@ -335,10 +335,11 @@ impl GamePanel {
 
         let central_split = Layout::vertical([
             Constraint::Fill(1),
+            Constraint::Length(1), // teams
             Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(2),
-            Constraint::Length(8),
+            Constraint::Length(2), // location
+            Constraint::Length(7), // score
+            Constraint::Length(2), //timer
             Constraint::Fill(1),
         ])
         .split(top_split[2]);
@@ -431,9 +432,9 @@ impl GamePanel {
                     team_id: game.home_team_in_game.team_id,
                 },
             )
-            .set_text_alignemnt(Alignment::Right)
+            .set_text_alignment(Alignment::Right)
             .set_style(UiStyle::HELP_LINK)
-            .set_hover_text(format!("Go to {} team", game.home_team_in_game.name));
+            .hover_text(format!("Go to {} team", game.home_team_in_game.name));
 
             let name_split = Layout::horizontal([
                 Constraint::Fill(1),
@@ -442,7 +443,10 @@ impl GamePanel {
             .split(spans_split[1]);
             frame.render_interactive_widget(home_button, name_split[1]);
         } else {
-            frame.render_widget(format!("{:>}", game.home_team_in_game.name), spans_split[1]);
+            frame.render_widget(
+                Paragraph::new(format!("{:>}", game.home_team_in_game.name)).right_aligned(),
+                spans_split[1],
+            );
         }
 
         frame.render_widget(Paragraph::default(), spans_split[3]);
@@ -454,9 +458,9 @@ impl GamePanel {
                     team_id: game.away_team_in_game.team_id,
                 },
             )
-            .set_text_alignemnt(Alignment::Left)
+            .set_text_alignment(Alignment::Left)
             .set_style(UiStyle::HELP_LINK)
-            .set_hover_text(format!("Go to {} team", game.away_team_in_game.name));
+            .hover_text(format!("Go to {} team", game.away_team_in_game.name));
 
             let name_split = Layout::horizontal([
                 Constraint::Length(game.away_team_in_game.name.len() as u16),
@@ -481,6 +485,7 @@ impl GamePanel {
 
         let timer_lines = self.build_timer_lines(world, game);
         frame.render_widget(Paragraph::new(timer_lines).centered(), central_split[5]);
+
         match home_score {
             x if x < 10 => frame.render_widget((home_score % 10).big_font(), digit_split[4]),
             x if x < 100 => {
@@ -631,32 +636,16 @@ impl GamePanel {
             return Ok(());
         };
         let mut shot_img = None;
-        // Display shot gif if the last action was a made 3 or if it was a substitution and the second last was a made 3.
-        if let Some(last_action) = game.action_results.last() {
-            let mut should_display_shot_gif_for = None;
-
-            if last_action.score_change == 3 {
-                should_display_shot_gif_for = Some(last_action.possession);
-            } else if last_action.situation == ActionSituation::AfterSubstitution
-                && game.action_results.len() > 1
-            {
-                let second_last_action = &game.action_results[game.action_results.len() - 2];
-                if second_last_action.score_change == 3 {
-                    should_display_shot_gif_for = Some(second_last_action.possession);
-                }
-            }
-
-            if let Some(side) = should_display_shot_gif_for {
-                let shot_tick = game.starting_at + last_action.start_at.as_tick();
-                let now = Tick::now();
-                let shot_frame = now.saturating_sub(shot_tick) as usize / 140;
+        if let Some((game_id, _, side, started_at)) = self.shot_gif {
+            if game_id == game.id {
+                let shot_frame = Tick::now().saturating_sub(started_at) as usize / 140;
                 if shot_frame < RIGHT_SHOT_GIF.len() {
                     // After scoring the possesion is flipped, so the opposite team scored.
-                    if side == Possession::Home {
-                        shot_img = Some(&RIGHT_SHOT_GIF[shot_frame]);
+                    shot_img = if side == Possession::Home {
+                        Some(&RIGHT_SHOT_GIF[shot_frame])
                     } else {
-                        shot_img = Some(&LEFT_SHOT_GIF[shot_frame]);
-                    }
+                        Some(&LEFT_SHOT_GIF[shot_frame])
+                    };
                 }
             }
         }
@@ -690,7 +679,7 @@ impl GamePanel {
             match action_result.advantage {
                 Advantage::Attack => UP_ARROW_SPAN.clone(),
                 Advantage::Defense => DOWN_ARROW_SPAN.clone(),
-                Advantage::Neutral => Span::raw(""),
+                Advantage::Neutral => Span::default(),
             }
         };
         let timer = Span::styled(format!("[{}] ", timer.format()), UiStyle::HIGHLIGHT);
@@ -1230,6 +1219,32 @@ impl Screen for GamePanel {
             &self.loaded_games,
         ) {
             self.action_results_len = game.action_results.len();
+
+            // Trigger the shot gif if the last action was a made 3 or if it was a substitution and the second last was a made 3.
+            let mut trigger = None;
+            if let Some(last_action) = game.action_results.last() {
+                let last_idx = game.action_results.len() - 1;
+                if last_action.score_change == 3 {
+                    trigger = Some((last_idx, last_action.possession));
+                } else if last_action.situation == ActionSituation::AfterSubstitution
+                    && last_idx > 0
+                {
+                    let second_last_action = &game.action_results[last_idx - 1];
+                    if second_last_action.score_change == 3 {
+                        trigger = Some((last_idx - 1, second_last_action.possession));
+                    }
+                }
+            }
+
+            self.shot_gif = match trigger {
+                Some((idx, side)) => match self.shot_gif {
+                    Some((game_id, prev_idx, _, _)) if game_id == game.id && prev_idx == idx => {
+                        self.shot_gif
+                    }
+                    _ => Some((game.id, idx, side, Tick::now())),
+                },
+                None => None,
+            };
         }
 
         Ok(())
@@ -1323,52 +1338,45 @@ impl Screen for GamePanel {
         };
         v
     }
+}
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        super::ui_screen::render_help_block(
-            frame,
-            area,
-            vec![
-                Line::from(" Browse upcoming, ongoing and recently finished games. Pick"),
-                Line::from(" one to follow live play-by-play commentary, the box score and"),
-                Line::from(" the pitch view."),
-                Line::from(""),
-                Line::from(" Pick your starting roster and tactics in My Team."),
-                Line::from(" Find a side to challenge from the Crews list."),
-                Line::from(" Track tournament brackets in Tournaments."),
-            ],
-            vec![
+impl HelpPanel for GamePanel {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: [
+                "Browse upcoming, ongoing and recently finished games.",
+                "Pick one to follow live play-by-play commentary, the box score and the pitch view.",
+                "",
+                "Pick your starting roster and tactics in My Team.",
+                "Find a side to challenge from the Crews list.",
+                "Track tournament brackets in Tournaments.",
+            ]
+            .join("\n"),
+            links: vec![
                 tab_link("My Team", UiTab::MyTeam),
                 tab_link("Crews", UiTab::Crews),
                 tab_link("Tournaments", UiTab::Tournaments),
             ],
-            vec![
-                Line::from(" Controls:"),
-                Line::from("   ↑/↓        Move highlight in the game list"),
+            controls: vec![
+                Line::from("Controls:"),
+                Line::from("  ↑/↓        Move highlight in the game list"),
                 Line::from(format!(
-                    "   {}          Toggle play-by-play vs. pitch view",
+                    "  {}          Toggle play-by-play vs. pitch view",
                     ui_key::game::PITCH_VIEW
                 )),
                 Line::from(format!(
-                    "   {}/{}        Scroll commentary  /  Enter scrolls to top",
+                    "  {}/{}        Scroll commentary  /  Enter scrolls to top",
                     ui_key::PREVIOUS_SELECTION,
                     ui_key::NEXT_SELECTION
                 )),
-                Line::from("   0-4        Filter pitch view by quarter"),
+                Line::from("  0-4        Filter pitch view by quarter"),
                 Line::from(format!(
-                    "   {} / {}      Challenge highlighted team / open its team page",
+                    "  {} / {}      Challenge highlighted team / open its team page",
                     ui_key::game::CHALLENGE_TEAM,
                     ui_key::GO_TO_TEAM_ALT
                 )),
             ],
-        );
-        Ok(())
+        }
     }
 }
 

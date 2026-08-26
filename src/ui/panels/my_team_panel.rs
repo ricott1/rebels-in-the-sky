@@ -1,47 +1,79 @@
-use super::ui_frame::UiFrame;
-use super::ui_screen::{tab_link, UiTab};
-use super::{
+use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
+use crate::game_engine::timer::Period;
+use crate::image::utils::open_image;
+use crate::types::{HashMapWithResult, PlayerId, Tick};
+use crate::ui::checkbox::Checkbox;
+use crate::ui::dropdown::{Dropdown, DropdownState, OpenDirection};
+use crate::ui::ui_frame::UiFrame;
+use crate::ui::ui_key;
+use crate::ui::ui_screen::{tab_link, UiTab};
+use crate::ui::utils::img_to_lines;
+use crate::ui::PopupMessage;
+use crate::ui::{
     button::Button,
     clickable_list::ClickableListState,
     clickable_table::{ClickableCell, ClickableRow, ClickableTable, ClickableTableState},
     constants::*,
     gif_map::GifMap,
-    traits::{PercentageRating, Screen, SplitPanel, UiStyled},
+    renders::*,
+    traits::{PercentageRating, UiStyled},
     ui_callback::UiCallback,
     utils::format_satoshi,
-    widgets::*,
 };
-use crate::game_engine::timer::Period;
-use crate::types::{HashMapWithResult, Tick};
-use crate::ui::checkbox::Checkbox;
-use crate::ui::popup_message::PopupMessage;
-use crate::ui::ui_key;
 use crate::{
     core::*,
     game_engine::game::Game,
+    game_engine::tactic::Tactic,
+    game_engine::types::{GamePositionFluidity, InGameDrinking, SubstitutionTendency},
     store::load_game,
     types::{AppResult, GameId, PlanetId, StorableResourceMap, SystemTimeTick, TeamId},
 };
 use anyhow::anyhow;
 use core::fmt::Debug;
 use itertools::Itertools;
+use rand_distr::num_traits::Signed;
 use ratatui::crossterm;
 use ratatui::crossterm::event::KeyCode;
-use ratatui::style::Stylize;
+use ratatui::style::{Styled, Stylize};
+use ratatui::text::Text;
 use ratatui::{
     layout::Margin,
     prelude::{Constraint, Layout, Rect},
+    symbols::{border, line},
     text::{Line, Span},
-    widgets::{Paragraph, Wrap},
+    widgets::{Borders, Paragraph, Wrap},
 };
 use std::collections::HashMap;
 use strum::IntoEnumIterator;
+
+const DROPDOWN_WIDTH: u16 = MAX_NAME_LENGTH as u16 + 3;
+const ROLE_COLUMN_WIDTH: u16 = 9;
+const ROLE_COLUMN_RIGHT_OFFSET: u16 = 15 + 17 + 2;
+const TRAINING_COLUMN_WIDTH: u16 = 10;
+const TRAINING_COLUMN_RIGHT_OFFSET: u16 = ROLE_COLUMN_RIGHT_OFFSET + ROLE_COLUMN_WIDTH + 1;
+const POSITION_COLUMN_WIDTH: u16 = 9;
+const POSITION_COLUMN_RIGHT_OFFSET: u16 = TRAINING_COLUMN_RIGHT_OFFSET + TRAINING_COLUMN_WIDTH + 4;
+// (col, row) offset of each position's dropdown within the court image.
+const DROPDOWN_OFFSETS: [(u16, u16); NUM_GAME_POSITIONS as usize] = [
+    (7, 2),   // PG
+    (25, 4),  // SG
+    (2, 8),   // SF
+    (24, 10), // PF
+    (9, 12),  // C
+];
+const TACTIC_DROPDOWN_ID: usize = usize::MAX;
+const SUBSTITUTION_DROPDOWN_ID: usize = usize::MAX - 1;
+const FLUIDITY_DROPDOWN_ID: usize = usize::MAX - 2;
+const DRINKING_DROPDOWN_ID: usize = usize::MAX - 3;
+const TRAINING_DROPDOWN_ID: usize = usize::MAX - 4;
+const ROLE_DROPDOWN_ID: usize = usize::MAX - 5;
+const POSITION_DROPDOWN_ID: usize = usize::MAX - 6;
 
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub enum MyTeamView {
     #[default]
     Info,
-    TeamSettings,
+    GameSettings,
     Games,
     Market,
     Shipyard,
@@ -51,8 +83,8 @@ pub enum MyTeamView {
 impl MyTeamView {
     const fn next(&self) -> Self {
         match self {
-            Self::Info => Self::TeamSettings,
-            Self::TeamSettings => Self::Games,
+            Self::Info => Self::GameSettings,
+            Self::GameSettings => Self::Games,
             Self::Games => Self::Market,
             Self::Market => Self::Shipyard,
             Self::Shipyard => Self::Asteroids,
@@ -63,8 +95,8 @@ impl MyTeamView {
     const fn previous(&self) -> Self {
         match self {
             Self::Info => Self::Asteroids,
-            Self::TeamSettings => Self::Info,
-            Self::Games => Self::TeamSettings,
+            Self::GameSettings => Self::Info,
+            Self::Games => Self::GameSettings,
             Self::Market => Self::Games,
             Self::Shipyard => Self::Market,
             Self::Asteroids => Self::Shipyard,
@@ -105,11 +137,25 @@ pub struct MyTeamPanel {
     game_list_state: ClickableListState,
     spaceship_upgrade_list_state: ClickableListState,
     asteroid_list_state: ClickableListState,
+    game_roster_widget: Paragraph<'static>,
+    position_dropdowns: Vec<DropdownState>,
+    setting_dropdowns: HashMap<usize, DropdownState>,
 }
 
 impl MyTeamPanel {
     pub fn new() -> Self {
-        Self::default()
+        let game_roster_widget = {
+            let img = open_image("game/half_court.png")
+                .expect("Should be able to create half_court image");
+            Paragraph::new(img_to_lines(&img))
+        };
+        Self {
+            game_roster_widget,
+            position_dropdowns: (0..NUM_GAME_POSITIONS as usize)
+                .map(DropdownState::new)
+                .collect(),
+            ..Default::default()
+        }
     }
 
     fn render_view_buttons(&self, frame: &mut UiFrame, area: Rect) -> AppResult<()> {
@@ -120,16 +166,16 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hover_text("View crew information.");
+        .hover_text("View crew information.");
 
         let mut view_team_button = Button::new(
-            "Team Settings",
+            "Game Settings",
             UiCallback::SetMyTeamPanelView {
-                view: MyTeamView::TeamSettings,
+                view: MyTeamView::GameSettings,
             },
         )
         .bold()
-        .set_hover_text("View team information.");
+        .hover_text("View team information.");
 
         let mut view_games_button = Button::new(
             "Games",
@@ -138,7 +184,7 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hover_text("View recent games.");
+        .hover_text("View recent games.");
 
         let mut view_market_button = Button::new(
             "Market",
@@ -147,7 +193,7 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hover_text("View market, buy and sell resources.");
+        .hover_text("View market, buy and sell resources.");
 
         let mut view_shipyard_button = Button::new(
             "Shipyard",
@@ -156,7 +202,7 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hover_text("View shipyard, improve your spaceship.");
+        .hover_text("View shipyard, improve your spaceship.");
 
         let mut view_asteroids_button = Button::new(
             format!(
@@ -173,11 +219,11 @@ impl MyTeamPanel {
             },
         )
         .bold()
-        .set_hover_text("View asteorids found during exploration.");
+        .hover_text("View asteorids found during exploration.");
 
         match self.view {
             MyTeamView::Info => view_info_button.select(),
-            MyTeamView::TeamSettings => view_team_button.select(),
+            MyTeamView::GameSettings => view_team_button.select(),
             MyTeamView::Games => view_games_button.select(),
             MyTeamView::Market => view_market_button.select(),
             MyTeamView::Shipyard => view_shipyard_button.select(),
@@ -213,7 +259,7 @@ impl MyTeamPanel {
         match own_team.current_location {
             TeamLocation::OnPlanet { planet_id } => {
                 let planet = world.planets.get_or_err(&planet_id)?;
-                render_market_on_planet(frame, world, own_team, planet, split[1])?;
+                Self::render_market_on_planet(frame, world, own_team, planet, split[1])?;
             }
             TeamLocation::Travelling { .. } => {
                 frame.render_widget(default_block().title("Market"), area);
@@ -238,6 +284,192 @@ impl MyTeamPanel {
         Ok(())
     }
 
+    fn render_market_on_planet(
+        frame: &mut UiFrame,
+        world: &World,
+        own_team: &Team,
+        planet: &Planet,
+        area: Rect,
+    ) -> AppResult<()> {
+        let inner_area = area.inner(Margin {
+            horizontal: 2,
+            vertical: 1,
+        });
+
+        frame.render_widget(
+            default_block().title(format!("Market on {}", planet.name)),
+            area,
+        );
+
+        if let Some(cove) = own_team.space_cove.as_ref() {
+            if matches!(own_team.is_on_planet(), Some(id) if id == cove.planet_id)
+                && !cove.upgrades.contains(&SpaceCoveUpgradeTarget::Market)
+            {
+                frame.render_widget(
+                    Paragraph::new(vec![Line::from(
+                        "There is no market available on the cove yet.",
+                    )])
+                    .centered(),
+                    inner_area,
+                );
+                return Ok(());
+            }
+        }
+
+        if !planet.has_market(world.space_cove_on(planet.id)) {
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from("There is no market available on this planet."),
+                    Line::from("Try another planet with more population."),
+                ])
+                .centered(),
+                inner_area,
+            );
+            return Ok(());
+        }
+
+        let central_pad = (inner_area.width.saturating_sub(75)) / 2;
+        let button_split = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(3),
+        ])
+        .split(inner_area.inner(Margin::new(central_pad, 0)));
+
+        let layout = Layout::horizontal([
+            Constraint::Length(7),  // name
+            Constraint::Length(6),  // buy 1
+            Constraint::Length(6),  // buy 10
+            Constraint::Length(6),  // buy 100
+            Constraint::Length(6),  // sell 1
+            Constraint::Length(6),  // sell 10
+            Constraint::Length(6),  // sell 100
+            Constraint::Length(11), // price
+            Constraint::Min(0),     // have
+        ]);
+
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "              Buy               Sell         Prices     Owned".to_string(),
+                UiStyle::HEADER.bold(),
+            )),
+            button_split[0],
+        );
+
+        let buy_ui_keys = [
+            ui_key::market::BUY_GOLD,
+            ui_key::market::BUY_SCRAPS,
+            ui_key::market::BUY_FUEL,
+            ui_key::market::BUY_RUM,
+        ];
+        let sell_ui_keys = [
+            ui_key::market::SELL_GOLD,
+            ui_key::market::SELL_SCRAPS,
+            ui_key::market::SELL_FUEL,
+            ui_key::market::SELL_RUM,
+        ];
+
+        for (button_split_idx, resource) in [
+            Resource::GOLD,
+            Resource::SCRAPS,
+            Resource::FUEL,
+            Resource::RUM,
+        ]
+        .iter()
+        .enumerate()
+        {
+            let resource_split = layout.split(button_split[button_split_idx + 1]);
+            let merchant_bonus = TeamBonus::Bargaining.current_team_bonus(
+                &own_team.id,
+                &world.teams,
+                &world.players,
+            )?;
+            let buy_unit_cost = planet.resource_buy_price(*resource, merchant_bonus);
+            let sell_unit_cost = planet.resource_sell_price(*resource, merchant_bonus);
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![Span::styled(
+                    format!("{:<6} ", resource.to_string()),
+                    resource.style(),
+                )])),
+                resource_split[0].inner(Margin::new(1, 1)),
+            );
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled(format!("{buy_unit_cost:>4}"), UiStyle::OK),
+                    Span::raw("/".to_string()),
+                    Span::styled(format!("{sell_unit_cost:<4}"), UiStyle::ERROR),
+                ])),
+                resource_split[7].inner(Margin::new(1, 1)),
+            );
+
+            frame.render_widget(
+                Paragraph::new(format!(" {:>4}", own_team.resources.value(resource),)),
+                resource_split[8].inner(Margin::new(1, 1)),
+            );
+
+            let max_buy_amount = own_team.max_resource_buy_amount(*resource, buy_unit_cost);
+            for (idx, amount) in [1, 10, 100.min(max_buy_amount) as i32].iter().enumerate() {
+                if let Ok(btn) = trade_resource_button(
+                    world,
+                    *resource,
+                    *amount,
+                    buy_unit_cost,
+                    if idx == 0 {
+                        Some(buy_ui_keys[button_split_idx])
+                    } else {
+                        None
+                    },
+                    UiStyle::OK,
+                ) {
+                    frame.render_interactive_widget(btn, resource_split[idx + 1]);
+                }
+            }
+
+            let max_sell_amount = own_team.max_resource_sell_amount(*resource);
+            for (idx, amount) in [1, 10, 100.min(max_sell_amount) as i32].iter().enumerate() {
+                if let Ok(btn) = trade_resource_button(
+                    world,
+                    *resource,
+                    -*amount,
+                    sell_unit_cost,
+                    if idx == 0 {
+                        Some(sell_ui_keys[button_split_idx])
+                    } else {
+                        None
+                    },
+                    UiStyle::ERROR,
+                ) {
+                    frame.render_interactive_widget(btn, resource_split[idx + 4]);
+                }
+            }
+        }
+
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(format!("Treasury {}", format_satoshi(own_team.balance()))),
+                Line::from(get_fuel_spans(
+                    own_team.fuel(),
+                    own_team.fuel_capacity(),
+                    BARS_LENGTH,
+                )),
+                Line::from(get_storage_spans(
+                    &own_team.resources,
+                    own_team.spaceship.storage_capacity(),
+                    BARS_LENGTH,
+                )),
+            ]),
+            button_split[5].inner(Margin {
+                horizontal: 2,
+                vertical: 0,
+            }),
+        );
+
+        Ok(())
+    }
+
     fn render_planet_markets(
         &mut self,
         frame: &mut UiFrame,
@@ -246,12 +478,9 @@ impl MyTeamPanel {
     ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
         frame.render_widget(default_block().title("Planet Markets"), area);
-        let split = Layout::horizontal([Constraint::Length(20), Constraint::Length(30)]).split(
-            area.inner(Margin {
-                horizontal: 1,
-                vertical: 1,
-            }),
-        );
+
+        let top_split = Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)])
+            .split(area.inner(Margin::new(1, 1)));
 
         let mut options = vec![];
         for id in self.planet_markets.iter() {
@@ -272,24 +501,23 @@ impl MyTeamPanel {
 
         let list = selectable_list(options);
         self.planet_list_state.select(self.planet_index);
-        frame.render_stateful_interactive_widget(
-            list,
-            split[0].inner(Margin {
-                horizontal: 0,
-                vertical: 1,
-            }),
-            &mut self.planet_list_state,
-        );
+        frame.render_stateful_interactive_widget(list, top_split[0], &mut self.planet_list_state);
 
         let planet_id =
             self.planet_markets[self.planet_index.unwrap_or_default() % self.planet_markets.len()];
         let planet = world.planets.get_or_err(&planet_id)?;
-        let merchant_bonus = TeamBonus::TradePrice.current_team_bonus(world, &own_team.id)?;
+        let merchant_bonus =
+            TeamBonus::Bargaining.current_team_bonus(&own_team.id, &world.teams, &world.players)?;
 
-        let mut lines = vec![Line::from(Span::styled(
-            format!("{:<8} {:>4}/{:<4}", "Resource", "Buy", "Sell"),
-            UiStyle::HEADER.bold(),
-        ))];
+        let mut lines = vec![
+            Line::default(),
+            Line::default(),
+            Line::default(),
+            Line::from(Span::styled(
+                format!("{:<8} {:>4}/{:<4}", "Resource", "Buy", "Sell"),
+                UiStyle::HEADER.bold(),
+            )),
+        ];
         for resource in Resource::iter() {
             if resource == Resource::SATOSHI {
                 continue;
@@ -313,13 +541,7 @@ impl MyTeamPanel {
             lines.push(line.into());
         }
 
-        frame.render_widget(
-            Paragraph::new(lines),
-            split[1].inner(Margin {
-                horizontal: 1,
-                vertical: 1,
-            }),
-        );
+        frame.render_widget(Paragraph::new(lines), top_split[1]);
 
         Ok(())
     }
@@ -328,6 +550,7 @@ impl MyTeamPanel {
         let own_team = world.get_own_team()?;
         let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
 
+        let total_salary = own_team.total_salary(&world.players);
         let info = Paragraph::new(vec![
             Line::default(),
             Line::from(format!(
@@ -349,17 +572,20 @@ impl MyTeamPanel {
                 "Treasury {:<10}",
                 format_satoshi(own_team.balance()),
             )),
+            Line::from(Span::styled(
+                format!("Salaries {}/day", format_satoshi(total_salary)),
+                if total_salary > own_team.balance() {
+                    UiStyle::ERROR
+                } else {
+                    UiStyle::DEFAULT
+                },
+            )),
+            Line::default(),
             Line::from(get_crew_spans(
                 own_team.player_ids.len(),
                 own_team.spaceship.crew_capacity() as usize,
             )),
-            Line::from(get_durability_spans(
-                own_team.spaceship.current_durability(),
-                own_team.spaceship.max_durability(),
-                own_team.spaceship.shield_max_durability() as u32,
-                own_team.spaceship.shield_max_durability() as u32,
-                BARS_LENGTH,
-            )),
+            Line::from(get_energy_spans(own_team.average_tiredness(world))),
             Line::from(get_fuel_spans(
                 own_team.fuel(),
                 own_team.fuel_capacity(),
@@ -476,159 +702,306 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_team(&mut self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
+    fn render_team_settings(
+        &mut self,
+        frame: &mut UiFrame,
+        world: &World,
+        area: Rect,
+    ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
-        let split = Layout::horizontal([Constraint::Length(48), Constraint::Min(48)]).split(area);
+        let split = Layout::horizontal([Constraint::Length(60), Constraint::Fill(1)]).split(area);
 
-        frame.render_widget(default_block().title("Team"), split[0]);
+        frame.render_widget(default_block().title("Game Roster"), split[0]);
+        let pitch_split = Layout::horizontal([Constraint::Length(41), Constraint::Length(17)])
+            .split(split[0].inner(Margin::new(1, 1)));
+
+        frame.render_widget(default_block().title("Game Settings"), split[1]);
+        let settings_split = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(1),
+            Constraint::Fill(1),
+        ])
+        .split(split[1].inner(Margin::new(2, 1)));
+
+        // Render team in game positions
+        let game_roster_area = pitch_split[0];
+        frame.render_widget(&self.game_roster_widget, game_roster_area);
+
+        let options = own_team
+            .player_ids
+            .iter()
+            .map(|id| {
+                let player = world.players.get_or_err(id)?;
+                Ok(Text::from(player.info.short_name()))
+            })
+            .collect::<AppResult<Vec<Text>>>()?;
+
+        // Bench/out dropdowns stack in the fill area to the right of the court image.
+        let bench_area = pitch_split[1].inner(Margin::new(1, 0));
+        let court = NUM_GAME_POSITIONS as usize;
+        let num_dropdowns = self.position_dropdowns.len();
+
+        let selected_player_index = self.player_index.and_then(|index| {
+            let sorted_players = own_team
+                .player_ids
+                .iter()
+                .map(|id| world.players.get(id).unwrap())
+                .collect_vec()
+                .sort_by_rating();
+            let player = sorted_players[index.min(sorted_players.len() - 1)];
+            own_team.player_ids.iter().position(|id| *id == player.id)
+        });
+
+        let can_change_team_settings = own_team.can_change_team_settings();
+
+        for idx in 0..num_dropdowns {
+            let (rect, direction, title) = if idx < court {
+                let (ox, oy) = DROPDOWN_OFFSETS[idx];
+                let rect = Rect::new(
+                    game_roster_area.x + ox,
+                    game_roster_area.y + oy,
+                    DROPDOWN_WIDTH,
+                    3,
+                );
+                let direction = if idx < 3 {
+                    OpenDirection::Down
+                } else {
+                    OpenDirection::Up
+                };
+                (
+                    rect,
+                    direction,
+                    format!("{}:{}", idx + 1, (idx as GamePosition).as_role()),
+                )
+            } else {
+                let slot = (idx - court) as u16; // 0-based bench/out slot
+                let rect = Rect::new(
+                    bench_area.x,
+                    bench_area.y + slot * 3,
+                    DROPDOWN_WIDTH.min(bench_area.width),
+                    3,
+                );
+                let title = if idx < MAX_PLAYERS_PER_GAME {
+                    format!("{}:{}", idx + 1, (idx as GamePosition).as_role())
+                } else {
+                    "Out".to_string()
+                };
+                (rect, OpenDirection::Down, title)
+            };
+
+            let is_open = self.position_dropdowns[idx].is_open();
+            let player_ids = own_team.player_ids.clone();
+            let position = idx as GamePosition;
+            let mut dropdown = Dropdown::new(
+                idx,
+                options.clone(),
+                Box::new(move |index| UiCallback::SwapPlayerPositions {
+                    player_id: player_ids[index],
+                    position,
+                }),
+            )
+            .open_direction(direction)
+            .hover_text(format!(
+                "Set player initial position to {}.",
+                position.as_role()
+            ))
+            .title(title)
+            .disabled(can_change_team_settings.is_err())
+            .block(default_block());
+            if idx < MAX_PLAYERS_PER_GAME {
+                if let Some(index) = selected_player_index {
+                    dropdown =
+                        dropdown.hotkey_select(ui_key::team::set_player_position(position), index);
+                }
+            }
+            frame.render_layered_stateful_interactive_widget(
+                dropdown,
+                rect,
+                &mut self.position_dropdowns[idx],
+                if is_open { 1 } else { 0 },
+            );
+        }
 
         let btm_split = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Length(3),
         ])
-        .split(split[0].inner(Margin::new(1, 1)));
+        .split(settings_split[0]);
 
-        let can_change_team_settings = own_team.can_change_team_settings();
-
-        let mut tactic_button = Button::new(
-            format!("tactic: {}", own_team.game_tactic),
-            UiCallback::SetTeamTactic {
-                tactic: own_team.game_tactic.next(),
-            },
+        let drinking_variants: Vec<InGameDrinking> = InGameDrinking::iter().collect();
+        let drinking_options: Vec<Text> = drinking_variants
+            .iter()
+            .map(|t| Text::from(t.to_string()))
+            .collect();
+        let drinking_is_open = self
+            .setting_dropdowns
+            .get(&DRINKING_DROPDOWN_ID)
+            .map_or(false, |d| d.is_open());
+        let drinking_dropdown = Dropdown::new(
+            DRINKING_DROPDOWN_ID,
+            drinking_options,
+            Box::new(move |index| UiCallback::SetTeamInGameDrinking {
+                in_game_drinking: drinking_variants[index],
+            }),
         )
-        .set_hover_text(format!(
-            "{}: {}",
-            own_team.game_tactic,
-            own_team.game_tactic.description()
-        ))
-        .set_hotkey(ui_key::team::SET_TACTIC);
-
-        if let Err(err) = can_change_team_settings.as_ref() {
-            tactic_button.disable(Some(err.to_string()));
-        }
-
-        frame.render_interactive_widget(tactic_button, btm_split[0]);
-
-        let mut sub_tendency_button = Button::new(
-            format!("substitutions: {}", own_team.substitution_tendency),
-            UiCallback::SetTeamSubstitutionTendency {
-                substitution_tendency: own_team.substitution_tendency.next(),
-            },
-        )
-        .set_hover_text(format!(
-            "{}: {}",
-            own_team.substitution_tendency,
-            own_team.substitution_tendency.description()
-        ))
-        .set_hotkey(ui_key::team::SET_SUBSTITUTION_TENDENCY);
-
-        if let Err(err) = can_change_team_settings.as_ref() {
-            sub_tendency_button.disable(Some(err.to_string()));
-        }
-
-        frame.render_interactive_widget(sub_tendency_button, btm_split[1]);
-
-        let mut game_position_fluidity_button = Button::new(
-            format!(
-                "game position fluidity: {}",
-                own_team.game_position_fluidity
-            ),
-            UiCallback::SetTeamGamePositionFluidity {
-                game_position_fluidity: own_team.game_position_fluidity.next(),
-            },
-        )
-        .set_hover_text(format!(
-            "{}: {}",
-            own_team.game_position_fluidity,
-            own_team.game_position_fluidity.description()
-        ))
-        .set_hotkey(ui_key::team::SET_GAME_POSITION_FLUIDITY);
-
-        if let Err(err) = can_change_team_settings.as_ref() {
-            game_position_fluidity_button.disable(Some(err.to_string()));
-        }
-
-        frame.render_interactive_widget(game_position_fluidity_button, btm_split[2]);
-
-        let mut in_game_drinking_button = Button::new(
-            format!("in-game drinking: {}", own_team.in_game_drinking),
-            UiCallback::SetTeamInGameDrinking {
-                in_game_drinking: own_team.in_game_drinking.next(),
-            },
-        )
-        .set_hover_text(format!(
+        .hotkey(ui_key::team::SET_IN_GAME_DRINKING)
+        .title("In-game drinking")
+        .hover_text(format!(
             "{}: {}",
             own_team.in_game_drinking,
             own_team.in_game_drinking.description()
         ))
-        .set_hotkey(ui_key::team::SET_IN_GAME_DRINKING);
-
-        if let Err(err) = can_change_team_settings.as_ref() {
-            in_game_drinking_button.disable(Some(err.to_string()));
-        }
-
-        frame.render_interactive_widget(in_game_drinking_button, btm_split[3]);
-
-        let challenges_split = Layout::horizontal([22, 12, 14]).split(btm_split[4]);
-        frame.render_widget(
-            Paragraph::new("Accept challenges").centered(),
-            challenges_split[0].inner(Margin::new(0, 1)),
+        .open_direction(OpenDirection::Down)
+        .disabled(can_change_team_settings.is_err())
+        .block(default_block());
+        frame.render_layered_stateful_interactive_widget(
+            drinking_dropdown,
+            btm_split[3],
+            self.setting_dropdowns
+                .entry(DRINKING_DROPDOWN_ID)
+                .or_default(),
+            if drinking_is_open { 1 } else { 0 },
         );
-        let local_challenge_button = Checkbox::new(
-            "local",
+
+        let fluidity_variants: Vec<GamePositionFluidity> = GamePositionFluidity::iter().collect();
+        let fluidity_options: Vec<Text> = fluidity_variants
+            .iter()
+            .map(|t| Text::from(t.to_string()))
+            .collect();
+        let fluidity_is_open = self
+            .setting_dropdowns
+            .get(&FLUIDITY_DROPDOWN_ID)
+            .map_or(false, |d| d.is_open());
+        let fluidity_dropdown = Dropdown::new(
+            FLUIDITY_DROPDOWN_ID,
+            fluidity_options,
+            Box::new(move |index| UiCallback::SetTeamGamePositionFluidity {
+                game_position_fluidity: fluidity_variants[index],
+            }),
+        )
+        .hotkey(ui_key::team::SET_GAME_POSITION_FLUIDITY)
+        .title("Position fluidity")
+        .hover_text(format!(
+            "{}: {}",
+            own_team.game_position_fluidity,
+            own_team.game_position_fluidity.description()
+        ))
+        .open_direction(OpenDirection::Down)
+        .disabled(can_change_team_settings.is_err())
+        .block(default_block());
+        frame.render_layered_stateful_interactive_widget(
+            fluidity_dropdown,
+            btm_split[2],
+            self.setting_dropdowns
+                .entry(FLUIDITY_DROPDOWN_ID)
+                .or_default(),
+            if fluidity_is_open { 1 } else { 0 },
+        );
+
+        let sub_variants: Vec<SubstitutionTendency> = SubstitutionTendency::iter().collect();
+        let sub_options: Vec<Text> = sub_variants
+            .iter()
+            .map(|t| Text::from(t.to_string()))
+            .collect();
+        let sub_is_open = self
+            .setting_dropdowns
+            .get(&SUBSTITUTION_DROPDOWN_ID)
+            .map_or(false, |d| d.is_open());
+        let substitution_dropdown = Dropdown::new(
+            SUBSTITUTION_DROPDOWN_ID,
+            sub_options,
+            Box::new(move |index| UiCallback::SetTeamSubstitutionTendency {
+                substitution_tendency: sub_variants[index],
+            }),
+        )
+        .hotkey(ui_key::team::SET_SUBSTITUTION_TENDENCY)
+        .title("Substitutions")
+        .hover_text(format!(
+            "{}: {}",
+            own_team.substitution_tendency,
+            own_team.substitution_tendency.description()
+        ))
+        .open_direction(OpenDirection::Down)
+        .disabled(can_change_team_settings.is_err())
+        .block(default_block());
+        frame.render_layered_stateful_interactive_widget(
+            substitution_dropdown,
+            btm_split[1],
+            self.setting_dropdowns
+                .entry(SUBSTITUTION_DROPDOWN_ID)
+                .or_default(),
+            if sub_is_open { 1 } else { 0 },
+        );
+
+        let tactics: Vec<Tactic> = Tactic::iter().collect();
+        let tactic_options: Vec<Text> = tactics.iter().map(|t| Text::from(t.to_string())).collect();
+        let tactic_is_open = self
+            .setting_dropdowns
+            .get(&TACTIC_DROPDOWN_ID)
+            .map_or(false, |d| d.is_open());
+        let tactic_dropdown = Dropdown::new(
+            TACTIC_DROPDOWN_ID,
+            tactic_options,
+            Box::new(move |index| UiCallback::SetTeamTactic {
+                tactic: tactics[index],
+            }),
+        )
+        .hotkey(ui_key::team::SET_TACTIC)
+        .title("tactic")
+        .hover_text(format!(
+            "{}: {}",
+            own_team.game_tactic,
+            own_team.game_tactic.description()
+        ))
+        .open_direction(OpenDirection::Down)
+        .disabled(can_change_team_settings.is_err())
+        .block(default_block());
+        frame.render_layered_stateful_interactive_widget(
+            tactic_dropdown,
+            btm_split[0],
+            self.setting_dropdowns
+                .entry(TACTIC_DROPDOWN_ID)
+                .or_default(),
+            if tactic_is_open { 1 } else { 0 },
+        );
+
+        let right_btm_split = Layout::vertical([4, 3]).split(settings_split[2]);
+        frame.render_widget(
+            default_block().title("Accept challenges"),
+            right_btm_split[0],
+        );
+
+        let cb_split = Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)])
+            .split(right_btm_split[0].inner(Margin::new(1, 1)));
+        let local_challenge_button = Checkbox::no_box(
+            "local  ",
             UiCallback::ToggleTeamAutonomousStrategyForLocalChallenges,
             own_team.autonomous_strategy.challenge_local,
         )
-        .set_hover_text("Accept challenges from local teams automatically.".to_string())
-        .set_hotkey(ui_key::team::TOGGLE_ACCEPT_LOCAL_CHALLENGES);
-        frame.render_interactive_widget(local_challenge_button, challenges_split[1]);
+        .hover_text("Accept challenges from local teams automatically.".to_string())
+        .hotkey(ui_key::team::TOGGLE_ACCEPT_LOCAL_CHALLENGES);
+        frame.render_interactive_widget(local_challenge_button, cb_split[0]);
 
-        let network_challenge_button = Checkbox::new(
+        let network_challenge_button = Checkbox::no_box(
             "network",
             UiCallback::ToggleTeamAutonomousStrategyForNetworkChallenges,
             own_team.autonomous_strategy.challenge_network,
         )
-        .set_hover_text("Accept challenges from network teams automatically.".to_string())
-        .set_hotkey(ui_key::team::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
-        frame.render_interactive_widget(network_challenge_button, challenges_split[2]);
+        .hover_text("Accept challenges from network teams automatically.".to_string())
+        .hotkey(ui_key::team::TOGGLE_ACCEPT_NETWORK_CHALLENGES);
+        frame.render_interactive_widget(network_challenge_button, cb_split[1]);
 
-        match own_team.current_location {
-            TeamLocation::OnPlanet { .. } => {
-                if let Some(upgrade) = &own_team.spaceship.pending_upgrade {
-                    self.render_upgrading_spaceship(frame, world, split[1], upgrade)?
-                } else {
-                    self.render_on_planet_spaceship(frame, world, split[1])?
-                }
-            }
-            TeamLocation::Travelling {
-                to,
-                started,
-                duration,
-                ..
-            } => {
-                let countdown = (started + duration)
-                    .saturating_sub(world.last_tick_short_interval)
-                    .formatted();
-                self.render_travelling_spaceship(frame, world, split[1], &to, countdown)?
-            }
-            TeamLocation::Exploring {
-                around,
-                started,
-                duration,
-                ..
-            } => {
-                let countdown = (started + duration)
-                    .saturating_sub(world.last_tick_short_interval)
-                    .formatted();
-                self.render_exploring_spaceship(frame, world, split[1], &around, countdown)?
-            }
-            TeamLocation::OnSpaceAdventure { .. } => {
-                return Err(anyhow!("Team is on a space adventure"))
-            }
+        let mut auto_assign_button =
+            Button::new("Auto-assign positions", UiCallback::AssignBestTeamPositions)
+                .hover_text("Auto-assign players' initial position.")
+                .hotkey(ui_key::team::AUTO_ASSIGN);
+        if let Err(err) = can_change_team_settings {
+            auto_assign_button = auto_assign_button.disabled(Some(err.to_string()));
         }
+        frame.render_interactive_widget(auto_assign_button, right_btm_split[1]);
+
         Ok(())
     }
 
@@ -686,7 +1059,7 @@ impl MyTeamPanel {
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
-        frame.render_widget(default_block().title("Recent Games".to_string()), area);
+        frame.render_widget(default_block().title("Recent Games"), area);
 
         if self.past_game_ids.is_empty() {
             return Ok(());
@@ -764,9 +1137,15 @@ impl MyTeamPanel {
         if world.games.contains_key(&game_id)
             || world.recently_finished_games.contains_key(&game_id)
         {
-            let button = Button::new("Go to game", UiCallback::GoToGame { game_id })
-                .set_hotkey(ui_key::GO_TO_GAME)
-                .set_hover_text("Go to game");
+            let button = Button::new(
+                "Go to game",
+                UiCallback::GoToGame {
+                    game_id,
+                    from_popup: false,
+                },
+            )
+            .hotkey(ui_key::GO_TO_GAME)
+            .hover_text("Go to game");
 
             frame.render_interactive_widget(button, v_split[1]);
         } else if let Some(loaded_game) = self.loaded_games.get(&game_id) {
@@ -775,12 +1154,12 @@ impl MyTeamPanel {
                     "Go to game",
                     UiCallback::GoToLoadedGame { game: game.clone() },
                 )
-                .set_hotkey(ui_key::GO_TO_GAME)
-                .set_hover_text("Go to game"),
+                .hotkey(ui_key::GO_TO_GAME)
+                .hover_text("Go to game"),
 
                 Err(err) => Button::new("Go to game", UiCallback::None)
-                    .set_hotkey(ui_key::GO_TO_GAME)
-                    .set_hover_text("Go to game")
+                    .hotkey(ui_key::GO_TO_GAME)
+                    .hover_text("Go to game")
                     .disabled(Some(err.to_string())),
             };
 
@@ -1162,7 +1541,8 @@ impl MyTeamPanel {
 
         let available = available_upgrade_targets(&own_team.spaceship);
         let possible_upgrade_target = available[self.spaceship_upgrade_index % available.len()];
-        let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
+        let bonus =
+            TeamBonus::Upgrades.current_team_bonus(&own_team.id, &world.teams, &world.players)?;
         let possible_upgrade = possible_upgrade_target.map(|target| Upgrade::new(target, bonus));
 
         let lines = if let Some(target) = possible_upgrade_target {
@@ -1310,8 +1690,8 @@ impl MyTeamPanel {
             };
 
             let mut upgrade_button = Button::new(text, UiCallback::SetSpaceshipUpgrade { upgrade })
-                .set_hotkey(hotkey)
-                .set_hover_text(upgrade.target.description());
+                .hotkey(hotkey)
+                .hover_text(upgrade.target.description());
 
             let can_upgrade_spaceship = own_team.can_upgrade_spaceship(&upgrade);
             if let Err(e) = can_upgrade_spaceship.as_ref() {
@@ -1458,11 +1838,19 @@ impl MyTeamPanel {
                 .upgrades
                 .contains(&PlanetUpgradeTarget::TeleportationPad)
             {
-                let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
+                let bonus = TeamBonus::Upgrades.current_team_bonus(
+                    &own_team.id,
+                    &world.teams,
+                    &world.players,
+                )?;
                 Some(Upgrade::new(PlanetUpgradeTarget::TeleportationPad, bonus))
             } else if own_team.has_space_cove_on().is_none() {
                 // Build space cove button
-                let bonus = TeamBonus::Upgrades.current_team_bonus(world, &own_team.id)?;
+                let bonus = TeamBonus::Upgrades.current_team_bonus(
+                    &own_team.id,
+                    &world.teams,
+                    &world.players,
+                )?;
                 Some(Upgrade::new(PlanetUpgradeTarget::SpaceCove, bonus))
             } else {
                 None
@@ -1525,7 +1913,8 @@ impl MyTeamPanel {
                         planet_id: parent.id,
                     },
                 )
-                .set_hover_text(format!("Go to {}", parent.name)),
+                .hover_text(format!("Go to {}", parent.name))
+                .set_style(UiStyle::HELP_LINK),
             );
         }
         let constraints = parent_buttons
@@ -1562,7 +1951,7 @@ impl MyTeamPanel {
             let b_split = Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
                 .split(split[1]);
             frame.render_interactive_widget(teleport_button(world, asteroid_id)?, b_split[0]);
-            frame.render_interactive_widget(go_to_space_cove_button()?, b_split[1]);
+            frame.render_interactive_widget(go_to_own_space_cove_button()?, b_split[1]);
         } else {
             frame.render_interactive_widget(teleport_button(world, asteroid_id)?, split[1]);
         }
@@ -1579,8 +1968,8 @@ impl MyTeamPanel {
 
         let abandon_asteroid_button =
             Button::new("Abandon", UiCallback::PushUiPopup { popup_message })
-                .set_hotkey(ui_key::ABANDON_ASTEROID)
-                .set_hover_text("Abandon this asteroid (there's no way back!)")
+                .hotkey(ui_key::ABANDON_ASTEROID)
+                .hover_text("Abandon this asteroid (there's no way back!)")
                 .block(default_block().border_style(UiStyle::WARNING));
 
         frame.render_interactive_widget(abandon_asteroid_button, b_split[1]);
@@ -1588,130 +1977,110 @@ impl MyTeamPanel {
         Ok(())
     }
 
-    fn render_player_buttons(
-        &self,
-        players: &[&Player],
+    fn render_selected_player(
+        &mut self,
+        player: &Player,
         frame: &mut UiFrame,
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
         let own_team = world.get_own_team()?;
-        let player_index = if let Some(index) = self.player_index {
-            index.min(players.len() - 1)
-        } else {
-            return Ok(());
+
+        let player_id = player.id;
+        let split = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(22),
+            Constraint::Length(28),
+        ])
+        .split(area);
+
+        let separator_set = border::Set {
+            top_left: line::NORMAL.horizontal_down,
+            bottom_left: line::NORMAL.horizontal_up,
+            ..border::PLAIN
         };
 
-        let player = players[player_index % players.len()];
-        let player_id = player.id;
-        let button_splits = Layout::horizontal([
-            Constraint::Length(12),
-            Constraint::Length(12),
-            Constraint::Length(12),
-            Constraint::Length(12),
-            Constraint::Length(24),
-            Constraint::Length(24),
-            Constraint::Fill(1),
-        ])
-        .split(area.inner(Margin::new(1, 0)));
+        frame.render_widget(
+            default_block()
+                .borders(Borders::TOP | Borders::LEFT | Borders::BOTTOM)
+                .title(format!("{}", player.info.full_name())),
+            split[0],
+        );
+        frame.render_widget(
+            default_block()
+                .borders(Borders::TOP | Borders::LEFT | Borders::BOTTOM)
+                .border_set(separator_set),
+            split[1],
+        );
+        frame.render_widget(default_block().border_set(separator_set), split[2]);
 
-        let can_set_crew_role = own_team.can_set_crew_role(player);
+        let potential_description = format!("Potential {}", player.potential.stars());
 
-        let mut captain_button = Button::new(
-            "captain",
-            UiCallback::SetCrewRole {
-                player_id,
-                role: CrewRole::Captain,
-            },
-        )
-        .set_hover_text(format!(
-            "Set player to captain role: {} +{}%, {} {}%",
-            TeamBonus::Reputation,
-            TeamBonus::Reputation.as_skill(player).percentage(),
-            TeamBonus::TradePrice,
-            TeamBonus::TradePrice.as_skill(player).percentage()
-        ))
-        .set_hotkey(ui_key::team::SET_CAPTAIN);
-        if own_team.crew_roles.captain == Some(player.id) {
-            captain_button = captain_button
-                .set_hover_text("Remove player from captain role".to_string())
-                .selected();
-        } else if let Err(e) = can_set_crew_role.as_ref() {
-            captain_button.disable(Some(e.to_string()));
+        let mut info_lines = {
+            let drunkenness = player.current_drunkenness(world);
+            let drunkenness_style = if drunkenness.is_negative() {
+                UiStyle::DRUNK
+            } else {
+                UiStyled::style(&((MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL))
+            };
+            let satisfaction = player.team_satisfaction().unwrap_or_default();
+
+            let info_line = Line::from(vec![
+                Span::styled(drunkenness_description(drunkenness), drunkenness_style),
+                Span::raw(" and "),
+                Span::styled(
+                    player.opinions.own_team_opinion(),
+                    UiStyled::style(&satisfaction),
+                ),
+            ]);
+            vec![
+                Line::from(potential_description),
+                Line::from(format!(
+                    "Joined the crew on {}",
+                    player
+                        .joined_team_on
+                        .unwrap_or_default()
+                        .formatted_as_date(),
+                )),
+                info_line,
+                Line::default(),
+                Line::from(Span::styled("Opinions", UiStyle::HEADER.bold())),
+            ]
+        };
+
+        for text in player.opinions.describe_opinions() {
+            info_lines.push(Line::from(format!("• {text}")));
         }
-        frame.render_interactive_widget(captain_button, button_splits[0]);
 
-        let mut pilot_button = Button::new(
-            "pilot",
-            UiCallback::SetCrewRole {
-                player_id,
-                role: CrewRole::Pilot,
-            },
-        )
-        .set_hover_text(format!(
-            "Set player to pilot role: {} +{}%, {} {}%",
-            TeamBonus::SpaceshipSpeed,
-            TeamBonus::SpaceshipSpeed.as_skill(player).percentage(),
-            TeamBonus::Exploration,
-            TeamBonus::Exploration.as_skill(player).percentage()
-        ))
-        .set_hotkey(ui_key::team::SET_PILOT);
-        if own_team.crew_roles.pilot == Some(player.id) {
-            pilot_button = pilot_button
-                .set_hover_text("Remove player from pilot role".to_string())
-                .selected();
-        } else if let Err(e) = can_set_crew_role.as_ref() {
-            pilot_button.disable(Some(e.to_string()));
-        }
-        frame.render_interactive_widget(pilot_button, button_splits[1]);
+        frame.render_widget(
+            Paragraph::new(info_lines).wrap(Wrap::default()),
+            split[0].inner(Margin::new(2, 1)),
+        );
 
-        let mut doctor_button = Button::new(
-            "doctor",
-            UiCallback::SetCrewRole {
-                player_id,
-                role: CrewRole::Doctor,
-            },
-        )
-        .set_hover_text(format!(
-            "Set player to doctor role: {} +{}%, {} {}%",
-            TeamBonus::TirednessRecovery,
-            TeamBonus::TirednessRecovery.as_skill(player).percentage(),
-            TeamBonus::Training,
-            TeamBonus::Training.as_skill(player).percentage()
-        ))
-        .set_hotkey(ui_key::team::SET_DOCTOR);
-        if own_team.crew_roles.doctor == Some(player.id) {
-            doctor_button = doctor_button
-                .set_hover_text("Remove player from doctor role".to_string())
-                .selected();
-        } else if let Err(e) = can_set_crew_role.as_ref() {
-            doctor_button.disable(Some(e.to_string()));
-        }
-        frame.render_interactive_widget(doctor_button, button_splits[2]);
-
-        let mut engineer_button = Button::new(
-            "engineer",
-            UiCallback::SetCrewRole {
-                player_id,
-                role: CrewRole::Engineer,
-            },
-        )
-        .set_hover_text(format!(
-            "Set player to engineer role: {} +{}%, {} {}%",
-            TeamBonus::Weapons,
-            TeamBonus::Weapons.as_skill(player).percentage(),
-            TeamBonus::Upgrades,
-            TeamBonus::Upgrades.as_skill(player).percentage()
-        ))
-        .set_hotkey(ui_key::team::SET_ENGINEER);
-        if own_team.crew_roles.engineer == Some(player.id) {
-            engineer_button = engineer_button
-                .set_hover_text("Remove player from engineer role".to_string())
-                .selected();
-        } else if let Err(e) = can_set_crew_role.as_ref() {
-            engineer_button.disable(Some(e.to_string()));
-        }
-        frame.render_interactive_widget(engineer_button, button_splits[3]);
+        let crew_lines = {
+            let mut l = vec![Line::from(Span::styled(
+                "Crew bonus",
+                UiStyle::HEADER.bold(),
+            ))];
+            for bonus in TeamBonus::iter() {
+                let skill = bonus.as_skill(player);
+                let style = if matches!(own_team.get_crew_role(bonus.crew_role()), Some(id) if id==player.id)
+                {
+                    UiStyled::style(&skill).underlined().bold()
+                } else {
+                    UiStyled::style(&skill)
+                };
+                l.push(Line::from(Span::styled(
+                    format!("{} +{}%", bonus, skill.percentage()),
+                    style,
+                )));
+            }
+            l
+        };
+        frame.render_widget(
+            Paragraph::new(crew_lines),
+            split[1].inner(Margin::new(2, 1)),
+        );
 
         let can_release = own_team.can_release_player(player);
         let popup_message = PopupMessage::ReleasePlayer {
@@ -1724,130 +2093,161 @@ impl MyTeamPanel {
             format!("Fire {}", player.info.short_name()),
             UiCallback::PushUiPopup { popup_message },
         )
-        .set_hover_text("Fire pirate from the crew!")
-        .set_hotkey(ui_key::player::FIRE);
+        .hover_text("Fire pirate from the crew!")
+        .hotkey(ui_key::player::FIRE);
         if let Err(err) = can_release {
             release_button.disable(Some(err.to_string()));
         } else {
             release_button = release_button.block(default_block().border_style(UiStyle::WARNING));
         }
 
-        frame.render_interactive_widget(release_button, button_splits[4]);
+        if own_team.can_change_team_settings().is_ok() {
+            let side_split = Layout::vertical([3, 3, 3]).split(split[2].inner(Margin::new(2, 1)));
 
-        if let Ok(drink_button) = drink_button(world, &player_id) {
-            frame.render_interactive_widget(drink_button, button_splits[5]);
+            frame.render_interactive_widget(release_button, side_split[0]);
+
+            if let Ok(drink_button) = drink_button(world, &player_id) {
+                frame.render_interactive_widget(drink_button, side_split[1]);
+            }
+
+            if let Ok(gold_button) = gold_button(world, &player_id) {
+                frame.render_interactive_widget(gold_button, side_split[2]);
+            }
         }
 
         Ok(())
     }
 
-    fn build_players_table<'a>(
-        players: &'a Vec<&Player>,
-        world: &'a World,
+    fn render_roster_dropdown(
+        &mut self,
+        frame: &mut UiFrame,
+        dropdown: Dropdown<'static>,
+        id: usize,
+        table_area: Rect,
+        row: u16,
+        right_offset: u16,
+        width: u16,
+        selected: usize,
+    ) {
+        let rect = Rect::new(
+            table_area.x + table_area.width - 1 - right_offset - width,
+            table_area.y + 2 + row,
+            width,
+            1,
+        );
+        let state = self.setting_dropdowns.entry(id).or_default();
+        if !state.is_open() {
+            state.select(selected);
+        }
+        let layer = if state.is_open() { 1 } else { 0 };
+        frame.render_layered_stateful_interactive_widget(dropdown, rect, state, layer);
+    }
+
+    fn build_players_table(
+        players: &Vec<&Player>,
+        player_ids: &Vec<PlayerId>,
         table_width: u16,
     ) -> AppResult<ClickableTable<'static>> {
-        let own_team = world.get_own_team()?;
-        let header_cells = [
-            "Name",
-            "Overall",
-            "Potential",
-            "Current",
-            "Best",
-            "Role",
-            "Crew bonus",
-        ]
-        .iter()
-        .map(|h| ClickableCell::from(*h).style(UiStyle::HEADER.bold()));
-        let header = ClickableRow::new(header_cells);
+        let header_style = UiStyle::HEADER.bold();
+        let header = ClickableRow::new(vec![
+            ClickableCell::from("Name").style(header_style),
+            ClickableCell::from("Overall").style(header_style),
+            ClickableCell::from("Salary").style(header_style),
+            ClickableCell::from("Position").style(header_style),
+            ClickableCell::from(Line::from(vec![
+                Span::styled("T", header_style.underlined()),
+                Span::styled("raining", header_style),
+            ])),
+            ClickableCell::from("Role").style(header_style),
+            ClickableCell::from("Crew bonus").style(header_style),
+        ]);
 
         // Calculate the available space for the players name in order to display the
         // full or shortened version.
         let name_header_width = table_width
-            .saturating_sub(9 + 10 + 10 + 10 + 9 + 15 + 20)
+            .saturating_sub(
+                7 + 10
+                    + POSITION_COLUMN_WIDTH
+                    + 4
+                    + TRAINING_COLUMN_WIDTH
+                    + TRAINING_COLUMN_RIGHT_OFFSET,
+            )
             .max(1);
 
         let rows = players
             .iter()
             .map(|player| {
-                let current_role = match own_team.player_ids.iter().position(|id| *id == player.id)
-                {
-                    Some(idx) => format!(
-                        "{:<2} {:<5}",
-                        (idx as GamePosition).as_role(),
-                        if (idx as GamePosition) < NUM_GAME_POSITIONS {
-                            player.position_rating(idx as GamePosition).stars()
-                        } else {
-                            "".to_string()
-                        }
-                    ),
-                    None => unreachable!("Player in MyTeam should have a position."),
-                };
-                let best_role = player.best_position();
                 let overall = player.average_skill().stars();
-                let potential = player.potential.stars();
+                let salary = player.salary().to_string();
+                let (position_index, _) = player_ids
+                    .iter()
+                    .enumerate()
+                    .find(|(_, id)| **id == player.id)
+                    .expect("Player id should be in player ids");
+                let position = (position_index as GamePosition).as_role().to_string();
 
                 let bonus_string_1 = match player.info.crew_role {
                     CrewRole::Pilot => {
                         let skill = TeamBonus::SpaceshipSpeed.as_skill(player);
                         Span::styled(
                             format!("{} +{}%", TeamBonus::SpaceshipSpeed, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Captain => {
                         let skill = TeamBonus::Reputation.as_skill(player);
                         Span::styled(
                             format!("{} +{}%", TeamBonus::Reputation, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Doctor => {
                         let skill = TeamBonus::TirednessRecovery.as_skill(player);
                         Span::styled(
                             format!("{} +{}%", TeamBonus::TirednessRecovery, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Engineer => {
                         let skill = TeamBonus::Weapons.as_skill(player);
                         Span::styled(
                             format!("{} +{}%", TeamBonus::Weapons, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
-                    CrewRole::Mozzo => Span::raw(""),
+                    CrewRole::Mozzo => Span::default(),
                 };
 
                 let bonus_string_2 = match player.info.crew_role {
                     CrewRole::Pilot => {
-                        let skill = TeamBonus::Exploration.as_skill(player);
+                        let skill = TeamBonus::Scouting.as_skill(player);
                         Span::styled(
-                            format!(" {} +{}%", TeamBonus::Exploration, skill.percentage()),
-                            skill.style(),
+                            format!(" {} +{}%", TeamBonus::Scouting, skill.percentage()),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Captain => {
-                        let skill = TeamBonus::TradePrice.as_skill(player);
+                        let skill = TeamBonus::Bargaining.as_skill(player);
                         Span::styled(
-                            format!(" {} +{}%", TeamBonus::TradePrice, skill.percentage()),
-                            skill.style(),
+                            format!(" {} +{}%", TeamBonus::Bargaining, skill.percentage()),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Doctor => {
                         let skill = TeamBonus::Training.as_skill(player);
                         Span::styled(
                             format!(" {} +{}%", TeamBonus::Training, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
                     CrewRole::Engineer => {
                         let skill = TeamBonus::Upgrades.as_skill(player);
                         Span::styled(
                             format!(" {} +{}%", TeamBonus::Upgrades, skill.percentage()),
-                            skill.style(),
+                            UiStyled::style(&skill),
                         )
                     }
-                    CrewRole::Mozzo => Span::raw(""),
+                    CrewRole::Mozzo => Span::default(),
                 };
 
                 let name = if name_header_width >= 2 * MAX_NAME_LENGTH as u16 + 2 {
@@ -1855,16 +2255,16 @@ impl MyTeamPanel {
                 } else {
                     player.info.short_name()
                 };
+                let training = match player.training_focus {
+                    Some(focus) => focus.to_string(),
+                    None => "General".to_string(),
+                };
                 let cells = [
                     ClickableCell::from(name),
                     ClickableCell::from(overall),
-                    ClickableCell::from(potential),
-                    ClickableCell::from(current_role),
-                    ClickableCell::from(format!(
-                        "{:<2} {:<5}",
-                        best_role.as_role(),
-                        player.position_rating(best_role).stars()
-                    )),
+                    ClickableCell::from(salary),
+                    ClickableCell::from(position),
+                    ClickableCell::from(training),
                     ClickableCell::from(player.info.crew_role.to_string()),
                     ClickableCell::from(bonus_string_1),
                     ClickableCell::from(bonus_string_2),
@@ -1875,16 +2275,16 @@ impl MyTeamPanel {
 
         let table = ClickableTable::new(rows?)
             .header(header)
-            .column_spacing(0)
+            .column_spacing(1)
             .widths(&[
                 Constraint::Min(MAX_NAME_LENGTH as u16 + 2),
-                Constraint::Length(9),
-                Constraint::Length(10),
-                Constraint::Length(10),
-                Constraint::Length(10),
-                Constraint::Length(9),
+                Constraint::Length(7),
+                Constraint::Length(7),
+                Constraint::Length(POSITION_COLUMN_WIDTH),
+                Constraint::Length(TRAINING_COLUMN_WIDTH),
+                Constraint::Length(ROLE_COLUMN_WIDTH),
                 Constraint::Length(15),
-                Constraint::Length(20),
+                Constraint::Length(17),
             ]);
 
         Ok(table)
@@ -1914,15 +2314,22 @@ impl MyTeamPanel {
         let top_split =
             Layout::horizontal([Constraint::Fill(1), Constraint::Length(60)]).split(area);
 
+        let table_split = Layout::vertical([
+            Constraint::Length(MAX_CREW_SIZE as u16 + 3),
+            Constraint::Fill(1),
+        ])
+        .split(top_split[0]);
+
         self.players_table_state.select(self.player_index);
         frame.render_stateful_interactive_widget(
             &self.players_table,
-            top_split[0],
+            table_split[0],
             &mut self.players_table_state,
         );
 
         render_player_description(
             player,
+            &world.players_scouting,
             self.player_widget_view,
             &mut self.gif_map,
             self.tick,
@@ -1931,9 +2338,12 @@ impl MyTeamPanel {
             top_split[1],
         );
 
+        let split =
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(28)]).split(table_split[1]);
+
         if let Some(game_id) = own_team.current_game {
             let game = world.games.get_or_err(&game_id)?;
-            let game_text = format!(
+            let text = format!(
                 "{:>} {:>3}-{:<3} {:<}",
                 game.home_team_in_game.name,
                 if let Some(action) = game.action_results.last() {
@@ -1954,115 +2364,168 @@ impl MyTeamPanel {
                 UiStyle::OWN_TEAM
             };
 
-            let table_bottom = Layout::vertical([Constraint::Fill(1), Constraint::Length(6)])
-                .split(top_split[0].inner(Margin::new(1, 1)));
+            frame.render_interactive_widget(
+                Button::new(
+                    vec![
+                        Line::default(),
+                        Line::default(),
+                        Line::from("Currently playing".to_string()).centered(),
+                        Line::default(),
+                        Line::from(text).centered(),
+                        Line::from(game.timer.format()).centered(),
+                    ],
+                    UiCallback::GoToGame {
+                        game_id,
+                        from_popup: false,
+                    },
+                )
+                .hover_text("Go to current game")
+                .hotkey(ui_key::GO_TO_CURRENT_GAME)
+                .block(default_block().border_style(border_style)),
+                split[1],
+            );
+        } else if let Some(tournament_id) = own_team.playing_in_tournament() {
+            let tournament = world.tournaments.get_or_err(&tournament_id)?;
 
             frame.render_interactive_widget(
                 Button::new(
                     vec![
-                        Line::from("Currently playing".to_string()).centered(),
                         Line::default(),
-                        Line::from(game_text).centered(),
-                        Line::from(game.timer.format()).centered(),
+                        Line::default(),
+                        Line::from("Currently in tournament".to_string()).centered(),
+                        Line::default(),
+                        Line::from(tournament.name()).centered(),
                     ],
-                    UiCallback::GoToGame { game_id },
+                    UiCallback::GoToTournament {
+                        tournament_id,
+                        from_popup: false,
+                    },
                 )
-                .set_hover_text("Go to current game")
-                .set_hotkey(ui_key::GO_TO_CURRENT_GAME)
-                .block(default_block().border_style(border_style)),
-                table_bottom[1],
+                .hover_text("Go to current tournament")
+                .hotkey(ui_key::GO_TO_CURRENT_GAME)
+                .block(default_block().border_style(UiStyle::NETWORK)),
+                split[1],
             );
-            return Ok(());
-        }
+        } else {
+            // If this is error, we should have branched before
+            assert!(own_team.can_change_team_settings().is_ok());
 
-        let table_bottom = Layout::vertical([
-            Constraint::Fill(1),
-            Constraint::Length(3), //position buttons
-            Constraint::Length(3), // role buttons
-        ])
-        .split(top_split[0].inner(Margin::new(1, 1)));
-        let position_button_splits = Layout::horizontal([
-            Constraint::Length(6),  //pg
-            Constraint::Length(6),  //sg
-            Constraint::Length(6),  //sf
-            Constraint::Length(6),  //pf
-            Constraint::Length(6),  //c
-            Constraint::Length(6),  //bench
-            Constraint::Length(6),  //bench
-            Constraint::Length(30), //auto-assign
-            Constraint::Length(24), //training
-            Constraint::Fill(1),
-        ])
-        .split(table_bottom[1].inner(Margin {
-            vertical: 0,
-            horizontal: 1,
-        }));
-
-        let player_id = player.id;
-        for idx in 0..MAX_PLAYERS_PER_GAME {
-            if idx >= own_team.player_ids.len() {
-                break;
+            let mut training_variants: Vec<Option<TrainingFocus>> = vec![None];
+            let mut focus = Some(TrainingFocus::default());
+            while let Some(f) = focus {
+                training_variants.push(Some(f));
+                focus = f.next();
             }
-            let position = idx as GamePosition;
-            let rect = position_button_splits[idx];
-            let mut button = Button::new(
-                format!(
-                    "{}:{:<2}",
-                    (idx + 1),
-                    if position == 5 {
-                        "B1"
-                    } else if position == 6 {
-                        "B2"
-                    } else {
-                        position.as_role()
-                    }
-                ),
-                UiCallback::SwapPlayerPositions {
+            let training_options: Vec<Text> = training_variants
+                .iter()
+                .map(|f| {
+                    Text::from(match f {
+                        Some(focus) => focus.to_string(),
+                        None => "General".to_string(),
+                    })
+                })
+                .collect();
+            let selected_focus = training_variants
+                .iter()
+                .position(|f| *f == player.training_focus)
+                .unwrap_or_default();
+            let player_id = player.id;
+            let training_dropdown = Dropdown::new(
+                TRAINING_DROPDOWN_ID,
+                training_options,
+                Box::new(move |index| UiCallback::SetTrainingFocus {
                     player_id,
-                    position: idx,
-                },
+                    training_focus: training_variants[index],
+                }),
             )
-            .set_hover_text(format!(
-                "Set player initial position to {}.",
-                position.as_role()
-            ))
-            .set_hotkey(ui_key::team::set_player_position(position));
+            .hotkey(ui_key::player::TRAINING_FOCUS)
+            .hover_text("Change the training focus to change skills increase faster.")
+            .open_direction(OpenDirection::Down);
 
-            let position = own_team.player_ids.iter().position(|id| *id == player.id);
-            if position.is_some() && position.unwrap() == idx {
-                button.select();
+            self.render_roster_dropdown(
+                frame,
+                training_dropdown,
+                TRAINING_DROPDOWN_ID,
+                table_split[0],
+                player_index as u16,
+                TRAINING_COLUMN_RIGHT_OFFSET,
+                TRAINING_COLUMN_WIDTH,
+                selected_focus,
+            );
+
+            let role_variants = CrewRole::iter().collect_vec();
+            let role_options: Vec<Text> = role_variants
+                .iter()
+                .map(|role| Text::from(role.to_string()))
+                .collect();
+            let selected_role = role_variants
+                .iter()
+                .position(|role| *role == player.info.crew_role)
+                .unwrap_or_default();
+            let on_select_variants = role_variants.clone();
+            let mut role_dropdown = Dropdown::new(
+                ROLE_DROPDOWN_ID,
+                role_options,
+                Box::new(move |index| UiCallback::SetCrewRole {
+                    player_id,
+                    role: on_select_variants[index],
+                }),
+            )
+            .hover_text("Set the pirate's crew role.")
+            .open_direction(OpenDirection::Down);
+            for (index, role) in role_variants.iter().enumerate() {
+                role_dropdown =
+                    role_dropdown.hotkey_select(ui_key::team::set_crew_role(*role), index);
             }
-            frame.render_interactive_widget(button, rect);
+
+            self.render_roster_dropdown(
+                frame,
+                role_dropdown,
+                ROLE_DROPDOWN_ID,
+                table_split[0],
+                player_index as u16,
+                ROLE_COLUMN_RIGHT_OFFSET,
+                ROLE_COLUMN_WIDTH,
+                selected_role,
+            );
+
+            let num_positions = own_team.player_ids.len();
+            let position_options: Vec<Text> = (0..num_positions)
+                .map(|idx| Text::from((idx as GamePosition).as_role().to_string()))
+                .collect();
+            let selected_position = own_team
+                .player_ids
+                .iter()
+                .position(|id| *id == player.id)
+                .unwrap_or_default();
+            let mut position_dropdown = Dropdown::new(
+                POSITION_DROPDOWN_ID,
+                position_options,
+                Box::new(move |index| UiCallback::SwapPlayerPositions {
+                    player_id,
+                    position: index as GamePosition,
+                }),
+            )
+            .hover_text("Set the pirate's game position.")
+            .open_direction(OpenDirection::Down);
+            for idx in 0..num_positions.min(MAX_PLAYERS_PER_GAME) {
+                position_dropdown = position_dropdown
+                    .hotkey_select(ui_key::team::set_player_position(idx as GamePosition), idx);
+            }
+
+            self.render_roster_dropdown(
+                frame,
+                position_dropdown,
+                POSITION_DROPDOWN_ID,
+                table_split[0],
+                player_index as u16,
+                POSITION_COLUMN_RIGHT_OFFSET,
+                6,
+                selected_position,
+            );
         }
 
-        let auto_assign_button =
-            Button::new("Auto-assign positions", UiCallback::AssignBestTeamPositions)
-                .set_hover_text("Auto-assign players' initial position.")
-                .set_hotkey(ui_key::team::AUTO_ASSIGN);
-        frame.render_interactive_widget(auto_assign_button, position_button_splits[7]);
-
-        let can_change_team_settings = own_team.can_change_team_settings();
-        let mut training_button = Button::new(
-            format!(
-                "Training: {}",
-                if let Some(focus) = player.training_focus {
-                    focus.to_string()
-                } else {
-                    "General".to_string()
-                }
-            ),
-            UiCallback::NextTrainingFocus {
-                player_id: player.id,
-            },
-        )
-        .set_hover_text("Change the training focus to change skills increase faster.")
-        .set_hotkey(ui_key::player::TRAINING_FOCUS);
-        if let Err(err) = can_change_team_settings {
-            training_button.disable(Some(err.to_string()));
-        }
-        frame.render_interactive_widget(training_button, position_button_splits[8]);
-
-        self.render_player_buttons(&sorted_players, frame, world, table_bottom[2])?;
+        self.render_selected_player(player, frame, world, table_split[1])?;
 
         Ok(())
     }
@@ -2274,6 +2737,32 @@ impl Screen for MyTeamPanel {
         self.tick += 1;
     }
 
+    fn dropdown(&mut self, id: usize) -> Option<&mut DropdownState> {
+        for (idx, dropdown) in self.position_dropdowns.iter_mut().enumerate() {
+            if id != idx {
+                dropdown.close();
+            }
+        }
+        for (other_id, dropdown) in self.setting_dropdowns.iter_mut() {
+            if *other_id != id {
+                dropdown.close();
+            }
+        }
+
+        if self.setting_dropdowns.contains_key(&id) {
+            self.setting_dropdowns.get_mut(&id)
+        } else {
+            self.position_dropdowns.get_mut(id)
+        }
+    }
+
+    fn has_open_dropdown(&self) -> Option<usize> {
+        if let Some((id, _)) = self.setting_dropdowns.iter().find(|(_, d)| d.is_open()) {
+            return Some(*id);
+        }
+        self.position_dropdowns.iter().position(|d| d.is_open())
+    }
+
     fn update(&mut self, world: &World) -> AppResult<()> {
         self.own_team_id = world.own_team_id;
         let own_team = world.get_own_team()?;
@@ -2328,6 +2817,51 @@ impl Screen for MyTeamPanel {
         self.max_player_index = own_team.player_ids.len();
 
         if world.dirty_ui {
+            // Add a dropdown for a hired player, drop one for a fired player,
+            // then fix selections if they diverged.
+            let num_players = own_team.player_ids.len();
+            self.position_dropdowns.truncate(num_players);
+            while self.position_dropdowns.len() < num_players {
+                let idx = self.position_dropdowns.len();
+                self.position_dropdowns.push(DropdownState::new(idx));
+            }
+            for (index, dropdown) in self.position_dropdowns.iter_mut().enumerate() {
+                dropdown.select(index);
+            }
+
+            let current_settings = [
+                (
+                    TACTIC_DROPDOWN_ID,
+                    Tactic::iter()
+                        .position(|t| t == own_team.game_tactic)
+                        .unwrap_or(0),
+                ),
+                (
+                    SUBSTITUTION_DROPDOWN_ID,
+                    SubstitutionTendency::iter()
+                        .position(|t| t == own_team.substitution_tendency)
+                        .unwrap_or(0),
+                ),
+                (
+                    FLUIDITY_DROPDOWN_ID,
+                    GamePositionFluidity::iter()
+                        .position(|t| t == own_team.game_position_fluidity)
+                        .unwrap_or(0),
+                ),
+                (
+                    DRINKING_DROPDOWN_ID,
+                    InGameDrinking::iter()
+                        .position(|t| t == own_team.in_game_drinking)
+                        .unwrap_or(0),
+                ),
+            ];
+            for (id, index) in current_settings {
+                let dropdown = self.setting_dropdowns.entry(id).or_default();
+                if !dropdown.is_open() {
+                    dropdown.select(index);
+                }
+            }
+
             let mut games = vec![];
             if let Some(current_game) = own_team.current_game {
                 games.push(current_game);
@@ -2379,12 +2913,13 @@ impl Screen for MyTeamPanel {
                 .sort_by_rating();
 
             let table_width = UI_SCREEN_SIZE.0 - 60;
-            self.players_table = Self::build_players_table(&sorted_players, world, table_width)?
-                .block(default_block().title(format!(
-                    "{} {} ↓/↑",
-                    own_team.name,
-                    world.team_rating(&own_team.id).unwrap_or_default().stars()
-                )));
+            self.players_table =
+                Self::build_players_table(&sorted_players, &own_team.player_ids, table_width)?
+                    .block(default_block().title(format!(
+                        "{} {} ↓/↑",
+                        own_team.name,
+                        world.team_rating(&own_team.id).unwrap_or_default().stars()
+                    )));
         }
 
         self.game_index = if !self.past_game_ids.is_empty() {
@@ -2424,7 +2959,7 @@ impl Screen for MyTeamPanel {
 
         match self.view {
             MyTeamView::Info => self.render_info(frame, world, bottom_split[1])?,
-            MyTeamView::TeamSettings => self.render_team(frame, world, bottom_split[1])?,
+            MyTeamView::GameSettings => self.render_team_settings(frame, world, bottom_split[1])?,
             MyTeamView::Games => self.render_games(frame, world, bottom_split[1])?,
             MyTeamView::Market => self.render_market(frame, world, bottom_split[1])?,
             MyTeamView::Shipyard => self.render_shipyard(frame, world, bottom_split[1])?,
@@ -2470,65 +3005,77 @@ impl Screen for MyTeamPanel {
             " Next tab ".to_string(),
         ]
     }
+}
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        super::ui_screen::render_help_block(
-            frame,
-            area,
-            vec![
-                Line::from(" The captain's bridge: manage roster, training, tactics, ships,"),
-                Line::from(" markets, asteroids, and games. Use Tab to cycle the inner view."),
-                Line::from(""),
-                Line::from(" Recruit new pirates from the Pirates panel."),
-                Line::from(" Scout rivals and challenge them from Crews."),
-                Line::from(" Watch your scheduled or finished games in Games."),
-                Line::from(" Travel between planets via the Galaxy star map."),
-            ],
-            vec![
+impl HelpPanel for MyTeamPanel {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: [
+                "The captain's bridge: manage roster, training, tactics, ships, markets, asteroids, and games.",
+                "Use Tab to cycle the inner view.",
+                "",
+                "Recruit new pirates from the Pirates panel.",
+                "Scout rivals and challenge them from Crews.",
+                "Watch your scheduled or finished games in Games.",
+                "Travel between planets via the Galaxy star map.",
+            ]
+            .join("\n"),
+            links: vec![
                 tab_link("Pirates", UiTab::Pirates),
                 tab_link("Crews", UiTab::Crews),
                 tab_link("Games", UiTab::Games),
                 tab_link("Galaxy", UiTab::Galaxy),
             ],
-            vec![
-                Line::from(" Controls:"),
+            controls: vec![
+                Line::from("Controls:"),
                 Line::from(format!(
-                    "   {}        Cycle view (Info/Team/Games/Market/Shipyard/Asteroids)",
+                    "  {}        Cycle view (Info/Game Settings/Games/Market/Shipyard/Asteroids)",
                     ui_key::CYCLE_VIEW
                 )),
-                Line::from("   ↑/↓        Move highlight in the active list"),
+                Line::from("  ↑/↓        Move highlight in the active list"),
                 Line::from(format!(
-                    "   {}/{}/{}/{}    Set captain/doctor/engineer/pilot",
+                    "  {}/{}/{}/{}/{}  Set highlighted pirate as captain/doctor/engineer/pilot/mozzo",
                     ui_key::team::SET_CAPTAIN,
                     ui_key::team::SET_DOCTOR,
                     ui_key::team::SET_ENGINEER,
-                    ui_key::team::SET_PILOT
+                    ui_key::team::SET_PILOT,
+                    ui_key::team::SET_MOZZO,
                 )),
-                Line::from("   1-7        Place highlighted player in that game position"),
+                Line::from("  1-7        Place highlighted pirate in that game position"),
                 Line::from(format!(
-                    "   {} / {}      Hire / fire highlighted pirate",
-                    ui_key::player::HIRE,
+                    "  {}      Fire highlighted pirate",
                     ui_key::player::FIRE
                 )),
+                Line::default(),
+                Line::from("  Game settings view"),
                 Line::from(format!(
-                    "   {} / {}      Set training focus / cycle tactic",
+                    "  {} / {}      Set training focus / cycle tactic",
                     ui_key::player::TRAINING_FOCUS,
                     ui_key::team::SET_TACTIC
                 )),
                 Line::from(format!(
-                    "   {} / {}      Cycle substitution tendency / game position fluidity",
+                    "  {} / {}      Cycle substitution tendency / game position fluidity",
                     ui_key::team::SET_SUBSTITUTION_TENDENCY,
                     ui_key::team::SET_GAME_POSITION_FLUIDITY
                 )),
+                Line::default(),
+                Line::from("  Market view"),
+                Line::from(format!(
+                    "  {}/{}/{}/{}    Buy gold/scraps/fuel/rum",
+                    ui_key::market::BUY_GOLD,
+                    ui_key::market::BUY_SCRAPS,
+                    ui_key::market::BUY_FUEL,
+                    ui_key::market::BUY_RUM,
+                )),
+                Line::from(format!(
+                    "  {}/{}/{}/{}    Sell gold/scraps/fuel/rum",
+                    ui_key::market::SELL_GOLD,
+                    ui_key::market::SELL_SCRAPS,
+                    ui_key::market::SELL_FUEL,
+                    ui_key::market::SELL_RUM,
+                )),
             ],
-        );
-        Ok(())
+        }
     }
 }
 

@@ -8,8 +8,12 @@ pub const LEFT_PANEL_WIDTH: u16 = 36;
 pub const IMG_FRAME_WIDTH: u16 = 80;
 pub const MIN_NAME_LENGTH: usize = 3;
 pub const MAX_NAME_LENGTH: usize = 12;
+pub const MAX_SPACE_COVE_NAME_LENGTH: usize = 16;
 
 pub const BARS_LENGTH: usize = 25;
+
+// This is used as a convenience value so that the bars are colored green if at max value.
+pub const GREEN_STYLE_SKILL: f32 = 16.0;
 
 // Used for improvement indicators
 pub const TREND_WEAK_UP: f32 = 0.05 * MAX_SKILL_INCREASE_PER_LONG_TICK;
@@ -31,6 +35,7 @@ impl UiStyle {
     pub const SELECTED_BUTTON: Style = Self::DEFAULT.fg(Color::Rgb(118, 213, 192));
     pub const UNSELECTABLE: Style = Self::DEFAULT.fg(Color::DarkGray);
     pub const ERROR: Style = Self::DEFAULT.fg(Color::Red);
+    pub const DRUNK: Style = Self::DEFAULT.fg(Color::Red);
     pub const OWN_TEAM: Style = Self::DEFAULT.fg(Color::Rgb(185, 225, 125));
     pub const HEADER: Style = Self::DEFAULT.fg(Color::LightBlue);
     pub const NETWORK: Style = Self::DEFAULT.fg(Color::Rgb(204, 144, 184));

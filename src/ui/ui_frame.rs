@@ -1,6 +1,8 @@
 use ratatui::crossterm::event::{KeyCode, MouseEventKind};
 use ratatui::{
+    buffer::Buffer,
     layout::{Constraint, Layout, Rect},
+    text::Text,
     widgets::{Clear, Paragraph, StatefulWidget, Widget},
     Frame,
 };
@@ -11,10 +13,13 @@ use super::{
     UI_SCREEN_SIZE,
 };
 
+type DeferredRender = Box<dyn FnOnce(&mut Buffer)>;
+
 pub struct UiFrame<'a, 'b> {
     inner: &'a mut Frame<'b>,
     hover_text_area: Rect,
     callback_registry: CallbackRegistry,
+    layered: Vec<DeferredRender>,
 }
 
 impl<'a, 'b> UiFrame<'a, 'b> {
@@ -90,6 +95,7 @@ impl<'a, 'b> UiFrame<'a, 'b> {
             inner: frame,
             hover_text_area: Rect::default(),
             callback_registry: CallbackRegistry::new(),
+            layered: Vec::new(),
         };
 
         let screen_area = ui_frame.screen_area();
@@ -118,17 +124,27 @@ impl<'a, 'b> UiFrame<'a, 'b> {
         self.inner.render_stateful_widget(widget, area, state);
     }
 
-    pub fn render_interactive_widget<W>(&mut self, mut widget: W, area: Rect)
+    fn draw_hover_text(&mut self, text: Text<'_>) {
+        self.render_widget(Clear, self.hover_text_area);
+        self.render_widget(Paragraph::new(text).centered(), self.hover_text_area);
+    }
+
+    pub fn render_interactive_widget<W>(&mut self, widget: W, area: Rect)
     where
         W: InteractiveWidget,
     {
-        let is_hovered = self.is_hovered(area, widget.layer());
-        widget.before_rendering(area, &mut self.callback_registry);
-        if is_hovered {
-            self.render_widget(Clear, self.hover_text_area);
+        self.render_interactive_widget_on_layer(widget, area, 0);
+    }
 
-            let hover_text = Paragraph::new(widget.hover_text()).centered();
-            self.render_widget(hover_text, self.hover_text_area);
+    pub fn render_interactive_widget_on_layer<W>(&mut self, widget: W, area: Rect, layer: usize)
+    where
+        W: InteractiveWidget,
+    {
+        let is_hovered = self.is_hovered(area, layer);
+        let mut widget = widget;
+        widget.before_rendering(area, &mut self.callback_registry, layer);
+        if is_hovered {
+            self.draw_hover_text(widget.hover_text());
         }
         self.render_widget(widget, area);
     }
@@ -141,14 +157,46 @@ impl<'a, 'b> UiFrame<'a, 'b> {
     ) where
         W: InteractiveStatefulWidget,
     {
-        let is_hovered = self.is_hovered(area, widget.layer());
-        widget.before_rendering(area, &mut self.callback_registry, state);
+        let is_hovered = self.is_hovered(area, 0);
+        widget.before_rendering(area, &mut self.callback_registry, state, 0);
         if is_hovered {
-            self.render_widget(Clear, self.hover_text_area);
-
-            let hover_text = Paragraph::new(widget.hover_text()).centered();
-            self.render_widget(hover_text, self.hover_text_area);
+            self.draw_hover_text(widget.hover_text());
         }
         self.render_stateful_widget(widget, area, state);
+    }
+
+    // Defers the widget rendering to the end of the render cycle, so that it can
+    // draw over content rendered after it in the current pass.
+    pub fn render_layered_stateful_interactive_widget<W>(
+        &mut self,
+        widget: W,
+        area: Rect,
+        state: &mut W::State,
+        layer: usize,
+    ) where
+        W: InteractiveStatefulWidget + 'static,
+        W::State: Clone + 'static,
+    {
+        let is_hovered = self.is_hovered(area, layer);
+        widget.before_rendering(area, &mut self.callback_registry, state, layer);
+        if is_hovered {
+            self.draw_hover_text(widget.hover_text());
+        }
+        if layer == 0 {
+            self.render_stateful_widget(widget, area, state);
+        } else {
+            let mut state = state.clone();
+            self.layered.push(Box::new(move |buffer| {
+                StatefulWidget::render(widget, area, buffer, &mut state)
+            }));
+        }
+    }
+
+    pub fn render_layered_widgets(&mut self) {
+        let layered = std::mem::take(&mut self.layered);
+        let buffer = self.inner.buffer_mut();
+        for render in layered {
+            render(buffer);
+        }
     }
 }

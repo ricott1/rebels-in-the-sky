@@ -1,25 +1,22 @@
-use super::button::Button;
-use super::clickable_list::ClickableListState;
-use super::constants::*;
-use super::gif_map::GifMap;
-use super::ui_callback::UiCallback;
-use super::ui_frame::UiFrame;
-use super::ui_screen::{render_help_block, tab_link, UiTab};
-use super::widgets::{
-    render_player_description, render_spaceship_description, selectable_list, PlayerWidgetView,
-};
-use super::{
-    traits::{Screen, SplitPanel},
-    utils::input_from_key_event,
-    widgets::default_block,
-};
+use super::traits::{HelpContent, HelpPanel, IndexBound, Screen, SplitPanel};
 use crate::core::constants::{MINUTES, MIN_PLAYERS_PER_GAME};
 use crate::core::{skill::Rated, world::World};
 use crate::network::types::{ChatHistoryEntry, PlayerRanking, TeamRanking};
 use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId, Tick};
+use crate::ui::button::Button;
+use crate::ui::clickable_list::ClickableListState;
 use crate::ui::clickable_list::{ClickableList, ClickableListItem};
+use crate::ui::constants::*;
+use crate::ui::gif_map::GifMap;
+use crate::ui::renders::{
+    render_player_description, render_spaceship_description, selectable_list, PlayerWidgetView,
+};
+use crate::ui::ui_callback::UiCallback;
+use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
-use crate::ui::utils::{wrap_text, IndexBound};
+use crate::ui::ui_screen::{tab_link, UiTab};
+use crate::ui::utils::wrap_text;
+use crate::ui::{renders::default_block, utils::input_from_key_event};
 use anyhow::Error;
 use core::fmt::Debug;
 use itertools::Itertools;
@@ -35,12 +32,11 @@ use ratatui::{
 };
 use ratatui_textarea::{CursorMove, TextArea};
 use std::collections::{BTreeSet, HashMap};
-use strum_macros::Display;
 
 const EVENT_DUPLICATE_DELAY: Tick = 2 * MINUTES;
 const PEER_DISCONNECTION_INTERVAL: Tick = 5 * MINUTES;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Display, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum SwarmView {
     #[default]
     Chat,
@@ -149,7 +145,7 @@ impl Ord for ChatEvent {
     }
 }
 
-#[derive(Debug, Display, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 enum PanelList {
     #[default]
     Players,
@@ -414,7 +410,7 @@ impl SwarmPanel {
             },
         )
         .bold()
-        .set_hover_text("View the chat. Just type and press Enter to message the network.");
+        .hover_text("View the chat. Just type and press Enter to message the network.");
 
         let mut requests_button = Button::new(
             "Requests",
@@ -423,7 +419,7 @@ impl SwarmPanel {
             },
         )
         .bold()
-        .set_hover_text("View challenges received from the network.");
+        .hover_text("View challenges received from the network.");
 
         let mut log_button = Button::new(
             "Log",
@@ -432,7 +428,7 @@ impl SwarmPanel {
             },
         )
         .bold()
-        .set_hover_text("View log and system info from the network.");
+        .hover_text("View log and system info from the network.");
 
         let mut ranking_button = Button::new(
             "Ranking",
@@ -441,7 +437,7 @@ impl SwarmPanel {
             },
         )
         .bold()
-        .set_hover_text("View ranking of best pirates and crews in the network.");
+        .hover_text("View ranking of best pirates and crews in the network.");
 
         match self.view {
             SwarmView::Chat => chat_button.select(),
@@ -575,12 +571,12 @@ impl SwarmPanel {
                     },
                 )
                 .block(default_block().border_style(UiStyle::OK))
-                .set_hover_text(format!(
+                .hover_text(format!(
                     "Accept the challenge from {} and start a game.",
                     team.name
                 ));
                 if idx == 0 {
-                    accept_button = accept_button.set_hotkey(ui_key::YES_TO_DIALOG);
+                    accept_button = accept_button.hotkey(ui_key::YES_TO_DIALOG);
                 }
                 frame.render_interactive_widget(accept_button, line_split[1]);
                 let mut decline_button = Button::new(
@@ -590,9 +586,9 @@ impl SwarmPanel {
                     },
                 )
                 .block(default_block().border_style(UiStyle::ERROR))
-                .set_hover_text(format!("Decline the challenge from {}.", team.name));
+                .hover_text(format!("Decline the challenge from {}.", team.name));
                 if idx == 0 {
-                    decline_button = decline_button.set_hotkey(ui_key::NO_TO_DIALOG);
+                    decline_button = decline_button.hotkey(ui_key::NO_TO_DIALOG);
                 }
                 frame.render_interactive_widget(decline_button, line_split[2]);
             }
@@ -662,13 +658,13 @@ impl SwarmPanel {
                     },
                 )
                 .block(default_block().border_style(UiStyle::OK))
-                .set_hover_text(format!(
+                .hover_text(format!(
                     "Accept to trade {} for {}.",
                     target_player.info.short_name(),
                     proposer_player.info.short_name()
                 ));
                 if idx == 0 {
-                    accept_button = accept_button.set_hotkey(ui_key::YES_TO_DIALOG);
+                    accept_button = accept_button.hotkey(ui_key::YES_TO_DIALOG);
                 }
                 frame.render_interactive_widget(accept_button, line_split[1]);
                 let mut decline_button = Button::new(
@@ -678,13 +674,13 @@ impl SwarmPanel {
                     },
                 )
                 .block(default_block().border_style(UiStyle::ERROR))
-                .set_hover_text(format!(
+                .hover_text(format!(
                     "Decline to trade {} for {}.",
                     target_player.info.short_name(),
                     proposer_player.info.short_name()
                 ));
                 if idx == 0 {
-                    decline_button = decline_button.set_hotkey(ui_key::NO_TO_DIALOG);
+                    decline_button = decline_button.hotkey(ui_key::NO_TO_DIALOG);
                 }
                 frame.render_interactive_widget(decline_button, line_split[2]);
             }
@@ -802,6 +798,7 @@ impl SwarmPanel {
         let (_, top_player) = &self.player_ranking[player_ranking_index];
         render_player_description(
             &top_player.player,
+            &world.players_scouting,
             PlayerWidgetView::Skills,
             &mut self.gif_map,
             self.tick,
@@ -1171,48 +1168,41 @@ impl Screen for SwarmPanel {
     fn is_capturing_text(&self) -> bool {
         self.view == SwarmView::Chat
     }
+}
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        render_help_block(
-            frame,
-            area,
-            vec![
-                Line::from(" Talk to other captains over the peer-to-peer swarm: chat,"),
-                Line::from(" review trade and challenge requests, browse the global player"),
-                Line::from(" and team rankings, and watch the network log."),
-                Line::from(""),
-                Line::from(" Accept a challenge here, then play it from Games."),
-                Line::from(" Inspect rivals before accepting via Crews."),
-                Line::from(" Browse traded players in Pirates."),
-            ],
-            vec![
+impl HelpPanel for SwarmPanel {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: [
+                "Talk to other players over the peer-to-peer swarm: ",
+                "chat, review trade and challenge requests, and browse the global rankings.",
+                "",
+                "Accept a challenge here, then play it from Games.",
+                "Inspect rivals before accepting via Crews.",
+                "Browse traded players in Pirates.",
+            ]
+            .join("\n"),
+            links: vec![
                 tab_link("Games", UiTab::Games),
                 tab_link("Crews", UiTab::Crews),
                 tab_link("Pirates", UiTab::Pirates),
             ],
-            vec![
-                Line::from(" Controls:"),
+            controls: vec![
+                Line::from("Controls:"),
                 Line::from(format!(
-                    "   {}        Cycle view (Chat / Requests / Log / Ranking)",
+                    "  {}        Cycle view (Chat / Requests / Log / Ranking)",
                     ui_key::CYCLE_VIEW
                 )),
-                Line::from("   ↑/↓        Scroll the active list"),
-                Line::from("   Enter      Send a chat message in Chat view"),
-                Line::from("   Type       Compose your chat message at the input bar"),
+                Line::from("  ↑/↓        Scroll the active list"),
+                Line::from("  Enter      Send a chat message in Chat view"),
+                Line::from("  Type       Compose your chat message at the input bar"),
                 Line::from(format!(
-                    "   {} / {}      Accept / decline highlighted trade",
+                    "  {} / {}      Accept / decline highlighted trade",
                     ui_key::ACCEPT_TRADE,
                     ui_key::DECLINE_TRADE
                 )),
             ],
-        );
-        Ok(())
+        }
     }
 }
 

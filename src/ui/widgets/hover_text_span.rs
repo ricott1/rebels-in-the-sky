@@ -1,4 +1,5 @@
-use super::{traits::InteractiveWidget, ui_callback::CallbackRegistry};
+use crate::ui::traits::InteractiveWidget;
+use crate::ui::ui_callback::CallbackRegistry;
 use ratatui::{prelude::*, widgets::Widget};
 
 /// A ratatui Paragraph that can display hover text when the mouse hovers over it.
@@ -10,7 +11,6 @@ pub struct HoverTextSpan<'a> {
     /// If the hover text is not empty, the hover text will be displayed when the mouse hovers over the paragraph
     /// If the hover text is empty, the hover text will not be displayed
     hover_text: Text<'a>,
-    layer: usize,
 }
 
 impl<'a> HoverTextSpan<'a> {
@@ -21,7 +21,6 @@ impl<'a> HoverTextSpan<'a> {
         HoverTextSpan {
             span,
             hover_text: hover_text.into(),
-            layer: 0,
         }
     }
 
@@ -37,11 +36,13 @@ impl Widget for HoverTextSpan<'_> {
 }
 
 impl InteractiveWidget for HoverTextSpan<'_> {
-    fn layer(&self) -> usize {
-        self.layer
+    fn before_rendering(
+        &mut self,
+        _area: Rect,
+        _callback_registry: &mut CallbackRegistry,
+        _layer: usize,
+    ) {
     }
-
-    fn before_rendering(&mut self, _area: Rect, _callback_registry: &mut CallbackRegistry) {}
 
     fn hover_text(&self) -> Text<'_> {
         self.hover_text.clone()

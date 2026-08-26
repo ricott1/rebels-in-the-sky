@@ -1,5 +1,5 @@
-use std::collections::HashSet;
-use std::iter::zip;
+mod links;
+pub(crate) use links::{render_lines_with_links, LinkAlign};
 
 use super::ui_frame::UiFrame;
 use super::{
@@ -16,7 +16,7 @@ use super::{
 use crate::core::skill::{Skill, MAX_SKILL, MIN_SKILL};
 use crate::core::types::TeamBonus;
 use crate::core::{
-    ChargeUnit, Honour, Planet, PlanetUpgradeTarget, Shield, Shooter, SpaceCoveUpgradeTarget,
+    ChargeUnit, Honour, Planet, PlanetUpgradeTarget, ScoutReport, Shield, Shooter,
     SpaceshipComponent, Upgrade, UpgradeableElement,
 };
 use crate::ui::utils::format_au;
@@ -44,11 +44,12 @@ use ratatui::{
     text::Span,
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
+use std::collections::{HashMap, HashSet};
+use std::iter::zip;
 use std::sync::LazyLock;
 use strum::Display;
 
-// This is used as a convenience value so that the bars are colored green if at max value.
-pub const GREEN_STYLE_SKILL: f32 = 16.0;
+const SPACES: &str = "                    ";
 
 pub static UP_ARROW_SPAN: LazyLock<Span<'static>> =
     LazyLock::new(|| Span::styled("↑", MAX_SKILL.style()));
@@ -118,14 +119,16 @@ pub fn go_to_planet_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<
         format!("Go to planet: {planet_name}"),
         UiCallback::GoToPlanet { planet_id },
     )
-    .set_hover_text(format!("Go to planet {planet_name}"))
-    .set_hotkey(ui_key::GO_TO_PLANET))
+    .hover_text(format!("Go to planet {planet_name}"))
+    .hotkey(ui_key::GO_TO_PLANET))
 }
 
-pub fn go_to_space_cove_button<'a>() -> AppResult<Button<'a>> {
-    Ok(Button::new("Go to space cove", UiCallback::GoToSpaceCove)
-        .set_hover_text("Go to space cove panel".to_string())
-        .set_hotkey(ui_key::GO_TO_SPACE_COVE))
+pub fn go_to_own_space_cove_button<'a>() -> AppResult<Button<'a>> {
+    Ok(
+        Button::new("Go to space cove", UiCallback::GoToOwnSpaceCove)
+            .hover_text("Go to space cove panel".to_string())
+            .hotkey(ui_key::GO_TO_SPACE_COVE),
+    )
 }
 
 pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Button<'a>> {
@@ -140,7 +143,7 @@ pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Butt
     };
 
     let mut teleport_button = Button::new(button_label, UiCallback::TravelToPlanet { planet_id })
-        .set_hover_text(format!(
+        .hover_text(format!(
             "Travel instantaneously to {}{}",
             planet.name,
             if rum_cost == 0 {
@@ -149,7 +152,7 @@ pub fn teleport_button<'a>(world: &World, planet_id: PlanetId) -> AppResult<Butt
                 format!(" for {} Rum", rum_cost)
             }
         ))
-        .set_hotkey(ui_key::TRAVEL);
+        .hotkey(ui_key::TRAVEL);
 
     if let Err(e) = own_team.can_travel_to_planet(planet, TELEPORT_TRAVEL_DURATION) {
         teleport_button.disable(Some(e.to_string()));
@@ -185,8 +188,8 @@ pub fn travel_or_teleport_button<'a>(
         format!("Travel ({formatted_duration})"),
         UiCallback::TravelToPlanet { planet_id },
     )
-    .set_hotkey(ui_key::TRAVEL)
-    .set_hover_text(hover_text);
+    .hotkey(ui_key::TRAVEL)
+    .hover_text(hover_text);
 
     if let Err(e) = own_team.can_travel_to_planet(planet, duration) {
         button.disable(Some(e.to_string()));
@@ -202,8 +205,8 @@ pub fn go_to_team_home_planet_button<'a>(world: &World, team_id: &TeamId) -> App
         format!("Home planet {planet_name}"),
         UiCallback::GoToHomePlanet { team_id: team.id },
     )
-    .set_hover_text(format!("Go to team home planet {planet_name}",))
-    .set_hotkey(ui_key::GO_TO_HOME_PLANET))
+    .hover_text(format!("Go to team home planet {planet_name}",))
+    .hotkey(ui_key::GO_TO_HOME_PLANET))
 }
 
 pub fn go_to_team_current_planet_button<'a>(
@@ -216,11 +219,11 @@ pub fn go_to_team_current_planet_button<'a>(
             format!("On planet {}", world.planets.get_or_err(&planet_id)?.name),
             UiCallback::GoToCurrentTeamPlanet { team_id: team.id },
         )
-        .set_hover_text(format!(
+        .hover_text(format!(
             "Go to planet {}",
             world.planets.get_or_err(&planet_id)?.name
         ))
-        .set_hotkey(ui_key::ON_PLANET),
+        .hotkey(ui_key::ON_PLANET),
 
         TeamLocation::Travelling {
             from: _from,
@@ -267,7 +270,7 @@ pub fn go_to_team_current_planet_button<'a>(
 
 pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button<'a>> {
     let player = world.players.get_or_err(player_id)?;
-    let can_drink = player.can_drink(world);
+    let can_drink = player.can_drink(&world.teams);
 
     let mut button = Button::new(
         "Drink! (-1 Rum)",
@@ -275,12 +278,32 @@ pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button
             player_id: *player_id,
         },
     )
-    .set_hotkey(ui_key::player::DRINK)
-    .set_hover_text(
+    .hotkey(ui_key::player::DRINK)
+    .hover_text(
         "Drink a liter of rum, increasing morale and drunkenness. Drink too much and the pirate could get wasted!",
     );
 
     if let Err(err) = can_drink {
+        button.disable(Some(err.to_string()));
+    }
+
+    Ok(button)
+}
+
+pub fn gold_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button<'a>> {
+    let player = world.players.get_or_err(player_id)?;
+    let can_receive_gold = player.can_receive_gold(&world.teams);
+
+    let mut button = Button::new(
+        "Give gold! (-1 Gold)",
+        UiCallback::GiveGold {
+            player_id: *player_id,
+        },
+    )
+    .hotkey(ui_key::player::GIVE_GOLD)
+    .hover_text("Give a piece of gold, the right way to cheer any pirate!");
+
+    if let Err(err) = can_receive_gold {
         button.disable(Some(err.to_string()));
     }
 
@@ -325,7 +348,7 @@ pub fn render_challenge_button(
             },
         )
         .block(default_block().border_style(UiStyle::OK))
-        .set_hover_text(format!(
+        .hover_text(format!(
             "Accept the challenge from {} and start a game.",
             team.name
         ));
@@ -342,7 +365,7 @@ pub fn render_challenge_button(
             },
         )
         .block(default_block().border_style(UiStyle::ERROR))
-        .set_hover_text(format!("Decline the challenge from {}.", team.name));
+        .hover_text(format!("Decline the challenge from {}.", team.name));
 
         frame.render_widget(
             Paragraph::new("Challenged!")
@@ -377,21 +400,24 @@ pub fn render_challenge_button(
             "Local game".to_string()
         };
         let mut b = Button::new(
-            format!("Playing - {game_text}"),
-            UiCallback::GoToGame { game_id },
+            format!("Game: {game_text}"),
+            UiCallback::GoToGame {
+                game_id,
+                from_popup: false,
+            },
         )
-        .set_hover_text("Go to team's game")
-        .set_hotkey(ui_key::GO_TO_GAME);
+        .hover_text("Go to team's game")
+        .hotkey(ui_key::GO_TO_GAME);
         if world.games.get_or_err(&game_id).is_err() {
             b.disable(Some("Game is not visible"));
         }
         b
     } else {
         let mut button = Button::new("Challenge", UiCallback::ChallengeTeam { team_id: team.id })
-            .set_hover_text(format!("Challenge {} to a game", team.name));
+            .hover_text(format!("Challenge {} to a game", team.name));
 
         if hotkey {
-            button = button.set_hotkey(ui_key::game::CHALLENGE_TEAM)
+            button = button.hotkey(ui_key::game::CHALLENGE_TEAM)
         }
 
         if let Err(err) = can_challenge {
@@ -428,9 +454,18 @@ pub fn trade_resource_button<'a>(
     )
     .block(default_block().border_style(box_style));
 
-    let can_trade_resource = world
-        .get_own_team()?
-        .can_trade_resource(resource, amount, unit_cost);
+    let can_trade_resource = if amount == 0 {
+        Ok(())
+    } else if amount > 0 {
+        world
+            .get_own_team()?
+            .can_buy_resource(resource, amount as u32, unit_cost)
+    } else {
+        world
+            .get_own_team()?
+            .can_sell_resource(resource, amount.unsigned_abs())
+    };
+
     if let Err(e) = can_trade_resource {
         button.disable(Some(e.to_string()));
     }
@@ -441,7 +476,7 @@ pub fn trade_resource_button<'a>(
         button.disable(disabled_text);
     }
 
-    let mut button = button.set_hover_text(format!(
+    let mut button = button.hover_text(format!(
         "{} {} {} for {}.",
         if amount > 0 { "Buy" } else { "Sell" },
         amount.abs(),
@@ -449,7 +484,7 @@ pub fn trade_resource_button<'a>(
         format_satoshi(amount.unsigned_abs() * unit_cost),
     ));
     if let Some(key) = hotkey {
-        button = button.set_hotkey(key);
+        button = button.hotkey(key);
     }
 
     Ok(button)
@@ -461,13 +496,13 @@ pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
         format!("Explore ({})", duration.formatted()),
         UiCallback::ExploreAroundPlanet { duration },
     )
-    .set_hotkey(ui_key::EXPLORE);
+    .hotkey(ui_key::EXPLORE);
 
     match team.current_location {
         TeamLocation::OnPlanet { planet_id } => {
             let planet = world.planets.get_or_err(&planet_id)?;
             let needed_fuel = (duration as f32 * team.spaceship_fuel_consumption_per_tick()) as u32;
-            button = button.set_hover_text(
+            button = button.hover_text(
                 format!(
                     "Explore the space around {} on autopilot (need {} t of fuel). Hope to find resources, free pirates or more...",
                     planet.name,
@@ -482,7 +517,7 @@ pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
         TeamLocation::Travelling {
             from: _from, to, ..
         } => {
-            button = button.set_hover_text(
+            button = button.hover_text(
                 "Explore the space on autopilot. Hope to find resources, free pirates or more..."
                     .to_string(),
             );
@@ -490,7 +525,7 @@ pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
             button.disable(Some(format!("Travelling to planet {to}")));
         }
         TeamLocation::Exploring { around, .. } => {
-            button = button.set_hover_text(
+            button = button.hover_text(
                 "Explore the space on autopilot. Hope to find resources, free pirates or more..."
                     .to_string(),
             );
@@ -514,13 +549,13 @@ pub fn space_adventure_button<'a>(world: &World, team: &Team) -> AppResult<Butto
         timestamp: Tick::now(),
     };
     let mut button = Button::new("Space Adventure", UiCallback::PushUiPopup { popup_message })
-        .set_hotkey(ui_key::SPACE_ADVENTURE)
+        .hotkey(ui_key::SPACE_ADVENTURE)
         .block(default_block().border_style(UiStyle::WARNING));
 
     match team.current_location {
         TeamLocation::OnPlanet { planet_id } => {
             let planet = world.planets.get_or_err(&planet_id)?;
-            button = button.set_hover_text(format!(
+            button = button.hover_text(format!(
                 "Start a space adventure around {} to collect resources and more...",
                 planet.name,
             ));
@@ -532,14 +567,14 @@ pub fn space_adventure_button<'a>(world: &World, team: &Team) -> AppResult<Butto
         TeamLocation::Travelling {
             from: _from, to, ..
         } => {
-            button = button.set_hover_text(
+            button = button.hover_text(
                 "Start a space adventure to manually collect resources and more...".to_string(),
             );
             let to = world.planets.get_or_err(&to)?.name.to_string();
             button.disable(Some(format!("Travelling to planet {to}")));
         }
         TeamLocation::Exploring { around, .. } => {
-            button = button.set_hover_text(
+            button = button.hover_text(
                 "Start a space adventure to manually collect resources and more...".to_string(),
             );
             let around_planet = world.planets.get_or_err(&around)?.name.to_string();
@@ -627,7 +662,7 @@ pub fn get_storage_spans(
         get_storage_lengths(resources, storage_capacity, bars_length)[..4]
     {
         vec![
-            Span::raw("Stiva  ".to_string()),
+            Span::raw("Cargo  ".to_string()),
             Span::styled("▰".repeat(gold_length), Resource::GOLD.style()),
             Span::styled("▰".repeat(scraps_length), Resource::SCRAPS.style()),
             Span::styled("▰".repeat(rum_length), Resource::RUM.style()),
@@ -639,7 +674,7 @@ pub fn get_storage_spans(
             )),
         ]
     } else {
-        vec![Span::raw("")]
+        vec![Span::default()]
     }
 }
 
@@ -666,7 +701,7 @@ pub fn get_crew_spans<'a>(crew_size: usize, crew_capacity: usize) -> Vec<Span<'a
     ]
 }
 
-pub fn get_energy_spans<'a>(average_tiredness: f32) -> Vec<Span<'a>> {
+pub fn get_energy_spans<'a>(average_tiredness: Skill) -> Vec<Span<'a>> {
     let tiredness_length = (average_tiredness / MAX_SKILL * BARS_LENGTH as f32).round() as usize;
     let energy_string = format!(
         "{}{}",
@@ -780,6 +815,18 @@ pub fn get_fuel_spans<'a>(fuel: u32, fuel_capacity: u32, bars_length: usize) -> 
     ]
 }
 
+pub fn drunkenness_description(drunkenness: Skill) -> &'static str {
+    match drunkenness {
+        x if x < MIN_SKILL => "completely drunk",
+        x if x == MIN_SKILL => "completely sober",
+        x if x < 4.0 => "dignifiedly tipsy",
+        x if x < 8.0 => "respectably buzzed",
+        x if x < 12.0 => "pretty merry",
+        x if x < 16.0 => "undignifiedly inebriated",
+        _ => "sloshed",
+    }
+}
+
 pub fn render_spaceship_description(
     team: &Team,
     world: &World,
@@ -812,12 +859,11 @@ pub fn render_spaceship_description(
     }
 
     if full_info {
-        let average_tiredness = team.average_tiredness(world);
         let speed_bonus = TeamBonus::SpaceshipSpeed
-            .current_team_bonus(world, &team.id)
+            .current_team_bonus(&team.id, &world.teams, &world.players)
             .unwrap_or(1.0);
         let weapon_bonus = TeamBonus::Weapons
-            .current_team_bonus(world, &team.id)
+            .current_team_bonus(&team.id, &world.teams, &world.players)
             .unwrap_or(1.0);
         let widget = Paragraph::new(vec![
             Line::default(),
@@ -825,7 +871,6 @@ pub fn render_spaceship_description(
                 team.player_ids.len(),
                 team.spaceship.crew_capacity() as usize,
             )),
-            Line::from(get_energy_spans(average_tiredness)),
             Line::from(get_durability_spans(
                 team.spaceship.current_durability(),
                 team.spaceship.max_durability(),
@@ -849,6 +894,7 @@ pub fn render_spaceship_description(
                 team.spaceship.storage_capacity(),
                 BARS_LENGTH,
             )),
+            Line::default(),
             Line::from(format!(
                 "Speed {:.3} AU/h",
                 team.spaceship_speed() * speed_bonus * HOURS as f32 / AU as f32
@@ -879,14 +925,15 @@ pub fn render_spaceship_description(
     } else {
         let area = spaceship_split[1].inner(Margin {
             horizontal: 0,
-            vertical: 1,
+            vertical: 0,
         });
 
         let split = Layout::vertical([
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
-            Constraint::Min(0),
+            Constraint::Length(8),
+            Constraint::Length(3),
         ])
         .split(area);
 
@@ -947,8 +994,19 @@ pub fn render_spaceship_description(
         }
 
         let lines_split = Layout::vertical([1].repeat(lines.len())).split(split[3]);
-        for (line, &split) in zip(lines, lines_split.iter()) {
-            frame.render_interactive_widget(line, split);
+        for (line, &l_split) in zip(lines, lines_split.iter()) {
+            frame.render_interactive_widget(line, l_split);
+        }
+
+        if let Some(cove) = team.space_cove.as_ref() {
+            frame.render_interactive_widget(
+                Button::new(
+                    format!("Go to space cove {}", cove.name),
+                    UiCallback::GoToSpaceCove { team_id: team.id },
+                )
+                .hotkey(ui_key::GO_TO_SPACE_COVE),
+                split[4].inner(Margin::new(2, 0)),
+            );
         }
     }
 
@@ -1092,7 +1150,7 @@ pub fn render_build_asteroid_upgrade_button(
             format!("Building {}", pending_upgrade.target),
             UiCallback::None,
         )
-        .set_hover_text(format!(
+        .hover_text(format!(
             "Building {} on {}",
             pending_upgrade.target, asteroid.name
         ))
@@ -1123,8 +1181,8 @@ pub fn render_build_asteroid_upgrade_button(
             ),
             on_click,
         )
-        .set_hotkey(ui_key::BUILD_ASTEROID_UPGRADE)
-        .set_hover_text(upgrade.target.description());
+        .hotkey(ui_key::BUILD_ASTEROID_UPGRADE)
+        .hover_text(upgrade.target.description());
 
         if upgrade.target == PlanetUpgradeTarget::SpaceCove {
             build_button = build_button.block(default_block().border_style(UiStyle::WARNING));
@@ -1466,198 +1524,9 @@ pub fn render_spaceship_upgrade(
     );
 }
 
-pub fn render_market_on_planet(
-    frame: &mut UiFrame,
-    world: &World,
-    own_team: &Team,
-    planet: &Planet,
-    area: Rect,
-) -> AppResult<()> {
-    let inner_area = area.inner(Margin {
-        horizontal: 1,
-        vertical: 1,
-    });
-
-    frame.render_widget(
-        default_block().title(format!("Planet {} Market", planet.name)),
-        area,
-    );
-
-    if let Some(cove) = own_team.space_cove.as_ref() {
-        if matches!(own_team.is_on_planet(), Some(id) if id == cove.planet_id)
-            && !cove.upgrades.contains(&SpaceCoveUpgradeTarget::Market)
-        {
-            frame.render_widget(
-                Paragraph::new(vec![Line::from(
-                    "There is no market available on the cove yet.",
-                )])
-                .centered(),
-                inner_area,
-            );
-            return Ok(());
-        }
-    }
-
-    if !planet.has_market(world.space_cove_on(planet.id)) {
-        frame.render_widget(
-            Paragraph::new(vec![
-                Line::from("There is no market available on this planet."),
-                Line::from("Try another planet with more population."),
-            ])
-            .centered(),
-            inner_area,
-        );
-        return Ok(());
-    }
-
-    let central_pad = (inner_area.width - 75) / 2;
-    let button_split = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(3),
-        Constraint::Length(3),
-        Constraint::Length(3),
-        Constraint::Length(3),
-        Constraint::Min(3),
-    ])
-    .split(inner_area.inner(Margin::new(central_pad, 0)));
-
-    let layout = Layout::horizontal([
-        Constraint::Length(12), // name
-        Constraint::Max(6),     // buy 1
-        Constraint::Max(6),     // buy 10
-        Constraint::Max(6),     // buy 100
-        Constraint::Max(6),     // sell 1
-        Constraint::Max(6),     // sell 10
-        Constraint::Max(6),     // sell 100
-        Constraint::Length(11), // price
-        Constraint::Min(0),     // have
-    ]);
-
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "        Key        Buy               Sell         Prices    In Stiva".to_string(),
-            UiStyle::HEADER.bold(),
-        )),
-        button_split[0],
-    );
-
-    let buy_ui_keys = [
-        ui_key::market::BUY_GOLD,
-        ui_key::market::BUY_SCRAPS,
-        ui_key::market::BUY_FUEL,
-        ui_key::market::BUY_RUM,
-    ];
-    let sell_ui_keys = [
-        ui_key::market::SELL_GOLD,
-        ui_key::market::SELL_SCRAPS,
-        ui_key::market::SELL_FUEL,
-        ui_key::market::SELL_RUM,
-    ];
-
-    for (button_split_idx, resource) in [
-        Resource::GOLD,
-        Resource::SCRAPS,
-        Resource::FUEL,
-        Resource::RUM,
-    ]
-    .iter()
-    .enumerate()
-    {
-        let resource_split = layout.split(button_split[button_split_idx + 1]);
-        let merchant_bonus = TeamBonus::TradePrice.current_team_bonus(world, &own_team.id)?;
-        let buy_unit_cost = planet.resource_buy_price(*resource, merchant_bonus);
-        let sell_unit_cost = planet.resource_sell_price(*resource, merchant_bonus);
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(format!("{:<6} ", resource.to_string()), resource.style()),
-                Span::styled(format!("{}", buy_ui_keys[button_split_idx]), UiStyle::OK),
-                Span::raw("/".to_string()),
-                Span::styled(
-                    format!("{}", sell_ui_keys[button_split_idx]),
-                    UiStyle::ERROR,
-                ),
-            ])),
-            resource_split[0].inner(Margin::new(1, 1)),
-        );
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(format!("{buy_unit_cost:>4}"), UiStyle::OK),
-                Span::raw("/".to_string()),
-                Span::styled(format!("{sell_unit_cost:<4}"), UiStyle::ERROR),
-            ])),
-            resource_split[7].inner(Margin::new(1, 1)),
-        );
-
-        frame.render_widget(
-            Paragraph::new(format!(
-                "{:^7}",
-                own_team.resources.value(resource).to_string()
-            )),
-            resource_split[8].inner(Margin::new(1, 1)),
-        );
-
-        let max_buy_amount = own_team.max_resource_buy_amount(*resource, buy_unit_cost);
-        for (idx, amount) in [1, 10, 100.min(max_buy_amount) as i32].iter().enumerate() {
-            if let Ok(btn) = trade_resource_button(
-                world,
-                *resource,
-                *amount,
-                buy_unit_cost,
-                if idx == 0 {
-                    Some(buy_ui_keys[button_split_idx])
-                } else {
-                    None
-                },
-                UiStyle::OK,
-            ) {
-                frame.render_interactive_widget(btn, resource_split[idx + 1]);
-            }
-        }
-
-        let max_sell_amount = own_team.max_resource_sell_amount(*resource);
-        for (idx, amount) in [1, 10, 100.min(max_sell_amount) as i32].iter().enumerate() {
-            if let Ok(btn) = trade_resource_button(
-                world,
-                *resource,
-                -*amount,
-                sell_unit_cost,
-                if idx == 0 {
-                    Some(sell_ui_keys[button_split_idx])
-                } else {
-                    None
-                },
-                UiStyle::ERROR,
-            ) {
-                frame.render_interactive_widget(btn, resource_split[idx + 4]);
-            }
-        }
-    }
-
-    frame.render_widget(
-        Paragraph::new(vec![
-            Line::from(format!("Treasury {}", format_satoshi(own_team.balance()))),
-            Line::from(get_fuel_spans(
-                own_team.fuel(),
-                own_team.fuel_capacity(),
-                BARS_LENGTH,
-            )),
-            Line::from(get_storage_spans(
-                &own_team.resources,
-                own_team.spaceship.storage_capacity(),
-                BARS_LENGTH,
-            )),
-        ]),
-        button_split[5].inner(Margin {
-            horizontal: 1,
-            vertical: 0,
-        }),
-    );
-
-    Ok(())
-}
-
 pub fn render_player_description(
     player: &Player,
+    players_scouting: &HashMap<PlayerId, ScoutReport>,
     view: PlayerWidgetView,
     gif_map: &mut GifMap,
     tick: usize,
@@ -1665,6 +1534,9 @@ pub fn render_player_description(
     frame: &mut UiFrame,
     area: Rect,
 ) {
+    let default_report = ScoutReport::default();
+    let report = players_scouting.get(&player.id).unwrap_or(&default_report);
+
     let h_split = Layout::horizontal([
         Constraint::Length(PLAYER_IMAGE_WIDTH as u16 + 4),
         Constraint::Min(2),
@@ -1694,20 +1566,16 @@ pub fn render_player_description(
         frame.render_widget(paragraph, header_body_img[1]);
     }
 
-    let trait_span = player.special_trait.map_or_else(
-        || Span::raw(""),
-        |t| Span::styled(format!("{t}"), t.style()),
-    );
+    let trait_span = if report.is_special_trait_scouted() {
+        player.special_trait.map_or_else(
+            || Span::default(),
+            |t| Span::styled(format!("{t}"), t.style()),
+        )
+    } else {
+        Span::default()
+    };
 
     let drunkenness = player.current_drunkenness(world);
-    let drunkenness_span = Player::drunkenness_description(drunkenness).map_or_else(
-        || Span::raw(""),
-        |desc| {
-            let style = ((MAX_SKILL - drunkenness) / MAX_SKILL * GREEN_STYLE_SKILL).style();
-            Span::styled(format!(" {desc}"), style)
-        },
-    );
-
     let line = HoverTextLine::from(vec![
         HoverTextSpan::new(
             Span::raw(format!(
@@ -1720,7 +1588,6 @@ pub fn render_player_description(
             trait_span,
             player.special_trait.map_or_else(String::new, |t| t.description(player)),
         ),
-        HoverTextSpan::new(drunkenness_span, String::new()),
     ]);
     frame.render_interactive_widget(line, header_body_stats[1]);
 
@@ -1757,7 +1624,6 @@ pub fn render_player_description(
             "▰".repeat(drunkenness_length),
             "▱".repeat(BARS_LENGTH.saturating_sub(drunkenness_length)),
         );
-        let style = UiStyle::ERROR;
 
         frame.render_interactive_widget(
         HoverTextLine::from(vec![
@@ -1765,7 +1631,7 @@ pub fn render_player_description(
                 Span::raw("Drunk  ".to_string()),
                 format!("{} is drunk! While {} {} getting sober, tiredness is not recovered (current value {:.2})", player.info.full_name(), player.info.pronouns.as_subject().to_lowercase(), player.info.pronouns.to_be(), -drunkenness),
             ),
-            HoverTextSpan::new(Span::styled( drunkenness_string, style),"", 
+            HoverTextSpan::new(Span::styled( drunkenness_string, UiStyle::DRUNK),"", 
            ),
         ]),
         header_body_stats[3],
@@ -1806,7 +1672,7 @@ pub fn render_player_description(
 
     match view {
         PlayerWidgetView::Skills => frame.render_widget(
-            Paragraph::new(format_player_skills(player)),
+            Paragraph::new(format_player_skills(player, report)),
             header_body_stats[6],
         ),
         PlayerWidgetView::Stats => frame.render_widget(
@@ -1871,127 +1737,118 @@ fn improvement_indicator<'a>(skill: f32, previous: f32) -> Span<'a> {
     }
 }
 
-fn format_player_skills(player: &'_ Player) -> Vec<Line<'_>> {
-    let skills = player.current_skill_array();
-    let mut text = vec![];
-    let mut roles = (0..NUM_GAME_POSITIONS)
-        .map(|i: GamePosition| {
-            (
-                i.as_role().to_string(),
-                player.game_position_fitness[i as usize],
-                player.previous_game_position_fitness[i as usize],
-            )
-        })
-        .collect::<Vec<(String, Skill, Skill)>>();
-    roles.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+fn scouted_player_skill_spans<'a>(
+    player: &Player,
+    report: &ScoutReport,
+    i: usize,
+) -> Vec<Span<'a>> {
+    const PADDING: usize = 3;
+    let skill = player.skill_at_index(i);
 
-    let mut spans = vec![];
-    spans.push(Span::styled(
-        format!("{:<2} {:<5} ", roles[0].0, roles[0].1.stars()),
-        roles[0].1.style(),
-    ));
-    spans.push(improvement_indicator(roles[0].1, roles[0].2));
-    spans.push(Span::raw("        "));
-    spans.push(Span::styled(
-        format!("Athletics {:<5}", player.athletics.stars()),
-        player.athletics.rating().style(),
-    ));
+    if report.scouting() == MAX_SKILL {
+        return vec![
+            Span::styled(
+                format!("{:10} {:02} ", SKILL_NAMES[i], skill.value()),
+                skill.style(),
+            ),
+            improvement_indicator(skill, player.previous_skills[i]),
+            Span::raw(&SPACES[..PADDING]),
+        ];
+    }
+
+    if report.is_skill_scouted(i) {
+        return vec![
+            Span::styled(
+                format!("{:10} {:02}", SKILL_NAMES[i], skill.value()),
+                skill.style(),
+            ),
+            Span::raw(&SPACES[..PADDING + 2]),
+        ];
+    }
+
+    vec![
+        Span::styled(format!("{:10} --", SKILL_NAMES[i]), UiStyle::DEFAULT),
+        Span::raw(&SPACES[..PADDING + 2]),
+    ]
+}
+
+fn skill_summary_span<'a>(name: &'a str) -> Span<'a> {
+    let padding = MAX_NAME_LENGTH.saturating_sub(name.len()) + 5;
+    Span::styled(
+        format!("{name} {}", &SPACES[..padding]),
+        UiStyle::HEADER.bold(),
+    )
+}
+
+fn scouted_player_role_spans<'a>(player: &Player, report: &ScoutReport, i: usize) -> Vec<Span<'a>> {
+    const PADDING: usize = 8;
+
+    let value = player.game_position_fitness[i];
+    let role = (i as GamePosition).as_role().to_string();
+
+    if report.scouting() == MAX_SKILL {
+        return vec![
+            Span::styled(
+                format!("{:2} {} ", role, value.stars()),
+                value.rating().style(),
+            ),
+            improvement_indicator(value, player.previous_game_position_fitness[i]),
+            Span::raw(&SPACES[..PADDING]),
+        ];
+    }
+
+    // Stronger roles are visualized first
+    if report.is_role_scouted(value) {
+        return vec![
+            Span::styled(
+                format!("{:2} {} ", role, value.stars()),
+                value.rating().style(),
+            ),
+            Span::raw(&SPACES[..PADDING + 1]),
+        ];
+    }
+
+    vec![Span::raw(&SPACES[..PADDING + 10])]
+}
+
+fn format_player_skills<'a>(player: &'a Player, report: &ScoutReport) -> Vec<Line<'a>> {
+    let mut text = vec![];
+    let sorted_roles = (0..NUM_GAME_POSITIONS as usize)
+        .sorted_by(|&a, &b| {
+            player.game_position_fitness[b].total_cmp(&player.game_position_fitness[a])
+        })
+        .collect_vec();
+
+    let mut spans = scouted_player_role_spans(player, report, sorted_roles[0]);
+    spans.push(skill_summary_span("Athletics"));
     text.push(Line::from(spans));
 
-    for i in 0..NUM_GAME_POSITIONS as usize - 1 {
-        let mut spans = vec![];
-        spans.push(Span::styled(
-            format!("{:<2} {:<5} ", roles[i + 1].0, roles[i + 1].1.stars()),
-            roles[i + 1].1.style(),
-        ));
-        spans.push(improvement_indicator(roles[i].1, roles[i].2));
-        spans.push(Span::raw("     "));
-        spans.push(Span::styled(
-            format!(
-                "   {:<MAX_NAME_LENGTH$}{:02} ",
-                SKILL_NAMES[i],
-                skills[i].value(),
-            ),
-            skills[i].style(),
-        ));
-        spans.push(improvement_indicator(skills[i], player.previous_skills[i]));
-
+    for i in 1..sorted_roles.len() {
+        let mut spans = scouted_player_role_spans(player, report, sorted_roles[i]);
+        spans.extend(scouted_player_skill_spans(player, report, i));
         text.push(Line::from(spans));
     }
-    text.push(Line::default());
 
+    text.push(Line::default());
     text.push(Line::from(vec![
-        Span::styled(
-            format!("{} {:<5}     ", "Offense", player.offense.stars()),
-            player.offense.rating().style(),
-        ),
-        Span::styled(
-            format!("{} {}", "Defense", player.defense.stars()),
-            player.defense.rating().style(),
-        ),
+        skill_summary_span("Offense"),
+        skill_summary_span("Defense"),
     ]));
     for i in 0..4 {
-        let mut spans = vec![];
-        spans.push(Span::styled(
-            format!("{:<10}{:02} ", SKILL_NAMES[i + 4], skills[i + 4].value(),),
-            skills[i + 4].style(),
-        ));
-        spans.push(improvement_indicator(
-            skills[i + 4],
-            player.previous_skills[i + 4],
-        ));
-
-        spans.push(Span::styled(
-            format!(
-                "    {:<MAX_NAME_LENGTH$}{:02} ",
-                SKILL_NAMES[i + 8],
-                skills[i + 8].value(),
-            ),
-            skills[i + 8].style(),
-        ));
-        spans.push(improvement_indicator(
-            skills[i + 8],
-            player.previous_skills[i + 8],
-        ));
-
+        let mut spans = scouted_player_skill_spans(player, report, i + 4);
+        spans.extend(scouted_player_skill_spans(player, report, i + 8));
         text.push(Line::from(spans));
     }
+
     text.push(Line::default());
     text.push(Line::from(vec![
-        Span::styled(
-            format!("{} {:<5}   ", "Technical", player.technical.stars()),
-            player.technical.rating().style(),
-        ),
-        Span::styled(
-            format!("{} {}", "Mental", player.mental.stars()),
-            player.mental.rating().style(),
-        ),
+        skill_summary_span("Technical"),
+        skill_summary_span("Mental"),
     ]));
 
     for i in 0..4 {
-        let mut spans = vec![];
-        spans.push(Span::styled(
-            format!("{:<10}{:02} ", SKILL_NAMES[i + 12], skills[i + 12].value(),),
-            skills[i + 12].style(),
-        ));
-        spans.push(improvement_indicator(
-            skills[i + 12],
-            player.previous_skills[i + 12],
-        ));
-
-        spans.push(Span::styled(
-            format!(
-                "    {:<MAX_NAME_LENGTH$}{:02} ",
-                SKILL_NAMES[i + 16],
-                skills[i + 16].value(),
-            ),
-            skills[i + 16].style(),
-        ));
-        spans.push(improvement_indicator(
-            skills[i + 16],
-            player.previous_skills[i + 16],
-        ));
-
+        let mut spans = scouted_player_skill_spans(player, report, i + 12);
+        spans.extend(scouted_player_skill_spans(player, report, i + 16));
         text.push(Line::from(spans));
     }
 
@@ -2292,7 +2149,7 @@ fn spaceship_component_description_lines<'a, C: SpaceshipComponent>(component: C
             .unwrap_or_default();
     if storage != 0 {
         lines.push(Line::from(vec![
-            Span::raw("Stiva "),
+            Span::raw("Cargo "),
             Span::styled(
                 format!("{storage:+}"),
                 if storage > 0 {
@@ -2381,7 +2238,7 @@ mod tests {
     use super::{AppResult, BARS_LENGTH};
     use crate::{
         core::{resources::Resource, spaceship::SpaceshipPrefab, team::Team},
-        ui::widgets::get_storage_lengths,
+        ui::renders::get_storage_lengths,
     };
 
     #[test]

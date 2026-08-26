@@ -19,7 +19,7 @@ pub(crate) fn execute(
 
     let play_idx = match input.attackers.len() {
         0 => {
-            let weights = [50, 20, 25, 2, 1];
+            let weights: [u8; 5] = [50, 30, 25, 2, 1];
             if let Some(idx) = sample_player_index(action_rng, weights, attacking_players_array) {
                 idx
             } else {
@@ -41,11 +41,23 @@ pub(crate) fn execute(
         _ => input.attackers[0],
     };
 
+    let playmaker = attacking_players_array[play_idx];
+    let playmaker_defender = defending_players_array[play_idx];
     let target_idx = match input.attackers.len() {
         2 => input.attackers[1],
         _ => {
-            let mut weights = [1, 2, 3, 3, 2];
-            weights[play_idx] = 0;
+            let weights = {
+                let mut base = [4.0, 5.0, 3.0, 2.0, 1.0];
+                base[play_idx] = 0.0;
+
+                // Opinion on population affects probability.
+                for (idx, target) in attacking_players_array.iter().enumerate() {
+                    base[idx] *= 1.0
+                        + playmaker.population_opinion_modifier(target.info.population);
+                }
+
+                base
+            };
             if let Some(idx) = sample_player_index(action_rng, weights, attacking_players_array) {
                 idx
             } else {
@@ -70,9 +82,6 @@ pub(crate) fn execute(
         3 => Some(input.attackers[2]),
         _ => None,
     };
-
-    let playmaker = attacking_players_array[play_idx];
-    let playmaker_defender = defending_players_array[play_idx];
 
     let target = attacking_players_array[target_idx];
     let target_defender = defending_players_array[target_idx];

@@ -1,15 +1,16 @@
-use crate::{core::constants::TickInterval, types::Tick};
+use crate::{
+    core::{constants::TickInterval, MINUTES, SECONDS},
+    types::Tick,
+};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::Display;
 
 const MINUTES_PER_QUARTER: u16 = 10;
 const MINUTES_PER_BREAK: u16 = 2;
-// const HALFTIME_BREAK_DURATION: u16 = 10;
-// const QUARTERS: u16 = 4;
-const SECONDS_PER_MINUTE: u16 = 60;
+const SECONDS_PER_MINUTE: u16 = (MINUTES / SECONDS) as u16;
 pub const MAX_TIME_IN_SECONDS: u16 =
-    SECONDS_PER_MINUTE * (MINUTES_PER_QUARTER * 4 + MINUTES_PER_BREAK * 3);
+    (MINUTES_PER_QUARTER * 4 + MINUTES_PER_BREAK * 3) * SECONDS_PER_MINUTE;
 
 #[derive(
     Debug, Display, Default, PartialEq, PartialOrd, Clone, Copy, Serialize_repr, Deserialize_repr,

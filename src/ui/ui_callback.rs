@@ -1,16 +1,7 @@
-use super::swarm_panel::SwarmView;
 use super::{
-    galaxy_panel::ZoomLevel,
-    my_team_panel::MyTeamView,
-    new_team_screen::CreationState,
-    player_panel::PlayerView,
-    popup_message::PopupMessage,
-    space_cove_panel::SpaceCoveView,
-    team_panel::TeamView,
-    traits::{Screen, SplitPanel},
+    panels::*,
     ui_screen::{UiState, UiTab},
 };
-use crate::app_version;
 use crate::core::{PlanetUpgradeTarget, Resource, SpaceCoveUpgradeTarget, UpgradeableElement};
 use crate::game_engine::game::Game;
 use crate::game_engine::types::{GamePositionFluidity, InGameDrinking, SubstitutionTendency};
@@ -18,7 +9,6 @@ use crate::game_engine::{Tournament, TournamentId, TournamentType};
 use crate::network::types::TournamentRequestState;
 use crate::network::{challenge::Challenge, trade::Trade};
 use crate::types::{HashMapWithResult, PlayerMap, StorableResourceMap};
-use crate::ui::tournament_panel::TournamentView;
 use crate::ui::ui_key;
 use crate::{
     app::App,
@@ -28,6 +18,7 @@ use crate::{
     space_adventure::PlayerInput,
     types::{AppCallback, AppResult, GameId, PlanetId, PlayerId, SystemTimeTick, TeamId, Tick},
 };
+use crate::{app_version, ui::PopupMessage};
 use anyhow::anyhow;
 use rand::{
     seq::{IndexedRandom, IteratorRandom},
@@ -49,6 +40,14 @@ pub enum UiCallback {
     SetPanelIndex {
         index: usize,
     },
+    ToggleDropdown {
+        id: usize,
+    },
+    SelectDropdown {
+        id: usize,
+        index: usize,
+        on_select: Option<Box<UiCallback>>,
+    },
     GoToTeam {
         team_id: TeamId,
     },
@@ -60,6 +59,7 @@ pub enum UiCallback {
     },
     GoToGame {
         game_id: GameId,
+        from_popup: bool,
     },
     GoToLoadedGame {
         game: Game,
@@ -67,7 +67,10 @@ pub enum UiCallback {
     GoToPlanet {
         planet_id: PlanetId,
     },
-    GoToSpaceCove,
+    GoToOwnSpaceCove,
+    GoToSpaceCove {
+        team_id: TeamId,
+    },
     GoToHomePlanet {
         team_id: TeamId,
     },
@@ -88,19 +91,42 @@ pub enum UiCallback {
         amount: i32,
         unit_cost: u32,
     },
-    TutorialGoToChat,
-    TutorialGoToChallenges,
-    TutorialGoToMarket,
-    TutorialGoToShipyard,
-    TutorialGoToFreePirates,
-    TutorialGoToSpaceAdventure,
-    TutorialGoToAsteroids,
-    GoToSwarmRequests,
-    GoToFreePirates,
-    GoToGames,
-    GoToTournaments,
+    GoToChat {
+        from_popup: bool,
+    },
+    GoToChallenges {
+        from_popup: bool,
+    },
+    GoToGameSettings {
+        from_popup: bool,
+    },
+    GoToMarket {
+        from_popup: bool,
+    },
+    GoToShipyard {
+        from_popup: bool,
+    },
+    GoToFreePirates {
+        from_popup: bool,
+    },
+    GoToSpaceAdventure {
+        from_popup: bool,
+    },
+    GoToAsteroids {
+        from_popup: bool,
+    },
+    GoToSwarmRequests {
+        from_popup: bool,
+    },
+    GoToGames {
+        from_popup: bool,
+    },
+    GoToTournaments {
+        from_popup: bool,
+    },
     GoToTournament {
         tournament_id: TournamentId,
+        from_popup: bool,
     },
     ChallengeTeam {
         team_id: TeamId,
@@ -204,6 +230,10 @@ pub enum UiCallback {
         player_id: PlayerId,
     },
 
+    GiveGold {
+        player_id: PlayerId,
+    },
+
     OrganizeNewTournament {
         tournament_type: TournamentType,
     },
@@ -237,13 +267,14 @@ pub enum UiCallback {
     AssignBestTeamPositions,
     SwapPlayerPositions {
         player_id: PlayerId,
-        position: usize,
+        position: GamePosition,
     },
     TogglePitchView,
     TogglePlayerStatusView,
     TogglePlayerWidgetView,
-    NextTrainingFocus {
+    SetTrainingFocus {
         player_id: PlayerId,
+        training_focus: Option<TrainingFocus>,
     },
     TravelToPlanet {
         planet_id: PlanetId,
@@ -267,6 +298,9 @@ pub enum UiCallback {
         name: String,
         filename: String,
     },
+    NameSpaceCove {
+        name: String,
+    },
     SetSpaceshipUpgrade {
         upgrade: Upgrade<SpaceshipUpgradeTarget>,
     },
@@ -287,8 +321,6 @@ pub enum UiCallback {
     UpgradeSpaceCove {
         target: SpaceCoveUpgradeTarget,
     },
-    GoToMarket,
-    GoToAsteroids,
     AddRumToCove {
         amount: u32,
     },
@@ -310,8 +342,8 @@ pub enum UiCallback {
 impl UiCallback {
     fn go_to_team(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.team_panel.update(&app.world)?;
             app.ui.team_panel.reset_view();
+            app.ui.team_panel.update(&app.world)?;
             if let Some(index) = app
                 .ui
                 .team_panel
@@ -347,20 +379,23 @@ impl UiCallback {
         })
     }
 
-    fn go_to_tournament(tournament_id: TournamentId) -> AppCallback {
+    fn go_to_tournament(tournament_id: TournamentId, from_popup: bool) -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui
                 .tournament_panel
                 .set_active_tournament(tournament_id, &app.world)?;
             app.ui.switch_to(super::ui_screen::UiTab::Tournaments);
+            if from_popup {
+                app.ui.close_popup();
+            }
             Ok(None)
         })
     }
 
     fn go_to_trade(trade: Trade) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.player_panel.update(&app.world)?;
             app.ui.player_panel.reset_view();
+            app.ui.player_panel.update(&app.world)?;
 
             // Display trade differently depending on who is the proposer.
             let (selected_player_id, locked_player_id) =
@@ -381,7 +416,7 @@ impl UiCallback {
                 app.ui.player_panel.set_index(index);
 
                 app.ui.player_panel.locked_player_id = Some(locked_player_id);
-                app.ui.player_panel.selected_player_id = selected_player_id;
+                app.ui.player_panel.selected_player_id = Some(selected_player_id);
                 app.ui.switch_to(super::ui_screen::UiTab::Pirates);
             }
 
@@ -391,6 +426,7 @@ impl UiCallback {
 
     fn go_to_player_team(player_id: PlayerId) -> AppCallback {
         Box::new(move |app: &mut App| {
+            app.ui.team_panel.reset_view();
             app.ui.team_panel.update(&app.world)?;
             let team_id = app
                 .world
@@ -398,8 +434,6 @@ impl UiCallback {
                 .get_or_err(&player_id)?
                 .team
                 .ok_or_else(|| anyhow!("Player {player_id:?} has no team"))?;
-
-            app.ui.team_panel.reset_view();
 
             if let Some(index) = app
                 .ui
@@ -425,11 +459,14 @@ impl UiCallback {
         })
     }
 
-    fn go_to_game(game_id: GameId) -> AppCallback {
+    fn go_to_game(game_id: GameId, from_popup: bool) -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.game_panel.update(&app.world)?;
             app.ui.game_panel.set_active_game(game_id)?;
             app.ui.switch_to(super::ui_screen::UiTab::Games);
+            if from_popup {
+                app.ui.close_popup();
+            }
             Ok(None)
         })
     }
@@ -454,10 +491,30 @@ impl UiCallback {
         })
     }
 
-    fn go_to_space_cove() -> AppCallback {
+    fn go_to_own_space_cove() -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.space_cove_panel.update(&app.world)?;
+            app.ui.space_cove_panel.set_view(SpaceCoveView::OwnCove);
             app.ui.switch_to(super::ui_screen::UiTab::SpaceCoves);
+
+            Ok(None)
+        })
+    }
+
+    fn go_to_space_cove(team_id: TeamId) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            if let Some(index) = app
+                .ui
+                .space_cove_panel
+                .all_coves
+                .iter()
+                .position(|&(x, _)| x == team_id)
+            {
+                app.ui.space_cove_panel.set_index(index);
+                app.ui.space_cove_panel.update(&app.world)?;
+                app.ui.space_cove_panel.set_view(SpaceCoveView::AllCoves);
+                app.ui.switch_to(super::ui_screen::UiTab::SpaceCoves);
+            }
 
             Ok(None)
         })
@@ -585,6 +642,8 @@ impl UiCallback {
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.add_sent_challenge(challenge);
 
+                app.ui.team_panel.update(&app.world)?;
+
                 return Ok(Some("Challenge sent".to_string()));
             }
 
@@ -659,13 +718,13 @@ impl UiCallback {
             // Local trade
             if proposer_player.hire_cost() >= target_player.hire_cost() {
                 app.world
-                    .swap_players_team(proposer_player_id, target_player_id)?;
+                    .swap_players_team(proposer_player_id, target_player_id, Tick::now())?;
 
                 let locked_id = app.ui.player_panel.locked_player_id;
                 let selected_id = app.ui.player_panel.selected_player_id;
-                app.ui.player_panel.locked_player_id = Some(selected_id);
+                app.ui.player_panel.locked_player_id = selected_id;
                 if let Some(player_id) = locked_id {
-                    app.ui.player_panel.selected_player_id = player_id;
+                    app.ui.player_panel.selected_player_id = Some(player_id);
                 }
 
                 return Ok(Some("Trade accepted".to_string()));
@@ -744,6 +803,10 @@ impl UiCallback {
                 .get(&planet_id)
                 .expect("Space cove planet should exist.");
 
+            own_team
+                .resources
+                .sub(Resource::GOLD, TOURNAMENT_ORGANIZATION_GOLD_COST)?;
+
             let tournament = Tournament::new(own_team, tournament_type)?.on_planet(planet);
 
             own_team.is_organizing_tournament = Some(tournament.id);
@@ -760,7 +823,7 @@ impl UiCallback {
                     planet.name,
                     tournament.max_participants
                 ),
-                links: vec![("tournament".to_string(), Self::GoToTournaments)],
+                links: vec![("tournament".to_string(), Self::GoToTournaments {from_popup:true})],
                 level: log::Level::Info,
                 is_skippable: true,
                 timestamp: Tick::now(),
@@ -785,8 +848,7 @@ impl UiCallback {
 
     fn cancel_generate_own_team() -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.new_team_screen.set_state(CreationState::Players);
-            app.ui.new_team_screen.clear_selected_players();
+            app.ui.new_team_screen.cancel_confirmation();
             Ok(None)
         })
     }
@@ -810,10 +872,10 @@ impl UiCallback {
         })
     }
 
-    fn swap_player_positions(player_id: PlayerId, position: usize) -> AppCallback {
+    fn swap_player_positions(player_id: PlayerId, position: GamePosition) -> AppCallback {
         Box::new(move |app: &mut App| {
             let team = app.world.get_own_team_mut()?;
-            if position >= team.player_ids.len() {
+            if position as usize >= team.player_ids.len() {
                 return Err(anyhow!(
                     "Invalid position {position}: team has only {} players.",
                     team.player_ids.len()
@@ -824,31 +886,27 @@ impl UiCallback {
                 .iter()
                 .position(|&id| id == player_id)
                 .ok_or_else(|| anyhow!("Could not find player with id {player_id}."))?;
-            team.player_ids.swap(position, current_player_position);
+            team.player_ids
+                .swap(position as usize, current_player_position);
             app.world.dirty = true;
             app.world.dirty_ui = true;
             Ok(None)
         })
     }
 
-    fn next_training_focus(player_id: PlayerId) -> AppCallback {
+    fn set_training_focus(
+        player_id: PlayerId,
+        training_focus: Option<TrainingFocus>,
+    ) -> AppCallback {
         Box::new(move |app: &mut App| {
             let player = app.world.players.get_mut_or_err(&player_id)?;
-            let team_id = if let Some(id) = player.team {
-                id
-            } else {
-                return Err(anyhow!(
-                    "Player should have a team to change training focus."
-                ));
-            };
+            let team_id = player
+                .team
+                .ok_or_else(|| anyhow!("Player should have a team to change training focus."))?;
             let team = app.world.teams.get_mut_or_err(&team_id)?;
             team.can_change_team_settings()?;
 
-            let new_focus = match player.training_focus {
-                Some(focus) => focus.next(),
-                None => Some(TrainingFocus::default()),
-            };
-            player.training_focus = new_focus;
+            player.training_focus = training_focus;
             app.world.dirty = true;
             app.world.dirty_ui = true;
             Ok(None)
@@ -1070,6 +1128,23 @@ impl UiCallback {
         })
     }
 
+    fn name_space_cove(name: String) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let own_team_id = app.world.own_team_id;
+            let own_team = app.world.teams.get_mut_or_err(&own_team_id)?;
+            if let Some(cove) = own_team.space_cove.as_mut() {
+                cove.name = name.clone();
+            }
+            own_team.version += 1;
+
+            app.world.dirty = true;
+            app.world.dirty_network = true;
+            app.world.dirty_ui = true;
+            app.ui.close_popup();
+            Ok(None)
+        })
+    }
+
     fn set_spaceship_upgrade(upgrade: Upgrade<SpaceshipUpgradeTarget>) -> AppCallback {
         Box::new(move |app: &mut App| {
             let mut team = app.world.get_own_team()?.clone();
@@ -1183,18 +1258,28 @@ impl UiCallback {
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
             let message = app.world.upgrade_asteroid(asteroid_id, upgrade)?;
-            let links = if upgrade.target == PlanetUpgradeTarget::SpaceCove {
-                vec![("Space cove".to_string(), UiCallback::GoToSpaceCove)]
+
+            if upgrade.target == PlanetUpgradeTarget::SpaceCove {
+                let asteroid = app.world.planets.get_or_err(&asteroid_id)?;
+                let asteroid_name = asteroid.name.clone();
+                let filename = asteroid.filename.clone();
+                app.ui.push_popup(PopupMessage::SpaceCoveNameDialog {
+                    timestamp: Tick::now(),
+                    asteroid_name,
+                    filename,
+                });
             } else {
-                vec![("Asteroid".to_string(), UiCallback::GoToAsteroids)]
-            };
-            app.ui.push_popup(PopupMessage::Message {
-                message,
-                links,
-                level: log::Level::Info,
-                is_skippable: true,
-                timestamp: Tick::now(),
-            });
+                app.ui.push_popup(PopupMessage::Message {
+                    message,
+                    links: vec![(
+                        "Asteroid".to_string(),
+                        UiCallback::GoToAsteroids { from_popup: true },
+                    )],
+                    level: log::Level::Info,
+                    is_skippable: true,
+                    timestamp: Tick::now(),
+                });
+            }
             Ok(None)
         })
     }
@@ -1226,7 +1311,7 @@ impl UiCallback {
             app.world.upgrade_space_cove(target)?;
             app.ui.push_popup(PopupMessage::Message {
                 message: format!("{target} construction completed in the space cove!"),
-                links: vec![("space cove".to_string(), UiCallback::GoToSpaceCove)],
+                links: vec![("space cove".to_string(), UiCallback::GoToOwnSpaceCove)],
                 level: log::Level::Info,
                 is_skippable: true,
                 timestamp: Tick::now(),
@@ -1315,93 +1400,149 @@ impl UiCallback {
                 }
                 Ok(None)
             }
+            Self::ToggleDropdown { id } => {
+                if let Some(dropdown) = app.ui.get_active_screen_mut().dropdown(*id) {
+                    dropdown.toggle();
+                }
+
+                Ok(None)
+            }
+            Self::SelectDropdown {
+                id,
+                index,
+                on_select,
+            } => {
+                if let Some(dropdown) = app.ui.get_active_screen_mut().dropdown(*id) {
+                    dropdown.select(*index);
+                }
+                if let Some(action) = on_select {
+                    return action.call(app);
+                }
+                Ok(None)
+            }
             Self::GoToTeam { team_id } => Self::go_to_team(*team_id)(app),
-            Self::TutorialGoToChat => {
+            Self::GoToChat { from_popup } => {
                 app.ui.swarm_panel.set_view(SwarmView::Chat);
                 app.ui.swarm_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Swarm);
 
+                if *from_popup {
+                    app.ui.close_popup()
+                }
+
                 Ok(None)
             }
-            Self::TutorialGoToChallenges => {
+            Self::GoToChallenges { from_popup } => {
                 app.ui.team_panel.set_view(TeamView::OpenToChallenge);
                 app.ui.team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Crews);
-
+                if *from_popup {
+                    app.ui.close_popup()
+                }
                 Ok(None)
             }
-            Self::TutorialGoToMarket => {
+
+            Self::GoToGameSettings { from_popup } => {
+                app.ui.my_team_panel.set_view(MyTeamView::GameSettings);
+                app.ui.my_team_panel.update(&app.world)?;
+                app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
+                if *from_popup {
+                    app.ui.close_popup()
+                }
+                Ok(None)
+            }
+
+            Self::GoToMarket { from_popup } => {
                 app.ui.my_team_panel.set_view(MyTeamView::Market);
                 app.ui.my_team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
-
+                if *from_popup {
+                    app.ui.close_popup()
+                }
                 Ok(None)
             }
-            Self::TutorialGoToShipyard => {
+
+            Self::GoToShipyard { from_popup } => {
                 app.ui.my_team_panel.set_view(MyTeamView::Shipyard);
                 app.ui.my_team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
-
+                if *from_popup {
+                    app.ui.close_popup()
+                }
                 Ok(None)
             }
-            Self::TutorialGoToFreePirates => {
+            Self::GoToFreePirates { from_popup } => {
                 app.ui.player_panel.set_view(PlayerView::FreePirates);
                 app.ui.player_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Pirates);
-
+                if *from_popup {
+                    app.ui.close_popup()
+                }
                 Ok(None)
             }
-            Self::TutorialGoToSpaceAdventure => {
+
+            Self::GoToSpaceAdventure { from_popup } => {
                 app.ui.my_team_panel.set_view(MyTeamView::Info);
                 app.ui.my_team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
-
+                if *from_popup {
+                    app.ui.close_popup()
+                }
                 Ok(None)
             }
-            Self::TutorialGoToAsteroids => {
+            Self::GoToAsteroids { from_popup } => {
                 app.ui.my_team_panel.set_view(MyTeamView::Asteroids);
                 app.ui.my_team_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
-
+                if *from_popup {
+                    app.ui.close_popup();
+                }
                 Ok(None)
             }
-            Self::GoToSwarmRequests => {
+
+            Self::GoToSwarmRequests { from_popup } => {
                 app.ui.swarm_panel.set_view(SwarmView::Requests);
                 app.ui.swarm_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Swarm);
-                app.ui.close_popup();
+                if *from_popup {
+                    app.ui.close_popup();
+                }
 
                 Ok(None)
             }
-            Self::GoToFreePirates => {
-                app.ui.player_panel.set_view(PlayerView::FreePirates);
-                app.ui.player_panel.update(&app.world)?;
-                app.ui.switch_to(super::ui_screen::UiTab::Pirates);
-                app.ui.close_popup();
 
-                Ok(None)
-            }
-            Self::GoToGames => {
+            Self::GoToGames { from_popup } => {
                 app.ui.game_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Games);
-                app.ui.close_popup();
+                if *from_popup {
+                    app.ui.close_popup();
+                }
 
                 Ok(None)
             }
-            Self::GoToTournaments => {
+            Self::GoToTournaments { from_popup } => {
                 app.ui.tournament_panel.update(&app.world)?;
                 app.ui.switch_to(super::ui_screen::UiTab::Tournaments);
-                app.ui.close_popup();
+                if *from_popup {
+                    app.ui.close_popup();
+                }
 
                 Ok(None)
             }
-            Self::GoToTournament { tournament_id } => Self::go_to_tournament(*tournament_id)(app),
+            Self::GoToTournament {
+                tournament_id,
+                from_popup,
+            } => Self::go_to_tournament(*tournament_id, *from_popup)(app),
             Self::GoToPlayer { player_id } => Self::go_to_player(*player_id)(app),
             Self::GoToPlayerTeam { player_id } => Self::go_to_player_team(*player_id)(app),
             Self::GoToLoadedGame { game } => Self::go_to_loaded_game(game.clone())(app),
-            Self::GoToGame { game_id } => Self::go_to_game(*game_id)(app),
+            Self::GoToGame {
+                game_id,
+                from_popup,
+            } => Self::go_to_game(*game_id, *from_popup)(app),
             Self::GoToPlanet { planet_id } => Self::go_to_planet(*planet_id)(app),
-            Self::GoToSpaceCove => Self::go_to_space_cove()(app),
+            Self::GoToOwnSpaceCove => Self::go_to_own_space_cove()(app),
+            Self::GoToSpaceCove { team_id } => Self::go_to_space_cove(*team_id)(app),
             Self::GoToHomePlanet { team_id } => Self::go_to_home_planet(*team_id)(app),
             Self::GoToCurrentTeamPlanet { team_id } => {
                 Self::go_to_current_team_planet(*team_id)(app)
@@ -1640,7 +1781,11 @@ impl UiCallback {
             }
             Self::BuildSpaceCove { asteroid_id } => {
                 let own_team = app.world.get_own_team()?;
-                let bonus = TeamBonus::Upgrades.current_team_bonus(&app.world, &own_team.id)?;
+                let bonus = TeamBonus::Upgrades.current_team_bonus(
+                    &own_team.id,
+                    &app.world.teams,
+                    &app.world.players,
+                )?;
                 let upgrade = Upgrade::new(PlanetUpgradeTarget::SpaceCove, bonus);
                 Self::set_asteroid_pending_upgrade(*asteroid_id, upgrade)(app)?;
                 app.ui.close_popup();
@@ -1648,13 +1793,17 @@ impl UiCallback {
             }
             Self::HirePlayer { player_id } => {
                 let own_team_id = app.world.own_team_id;
-                app.world.hire_player_for_team(player_id, &own_team_id)?;
+                app.world
+                    .hire_player_for_team(player_id, &own_team_id, Tick::now())?;
+                app.world
+                    .players_scouting
+                    .insert(*player_id, ScoutReport::new(*player_id, MAX_SKILL));
                 app.world.dirty_ui = true;
                 app.ui.player_panel.update(&app.world)?;
                 Ok(None)
             }
             Self::ReleasePlayer { player_id } => {
-                app.world.release_player_from_team(*player_id)?;
+                app.world.release_player_from_team(*player_id, true)?;
                 app.ui.close_popup();
                 app.ui.swarm_panel.remove_player_from_ranking(*player_id);
                 app.world.dirty_ui = true;
@@ -1678,7 +1827,7 @@ impl UiCallback {
 
             Self::Drink { player_id } => {
                 let mut player = app.world.players.get_or_err(player_id)?.clone();
-                player.can_drink(&app.world)?;
+                player.can_drink(&app.world.teams)?;
 
                 let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
                 let got_drunk = player.drink(rng);
@@ -1688,6 +1837,8 @@ impl UiCallback {
                     .teams
                     .get_or_err(&player.team.expect("Player should have team"))?
                     .clone();
+
+                let its_own_team = team.id == app.world.own_team_id;
 
                 team.sub_resource(Resource::RUM, 1)?;
 
@@ -1705,13 +1856,15 @@ impl UiCallback {
                     .expect("There should be one option")
                     .clone();
 
-                    app.ui.push_popup(PopupMessage::Message {
-                        message: format!("{} {}", player.info.short_name(), description),
-                        links: vec![],
-                        level: log::Level::Info,
-                        is_skippable: true,
-                        timestamp: Tick::now(),
-                    });
+                    if its_own_team {
+                        app.ui.push_popup(PopupMessage::Message {
+                            message: format!("{} {}", player.info.short_name(), description),
+                            links: vec![],
+                            level: log::Level::Info,
+                            is_skippable: true,
+                            timestamp: Tick::now(),
+                        });
+                    }
                 }
 
                 // If a spugna pilot gets drunk while the team is travelling or exploring,
@@ -1769,16 +1922,39 @@ impl UiCallback {
                             distance,
                         };
 
-                        app.ui.push_popup(PopupMessage::PortalFound {
-                            player_name: player.info.short_name(),
-                            portal_target: portal_target.name.to_string(),
-                            timestamp: Tick::now(),
-                        });
+                        if its_own_team {
+                            app.ui.push_popup(PopupMessage::PortalFound {
+                                player_name: player.info.short_name(),
+                                portal_target: portal_target.name.to_string(),
+                                timestamp: Tick::now(),
+                            });
+                        }
                     }
                 }
 
                 app.world.players.insert(player.id, player);
                 app.world.teams.insert(team.id, team);
+                if its_own_team {
+                    app.world.dirty_network = true;
+                }
+                app.world.dirty_ui = true;
+                app.world.dirty = true;
+
+                Ok(None)
+            }
+            Self::GiveGold { player_id } => {
+                let player = app.world.players.get_mut_or_err(player_id)?;
+                player.can_receive_gold(&app.world.teams)?;
+
+                player.get_gold();
+
+                let team = app
+                    .world
+                    .teams
+                    .get_mut_or_err(&player.team.expect("Player should have team"))?;
+
+                team.sub_resource(Resource::GOLD, 1)?;
+
                 app.world.dirty_network = true;
                 app.world.dirty_ui = true;
                 app.world.dirty = true;
@@ -2008,7 +2184,10 @@ impl UiCallback {
                 player_id,
                 position,
             } => Self::swap_player_positions(*player_id, *position)(app),
-            Self::NextTrainingFocus { player_id } => Self::next_training_focus(*player_id)(app),
+            Self::SetTrainingFocus {
+                player_id,
+                training_focus,
+            } => Self::set_training_focus(*player_id, *training_focus)(app),
             Self::TravelToPlanet { planet_id } => Self::travel_to_planet(*planet_id)(app),
             Self::ExploreAroundPlanet { duration } => Self::explore_around_planet(*duration)(app),
             Self::ZoomToPlanet {
@@ -2026,6 +2205,8 @@ impl UiCallback {
             Self::NameAndAcceptAsteroid { name, filename } => {
                 Self::name_and_accept_asteroid(name.clone(), filename.clone())(app)
             }
+
+            Self::NameSpaceCove { name } => Self::name_space_cove(name.clone())(app),
 
             Self::SetSpaceshipUpgrade { upgrade } => Self::set_spaceship_upgrade(*upgrade)(app),
 
@@ -2046,18 +2227,6 @@ impl UiCallback {
             }
 
             Self::UpgradeSpaceCove { target } => Self::upgrade_space_cove(*target)(app),
-
-            Self::GoToMarket => {
-                app.ui.my_team_panel.set_view(MyTeamView::Market);
-                app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
-                Ok(None)
-            }
-
-            Self::GoToAsteroids => {
-                app.ui.my_team_panel.set_view(MyTeamView::Asteroids);
-                app.ui.switch_to(super::ui_screen::UiTab::MyTeam);
-                Ok(None)
-            }
 
             Self::AddRumToCove { amount } => Self::add_rum_to_cove(*amount)(app),
 
@@ -2185,19 +2354,24 @@ impl CallbackRegistry {
     }
 
     pub fn handle_mouse_event(&self, event: &MouseEvent) -> Option<UiCallback> {
-        if let Some(mouse_callbacks) = self.mouse_callbacks.get(&event.kind) {
-            for (rect, callback) in mouse_callbacks.iter() {
-                if let Some(r) = rect {
-                    if Self::contains(r, event.column, event.row) {
-                        return Some(callback.clone());
+        let mouse_callbacks = self.mouse_callbacks.get(&event.kind)?;
+
+        let mut best: Option<(&Rect, &UiCallback)> = None;
+        let mut global: Option<&UiCallback> = None;
+        for (rect, callback) in mouse_callbacks.iter() {
+            match rect {
+                Some(r) if Self::contains(r, event.column, event.row) => {
+                    if best.map_or(true, |(b, _)| r.area() < b.area()) {
+                        best = Some((r, callback));
                     }
-                } else {
-                    // Callbacks with no rect are global callbacks.
-                    return Some(callback.clone());
                 }
+                // Callbacks with no rect are global fallbacks, tried after rects.
+                None => global = Some(callback),
+                _ => {}
             }
         }
-        None
+
+        best.map(|(_, callback)| callback).or(global).cloned()
     }
 
     pub fn handle_keyboard_event(&self, key_code: &KeyCode) -> Option<UiCallback> {
@@ -2210,10 +2384,9 @@ mod test {
     use super::UiCallback;
     use crate::{
         app::App,
-        core::resources::Resource,
+        core::{resources::Resource, INITIAL_RANDOM_TEAM_BALANCE},
         space_adventure::{ControllableSpaceship, GameEntity, SpaceCallback},
         types::{AppResult, ResourceMap, StorableResourceMap},
-        ui::ui_callback::INITIAL_TEAM_BALANCE,
     };
 
     #[test]
@@ -2227,7 +2400,7 @@ mod test {
 
         assert!(own_team.resources.value(&Resource::GOLD) == 0);
         assert!(own_team.resources.value(&Resource::FUEL) == 100);
-        assert!(own_team.resources.value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE);
+        assert!(own_team.resources.value(&Resource::SATOSHI) == INITIAL_RANDOM_TEAM_BALANCE);
 
         let own_team_resources = own_team.resources.clone();
 
@@ -2261,7 +2434,7 @@ mod test {
 
         assert!(player.current_durability() == 0);
         assert!(player.resources().value(&Resource::GOLD) == 10);
-        assert!(player.resources().value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE);
+        assert!(player.resources().value(&Resource::SATOSHI) == INITIAL_RANDOM_TEAM_BALANCE);
         assert!(player.resources().value(&Resource::FUEL) == 100);
 
         println!(
@@ -2288,7 +2461,7 @@ mod test {
 
         println!("Collected {:#?}", new_resources);
         assert!(new_resources.value(&Resource::GOLD) == 0);
-        assert!(new_resources.value(&Resource::SATOSHI) == INITIAL_TEAM_BALANCE);
+        assert!(new_resources.value(&Resource::SATOSHI) == INITIAL_RANDOM_TEAM_BALANCE);
         assert!(new_resources.value(&Resource::FUEL) == 0);
 
         Ok(())

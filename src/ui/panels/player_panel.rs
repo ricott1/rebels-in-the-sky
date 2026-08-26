@@ -1,16 +1,16 @@
-use super::button::Button;
-use super::clickable_list::ClickableListState;
-use super::constants::*;
-use super::gif_map::GifMap;
-use super::ui_callback::UiCallback;
-use super::ui_frame::UiFrame;
-use super::ui_screen::{render_help_block, tab_link, UiTab};
-use super::utils::format_satoshi;
-use super::widgets::PlayerWidgetView;
-use super::{
+use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
+use crate::ui::button::Button;
+use crate::ui::clickable_list::ClickableListState;
+use crate::ui::constants::*;
+use crate::ui::gif_map::GifMap;
+use crate::ui::renders::PlayerWidgetView;
+use crate::ui::ui_callback::UiCallback;
+use crate::ui::ui_frame::UiFrame;
+use crate::ui::ui_screen::{tab_link, UiTab};
+use crate::ui::utils::format_satoshi;
+use crate::ui::{
     constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
-    traits::{Screen, SplitPanel},
-    widgets::{default_block, render_player_description, selectable_list},
+    renders::{default_block, render_player_description, selectable_list},
 };
 use ratatui::text::Line;
 
@@ -136,7 +136,7 @@ impl Display for PlayerView {
 pub struct PlayerListPanel {
     pub index: Option<usize>,
     pub locked_player_id: Option<PlayerId>,
-    pub selected_player_id: PlayerId,
+    pub selected_player_id: Option<PlayerId>,
     player_widget_view: PlayerWidgetView,
     pub selected_team_id: Option<TeamId>,
     pub all_players: Vec<PlayerId>,
@@ -170,7 +170,7 @@ impl PlayerListPanel {
             },
         )
         .bold()
-        .set_hover_text("View all pirates.");
+        .hover_text("View all pirates.");
 
         let mut filter_free_pirates_button = Button::new(
             PlayerView::FreePirates.to_string(),
@@ -179,7 +179,7 @@ impl PlayerListPanel {
             },
         )
         .bold()
-        .set_hover_text("View free pirates.");
+        .hover_text("View free pirates.");
 
         let mut filter_tradable_button = Button::new(
             PlayerView::Tradable.to_string(),
@@ -188,7 +188,7 @@ impl PlayerListPanel {
             },
         )
         .bold()
-        .set_hover_text("View pirates open for trade.");
+        .hover_text("View pirates open for trade.");
 
         let mut filter_own_team_button = Button::new(
             PlayerView::OwnTeam.to_string(),
@@ -197,7 +197,7 @@ impl PlayerListPanel {
             },
         )
         .bold()
-        .set_hover_text("View your pirates from your crew.");
+        .hover_text("View your pirates from your crew.");
         match self.view {
             PlayerView::All => filter_all_button.select(),
             PlayerView::FreePirates => filter_free_pirates_button.select(),
@@ -270,7 +270,10 @@ impl PlayerListPanel {
         ])
         .split(v_split[1]);
 
-        let player = world.players.get_or_err(&self.selected_player_id)?;
+        let Some(selected_player_id) = self.selected_player_id else {
+            return Ok(());
+        };
+        let player = world.players.get_or_err(&selected_player_id)?;
         let own_team = world.get_own_team()?;
 
         // Display open trade if the selected and lock player are the two being traded.
@@ -295,6 +298,7 @@ impl PlayerListPanel {
 
         render_player_description(
             player,
+            &world.players_scouting,
             self.player_widget_view,
             &mut self.gif_map,
             self.tick,
@@ -302,7 +306,14 @@ impl PlayerListPanel {
             frame,
             h_split[0],
         );
-        self.render_buttons(player, open_trade, frame, world, button_split[0])?;
+        self.render_buttons(
+            player,
+            selected_player_id,
+            open_trade,
+            frame,
+            world,
+            button_split[0],
+        )?;
 
         // If there is an open trade for the locked and selected players,
         // display a button to accept
@@ -311,6 +322,7 @@ impl PlayerListPanel {
             let locked_player = world.players.get_or_err(&locked_player_id)?;
             render_player_description(
                 locked_player,
+                &world.players_scouting,
                 self.player_widget_view,
                 &mut self.gif_map,
                 self.tick,
@@ -318,7 +330,14 @@ impl PlayerListPanel {
                 frame,
                 h_split[1],
             );
-            self.render_buttons(locked_player, open_trade, frame, world, button_split[1])?;
+            self.render_buttons(
+                locked_player,
+                selected_player_id,
+                open_trade,
+                frame,
+                world,
+                button_split[1],
+            )?;
         }
 
         Ok(())
@@ -327,6 +346,7 @@ impl PlayerListPanel {
     fn render_buttons(
         &self,
         player: &Player,
+        selected_player_id: PlayerId,
         open_trade: Option<&Trade>,
         frame: &mut UiFrame,
         world: &World,
@@ -350,11 +370,11 @@ impl PlayerListPanel {
                     format!("Free pirate - On planet {}", planet.name),
                     UiCallback::GoToPlanetZoomIn { planet_id },
                 )
-                .set_hover_text(format!(
+                .hover_text(format!(
                     "Go to {}, this free pirate's current location",
                     planet.name
                 ))
-                .set_hotkey(ui_key::ON_PLANET);
+                .hotkey(ui_key::ON_PLANET);
                 frame.render_interactive_widget(button, buttons_split[0]);
             }
             PlayerLocation::WithTeam => {
@@ -365,8 +385,8 @@ impl PlayerListPanel {
                         player_id: player.id,
                     },
                 )
-                .set_hover_text(format!("Go to team {}", team.name))
-                .set_hotkey(ui_key::GO_TO_TEAM_ALT);
+                .hover_text(format!("Go to team {}", team.name))
+                .hotkey(ui_key::GO_TO_TEAM_ALT);
                 frame.render_interactive_widget(button, buttons_split[0]);
             }
         }
@@ -382,35 +402,34 @@ impl PlayerListPanel {
             ),
             UiCallback::TogglePlayerWidgetView,
         )
-        .set_hover_text(format!(
+        .hover_text(format!(
             "View player's {}",
             self.player_widget_view.to_string().to_lowercase()
         ))
-        .set_hotkey(ui_key::player::PLAYER_STATUS_VIEW);
+        .hotkey(ui_key::player::PLAYER_STATUS_VIEW);
         frame.render_interactive_widget(player_widget_view_button, buttons_split[1]);
 
-        let lock_button = if self.locked_player_id.is_some()
-            && self.locked_player_id.unwrap() == player.id
-        {
-            Button::new(
-                "Unlock",
-                UiCallback::LockPlayerPanel {
-                    player_id: player.id,
-                },
-            )
-            .set_hover_text("Unlock the player panel to allow browsing other players".to_string())
-            .set_hotkey(ui_key::player::UNLOCK_PLAYER)
-            .selected()
-        } else {
-            Button::new(
-                "Lock",
-                UiCallback::LockPlayerPanel {
-                    player_id: self.selected_player_id,
-                },
-            )
-            .set_hover_text("Lock the player panel to keep the info while browsing".to_string())
-            .set_hotkey(ui_key::player::LOCK_PLAYER)
-        };
+        let lock_button =
+            if self.locked_player_id.is_some() && self.locked_player_id.unwrap() == player.id {
+                Button::new(
+                    "Unlock",
+                    UiCallback::LockPlayerPanel {
+                        player_id: player.id,
+                    },
+                )
+                .hover_text("Unlock the player panel to allow browsing other players".to_string())
+                .hotkey(ui_key::player::UNLOCK_PLAYER)
+                .selected()
+            } else {
+                Button::new(
+                    "Lock",
+                    UiCallback::LockPlayerPanel {
+                        player_id: selected_player_id,
+                    },
+                )
+                .hover_text("Lock the player panel to keep the info while browsing".to_string())
+                .hotkey(ui_key::player::LOCK_PLAYER)
+            };
         frame.render_interactive_widget(lock_button, buttons_split[2]);
 
         // Add hire button for free pirates
@@ -424,11 +443,11 @@ impl PlayerListPanel {
                     player_id: player.id,
                 },
             )
-            .set_hover_text(format!(
+            .hover_text(format!(
                 "Hire this free pirate for {}",
                 format_satoshi(hire_cost)
             ))
-            .set_hotkey(ui_key::player::HIRE);
+            .hotkey(ui_key::player::HIRE);
             if let Err(err) = own_team.can_hire_player(player, is_in_space_cove) {
                 button.disable(Some(err.to_string()));
             }
@@ -439,7 +458,7 @@ impl PlayerListPanel {
         else if let Some(trade) = open_trade {
             let proposer_player = &trade.proposer_player;
             let target_player = &trade.target_player;
-            if player.id == self.selected_player_id {
+            if player.id == selected_player_id {
                 let proposer_team = world
                     .teams
                     .get_or_err(&proposer_player.team.expect("Player should have a team"))?;
@@ -449,13 +468,13 @@ impl PlayerListPanel {
                         trade: trade.clone(),
                     },
                 )
-                .set_hover_text(format!(
+                .hover_text(format!(
                     "Accept to trade {} for {}",
                     target_player.info.short_name(),
                     proposer_player.info.short_name(),
                 ))
                 .block(default_block().border_style(UiStyle::OK))
-                .set_hotkey(ui_key::ACCEPT_TRADE);
+                .hotkey(ui_key::ACCEPT_TRADE);
 
                 let can_trade = proposer_team.can_trade_players_with_team(
                     proposer_player,
@@ -474,13 +493,13 @@ impl PlayerListPanel {
                         trade: trade.clone(),
                     },
                 )
-                .set_hover_text(format!(
+                .hover_text(format!(
                     "Decline to trade {} for {}",
                     target_player.info.short_name(),
                     proposer_player.info.short_name(),
                 ))
                 .block(default_block().border_style(UiStyle::ERROR))
-                .set_hotkey(ui_key::DECLINE_TRADE);
+                .hotkey(ui_key::DECLINE_TRADE);
 
                 frame.render_interactive_widget(button, buttons_split[3]);
             };
@@ -489,7 +508,7 @@ impl PlayerListPanel {
         // add button to propose a trade.
         else if let Some(locked_player_id) = self.locked_player_id {
             //If player is selected and part of own team
-            if own_team.player_ids.contains(&player.id) && player.id == self.selected_player_id {
+            if own_team.player_ids.contains(&player.id) && player.id == selected_player_id {
                 let proposer_player = world.players.get_or_err(&player.id)?;
                 let target_player = world.players.get_or_err(&locked_player_id)?;
                 if let Some(target_team_id) = target_player.team {
@@ -505,12 +524,12 @@ impl PlayerListPanel {
                                 target_player_id: target_player.id,
                             },
                         )
-                        .set_hover_text(format!(
+                        .hover_text(format!(
                             "Propose to trade {} for {}",
                             proposer_player.info.short_name(),
                             target_player.info.short_name(),
                         ))
-                        .set_hotkey(ui_key::CREATE_TRADE);
+                        .hotkey(ui_key::CREATE_TRADE);
 
                         if own_team
                             .sent_trades
@@ -591,8 +610,11 @@ impl Screen for PlayerListPanel {
             }
 
             if index < self.players.len() && !self.players.is_empty() {
-                self.selected_player_id = self.players[index];
-                self.selected_team_id = world.players.get_or_err(&self.selected_player_id)?.team;
+                self.selected_player_id = Some(self.players[index]);
+                self.selected_team_id = world.players.get_or_err(&self.players[index])?.team;
+            } else {
+                self.selected_player_id = None;
+                self.selected_team_id = None;
             }
         } else if !self.players.is_empty() {
             self.set_index(0);
@@ -636,10 +658,10 @@ impl Screen for PlayerListPanel {
             KeyCode::Up => self.next_index(),
             KeyCode::Down => self.previous_index(),
             ui_key::GO_TO_TEAM => {
-                if self.selected_team_id.is_some() {
-                    return Some(UiCallback::GoToPlayerTeam {
-                        player_id: self.selected_player_id,
-                    });
+                if let Some(player_id) = self.selected_player_id {
+                    if self.selected_team_id.is_some() {
+                        return Some(UiCallback::GoToPlayerTeam { player_id });
+                    }
                 }
             }
             ui_key::CYCLE_VIEW => {
@@ -664,59 +686,51 @@ impl Screen for PlayerListPanel {
             " Next tab ".to_string(),
         ]
     }
+}
 
-    fn render_help_widget(
-        &self,
-        frame: &mut UiFrame,
-        _world: &World,
-        area: Rect,
-        _debug_view: bool,
-    ) -> AppResult<()> {
-        render_help_block(
-            frame,
-            area,
-            vec![
-                Line::from(" Browse free pirates and players across the galaxy. Inspect"),
-                Line::from(" their skills and stats, lock favorites, and hire those that"),
-                Line::from(" fit your roster and your budget."),
-                Line::from(""),
-                Line::from(" Once hired, manage them in My Team."),
-                Line::from(" To see who plays for which side, browse Crews."),
-                Line::from(" Free pirates often hang around their home planet, see Galaxy."),
-            ],
-            vec![
+impl HelpPanel for PlayerListPanel {
+    fn help_content(&self) -> HelpContent {
+        HelpContent {
+            description: [
+                "Browse pirates across the galaxy.",
+                "Find free pirates to hire that fit your roster and budget.",
+                "",
+                "Once hired, manage them in My Team.",
+                "To see who plays for which side, browse Crews.",
+            ]
+            .join("\n"),
+            links: vec![
                 tab_link("My Team", UiTab::MyTeam),
                 tab_link("Crews", UiTab::Crews),
                 tab_link("Galaxy", UiTab::Galaxy),
             ],
-            vec![
-                Line::from(" Controls:"),
+            controls: vec![
+                Line::from("Controls:"),
                 Line::from(format!(
-                    "   {}        Cycle view (All / FreePirates / OwnTeam)",
+                    "  {}        Cycle view (All / FreePirates / OwnTeam)",
                     ui_key::CYCLE_VIEW
                 )),
-                Line::from("   ↑/↓        Move highlight in the list"),
+                Line::from("  ↑/↓        Move highlight in the list"),
                 Line::from(format!(
-                    "   {} / {}      Hire / fire highlighted pirate",
+                    "  {} / {}      Hire / fire highlighted pirate",
                     ui_key::player::HIRE,
                     ui_key::player::FIRE
                 )),
                 Line::from(format!(
-                    "   {} / {}      Lock / unlock pirate (skip refresh)",
+                    "  {} / {}      Lock / unlock pirate (skip refresh)",
                     ui_key::player::LOCK_PLAYER,
                     ui_key::player::UNLOCK_PLAYER
                 )),
                 Line::from(format!(
-                    "   {}          Switch between skills view and stats view",
+                    "  {}          Switch between skills view and stats view",
                     ui_key::player::PLAYER_STATUS_VIEW
                 )),
                 Line::from(format!(
-                    "   {}          Open the home planet of highlighted pirate",
+                    "  {}          Open the home planet of highlighted pirate",
                     ui_key::ON_PLANET
                 )),
             ],
-        );
-        Ok(())
+        }
     }
 }
 

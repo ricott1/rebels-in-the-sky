@@ -20,7 +20,7 @@ pub(crate) fn execute(
 
     let post_idx = match input.attackers.len() {
         0 => {
-            let weights = [1, 2, 15, 30, 40];
+            let weights: [u8; 5] = [1, 2, 10, 30, 45];
             if let Some(idx) = sample_player_index(action_rng, weights, attacking_players_array) {
                 idx
             } else {
@@ -170,8 +170,18 @@ pub(crate) fn execute(
                 && (0.75 * poster.mental.vision + 0.25 * poster.technical.passing).game_value() + x
                     > ADV_NEUTRAL_LIMIT
             {
-                let mut weights = [3, 3, 2, 2, 1];
-                weights[post_idx] = 0;
+                let weights = {
+                    let mut base = [3.0, 3.0, 2.0, 2.0, 1.0];
+                    base[post_idx] = 0.0;
+
+                    // Opinion on population affects probability.
+                    for (idx, target) in attacking_players_array.iter().enumerate() {
+                        base[idx] *= 1.0
+                            + poster.population_opinion_modifier(target.info.population);
+                    }
+
+                    base
+                };
                 let target_idx = sample_player_index(action_rng, weights, attacking_players_array)
                     .expect("There should be another ok player");
                 let target: &Player = attacking_players_array[target_idx];

@@ -1,25 +1,7 @@
-mod big_numbers;
-mod button;
-mod checkbox;
-mod clickable_list;
-mod clickable_table;
 mod constants;
-mod galaxy_panel;
-mod game_panel;
 mod gif_map;
-mod hover_text_line;
-mod hover_text_span;
-mod my_team_panel;
-mod new_team_screen;
-mod player_panel;
-mod popup_message;
-mod space_cove_panel;
-mod space_screen;
-mod splash_screen;
-mod swarm_panel;
-mod team_panel;
-mod tournament_brackets_lines;
-mod tournament_panel;
+mod panels;
+mod renders;
 mod traits;
 mod ui_callback;
 mod ui_frame;
@@ -28,8 +10,13 @@ mod ui_screen;
 mod utils;
 mod widgets;
 
+pub(crate) use widgets::{
+    big_numbers, button, checkbox, clickable_list, clickable_table, dropdown, hover_text_line,
+    hover_text_span,
+};
+
 pub use constants::UI_SCREEN_SIZE;
-pub use popup_message::*;
 pub use ui_callback::UiCallback;
 pub use ui_key::*;
 pub use ui_screen::{UiScreen, UiState};
+pub use widgets::popup_message::*;

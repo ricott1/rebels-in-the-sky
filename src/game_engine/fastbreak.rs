@@ -95,8 +95,18 @@ pub(crate) fn execute(
             // Smart read: if playmaker has good intuition, look for an open teammate
             let found_pass = if playmaker.mental.intuition.game_value() + x > ADV_NEUTRAL_LIMIT {
                 let target_idx = {
-                    let mut weights = [3, 3, 2, 2, 1];
-                    weights[play_idx] = 0;
+                    let weights = {
+                        let mut base = [3.0, 3.0, 2.0, 2.0, 1.0];
+                        base[play_idx] = 0.0;
+
+                        // Opinion on population affects probability.
+                        for (idx, target) in attacking_players_array.iter().enumerate() {
+                            base[idx] *= 1.0
+                                + playmaker.population_opinion_modifier(target.info.population);
+                        }
+
+                        base
+                    };
                     sample_player_index(action_rng, weights, attacking_players_array)
                 };
 

@@ -19,7 +19,7 @@ pub const NO_TO_DIALOG: KeyCode = KeyCode::Backspace;
 
 pub const GO_TO_CHAT: KeyCode = KeyCode::Char('C');
 pub const GO_TO_CHALLENGES: KeyCode = KeyCode::Char('C');
-pub const GO_TO_MARKET: KeyCode = KeyCode::Char('m');
+pub const GO_TO_MARKET: KeyCode = KeyCode::Char('M');
 pub const GO_TO_SPACE_ADVENTURE: KeyCode = KeyCode::Char('A');
 pub const GO_TO_SHIPYARD: KeyCode = KeyCode::Char('S');
 pub const GO_TO_FREE_PIRATES: KeyCode = KeyCode::Char('F');
@@ -34,7 +34,7 @@ pub const REGISTER_TO_TOURNAMENT: KeyCode = KeyCode::Char('R');
 
 pub const GO_TO_TEAM: KeyCode = KeyCode::Backspace;
 pub const GO_TO_TEAM_ALT: KeyCode = KeyCode::Char('t');
-pub const GO_TO_GAME: KeyCode = KeyCode::Char('g');
+pub const GO_TO_GAME: KeyCode = KeyCode::Char('G');
 pub const GO_TO_CURRENT_GAME: KeyCode = KeyCode::Char('C');
 
 pub const GO_TO_PIRATE: KeyCode = KeyCode::Char('p');
@@ -101,12 +101,13 @@ pub mod player {
     pub const LOCK_PLAYER: KeyCode = KeyCode::Char('L');
     pub const UNLOCK_PLAYER: KeyCode = KeyCode::Char('U');
     pub const DRINK: KeyCode = KeyCode::Char('D');
+    pub const GIVE_GOLD: KeyCode = KeyCode::Char('g');
     pub const PLAYER_STATUS_VIEW: KeyCode = KeyCode::Char('s');
     pub const TRAINING_FOCUS: KeyCode = KeyCode::Char('T');
 }
 
 pub mod team {
-    use crate::core::GamePosition;
+    use crate::core::{CrewRole, GamePosition};
 
     use super::KeyCode;
     pub const AUTO_ASSIGN: KeyCode = KeyCode::Char('a');
@@ -118,12 +119,13 @@ pub mod team {
     pub const SET_CAPTAIN: KeyCode = KeyCode::Char('c');
     pub const SET_DOCTOR: KeyCode = KeyCode::Char('d');
     pub const SET_ENGINEER: KeyCode = KeyCode::Char('e');
+    pub const SET_MOZZO: KeyCode = KeyCode::Char('m');
     pub const SET_PILOT: KeyCode = KeyCode::Char('p');
-    pub const SET_SUBSTITUTION_TENDENCY: KeyCode = KeyCode::Char('s');
-    pub const SET_GAME_POSITION_FLUIDITY: KeyCode = KeyCode::Char('g');
+    pub const SET_SUBSTITUTION_TENDENCY: KeyCode = KeyCode::Char('S');
+    pub const SET_GAME_POSITION_FLUIDITY: KeyCode = KeyCode::Char('P');
     pub const SET_IN_GAME_DRINKING: KeyCode = KeyCode::Char('r');
 
-    pub const fn set_player_position(position: GamePosition) -> KeyCode {
+    pub fn set_player_position(position: GamePosition) -> KeyCode {
         match position {
             0 => KeyCode::Char('1'),
             1 => KeyCode::Char('2'),
@@ -132,7 +134,17 @@ pub mod team {
             4 => KeyCode::Char('5'),
             5 => KeyCode::Char('6'),
             6 => KeyCode::Char('7'),
-            _ => panic!("Invalid position for SET_PLAYER_POSITION"),
+            _ => panic!("Invalid position for SET_PLAYER_POSITION: {position}"),
+        }
+    }
+
+    pub const fn set_crew_role(role: CrewRole) -> KeyCode {
+        match role {
+            CrewRole::Captain => SET_CAPTAIN,
+            CrewRole::Doctor => SET_DOCTOR,
+            CrewRole::Pilot => SET_PILOT,
+            CrewRole::Engineer => SET_ENGINEER,
+            CrewRole::Mozzo => SET_MOZZO,
         }
     }
 }

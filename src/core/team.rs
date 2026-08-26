@@ -133,15 +133,12 @@ impl Team {
         };
         let jersey = Jersey::random(rng);
         let ship_color = jersey.color;
-        let mut resources = HashMap::new();
-        resources.insert(Resource::SATOSHI, INITIAL_TEAM_BALANCE);
         Self {
             id: TeamId::new_v4(),
             creation_time: Tick::now(),
             jersey,
             spaceship: Spaceship::random(rng).with_color_map(ship_color),
             game_tactic: Tactic::random(rng),
-            resources,
             ..Default::default()
         }
     }
@@ -162,6 +159,17 @@ impl Team {
             planet_id: home_planet_id,
         };
         self
+    }
+
+    pub fn with_reputation(mut self, reputation: Skill) -> Self {
+        self.reputation = reputation;
+        self
+    }
+
+    pub fn with_balance(mut self, amount: u32) -> AppResult<Self> {
+        self.add_resource(Resource::SATOSHI, amount)?;
+
+        Ok(self)
     }
 
     pub fn add_sent_challenge(&mut self, challenge: Challenge) {
@@ -215,6 +223,13 @@ impl Team {
         self.resources.value(&Resource::SATOSHI)
     }
 
+    pub fn total_salary(&self, players: &PlayerMap) -> u32 {
+        self.player_ids
+            .iter()
+            .map(|id| players.get(id).map(|p| p.salary()).unwrap_or_default())
+            .sum()
+    }
+
     pub fn add_resource(&mut self, resource: Resource, amount: u32) -> AppResult<()> {
         if resource == Resource::FUEL {
             self.resources.add(resource, amount, self.fuel_capacity())?;
@@ -241,14 +256,6 @@ impl Team {
 
     pub fn saturating_sub_resource(&mut self, resource: Resource, amount: u32) {
         self.resources.saturating_sub(resource, amount);
-    }
-
-    // Register the team to a game. The rum brought to the game is debited upfront
-    // and (if not drunk) returned at the end, so that trading rum during the game
-    // cannot influence the game.
-    pub fn enter_game(&mut self, game_id: GameId, brought_rum: u32) {
-        self.current_game = Some(game_id);
-        self.saturating_sub_resource(Resource::RUM, brought_rum);
     }
 
     pub fn fuel(&self) -> u32 {
@@ -293,6 +300,23 @@ impl Team {
             .fuel_consumption_per_kilometer(self.used_storage_capacity())
     }
 
+    // Register the team to a game. The rum brought to the game is debited upfront and (if not drunk) returned at the end,
+    // so that trading rum during the game cannot influence the game.
+    pub fn enter_game(&mut self, game_id: GameId, brought_rum: u32) {
+        self.current_game = Some(game_id);
+        self.saturating_sub_resource(Resource::RUM, brought_rum);
+    }
+
+    pub fn get_crew_role(&self, role: CrewRole) -> Option<PlayerId> {
+        match role {
+            CrewRole::Captain => self.crew_roles.captain,
+            CrewRole::Doctor => self.crew_roles.doctor,
+            CrewRole::Pilot => self.crew_roles.pilot,
+            CrewRole::Mozzo => None, // we should not get_crew_role for the Mozzo
+            CrewRole::Engineer => self.crew_roles.engineer,
+        }
+    }
+
     pub fn is_on_planet(&self) -> Option<PlanetId> {
         match self.current_location {
             TeamLocation::OnPlanet { planet_id } => Some(planet_id),
@@ -300,7 +324,7 @@ impl Team {
         }
     }
 
-    pub fn playing_in_tournament(&self) -> Option<PlanetId> {
+    pub fn playing_in_tournament(&self) -> Option<TournamentId> {
         match self.tournament_registration_state {
             TournamentRegistrationState::None
             | TournamentRegistrationState::Pending { .. }
@@ -309,7 +333,7 @@ impl Team {
         }
     }
 
-    pub fn committed_to_tournament(&self) -> Option<PlanetId> {
+    pub fn committed_to_tournament(&self) -> Option<TournamentId> {
         match self.tournament_registration_state {
             TournamentRegistrationState::None => None,
             TournamentRegistrationState::Pending { tournament_id }
@@ -381,6 +405,10 @@ impl Team {
     ) -> AppResult<()> {
         if player.team.is_some() {
             return Err(anyhow!("Already in a team"));
+        }
+
+        if self.current_game.is_some() {
+            return Err(anyhow!("Can't hire during a game"));
         }
 
         if self.player_ids.len() >= self.spaceship.crew_capacity() as usize {
@@ -565,7 +593,11 @@ impl Team {
             }
         }
 
-        // FIXME: add conditions on kartoffeln
+        if self.resources.value(&Resource::GOLD) < TOURNAMENT_ORGANIZATION_GOLD_COST {
+            return Err(anyhow!(
+                "To organize a tournament you need {TOURNAMENT_ORGANIZATION_GOLD_COST} gold"
+            ));
+        }
 
         Ok(())
     }
@@ -681,6 +713,16 @@ impl Team {
     }
 
     pub fn can_challenge_network_team(&self, team: &Team) -> AppResult<()> {
+        if self.sent_challenges.contains_key(&team.id) {
+            return Err(anyhow!("Already challenged {}", team.name));
+        }
+
+        self.can_still_challenge_network_team(team)
+    }
+
+    // Same as can_challenge_network_team but without the already-challenged guard, so a challenge
+    // being resent is not dropped just because it is still in sent_challenges.
+    pub fn can_still_challenge_network_team(&self, team: &Team) -> AppResult<()> {
         if team.peer_id.is_none() {
             return Err(anyhow!("{} is not from network", team.name));
         }
@@ -691,10 +733,6 @@ impl Team {
 
         if team.current_game.is_some() {
             return Err(anyhow!("{} is already playing", team.name));
-        }
-
-        if self.sent_challenges.contains_key(&team.id) {
-            return Err(anyhow!("Already challenged {}", team.name));
         }
 
         self.can_play_game_with_team(team, None)
@@ -719,29 +757,12 @@ impl Team {
             return Err(anyhow!("Target player is not part of the team"));
         }
 
-        if target_player.team.unwrap() == self.id {
-            return Err(anyhow!("Target player is in team"));
-        }
-
         if self.is_on_planet() != target_team.is_on_planet() {
             return Err(anyhow!("Not on the same planet"));
         }
 
-        if self.current_game.is_some() {
-            return Err(anyhow!("{} is playing", self.name));
-        }
-
-        if target_team.current_game.is_some() {
-            return Err(anyhow!("{} is playing", target_team.name));
-        }
-
-        if self.playing_in_tournament().is_some() {
-            return Err(anyhow!("{} is playing in a tournament", self.name));
-        }
-
-        if target_team.playing_in_tournament().is_some() {
-            return Err(anyhow!("{} is playing in a tournament", target_team.name));
-        }
+        self.can_release_player(proposer_player)?;
+        target_team.can_release_player(target_player)?;
 
         Ok(())
     }
@@ -879,39 +900,42 @@ impl Team {
         Ok(())
     }
 
-    pub fn can_trade_resource(
+    pub fn can_sell_resource(&self, resource: Resource, amount: u32) -> AppResult<()> {
+        // Selling. Check if enough resource
+        let current = self.resources.value(&resource);
+        if current < amount {
+            return Err(anyhow!("Not enough resource"));
+        }
+        Ok(())
+    }
+
+    pub fn can_buy_resource(
         &self,
         resource: Resource,
-        amount: i32,
+        amount: u32,
         unit_cost: u32,
     ) -> AppResult<()> {
         // Buying. Check if enough satoshi and if enough storing space
-        if amount > 0 {
-            let total_cost = amount as u32 * unit_cost;
-            if self.balance() < total_cost {
-                return Err(anyhow!("Not enough satoshi"));
-            }
 
-            if resource == Resource::FUEL {
-                let current = self.fuel();
-                let storage_capacity = self.spaceship.fuel_capacity();
-                if current + amount as u32 > storage_capacity {
-                    return Err(anyhow!("Not enough storage capacity"));
-                }
-            } else {
-                let current = self.resources.used_storage_capacity();
-                let storage_capacity = self.spaceship.storage_capacity();
-                if current + resource.to_storing_space() * amount as u32 > storage_capacity {
-                    return Err(anyhow!("Not enough storage capacity"));
-                }
+        let total_cost = amount as u32 * unit_cost;
+        if self.balance() < total_cost {
+            return Err(anyhow!("Not enough satoshi"));
+        }
+
+        if resource == Resource::FUEL {
+            let current = self.fuel();
+            let storage_capacity = self.spaceship.fuel_capacity();
+            if current + amount as u32 > storage_capacity {
+                return Err(anyhow!("Not enough storage capacity"));
             }
-        } else if amount < 0 {
-            // Selling. Check if enough resource
-            let current = self.resources.value(&resource);
-            if current < amount.unsigned_abs() {
-                return Err(anyhow!("Not enough resource"));
+        } else {
+            let current = self.resources.used_storage_capacity();
+            let storage_capacity = self.spaceship.storage_capacity();
+            if current + resource.to_storing_space() * amount as u32 > storage_capacity {
+                return Err(anyhow!("Not enough storage capacity"));
             }
         }
+
         Ok(())
     }
 

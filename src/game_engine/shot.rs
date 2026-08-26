@@ -207,7 +207,7 @@ fn description(
         ],
         (ShotDifficulty::Close, Advantage::Attack, false) => vec![
             format!(
-                "{} manages to miss the open layup! The coach is furious...",
+                "{} manages to miss the open layup! The rest of the crew looks very frustrated...",
                 shooter.info.short_name()
             ),
             format!(

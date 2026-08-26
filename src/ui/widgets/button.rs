@@ -1,9 +1,7 @@
-use super::{
-    constants::UiStyle,
-    traits::InteractiveWidget,
-    ui_callback::{CallbackRegistry, UiCallback},
-    widgets::default_block,
-};
+use crate::ui::constants::UiStyle;
+use crate::ui::renders::default_block;
+use crate::ui::traits::InteractiveWidget;
+use crate::ui::ui_callback::{CallbackRegistry, UiCallback};
 use ratatui::crossterm::event::KeyCode;
 use ratatui::{crossterm, layout::Alignment};
 use ratatui::{
@@ -23,13 +21,12 @@ pub struct Button<'a> {
     selected: bool,
     is_hovered: bool,
     disabled_text: Option<Text<'a>>,
-    text_alignemnt: Alignment,
+    text_alignment: Alignment,
     style: Style,
     hover_style: Style,
     block: Option<Block<'a>>,
     hover_block: Option<Block<'a>>,
     hover_text: Option<Text<'a>>,
-    layer: usize,
 }
 
 impl<'a> Button<'a> {
@@ -47,7 +44,7 @@ impl<'a> Button<'a> {
         Self {
             text: text.into(),
             on_click,
-            text_alignemnt: ratatui::layout::Alignment::Center,
+            text_alignment: ratatui::layout::Alignment::Center,
             hover_style: UiStyle::HIGHLIGHT,
             ..Default::default()
         }
@@ -58,8 +55,8 @@ impl<'a> Button<'a> {
         self
     }
 
-    pub fn set_text_alignemnt(mut self, text_alignemnt: Alignment) -> Self {
-        self.text_alignemnt = text_alignemnt;
+    pub fn set_text_alignment(mut self, text_alignment: Alignment) -> Self {
+        self.text_alignment = text_alignment;
         self
     }
 
@@ -102,18 +99,13 @@ impl<'a> Button<'a> {
         self
     }
 
-    pub fn set_hover_text(mut self, text: impl Into<Text<'a>>) -> Self {
+    pub fn hover_text(mut self, text: impl Into<Text<'a>>) -> Self {
         self.hover_text = Some(text.into());
         self
     }
 
-    pub const fn set_hotkey(mut self, k: KeyCode) -> Self {
+    pub const fn hotkey(mut self, k: KeyCode) -> Self {
         self.hotkey = Some(k);
-        self
-    }
-
-    pub const fn set_layer(mut self, layer: usize) -> Self {
-        self.layer = layer;
         self
     }
 
@@ -170,7 +162,7 @@ impl<'a> Widget for Button<'a> {
         } else {
             Paragraph::new(self.text)
         }
-        .alignment(self.text_alignemnt);
+        .alignment(self.text_alignment);
 
         let paragraph_style = if self.selected {
             UiStyle::SELECTED_BUTTON
@@ -212,13 +204,14 @@ impl<'a> Widget for Button<'a> {
 }
 
 impl InteractiveWidget for Button<'_> {
-    fn layer(&self) -> usize {
-        self.layer
-    }
-
-    fn before_rendering(&mut self, area: Rect, callback_registry: &mut CallbackRegistry) {
-        self.is_hovered = callback_registry.is_hovering(area)
-            && callback_registry.get_active_layer() == self.layer();
+    fn before_rendering(
+        &mut self,
+        area: Rect,
+        callback_registry: &mut CallbackRegistry,
+        layer: usize,
+    ) {
+        self.is_hovered =
+            callback_registry.is_hovering(area) && callback_registry.get_active_layer() == layer;
 
         if !self.disabled {
             if self.is_hovered {
