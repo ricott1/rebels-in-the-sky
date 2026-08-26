@@ -1048,12 +1048,14 @@ impl Player {
             let avg_skill_modifier = (1.0 + avg_skill / MAX_SKILL).powf(2.6);
 
             let mut sorted_fitness = self.game_position_fitness;
-            sorted_fitness.sort_unstable_by(f32::total_cmp);
+            sorted_fitness.sort_unstable_by(|a, b| b.total_cmp(a));
 
-            let position_modifier = sorted_fitness[0] / MAX_SKILL
-                + 0.25 * sorted_fitness[1] / MAX_SKILL
-                + 0.05 * sorted_fitness[2] / MAX_SKILL
-                + 0.01 * sorted_fitness[3] / MAX_SKILL;
+            let position_modifier = 0.75 / MAX_SKILL
+                * (sorted_fitness[0]
+                    + 0.25 * sorted_fitness[1]
+                    + 0.05 * sorted_fitness[2]
+                    + 0.01 * sorted_fitness[3]
+                    + 0.0025 * sorted_fitness[4]);
 
             avg_skill
                 * avg_skill_modifier
