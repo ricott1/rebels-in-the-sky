@@ -1014,25 +1014,28 @@ impl SwarmPanel {
             let timestamp_length = timestamp_span.content.len();
             let incipit_length = timestamp_length + author_span.content.len();
             // FIXME: we should ideally use area.width and make this adaptive.
-            let message_max_length =
-                (UI_SCREEN_SIZE.0 as usize).saturating_sub(36 + 2 + incipit_length); // 36 is left panel width, extra 2 is because of Block outside.
+            let message_max_length = (UI_SCREEN_SIZE.0 as usize)
+                .saturating_sub(36 + 2 + incipit_length)
+                .max(1); // 36 is left panel width, extra 2 is because of Block outside.
 
             let text_lines = wrap_text(event.text.as_str(), message_max_length);
-            let mut lines = vec![Line::from(vec![
-                timestamp_span,
-                author_span,
-                Span::raw(text_lines[0].clone()),
-            ])];
+            if !text_lines.is_empty() {
+                let mut lines = vec![Line::from(vec![
+                    timestamp_span,
+                    author_span,
+                    Span::raw(text_lines[0].clone()),
+                ])];
 
-            for text in text_lines.iter().skip(1) {
-                lines.push(Line::from(format!(
-                    "{}{}",
-                    " ".repeat(incipit_length),
-                    text
-                )));
+                for text in text_lines.iter().skip(1) {
+                    lines.push(Line::from(format!(
+                        "{}{}",
+                        " ".repeat(incipit_length),
+                        text
+                    )));
+                }
+
+                items.push(ClickableListItem::new(lines));
             }
-
-            items.push(ClickableListItem::new(lines));
         }
 
         let new_count = items.len();
