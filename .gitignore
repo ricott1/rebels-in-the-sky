@@ -27,6 +27,8 @@ Session.vim
 .settings/
 .vs/
 
+*.json.gz
+
 ## Tool
 .valgrindrc
 .cargo
@@ -99,3 +101,4 @@ tests/player_generation/generation_data.json
 tests/player_generation/*.png
 TODO.md
 scripts
+*.sh
