@@ -624,6 +624,10 @@ impl NetworkCallback {
                 ));
             }
 
+            if app.world.canceled_tournaments.contains(&tournament.id) {
+                return Ok(None);
+            }
+
             if tournament.state(Tick::now()) == TournamentState::Registration
                 && !app.world.tournaments.contains_key(&tournament.id)
             {
@@ -1387,5 +1391,33 @@ impl NetworkCallback {
                 Ok(None)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NetworkCallback;
+    use crate::app::App;
+    use crate::core::constants::HOURS;
+    use crate::game_engine::Tournament;
+    use crate::types::{AppResult, SystemTimeTick, Tick};
+
+    // A tournament this client has already cancelled and dropped keeps being
+    // rebroadcast by peers; it must not come back.
+    #[test]
+    fn test_rebroadcast_of_canceled_tournament_is_ignored() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let mut tournament = Tournament::test(2, 4);
+        tournament.registrations_closing_at = Tick::now() - HOURS;
+
+        NetworkCallback::handle_tournament_topic(tournament.clone())(&mut app)?;
+        assert!(app.world.tournaments.contains_key(&tournament.id));
+
+        app.world.tournaments.remove(&tournament.id);
+        app.world.canceled_tournaments.insert(tournament.id);
+
+        NetworkCallback::handle_tournament_topic(tournament.clone())(&mut app)?;
+        assert!(!app.world.tournaments.contains_key(&tournament.id));
+        Ok(())
     }
 }
