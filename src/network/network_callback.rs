@@ -1081,6 +1081,18 @@ impl NetworkCallback {
                         ));
                     }
 
+                    if !app
+                        .world
+                        .get_own_team()?
+                        .sent_challenges
+                        .contains_key(&challenge.away_team_in_game.team_id)
+                    {
+                        return Err(anyhow!(
+                            "No outstanding challenge to {}",
+                            challenge.away_team_in_game.name
+                        ));
+                    }
+
                     let mut handle_syn_ack = || -> AppResult<()> {
                         let mut home_team_in_game = TeamInGame::from_team_id(
                             &app.world.own_team_id,
