@@ -1532,7 +1532,10 @@ impl World {
         player.is_on_planet().and_then(|id| {
             self.planets
                 .get(&id)
-                .filter(|planet| planet.planet_type == PlanetType::Asteroid)
+                .filter(|planet| {
+                    planet.planet_type == PlanetType::Asteroid
+                        && self.space_cove_on(planet.id).is_some()
+                })
                 .map(|planet| planet.id)
         })
     }
@@ -2184,10 +2187,6 @@ impl World {
         for game in self.games.values_mut() {
             if game.has_started(current_tick) {
                 game.catch_up(Tick::now());
-                log::info!(
-                    "current_tick - now {}",
-                    (Tick::now() - current_tick) / SECONDS
-                );
             }
         }
         Ok(())
