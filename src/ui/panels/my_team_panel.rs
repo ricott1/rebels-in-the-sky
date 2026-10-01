@@ -2343,21 +2343,7 @@ impl MyTeamPanel {
 
         if let Some(game_id) = own_team.current_game {
             let game = world.games.get_or_err(&game_id)?;
-            let text = format!(
-                "{:>} {:>3}-{:<3} {:<}",
-                game.home_team_in_game.name,
-                if let Some(action) = game.action_results.last() {
-                    action.home_score
-                } else {
-                    0
-                },
-                if let Some(action) = game.action_results.last() {
-                    action.away_score
-                } else {
-                    0
-                },
-                game.away_team_in_game.name,
-            );
+
             let border_style = if game.is_network() {
                 UiStyle::NETWORK
             } else {
@@ -2371,7 +2357,22 @@ impl MyTeamPanel {
                         Line::default(),
                         Line::from("Currently playing".to_string()).centered(),
                         Line::default(),
-                        Line::from(text).centered(),
+                        Line::from(game.home_team_in_game.name.as_str()).centered(),
+                        Line::from(format!(
+                            "{:>3}-{:<3}",
+                            if let Some(action) = game.action_results.last() {
+                                action.home_score
+                            } else {
+                                0
+                            },
+                            if let Some(action) = game.action_results.last() {
+                                action.away_score
+                            } else {
+                                0
+                            },
+                        ))
+                        .centered(),
+                        Line::from(game.away_team_in_game.name.as_str()).centered(),
                         Line::from(game.timer.format()).centered(),
                     ],
                     UiCallback::GoToGame {
