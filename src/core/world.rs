@@ -1529,15 +1529,9 @@ impl World {
     }
 
     pub fn player_is_in_space_cove_on(&self, player: &Player) -> Option<PlanetId> {
-        player.is_on_planet().and_then(|id| {
-            self.planets
-                .get(&id)
-                .filter(|planet| {
-                    planet.planet_type == PlanetType::Asteroid
-                        && self.space_cove_on(planet.id).is_some()
-                })
-                .map(|planet| planet.id)
-        })
+        player
+            .is_on_planet()
+            .filter(|&id| self.space_cove_on(id).is_some())
     }
 
     pub fn upgrade_space_cove(&mut self, target: SpaceCoveUpgradeTarget) -> AppResult<()> {
