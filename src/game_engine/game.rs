@@ -1012,14 +1012,35 @@ impl Game {
         match (home_knocked_out, away_knocked_out) {
             (true, true) => {
                 self.end();
-                self.winner = None;
 
-                let description = self.game_end_description(None);
+                // win decided by reputation.
+                const REPUTATION_FLOOR: f32 = 1.0;
+                let home_weight = self.home_team_in_game.reputation + REPUTATION_FLOOR;
+                let away_weight = self.away_team_in_game.reputation + REPUTATION_FLOOR;
+                let home_wins =
+                    action_rng.random_range(0.0..home_weight + away_weight) < home_weight;
+
+                let possession = if home_wins {
+                    self.winner = Some(self.home_team_in_game.team_id);
+                    Possession::Home
+                } else {
+                    self.winner = Some(self.away_team_in_game.team_id);
+                    Possession::Away
+                };
+
+                let winner_name = if home_wins {
+                    &self.home_team_in_game.name
+                } else {
+                    &self.away_team_in_game.name
+                };
+                let description = format!(
+                    "Both crews are completely done! {winner_name} are chosen as winners \
+                    in the pirate way: by pure chance. {}",
+                    self.game_end_description(Some(possession))
+                );
 
                 self.action_results.push(ActionOutput {
-                    description: format!(
-                    "Both team are completely done! {description} They should get some rest now..."
-                ),
+                    description,
                     start_at: self.timer,
                     end_at: self.timer,
                     home_score: self.get_score().0,
@@ -1102,10 +1123,9 @@ mod tests {
     use crate::types::{SystemTimeTick, Tick};
 
     /// A mutual knockout - every pirate on both sides at MAX tiredness - ends the
-    /// game with no winner at all. Unlike a drawn scoreline, which is settled by a
-    /// final total brawl, this path has no tiebreak.
+    /// game with a winner drawn by reputation.
     #[test]
-    fn test_a_mutual_knockout_leaves_no_winner() {
+    fn test_a_mutual_knockout_still_has_a_winner() {
         use crate::core::skill::MAX_SKILL;
 
         let mut home_team_in_game = TeamInGame::test();
@@ -1123,8 +1143,9 @@ mod tests {
 
         assert!(game.has_ended());
         assert!(
-            game.winner.is_none(),
-            "a game both crews were carried out of has no winner"
+            game.winner == Some(game.home_team_in_game.team_id)
+                || game.winner == Some(game.away_team_in_game.team_id),
+            "a game both crews were carried out of is won by one of them"
         );
     }
 

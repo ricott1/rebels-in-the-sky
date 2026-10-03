@@ -18,15 +18,10 @@ use strum::Display;
 use strum_macros::EnumIter;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
-pub struct DrinkingCompetition {
-    participants: [PlayerId; 2],
-}
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
 pub struct Tavern {
     // The tavern increases the cove asteroid population,
     // which in turns means that tick_free_pirates populate the asteroid with free pirates.
     pub upkeep_cost: ResourceMap,
-    pub drinking_competition: Option<DrinkingCompetition>,
 }
 
 impl Tavern {

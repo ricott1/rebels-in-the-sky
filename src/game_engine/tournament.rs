@@ -1,6 +1,6 @@
 use crate::{
     app_version,
-    core::{utils::is_default, Planet, Rated, Skill, Team, MINUTES, MIN_SKILL, SECONDS},
+    core::{utils::is_default, Planet, Rated, Skill, Team, DAYS, MINUTES, MIN_SKILL, SECONDS},
     game_engine::{
         game::{Game, GameSummary},
         timer,
@@ -115,8 +115,8 @@ impl TournamentType {
 
     pub fn registration_duration(&self) -> Tick {
         match self {
-            Self::Cup => 5 * MINUTES,
-            Self::Supercup => 45 * MINUTES,
+            Self::Cup => 10 * MINUTES,
+            Self::Supercup => DAYS,
         }
     }
 }
