@@ -71,23 +71,8 @@ impl PlayerView {
         match self {
             Self::All => true,
             Self::FreePirates => {
-                if player.team.is_some() {
-                    return false;
-                }
-
-                let player_planet_id = match player.current_location {
-                    PlayerLocation::OnPlanet { planet_id } => planet_id,
-                    _ => panic!("Free pirate must be PlayerLocation::OnPlanet"),
-                };
-
-                let own_team_planet_id = match own_team.current_location {
-                    TeamLocation::OnPlanet { planet_id } => planet_id,
-                    TeamLocation::Travelling { to, .. } => to,
-                    TeamLocation::Exploring { around, .. } => around,
-                    TeamLocation::OnSpaceAdventure { around, .. } => around,
-                };
-
-                player_planet_id == own_team_planet_id
+                player.team.is_none()
+                    && own_team.can_hire_from_space_cove(world.player_is_in_space_cove_on(player))
             }
             Self::Tradable => {
                 let own_team_planet_id = match own_team.current_location {

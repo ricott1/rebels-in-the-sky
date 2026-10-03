@@ -104,6 +104,9 @@ pub struct World {
     pub past_tournaments: TournamentSummaryMap, // Holds summary of finished tournaments, persisted.
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
+    pub canceled_tournaments: HashSet<TournamentId>, // Cancelled here, so a peer's rebroadcast is ignored.
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub network_store_data: NetworkStoreData,
 }
 
@@ -1526,12 +1529,9 @@ impl World {
     }
 
     pub fn player_is_in_space_cove_on(&self, player: &Player) -> Option<PlanetId> {
-        player.is_on_planet().and_then(|id| {
-            self.planets
-                .get(&id)
-                .filter(|planet| planet.planet_type == PlanetType::Asteroid)
-                .map(|planet| planet.id)
-        })
+        player
+            .is_on_planet()
+            .filter(|&id| self.space_cove_on(id).is_some())
     }
 
     pub fn upgrade_space_cove(&mut self, target: SpaceCoveUpgradeTarget) -> AppResult<()> {
@@ -2181,10 +2181,6 @@ impl World {
         for game in self.games.values_mut() {
             if game.has_started(current_tick) {
                 game.catch_up(Tick::now());
-                log::info!(
-                    "current_tick - now {}",
-                    (Tick::now() - current_tick) / SECONDS
-                );
             }
         }
         Ok(())
@@ -2395,6 +2391,12 @@ impl World {
             }
         }
 
+        self.canceled_tournaments.extend(
+            self.tournaments
+                .values()
+                .filter(|t| t.is_canceled())
+                .map(|t| t.id),
+        );
         self.tournaments
             .retain(|_, t| !t.has_ended() && !t.is_canceled());
 
@@ -3626,6 +3628,7 @@ impl World {
                 .filter(|(_, t)| t.participant_ids.contains(&self.own_team_id))
                 .map(|(id, t)| (*id, t.clone()))
                 .collect(),
+            canceled_tournaments: self.canceled_tournaments.clone(),
             serialized_size: self.serialized_size,
             network_store_data: self.network_store_data.to_store(),
             ..Default::default()
@@ -3703,7 +3706,7 @@ mod test {
             RatedPlayers, DEFAULT_PLANET_ID, MAX_SKILL, MIN_PLAYERS_PER_GAME,
             PORTAL_TRAVEL_DURATION, SPUGNA_DRUNKENNESS_ON_GETTING_DRUNK,
         },
-        game_engine::types::TeamInGame,
+        game_engine::{types::TeamInGame, Tournament, TournamentId},
         types::{HashMapWithResult, StorableResourceMap, SystemTimeTick, Tick},
         ui::UiCallback,
     };
@@ -4383,6 +4386,36 @@ mod test {
             );
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_canceled_tournament_is_remembered_once_dropped() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let mut tournament = Tournament::test(2, 4);
+        tournament.cancel();
+        app.world
+            .tournaments
+            .insert(tournament.id, tournament.clone());
+
+        app.world.tick_tournaments(Tick::now())?;
+
+        assert!(!app.world.tournaments.contains_key(&tournament.id));
+        assert!(app.world.canceled_tournaments.contains(&tournament.id));
+        Ok(())
+    }
+
+    #[test]
+    fn test_to_store_keeps_canceled_tournaments() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let tournament_id = TournamentId::from_u128(7);
+        app.world.canceled_tournaments.insert(tournament_id);
+
+        assert!(app
+            .world
+            .to_store()?
+            .canceled_tournaments
+            .contains(&tournament_id));
         Ok(())
     }
 }
