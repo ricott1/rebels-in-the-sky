@@ -1,5 +1,6 @@
 mod constants;
 mod gif_map;
+mod overlays;
 mod panels;
 mod renders;
 mod traits;
@@ -7,7 +8,7 @@ mod ui_callback;
 mod ui_frame;
 mod ui_key;
 mod ui_screen;
-mod utils;
+pub(crate) mod utils;
 mod widgets;
 
 pub(crate) use widgets::{

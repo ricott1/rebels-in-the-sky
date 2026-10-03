@@ -820,9 +820,10 @@ impl Player {
         let mut rating = 0 as f32;
         let weights = position.weights();
         let mut total_weight = 0 as f32;
-        for i in 0..self.current_skill_array().len() {
-            let w = weights[i].powf(4.0);
-            rating += w * self.current_skill_array()[i];
+        let skills = self.current_skill_array();
+        for (skill, weight) in skills.iter().zip(weights.iter()) {
+            let w = weight.powf(4.0);
+            rating += w * skill;
             total_weight += w;
         }
 
@@ -853,11 +854,7 @@ impl Player {
     }
 
     pub fn current_skill_array(&self) -> [Skill; 20] {
-        (0..20)
-            .map(|idx| self.skill_at_index(idx))
-            .collect::<Vec<Skill>>()
-            .try_into()
-            .expect("There should be 20 skills")
+        std::array::from_fn(|idx| self.skill_at_index(idx))
     }
 
     // If the player is currently playing a game, returns the in-game copy of the player,

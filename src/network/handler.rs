@@ -1,7 +1,7 @@
 use super::challenge::Challenge;
 use super::constants::*;
 use super::network_callback::NetworkCallback;
-use super::trade::Trade;
+use super::trade::{Trade, TradeRoute};
 use super::types::SeedInfo;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam};
 use crate::app::AppEvent;
@@ -12,7 +12,7 @@ use crate::game_engine::{Tournament, TournamentId};
 use crate::network::network_store_data::NetworkStoreData;
 use crate::network::types::TournamentRequestState;
 use crate::store::serialize;
-use crate::types::{AppResult, GameId, HashMapWithResult, PlayerMap};
+use crate::types::{AppResult, GameId, HashMapWithResult, PlayerMap, TradeId};
 use crate::types::{PlayerId, TeamId};
 use crate::types::{SystemTimeTick, Tick};
 use anyhow::anyhow;
@@ -735,39 +735,38 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub fn resend_open_trades(&self, world: &World) -> AppResult<Vec<(PlayerId, PlayerId)>> {
+    /// Re-broadcasts still-open offers, returning the ids of the ones that are no
+    /// longer worth resending so the caller can drop them.
+    pub fn resend_open_trades(&self, world: &World) -> AppResult<Vec<TradeId>> {
         let own_team = world.get_own_team()?;
         let mut to_remove = vec![];
         for trade in own_team.sent_trades.values() {
-            let id = (trade.proposer_player.id, trade.target_player.id);
             if trade.state != NetworkRequestState::Syn {
-                to_remove.push(id);
+                to_remove.push(trade.id);
                 continue;
             }
 
-            let team_id = if let Some(id) = trade.target_player.team {
-                id
-            } else {
-                to_remove.push(id);
-                continue;
-            };
-
-            let target_team = if let Some(t) = world.teams.get(&team_id) {
+            // The target team is carried on the trade rather than derived from the
+            // target player, which a cash-only bid does not pin down on its own.
+            let target_team = if let Some(t) = world.teams.get(&trade.target_team_id) {
                 t
             } else {
-                to_remove.push(id);
+                to_remove.push(trade.id);
                 continue;
             };
 
             if own_team
-                .can_trade_players_with_team(
-                    &trade.proposer_player,
-                    &trade.target_player,
+                .can_trade_with_team(
                     target_team,
+                    trade.route,
+                    trade.proposer_player.as_ref(),
+                    &trade.target_player,
+                    trade.proposer_satoshis,
+                    trade.target_satoshis,
                 )
                 .is_err()
             {
-                to_remove.push(id);
+                to_remove.push(trade.id);
                 continue;
             }
             self.send_trade(trade.clone())?;
@@ -880,24 +879,54 @@ impl NetworkHandler {
         Ok(challenge)
     }
 
-    pub fn send_new_trade(
+    pub fn send_new_crew_swap(
         &self,
         world: &World,
         target_peer_id: PeerId,
+        target_team_id: TeamId,
         proposer_player_id: PlayerId,
         target_player_id: PlayerId,
+        proposer_satoshis: u32,
+        target_satoshis: u32,
     ) -> AppResult<Trade> {
         self.send_own_team(world)?;
 
         let proposer_player = world.players.get_or_err(&proposer_player_id)?.clone();
         let target_player = world.players.get_or_err(&target_player_id)?.clone();
 
-        let trade = Trade::new(
+        let trade = Trade::crew_swap(
             *self.own_peer_id(),
             target_peer_id,
+            world.own_team_id,
+            target_team_id,
             proposer_player,
             target_player,
-            0,
+            proposer_satoshis,
+            target_satoshis,
+        );
+
+        self.send_trade(trade.clone())?;
+        Ok(trade)
+    }
+
+    pub fn send_new_dock_bid(
+        &self,
+        world: &World,
+        target_peer_id: PeerId,
+        target_team_id: TeamId,
+        target_player_id: PlayerId,
+        amount: u32,
+    ) -> AppResult<Trade> {
+        self.send_own_team(world)?;
+
+        let target_player = world.players.get_or_err(&target_player_id)?.clone();
+        let trade = Trade::dock_bid(
+            *self.own_peer_id(),
+            target_peer_id,
+            world.own_team_id,
+            target_team_id,
+            target_player,
+            amount,
         );
 
         self.send_trade(trade.clone())?;
@@ -957,13 +986,12 @@ impl NetworkHandler {
     }
 
     pub fn accept_trade(&self, world: &World, trade: Trade) -> AppResult<()> {
+        if trade.route == TradeRoute::DockBid {
+            return Err(anyhow!("A dock bid settles through the releasing crew's receipt"));
+        }
         let handle_syn = || -> AppResult<()> {
             let own_team = world.get_own_team()?;
-            let proposer_team = if let Some(proposer_team_id) = trade.proposer_player.team {
-                world.teams.get_or_err(&proposer_team_id)?
-            } else {
-                return Err(anyhow!("Trade target player has no team"));
-            };
+            let proposer_team = world.teams.get_or_err(&trade.proposer_team_id)?;
 
             // Note: we do not apply immediately the trade at this point,
             // because it could take a long time to accept a trade
@@ -972,10 +1000,13 @@ impl NetworkHandler {
             let mut trade = trade.clone();
             let target_player = world.players.get_or_err(&trade.target_player.id)?.clone();
             trade.target_player = target_player;
-            proposer_team.can_trade_players_with_team(
-                &trade.proposer_player,
-                &trade.target_player,
+            proposer_team.can_trade_with_team(
                 own_team,
+                trade.route,
+                trade.proposer_player.as_ref(),
+                &trade.target_player,
+                trade.proposer_satoshis,
+                trade.target_satoshis,
             )?;
 
             trade.state = NetworkRequestState::SynAck;
@@ -994,10 +1025,11 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub fn decline_trade(&self, trade: Trade) -> AppResult<()> {
-        let mut trade = trade.clone();
+    /// Refuses an offer, with a reason when there is one worth reading.
+    pub fn decline_trade(&self, trade: Trade, reason: Option<String>) -> AppResult<()> {
+        let mut trade = trade;
         trade.state = NetworkRequestState::Failed {
-            error_message: "Trade declined".to_string(),
+            error_message: reason.unwrap_or_else(|| "Trade declined".to_string()),
         };
         self.send_trade(trade)?;
         Ok(())

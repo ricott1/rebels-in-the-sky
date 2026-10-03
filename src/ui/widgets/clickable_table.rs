@@ -60,6 +60,11 @@ impl<'a> ClickableRow<'a> {
             style: Style::default(),
         }
     }
+
+    pub fn style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
 }
 
 impl<'a> From<ClickableRow<'a>> for Row<'a> {

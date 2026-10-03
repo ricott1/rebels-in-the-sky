@@ -1,7 +1,11 @@
 use super::button::Button;
 use super::constants::UiStyle;
+use super::dropdown::DropdownState;
+use super::overlays::{
+    HelpOverlay, OverlayKind, TradeOverlay, MAX_OVERLAY_DEPTH, POPUP_LAYER,
+};
 use super::panels::*;
-use super::panels::{Screen, SplitPanel};
+use super::panels::{HelpContent, Screen, SplitPanel};
 use super::renders::{default_block, thick_block};
 use super::ui_callback::{CallbackRegistry, UiCallback};
 use super::ui_frame::UiFrame;
@@ -42,6 +46,7 @@ static CONSTANT_TAB_BUTTONS: LazyLock<HashMap<UiTab, [Button<'static>; 2]>> = La
     let constant_tabs = [
         UiTab::Crews,
         UiTab::Pirates,
+        UiTab::Dock,
         UiTab::Galaxy,
         UiTab::Games,
         UiTab::Tournaments,
@@ -57,21 +62,6 @@ static CONSTANT_TAB_BUTTONS: LazyLock<HashMap<UiTab, [Button<'static>; 2]>> = La
         })
         .collect()
 });
-
-/// Returns a centered rect ~60% wide / 80% tall, used for the help popup.
-/// Falls back to the full screen if it would otherwise be smaller than the
-/// preferred minimum (50x20). `clamp(min, max)` would panic when min > max.
-fn help_popup_rect(screen_area: Rect) -> Rect {
-    let width = (screen_area.width * 60 / 100)
-        .max(50)
-        .min(screen_area.width);
-    let height = (screen_area.height * 80 / 100)
-        .max(20)
-        .min(screen_area.height);
-    let x = screen_area.x + screen_area.width.saturating_sub(width) / 2;
-    let y = screen_area.y + screen_area.height.saturating_sub(height) / 2;
-    Rect::new(x, y, width, height)
-}
 
 /// Convenience constructor for a help-block link that switches to `tab`,
 /// labelled by `label` (which must appear verbatim in the help description).
@@ -96,6 +86,8 @@ pub enum UiTab {
     MyTeam,
     Crews,
     Pirates,
+    #[strum(to_string = "The Dock")]
+    Dock,
     Galaxy,
     Games,
     Tournaments,
@@ -110,7 +102,7 @@ pub struct UiScreen {
     ui_tabs: Vec<UiTab>,
     tab_index: usize,
     debug_view: bool,
-    show_help: bool,
+    overlays: Vec<OverlayKind>,
     last_render: Instant,
     pub splash_screen: SplashScreen,
     pub new_team_screen: NewTeamScreen,
@@ -120,6 +112,7 @@ pub struct UiScreen {
     pub game_panel: GamePanel,
     pub tournament_panel: TournamentPanel,
     pub space_cove_panel: SpaceCovePanel,
+    pub dock_panel: DockPanel,
     pub swarm_panel: SwarmPanel,
     pub my_team_panel: MyTeamPanel,
     pub galaxy_panel: GalaxyPanel,
@@ -136,6 +129,7 @@ impl UiScreen {
         let game_panel = GamePanel::new();
         let tournament_panel = TournamentPanel::new();
         let space_cove_panel = SpaceCovePanel::new();
+        let dock_panel = DockPanel::new();
         let swarm_panel = SwarmPanel::new();
         let my_team_panel = MyTeamPanel::new();
         let new_team_screen = NewTeamScreen::new();
@@ -145,6 +139,7 @@ impl UiScreen {
             UiTab::MyTeam,
             UiTab::Crews,
             UiTab::Pirates,
+            UiTab::Dock,
             UiTab::SpaceCoves,
             UiTab::Games,
             UiTab::Tournaments,
@@ -162,7 +157,7 @@ impl UiScreen {
             ui_tabs,
             tab_index: 0,
             debug_view: false,
-            show_help: false,
+            overlays: vec![],
             last_render: Instant::now(),
             splash_screen,
             new_team_screen,
@@ -172,6 +167,7 @@ impl UiScreen {
             game_panel,
             tournament_panel,
             space_cove_panel,
+            dock_panel,
             swarm_panel,
             my_team_panel,
             galaxy_panel,
@@ -250,8 +246,71 @@ impl UiScreen {
         }
     }
 
-    pub const fn close_help(&mut self) {
-        self.show_help = false;
+    pub fn push_overlay(&mut self, overlay: OverlayKind) {
+        if self.overlays.len() < MAX_OVERLAY_DEPTH {
+            self.overlays.push(overlay);
+        }
+    }
+
+    pub fn pop_overlay(&mut self) {
+        self.overlays.pop();
+    }
+
+    pub fn close_overlays(&mut self) {
+        self.overlays.clear();
+    }
+
+    /// Concrete access for the callbacks that edit the offer being composed.
+    /// This is why the stack holds an enum rather than trait objects.
+    pub fn trade_overlay_mut(&mut self) -> Option<&mut TradeOverlay> {
+        match self.overlays.last_mut() {
+            Some(OverlayKind::Trade(overlay)) => Some(overlay),
+            _ => None,
+        }
+    }
+
+    /// Refreshes overlay state after a callback has edited it, so the blockers
+    /// and summary a frame shows are never stale.
+    pub fn update_overlays(&mut self, world: &World) -> AppResult<()> {
+        for overlay in self.overlays.iter_mut() {
+            overlay.as_dyn_mut().update(world)?;
+        }
+        Ok(())
+    }
+
+    fn top_overlay_is_help(&self) -> bool {
+        matches!(self.overlays.last(), Some(OverlayKind::Help(_)))
+    }
+
+    fn top_overlay_consumes_tab_keys(&self) -> bool {
+        self.overlays
+            .last()
+            .is_some_and(|overlay| overlay.as_dyn().consumes_tab_keys())
+    }
+
+    /// What '?' should show right now: the top overlay's own help if it has any,
+    /// otherwise the active screen's.
+    fn current_help_content(&self) -> Option<(String, HelpContent)> {
+        match self.overlays.last() {
+            Some(overlay) => overlay.as_dyn().help_content(),
+            None => {
+                let title = match &self.state {
+                    UiState::Main => self.ui_tabs[self.tab_index].to_string(),
+                    state => state.to_string(),
+                };
+                Some((title, self.get_active_screen().help_content()))
+            }
+        }
+    }
+
+    /// Dropdowns belong to whatever currently owns input.
+    pub fn active_dropdown(&mut self, id: usize) -> Option<&mut DropdownState> {
+        if self.overlays.is_empty() {
+            return self.get_active_screen_mut().dropdown(id);
+        }
+        self.overlays
+            .last_mut()
+            .and_then(|overlay| overlay.as_dyn_mut().dropdown(id))
     }
 
     pub fn push_log_event(
@@ -277,11 +336,21 @@ impl UiScreen {
         for i in 0..self.ui_tabs.len() {
             if self.ui_tabs[i] == tab {
                 if self.tab_index != i {
-                    self.show_help = false;
+                    self.close_overlays();
                 }
                 self.tab_index = i;
                 return;
             }
+        }
+    }
+
+    /// Whether the thing currently receiving input wants raw character keys.
+    /// Global shortcuts ('?', debug) defer to this so a text field can be typed
+    /// into. Overlays take precedence over the panel below them once they exist.
+    fn is_capturing_text(&self) -> bool {
+        match self.overlays.last() {
+            Some(overlay) => overlay.as_dyn().is_capturing_text(),
+            None => self.get_active_screen().is_capturing_text(),
         }
     }
 
@@ -297,6 +366,7 @@ impl UiScreen {
                 UiTab::Tournaments => &self.tournament_panel,
                 UiTab::Galaxy => &self.galaxy_panel,
                 UiTab::SpaceCoves => &self.space_cove_panel,
+                UiTab::Dock => &self.dock_panel,
                 UiTab::Swarm => &self.swarm_panel,
             },
             UiState::SpaceAdventure => &self.space_screen,
@@ -304,6 +374,9 @@ impl UiScreen {
     }
 
     pub fn get_active_panel(&mut self) -> Option<&mut dyn SplitPanel> {
+        if let Some(overlay) = self.overlays.last_mut() {
+            return overlay.as_dyn_mut().as_split_panel();
+        }
         match self.state {
             UiState::Splash => None,
             UiState::NewTeam => Some(&mut self.new_team_screen),
@@ -315,6 +388,7 @@ impl UiScreen {
                 UiTab::Tournaments => Some(&mut self.tournament_panel),
                 UiTab::Galaxy => Some(&mut self.galaxy_panel),
                 UiTab::SpaceCoves => Some(&mut self.space_cove_panel),
+                UiTab::Dock => Some(&mut self.dock_panel),
                 UiTab::Swarm => Some(&mut self.swarm_panel),
             },
         }
@@ -332,6 +406,7 @@ impl UiScreen {
                 UiTab::Tournaments => &mut self.tournament_panel,
                 UiTab::Galaxy => &mut self.galaxy_panel,
                 UiTab::SpaceCoves => &mut self.space_cove_panel,
+                UiTab::Dock => &mut self.dock_panel,
                 UiTab::Swarm => &mut self.swarm_panel,
             },
             UiState::SpaceAdventure => &mut self.space_screen,
@@ -344,8 +419,8 @@ impl UiScreen {
         world: &World,
     ) -> Option<UiCallback> {
         match key_event.code {
-            ui_key::ESC if self.show_help => {
-                self.show_help = false;
+            ui_key::ESC if !self.overlays.is_empty() => {
+                self.pop_overlay();
                 None
             }
             ui_key::ESC => {
@@ -363,33 +438,40 @@ impl UiScreen {
                 })
             }
 
-            ui_key::UI_DEBUG_MODE if !self.get_active_screen().is_capturing_text() => {
+            ui_key::UI_DEBUG_MODE if !self.is_capturing_text() => {
                 Some(UiCallback::ToggleUiDebugMode)
             }
 
-            ui_key::HELP
-                if self.popup_messages.is_empty()
-                    && !self.get_active_screen().is_capturing_text() =>
+            ui_key::HELP if self.popup_messages.is_empty() && !self.is_capturing_text() => {
+                if self.top_overlay_is_help() {
+                    self.pop_overlay();
+                } else if let Some((title, content)) = self.current_help_content() {
+                    self.push_overlay(OverlayKind::Help(HelpOverlay::new(title, content)));
+                }
+                None
+            }
+
+            ui_key::YES_TO_DIALOG if self.top_overlay_is_help() => {
+                self.pop_overlay();
+                None
+            }
+
+            ui_key::NEXT_TAB
+                if self.state == UiState::Main
+                    && self.popup_messages.is_empty()
+                    && !self.top_overlay_consumes_tab_keys() =>
             {
-                self.show_help = !self.show_help;
-                None
-            }
-
-            ui_key::YES_TO_DIALOG if self.show_help => {
-                self.show_help = false;
-                None
-            }
-
-            ui_key::NEXT_TAB if self.state == UiState::Main && self.popup_messages.is_empty() => {
-                self.show_help = false;
+                self.close_overlays();
                 self.next_tab();
                 None
             }
 
             ui_key::PREVIOUS_TAB
-                if self.state == UiState::Main && self.popup_messages.is_empty() =>
+                if self.state == UiState::Main
+                    && self.popup_messages.is_empty()
+                    && !self.top_overlay_consumes_tab_keys() =>
             {
-                self.show_help = false;
+                self.close_overlays();
                 self.previous_tab();
                 None
             }
@@ -407,10 +489,14 @@ impl UiScreen {
                 self.popup_input.move_cursor(CursorMove::End);
                 self.popup_input.delete_line_by_head();
 
-                // While help is shown, swallow keyboard events targeted at the panel:
-                // closing requires '?' or navigating away, both handled above.
-                if self.show_help {
-                    return None;
+                // An overlay is modal: the panel beneath it never sees the key.
+                // Its own button hotkeys live in inner_registry on the active layer.
+                if let Some(overlay) = self.overlays.last_mut() {
+                    if let Some(callback) = overlay.as_dyn_mut().handle_key_events(key_event, world)
+                    {
+                        return Some(callback);
+                    }
+                    return self.inner_registry.handle_keyboard_event(&key_event.code);
                 }
 
                 if let Some(callback) = self
@@ -483,6 +569,7 @@ impl UiScreen {
                 self.tournament_panel.update(world)?;
                 self.galaxy_panel.update(world)?;
                 self.space_cove_panel.update(world)?;
+                self.dock_panel.update(world)?;
                 if self.ui_tabs.contains(&UiTab::Swarm) {
                     self.swarm_panel.update(world)?;
                 }
@@ -490,10 +577,17 @@ impl UiScreen {
             UiState::SpaceAdventure => self.space_screen.update(world)?,
         }
 
+        for overlay in self.overlays.iter_mut() {
+            overlay.as_dyn_mut().update(world)?;
+        }
+
         Ok(())
     }
 
     pub fn tick(&mut self) {
+        for overlay in self.overlays.iter_mut() {
+            overlay.as_dyn_mut().tick();
+        }
         match self.state {
             UiState::Splash => self.splash_screen.tick(),
             UiState::NewTeam => self.new_team_screen.tick(),
@@ -505,6 +599,7 @@ impl UiScreen {
                 self.tournament_panel.tick();
                 self.galaxy_panel.tick();
                 self.space_cove_panel.tick();
+                self.dock_panel.tick();
                 if self.ui_tabs.contains(&UiTab::Swarm) {
                     self.swarm_panel.tick();
                 }
@@ -523,18 +618,29 @@ impl UiScreen {
         let mut ui_frame = UiFrame::new(frame);
         ui_frame.set_hovering(self.inner_registry.hovering());
 
+        // 0 is the panel, each overlay claims the next layer up, and an open
+        // dropdown floats one above whatever owns it.
+        let overlay_layer = self.overlays.len();
+        let dropdown_open = match self.overlays.last() {
+            Some(overlay) => overlay.as_dyn().has_open_dropdown().is_some(),
+            None => self.get_active_screen_mut().has_open_dropdown().is_some(),
+        };
         let active_layer = if !self.popup_messages.is_empty() {
-            2
-        } else if self.show_help || self.get_active_screen_mut().has_open_dropdown().is_some() {
-            1
+            POPUP_LAYER
+        } else if dropdown_open {
+            overlay_layer + 1
         } else {
-            0
+            overlay_layer
         };
         ui_frame.set_active_layer(active_layer);
 
         let screen_area = ui_frame.screen_area();
 
-        if let Some(id) = self.get_active_screen_mut().has_open_dropdown() {
+        let open_dropdown = match self.overlays.last() {
+            Some(overlay) => overlay.as_dyn().has_open_dropdown(),
+            None => self.get_active_screen_mut().has_open_dropdown(),
+        };
+        if let Some(id) = open_dropdown {
             ui_frame.register_mouse_callback(
                 crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
                 None,
@@ -582,7 +688,13 @@ impl UiScreen {
                 ui_frame.render_widget(default_block(), tab_main_split[0]);
                 let tab_split = Layout::horizontal(constraints).split(tab_main_split[0]);
 
-                let tab_layer = if self.show_help { 1 } else { 0 };
+                // Tabs stay clickable over the help overlay, as they always have,
+                // but not over one that would lose work if you navigated away.
+                let tab_layer = if self.top_overlay_consumes_tab_keys() {
+                    0
+                } else {
+                    self.overlays.len()
+                };
                 for (idx, &tab) in self.ui_tabs.iter().enumerate() {
                     let selected = idx == self.tab_index;
                     let button = if let Some(variants) = CONSTANT_TAB_BUTTONS.get(&tab) {
@@ -646,47 +758,44 @@ impl UiScreen {
         // which are rendered on higher layers.
         ui_frame.render_layered_widgets();
 
-        if self.show_help {
-            let popup_rect = help_popup_rect(screen_area);
-            ui_frame.render_widget(Clear, popup_rect);
-            ui_frame.render_widget(thick_block(), popup_rect);
+        // Overlays draw innermost last, each on its own layer.
+        let mut overlay_errors: Vec<String> = vec![];
+        for (index, overlay) in self.overlays.iter_mut().enumerate() {
+            let layer = index + 1;
+            let overlay = overlay.as_dyn_mut();
+            let rect = overlay.rect(screen_area);
+            ui_frame.render_widget(Clear, rect);
+            ui_frame.render_widget(thick_block(), rect);
 
-            let popup_split = Layout::vertical([
-                Constraint::Length(3), // header
-                Constraint::Min(3),    // body
-                Constraint::Length(3), // close button
-            ])
-            .split(popup_rect.inner(Margin {
-                vertical: 1,
-                horizontal: 1,
-            }));
+            let split = Layout::vertical([Constraint::Length(3), Constraint::Min(3)]).split(
+                rect.inner(Margin {
+                    vertical: 1,
+                    horizontal: 1,
+                }),
+            );
 
-            let title = match &self.state {
-                UiState::Main => self.ui_tabs[self.tab_index].to_string(),
-                state => state.to_string(),
-            };
             ui_frame.render_widget(
-                Paragraph::new(format!("Help - {title}"))
+                Paragraph::new(overlay.title(world))
                     .bold()
                     .block(default_block().border_style(UiStyle::HEADER))
                     .centered(),
-                popup_split[0],
+                split[0],
             );
 
-            let content = self.get_active_screen().help_content();
-            render_help_content(&mut ui_frame, popup_split[1], content);
+            if let Err(err) = overlay.render(&mut ui_frame, world, split[1], layer) {
+                overlay_errors.push(format!("Overlay render error\n{err}"));
+            }
+        }
 
-            let button_split = Layout::horizontal([
-                Constraint::Min(0),
-                Constraint::Length(20),
-                Constraint::Min(0),
-            ])
-            .split(popup_split[2]);
-            let close_button = Button::new(super::constants::UiText::YES, UiCallback::CloseHelp)
-                .hover_text("Close help")
-                .hotkey(ui_key::YES_TO_DIALOG)
-                .block(default_block().border_style(UiStyle::OK));
-            ui_frame.render_interactive_widget_on_layer(close_button, button_split[1], 1);
+        // A dropdown inside an overlay defers its draw, so flush again or it never
+        // reaches the screen. `render_layered_widgets` is a take, so this is free.
+        if !self.overlays.is_empty() {
+            ui_frame.render_layered_widgets();
+        }
+
+        // Buffered: push_log_event needs &mut self while self.overlays is borrowed.
+        for err in overlay_errors {
+            self.push_log_event(Tick::now(), None, err, log::Level::Error);
         }
 
         if self.state == UiState::Main || self.state == UiState::SpaceAdventure {
@@ -732,7 +841,7 @@ impl UiScreen {
             " Esc ".to_string(),
             " Quit ".to_string(),
             " ? ".to_string(),
-            if self.show_help {
+            if self.top_overlay_is_help() {
                 " Close help ".to_string()
             } else {
                 " Help ".to_string()

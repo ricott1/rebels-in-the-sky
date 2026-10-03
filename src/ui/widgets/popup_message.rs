@@ -1,5 +1,6 @@
 use super::button::Button;
 use crate::core::planet::PlanetType;
+use crate::core::DOCK_MIN_BID_DIVISOR;
 use crate::core::MAX_SKILL;
 use crate::core::{player::Player, resources::Resource, skill::Rated};
 use crate::image::utils::open_gif;
@@ -8,11 +9,14 @@ use crate::ui::constants::{UiStyle, UiText};
 use crate::ui::constants::{MAX_NAME_LENGTH, MAX_SPACE_COVE_NAME_LENGTH};
 use crate::ui::gif_map::PORTAL_GIFS;
 use crate::ui::gif_map::{self, GifMap, TREASURE_GIF};
+use crate::ui::overlays::POPUP_LAYER;
 use crate::ui::renders::{default_block, render_lines_with_links, thick_block, LinkAlign};
 use crate::ui::traits::PrintableGif;
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
+use crate::ui::utils::format_satoshi;
+use crate::ui::utils::parse_satoshi_input;
 use crate::ui::utils::{
     img_to_lines, input_from_key_event, sanitized_name, validate_textarea_input,
 };
@@ -48,6 +52,12 @@ pub enum PopupMessage {
         player_name: String,
         player_id: PlayerId,
         not_enough_players_for_game: bool,
+        timestamp: Tick,
+    },
+    ConfirmLeaveAtDock {
+        player_name: String,
+        player_id: PlayerId,
+        release_fee: u32,
         timestamp: Tick,
     },
     ConfirmSpaceAdventure {
@@ -201,6 +211,34 @@ impl PopupMessage {
                 }
             }
 
+            Self::ConfirmLeaveAtDock {
+                player_id,
+                release_fee,
+                ..
+            } => {
+                if key_event.code == ui_key::YES_TO_DIALOG {
+                    if let Some(release_fee) =
+                        parse_satoshi_input(popup_input, "Release fee (sat)", *release_fee)
+                    {
+                        return Some(UiCallback::LeavePlayerAtDock {
+                            player_id: *player_id,
+                            release_fee,
+                            min_bid: release_fee / DOCK_MIN_BID_DIVISOR,
+                        });
+                    }
+                } else if key_event.code == ui_key::NO_TO_DIALOG {
+                    if popup_input.lines()[0].is_empty() {
+                        return Some(UiCallback::CloseUiPopup);
+                    }
+                    popup_input.input(input_from_key_event(key_event));
+                } else if matches!(
+                    key_event.code,
+                    crossterm::event::KeyCode::Char(c) if c.is_ascii_digit()
+                ) {
+                    popup_input.input(input_from_key_event(key_event));
+                }
+            }
+
             Self::ReleasePlayer { player_id, .. } => {
                 if key_event.code == ui_key::YES_TO_DIALOG {
                     return Some(UiCallback::ReleasePlayer {
@@ -348,8 +386,88 @@ impl PopupMessage {
                         vertical: 0,
                         horizontal: 8,
                     }),
-                    2,
+                    POPUP_LAYER,
                 );
+            }
+
+            Self::ConfirmLeaveAtDock {
+                player_name,
+                player_id,
+                release_fee,
+                ..
+            } => {
+                frame.render_widget(
+                    Paragraph::new("Leave at the dock?")
+                        .bold()
+                        .block(default_block().border_style(UiStyle::WARNING))
+                        .centered(),
+                    split[0],
+                );
+
+                let m_split =
+                    Layout::vertical([Constraint::Min(3), Constraint::Length(3)]).split(split[1]);
+
+                let release_fee = popup_input.lines()[0]
+                    .trim()
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|amount| *amount > 0)
+                    .unwrap_or(*release_fee);
+
+                let min_bid = release_fee / DOCK_MIN_BID_DIVISOR;
+                popup_input.set_cursor_style(UiStyle::SELECTED);
+                popup_input.set_placeholder_text(release_fee.to_string());
+                popup_input.set_block(default_block().title("Release fee (sat)"));
+
+                frame.render_widget(
+                    Paragraph::new(format!(
+                        "Leave {player_name} at the dock?\n\n\
+                         Release fee {}  ·  bids from {}\n\n\
+                         Still paid, sits out until a crew signs them.",
+                        format_satoshi(release_fee),
+                        format_satoshi(min_bid),
+                    ))
+                    .centered()
+                    .wrap(Wrap { trim: true }),
+                    m_split[0].inner(Margin {
+                        horizontal: 1,
+                        vertical: 1,
+                    }),
+                );
+                frame.render_widget(
+                    &popup_input.clone(),
+                    m_split[1].inner(Margin {
+                        horizontal: 1,
+                        vertical: 0,
+                    }),
+                );
+
+                let buttons_split =
+                    Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+                        .split(split[2]);
+
+                let confirm_button = Button::new(
+                    UiText::YES,
+                    UiCallback::LeavePlayerAtDock {
+                        player_id: *player_id,
+                        release_fee,
+                        min_bid,
+                    },
+                )
+                .hover_text(format!("Leave {player_name} at the dock for another crew to sign"))
+                .hotkey(ui_key::YES_TO_DIALOG)
+                .block(default_block().border_style(UiStyle::OK));
+                frame.render_interactive_widget_on_layer(
+                    confirm_button,
+                    buttons_split[0],
+                    POPUP_LAYER,
+                );
+
+                let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
+                    .hover_text(format!("Keep {player_name} aboard"))
+                    .hotkey(ui_key::NO_TO_DIALOG)
+                    .block(default_block().border_style(UiStyle::ERROR));
+                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], POPUP_LAYER);
             }
 
             Self::ReleasePlayer {
@@ -393,14 +511,18 @@ impl PopupMessage {
                 .hotkey(ui_key::YES_TO_DIALOG)
                 .block(default_block().border_style(UiStyle::OK));
 
-                frame.render_interactive_widget_on_layer(confirm_button, buttons_split[0], 2);
+                frame.render_interactive_widget_on_layer(
+                    confirm_button,
+                    buttons_split[0],
+                    POPUP_LAYER,
+                );
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
                     .hover_text(format!("Don't release {player_name}"))
                     .hotkey(ui_key::NO_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::ERROR));
 
-                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], 2);
+                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], POPUP_LAYER);
             }
 
             Self::ConfirmSpaceAdventure {
@@ -444,14 +566,18 @@ impl PopupMessage {
                     .hotkey(ui_key::YES_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::OK));
 
-                frame.render_interactive_widget_on_layer(confirm_button, buttons_split[0], 2);
+                frame.render_interactive_widget_on_layer(
+                    confirm_button,
+                    buttons_split[0],
+                    POPUP_LAYER,
+                );
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
                     .hover_text("Don't start space adventure")
                     .hotkey(ui_key::NO_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::ERROR));
 
-                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], 2);
+                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], POPUP_LAYER);
             }
 
             Self::AbandonAsteroid {
@@ -492,14 +618,18 @@ impl PopupMessage {
                 .hotkey(ui_key::YES_TO_DIALOG)
                 .block(default_block().border_style(UiStyle::OK));
 
-                frame.render_interactive_widget_on_layer(confirm_button, buttons_split[0], 2);
+                frame.render_interactive_widget_on_layer(
+                    confirm_button,
+                    buttons_split[0],
+                    POPUP_LAYER,
+                );
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
                     .hover_text(format!("Don't abandon {asteroid_name}"))
                     .hotkey(ui_key::NO_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::ERROR));
 
-                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], 2);
+                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], POPUP_LAYER);
             }
 
             Self::BuildSpaceCove {
@@ -540,14 +670,18 @@ impl PopupMessage {
                 .hotkey(ui_key::YES_TO_DIALOG)
                 .block(default_block().border_style(UiStyle::OK));
 
-                frame.render_interactive_widget_on_layer(confirm_button, buttons_split[0], 2);
+                frame.render_interactive_widget_on_layer(
+                    confirm_button,
+                    buttons_split[0],
+                    POPUP_LAYER,
+                );
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
                     .hover_text(format!("Don't build space cove on {asteroid_name}"))
                     .hotkey(ui_key::NO_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::ERROR));
 
-                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], 2);
+                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], POPUP_LAYER);
             }
 
             Self::PromptQuit {
@@ -587,14 +721,18 @@ impl PopupMessage {
                     .hotkey(ui_key::YES_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::OK));
 
-                frame.render_interactive_widget_on_layer(confirm_button, buttons_split[0], 2);
+                frame.render_interactive_widget_on_layer(
+                    confirm_button,
+                    buttons_split[0],
+                    POPUP_LAYER,
+                );
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
                     .hover_text("Please don't go, don't goooooo...".to_string())
                     .hotkey(ui_key::NO_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::ERROR));
 
-                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], 2);
+                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], POPUP_LAYER);
             }
 
             Self::AsteroidNameDialog {
@@ -675,14 +813,14 @@ impl PopupMessage {
                     ok_button.disable(Some("Invalid asteroid name"));
                 }
 
-                frame.render_interactive_widget_on_layer(ok_button, buttons_split[0], 2);
+                frame.render_interactive_widget_on_layer(ok_button, buttons_split[0], POPUP_LAYER);
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
                     .hover_text("Leave the asteroid alone!")
                     .hotkey(ui_key::NO_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::ERROR));
 
-                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], 2);
+                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], POPUP_LAYER);
             }
 
             Self::SpaceCoveNameDialog {
@@ -754,7 +892,7 @@ impl PopupMessage {
                     ok_button.disable(Some("Invalid space cove name"));
                 }
 
-                frame.render_interactive_widget_on_layer(ok_button, split[2], 2);
+                frame.render_interactive_widget_on_layer(ok_button, split[2], POPUP_LAYER);
             }
 
             Self::PortalFound {
@@ -822,7 +960,7 @@ impl PopupMessage {
                         vertical: 0,
                         horizontal: 8,
                     }),
-                    2,
+                    POPUP_LAYER,
                 );
             }
 
@@ -928,7 +1066,7 @@ impl PopupMessage {
                         vertical: 0,
                         horizontal: 8,
                     }),
-                    2,
+                    POPUP_LAYER,
                 );
             }
 
@@ -1002,7 +1140,7 @@ impl PopupMessage {
                         vertical: 0,
                         horizontal: 8,
                     }),
-                    2,
+                    POPUP_LAYER,
                 );
             }
 
@@ -1073,7 +1211,7 @@ impl PopupMessage {
                     .block(default_block().border_style(UiStyle::ERROR));
 
                 if *index == Self::MAX_TUTORIAL_PAGE {
-                    frame.render_interactive_widget_on_layer(close_button, split[2], 2);
+                    frame.render_interactive_widget_on_layer(close_button, split[2], POPUP_LAYER);
                 } else {
                     let buttons_split =
                         Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
@@ -1085,8 +1223,16 @@ impl PopupMessage {
                             .hotkey(ui_key::YES_TO_DIALOG)
                             .block(default_block().border_style(UiStyle::OK));
 
-                    frame.render_interactive_widget_on_layer(next_button, buttons_split[0], 2);
-                    frame.render_interactive_widget_on_layer(close_button, buttons_split[1], 2);
+                    frame.render_interactive_widget_on_layer(
+                        next_button,
+                        buttons_split[0],
+                        POPUP_LAYER,
+                    );
+                    frame.render_interactive_widget_on_layer(
+                        close_button,
+                        buttons_split[1],
+                        POPUP_LAYER,
+                    );
                 }
             }
         }
@@ -1121,5 +1267,5 @@ fn render_message_with_links<S: AsRef<str>>(
     message: &str,
     links: &[(S, UiCallback)],
 ) {
-    render_lines_with_links(frame, area, message, links, LinkAlign::Center, 2);
+    render_lines_with_links(frame, area, message, links, LinkAlign::Center, POPUP_LAYER);
 }

@@ -1,14 +1,21 @@
 use super::{
+    overlays::{Overlay, OverlayKind, TradeOverlay, TradeSide},
     panels::*,
     ui_screen::{UiState, UiTab},
 };
-use crate::core::{PlanetUpgradeTarget, Resource, SpaceCoveUpgradeTarget, UpgradeableElement};
+use crate::core::{
+    PlanetUpgradeTarget, Resource, SpaceCoveUpgradeTarget, UpgradeableElement,
+    DEFAULT_DOCK_LISTING_DURATION,
+};
 use crate::game_engine::game::Game;
 use crate::game_engine::types::{GamePositionFluidity, InGameDrinking, SubstitutionTendency};
 use crate::game_engine::{Tournament, TournamentId, TournamentType};
 use crate::network::types::TournamentRequestState;
-use crate::network::{challenge::Challenge, trade::Trade};
-use crate::types::{HashMapWithResult, PlayerMap, StorableResourceMap};
+use crate::network::{
+    challenge::Challenge,
+    trade::{Trade, TradeRoute},
+};
+use crate::types::{HashMapWithResult, PlayerMap, StorableResourceMap, TradeId};
 use crate::ui::ui_key;
 use crate::{
     app::App,
@@ -145,15 +152,17 @@ pub enum UiCallback {
     },
 
     AcceptTrade {
-        trade: Trade,
+        trade_id: TradeId,
     },
 
     DeclineTrade {
-        trade: Trade,
+        trade_id: TradeId,
+        /// Why, when it is not a captain saying no by hand.
+        reason: Option<String>,
     },
 
     GoToTrade {
-        trade: Trade,
+        trade_id: TradeId,
     },
 
     SetTeamColors {
@@ -178,7 +187,7 @@ pub enum UiCallback {
     NextPanelIndex,
     PreviousPanelIndex,
     CloseUiPopup,
-    CloseHelp,
+    CloseOverlay,
     NewGame,
     ContinueGame,
     QuitGame,
@@ -219,6 +228,35 @@ pub enum UiCallback {
     ReleasePlayer {
         player_id: PlayerId,
     },
+    LeavePlayerAtDock {
+        player_id: PlayerId,
+        release_fee: u32,
+        min_bid: u32,
+    },
+    RecallPlayerFromDock {
+        player_id: PlayerId,
+    },
+    BidOnListedPlayer {
+        player_id: PlayerId,
+        amount: u32,
+    },
+    OpenTradeOverlay {
+        other_team_id: TeamId,
+        seed_other: Option<PlayerId>,
+    },
+    OpenDockBidOverlay {
+        player_id: PlayerId,
+    },
+    SetTradeOfferPlayer {
+        side: TradeSide,
+        player_id: PlayerId,
+    },
+    AdjustTradeOfferSatoshis {
+        side: TradeSide,
+        delta: i64,
+    },
+    SendTradeOffer,
+    GoToDock,
     LockPlayerPanel {
         player_id: PlayerId,
     },
@@ -392,18 +430,29 @@ impl UiCallback {
         })
     }
 
-    fn go_to_trade(trade: Trade) -> AppCallback {
+    fn go_to_trade(trade_id: TradeId) -> AppCallback {
         Box::new(move |app: &mut App| {
             app.ui.player_panel.reset_view();
             app.ui.player_panel.update(&app.world)?;
 
+            let trade = app
+                .world
+                .get_own_team()?
+                .trade(&trade_id)
+                .ok_or_else(|| anyhow!("That offer is no longer open"))?
+                .clone();
+
+            // A cash-only bid has no pirate on the proposer's side to show.
+            let Some(proposer_player_id) = trade.proposer_player.as_ref().map(|p| p.id) else {
+                return Ok(None);
+            };
+
             // Display trade differently depending on who is the proposer.
             let (selected_player_id, locked_player_id) =
-                if trade.proposer_player.team.expect("Should have a team") == app.world.own_team_id
-                {
-                    (trade.proposer_player.id, trade.target_player.id)
+                if trade.proposer_team_id == app.world.own_team_id {
+                    (proposer_player_id, trade.target_player.id)
                 } else {
-                    (trade.target_player.id, trade.proposer_player.id)
+                    (trade.target_player.id, proposer_player_id)
                 };
 
             if let Some(index) = app
@@ -503,18 +552,9 @@ impl UiCallback {
 
     fn go_to_space_cove(team_id: TeamId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            if let Some(index) = app
-                .ui
-                .space_cove_panel
-                .all_coves
-                .iter()
-                .position(|&(x, _)| x == team_id)
-            {
-                app.ui.space_cove_panel.set_index(index);
-                app.ui.space_cove_panel.update(&app.world)?;
-                app.ui.space_cove_panel.set_view(SpaceCoveView::AllCoves);
-                app.ui.switch_to(super::ui_screen::UiTab::SpaceCoves);
-            }
+            app.ui.space_cove_panel.go_to_cove(team_id);
+            app.ui.space_cove_panel.update(&app.world)?;
+            app.ui.switch_to(super::ui_screen::UiTab::SpaceCoves);
 
             Ok(None)
         })
@@ -700,25 +740,45 @@ impl UiCallback {
             };
 
             let proposer_player = app.world.players.get_or_err(&proposer_player_id)?;
-            own_team.can_trade_players_with_team(proposer_player, target_player, target_team)?;
+            own_team.can_trade_with_team(
+                target_team,
+                TradeRoute::CrewSwap,
+                Some(proposer_player),
+                target_player,
+                0,
+                0,
+            )?;
 
             // Network trade
             if let Some(peer_id) = target_team.peer_id {
-                let trade = app.network_handler.send_new_trade(
+                let target_team_id = target_team.id;
+                let trade = app.network_handler.send_new_crew_swap(
                     &app.world,
                     peer_id,
+                    target_team_id,
                     proposer_player_id,
                     target_player_id,
+                    0,
+                    0,
                 )?;
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.add_sent_trade(trade);
                 return Ok(Some("Trade offer sent".to_string()));
             }
 
-            // Local trade
+            // Local trade: the AI weighs the two bundles and says yes or no.
             if proposer_player.hire_cost() >= target_player.hire_cost() {
-                app.world
-                    .swap_players_team(proposer_player_id, target_player_id, Tick::now())?;
+                let trade = Trade::crew_swap(
+                    *app.network_handler.own_peer_id(),
+                    *app.network_handler.own_peer_id(),
+                    app.world.own_team_id,
+                    target_team.id,
+                    proposer_player.clone(),
+                    target_player.clone(),
+                    0,
+                    0,
+                );
+                app.world.apply_trade(&trade, Tick::now())?;
 
                 let locked_id = app.ui.player_panel.locked_player_id;
                 let selected_id = app.ui.player_panel.selected_player_id;
@@ -730,6 +790,116 @@ impl UiCallback {
                 return Ok(Some("Trade accepted".to_string()));
             }
             Ok(Some("Trade Rejected".to_string()))
+        })
+    }
+
+    /// Places a bid on a pirate listed at another crew's cove. The satoshis are
+    /// committed immediately, so the bid cannot be made with money we do not have.
+    /// Sends whatever the trade overlay currently holds, then closes it.
+    fn send_trade_offer() -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let Some(overlay) = app.ui.trade_overlay_mut() else {
+                return Err(anyhow!("No offer is open"));
+            };
+            let (route, own_player_id, other_player_id, own_satoshis, other_satoshis) =
+                overlay.offer();
+            let other_team_id = overlay.other_team_id();
+
+            let target_player_id =
+                other_player_id.ok_or_else(|| anyhow!("Pick a pirate to trade for"))?;
+
+            let result = match route {
+                TradeRoute::DockBid => {
+                    Self::bid_on_listed_player(target_player_id, own_satoshis)(app)
+                }
+                TradeRoute::CrewSwap => {
+                    let proposer_player_id =
+                        own_player_id.ok_or_else(|| anyhow!("Pick one of your pirates"))?;
+                    Self::propose_crew_swap(
+                        other_team_id,
+                        proposer_player_id,
+                        target_player_id,
+                        own_satoshis,
+                        other_satoshis,
+                    )(app)
+                }
+            };
+
+            if result.is_ok() {
+                app.ui.pop_overlay();
+            }
+            result
+        })
+    }
+
+    fn propose_crew_swap(
+        target_team_id: TeamId,
+        proposer_player_id: PlayerId,
+        target_player_id: PlayerId,
+        proposer_satoshis: u32,
+        target_satoshis: u32,
+    ) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let target_team = app.world.teams.get_or_err(&target_team_id)?;
+            let target_player = app.world.players.get_or_err(&target_player_id)?;
+            let proposer_player = app.world.players.get_or_err(&proposer_player_id)?;
+
+            app.world.get_own_team()?.can_trade_with_team(
+                target_team,
+                TradeRoute::CrewSwap,
+                Some(proposer_player),
+                target_player,
+                proposer_satoshis,
+                target_satoshis,
+            )?;
+
+            let Some(peer_id) = target_team.peer_id else {
+                // Local crews still decide with a straight value comparison.
+                return Self::trade_players(proposer_player_id, target_player_id)(app);
+            };
+
+            let trade = app.network_handler.send_new_crew_swap(
+                &app.world,
+                peer_id,
+                target_team_id,
+                proposer_player_id,
+                target_player_id,
+                proposer_satoshis,
+                target_satoshis,
+            )?;
+            app.world.get_own_team_mut()?.add_sent_trade(trade);
+            Ok(Some("Trade offer sent".to_string()))
+        })
+    }
+
+    fn bid_on_listed_player(player_id: PlayerId, amount: u32) -> AppCallback {
+        Box::new(move |app: &mut App| {
+            let target_player = app.world.players.get_or_err(&player_id)?.clone();
+            let target_team_id = target_player
+                .team
+                .ok_or_else(|| anyhow!("That pirate has no crew"))?;
+            let target_team = app.world.teams.get_or_err(&target_team_id)?;
+            let peer_id = target_team
+                .peer_id
+                .ok_or_else(|| anyhow!("{} is not on the network", target_team.name))?;
+
+            app.world.can_bid_on(&player_id, amount)?;
+
+            let trade = app.network_handler.send_new_dock_bid(
+                &app.world,
+                peer_id,
+                target_team_id,
+                player_id,
+                amount,
+            )?;
+
+            app.world.escrow_bid(&trade, Tick::now())?;
+            app.world.get_own_team_mut()?.add_sent_trade(trade);
+
+            Ok(Some(format!(
+                "Bid {amount} satoshi for {}",
+                target_player.info.short_name()
+            )))
         })
     }
 
@@ -855,15 +1025,9 @@ impl UiCallback {
 
     fn assign_best_team_positions() -> AppCallback {
         Box::new(move |app: &mut App| {
+            let players = &app.world.players;
             let team = app.world.teams.get_mut_or_err(&app.world.own_team_id)?;
-            let current_ids = team.player_ids.clone();
-            team.player_ids = Team::best_position_assignment(
-                current_ids
-                    .iter()
-                    .map(|id| app.world.players.get(id).unwrap())
-                    .collect(),
-                team.game_position_fluidity,
-            );
+            team.reassign_positions(players);
 
             app.world.dirty = true;
             app.world.dirty_ui = true;
@@ -875,11 +1039,14 @@ impl UiCallback {
     fn swap_player_positions(player_id: PlayerId, position: GamePosition) -> AppCallback {
         Box::new(move |app: &mut App| {
             let team = app.world.get_own_team_mut()?;
-            if position as usize >= team.player_ids.len() {
+            if position as usize >= team.active_players_count() {
                 return Err(anyhow!(
                     "Invalid position {position}: team has only {} players.",
-                    team.player_ids.len()
+                    team.active_players_count()
                 ));
+            }
+            if team.is_parked(&player_id) {
+                return Err(anyhow!("Pirate is not aboard"));
             }
             let current_player_position = team
                 .player_ids
@@ -982,7 +1149,7 @@ impl UiCallback {
                 color: own_team.jersey.color,
             };
 
-            for player in own_team.player_ids.iter() {
+            for player in own_team.active_player_ids().iter() {
                 let mut player = app.world.players.get_or_err(player)?.clone();
                 player.set_jersey(&pirate_jersey);
                 app.world.players.insert(player.id, player);
@@ -1035,7 +1202,7 @@ impl UiCallback {
                 color: own_team.jersey.color,
             };
 
-            for player_id in own_team.player_ids.iter() {
+            for player_id in own_team.active_player_ids().iter() {
                 let mut player = app.world.players.get_or_err(player_id)?.clone();
                 player.set_jersey(&pirate_jersey);
                 app.world.players.insert(player.id, player);
@@ -1543,6 +1710,11 @@ impl UiCallback {
             Self::GoToPlanet { planet_id } => Self::go_to_planet(*planet_id)(app),
             Self::GoToOwnSpaceCove => Self::go_to_own_space_cove()(app),
             Self::GoToSpaceCove { team_id } => Self::go_to_space_cove(*team_id)(app),
+            Self::GoToDock => {
+                app.ui.dock_panel.update(&app.world)?;
+                app.ui.switch_to(super::ui_screen::UiTab::Dock);
+                Ok(None)
+            }
             Self::GoToHomePlanet { team_id } => Self::go_to_home_planet(*team_id)(app),
             Self::GoToCurrentTeamPlanet { team_id } => {
                 Self::go_to_current_team_planet(*team_id)(app)
@@ -1655,30 +1827,61 @@ impl UiCallback {
                 proposer_player_id,
                 target_player_id,
             } => Self::trade_players(*proposer_player_id, *target_player_id)(app),
-            Self::AcceptTrade { trade } => {
-                if let Err(e) = app.network_handler.accept_trade(&app.world, trade.clone()) {
-                    let own_team = app.world.get_own_team_mut()?;
-                    own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
-                    return Err(e);
+            Self::AcceptTrade { trade_id } => {
+                let trade = app
+                    .world
+                    .get_own_team()?
+                    .trade(trade_id)
+                    .ok_or_else(|| anyhow!("That offer is no longer open"))?
+                    .clone();
+
+                // Taking the standing bid early closes the auction at that price.
+                if trade.route == crate::network::trade::TradeRoute::DockBid {
+                    for cb in app
+                        .world
+                        .settle_listing(&trade.target_player.id, Tick::now())?
+                    {
+                        cb.call(app)?;
+                    }
+                    return Ok(None);
                 }
 
+                let result = app.network_handler.accept_trade(&app.world, trade);
                 let own_team = app.world.get_own_team_mut()?;
-                own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
+                own_team.remove_trade(trade_id);
+                result?;
+
                 app.world.dirty = true;
                 app.world.dirty_network = true;
                 app.world.dirty_ui = true;
                 Ok(None)
             }
-            Self::DeclineTrade { trade } => {
-                app.network_handler.decline_trade(trade.clone())?;
+            Self::DeclineTrade { trade_id, reason } => {
+                let trade = app
+                    .world
+                    .get_own_team()?
+                    .trade(trade_id)
+                    .ok_or_else(|| anyhow!("That offer is no longer open"))?
+                    .clone();
+
+                // The same rule that stops a recall: once someone has committed
+                // satoshis, the auction runs its course. Declining the standing bid
+                // by hand would leave the listing pointing at a bidder we refunded.
+                if trade.route == crate::network::trade::TradeRoute::DockBid
+                    && reason.is_none()
+                {
+                    return Err(anyhow!("A standing bid cannot be declined - let the auction run"));
+                }
+
+                app.network_handler.decline_trade(trade, reason.clone())?;
                 let own_team = app.world.get_own_team_mut()?;
-                own_team.remove_trade(trade.proposer_player.id, trade.target_player.id);
+                own_team.remove_trade(trade_id);
                 app.world.dirty = true;
                 app.world.dirty_network = true;
                 app.world.dirty_ui = true;
                 Ok(None)
             }
-            Self::GoToTrade { trade } => Self::go_to_trade(trade.clone())(app),
+            Self::GoToTrade { trade_id } => Self::go_to_trade(*trade_id)(app),
             Self::SetUiTab { ui_tab } => Self::set_ui_tab(*ui_tab)(app),
             Self::NextPanelIndex => Self::next_panel_index()(app),
             Self::PreviousPanelIndex => Self::previous_panel_index()(app),
@@ -1686,8 +1889,8 @@ impl UiCallback {
                 app.ui.close_popup();
                 Ok(None)
             }
-            Self::CloseHelp => {
-                app.ui.close_help();
+            Self::CloseOverlay => {
+                app.ui.pop_overlay();
                 Ok(None)
             }
             Self::NewGame => {
@@ -1802,6 +2005,83 @@ impl UiCallback {
                 app.ui.player_panel.update(&app.world)?;
                 Ok(None)
             }
+            Self::OpenTradeOverlay {
+                other_team_id,
+                seed_other,
+            } => {
+                let mut overlay = TradeOverlay::crew_swap(*other_team_id, *seed_other);
+                overlay.update(&app.world)?;
+                app.ui.push_overlay(OverlayKind::Trade(overlay));
+                Ok(None)
+            }
+
+            Self::OpenDockBidOverlay { player_id } => {
+                let player = app.world.players.get_or_err(player_id)?;
+                let seller_team_id = player
+                    .team
+                    .ok_or_else(|| anyhow!("That pirate has no crew"))?;
+                let opening = app
+                    .world
+                    .teams
+                    .get_or_err(&seller_team_id)?
+                    .listing(player_id)
+                    .map(|listing| listing.next_valid_bid())
+                    .ok_or_else(|| anyhow!("That pirate is not at the dock"))?;
+
+                let mut overlay = TradeOverlay::dock_bid(*player_id, seller_team_id, opening);
+                overlay.update(&app.world)?;
+                app.ui.push_overlay(OverlayKind::Trade(overlay));
+                Ok(None)
+            }
+
+            Self::SetTradeOfferPlayer { side, player_id } => {
+                if let Some(overlay) = app.ui.trade_overlay_mut() {
+                    overlay.set_offer_player(*side, *player_id);
+                }
+                app.ui.update_overlays(&app.world)?;
+                Ok(None)
+            }
+
+            Self::AdjustTradeOfferSatoshis { side, delta } => {
+                let balance = app.world.get_own_team()?.balance();
+                if let Some(overlay) = app.ui.trade_overlay_mut() {
+                    overlay.adjust_satoshis(*side, *delta, balance);
+                }
+                app.ui.update_overlays(&app.world)?;
+                Ok(None)
+            }
+
+            Self::SendTradeOffer => Self::send_trade_offer()(app),
+
+            Self::BidOnListedPlayer { player_id, amount } => {
+                Self::bid_on_listed_player(*player_id, *amount)(app)
+            }
+
+            Self::LeavePlayerAtDock {
+                player_id,
+                release_fee,
+                min_bid,
+            } => {
+                app.world.leave_player_at_dock(
+                    *player_id,
+                    *release_fee,
+                    *min_bid,
+                    DEFAULT_DOCK_LISTING_DURATION,
+                    Tick::now(),
+                )?;
+                app.ui.close_popup();
+                app.ui.my_team_panel.update(&app.world)?;
+                let name = app.world.players.get_or_err(player_id)?.info.short_name();
+                Ok(Some(format!("{name} is waiting at the dock")))
+            }
+
+            Self::RecallPlayerFromDock { player_id } => {
+                app.world.recall_player_from_dock(*player_id)?;
+                app.ui.my_team_panel.update(&app.world)?;
+                let name = app.world.players.get_or_err(player_id)?.info.short_name();
+                Ok(Some(format!("{name} is back aboard")))
+            }
+
             Self::ReleasePlayer { player_id } => {
                 app.world.release_player_from_team(*player_id, true)?;
                 app.ui.close_popup();
@@ -2074,7 +2354,7 @@ impl UiCallback {
                     team.peer_id = Some(own_peer_id);
 
                     let mut players = PlayerMap::new();
-                    for &player_id in own_team.player_ids.iter().take(MAX_PLAYERS_PER_GAME) {
+                    for player_id in own_team.active_player_ids().into_iter().take(MAX_PLAYERS_PER_GAME) {
                         let player = if let Some(player) = app.world.players.get(&player_id) {
                             let mut p = player.clone();
                             p.peer_id = Some(own_peer_id);

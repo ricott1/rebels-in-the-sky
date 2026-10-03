@@ -5,6 +5,9 @@ use crate::core::{MAX_SKILL_INCREASE_PER_LONG_TICK, SKILL_DECREMENT_PER_LONG_TIC
 pub const UI_SCREEN_SIZE: (u16, u16) = (160, 48);
 
 pub const LEFT_PANEL_WIDTH: u16 = 36;
+/// The pirate description widget is the same box wherever it appears.
+pub const PLAYER_DESCRIPTION_WIDTH: u16 = 60;
+pub const PLAYER_DESCRIPTION_HEIGHT: u16 = 24;
 pub const IMG_FRAME_WIDTH: u16 = 80;
 pub const MIN_NAME_LENGTH: usize = 3;
 pub const MAX_NAME_LENGTH: usize = 12;

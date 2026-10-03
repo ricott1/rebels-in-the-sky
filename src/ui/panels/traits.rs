@@ -100,6 +100,7 @@ pub trait Screen: HelpPanel {
     }
 }
 
+#[derive(Debug)]
 pub struct HelpContent {
     pub description: String,
     pub links: Vec<(String, UiCallback)>,
@@ -110,7 +111,9 @@ pub trait HelpPanel {
     fn help_content(&self) -> HelpContent;
 }
 
-pub fn render_help_content(frame: &mut UiFrame, area: Rect, content: HelpContent) {
+/// `layer` is the layer the help links claim input on: an overlay stacked on top
+/// of another draws above layer 1, and hardcoding 1 would make its links dead.
+pub fn render_help_content(frame: &mut UiFrame, area: Rect, content: &HelpContent, layer: usize) {
     let area = area.inner(Margin::new(1, 0));
     let desc_rows = content
         .description
@@ -126,7 +129,7 @@ pub fn render_help_content(frame: &mut UiFrame, area: Rect, content: HelpContent
         &content.description,
         &content.links,
         LinkAlign::Left,
-        1,
+        layer,
     );
-    frame.render_widget(Paragraph::new(content.controls), split[1]);
+    frame.render_widget(Paragraph::new(content.controls.clone()), split[1]);
 }

@@ -1101,6 +1101,33 @@ mod tests {
     use crate::types::AppResult;
     use crate::types::{SystemTimeTick, Tick};
 
+    /// A mutual knockout - every pirate on both sides at MAX tiredness - ends the
+    /// game with no winner at all. Unlike a drawn scoreline, which is settled by a
+    /// final total brawl, this path has no tiebreak.
+    #[test]
+    fn test_a_mutual_knockout_leaves_no_winner() {
+        use crate::core::skill::MAX_SKILL;
+
+        let mut home_team_in_game = TeamInGame::test();
+        let mut away_team_in_game = TeamInGame::test();
+        for team_in_game in [&mut home_team_in_game, &mut away_team_in_game] {
+            for player in team_in_game.players.values_mut() {
+                player.tiredness = MAX_SKILL;
+            }
+        }
+
+        let mut game = Game::test(home_team_in_game, away_team_in_game);
+        while !game.has_ended() {
+            game.tick();
+        }
+
+        assert!(game.has_ended());
+        assert!(
+            game.winner.is_none(),
+            "a game both crews were carried out of has no winner"
+        );
+    }
+
     #[test]
     fn test_in_game_drinking() -> AppResult<()> {
         let mut home_team_in_game = TeamInGame::test();

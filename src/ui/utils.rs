@@ -144,6 +144,27 @@ pub fn validate_textarea_input<'a>(
     }
 }
 
+pub fn parse_satoshi_input<'a>(
+    textarea: &mut TextArea<'a>,
+    title: impl Into<Line<'a>>,
+    default: u32,
+) -> Option<u32> {
+    let text = textarea.lines()[0].trim();
+    let parsed = if text.is_empty() {
+        Some(default)
+    } else {
+        text.parse::<u32>().ok().filter(|amount| *amount > 0)
+    };
+    match parsed {
+        Some(_) => textarea.set_style(UiStyle::DEFAULT),
+        None => {
+            textarea.set_style(UiStyle::ERROR);
+            textarea.set_block(default_block().title(title).title("(not a price)"));
+        }
+    }
+    parsed
+}
+
 pub fn sanitized_name(name: &str, max_len: usize) -> String {
     name.chars()
         .enumerate()
@@ -229,8 +250,25 @@ pub fn wrap_text<T: AsRef<str>>(text: T, line_width: usize) -> Vec<String> {
 
 #[cfg(test)]
 mod test {
-    use super::format_satoshi;
+    use super::{format_satoshi, parse_satoshi_input};
+    use crate::ui::constants::UiStyle;
     use crate::ui::utils::wrap_text;
+    use ratatui_textarea::TextArea;
+
+    #[test]
+    fn test_parse_satoshi_input_falls_back_and_rejects_junk() {
+        let mut empty = TextArea::default();
+        assert_eq!(parse_satoshi_input(&mut empty, "Price", 4_200), Some(4_200));
+
+        let mut typed = TextArea::from(["12345"]);
+        assert_eq!(parse_satoshi_input(&mut typed, "Price", 4_200), Some(12_345));
+
+        for junk in ["0", "abc", "-5", "1.5"] {
+            let mut field = TextArea::from([junk]);
+            assert_eq!(parse_satoshi_input(&mut field, "Price", 4_200), None, "{junk}");
+            assert_eq!(field.style(), UiStyle::ERROR);
+        }
+    }
 
     #[test]
     fn test_format_satoshi() {

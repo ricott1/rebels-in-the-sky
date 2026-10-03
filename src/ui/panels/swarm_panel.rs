@@ -12,6 +12,7 @@ use crate::ui::renders::{
     render_player_description, render_spaceship_description, selectable_list, PlayerWidgetView,
 };
 use crate::ui::ui_callback::UiCallback;
+use crate::ui::utils::format_satoshi;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
 use crate::ui::ui_screen::{tab_link, UiTab};
@@ -624,7 +625,15 @@ impl SwarmPanel {
             vertical: 1,
         }));
 
-        for (idx, (_, trade)) in trades.iter().enumerate() {
+        // `trades` is a HashMap, whose iteration order is arbitrary and reshuffles
+        // on insert. Sorting by (created_at, id) is what lets a hotkey mean the
+        // same offer twice running.
+        let trades = trades
+            .values()
+            .sorted_by_key(|trade| (trade.created_at, trade.id))
+            .collect_vec();
+
+        for (idx, trade) in trades.iter().enumerate() {
             let line_split = Layout::horizontal([
                 Constraint::Length(46),
                 Constraint::Length(6),
@@ -633,52 +642,42 @@ impl SwarmPanel {
             ])
             .split(split[idx]);
 
-            let proposer_player = &trade.proposer_player;
-            let target_player = &trade.target_player;
+            let wanted = trade.target_player.info.short_name();
+            let wanted_stars = trade.target_player.stars();
+            let offered = match trade.proposer_player.as_ref() {
+                Some(player) => format!("{} {}", player.info.short_name(), player.stars()),
+                None => format_satoshi(trade.proposer_satoshis),
+            };
+
             frame.render_interactive_widget(
                 Button::new(
-                    format!(
-                        "{} {} ⇄ {} {}",
-                        target_player.info.short_name(),
-                        target_player.stars(),
-                        proposer_player.info.short_name(),
-                        proposer_player.stars()
-                    ),
-                    UiCallback::GoToTrade {
-                        trade: trade.clone(),
-                    },
+                    format!("{wanted} {wanted_stars} ⇄ {offered}"),
+                    UiCallback::GoToTrade { trade_id: trade.id },
                 ),
                 line_split[0],
             );
+
             if !is_sent {
                 let mut accept_button = Button::new(
                     format!("{:6^}", UiText::YES),
-                    UiCallback::AcceptTrade {
-                        trade: trade.clone(),
-                    },
+                    UiCallback::AcceptTrade { trade_id: trade.id },
                 )
                 .block(default_block().border_style(UiStyle::OK))
-                .hover_text(format!(
-                    "Accept to trade {} for {}.",
-                    target_player.info.short_name(),
-                    proposer_player.info.short_name()
-                ));
+                .hover_text(format!("Accept to trade {wanted} for {offered}."));
                 if idx == 0 {
                     accept_button = accept_button.hotkey(ui_key::YES_TO_DIALOG);
                 }
                 frame.render_interactive_widget(accept_button, line_split[1]);
+
                 let mut decline_button = Button::new(
                     format!("{:6^}", UiText::NO),
                     UiCallback::DeclineTrade {
-                        trade: trade.clone(),
+                        trade_id: trade.id,
+                        reason: None,
                     },
                 )
                 .block(default_block().border_style(UiStyle::ERROR))
-                .hover_text(format!(
-                    "Decline to trade {} for {}.",
-                    target_player.info.short_name(),
-                    proposer_player.info.short_name()
-                ));
+                .hover_text(format!("Decline to trade {wanted} for {offered}."));
                 if idx == 0 {
                     decline_button = decline_button.hotkey(ui_key::NO_TO_DIALOG);
                 }
@@ -780,7 +779,11 @@ impl SwarmPanel {
 
     fn render_player_ranking(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
         let block_title = "Top 20 Pirates by Reputation";
-        let h_split = Layout::horizontal([Constraint::Fill(1), Constraint::Length(60)]).split(area);
+        let h_split = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(PLAYER_DESCRIPTION_WIDTH),
+        ])
+        .split(area);
         if self.player_ranking.is_empty() {
             frame.render_widget(default_block().title(block_title), h_split[0]);
             frame.render_widget(default_block(), h_split[1]);
@@ -896,8 +899,11 @@ impl SwarmPanel {
                 self.build_trade_list(true, frame, world, trade_split[1])?;
             }
             SwarmView::Ranking => {
-                let ranking_split =
-                    Layout::vertical([Constraint::Length(24), Constraint::Fill(1)]).split(split[0]);
+                let ranking_split = Layout::vertical([
+                    Constraint::Length(PLAYER_DESCRIPTION_HEIGHT),
+                    Constraint::Fill(1),
+                ])
+                .split(split[0]);
                 if frame.is_hovering(ranking_split[0]) {
                     self.active_list = PanelList::Players;
                 } else {

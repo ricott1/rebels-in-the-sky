@@ -1,3 +1,5 @@
+mod cove_images;
+mod dock_panel;
 mod galaxy_panel;
 mod game_panel;
 mod my_team_panel;
@@ -12,6 +14,7 @@ mod tournament_brackets_lines;
 mod tournament_panel;
 mod traits;
 
+pub use dock_panel::DockPanel;
 pub use galaxy_panel::{GalaxyPanel, ZoomLevel};
 pub use game_panel::GamePanel;
 pub use my_team_panel::{MyTeamPanel, MyTeamView};
@@ -23,4 +26,4 @@ pub use splash_screen::SplashScreen;
 pub use swarm_panel::{SwarmPanel, SwarmView};
 pub use team_panel::{TeamListPanel, TeamView};
 pub use tournament_panel::{TournamentPanel, TournamentView};
-pub use traits::{render_help_content, HelpPanel, Screen, SplitPanel};
+pub use traits::{render_help_content, HelpContent, HelpPanel, IndexBound, Screen, SplitPanel};

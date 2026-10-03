@@ -210,10 +210,12 @@ impl InteractiveWidget for Button<'_> {
         callback_registry: &mut CallbackRegistry,
         layer: usize,
     ) {
-        self.is_hovered =
-            callback_registry.is_hovering(area) && callback_registry.get_active_layer() == layer;
+        // Widgets only claim input on the layer that is currently active, so an
+        // overlay drawn on top does not share its hotkeys with the panel below.
+        let is_active_layer = callback_registry.get_active_layer() == layer;
+        self.is_hovered = callback_registry.is_hovering(area) && is_active_layer;
 
-        if !self.disabled {
+        if !self.disabled && is_active_layer {
             if self.is_hovered {
                 callback_registry.register_mouse_callback(
                     crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),

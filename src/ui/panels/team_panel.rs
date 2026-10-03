@@ -418,8 +418,12 @@ impl TeamListPanel {
             vertical: 1,
         }));
 
-        let button_split = Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-            .split(ship_buttons_split[1]);
+        let button_split = Layout::horizontal([
+            Constraint::Ratio(1, 3),
+            Constraint::Ratio(1, 3),
+            Constraint::Ratio(1, 3),
+        ])
+        .split(ship_buttons_split[1]);
 
         match go_to_team_current_planet_button(world, &team.id) {
             Ok(go_to_team_current_planet_button) => {
@@ -430,6 +434,25 @@ impl TeamListPanel {
 
         if team.id != world.own_team_id {
             render_challenge_button(world, team, true, frame, button_split[1])?;
+
+            // Seeded with whichever pirate the [ / ] cursor is on.
+            let mut trade_button = Button::new(
+                "Propose trade",
+                UiCallback::OpenTradeOverlay {
+                    other_team_id: team.id,
+                    seed_other: Some(self.selected_player_id),
+                },
+            )
+            .hover_text(format!("Open a trade offer with {}", team.name))
+            .hotkey(ui_key::CREATE_TRADE);
+
+            let own_team = world.get_own_team()?;
+            if team.active_players_count() == 0 {
+                trade_button.disable(Some("That crew has no pirate to trade"));
+            } else if own_team.is_on_planet() != team.is_on_planet() {
+                trade_button.disable(Some("Not on the same planet"));
+            }
+            frame.render_interactive_widget(trade_button, button_split[2]);
         }
 
         render_spaceship_description(
@@ -633,6 +656,10 @@ impl HelpPanel for TeamListPanel {
                 Line::from(format!(
                     "  {}          Challenge highlighted team to a match",
                     ui_key::game::CHALLENGE_TEAM
+                )),
+                Line::from(format!(
+                    "  {}          Propose a trade with the highlighted crew",
+                    ui_key::CREATE_TRADE
                 )),
                 Line::from(format!(
                     "  {}          Open home planet / {} current planet",

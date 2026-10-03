@@ -1,7 +1,7 @@
 use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
 use crate::game_engine::timer::Period;
 use crate::image::utils::open_image;
-use crate::types::{HashMapWithResult, PlayerId, Tick};
+use crate::types::{HashMapWithResult, Tick};
 use crate::ui::checkbox::Checkbox;
 use crate::ui::dropdown::{Dropdown, DropdownState, OpenDirection};
 use crate::ui::ui_frame::UiFrame;
@@ -2110,8 +2110,8 @@ impl MyTeamPanel {
                 frame.render_interactive_widget(drink_button, side_split[1]);
             }
 
-            if let Ok(gold_button) = gold_button(world, &player_id) {
-                frame.render_interactive_widget(gold_button, side_split[2]);
+            if let Ok(market_button) = dock_listing_button(world, &player_id) {
+                frame.render_interactive_widget(market_button, side_split[2]);
             }
         }
 
@@ -2145,7 +2145,7 @@ impl MyTeamPanel {
 
     fn build_players_table(
         players: &Vec<&Player>,
-        player_ids: &Vec<PlayerId>,
+        team: &Team,
         table_width: u16,
     ) -> AppResult<ClickableTable<'static>> {
         let header_style = UiStyle::HEADER.bold();
@@ -2177,14 +2177,22 @@ impl MyTeamPanel {
         let rows = players
             .iter()
             .map(|player| {
+                let is_parked = team.is_parked(&player.id);
                 let overall = player.average_skill().stars();
                 let salary = player.salary().to_string();
-                let (position_index, _) = player_ids
-                    .iter()
-                    .enumerate()
-                    .find(|(_, id)| **id == player.id)
-                    .expect("Player id should be in player ids");
-                let position = (position_index as GamePosition).as_role().to_string();
+                let position = if team.is_listed(&player.id) {
+                    "Market".to_string()
+                } else if is_parked {
+                    "Ashore".to_string()
+                } else {
+                    let (position_index, _) = team
+                        .player_ids
+                        .iter()
+                        .enumerate()
+                        .find(|(_, id)| **id == player.id)
+                        .expect("Player id should be in player ids");
+                    (position_index as GamePosition).as_role().to_string()
+                };
 
                 let bonus_string_1 = match player.info.crew_role {
                     CrewRole::Pilot => {
@@ -2250,6 +2258,12 @@ impl MyTeamPanel {
                     CrewRole::Mozzo => Span::default(),
                 };
 
+                let (mut bonus_string_1, mut bonus_string_2) = (bonus_string_1, bonus_string_2);
+                if is_parked {
+                    bonus_string_1 = bonus_string_1.style(UiStyle::UNSELECTABLE);
+                    bonus_string_2 = bonus_string_2.style(UiStyle::UNSELECTABLE);
+                }
+
                 let name = if name_header_width >= 2 * MAX_NAME_LENGTH as u16 + 2 {
                     player.info.full_name()
                 } else {
@@ -2269,7 +2283,11 @@ impl MyTeamPanel {
                     ClickableCell::from(bonus_string_1),
                     ClickableCell::from(bonus_string_2),
                 ];
-                Ok(ClickableRow::new(cells))
+                Ok(ClickableRow::new(cells).style(if is_parked {
+                    UiStyle::UNSELECTABLE
+                } else {
+                    UiStyle::DEFAULT
+                }))
             })
             .collect::<AppResult<Vec<ClickableRow>>>();
 
@@ -2312,7 +2330,8 @@ impl MyTeamPanel {
         let player = sorted_players[player_index];
 
         let top_split =
-            Layout::horizontal([Constraint::Fill(1), Constraint::Length(60)]).split(area);
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(PLAYER_DESCRIPTION_WIDTH)])
+                .split(area);
 
         let table_split = Layout::vertical([
             Constraint::Length(MAX_CREW_SIZE as u16 + 3),
@@ -2430,6 +2449,7 @@ impl MyTeamPanel {
                 .position(|f| *f == player.training_focus)
                 .unwrap_or_default();
             let player_id = player.id;
+            let is_parked = own_team.is_parked(&player_id);
             let training_dropdown = Dropdown::new(
                 TRAINING_DROPDOWN_ID,
                 training_options,
@@ -2440,7 +2460,8 @@ impl MyTeamPanel {
             )
             .hotkey(ui_key::player::TRAINING_FOCUS)
             .hover_text("Change the training focus to change skills increase faster.")
-            .open_direction(OpenDirection::Down);
+            .open_direction(OpenDirection::Down)
+            .disabled(is_parked);
 
             self.render_roster_dropdown(
                 frame,
@@ -2472,7 +2493,8 @@ impl MyTeamPanel {
                 }),
             )
             .hover_text("Set the pirate's crew role.")
-            .open_direction(OpenDirection::Down);
+            .open_direction(OpenDirection::Down)
+            .disabled(is_parked);
             for (index, role) in role_variants.iter().enumerate() {
                 role_dropdown =
                     role_dropdown.hotkey_select(ui_key::team::set_crew_role(*role), index);
@@ -2513,16 +2535,18 @@ impl MyTeamPanel {
                     .hotkey_select(ui_key::team::set_player_position(idx as GamePosition), idx);
             }
 
-            self.render_roster_dropdown(
-                frame,
-                position_dropdown,
-                POSITION_DROPDOWN_ID,
-                table_split[0],
-                player_index as u16,
-                POSITION_COLUMN_RIGHT_OFFSET,
-                6,
-                selected_position,
-            );
+            if !is_parked {
+                self.render_roster_dropdown(
+                    frame,
+                    position_dropdown,
+                    POSITION_DROPDOWN_ID,
+                    table_split[0],
+                    player_index as u16,
+                    POSITION_COLUMN_RIGHT_OFFSET,
+                    6,
+                    selected_position,
+                );
+            }
         }
 
         self.render_selected_player(player, frame, world, table_split[1])?;
@@ -2914,7 +2938,7 @@ impl Screen for MyTeamPanel {
 
             let table_width = UI_SCREEN_SIZE.0 - 60;
             self.players_table =
-                Self::build_players_table(&sorted_players, &own_team.player_ids, table_width)?
+                Self::build_players_table(&sorted_players, own_team, table_width)?
                     .block(default_block().title(format!(
                         "{} {} ↓/↑",
                         own_team.name,
@@ -2942,7 +2966,9 @@ impl Screen for MyTeamPanel {
         area: Rect,
         _debug_view: bool,
     ) -> AppResult<()> {
-        let split = Layout::vertical([Constraint::Length(24), Constraint::Min(8)]).split(area);
+        let split =
+            Layout::vertical([Constraint::Length(PLAYER_DESCRIPTION_HEIGHT), Constraint::Min(8)])
+                .split(area);
 
         if frame.is_hovering(split[0]) {
             self.active_list = PanelList::Top;
@@ -3045,6 +3071,10 @@ impl HelpPanel for MyTeamPanel {
                 Line::from(format!(
                     "  {}      Fire highlighted pirate",
                     ui_key::player::FIRE
+                )),
+                Line::from(format!(
+                    "  {}      Leave highlighted pirate at the dock, or recall them",
+                    ui_key::player::MARKET_LISTING
                 )),
                 Line::default(),
                 Line::from("  Game settings view"),

@@ -1,17 +1,19 @@
+use super::cove_images::{
+    blit_pirate_group, get_market_image, pirate_frames, render_pirate_summaries,
+    strongest_pirates, TAVERN_PIRATE_BASELINES_Y,
+};
 use super::traits::SplitPanel;
 use crate::game_engine::{TournamentId, TournamentType};
-use crate::image::player::PLAYER_IMAGE_WIDTH;
 use crate::image::utils::{open_image, LightMaskStyle};
 use crate::image::utils::{ExtraImageUtils, UNIVERSE_BACKGROUND};
-use crate::types::{
-    HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, SystemTimeTick, TeamId,
-};
+use crate::types::{HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, SystemTimeTick, TeamId};
 use crate::ui::button::Button;
 use crate::ui::checkbox::Checkbox;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::panels::traits::{normalize_index, HelpContent, HelpPanel, IndexBound, Screen};
 use crate::ui::renders::{
-    default_block, go_to_planet_button, render_available_upgrades, selectable_list, teleport_button,
+    default_block, go_to_planet_button, render_available_upgrades, selectable_list,
+    teleport_button,
 };
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
@@ -27,7 +29,7 @@ use ratatui::layout::{Constraint, Layout, Margin};
 use ratatui::prelude::Rect;
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Paragraph, Wrap};
 use std::collections::HashSet;
 use std::fmt::{self, Display};
 
@@ -114,6 +116,7 @@ pub struct SpaceCovePanel {
     tavern_widget: Paragraph<'static>,
     tavern_lamps_on: bool,
     tavern_pirate_ids: Vec<PlayerId>,
+    tavern_drawn_ids: Vec<PlayerId>,
     market_widget: Paragraph<'static>,
     stadium_widget: Paragraph<'static>,
     active_list: PanelList,
@@ -132,13 +135,8 @@ impl SpaceCovePanel {
             Paragraph::new(img_to_lines(&img))
         };
         let market_widget = {
-            let mut base =
-                open_image("cove/market.png").expect("Should be able to create market image");
-            let outer = open_image("cove/base_outer.png")
-                .expect("Should be able to create base outer image");
-            base.copy_non_trasparent_from(&outer, 0, 0)
-                .expect("Should be able to copy image");
-            Paragraph::new(img_to_lines(&base))
+            let img = get_market_image(&[]).expect("Should be able to create market image");
+            Paragraph::new(img_to_lines(&img))
         };
         let stadium_widget = {
             let mut base =
@@ -276,18 +274,7 @@ impl SpaceCovePanel {
         }
 
         // Blit each free pirate standing in the tavern, clustered and centered.
-        const PIRATE_X_STEP: u32 = 20;
-        const PIRATE_BASELINES_Y: [u32; MAX_TAVERN_POPULATION as usize] = [66, 70, 67];
-        let pirates = &pirate_frames[..pirate_frames.len().min(MAX_TAVERN_POPULATION as usize)];
-        if !pirates.is_empty() {
-            let group_width = PIRATE_X_STEP * (pirates.len() as u32 - 1) + PLAYER_IMAGE_WIDTH;
-            let mut x = base.width().saturating_sub(group_width) / 2 + 4;
-            for (idx, frame) in pirates.iter().enumerate() {
-                let y = PIRATE_BASELINES_Y[idx] - frame.height();
-                base.copy_non_trasparent_from(frame, x, y)?;
-                x += PIRATE_X_STEP;
-            }
-        }
+        blit_pirate_group(&mut base, pirate_frames, &TAVERN_PIRATE_BASELINES_Y)?;
 
         let outer = open_image("cove/base_outer.png")?;
         base.copy_non_trasparent_from(&outer, 0, 0)?;
@@ -537,28 +524,48 @@ impl SpaceCovePanel {
                     return self.render_stadium_detail(frame, world, asteroid, own_team, area);
                 }
 
-                SpaceCoveUpgradeTarget::Market => return self.render_market_detail(frame, area),
+                SpaceCoveUpgradeTarget::Market => {
+                    return self.render_market_detail(frame, area)
+                }
             }
         }
 
         self.render_missing_building(frame, world, own_team, cove, building, area)
     }
 
-    fn render_market_detail(&self, frame: &mut UiFrame, area: Rect) -> AppResult<()> {
-        let layout = Layout::vertical([
-            Constraint::Length(3), // market
-            Constraint::Fill(1),   // list?
-        ])
-        .split(area);
-
-        let button = Button::new("Go to Market", UiCallback::GoToMarket { from_popup: false })
-            .hover_text("Trade resources at the cove market.")
-            .hotkey(ui_key::GO_TO_MARKET);
-        frame.render_interactive_widget(button, layout[0]);
-
-        Ok(())
+    pub fn go_to_cove(&mut self, team_id: TeamId) {
+        let Some(index) = self.all_coves.iter().position(|&(id, _)| id == team_id) else {
+            return;
+        };
+        self.view = SpaceCoveView::AllCoves;
+        self.active_list = PanelList::Top;
+        self.cove_index = Some(index);
     }
 
+    /// The market building itself. Pirates changing crews go through The Dock,
+    /// which is not tied to any cove; here there are only goods.
+    fn render_market_detail(&mut self, frame: &mut UiFrame, area: Rect) -> AppResult<()> {
+        let layout = Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(area);
+
+        frame.render_interactive_widget(
+            Button::new(
+                "Trade goods",
+                UiCallback::GoToMarket { from_popup: false },
+            )
+            .hover_text("Buy and sell goods at your cove's market"),
+            layout[0],
+        );
+        frame.render_widget(
+            Paragraph::new(SpaceCoveUpgradeTarget::Market.description())
+                .wrap(Wrap { trim: true })
+                .block(default_block().title("Market")),
+            layout[1],
+        );
+        Ok(())
+    }
+}
+
+impl SpaceCovePanel {
     fn render_missing_building(
         &self,
         frame: &mut UiFrame,
@@ -839,20 +846,18 @@ impl Screen for SpaceCovePanel {
                 .collect(),
             None => Vec::new(),
         };
-        if lamps_on != self.tavern_lamps_on || tavern_pirate_ids != self.tavern_pirate_ids {
-            let pirate_frames: Vec<RgbaImage> = tavern_pirate_ids
-                .iter()
-                .filter_map(|id| world.players.get(id))
-                .filter_map(|player| player.compose_image().ok())
-                .filter_map(|gif| gif.into_iter().next())
-                .collect();
+        let tavern_drawn_ids = strongest_pirates(&tavern_pirate_ids, world);
+        self.tavern_pirate_ids = tavern_pirate_ids;
+        if lamps_on != self.tavern_lamps_on || tavern_drawn_ids != self.tavern_drawn_ids {
+            let pirate_frames = pirate_frames(&tavern_drawn_ids, world);
             self.tavern_widget = {
                 let img = Self::get_tavern_image(lamps_on, &pirate_frames)?;
                 Paragraph::new(img_to_lines(&img))
             };
             self.tavern_lamps_on = lamps_on;
-            self.tavern_pirate_ids = tavern_pirate_ids;
+            self.tavern_drawn_ids = tavern_drawn_ids;
         }
+
 
         // Rebuild the cove entries only when the team set or contents may have shifted.
         let mut entries_changed = false;
@@ -1104,6 +1109,18 @@ impl Screen for SpaceCovePanel {
                                 }
                                 SpaceCoveUpgradeTarget::Tavern => {
                                     frame.render_widget(&self.tavern_widget, right_area);
+                                    let selected = self
+                                        .tavern_pirate_index
+                                        .and_then(|i| self.tavern_pirate_ids.get(i))
+                                        .copied();
+                                    render_pirate_summaries(
+                                        frame,
+                                        world,
+                                        &self.tavern_drawn_ids,
+                                        selected,
+                                        &TAVERN_PIRATE_BASELINES_Y,
+                                        right_area,
+                                    );
                                 }
                                 SpaceCoveUpgradeTarget::Stadium => {
                                     frame.render_widget(&self.stadium_widget, right_area);
@@ -1223,12 +1240,14 @@ impl HelpPanel for SpaceCovePanel {
                 "Manage the asteroid that hosts your cove from My Team.",
                 "Inspect visiting crews directly, or browse all in Crews.",
                 "To find another asteroid candidate, explore the Galaxy.",
+                "Pirates looking for a new crew are at The Dock, wherever you are.",
             ]
             .join("\n"),
             links: vec![
                 tab_link("My Team", UiTab::MyTeam),
                 tab_link("Crews", UiTab::Crews),
                 tab_link("Galaxy", UiTab::Galaxy),
+                tab_link("The Dock", UiTab::Dock),
             ],
             controls: vec![
                 Line::from("Controls:"),

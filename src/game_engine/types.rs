@@ -262,7 +262,8 @@ impl TeamInGame {
             return Err(anyhow!("Could not find team {team_id}"));
         };
         let mut team_players = PlayerMap::new();
-        for &player_id in team.player_ids.iter().take(MAX_PLAYERS_PER_GAME) {
+        // Pirates at the dock stay on the roster but never take the court.
+        for player_id in team.active_player_ids().into_iter().take(MAX_PLAYERS_PER_GAME) {
             let player = if let Some(player) = players.get(&player_id) {
                 player
             } else {

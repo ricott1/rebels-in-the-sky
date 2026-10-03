@@ -290,24 +290,73 @@ pub fn drink_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button
     Ok(button)
 }
 
-pub fn gold_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button<'a>> {
+/// Leaves a pirate at the dock, or takes them back.
+/// Prices default off the pirate's hire cost; the trade overlay will let the
+/// captain set them by hand.
+pub fn dock_listing_button<'a>(world: &World, player_id: &PlayerId) -> AppResult<Button<'a>> {
     let player = world.players.get_or_err(player_id)?;
-    let can_receive_gold = player.can_receive_gold(&world.teams);
+    let own_team = world.get_own_team()?;
+    let name = player.info.short_name();
 
+    if own_team.is_listed(player_id) {
+        let mut button = Button::new(
+            "Recall from the dock",
+            UiCallback::RecallPlayerFromDock {
+                player_id: *player_id,
+            },
+        )
+        .hover_text(format!("Take {name} back aboard from the dock"))
+        .hotkey(ui_key::player::MARKET_LISTING);
+        if let Err(err) = own_team.can_recall_player_from_dock(player_id) {
+            button.disable(Some(err.to_string()));
+        }
+        return Ok(button);
+    }
+
+    let release_fee = player.hire_cost();
     let mut button = Button::new(
-        "Give gold! (-1 Gold)",
-        UiCallback::GiveGold {
-            player_id: *player_id,
+        "Leave at the dock",
+        UiCallback::PushUiPopup {
+            popup_message: PopupMessage::ConfirmLeaveAtDock {
+                player_name: player.info.full_name(),
+                player_id: *player_id,
+                release_fee,
+                timestamp: Tick::now(),
+            },
         },
     )
-    .hotkey(ui_key::player::GIVE_GOLD)
-    .hover_text("Give a piece of gold, the right way to cheer any pirate!");
-
-    if let Err(err) = can_receive_gold {
+    .hover_text(format!("Leave {name} at the dock for another crew to sign"))
+    .hotkey(ui_key::player::MARKET_LISTING);
+    if let Err(err) = own_team.can_leave_player_at_dock(player) {
         button.disable(Some(err.to_string()));
     }
 
     Ok(button)
+}
+
+/// The binding take-it-now button. Shared so its label, hotkey and eligibility
+/// rule cannot drift between The Dock and the trade overlay.
+pub fn sign_now_button<'a>(world: &World, player_id: PlayerId, amount: u32) -> Button<'a> {
+    let name = world
+        .players
+        .get(&player_id)
+        .map_or_else(|| "them".to_string(), |player| player.info.short_name());
+
+    let mut button = Button::new(
+        format!("Sign now {}", format_satoshi(amount)),
+        UiCallback::BidOnListedPlayer { player_id, amount },
+    )
+    .hover_text(format!(
+        "Sign {name} now for {}. Binding.",
+        format_satoshi(amount)
+    ))
+    .hotkey(ui_key::dock::SIGN_NOW);
+
+    if let Err(err) = world.can_bid_on(&player_id, amount) {
+        button.disable(Some(err.to_string()));
+    }
+
+    button
 }
 
 pub fn render_challenge_button(

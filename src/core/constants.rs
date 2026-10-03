@@ -162,12 +162,68 @@ pub const SATISFACTION_THRESHOLD_FOR_LEAVING: f32 = 4.0;
 pub const SATISFACTION_MALUS_FOR_MORALE_DROP: f32 = -0.25;
 pub const SATISFACTION_MALUS_FOR_SITTING_OUT: f32 = -0.1;
 pub const SATISFACTION_DECREASE_PER_LONG_TICK: f32 = -0.1;
+/// Waiting at the dock stings more than sitting out a game: it is the
+/// pressure that stops a crew warehousing pirates there indefinitely.
+pub const SATISFACTION_MALUS_PER_LONG_TICK_AT_DOCK: f32 = -0.5;
+
+/// How long a dock listing runs before it is settled.
+pub const DEFAULT_DOCK_LISTING_DURATION: Tick = DAYS;
+
+/// The reserve a listing opens at, as a fraction of its release fee.
+pub const DOCK_MIN_BID_DIVISOR: u32 = 5;
+
+/// How much a bid must beat the standing one by, in percent. Nudging the lead by
+/// a single satoshi is free and drags an auction out for no one's benefit.
+pub const DOCK_MIN_BID_RAISE_PERCENT: u32 = 5;
+
+/// What a crew learns about a pirate the moment someone puts them up for sale.
+/// A seller showing off the goods is the whole point of a listing.
+pub const DOCK_LISTING_SCOUTING: Skill = 10.0;
+
+/// How many bids a listing remembers. The listing travels with the team on every
+/// gossip round, so the log has to stay small.
+pub const DOCK_BID_LOG_SIZE: usize = 8;
+
+/// A new highest bid inside this window of the deadline pushes the deadline out
+/// to `now + AUCTION_EXTENSION_WINDOW`, so an auction cannot be sniped.
+pub const AUCTION_EXTENSION_WINDOW: Tick = MINUTES;
+
+/// How long after the deadline a bidder waits for the seller to settle before
+/// refunding itself.
+///
+/// This MUST exceed `AUCTION_EXTENSION_WINDOW`. A bidder's copy of `expires_at`
+/// is a snapshot taken when they bid, so an extension makes it stale - but an
+/// extension is only ever triggered by a new *highest* bid, which displaces the
+/// previous leader. The only party whose snapshot matters is therefore the
+/// current leader, who bid at most one extension window ago, so the snapshot can
+/// never lag the truth by more than one window however often the auction extends.
+pub const AUCTION_SETTLEMENT_GRACE: Tick = 3 * MINUTES;
+
+/// Backstop so escrowed satoshis can never be stuck indefinitely.
+pub const MAX_BID_LIFETIME: Tick = DEFAULT_DOCK_LISTING_DURATION + AUCTION_SETTLEMENT_GRACE;
+
+/// How long a seller keeps the record of a closed auction on their team. The
+/// winner may have been away when it closed and only learns they won by seeing
+/// this, so it has to outlast any absence worth planning for.
+pub const DOCK_RECEIPT_RETENTION: Tick = 2 * WEEKS;
+
+const _: () = assert!(
+    DOCK_RECEIPT_RETENTION > MAX_BID_LIFETIME,
+    "a bidder gives up on a silent seller after MAX_BID_LIFETIME, so the seller's word must still be there to find"
+);
+
+const _: () = assert!(
+    AUCTION_SETTLEMENT_GRACE > AUCTION_EXTENSION_WINDOW,
+    "the offline-refund guarantee rests on the grace window outlasting any single deadline extension"
+);
 pub const SATISFACTION_PER_OPINION_EVENT: f32 = 0.275;
 pub const SATISFACTION_OPINION_RECOVERY_TIME: Tick = TickInterval::LONG;
 pub const SATISFACTION_OPINION_MODIFIER_WEIGHT: f32 = 2.5;
 pub const LEAVING_PROBABILITY_SATISFACTION_MODIFIER: f64 =
     0.01 / SATISFACTION_THRESHOLD_FOR_LEAVING as f64;
 pub const SATISFACTION_MALUS_RELEASE_FROM_TEAM: Skill = -5.0;
+/// Being sold stings, but nowhere near as much as being fired.
+pub const SATISFACTION_MALUS_TRADED: Skill = -1.0;
 pub const SATISFACTION_MALUS_UNPAID_SALARIES: Skill = -1.5;
 
 pub const MORALE_DEMOTION_MALUS: Skill = MoraleModifier::MEDIUM_MALUS;

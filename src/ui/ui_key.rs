@@ -101,9 +101,10 @@ pub mod player {
     pub const LOCK_PLAYER: KeyCode = KeyCode::Char('L');
     pub const UNLOCK_PLAYER: KeyCode = KeyCode::Char('U');
     pub const DRINK: KeyCode = KeyCode::Char('D');
-    pub const GIVE_GOLD: KeyCode = KeyCode::Char('g');
     pub const PLAYER_STATUS_VIEW: KeyCode = KeyCode::Char('s');
     pub const TRAINING_FOCUS: KeyCode = KeyCode::Char('T');
+    /// Leaves the highlighted pirate at the dock, or takes them back.
+    pub const MARKET_LISTING: KeyCode = KeyCode::Char('M');
 }
 
 pub mod team {
@@ -122,7 +123,7 @@ pub mod team {
     pub const SET_MOZZO: KeyCode = KeyCode::Char('m');
     pub const SET_PILOT: KeyCode = KeyCode::Char('p');
     pub const SET_SUBSTITUTION_TENDENCY: KeyCode = KeyCode::Char('S');
-    pub const SET_GAME_POSITION_FLUIDITY: KeyCode = KeyCode::Char('P');
+    pub const SET_GAME_POSITION_FLUIDITY: KeyCode = KeyCode::Char('f');
     pub const SET_IN_GAME_DRINKING: KeyCode = KeyCode::Char('r');
 
     pub fn set_player_position(position: GamePosition) -> KeyCode {
@@ -150,6 +151,11 @@ pub mod team {
 }
 
 /// Trading & economy
+pub mod dock {
+    use super::KeyCode;
+    pub const SIGN_NOW: KeyCode = KeyCode::Char('B');
+}
+
 pub mod market {
     use super::KeyCode;
     pub const BUY_SCRAPS: KeyCode = KeyCode::Char('s');

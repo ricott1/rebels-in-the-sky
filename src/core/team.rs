@@ -2,7 +2,10 @@ use super::*;
 use crate::{
     core::{constants::MAX_CREW_SIZE, utils::is_default},
     game_engine::{tactic::Tactic, types::*, Tournament, TournamentId, TournamentState},
-    network::{challenge::Challenge, trade::Trade},
+    network::{
+        challenge::Challenge,
+        trade::{Trade, TradeRoute},
+    },
     types::*,
 };
 use anyhow::anyhow;
@@ -39,6 +42,42 @@ pub enum TournamentRegistrationState {
     Confirmed {
         tournament_id: TournamentId,
     },
+}
+
+/// Satoshis a crew has committed to a bid and no longer has.
+///
+/// Serialized, unlike the trade books, because the money has already left
+/// `resources`: losing this record on restart would lose the money with it.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct OutstandingBid {
+    pub trade_id: TradeId,
+    pub seller_team_id: TeamId,
+    pub player_id: PlayerId,
+    /// Which of the pirate's listings this bid was for, matched against the
+    /// seller's receipt when the auction closes.
+    #[serde(default)]
+    pub listed_on: Tick,
+    pub amount: u32,
+    pub placed_on: Tick,
+    /// The deadline as published when the bid was placed. Refreshed whenever we
+    /// can see the listing, so the countdown shown is honest.
+    pub expires_at: Tick,
+    /// Set the moment we see the seller's receipt naming us. From then on the
+    /// escrow is spent whatever else happens: we are only waiting for room on
+    /// board to collect the pirate.
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub won_on: Option<Tick>,
+}
+
+impl OutstandingBid {
+    /// True once the seller has had their whole grace window to settle and has
+    /// said nothing - no receipt, no listing. A won bid is never refunded.
+    pub fn should_be_refunded(&self, now: Tick) -> bool {
+        self.won_on.is_none()
+            && (now > self.expires_at + AUCTION_SETTLEMENT_GRACE
+                || now > self.placed_on + MAX_BID_LIFETIME)
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
@@ -97,9 +136,9 @@ pub struct Team {
     #[serde(default)]
     pub in_game_drinking: InGameDrinking,
     #[serde(skip)]
-    pub sent_trades: HashMap<(PlayerId, PlayerId), Trade>,
+    pub sent_trades: HashMap<TradeId, Trade>,
     #[serde(skip)]
-    pub received_trades: HashMap<(PlayerId, PlayerId), Trade>,
+    pub received_trades: HashMap<TradeId, Trade>,
     #[serde(skip)]
     pub sent_challenges: HashMap<TeamId, Challenge>,
     #[serde(skip)]
@@ -119,6 +158,15 @@ pub struct Team {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub space_cove: Option<SpaceCove>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub outstanding_bids: Vec<OutstandingBid>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default, alias = "market_listings")]
+    pub dock_listings: Vec<DockListing>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default, alias = "auction_receipts")]
+    pub dock_receipts: Vec<DockReceipt>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub tournaments_won: Vec<TournamentId>,
@@ -198,20 +246,22 @@ impl Team {
     }
 
     pub fn add_sent_trade(&mut self, trade: Trade) {
-        self.sent_trades
-            .insert((trade.proposer_player.id, trade.target_player.id), trade);
+        self.sent_trades.insert(trade.id, trade);
     }
 
     pub fn add_received_trade(&mut self, trade: Trade) {
-        self.received_trades
-            .insert((trade.proposer_player.id, trade.target_player.id), trade);
+        self.received_trades.insert(trade.id, trade);
     }
 
-    pub fn remove_trade(&mut self, proposer_player_id: PlayerId, target_player_id: PlayerId) {
+    pub fn remove_trade(&mut self, trade_id: &TradeId) {
+        self.sent_trades.remove(trade_id);
+        self.received_trades.remove(trade_id);
+    }
+
+    pub fn trade(&self, trade_id: &TradeId) -> Option<&Trade> {
         self.sent_trades
-            .remove(&(proposer_player_id, target_player_id));
-        self.received_trades
-            .remove(&(proposer_player_id, target_player_id));
+            .get(trade_id)
+            .or_else(|| self.received_trades.get(trade_id))
     }
 
     pub fn clear_trades(&mut self) {
@@ -344,10 +394,10 @@ impl Team {
 
     pub fn average_tiredness(&self, world: &World) -> f32 {
         let tiredness_iter = self
-            .player_ids
-            .iter()
+            .active_player_ids()
+            .into_iter()
             .take(MAX_PLAYERS_PER_GAME)
-            .map(|&id| {
+            .map(|id| {
                 if let Ok(player) = world.players.get_or_err(&id) {
                     player.current_tiredness(world)
                 } else {
@@ -369,6 +419,105 @@ impl Team {
 
     pub fn has_space_cove_on(&self) -> Option<PlanetId> {
         self.space_cove.as_ref().map(|cove| cove.planet_id)
+    }
+
+    /// Empties whichever crew-role slot this pirate occupies.
+    pub fn vacate_crew_role(&mut self, player_id: &PlayerId, role: CrewRole) {
+        match role {
+            CrewRole::Captain => self.crew_roles.captain = None,
+            CrewRole::Doctor => self.crew_roles.doctor = None,
+            CrewRole::Pilot => self.crew_roles.pilot = None,
+            CrewRole::Engineer => self.crew_roles.engineer = None,
+            CrewRole::Mozzo => self.crew_roles.mozzo.retain(|id| id != player_id),
+        }
+    }
+
+    pub fn has_listings(&self) -> bool {
+        !self.dock_listings.is_empty()
+    }
+
+    pub fn is_listed(&self, player_id: &PlayerId) -> bool {
+        self.dock_listings
+            .iter()
+            .any(|listing| listing.player_id == *player_id)
+    }
+
+    pub fn listing(&self, player_id: &PlayerId) -> Option<&DockListing> {
+        self.dock_listings
+            .iter()
+            .find(|listing| listing.player_id == *player_id)
+    }
+
+    pub fn receipt_for(&self, player_id: &PlayerId, listed_on: Tick) -> Option<&DockReceipt> {
+        self.dock_receipts
+            .iter()
+            .find(|receipt| receipt.player_id == *player_id && receipt.listed_on == listed_on)
+    }
+
+    pub fn listing_mut(&mut self, player_id: &PlayerId) -> Option<&mut DockListing> {
+        self.dock_listings
+            .iter_mut()
+            .find(|listing| listing.player_id == *player_id)
+    }
+
+    /// Returns the removed listing, so a caller can refund any standing bid.
+    pub fn remove_listing(&mut self, player_id: &PlayerId) -> Option<DockListing> {
+        let index = self
+            .dock_listings
+            .iter()
+            .position(|listing| listing.player_id == *player_id)?;
+        Some(self.dock_listings.remove(index))
+    }
+
+    pub fn is_parked(&self, player_id: &PlayerId) -> bool {
+        self.is_listed(player_id)
+    }
+
+    fn has_parked_pirates(&self) -> bool {
+        self.has_listings()
+    }
+
+    /// Crew that sails, plays, holds roles and drinks rum. Keeps `player_ids`
+    /// order, so `.take(MAX_PLAYERS_PER_GAME)` still yields starters then bench.
+    pub fn active_player_ids(&self) -> Vec<PlayerId> {
+        if !self.has_parked_pirates() {
+            return self.player_ids.clone();
+        }
+        self.player_ids
+            .iter()
+            .copied()
+            .filter(|id| !self.is_parked(id))
+            .collect()
+    }
+
+    /// The counterpart to `active_player_ids`: together they cover `player_ids`.
+    pub fn parked_player_ids(&self) -> Vec<PlayerId> {
+        if !self.has_parked_pirates() {
+            return vec![];
+        }
+        self.player_ids
+            .iter()
+            .copied()
+            .filter(|id| self.is_parked(id))
+            .collect()
+    }
+
+    pub fn listed_player_ids(&self) -> Vec<PlayerId> {
+        if !self.has_listings() {
+            return vec![];
+        }
+        self.player_ids
+            .iter()
+            .copied()
+            .filter(|id| self.is_listed(id))
+            .collect()
+    }
+
+    pub fn active_players_count(&self) -> usize {
+        if !self.has_parked_pirates() {
+            return self.player_ids.len();
+        }
+        self.player_ids.iter().filter(|id| !self.is_parked(id)).count()
     }
 
     pub fn can_teleport_to(&self, to: &Planet) -> AppResult<()> {
@@ -484,6 +633,23 @@ impl Team {
             return Err(anyhow!("Player is not in a team"));
         }
 
+        match self.listing(&player.id) {
+            // Selling a pirate out from under a bidder would leave their escrowed
+            // satoshi stranded until the backstop sweep. Let the auction finish.
+            Some(listing) if listing.highest_bid.is_some() => {
+                Err(anyhow!("There is a standing bid"))
+            }
+            // Already ashore, and never on a game or tournament roster - those hold
+            // clones taken from the active crew. Without this the retirement and
+            // low-satisfaction ticks would skip them forever while the crew is away.
+            Some(_) => Ok(()),
+            None => self.crew_is_ashore_and_idle(),
+        }
+    }
+
+    /// The crew is docked somewhere and not committed to a game or a tournament -
+    /// the precondition for any change to who is aboard.
+    pub fn crew_is_ashore_and_idle(&self) -> AppResult<()> {
         if self.is_on_planet().is_none() {
             return Err(anyhow!("{} is not on a planet", self.name));
         }
@@ -499,9 +665,87 @@ impl Team {
         Ok(())
     }
 
+    /// Conditions to leave a pirate at the dock. The dock is not a place, so this
+    /// to another crew.
+    ///
+    /// The game and tournament checks are not implied by the location check:
+    /// games are played on a planet, and a crew can organise a tournament at its
+    /// own cove, so being docked there is compatible with both.
+    pub fn can_leave_player_at_dock(&self, player: &Player) -> AppResult<()> {
+        // Being on a planet is load-bearing, not flavour: it guarantees the crew
+        // is never Travelling while a crew role is vacated.
+        if self.is_on_planet().is_none() {
+            return Err(anyhow!("{} is not on a planet", self.name));
+        }
+
+        if !self.player_ids.contains(&player.id) || player.team != Some(self.id) {
+            return Err(anyhow!("Player is not in team"));
+        }
+
+        if self.is_listed(&player.id) {
+            return Err(anyhow!(
+                "{} is already at the dock",
+                player.info.short_name()
+            ));
+        }
+
+        self.crew_is_ashore_and_idle()?;
+
+        // Deliberately 1, not MIN_PLAYERS_PER_GAME: a crew may list itself down to
+        // where it cannot field a game, and simply cannot play. An empty active
+        // roster is the real problem - it soft-locks travel and space adventures.
+        if self.active_players_count() <= 1 {
+            return Err(anyhow!("Someone has to sail the ship"));
+        }
+
+        Ok(())
+    }
+
+    /// Taking a pirate back from the dock. No crew-capacity check is needed or
+    /// wanted: a listed pirate never left `player_ids`, so their seat was never
+    /// freed and can never have been given away.
+    pub fn can_recall_player_from_dock(&self, player_id: &PlayerId) -> AppResult<()> {
+        let listing = self
+            .listing(player_id)
+            .ok_or_else(|| anyhow!("Pirate is not at the dock"))?;
+
+        // Pulling a lot with money already escrowed against it would either renege
+        // on the bidder or leak their satoshis. Let the auction run out instead.
+        if listing.highest_bid.is_some() {
+            return Err(anyhow!("There is a standing bid"));
+        }
+
+        self.crew_is_ashore_and_idle()
+    }
+
+    /// Orders `player_ids` as `[active in best-position order.., parked..]`.
+    /// The tail is what keeps a pirate who is for sale out of the game roster,
+    /// since `TeamInGame::from_team_id` just takes the first MAX_PLAYERS_PER_GAME.
+    ///
+    /// Ids whose player is missing from `players` are parked in the tail rather
+    /// than dropped: silently shrinking `player_ids` here would lose the pirate.
+    pub fn reassign_positions(&mut self, players: &PlayerMap) {
+        let mut active: Vec<&Player> = vec![];
+        let mut tail: Vec<PlayerId> = vec![];
+        for &id in self.player_ids.iter() {
+            match players.get(&id) {
+                Some(player) if !self.is_parked(&id) => active.push(player),
+                _ => tail.push(id),
+            }
+        }
+
+        let mut ids = Self::best_position_assignment(active, self.game_position_fluidity);
+        ids.extend(tail);
+        self.player_ids = ids;
+    }
+
     pub fn can_set_crew_role(&self, player: &Player) -> AppResult<()> {
         if player.team.is_none() {
             return Err(anyhow!("Player is not in a team"));
+        }
+
+        if self.is_parked(&player.id) {
+            return Err(anyhow!("{} is at the dock", player.info.short_name()));
         }
 
         if self.current_game.is_some() {
@@ -546,11 +790,11 @@ impl Team {
             ));
         }
 
-        if self.player_ids.len() < MIN_PLAYERS_PER_GAME {
+        if self.active_players_count() < MIN_PLAYERS_PER_GAME {
             return Err(anyhow!("{} does not have enough pirates", self.name));
         }
 
-        if team.player_ids.len() < MIN_PLAYERS_PER_GAME {
+        if team.active_players_count() < MIN_PLAYERS_PER_GAME {
             return Err(anyhow!("{} does not have enough pirates", team.name));
         }
 
@@ -643,6 +887,12 @@ impl Team {
 
         if !matches!(self.is_on_planet(), Some(id) if id == tournament.planet_id) {
             return Err(anyhow!("Team is not at the tournament location."));
+        }
+
+        // Checked last so it does not pre-empt the errors above: without it a crew
+        // that has listed itself short could register and then fail to field five.
+        if self.active_players_count() < MIN_PLAYERS_PER_GAME {
+            return Err(anyhow!("Team does not have enough pirates."));
         }
 
         Ok(())
@@ -738,31 +988,93 @@ impl Team {
         self.can_play_game_with_team(team, None)
     }
 
-    pub fn can_trade_players_with_team(
+    /// Always evaluated from the proposer's point of view.
+    ///
+    /// `CrewSwap` is the classic co-located pirate-for-pirate deal. `DockBid`
+    /// is cash for a pirate listed on the target's cove: no co-location between
+    /// the crews, but the buyer must be standing at that cove, because the pirate
+    /// comes aboard the moment the deal settles.
+    pub fn can_trade_with_team(
         &self,
-        proposer_player: &Player,
-        target_player: &Player,
         target_team: &Team,
+        route: TradeRoute,
+        proposer_player: Option<&Player>,
+        target_player: &Player,
+        proposer_satoshis: u32,
+        target_satoshis: u32,
     ) -> AppResult<()> {
-        // This is always run from the proposer team point of view.
         if self.id == target_team.id {
             return Err(anyhow!("Cannot trade with oneself"));
-        }
-
-        if proposer_player.team.is_none() || proposer_player.team.unwrap() != self.id {
-            return Err(anyhow!("Proposed player is not part of the team"));
         }
 
         if target_player.team.is_none() || target_player.team.unwrap() != target_team.id {
             return Err(anyhow!("Target player is not part of the team"));
         }
 
-        if self.is_on_planet() != target_team.is_on_planet() {
-            return Err(anyhow!("Not on the same planet"));
+        if self.balance() < proposer_satoshis {
+            return Err(anyhow!("Not enough satoshi"));
         }
 
-        self.can_release_player(proposer_player)?;
-        target_team.can_release_player(target_player)?;
+        if target_team.balance() < target_satoshis {
+            return Err(anyhow!("{} cannot afford that", target_team.name));
+        }
+
+        match route {
+            TradeRoute::CrewSwap => {
+                let proposer_player = proposer_player
+                    .ok_or_else(|| anyhow!("A crew swap needs a pirate on both sides"))?;
+
+                if proposer_player.team.is_none() || proposer_player.team.unwrap() != self.id {
+                    return Err(anyhow!("Proposed player is not part of the team"));
+                }
+
+                if self.is_on_planet() != target_team.is_on_planet() {
+                    return Err(anyhow!("Not on the same planet"));
+                }
+
+                // A pirate at the dock is always signed through a bid, even when
+                // you happen to be standing at the cove. One code path, not two.
+                if self.is_listed(&proposer_player.id) {
+                    return Err(anyhow!("Recall your pirate from the market first"));
+                }
+                if target_team.is_listed(&target_player.id) {
+                    return Err(anyhow!(
+                        "{} is at the dock - bid for them instead",
+                        target_player.info.short_name()
+                    ));
+                }
+
+                self.can_release_player(proposer_player)?;
+                target_team.can_release_player(target_player)?;
+            }
+
+            TradeRoute::DockBid => {
+                if proposer_player.is_some() {
+                    return Err(anyhow!("A dock bid is cash only"));
+                }
+                if target_satoshis != 0 {
+                    return Err(anyhow!("A dock bid is cash only"));
+                }
+
+                let listing = target_team.listing(&target_player.id).ok_or_else(|| {
+                    anyhow!(
+                        "{} is not at the dock",
+                        target_player.info.short_name()
+                    )
+                })?;
+
+                if proposer_satoshis < listing.next_valid_bid() {
+                    return Err(anyhow!(
+                        "Bid at least {} satoshi",
+                        listing.next_valid_bid()
+                    ));
+                }
+
+                if self.player_ids.len() >= self.spaceship.crew_capacity() as usize {
+                    return Err(anyhow!("{} is full", self.name));
+                }
+            }
+        }
 
         Ok(())
     }
@@ -770,7 +1082,7 @@ impl Team {
     pub fn can_travel_to_planet(&self, planet: &Planet, duration: Tick) -> AppResult<()> {
         planet.can_be_travelled_to()?;
 
-        if self.player_ids.is_empty() {
+        if self.active_players_count() == 0 {
             return Err(anyhow!("No pirate to travel"));
         }
 
@@ -824,7 +1136,7 @@ impl Team {
     }
 
     pub fn can_start_space_adventure(&self, average_tiredness: Skill) -> AppResult<()> {
-        if self.player_ids.is_empty() {
+        if self.active_players_count() == 0 {
             return Err(anyhow!("No pirate to explore"));
         }
 
@@ -1128,7 +1440,7 @@ impl Team {
         if self.home_planet_id == planet_id {
             0
         } else {
-            self.player_ids.len() as u32
+            self.active_players_count() as u32
         }
     }
 }
@@ -1136,6 +1448,265 @@ impl Team {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A crew of `n` pirates with a ready cove that has a market, so listings can
+    /// be pushed directly - list/recall does not exist yet at this layer.
+    fn team_with_cove(n: usize) -> (Team, PlayerMap) {
+        let planet_id = PlanetId::new_v4();
+        let mut cove = SpaceCove::under_construction(planet_id);
+        cove.finish_contruction();
+        cove.upgrades.insert(SpaceCoveUpgradeTarget::Market);
+
+        let mut team = Team::random(None);
+        team.space_cove = Some(cove);
+        team.current_location = TeamLocation::OnPlanet { planet_id };
+
+        let mut players = PlayerMap::new();
+        for _ in 0..n {
+            let mut player = Player::default().randomize(None);
+            player.team = Some(team.id);
+            team.player_ids.push(player.id);
+            players.insert(player.id, player);
+        }
+        (team, players)
+    }
+
+    fn list(team: &mut Team, player_id: PlayerId) {
+        team.dock_listings.push(DockListing::new(player_id,
+            1_000,
+            100,
+            DAYS,
+            Tick::now(),
+        ));
+    }
+
+    #[test]
+    fn test_listed_pirate_leaves_the_active_roster() {
+        let (mut team, _) = team_with_cove(7);
+        let listed = team.player_ids[0];
+        assert_eq!(team.active_players_count(), 7);
+        assert!(!team.is_listed(&listed));
+
+        list(&mut team, listed);
+
+        assert!(team.is_listed(&listed));
+        assert_eq!(team.active_players_count(), 6);
+        assert_eq!(team.active_player_ids().len(), 6);
+        assert!(!team.active_player_ids().contains(&listed));
+        assert_eq!(team.listed_player_ids(), vec![listed]);
+        // Still on the crew: they keep their seat and keep drawing pay.
+        assert!(team.player_ids.contains(&listed));
+        assert_eq!(team.player_ids.len(), 7);
+    }
+
+    #[test]
+    fn test_reassign_positions_parks_listed_pirates_at_the_tail() {
+        let (mut team, players) = team_with_cove(7);
+        let listed = team.player_ids[0];
+        list(&mut team, listed);
+
+        team.reassign_positions(&players);
+
+        assert_eq!(team.player_ids.len(), 7);
+        assert_eq!(
+            team.player_ids.last(),
+            Some(&listed),
+            "a pirate at the dock must sort behind every active pirate"
+        );
+        // The game roster cut can therefore never reach them.
+        assert!(!team.player_ids[..MAX_PLAYERS_PER_GAME.min(6)].contains(&listed));
+    }
+
+    #[test]
+    fn test_reassign_positions_keeps_ids_whose_player_is_missing() {
+        let (mut team, mut players) = team_with_cove(6);
+        let ghost = team.player_ids[2];
+        players.remove(&ghost);
+
+        team.reassign_positions(&players);
+
+        assert_eq!(team.player_ids.len(), 6, "no id may be silently dropped");
+        assert!(team.player_ids.contains(&ghost));
+    }
+
+    #[test]
+    fn test_listing_below_five_blocks_games_but_not_the_roster() {
+        let (mut team, _) = team_with_cove(6);
+        let mut other = Team::random(None);
+        other.current_location = team.current_location;
+        for _ in 0..MIN_PLAYERS_PER_GAME {
+            other.player_ids.push(PlayerId::new_v4());
+        }
+        assert!(team.can_play_game_with_team(&other, None).is_ok());
+
+        let (first, second) = (team.player_ids[0], team.player_ids[1]);
+        list(&mut team, first);
+        list(&mut team, second);
+
+        assert_eq!(team.active_players_count(), 4);
+        assert!(team
+            .can_play_game_with_team(&other, None)
+            .unwrap_err()
+            .to_string()
+            .contains("does not have enough pirates"));
+    }
+
+    #[test]
+    fn test_listed_pirate_does_not_cost_teleport_rum() {
+        let (mut team, _) = team_with_cove(5);
+        let elsewhere = PlanetId::new_v4();
+        assert_eq!(team.teleport_rum_cost(elsewhere), 5);
+
+        let first = team.player_ids[0];
+        list(&mut team, first);
+
+        assert_eq!(team.teleport_rum_cost(elsewhere), 4);
+    }
+
+    #[test]
+    fn test_can_leave_player_requires_being_on_a_planet() {
+        let (mut team, players) = team_with_cove(5);
+        let player = players.get(&team.player_ids[0]).expect("player").clone();
+        assert!(team.can_leave_player_at_dock(&player).is_ok());
+
+        // Any planet will do - the dock is not a place - but in flight is not.
+        team.current_location = TeamLocation::OnPlanet {
+            planet_id: PlanetId::new_v4(),
+        };
+        assert!(team.can_leave_player_at_dock(&player).is_ok());
+
+        team.current_location = TeamLocation::Travelling {
+            from: PlanetId::new_v4(),
+            to: PlanetId::new_v4(),
+            started: 0,
+            duration: DAYS,
+            distance: 1,
+        };
+        assert!(team
+            .can_leave_player_at_dock(&player)
+            .unwrap_err()
+            .to_string()
+            .contains("not on a planet"));
+    }
+
+    // Being on a planet does not imply being idle: games are played on a planet,
+    // and a crew can organise a tournament at its own cove.
+    #[test]
+    fn test_can_list_player_is_blocked_by_a_game_or_a_tournament() {
+        let (team, players) = team_with_cove(5);
+        let player = players.get(&team.player_ids[0]).expect("player").clone();
+        assert!(team.can_leave_player_at_dock(&player).is_ok());
+
+        let mut playing = team.clone();
+        playing.current_game = Some(GameId::new_v4());
+        assert!(playing
+            .can_leave_player_at_dock(&player)
+            .unwrap_err()
+            .to_string()
+            .contains("is playing"));
+
+        let mut in_tournament = team.clone();
+        in_tournament.tournament_registration_state = TournamentRegistrationState::Confirmed {
+            tournament_id: TournamentId::new_v4(),
+        };
+        assert!(in_tournament
+            .can_leave_player_at_dock(&player)
+            .unwrap_err()
+            .to_string()
+            .contains("in a tournament"));
+    }
+
+    #[test]
+    fn test_cannot_list_the_last_active_pirate() {
+        let (mut team, players) = team_with_cove(2);
+        let (first, second) = (team.player_ids[0], team.player_ids[1]);
+        let second_player = players.get(&second).expect("player").clone();
+
+        list(&mut team, first);
+
+        assert_eq!(team.active_players_count(), 1);
+        assert!(team
+            .can_leave_player_at_dock(&second_player)
+            .unwrap_err()
+            .to_string()
+            .contains("sail the ship"));
+    }
+
+    #[test]
+    fn test_removing_a_listing_unparks_the_pirate() {
+        let (mut team, _) = team_with_cove(3);
+        let listed = team.player_ids[0];
+        list(&mut team, listed);
+        assert!(team.is_parked(&listed));
+
+        team.remove_listing(&listed);
+
+        assert!(!team.is_parked(&listed));
+        assert!(team.dock_listings.is_empty());
+    }
+
+    #[test]
+    fn test_cannot_list_the_same_pirate_twice() {
+        let (mut team, players) = team_with_cove(5);
+        let first = team.player_ids[0];
+        let player = players.get(&first).expect("player").clone();
+
+        list(&mut team, first);
+
+        assert!(team
+            .can_leave_player_at_dock(&player)
+            .unwrap_err()
+            .to_string()
+            .contains("already at the dock"));
+    }
+
+    #[test]
+    fn test_recall_is_blocked_once_a_bid_stands() {
+        let (mut team, _) = team_with_cove(5);
+        let first = team.player_ids[0];
+        list(&mut team, first);
+        assert!(team.can_recall_player_from_dock(&first).is_ok());
+
+        team.listing_mut(&first).expect("listing").highest_bid = Some(DockBid {
+            team_id: TeamId::new_v4(),
+            peer_id: PeerId::random(),
+            trade_id: TradeId::new_v4(),
+            amount: 500,
+            placed_on: Tick::now(),
+        });
+
+        assert!(team
+            .can_recall_player_from_dock(&first)
+            .unwrap_err()
+            .to_string()
+            .contains("standing bid"));
+    }
+
+    #[test]
+    fn test_cannot_recall_a_pirate_who_is_not_listed() {
+        let (team, _) = team_with_cove(5);
+        assert!(team
+            .can_recall_player_from_dock(&team.player_ids[0])
+            .unwrap_err()
+            .to_string()
+            .contains("not at the dock"));
+    }
+
+    #[test]
+    fn test_listed_pirate_cannot_take_a_crew_role() {
+        let (mut team, players) = team_with_cove(5);
+        let listed = team.player_ids[0];
+        let player = players.get(&listed).expect("player").clone();
+        assert!(team.can_set_crew_role(&player).is_ok());
+
+        list(&mut team, listed);
+
+        assert!(team
+            .can_set_crew_role(&player)
+            .unwrap_err()
+            .to_string()
+            .contains("at the dock"));
+    }
 
     // Builds a player with uniform skills - so `position_skill_rating` is identical for
     // every position - and the given per-position fitness. `fitness` entries are in
