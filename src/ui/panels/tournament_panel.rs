@@ -745,11 +745,6 @@ impl HelpPanel for TournamentPanel {
                     "  {}          Register your team for the highlighted tournament",
                     ui_key::REGISTER_TO_TOURNAMENT
                 )),
-                Line::from(format!(
-                    "  {} / {}      Organize a quick / big tournament",
-                    ui_key::ORGANIZE_QUICK_TOURNAMENT,
-                    ui_key::ORGANIZE_BIG_TOURNAMENT
-                )),
             ],
         }
     }
