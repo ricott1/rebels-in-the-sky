@@ -878,6 +878,76 @@ mod coop_tests {
         }
     }
 
+    async fn pump_alone(
+        app: &mut App,
+        ticker: &mut tokio::time::Interval,
+        timeout: Duration,
+        done: impl Fn(&App) -> bool,
+    ) -> AppResult<()> {
+        let deadline = Instant::now() + timeout;
+        while !done(app) {
+            if Instant::now() > deadline {
+                return Err(anyhow!("timed out"));
+            }
+            let next = tokio::select! {
+                Some(event) = app.event_receiver.recv() => Some(event),
+                _ = ticker.tick() => None,
+            };
+            match next {
+                Some(AppEvent::SpaceLink(event)) => app.handle_space_link_event(event)?,
+                Some(_) => {}
+                None => fast_tick(app)?,
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_host_drops_a_guest_whose_game_dies() -> AppResult<()> {
+        let (mut peers, host_team_id) = Peers::connected().await?;
+        peers.join(host_team_id).await?;
+        let Peers {
+            mut host,
+            guest,
+            mut ticker,
+            ..
+        } = peers;
+        drop(guest);
+
+        pump_alone(&mut host, &mut ticker, Duration::from_secs(10), |app| {
+            app.world
+                .space_adventure
+                .as_ref()
+                .is_some_and(|space| space.guest_id().is_none())
+        })
+        .await?;
+        assert!(matches!(
+            host.world.get_own_team()?.current_location,
+            TeamLocation::OnSpaceAdventure { joinable: true, .. }
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_guest_goes_home_when_the_host_game_dies() -> AppResult<()> {
+        let (mut peers, host_team_id) = Peers::connected().await?;
+        peers.join(host_team_id).await?;
+        let Peers {
+            host,
+            mut guest,
+            mut ticker,
+            ..
+        } = peers;
+        drop(host);
+
+        pump_alone(&mut guest, &mut ticker, Duration::from_secs(15), |app| {
+            app.world.space_mirror.is_none() && app.space_session.is_none()
+        })
+        .await?;
+        assert!(guest.world.get_own_team()?.is_on_planet().is_some());
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_guest_joins_flies_and_leaves_over_a_real_link() -> AppResult<()> {
         let (mut peers, host_team_id) = Peers::connected().await?;
