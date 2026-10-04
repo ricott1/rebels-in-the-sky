@@ -1066,8 +1066,9 @@ impl World {
 
         // Drop any listing before the pirate leaves, so the dock never names
         // someone who is no longer on the crew.
-        let at_dock = team.is_listed(&player.id);
+        let at_dock = team.is_listed(&player.id) || team.is_waiting(&player.id);
         team.remove_listing(&player.id);
+        team.waiting_at_dock.retain(|id| *id != player.id);
 
         team.player_ids.retain(|&p| p != player.id);
 
@@ -1899,6 +1900,10 @@ impl World {
             }
 
             callbacks.append(&mut self.tick_travel(current_tick)?);
+
+            if let Some(cb) = self.tick_collect_waiting_pirates(current_tick)? {
+                callbacks.push(cb);
+            }
 
             if let Some(callback) = self.tick_spaceship_upgrade(current_tick)? {
                 callbacks.push(callback);
@@ -3237,12 +3242,48 @@ impl World {
         Ok(callback)
     }
 
+    fn tick_collect_waiting_pirates(
+        &mut self,
+        current_tick: Tick,
+    ) -> AppResult<Option<UiCallback>> {
+        let own_team = self.get_own_team()?;
+        if own_team.waiting_at_dock.is_empty() || !own_team.is_at_dock() {
+            return Ok(None);
+        }
+
+        let mut team = own_team.clone();
+        let names = team
+            .waiting_at_dock
+            .iter()
+            .filter_map(|id| self.players.get(id))
+            .map(|player| player.info.short_name())
+            .join(", ");
+        team.waiting_at_dock.clear();
+        team.reassign_positions(&self.players);
+        team.version += 1;
+        self.teams.insert(team.id, team);
+
+        self.dirty = true;
+        self.dirty_network = true;
+        self.dirty_ui = true;
+
+        Ok(Some(UiCallback::PushUiPopup {
+            popup_message: PopupMessage::Message {
+                message: format!("{names} came aboard from the dock."),
+                links: vec![],
+                level: log::Level::Info,
+                is_skippable: true,
+                timestamp: current_tick,
+            },
+        }))
+    }
+
     fn tick_players_at_dock(&mut self) -> AppResult<()> {
         let listed: Vec<PlayerId> = self
             .teams
             .values()
             .filter(|team| team.peer_id.is_none())
-            .flat_map(|team| team.parked_player_ids())
+            .flat_map(|team| team.listed_player_ids())
             .collect();
 
         for player_id in listed {
@@ -4242,6 +4283,67 @@ mod test {
         );
         assert!(app.world.players.get_or_err(&player_id)?.team.is_none());
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_waiting_pirates_board_when_the_crew_reaches_the_dock() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let own_team_id = app.world.own_team_id;
+        app.world
+            .teams
+            .get_mut_or_err(&own_team_id)?
+            .current_location = TeamLocation::OnPlanet {
+            planet_id: *DEFAULT_PLANET_ID,
+        };
+        let player_id = app.world.get_own_team()?.player_ids[0];
+        app.world
+            .get_own_team_mut()?
+            .waiting_at_dock
+            .push(player_id);
+
+        assert!(app
+            .world
+            .tick_collect_waiting_pirates(Tick::now())?
+            .is_none());
+        assert!(app.world.get_own_team()?.is_waiting(&player_id));
+
+        park_own_team_at_the_dock(&mut app)?;
+        assert!(app
+            .world
+            .tick_collect_waiting_pirates(Tick::now())?
+            .is_some());
+        let team = app.world.get_own_team()?;
+        assert!(!team.is_waiting(&player_id));
+        assert!(team.active_player_ids().contains(&player_id));
+        Ok(())
+    }
+
+    #[test]
+    fn test_a_released_waiting_pirate_stays_at_the_dock() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let own_team_id = app.world.own_team_id;
+        app.world
+            .teams
+            .get_mut_or_err(&own_team_id)?
+            .current_location = TeamLocation::OnPlanet {
+            planet_id: *DEFAULT_PLANET_ID,
+        };
+        let player_id = app.world.get_own_team()?.player_ids[0];
+        app.world
+            .get_own_team_mut()?
+            .waiting_at_dock
+            .push(player_id);
+
+        app.world.release_player_from_team(player_id, true)?;
+
+        assert!(!app.world.get_own_team()?.is_waiting(&player_id));
+        assert_eq!(
+            app.world.players.get_or_err(&player_id)?.current_location,
+            crate::core::types::PlayerLocation::OnPlanet {
+                planet_id: *crate::core::GALAXY_ROOT_ID
+            }
+        );
         Ok(())
     }
 

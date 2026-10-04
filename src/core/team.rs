@@ -127,6 +127,15 @@ pub struct Team {
     pub dock_listings: Vec<DockListing>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
+    pub offers: Vec<Offer>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub waiting_at_dock: Vec<PlayerId>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
+    pub pending_accepts: Vec<Trade>,
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub tournaments_won: Vec<TournamentId>,
 }
 
@@ -418,12 +427,52 @@ impl Team {
         Some(self.dock_listings.remove(index))
     }
 
+    pub fn offer(&self, trade_id: &TradeId) -> Option<&Offer> {
+        self.offers.iter().find(|offer| offer.trade_id == *trade_id)
+    }
+
+    pub fn offer_on(&self, target_player_id: &PlayerId) -> Option<&Offer> {
+        self.offers
+            .iter()
+            .find(|offer| offer.target_player_id == *target_player_id)
+    }
+
+    pub fn offer_with(&self, player_id: &PlayerId) -> Option<&Offer> {
+        self.offers
+            .iter()
+            .find(|offer| offer.pirate == Some(*player_id))
+    }
+
+    pub fn is_offered(&self, player_id: &PlayerId) -> bool {
+        self.offer_with(player_id).is_some()
+    }
+
+    pub fn is_waiting(&self, player_id: &PlayerId) -> bool {
+        self.waiting_at_dock.contains(player_id)
+    }
+
+    pub fn pending_accept_for(&self, player_id: &PlayerId) -> Option<&Trade> {
+        self.pending_accepts
+            .iter()
+            .find(|trade| trade.target_player.id == *player_id)
+    }
+
+    pub fn is_leaving(&self, player_id: &PlayerId) -> bool {
+        self.pending_accept_for(player_id).is_some()
+    }
+
     pub fn is_parked(&self, player_id: &PlayerId) -> bool {
         self.is_listed(player_id)
+            || self.is_offered(player_id)
+            || self.is_waiting(player_id)
+            || self.is_leaving(player_id)
     }
 
     fn has_parked_pirates(&self) -> bool {
-        self.has_listings()
+        !(self.dock_listings.is_empty()
+            && self.offers.is_empty()
+            && self.waiting_at_dock.is_empty()
+            && self.pending_accepts.is_empty())
     }
 
     /// Crew that sails, plays, holds roles and drinks rum. Keeps `player_ids`
@@ -586,7 +635,14 @@ impl Team {
             return Err(anyhow!("Player is not in a team"));
         }
 
-        if self.is_listed(&player.id) {
+        let name = player.info.short_name();
+        if self.is_offered(&player.id) {
+            return Err(anyhow!("{name} is part of an offer"));
+        }
+        if self.is_leaving(&player.id) {
+            return Err(anyhow!("{name} is leaving the crew"));
+        }
+        if self.is_listed(&player.id) || self.is_waiting(&player.id) {
             return Ok(());
         }
 
@@ -627,6 +683,10 @@ impl Team {
             ));
         }
 
+        if self.is_parked(&player.id) {
+            return Err(anyhow!("{} is not aboard", player.info.short_name()));
+        }
+
         self.crew_is_ashore_and_idle()?;
 
         // Deliberately 1, not MIN_PLAYERS_PER_GAME: a crew may list itself down to
@@ -642,6 +702,10 @@ impl Team {
     pub fn can_recall_player_from_dock(&self, player_id: &PlayerId) -> AppResult<()> {
         if !self.is_listed(player_id) {
             return Err(anyhow!("Pirate is not at the dock"));
+        }
+
+        if self.is_leaving(player_id) {
+            return Err(anyhow!("That pirate is leaving the crew"));
         }
 
         if !self.is_at_dock() {
@@ -678,7 +742,7 @@ impl Team {
         }
 
         if self.is_parked(&player.id) {
-            return Err(anyhow!("{} is at the dock", player.info.short_name()));
+            return Err(anyhow!("{} is not aboard", player.info.short_name()));
         }
 
         if self.current_game.is_some() {
@@ -953,7 +1017,7 @@ impl Team {
 
         match route {
             OfferKind::Direct => {
-                if target_team.is_listed(&target_player.id) {
+                if target_team.is_parked(&target_player.id) {
                     return Err(anyhow!("{wanted} is not aboard"));
                 }
                 target_team.crew_is_ashore_and_idle()?;
@@ -1397,6 +1461,32 @@ mod tests {
             .push(DockListing::new(player_id, Tick::now()));
     }
 
+    fn offer_with(team: &mut Team, pirate: PlayerId, kind: OfferKind) {
+        team.offers.push(Offer {
+            trade_id: TradeId::new_v4(),
+            kind,
+            target_team_id: TeamId::new_v4(),
+            target_player_id: PlayerId::new_v4(),
+            satoshis: 0,
+            pirate: Some(pirate),
+            placed_on: 0,
+        });
+    }
+
+    fn leaving(team: &mut Team, players: &PlayerMap, pirate: PlayerId) {
+        let target_player = players.get(&pirate).expect("player").clone();
+        team.pending_accepts.push(Trade::new(
+            OfferKind::Direct,
+            PeerId::random(),
+            PeerId::random(),
+            TeamId::new_v4(),
+            team.id,
+            None,
+            target_player,
+            0,
+        ));
+    }
+
     fn dock_planet() -> Planet {
         PLANET_DATA
             .iter()
@@ -1649,7 +1739,81 @@ mod tests {
             .can_set_crew_role(&player)
             .unwrap_err()
             .to_string()
-            .contains("at the dock"));
+            .contains("not aboard"));
+    }
+
+    #[test]
+    fn test_offered_waiting_and_leaving_pirates_sit_out_but_keep_their_seat() {
+        let (mut team, players) = team_with_cove(7);
+        let ids = team.player_ids.clone();
+        offer_with(&mut team, ids[0], OfferKind::Direct);
+        team.waiting_at_dock.push(ids[1]);
+        leaving(&mut team, &players, ids[2]);
+
+        assert_eq!(team.active_players_count(), 4);
+        for id in &ids[..3] {
+            assert!(team.is_parked(id));
+            assert!(!team.active_player_ids().contains(id));
+        }
+        assert_eq!(team.player_ids.len(), 7);
+    }
+
+    #[test]
+    fn test_offered_and_leaving_pirates_cannot_be_released() {
+        let (mut team, players) = team_with_cove(7);
+        let ids = team.player_ids.clone();
+        offer_with(&mut team, ids[0], OfferKind::Direct);
+        team.waiting_at_dock.push(ids[1]);
+        leaving(&mut team, &players, ids[2]);
+        list(&mut team, ids[3]);
+
+        let release = |id: PlayerId| team.can_release_player(players.get(&id).expect("player"));
+        assert!(release(ids[0])
+            .unwrap_err()
+            .to_string()
+            .contains("part of an offer"));
+        assert!(release(ids[1]).is_ok());
+        assert!(release(ids[2]).unwrap_err().to_string().contains("leaving"));
+        assert!(release(ids[3]).is_ok());
+    }
+
+    #[test]
+    fn test_a_pirate_in_another_state_cannot_be_left_at_the_dock() {
+        let (mut team, players) = team_with_cove(7);
+        let id = team.player_ids[0];
+        team.waiting_at_dock.push(id);
+        assert!(team
+            .can_leave_player_at_dock(players.get(&id).expect("player"))
+            .unwrap_err()
+            .to_string()
+            .contains("not aboard"));
+    }
+
+    #[test]
+    fn test_a_leaving_pirate_cannot_be_recalled() {
+        let (mut team, players) = team_with_cove(7);
+        let id = team.player_ids[0];
+        list(&mut team, id);
+        leaving(&mut team, &players, id);
+        assert!(team
+            .can_recall_player_from_dock(&id)
+            .unwrap_err()
+            .to_string()
+            .contains("leaving"));
+    }
+
+    #[test]
+    fn test_pirate_states_survive_a_save() {
+        let (mut team, players) = team_with_cove(7);
+        let ids = team.player_ids.clone();
+        offer_with(&mut team, ids[0], OfferKind::Dock);
+        team.waiting_at_dock.push(ids[1]);
+        leaving(&mut team, &players, ids[2]);
+
+        let restored: Team = serde_json::from_str(&serde_json::to_string(&team).unwrap()).unwrap();
+        assert_eq!(restored.offers, team.offers);
+        assert_eq!(restored.waiting_at_dock, team.waiting_at_dock);
+        assert_eq!(restored.pending_accepts, team.pending_accepts);
     }
 
     // Builds a player with uniform skills - so `position_skill_rating` is identical for
