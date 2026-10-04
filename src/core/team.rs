@@ -1020,7 +1020,6 @@ impl Team {
                 if target_team.is_parked(&target_player.id) {
                     return Err(anyhow!("{wanted} is not aboard"));
                 }
-                target_team.crew_is_ashore_and_idle()?;
                 if !self.shares_planet_with(target_team) {
                     return Err(anyhow!("Not on the same planet"));
                 }
@@ -2031,7 +2030,7 @@ mod tests {
     }
 
     #[test]
-    fn test_a_direct_offer_needs_the_target_crew_ashore_and_idle() {
+    fn test_a_direct_offer_can_reach_a_crew_that_is_playing() {
         let planet_id = PlanetId::new_v4();
         let (proposer, _) = crew_on(planet_id, 5);
         let (mut target, target_players) = crew_on(planet_id, 5);
@@ -2040,9 +2039,7 @@ mod tests {
 
         assert!(proposer
             .can_make_offer(&target, OfferKind::Direct, None, wanted, 0)
-            .unwrap_err()
-            .to_string()
-            .contains("is playing"));
+            .is_ok());
 
         let (dock_proposer, _) = crew_on(*GALAXY_ROOT_ID, 5);
         let listed_id = target.player_ids[1];
