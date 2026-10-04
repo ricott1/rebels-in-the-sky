@@ -8,6 +8,7 @@ pub mod mirror;
 mod particle;
 mod player;
 mod projectile;
+pub mod session;
 mod shield;
 pub mod snapshot;
 mod space;

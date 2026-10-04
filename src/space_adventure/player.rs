@@ -1,4 +1,7 @@
-use crate::{core::spaceship::Spaceship, types::ResourceMap};
+use crate::{
+    core::{resources::Resource, spaceship::Spaceship},
+    types::{ResourceMap, StorableResourceMap},
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -38,6 +41,33 @@ impl LocalPlayerView {
             resources: self.resources.clone(),
             durability: self.durability,
         }
+    }
+}
+
+impl ShipLoadout {
+    pub fn outcome(&self) -> PlayerOutcome {
+        let mut resources = self.resources.clone();
+        resources.insert(Resource::FUEL, self.fuel);
+        PlayerOutcome {
+            resources,
+            durability: self.spaceship.current_durability(),
+        }
+    }
+}
+
+impl PlayerOutcome {
+    pub fn capped(mut self, loadout: &ShipLoadout) -> Self {
+        let fuel = self.resources.value(&Resource::FUEL).min(loadout.fuel);
+        if self.resources.used_storage_capacity() > loadout.spaceship.storage_capacity() {
+            self.resources = loadout.resources.clone();
+        }
+        self.resources.insert(Resource::FUEL, fuel);
+        self.resources.insert(
+            Resource::SATOSHI,
+            loadout.resources.value(&Resource::SATOSHI),
+        );
+        self.durability = self.durability.min(loadout.spaceship.current_durability());
+        self
     }
 }
 
