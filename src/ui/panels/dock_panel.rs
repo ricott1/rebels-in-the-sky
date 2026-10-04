@@ -84,7 +84,7 @@ impl DockPanel {
             DockRow::Listing(_) if player.team == Some(world.own_team_id) => {
                 let count = Self::offers_on(world, player.id);
                 let noun = if count == 1 { "offer" } else { "offers" };
-                (format!("yours, {count} {noun}"), UiStyle::OWN_TEAM)
+                (format!("{count} {noun}"), UiStyle::OWN_TEAM)
             }
             DockRow::Listing(_) => (Self::team_name(world, player.team), UiStyle::DEFAULT),
         };
@@ -289,7 +289,7 @@ impl DockPanel {
             },
         )
         .hover_text(format!("Take {} back aboard", player.info.short_name()))
-        .hotkey(ui_key::player::MARKET_LISTING);
+        .hotkey(ui_key::player::RECALL_FROM_DOCK);
         if let Err(err) = own_team.can_recall_player_from_dock(&player.id) {
             recall.disable(Some(err.to_string()));
         }
@@ -543,7 +543,7 @@ mod tests {
             .received_trades
             .insert(trade.id, trade);
 
-        for (player_id, detail) in [(own_id, "yours, 1 offer"), (their_id, "")] {
+        for (player_id, detail) in [(own_id, "1 offer"), (their_id, "")] {
             let (text, _) =
                 DockPanel::list_option(&app.world, &DockRow::Listing(player_id)).expect("a row");
             let stars = app.world.players.get_or_err(&player_id)?.stars();

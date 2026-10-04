@@ -105,6 +105,7 @@ pub mod player {
     pub const TRAINING_FOCUS: KeyCode = KeyCode::Char('T');
     /// Leaves the highlighted pirate at the dock, or takes them back.
     pub const MARKET_LISTING: KeyCode = KeyCode::Char('M');
+    pub const RECALL_FROM_DOCK: KeyCode = KeyCode::Char('R');
 }
 
 pub mod team {
