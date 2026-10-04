@@ -1,7 +1,9 @@
 use crate::{core::spaceship::Spaceship, types::ResourceMap};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ShipLoadout {
+    #[serde(with = "super::wire::json_bytes")]
     pub spaceship: Spaceship,
     pub resources: ResourceMap,
     pub speed_bonus: f32,
@@ -9,13 +11,13 @@ pub struct ShipLoadout {
     pub fuel: u32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlayerOutcome {
     pub resources: ResourceMap,
     pub durability: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct LocalPlayerView {
     pub durability: u32,
     pub max_durability: u32,

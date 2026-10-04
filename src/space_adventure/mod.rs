@@ -15,6 +15,7 @@ mod spaceship;
 mod traits;
 mod utils;
 mod visual_effects;
+pub mod wire;
 
 use crate::core::{constants as core_constants, resources};
 pub use space::SpaceAdventure;

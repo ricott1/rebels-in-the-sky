@@ -2,6 +2,7 @@ use super::{collisions::HitBox, space_callback::SpaceCallback, visual_effects::V
 use crate::{core::resources::Resource, types::ResourceMap};
 use glam::{I16Vec2, Vec2};
 use image::{Rgba, RgbaImage};
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Debug};
 
 pub type VisualEffectMap = HashMap<VisualEffect, f32>;
@@ -122,7 +123,7 @@ pub trait GameEntity: Sprite + Body + Collider {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum PlayerInput {
     MoveLeft,
     MoveRight,
