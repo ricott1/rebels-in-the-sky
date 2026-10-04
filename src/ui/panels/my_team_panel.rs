@@ -2093,7 +2093,7 @@ impl MyTeamPanel {
             format!("Fire {}", player.info.short_name()),
             UiCallback::PushUiPopup { popup_message },
         )
-        .hover_text("Fire pirate from the crew!")
+        .hover_text("Fire pirate from the crew! Or leave them at the dock, where another crew may make an offer.")
         .hotkey(ui_key::player::FIRE);
         if let Err(err) = can_release {
             release_button.disable(Some(err.to_string()));
@@ -2181,9 +2181,13 @@ impl MyTeamPanel {
                 let overall = player.average_skill().stars();
                 let salary = player.salary().to_string();
                 let position = if team.is_listed(&player.id) {
-                    "Market".to_string()
-                } else if is_parked {
-                    "Ashore".to_string()
+                    "Dock".to_string()
+                } else if team.is_waiting(&player.id) {
+                    "Waiting".to_string()
+                } else if team.is_offered(&player.id) {
+                    "Offered".to_string()
+                } else if team.is_leaving(&player.id) {
+                    "Leaving".to_string()
                 } else {
                     let (position_index, _) = team
                         .player_ids

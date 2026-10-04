@@ -240,17 +240,15 @@ impl PlayerListPanel {
         let player = world.players.get_or_err(&selected_player_id)?;
         let own_team = world.get_own_team()?;
 
-        // Display open trade if the selected and lock player are the two being traded.
-        let mut open_trade = None;
-
-        if let Some(locked_player_id) = self.locked_player_id {
-            open_trade = own_team.received_trades.values().find(|trade| {
-                let proposed = trade.proposer_player.as_ref().map(|p| p.id);
-                let target = trade.target_player.id;
-                (proposed == Some(locked_player_id) && target == player.id)
-                    || (proposed == Some(player.id) && target == locked_player_id)
-            });
-        }
+        let open_trade = own_team.received_trades.values().find(|trade| {
+            let proposed = trade.proposer_player.as_ref().map(|p| p.id);
+            let target = trade.target_player.id;
+            target == player.id
+                || self.locked_player_id.is_some_and(|locked| {
+                    (proposed == Some(locked) && target == player.id)
+                        || (proposed == Some(player.id) && target == locked)
+                })
+        });
 
         render_player_description(
             player,
@@ -270,9 +268,6 @@ impl PlayerListPanel {
             world,
             button_split[0],
         )?;
-
-        // If there is an open trade for the locked and selected players,
-        // display a button to accept
 
         if let Some(locked_player_id) = self.locked_player_id {
             let locked_player = world.players.get_or_err(&locked_player_id)?;
@@ -319,18 +314,56 @@ impl PlayerListPanel {
         ])
         .split(area);
 
-        // Free agency is `team.is_none()`, not being at the dock: a listed pirate
-        // still very much has a crew.
-        let is_listed = world.listing_for(&player.id).is_some();
+        let own_state = (player.team == Some(own_team.id)).then(|| {
+            if own_team.is_listed(&player.id) {
+                Some(("At the dock".to_string(), UiCallback::GoToDock))
+            } else if own_team.is_waiting(&player.id) {
+                Some((
+                    "Waiting at the dock".to_string(),
+                    UiCallback::GoToPlayerTeam {
+                        player_id: player.id,
+                    },
+                ))
+            } else if let Some(offer) = own_team.offer_with(&player.id) {
+                let crew = world
+                    .teams
+                    .get(&offer.target_team_id)
+                    .map_or("another crew", |team| team.name.as_str());
+                Some((
+                    format!("Offered to {crew}"),
+                    UiCallback::GoToTrade {
+                        trade_id: offer.trade_id,
+                    },
+                ))
+            } else if let Some(trade) = own_team.pending_accept_for(&player.id) {
+                let crew = world
+                    .teams
+                    .get(&trade.proposer_team_id)
+                    .map_or("another crew", |team| team.name.as_str());
+                Some((
+                    format!("Leaving for {crew}"),
+                    UiCallback::GoToPlayerTeam {
+                        player_id: player.id,
+                    },
+                ))
+            } else {
+                None
+            }
+        });
+        let is_listed_elsewhere = world.listing_for(&player.id).is_some() && own_state.is_none();
 
-        match (is_listed, player.team) {
-            (true, _) => {
+        match (own_state.flatten(), is_listed_elsewhere, player.team) {
+            (Some((label, callback)), _, _) => {
+                let button = Button::new(label, callback).hotkey(ui_key::GO_TO_TEAM_ALT);
+                frame.render_interactive_widget(button, buttons_split[0]);
+            }
+            (None, true, _) => {
                 let button = Button::new("At the dock", UiCallback::GoToDock)
-                    .hover_text("Go to the dock, where crews are bidding for them")
+                    .hover_text("Go to the dock, where crews make offers for them")
                     .hotkey(ui_key::GO_TO_TEAM_ALT);
                 frame.render_interactive_widget(button, buttons_split[0]);
             }
-            (false, None) => {
+            (None, false, None) => {
                 let planet_id = player
                     .is_on_planet()
                     .ok_or_else(|| anyhow!("A free pirate should be on a planet"))?;
@@ -346,7 +379,7 @@ impl PlayerListPanel {
                 .hotkey(ui_key::ON_PLANET);
                 frame.render_interactive_widget(button, buttons_split[0]);
             }
-            (false, Some(team_id)) => {
+            (None, false, Some(team_id)) => {
                 let team = world.teams.get_or_err(&team_id)?;
                 let button = Button::new(
                     format!("team {}", team.name),
@@ -422,84 +455,57 @@ impl PlayerListPanel {
             }
 
             frame.render_interactive_widget(button, buttons_split[3]);
-        }
-        // or if a trade exists and player is part of it, add trade buttons
-        else if let Some(trade) = open_trade {
-            let offered = trade
-                .proposer_player
-                .as_ref()
-                .map(|p| p.info.short_name())
-                .unwrap_or_else(|| "satoshi".to_string());
-            let wanted = trade.target_player.info.short_name();
-
-            if player.id == selected_player_id {
-                let mut button = Button::new(
-                    "Accept trade",
-                    UiCallback::AcceptTrade { trade_id: trade.id },
-                )
-                .hover_text(format!("Accept to trade {wanted} for {offered}"))
-                .block(default_block().border_style(UiStyle::OK))
-                .hotkey(ui_key::ACCEPT_TRADE);
-
-                if let Err(err) = world.can_accept_offer(&trade.id, Tick::now()) {
-                    button.disable(Some(err.to_string()));
-                }
-                frame.render_interactive_widget(button, buttons_split[3]);
-            } else if player.id == self.locked_player_id.expect("One player should be locked") {
-                let button = Button::new(
-                    "Decline trade",
-                    UiCallback::DeclineTrade { trade_id: trade.id },
-                )
-                .hover_text(format!("Decline to trade {wanted} for {offered}"))
-                .block(default_block().border_style(UiStyle::ERROR))
-                .hotkey(ui_key::DECLINE_TRADE);
-
-                frame.render_interactive_widget(button, buttons_split[3]);
-            };
-        }
-        // or finally if either the selected or locked player are part of own_team (but not both)
-        // add button to propose a trade.
-        else if let Some(locked_player_id) = self.locked_player_id {
-            //If player is selected and part of own team
-            if own_team.player_ids.contains(&player.id) && player.id == selected_player_id {
-                let proposer_player = world.players.get_or_err(&player.id)?;
-                let target_player = world.players.get_or_err(&locked_player_id)?;
-                if let Some(target_team_id) = target_player.team {
-                    let target_team = world.teams.get_or_err(&target_team_id)?;
-                    if own_team
-                        .can_make_offer(
-                            target_team,
-                            OfferKind::Direct,
-                            Some(proposer_player),
-                            target_player,
-                            0,
-                        )
-                        .is_ok()
-                    {
-                        let mut trade_button = Button::new(
-                            "Propose trade",
-                            UiCallback::MakeOffer {
-                                target_player_id: target_player.id,
-                                pirate: Some(proposer_player.id),
-                                satoshis: 0,
-                            },
-                        )
-                        .hover_text(format!(
-                            "Propose to trade {} for {}",
-                            proposer_player.info.short_name(),
-                            target_player.info.short_name(),
-                        ))
-                        .hotkey(ui_key::CREATE_TRADE);
-
-                        let already_proposed = own_team.offer_on(&target_player.id).is_some();
-                        if already_proposed {
-                            trade_button.disable(Some("Trade already proposed"));
-                        }
-
-                        frame.render_interactive_widget(trade_button, buttons_split[3]);
-                    }
-                }
+        } else if let Some(offer) = own_team.offer_on(&player.id) {
+            let button = Button::new(
+                "Retire offer",
+                UiCallback::RetireOffer {
+                    trade_id: offer.trade_id,
+                },
+            )
+            .hover_text("Retire your offer and get back what it holds")
+            .block(default_block().border_style(UiStyle::ERROR));
+            frame.render_interactive_widget(button, buttons_split[3]);
+        } else if let Some(trade) = open_trade.filter(|_| player.id == selected_player_id) {
+            let mut accept = Button::new(
+                "Accept offer",
+                UiCallback::AcceptTrade { trade_id: trade.id },
+            )
+            .hover_text(format!(
+                "Accept {} for {}",
+                trade.offered(),
+                trade.target_player.info.short_name()
+            ))
+            .block(default_block().border_style(UiStyle::OK))
+            .hotkey(ui_key::ACCEPT_TRADE);
+            if let Err(err) = world.can_accept_offer(&trade.id, Tick::now()) {
+                accept.disable(Some(err.to_string()));
             }
+            frame.render_interactive_widget(accept, buttons_split[3]);
+        } else if let Some(team) = player
+            .team
+            .filter(|team_id| *team_id != own_team.id)
+            .and_then(|team_id| world.teams.get(&team_id))
+        {
+            let own_offer = self
+                .locked_player_id
+                .filter(|id| own_team.player_ids.contains(id));
+            let mut button = Button::new(
+                "Make offer",
+                UiCallback::OpenOfferOverlay {
+                    target_player_id: player.id,
+                    own_offer,
+                },
+            )
+            .hover_text(format!("Make an offer for {}", player.info.short_name()))
+            .hotkey(ui_key::CREATE_TRADE);
+            if team.is_listed(&player.id) {
+                if !own_team.is_at_dock() {
+                    button.disable(Some("Teleport to the dock to make an offer"));
+                }
+            } else if !own_team.shares_planet_with(team) {
+                button.disable(Some("Not on the same planet"));
+            }
+            frame.render_interactive_widget(button, buttons_split[3]);
         }
 
         Ok(())
