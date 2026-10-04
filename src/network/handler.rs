@@ -898,52 +898,6 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub fn accept_trade(&self, world: &World, trade: Trade) -> AppResult<()> {
-        let handle_syn = || -> AppResult<()> {
-            let own_team = world.get_own_team()?;
-            let proposer_team = world.teams.get_or_err(&trade.proposer_team_id)?;
-
-            // Note: we do not apply immediately the trade at this point,
-            // because it could take a long time to accept a trade
-            // and the status of the proposer could have changed considerably
-            // possibly making the trade invalid.
-            let mut trade = trade.clone();
-            let target_player = world.players.get_or_err(&trade.target_player.id)?.clone();
-            trade.target_player = target_player;
-            proposer_team.can_make_offer(
-                own_team,
-                trade.route,
-                trade.proposer_player.as_ref(),
-                &trade.target_player,
-                trade.satoshis,
-            )?;
-
-            trade.state = NetworkRequestState::SynAck;
-            self.send_trade(trade)?;
-            Ok(())
-        };
-
-        if let Err(err) = handle_syn() {
-            let mut trade = trade.clone();
-            trade.state = NetworkRequestState::Failed {
-                error_message: err.to_string(),
-            };
-            self.send_trade(trade)?;
-            return Err(anyhow!(err.to_string()));
-        }
-        Ok(())
-    }
-
-    /// Refuses an offer, with a reason when there is one worth reading.
-    pub fn decline_trade(&self, trade: Trade, reason: Option<String>) -> AppResult<()> {
-        let mut trade = trade;
-        trade.state = NetworkRequestState::Failed {
-            error_message: reason.unwrap_or_else(|| "Trade declined".to_string()),
-        };
-        self.send_trade(trade)?;
-        Ok(())
-    }
-
     pub fn handle_network_events(
         &mut self,
         event: SwarmEvent<BehaviourEvent>,

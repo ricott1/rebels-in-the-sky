@@ -16,7 +16,7 @@ use anyhow::anyhow;
 use ratatui::text::Line;
 
 use crate::network::trade::Trade;
-use crate::types::{AppResult, HashMapWithResult};
+use crate::types::{AppResult, HashMapWithResult, SystemTimeTick, Tick};
 use crate::ui::ui_key;
 use crate::{
     core::*,
@@ -433,7 +433,6 @@ impl PlayerListPanel {
             let wanted = trade.target_player.info.short_name();
 
             if player.id == selected_player_id {
-                let proposer_team = world.teams.get_or_err(&trade.proposer_team_id)?;
                 let mut button = Button::new(
                     "Accept trade",
                     UiCallback::AcceptTrade { trade_id: trade.id },
@@ -442,23 +441,14 @@ impl PlayerListPanel {
                 .block(default_block().border_style(UiStyle::OK))
                 .hotkey(ui_key::ACCEPT_TRADE);
 
-                if let Err(err) = proposer_team.can_make_offer(
-                    own_team,
-                    trade.route,
-                    trade.proposer_player.as_ref(),
-                    &trade.target_player,
-                    trade.satoshis,
-                ) {
+                if let Err(err) = world.can_accept_offer(&trade.id, Tick::now()) {
                     button.disable(Some(err.to_string()));
                 }
                 frame.render_interactive_widget(button, buttons_split[3]);
             } else if player.id == self.locked_player_id.expect("One player should be locked") {
                 let button = Button::new(
                     "Decline trade",
-                    UiCallback::DeclineTrade {
-                        trade_id: trade.id,
-                        reason: None,
-                    },
+                    UiCallback::DeclineTrade { trade_id: trade.id },
                 )
                 .hover_text(format!("Decline to trade {wanted} for {offered}"))
                 .block(default_block().border_style(UiStyle::ERROR))

@@ -157,8 +157,6 @@ pub enum UiCallback {
 
     DeclineTrade {
         trade_id: TradeId,
-        /// Why, when it is not a captain saying no by hand.
-        reason: Option<String>,
     },
 
     GoToTrade {
@@ -1688,38 +1686,14 @@ impl UiCallback {
                 Ok(Some("Offer retired".to_string()))
             }
             Self::AcceptTrade { trade_id } => {
-                let trade = app
-                    .world
-                    .get_own_team()?
-                    .trade(trade_id)
-                    .ok_or_else(|| anyhow!("That offer is no longer open"))?
-                    .clone();
-
-                let result = app.network_handler.accept_trade(&app.world, trade);
-                let own_team = app.world.get_own_team_mut()?;
-                own_team.remove_trade(trade_id);
-                result?;
-
-                app.world.dirty = true;
-                app.world.dirty_network = true;
-                app.world.dirty_ui = true;
-                Ok(None)
+                app.world.accept_offer(trade_id, Tick::now())?;
+                Ok(Some(
+                    "Offer accepted. Waiting for the other crew".to_string(),
+                ))
             }
-            Self::DeclineTrade { trade_id, reason } => {
-                let trade = app
-                    .world
-                    .get_own_team()?
-                    .trade(trade_id)
-                    .ok_or_else(|| anyhow!("That offer is no longer open"))?
-                    .clone();
-
-                app.network_handler.decline_trade(trade, reason.clone())?;
-                let own_team = app.world.get_own_team_mut()?;
-                own_team.remove_trade(trade_id);
-                app.world.dirty = true;
-                app.world.dirty_network = true;
-                app.world.dirty_ui = true;
-                Ok(None)
+            Self::DeclineTrade { trade_id } => {
+                app.world.decline_offer(trade_id)?;
+                Ok(Some("Offer declined".to_string()))
             }
             Self::GoToTrade { trade_id } => Self::go_to_trade(*trade_id)(app),
             Self::SetUiTab { ui_tab } => Self::set_ui_tab(*ui_tab)(app),

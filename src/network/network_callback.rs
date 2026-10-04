@@ -4,7 +4,9 @@ use super::trade::Trade;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::app_version;
 use crate::core::constants::NETWORK_GAME_START_DELAY;
-use crate::core::{Team, TournamentRegistrationState, World, MAX_AVG_TIREDNESS_PER_AUTO_GAME};
+use crate::core::{
+    OfferKind, Team, TournamentRegistrationState, World, MAX_AVG_TIREDNESS_PER_AUTO_GAME,
+};
 use crate::game_engine::game::GameSummary;
 use crate::game_engine::types::TeamInGame;
 use crate::game_engine::{Tournament, TournamentId, TournamentState};
@@ -766,221 +768,82 @@ impl NetworkCallback {
             app.ui.push_log_event(
                 timestamp,
                 peer_id,
-                format!("Deserialized trade: {}", trade.format()),
+                format!("Received {}", trade.format()),
                 log::Level::Info,
             );
 
-            let self_peer_id = app.network_handler.own_peer_id();
-            match &trade.state {
-                NetworkRequestState::Syn => {
-                    if trade.proposer_peer_id == *self_peer_id {
-                        return Err(anyhow!("Team is trade sender (should be receiver)"));
-                    }
-
-                    if trade.target_peer_id != *self_peer_id {
-                        return Err(anyhow!("Team is not trade receiver"));
-                    }
-
-                    // A peer on another minor version gets a readable refusal, not a mangled deal.
-                    if !trade.app_version_matches() {
-                        let [major, minor, patch] = trade.app_version;
-                        let [own_major, own_minor, own_patch] = app_version();
-                        let mut trade = trade.clone();
-                        trade.state = NetworkRequestState::Failed {
-                            error_message: format!(
-                                "App versions do not match: Proposer version {major}.{minor}.{patch} - Target version {own_major}.{own_minor}.{own_patch}"
-                            ),
-                        };
-                        app.network_handler.send_trade(trade)?;
-                        return Ok(None);
-                    }
-
-                    // Redelivery of an offer we already hold.
-                    if app
-                        .world
-                        .get_own_team()?
-                        .received_trades
-                        .contains_key(&trade.id)
-                    {
-                        return Ok(None);
-                    }
-
-                    // Validate on arrival rather than when a human eventually looks:
-                    // the proposer learns straight away that the offer is dead.
-                    let validate = || -> AppResult<()> {
-                        let own_team = app.world.get_own_team()?;
-                        let proposer_team = app.world.teams.get_or_err(&trade.proposer_team_id)?;
-                        proposer_team.can_make_offer(
-                            own_team,
-                            trade.route,
-                            trade.proposer_player.as_ref(),
-                            &trade.target_player,
-                            trade.satoshis,
-                        )
-                    };
-
-                    if let Err(err) = validate() {
-                        let mut trade = trade.clone();
-                        trade.state = NetworkRequestState::Failed {
-                            error_message: err.to_string(),
-                        };
-                        app.network_handler.send_trade(trade)?;
-                        return Ok(None);
-                    }
-
-                    let own_team = app.world.get_own_team_mut()?;
-                    own_team.add_received_trade(trade.clone());
-
-                    app.ui.push_popup(PopupMessage::Message {
-                        message: "Trade offer received.\nCheck the swarm panel".to_string(),
-                        links: vec![(
-                            "swarm panel".to_string(),
-                            UiCallback::GoToSwarmRequests { from_popup: true },
-                        )],
-                        level: log::Level::Info,
-                        is_skippable: true,
-                        timestamp,
-                    });
-                    return Ok(None);
-                }
-
-                NetworkRequestState::SynAck => {
-                    if trade.target_peer_id == *self_peer_id {
-                        return Err(anyhow!(
-                            "Invalid trade: team is trade receiver (should be sender)"
-                        ));
-                    }
-
-                    if trade.proposer_peer_id != *self_peer_id {
-                        return Err(anyhow!("Invalid trade: team is not trade sender"));
-                    }
-
-                    let mut handle_syn_ack = || -> AppResult<()> {
-                        // The other side is authoritative for their own pirate, so
-                        // take their version; ours wins for our own.
-                        app.world
-                            .players
-                            .insert(trade.target_player.id, trade.target_player.clone());
-
-                        // Apply first, so add_network_team won't revive a stale copy of this pirate.
-                        app.world.apply_trade(&trade, timestamp)?;
-
-                        let own_team = app.world.get_own_team_mut()?;
-                        own_team.remove_trade(&trade.id);
-
-                        app.ui.push_log_event(
-                            timestamp,
-                            peer_id,
-                            "Trade accepted, players swapped".to_string(),
-                            log::Level::Info,
-                        );
-
-                        app.ui.push_popup(PopupMessage::Message {
-                            message: "Trade accepted, players swapped.".to_string(),
-                            links: vec![],
-                            level: log::Level::Info,
-                            is_skippable: false,
-                            timestamp: Tick::now(),
-                        });
-
-                        let mut trade = trade.clone();
-                        trade.state = NetworkRequestState::Ack;
-                        app.network_handler.send_trade(trade)?;
-                        Ok(())
-                    };
-
-                    if let Err(err) = handle_syn_ack() {
-                        let trade_id = trade.id;
-                        let mut trade = trade.clone();
-                        trade.state = NetworkRequestState::Failed {
-                            error_message: err.to_string(),
-                        };
-                        let own_team = app.world.get_own_team_mut()?;
-                        own_team.remove_trade(&trade_id);
-                        app.network_handler.send_trade(trade)?;
-
-                        return Err(anyhow!(err.to_string()));
-                    }
-                }
-
-                NetworkRequestState::Ack => {
-                    if trade.proposer_peer_id != *self_peer_id
-                        && trade.target_peer_id != *self_peer_id
-                    {
-                        app.ui.push_log_event(
-                            timestamp,
-                            peer_id,
-                            "A trade is happening in the network".to_string(),
-                            log::Level::Info,
-                        );
-
-                        return Ok(None);
-                    }
-
-                    if trade.proposer_peer_id == *self_peer_id {
-                        return Err(anyhow!("Team is trade sender (should be receiver)"));
-                    }
-
-                    // The following check sometimes fails if the peer_id changed after the challenge has been sent.
-                    if trade.target_peer_id != *self_peer_id {
-                        return Err(anyhow!("Team is not trade receiver"));
-                    }
-
-                    let mut handle_ack = || -> AppResult<()> {
-                        if let Some(proposer_player) = trade.proposer_player.as_ref() {
-                            app.world
-                                .players
-                                .insert(proposer_player.id, proposer_player.clone());
-                        }
-
-                        app.world.apply_trade(&trade, timestamp)?;
-
-                        let own_team = app.world.get_own_team_mut()?;
-                        own_team.remove_trade(&trade.id);
-
-                        app.ui.push_log_event(
-                            timestamp,
-                            peer_id,
-                            "Trade accepted, players swapped".to_string(),
-                            log::Level::Info,
-                        );
-
-                        app.ui.push_popup(PopupMessage::Message {
-                            message: "Trade accepted, players swapped.".to_string(),
-                            links: vec![],
-                            level: log::Level::Info,
-                            is_skippable: false,
-                            timestamp: Tick::now(),
-                        });
-                        Ok(())
-                    };
-
-                    if let Err(err) = handle_ack() {
-                        let trade_id = trade.id;
-                        let mut trade = trade.clone();
-                        trade.state = NetworkRequestState::Failed {
-                            error_message: err.to_string(),
-                        };
-                        app.network_handler.send_trade(trade)?;
-                        let own_team = app.world.get_own_team_mut()?;
-                        own_team.remove_trade(&trade_id);
-
-                        return Err(anyhow!(err.to_string()));
-                    }
-                }
-
-                NetworkRequestState::Failed { error_message } => {
-                    let own_team = app.world.get_own_team_mut()?;
-                    let was_ours = own_team.trade(&trade.id).is_some();
-                    own_team.remove_trade(&trade.id);
-                    if was_ours {
-                        app.ui.push_popup(PopupMessage::error(format!(
-                            "Trade failed: {error_message}"
-                        )));
-                    }
-                }
+            let own_team_id = app.world.own_team_id;
+            let is_target = trade.target_team_id == own_team_id;
+            let is_proposer = trade.proposer_team_id == own_team_id;
+            if !is_target && !is_proposer {
+                return Ok(None);
             }
 
+            if !trade.app_version_matches() {
+                if is_target && trade.state == NetworkRequestState::Syn {
+                    let [major, minor, patch] = trade.app_version;
+                    let [own_major, own_minor, own_patch] = app_version();
+                    app.world.push_reply(
+                        &trade,
+                        NetworkRequestState::Failed {
+                            error_message: format!(
+                                "App versions do not match: {major}.{minor}.{patch} and {own_major}.{own_minor}.{own_patch}"
+                            ),
+                        },
+                    );
+                }
+                return Ok(None);
+            }
+
+            let now = Tick::now();
+            let message = match &trade.state {
+                NetworkRequestState::Syn if is_target => {
+                    if app.world.receive_offer(trade.clone(), now)? {
+                        let proposer = app
+                            .world
+                            .teams
+                            .get(&trade.proposer_team_id)
+                            .map_or_else(|| "A crew".to_string(), |team| team.name.clone());
+                        let link = match trade.route {
+                            OfferKind::Dock => ("dock".to_string(), UiCallback::GoToDock),
+                            OfferKind::Direct => (
+                                "swarm panel".to_string(),
+                                UiCallback::GoToSwarmRequests { from_popup: true },
+                            ),
+                        };
+                        app.ui.push_popup(PopupMessage::Message {
+                            message: format!(
+                                "{proposer} made an offer for {}.\nSee the {}",
+                                trade.target_player.info.short_name(),
+                                link.0
+                            ),
+                            links: vec![link],
+                            level: log::Level::Info,
+                            is_skippable: true,
+                            timestamp: now,
+                        });
+                    }
+                    None
+                }
+                NetworkRequestState::SynAck if is_proposer => {
+                    app.world.receive_syn_ack(&trade, now)?
+                }
+                NetworkRequestState::Ack if is_target => app.world.receive_ack(&trade, now)?,
+                NetworkRequestState::Failed { error_message } => {
+                    app.world.receive_failed(&trade, error_message)?
+                }
+                _ => None,
+            };
+
+            if let Some(message) = message {
+                app.ui.push_popup(PopupMessage::Message {
+                    message,
+                    links: vec![],
+                    level: log::Level::Info,
+                    is_skippable: true,
+                    timestamp: now,
+                });
+            }
             Ok(None)
         })
     }

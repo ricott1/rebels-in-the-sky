@@ -660,6 +660,9 @@ impl SwarmPanel {
                 )
                 .block(default_block().border_style(UiStyle::OK))
                 .hover_text(format!("Accept to trade {wanted} for {offered}."));
+                if let Err(err) = world.can_accept_offer(&trade.id, Tick::now()) {
+                    accept_button.disable(Some(err.to_string()));
+                }
                 if idx == 0 {
                     accept_button = accept_button.hotkey(ui_key::YES_TO_DIALOG);
                 }
@@ -667,10 +670,7 @@ impl SwarmPanel {
 
                 let mut decline_button = Button::new(
                     format!("{:6^}", UiText::NO),
-                    UiCallback::DeclineTrade {
-                        trade_id: trade.id,
-                        reason: None,
-                    },
+                    UiCallback::DeclineTrade { trade_id: trade.id },
                 )
                 .block(default_block().border_style(UiStyle::ERROR))
                 .hover_text(format!("Decline to trade {wanted} for {offered}."));

@@ -176,6 +176,8 @@ pub const LEAVING_PROBABILITY_SATISFACTION_MODIFIER: f64 =
     0.01 / SATISFACTION_THRESHOLD_FOR_LEAVING as f64;
 pub const SATISFACTION_MALUS_RELEASE_FROM_TEAM: Skill = -5.0;
 pub const SATISFACTION_MALUS_TRADED: Skill = -1.0;
+/// A crew is online for offers if we heard from it this recently.
+pub const DOCK_PRESENCE_WINDOW: Tick = 3 * MINUTES;
 pub const SATISFACTION_MALUS_UNPAID_SALARIES: Skill = -1.5;
 
 pub const MORALE_DEMOTION_MALUS: Skill = MoraleModifier::MEDIUM_MALUS;
