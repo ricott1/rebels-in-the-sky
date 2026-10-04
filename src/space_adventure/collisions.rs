@@ -18,6 +18,13 @@ use std::{
 
 const SPACESHIP_COLLISION_DAMAGE: f32 = 5.0;
 
+fn spaceship_collision_accelerations(
+    one_velocity: I16Vec2,
+    other_velocity: I16Vec2,
+) -> (Vec2, Vec2) {
+    (-one_velocity.as_vec2(), -other_velocity.as_vec2())
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct HitBox {
     inner: HashMap<I16Vec2, bool>,
@@ -453,6 +460,8 @@ fn get_collision_callbacks(
         }
 
         (ColliderType::Spaceship, ColliderType::Spaceship) => {
+            let (one_acceleration, other_acceleration) =
+                spaceship_collision_accelerations(one.velocity(), other.velocity());
             vec![
                 SpaceCallback::DamageEntity {
                     id: one.id(),
@@ -460,7 +469,7 @@ fn get_collision_callbacks(
                 },
                 SpaceCallback::SetAcceleration {
                     id: one.id(),
-                    acceleration: -one.velocity().as_vec2(),
+                    acceleration: one_acceleration,
                 },
                 SpaceCallback::DamageEntity {
                     id: other.id(),
@@ -468,7 +477,7 @@ fn get_collision_callbacks(
                 },
                 SpaceCallback::SetAcceleration {
                     id: other.id(),
-                    acceleration: -one.velocity().as_vec2(),
+                    acceleration: other_acceleration,
                 },
             ]
         }
@@ -494,12 +503,25 @@ pub fn resolve_collision_between(
 
 #[cfg(test)]
 mod test {
+    use super::spaceship_collision_accelerations;
     use crate::space_adventure::resources::Resource;
     use crate::space_adventure::{
         collector::CollectorEntity, collisions::are_colliding, fragment::FragmentEntity, traits::*,
     };
     use crate::types::AppResult;
     use glam::Vec2;
+
+    #[test]
+    fn spaceship_collision_recoils_each_ship_using_its_own_velocity() {
+        let one_velocity = glam::I16Vec2::new(4, -2);
+        let other_velocity = glam::I16Vec2::new(-1, 3);
+
+        let (one_acceleration, other_acceleration) =
+            spaceship_collision_accelerations(one_velocity, other_velocity);
+
+        assert_eq!(one_acceleration, -one_velocity.as_vec2());
+        assert_eq!(other_acceleration, -other_velocity.as_vec2());
+    }
 
     #[test]
     fn test_spaceship_fragment_collisions() -> AppResult<()> {

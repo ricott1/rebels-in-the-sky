@@ -1825,7 +1825,7 @@ fn format_player_skills<'a>(player: &'a Player, report: &ScoutReport) -> Vec<Lin
 
     for i in 1..sorted_roles.len() {
         let mut spans = scouted_player_role_spans(player, report, sorted_roles[i]);
-        spans.extend(scouted_player_skill_spans(player, report, i));
+        spans.extend(scouted_player_skill_spans(player, report, i - 1));
         text.push(Line::from(spans));
     }
 
@@ -2235,11 +2235,30 @@ fn spaceship_component_description_lines<'a, C: SpaceshipComponent>(component: C
 
 #[cfg(test)]
 mod tests {
-    use super::{AppResult, BARS_LENGTH};
+    use super::{format_player_skills, AppResult, BARS_LENGTH};
     use crate::{
-        core::{resources::Resource, spaceship::SpaceshipPrefab, team::Team},
+        core::{
+            resources::Resource, scouting_report::ScoutReport, spaceship::SpaceshipPrefab,
+            team::Team, Player, MAX_SKILL,
+        },
         ui::renders::get_storage_lengths,
     };
+
+    #[test]
+    fn player_skills_include_quickness_once() {
+        let player = Player::default();
+        let report = ScoutReport::new(player.id, MAX_SKILL);
+        let lines = format_player_skills(&player, &report);
+        let text = lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        assert_eq!(text.matches("Quickness").count(), 1);
+        assert_eq!(text.matches("Brawl").count(), 1);
+    }
 
     #[test]
     fn test_storage_spans() -> AppResult<()> {
