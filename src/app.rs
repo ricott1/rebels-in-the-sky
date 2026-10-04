@@ -543,20 +543,13 @@ impl App {
                     );
                 }
 
-                match self.network_handler.resend_open_trades(&self.world) {
-                    Ok(stale) => {
-                        if let Ok(own_team) = self.world.get_own_team_mut() {
-                            for id in stale {
-                                own_team.sent_trades.remove(&id);
-                            }
-                        }
-                    }
-                    Err(e) => self.ui.push_log_event(
+                if let Err(e) = self.network_handler.resend_open_trades(&self.world) {
+                    self.ui.push_log_event(
                         Tick::now(),
                         None,
-                        format!("Failed to send open trades to peers: {e}"),
+                        format!("Failed to resend offers: {e}"),
                         log::Level::Error,
-                    ),
+                    );
                 }
 
                 match self.network_handler.resend_open_challenges(&self.world) {
@@ -593,6 +586,19 @@ impl App {
                         Tick::now(),
                         None,
                         format!("Failed to dial known peers: {e}"),
+                        log::Level::Error,
+                    );
+                }
+            }
+        }
+
+        if self.network_handler.connected_peers_count > 0 {
+            for trade in std::mem::take(&mut self.world.trade_outbox) {
+                if let Err(e) = self.network_handler.send_trade(trade) {
+                    self.ui.push_log_event(
+                        Tick::now(),
+                        None,
+                        format!("Failed to send an offer: {e}"),
                         log::Level::Error,
                     );
                 }

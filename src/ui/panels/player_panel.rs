@@ -488,9 +488,10 @@ impl PlayerListPanel {
                     {
                         let mut trade_button = Button::new(
                             "Propose trade",
-                            UiCallback::CreateTradeProposal {
-                                proposer_player_id: proposer_player.id,
+                            UiCallback::MakeOffer {
                                 target_player_id: target_player.id,
+                                pirate: Some(proposer_player.id),
+                                satoshis: 0,
                             },
                         )
                         .hover_text(format!(
@@ -500,10 +501,7 @@ impl PlayerListPanel {
                         ))
                         .hotkey(ui_key::CREATE_TRADE);
 
-                        let already_proposed = own_team.sent_trades.values().any(|trade| {
-                            trade.proposer_player.as_ref().map(|p| p.id) == Some(proposer_player.id)
-                                && trade.target_player.id == target_player.id
-                        });
+                        let already_proposed = own_team.offer_on(&target_player.id).is_some();
                         if already_proposed {
                             trade_button.disable(Some("Trade already proposed"));
                         }

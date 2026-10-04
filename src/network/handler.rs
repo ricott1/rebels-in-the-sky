@@ -6,14 +6,14 @@ use super::types::SeedInfo;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam};
 use crate::app::AppEvent;
 use crate::core::world::World;
-use crate::core::{OfferKind, Team};
+use crate::core::Team;
 use crate::game_engine::types::TeamInGame;
 use crate::game_engine::{Tournament, TournamentId};
 use crate::network::network_store_data::NetworkStoreData;
 use crate::network::types::TournamentRequestState;
 use crate::store::serialize;
-use crate::types::{AppResult, GameId, HashMapWithResult, PlayerMap, TradeId};
-use crate::types::{PlayerId, TeamId};
+use crate::types::TeamId;
+use crate::types::{AppResult, GameId, HashMapWithResult, PlayerMap};
 use crate::types::{SystemTimeTick, Tick};
 use anyhow::anyhow;
 use futures::StreamExt;
@@ -735,41 +735,11 @@ impl NetworkHandler {
         Ok(())
     }
 
-    /// Re-broadcasts still-open offers, returning the ids of the ones that are no
-    /// longer worth resending so the caller can drop them.
-    pub fn resend_open_trades(&self, world: &World) -> AppResult<Vec<TradeId>> {
-        let own_team = world.get_own_team()?;
-        let mut to_remove = vec![];
-        for trade in own_team.sent_trades.values() {
-            if trade.state != NetworkRequestState::Syn {
-                to_remove.push(trade.id);
-                continue;
-            }
-
-            let target_team = if let Some(t) = world.teams.get(&trade.target_team_id) {
-                t
-            } else {
-                to_remove.push(trade.id);
-                continue;
-            };
-
-            if own_team
-                .can_make_offer(
-                    target_team,
-                    trade.route,
-                    trade.proposer_player.as_ref(),
-                    &trade.target_player,
-                    trade.satoshis,
-                )
-                .is_err()
-            {
-                to_remove.push(trade.id);
-                continue;
-            }
-            self.send_trade(trade.clone())?;
+    pub fn resend_open_trades(&self, world: &World) -> AppResult<()> {
+        for trade in world.open_trades(*self.own_peer_id()) {
+            self.send_trade(trade)?;
         }
-
-        Ok(to_remove)
+        Ok(())
     }
 
     pub fn resend_open_challenges(&self, world: &World) -> AppResult<Vec<TeamId>> {
@@ -874,35 +844,6 @@ impl NetworkHandler {
 
         self.send_challenge(challenge.clone())?;
         Ok(challenge)
-    }
-
-    pub fn send_new_crew_swap(
-        &self,
-        world: &World,
-        target_peer_id: PeerId,
-        target_team_id: TeamId,
-        proposer_player_id: PlayerId,
-        target_player_id: PlayerId,
-        satoshis: i64,
-    ) -> AppResult<Trade> {
-        self.send_own_team(world)?;
-
-        let proposer_player = world.players.get_or_err(&proposer_player_id)?.clone();
-        let target_player = world.players.get_or_err(&target_player_id)?.clone();
-
-        let trade = Trade::new(
-            OfferKind::Direct,
-            *self.own_peer_id(),
-            target_peer_id,
-            world.own_team_id,
-            target_team_id,
-            Some(proposer_player),
-            target_player,
-            satoshis,
-        );
-
-        self.send_trade(trade.clone())?;
-        Ok(trade)
     }
 
     pub fn accept_challenge(&self, world: &World, challenge: Challenge) -> AppResult<()> {

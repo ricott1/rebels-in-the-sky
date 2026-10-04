@@ -11,7 +11,7 @@ use super::team::Team;
 use super::types::{PlayerLocation, TeamBonus, TeamLocation};
 use super::utils::{is_default, PLANET_DATA};
 use crate::core::{
-    AutonomousStrategy, DockListing, GameResult, Honour, OfferKind, PlanetUpgradeTarget,
+    AutonomousStrategy, DockListing, GameResult, Honour, Offer, OfferKind, PlanetUpgradeTarget,
     PlayerOpinion, PlayerOpinionMapDescription, Population, Rated, RatedPlayers, ScoutReport,
     Skill, SpaceCove, SpaceCoveUpgradeTarget, Tavern, TournamentRegistrationState, Upgrade,
     MIN_SKILL,
@@ -25,7 +25,7 @@ use crate::game_engine::{
 use crate::image::color_map::ColorMap;
 use crate::network::network_store_data::NetworkStoreData;
 use crate::network::trade::Trade;
-use crate::network::types::{NetworkGame, NetworkTeam};
+use crate::network::types::{NetworkGame, NetworkRequestState, NetworkTeam};
 use crate::space_adventure::ControllableSpaceship;
 use crate::space_adventure::SpaceAdventure;
 use crate::store::{save_game, save_tournament, ASSETS_DIR};
@@ -79,6 +79,8 @@ pub struct World {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub applied_trades: HashSet<TradeId>,
+    #[serde(skip)]
+    pub trade_outbox: Vec<Trade>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub players: PlayerMap,
@@ -113,6 +115,13 @@ pub struct World {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub network_store_data: NetworkStoreData,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OfferOutcome {
+    Sent,
+    Accepted,
+    Refused,
 }
 
 impl World {
@@ -1158,6 +1167,194 @@ impl World {
         self.teams.insert(team.id, team);
 
         Ok(())
+    }
+
+    pub fn make_offer(
+        &mut self,
+        target_player_id: PlayerId,
+        pirate: Option<PlayerId>,
+        satoshis: i64,
+        own_peer_id: PeerId,
+    ) -> AppResult<OfferOutcome> {
+        let target_player = self.players.get_or_err(&target_player_id)?.clone();
+        let name = target_player.info.short_name();
+        let target_team_id = target_player
+            .team
+            .ok_or_else(|| anyhow!("{name} has no crew"))?;
+        let target_team = self.teams.get_or_err(&target_team_id)?;
+        let own_team = self.get_own_team()?;
+        if own_team.offer_on(&target_player_id).is_some() {
+            return Err(anyhow!("You already made an offer for {name}"));
+        }
+
+        let route = if target_team.is_listed(&target_player_id) {
+            OfferKind::Dock
+        } else {
+            OfferKind::Direct
+        };
+        let proposer_player = match pirate {
+            Some(id) => Some(self.players.get_or_err(&id)?.clone()),
+            None => None,
+        };
+        own_team.can_make_offer(
+            target_team,
+            route,
+            proposer_player.as_ref(),
+            &target_player,
+            satoshis,
+        )?;
+
+        let target_peer_id = target_team.peer_id;
+        let trade = Trade::new(
+            route,
+            own_peer_id,
+            target_peer_id.unwrap_or(own_peer_id),
+            self.own_team_id,
+            target_team_id,
+            proposer_player,
+            target_player,
+            satoshis,
+        );
+
+        if target_peer_id.is_none() {
+            return self.offer_to_local_crew(&trade);
+        }
+
+        let mut own_team = self.get_own_team()?.clone();
+        own_team.sub_resource(Resource::SATOSHI, trade.proposer_pays())?;
+        own_team.offers.push(Offer {
+            trade_id: trade.id,
+            kind: route,
+            target_team_id,
+            target_player_id,
+            satoshis,
+            pirate,
+            placed_on: trade.created_at,
+        });
+        if let Some(player_id) = pirate {
+            let mut player = self.players.get_or_err(&player_id)?.clone();
+            own_team.vacate_crew_role(&player_id, player.info.crew_role);
+            player.info.crew_role = CrewRole::Mozzo;
+            player.version += 1;
+            self.players.insert(player_id, player);
+        }
+        own_team.reassign_positions(&self.players);
+        own_team.version += 1;
+        self.teams.insert(own_team.id, own_team);
+        self.trade_outbox.push(trade);
+
+        self.dirty = true;
+        self.dirty_network = true;
+        self.dirty_ui = true;
+        Ok(OfferOutcome::Sent)
+    }
+
+    fn offer_to_local_crew(&mut self, trade: &Trade) -> AppResult<OfferOutcome> {
+        let target_team = self.teams.get_or_err(&trade.target_team_id)?;
+        if target_team.current_game.is_some() || target_team.playing_in_tournament().is_some() {
+            return Err(anyhow!(
+                "{} is playing, make your offer after the game",
+                target_team.name
+            ));
+        }
+
+        let offered = trade
+            .proposer_player
+            .as_ref()
+            .map_or(0, |player| i64::from(player.hire_cost()))
+            + trade.satoshis;
+        if offered < i64::from(trade.target_player.hire_cost()) {
+            return Ok(OfferOutcome::Refused);
+        }
+        self.apply_trade(trade, Tick::now())?;
+        Ok(OfferOutcome::Accepted)
+    }
+
+    pub fn end_offer(&mut self, trade_id: &TradeId) -> AppResult<Option<Offer>> {
+        let mut own_team = self.get_own_team()?.clone();
+        let Some(index) = own_team
+            .offers
+            .iter()
+            .position(|offer| offer.trade_id == *trade_id)
+        else {
+            return Ok(None);
+        };
+
+        let offer = own_team.offers.remove(index);
+        own_team.saturating_add_resource(Resource::SATOSHI, offer.held_satoshis());
+        if let Some(player_id) = offer.pirate {
+            if offer.is_dock_offer() && own_team.player_ids.contains(&player_id) {
+                own_team.waiting_at_dock.push(player_id);
+            }
+        }
+        own_team.reassign_positions(&self.players);
+        own_team.version += 1;
+        self.teams.insert(own_team.id, own_team);
+
+        self.dirty = true;
+        self.dirty_network = true;
+        self.dirty_ui = true;
+        Ok(Some(offer))
+    }
+
+    pub fn retire_offer(&mut self, trade_id: &TradeId, own_peer_id: PeerId) -> AppResult<()> {
+        let offer = self
+            .get_own_team()?
+            .offer(trade_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("That offer is no longer open"))?;
+        if let Some(trade) = self.trade_for_offer(&offer, own_peer_id) {
+            self.push_reply(
+                &trade,
+                NetworkRequestState::Failed {
+                    error_message: "Offer retired".to_string(),
+                },
+            );
+        }
+        self.end_offer(trade_id)?;
+        Ok(())
+    }
+
+    pub fn trade_for_offer(&self, offer: &Offer, own_peer_id: PeerId) -> Option<Trade> {
+        let target_team = self.teams.get(&offer.target_team_id)?;
+        let target_peer_id = target_team.peer_id?;
+        let target_player = self.players.get(&offer.target_player_id)?.clone();
+        let proposer_player = match offer.pirate {
+            Some(id) => Some(self.players.get(&id)?.clone()),
+            None => None,
+        };
+        Some(Trade {
+            id: offer.trade_id,
+            state: NetworkRequestState::Syn,
+            route: offer.kind,
+            app_version: app_version(),
+            created_at: offer.placed_on,
+            proposer_peer_id: own_peer_id,
+            target_peer_id,
+            proposer_team_id: self.own_team_id,
+            target_team_id: offer.target_team_id,
+            proposer_player,
+            target_player,
+            satoshis: offer.satoshis,
+        })
+    }
+
+    pub fn push_reply(&mut self, trade: &Trade, state: NetworkRequestState) {
+        let mut reply = trade.clone();
+        reply.state = state;
+        self.trade_outbox.push(reply);
+    }
+
+    pub fn open_trades(&self, own_peer_id: PeerId) -> Vec<Trade> {
+        let Ok(own_team) = self.get_own_team() else {
+            return vec![];
+        };
+        own_team
+            .offers
+            .iter()
+            .filter_map(|offer| self.trade_for_offer(offer, own_peer_id))
+            .chain(own_team.pending_accepts.iter().cloned())
+            .collect()
     }
 
     pub fn leave_player_at_dock(
@@ -5327,6 +5524,224 @@ mod test {
 
         assert!(app.world.applied_trades.contains(&trade.id));
         assert!(app.world.get_own_team()?.player_ids.contains(&target_id));
+        Ok(())
+    }
+
+    fn crew_with_a_listed_pirate(
+        app: &mut App,
+    ) -> AppResult<(crate::types::TeamId, crate::types::PlayerId)> {
+        use crate::core::DockListing;
+
+        let team_id = network_crew_on(app, *DEFAULT_PLANET_ID)?;
+        let team = app.world.teams.get_mut_or_err(&team_id)?;
+        let player_id = team.player_ids[0];
+        team.dock_listings.push(DockListing::new(player_id, 5));
+        Ok((team_id, player_id))
+    }
+
+    #[test]
+    fn test_an_offer_holds_its_satoshis_and_parks_its_pirate() -> AppResult<()> {
+        use super::OfferOutcome;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_team_id = network_crew_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = app.world.teams.get_or_err(&target_team_id)?.player_ids[0];
+        let own_id = app.world.get_own_team()?.player_ids[0];
+        app.world.set_team_crew_role(CrewRole::Captain, own_id)?;
+        let before = app.world.get_own_team()?.balance();
+
+        let outcome =
+            app.world
+                .make_offer(target_id, Some(own_id), 2_000, libp2p::PeerId::random())?;
+
+        assert_eq!(outcome, OfferOutcome::Sent);
+        let own_team = app.world.get_own_team()?;
+        assert_eq!(own_team.balance(), before - 2_000);
+        assert!(own_team.is_offered(&own_id));
+        assert_eq!(own_team.crew_roles.captain, None);
+        assert_eq!(app.world.trade_outbox.len(), 1);
+        assert_eq!(app.world.trade_outbox[0].id, own_team.offers[0].trade_id);
+        assert!(app
+            .world
+            .make_offer(target_id, None, 100, libp2p::PeerId::random())
+            .unwrap_err()
+            .to_string()
+            .contains("already made an offer"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_a_dock_offer_leaves_the_offered_pirate_at_the_dock() -> AppResult<()> {
+        use crate::core::OfferKind;
+
+        let mut app = App::test_default()?;
+        park_own_team_at_the_dock(&mut app)?;
+        let (_, listed_id) = crew_with_a_listed_pirate(&mut app)?;
+        let own_id = app.world.get_own_team()?.player_ids[0];
+
+        app.world
+            .make_offer(listed_id, Some(own_id), 0, libp2p::PeerId::random())?;
+
+        let own_team = app.world.get_own_team()?;
+        assert_eq!(own_team.offers[0].kind, OfferKind::Dock);
+        assert!(own_team.is_offered(&own_id));
+        Ok(())
+    }
+
+    #[test]
+    fn test_retiring_refunds_and_a_dock_offered_pirate_waits_at_the_dock() -> AppResult<()> {
+        use crate::network::types::NetworkRequestState;
+
+        let mut app = App::test_default()?;
+        park_own_team_at_the_dock(&mut app)?;
+        let (_, listed_id) = crew_with_a_listed_pirate(&mut app)?;
+        let own_id = app.world.get_own_team()?.player_ids[0];
+        let before = app.world.get_own_team()?.balance();
+        let peer_id = libp2p::PeerId::random();
+        app.world
+            .make_offer(listed_id, Some(own_id), 1_500, peer_id)?;
+        let trade_id = app.world.get_own_team()?.offers[0].trade_id;
+        app.world.trade_outbox.clear();
+
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        app.world.retire_offer(&trade_id, peer_id)?;
+
+        let own_team = app.world.get_own_team()?;
+        assert_eq!(own_team.balance(), before);
+        assert!(own_team.offers.is_empty());
+        assert!(own_team.is_waiting(&own_id));
+        assert!(matches!(
+            app.world.trade_outbox[0].state,
+            NetworkRequestState::Failed { .. }
+        ));
+
+        park_own_team_at_the_dock(&mut app)?;
+        app.world.tick_collect_waiting_pirates(Tick::now())?;
+        assert!(app
+            .world
+            .get_own_team()?
+            .active_player_ids()
+            .contains(&own_id));
+        Ok(())
+    }
+
+    #[test]
+    fn test_a_local_crew_decides_on_the_spot() -> AppResult<()> {
+        use super::OfferOutcome;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let local_team_id = app
+            .world
+            .teams
+            .values()
+            .find(|team| team.id != app.world.own_team_id)
+            .expect("another crew")
+            .id;
+        app.world
+            .teams
+            .get_mut_or_err(&local_team_id)?
+            .current_location = TeamLocation::OnPlanet {
+            planet_id: *DEFAULT_PLANET_ID,
+        };
+        let target_id = app.world.teams.get_or_err(&local_team_id)?.player_ids[0];
+        let hire_cost = app.world.players.get_or_err(&target_id)?.hire_cost();
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::SATOSHI, hire_cost)?;
+        let peer_id = libp2p::PeerId::random();
+
+        assert_eq!(
+            app.world.make_offer(target_id, None, 0, peer_id)?,
+            OfferOutcome::Refused
+        );
+        let before = app.world.get_own_team()?.balance();
+        assert_eq!(
+            app.world
+                .make_offer(target_id, None, hire_cost as i64, peer_id)?,
+            OfferOutcome::Accepted
+        );
+        let own_team = app.world.get_own_team()?;
+        assert!(own_team.player_ids.contains(&target_id));
+        assert!(own_team.offers.is_empty());
+        assert_eq!(own_team.balance(), before - hire_cost);
+        assert!(app.world.trade_outbox.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_an_offer_to_a_playing_local_crew_is_refused() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let local_team_id = app
+            .world
+            .teams
+            .values()
+            .find(|team| team.id != app.world.own_team_id)
+            .expect("another crew")
+            .id;
+        let local_team = app.world.teams.get_mut_or_err(&local_team_id)?;
+        local_team.current_location = TeamLocation::OnPlanet {
+            planet_id: *DEFAULT_PLANET_ID,
+        };
+        local_team.current_game = Some(crate::types::GameId::new_v4());
+        let target_id = local_team.player_ids[0];
+        let hire_cost = app.world.players.get_or_err(&target_id)?.hire_cost();
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::SATOSHI, hire_cost)?;
+        let before = app.world.get_own_team()?.balance();
+
+        let error = app
+            .world
+            .make_offer(target_id, None, hire_cost as i64, libp2p::PeerId::random())
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("is playing, make your offer after the game"));
+        let own_team = app.world.get_own_team()?;
+        assert_eq!(own_team.balance(), before);
+        assert!(own_team.offers.is_empty());
+        assert!(app.world.trade_outbox.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_trade_for_offer_rebuilds_the_trade_that_was_sent() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_team_id = network_crew_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = app.world.teams.get_or_err(&target_team_id)?.player_ids[0];
+        let peer_id = libp2p::PeerId::random();
+        app.world.make_offer(target_id, None, 1_000, peer_id)?;
+
+        let sent = app.world.trade_outbox[0].clone();
+        let offer = app.world.get_own_team()?.offers[0].clone();
+        let rebuilt = app
+            .world
+            .trade_for_offer(&offer, peer_id)
+            .expect("the trade");
+        assert_eq!(
+            serde_json::to_string(&rebuilt)?,
+            serde_json::to_string(&sent)?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_open_trades_resend_every_offer() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_team_id = network_crew_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = app.world.teams.get_or_err(&target_team_id)?.player_ids[0];
+        let peer_id = libp2p::PeerId::random();
+        app.world.make_offer(target_id, None, 1_000, peer_id)?;
+
+        let open = app.world.open_trades(peer_id);
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].id, app.world.get_own_team()?.offers[0].trade_id);
         Ok(())
     }
 }

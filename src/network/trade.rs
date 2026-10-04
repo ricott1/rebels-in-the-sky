@@ -177,9 +177,10 @@ mod tests {
         let target_player = app.world.players.get_or_err(&target_player_id)?;
         assert!(target_player.team == Some(target_team_id));
 
-        let cb = UiCallback::CreateTradeProposal {
-            proposer_player_id,
+        let cb = UiCallback::MakeOffer {
             target_player_id,
+            pirate: Some(proposer_player_id),
+            satoshis: 0,
         };
         assert!(cb.call(&mut app).is_ok());
 
@@ -215,9 +216,10 @@ mod tests {
         let target_player = app.world.players.get_or_err(&target_player_id)?;
         assert!(target_player.team == Some(target_team.id));
 
-        let cb = UiCallback::CreateTradeProposal {
-            proposer_player_id,
+        let cb = UiCallback::MakeOffer {
             target_player_id,
+            pirate: Some(proposer_player_id),
+            satoshis: 0,
         };
 
         assert!(cb.call(&mut app).unwrap_err().to_string() == "Not on the same planet".to_string());
@@ -244,9 +246,10 @@ mod tests {
         let target_player = app.world.players.get(&target_player_id).unwrap();
         assert!(target_player.team == Some(own_team.id));
 
-        let cb = UiCallback::CreateTradeProposal {
-            proposer_player_id,
+        let cb = UiCallback::MakeOffer {
             target_player_id,
+            pirate: Some(proposer_player_id),
+            satoshis: 0,
         };
         assert!(
             cb.call(&mut app).unwrap_err().to_string() == "Cannot trade with oneself".to_string()
