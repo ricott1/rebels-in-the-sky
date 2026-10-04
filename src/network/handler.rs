@@ -10,7 +10,11 @@ use crate::core::Team;
 use crate::game_engine::types::TeamInGame;
 use crate::game_engine::{Tournament, TournamentId};
 use crate::network::network_store_data::NetworkStoreData;
+use crate::network::space_link::{
+    next_link_id, spawn_link, LinkId, SpaceLinkEvent, SPACE_ADVENTURE_PROTOCOL,
+};
 use crate::network::types::TournamentRequestState;
+use crate::space_adventure::wire::{LinkSender, SessionMessage};
 use crate::store::serialize;
 use crate::types::{AppResult, GameId, HashMapWithResult, PlayerMap};
 use crate::types::{PlayerId, TeamId};
@@ -22,7 +26,7 @@ use libp2p::gossipsub::{self, IdentTopic};
 use libp2p::identity::Keypair;
 use libp2p::multiaddr::Protocol;
 use libp2p::swarm::dial_opts::DialOpts;
-use libp2p::swarm::{DialError, NetworkBehaviour, SwarmEvent};
+use libp2p::swarm::{ConnectionId, DialError, NetworkBehaviour, SwarmEvent};
 use libp2p::{
     autonat, dcutr, identify, identity, kad, noise, relay, tcp, yamux, PeerId, StreamProtocol,
     TransportError,
@@ -33,7 +37,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -121,6 +125,7 @@ pub struct Behaviour {
     pub relay_client: relay::client::Behaviour,
     pub dcutr: dcutr::Behaviour,
     pub autonat_client: autonat::v2::client::Behaviour,
+    pub stream: libp2p_stream::Behaviour,
     // Server roles only exist in the relayer build (`--features relayer`).
     #[cfg(feature = "relayer")]
     pub relay_server: relay::Behaviour,
@@ -137,7 +142,7 @@ enum SwarmStatus {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum SwarmCommand {
     Dial {
         address: Multiaddr,
@@ -151,9 +156,65 @@ enum SwarmCommand {
     FindPeer {
         peer_id: PeerId,
     },
+    EnsureDirect {
+        peer_id: PeerId,
+        reply: oneshot::Sender<bool>,
+    },
 }
 
-#[derive(Debug)]
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[derive(Debug, PartialEq)]
+enum DirectState {
+    Missing,
+    Closing(Vec<ConnectionId>),
+    Ready,
+}
+
+fn direct_state(
+    connections: &HashMap<PeerId, Vec<(ConnectionId, bool)>>,
+    peer_id: &PeerId,
+) -> DirectState {
+    let list = connections.get(peer_id).map(Vec::as_slice).unwrap_or_default();
+    if !list.iter().any(|(_, relayed)| !relayed) {
+        return DirectState::Missing;
+    }
+    let relayed: Vec<ConnectionId> = list
+        .iter()
+        .filter(|(_, relayed)| *relayed)
+        .map(|(id, _)| *id)
+        .collect();
+    if relayed.is_empty() {
+        DirectState::Ready
+    } else {
+        DirectState::Closing(relayed)
+    }
+}
+
+fn resolve_direct_waiters(
+    swarm: &mut Swarm<Behaviour>,
+    connections: &HashMap<PeerId, Vec<(ConnectionId, bool)>>,
+    direct_waiters: &mut HashMap<PeerId, Vec<oneshot::Sender<bool>>>,
+    peer_id: &PeerId,
+) {
+    if !direct_waiters.contains_key(peer_id) {
+        return;
+    }
+    match direct_state(connections, peer_id) {
+        DirectState::Missing => {}
+        DirectState::Closing(relayed) => {
+            for connection_id in relayed {
+                swarm.close_connection(connection_id);
+            }
+        }
+        DirectState::Ready => {
+            for waiter in direct_waiters.remove(peer_id).into_iter().flatten() {
+                let _ = waiter.send(true);
+            }
+        }
+    }
+}
+
 pub struct NetworkHandler {
     local_keypair: Keypair,
     pub connected_peers_count: usize,
@@ -165,6 +226,19 @@ pub struct NetworkHandler {
     /// relay reservations), so without this guard we would re-dial everyone many
     /// times over and collide on the reused TCP source port.
     initial_dial_done: bool,
+    stream_control: Option<libp2p_stream::Control>,
+}
+
+impl Debug for NetworkHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NetworkHandler")
+            .field("own_peer_id", &self.own_peer_id)
+            .field("connected_peers_count", &self.connected_peers_count)
+            .field("seed_addresses", &self.seed_addresses)
+            .field("swarm_status", &self.swarm_status)
+            .field("initial_dial_done", &self.initial_dial_done)
+            .finish_non_exhaustive()
+    }
 }
 
 impl NetworkHandler {
@@ -173,6 +247,7 @@ impl NetworkHandler {
         tcp_port: u16,
         use_ipv4: bool,
         use_ipv6: bool,
+        stream: libp2p_stream::Behaviour,
     ) -> AppResult<Swarm<Behaviour>> {
         // To content-address message, we can take the hash of message and use it as an ID.
         let message_id_fn = |message: &gossipsub::Message| {
@@ -226,6 +301,7 @@ impl NetworkHandler {
                 relay_client,
                 dcutr: dcutr::Behaviour::new(peer_id),
                 autonat_client: autonat::v2::client::Behaviour::default(),
+                stream,
                 #[cfg(feature = "relayer")]
                 relay_server: relay::Behaviour::new(peer_id, relay::Config::default()),
                 #[cfg(feature = "relayer")]
@@ -283,6 +359,7 @@ impl NetworkHandler {
             seed_addresses: vec![],
             swarm_status: SwarmStatus::Uninitialized,
             initial_dial_done: false,
+            stream_control: None,
         }
     }
 
@@ -319,6 +396,7 @@ impl NetworkHandler {
             seed_addresses,
             swarm_status: SwarmStatus::Uninitialized,
             initial_dial_done: false,
+            stream_control: None,
         })
     }
 
@@ -360,13 +438,48 @@ impl NetworkHandler {
         let (sender, mut receiver) = mpsc::channel(256);
 
         self.swarm_status = SwarmStatus::Ready { sender };
+
+        let stream_behaviour = libp2p_stream::Behaviour::new();
+        let mut control = stream_behaviour.new_control();
+        self.stream_control = Some(control.clone());
+        match control.accept(SPACE_ADVENTURE_PROTOCOL) {
+            Ok(mut incoming) => {
+                let accept_events = event_sender.clone();
+                let accept_token = cancellation_token.clone();
+                tokio::spawn(async move {
+                    loop {
+                        let next = tokio::select! {
+                            _ = accept_token.cancelled() => break,
+                            next = incoming.next() => next,
+                        };
+                        let Some((peer_id, stream)) = next else {
+                            break;
+                        };
+                        let link_id = next_link_id();
+                        let handle = spawn_link(stream, link_id, accept_events.clone());
+                        let event = AppEvent::SpaceLink(SpaceLinkEvent::Opened {
+                            link_id,
+                            peer_id,
+                            handle,
+                            inbound: true,
+                        });
+                        if accept_events.send(event).await.is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+            Err(err) => log::error!("Cannot accept space adventure streams: {err}"),
+        }
+
         let handle = tokio::spawn(async move {
-            let mut swarm =
-                if let Ok(swarm) = Self::new_swarm(local_keypair, tcp_port, use_ipv4, use_ipv6) {
-                    swarm
-                } else {
-                    return;
-                };
+            let mut swarm = if let Ok(swarm) =
+                Self::new_swarm(local_keypair, tcp_port, use_ipv4, use_ipv6, stream_behaviour)
+            {
+                swarm
+            } else {
+                return;
+            };
 
             assert_eq!(own_peer_id, *swarm.local_peer_id());
             let mut kad_bootstrapped = false;
@@ -377,6 +490,8 @@ impl NetworkHandler {
             // reserved on. Appending `/p2p/<target>` gives a dialable address that
             // reaches any peer through the relay, which DCUtR then upgrades.
             let mut relay_circuit: Option<Multiaddr> = None;
+            let mut connections: HashMap<PeerId, Vec<(ConnectionId, bool)>> = HashMap::new();
+            let mut direct_waiters: HashMap<PeerId, Vec<oneshot::Sender<bool>>> = HashMap::new();
 
             loop {
                 tokio::select! {
@@ -498,22 +613,30 @@ impl NetworkHandler {
                                     }
                                 }
                             }
-                            SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
-                                let kind = if is_relay_circuit(endpoint.get_remote_address()) {
-                                    "relayed"
-                                } else {
-                                    "direct"
-                                };
+                            SwarmEvent::ConnectionEstablished { peer_id, connection_id, endpoint, .. } => {
+                                let relayed = is_relay_circuit(endpoint.get_remote_address());
+                                let kind = if relayed { "relayed" } else { "direct" };
                                 log::info!(
                                     "Connection established with {peer_id} ({kind}): {}",
                                     endpoint.get_remote_address()
                                 );
+                                connections.entry(*peer_id).or_default().push((*connection_id, relayed));
+                                resolve_direct_waiters(&mut swarm, &connections, &mut direct_waiters, peer_id);
                                 if !kad_bootstrapped
                                     && swarm.behaviour_mut().kademlia.bootstrap().is_ok()
                                 {
                                     kad_bootstrapped = true;
                                     log::info!("Kademlia bootstrap initiated");
                                 }
+                            }
+                            SwarmEvent::ConnectionClosed { peer_id, connection_id, .. } => {
+                                if let Some(list) = connections.get_mut(peer_id) {
+                                    list.retain(|(id, _)| id != connection_id);
+                                    if list.is_empty() {
+                                        connections.remove(peer_id);
+                                    }
+                                }
+                                resolve_direct_waiters(&mut swarm, &connections, &mut direct_waiters, peer_id);
                             }
                             _ => {}
                         }
@@ -560,6 +683,26 @@ impl NetworkHandler {
                                     }
                                 }
                             }
+                            SwarmCommand::EnsureDirect { peer_id, reply } => {
+                                let waiters = direct_waiters.entry(peer_id).or_default();
+                                waiters.retain(|waiter| !waiter.is_closed());
+                                waiters.push(reply);
+                                if direct_state(&connections, &peer_id) == DirectState::Missing {
+                                    swarm.behaviour_mut().kademlia.get_closest_peers(peer_id);
+                                    if let Some(base) = &relay_circuit {
+                                        let via_relay = base.clone().with(Protocol::P2p(peer_id));
+                                        let opts = DialOpts::unknown_peer_id()
+                                            .address(via_relay)
+                                            .allocate_new_port()
+                                            .build();
+                                        if let Err(e) = swarm.dial(opts) {
+                                            log::debug!("Could not dial {peer_id} via relay: {e}");
+                                        }
+                                    }
+                                } else {
+                                    resolve_direct_waiters(&mut swarm, &connections, &mut direct_waiters, &peer_id);
+                                }
+                            }
                         }
                     }
                 }
@@ -567,6 +710,31 @@ impl NetworkHandler {
         });
 
         handle
+    }
+
+    pub fn connect_space_link(
+        &self,
+        peer_id: PeerId,
+        join: SessionMessage,
+        events: mpsc::Sender<AppEvent>,
+    ) -> AppResult<LinkId> {
+        let SwarmStatus::Ready { sender } = &self.swarm_status else {
+            return Err(anyhow!("Network is not running"));
+        };
+        let control = self
+            .stream_control
+            .clone()
+            .ok_or_else(|| anyhow!("Network is not running"))?;
+        let link_id = next_link_id();
+        tokio::spawn(connect_space_link_task(
+            control,
+            sender.clone(),
+            peer_id,
+            join,
+            events,
+            link_id,
+        ));
+        Ok(link_id)
     }
 
     fn _send(&self, data: &NetworkData) -> AppResult<()> {
@@ -1099,6 +1267,63 @@ impl NetworkHandler {
     }
 }
 
+async fn connect_space_link_task(
+    mut control: libp2p_stream::Control,
+    commands: mpsc::Sender<SwarmCommand>,
+    peer_id: PeerId,
+    join: SessionMessage,
+    events: mpsc::Sender<AppEvent>,
+    link_id: LinkId,
+) {
+    let connect = async {
+        let (reply, direct) = oneshot::channel();
+        commands
+            .send(SwarmCommand::EnsureDirect { peer_id, reply })
+            .await
+            .map_err(|_| "network stopped")?;
+        if !matches!(direct.await, Ok(true)) {
+            return Err("no direct connection");
+        }
+        control
+            .open_stream(peer_id, SPACE_ADVENTURE_PROTOCOL)
+            .await
+            .map_err(|_| "could not open stream")
+    };
+
+    let stream = match tokio::time::timeout(CONNECT_TIMEOUT, connect).await {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(reason)) => {
+            let _ = events
+                .send(AppEvent::SpaceLink(SpaceLinkEvent::Closed {
+                    link_id,
+                    reason: reason.to_string(),
+                }))
+                .await;
+            return;
+        }
+        Err(_) => {
+            let _ = events
+                .send(AppEvent::SpaceLink(SpaceLinkEvent::Closed {
+                    link_id,
+                    reason: "no direct connection in time".to_string(),
+                }))
+                .await;
+            return;
+        }
+    };
+
+    let handle = spawn_link(stream, link_id, events.clone());
+    let opened = AppEvent::SpaceLink(SpaceLinkEvent::Opened {
+        link_id,
+        peer_id,
+        handle: handle.clone(),
+        inbound: false,
+    });
+    if events.send(opened).await.is_ok() {
+        handle.send_control(join);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::TOPIC;
@@ -1313,5 +1538,30 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_direct_state_waits_for_relayed_connections_to_close() {
+        use super::{direct_state, DirectState};
+        use libp2p::{swarm::ConnectionId, PeerId};
+        use std::collections::HashMap;
+
+        let peer = PeerId::random();
+        let direct = ConnectionId::new_unchecked(1);
+        let relayed = ConnectionId::new_unchecked(2);
+        let mut connections = HashMap::new();
+        assert_eq!(direct_state(&connections, &peer), DirectState::Missing);
+
+        connections.insert(peer, vec![(relayed, true)]);
+        assert_eq!(direct_state(&connections, &peer), DirectState::Missing);
+
+        connections.insert(peer, vec![(relayed, true), (direct, false)]);
+        assert_eq!(
+            direct_state(&connections, &peer),
+            DirectState::Closing(vec![relayed])
+        );
+
+        connections.insert(peer, vec![(direct, false)]);
+        assert_eq!(direct_state(&connections, &peer), DirectState::Ready);
     }
 }
