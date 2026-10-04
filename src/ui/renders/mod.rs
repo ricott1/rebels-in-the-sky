@@ -546,6 +546,7 @@ pub fn space_adventure_button<'a>(world: &World, team: &Team) -> AppResult<Butto
     let popup_message = PopupMessage::ConfirmSpaceAdventure {
         has_shooter: team.spaceship.has_shooters(),
         average_tiredness,
+        joinable: world.joinable_adventures().into_iter().take(3).collect(),
         timestamp: Tick::now(),
     };
     let mut button = Button::new("Space Adventure", UiCallback::PushUiPopup { popup_message })

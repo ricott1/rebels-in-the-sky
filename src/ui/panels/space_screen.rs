@@ -60,9 +60,17 @@ impl Screen for SpaceScreen {
     }
 
     fn update(&mut self, world: &World) -> AppResult<()> {
-        if let Some(space_adventure) = &world.space_adventure {
-            self.entity_count = space_adventure.entity_count();
-        }
+        self.entity_count = world
+            .space_adventure
+            .as_ref()
+            .map(|space| space.entity_count())
+            .or_else(|| {
+                world
+                    .space_mirror
+                    .as_ref()
+                    .map(|mirror| mirror.entity_count())
+            })
+            .unwrap_or_default();
 
         Ok(())
     }
@@ -75,17 +83,25 @@ impl Screen for SpaceScreen {
         debug_view: bool,
     ) -> AppResult<()> {
         let split = Layout::vertical([Constraint::Min(10), Constraint::Length(1)]).split(area);
-        let space_adventure = if let Some(space_adventure) = &world.space_adventure {
-            space_adventure
+        let width = split[0].width as u32;
+        let height = split[0].height as u32 * 2;
+        let (image, view, is_starting) = if let Some(space) = &world.space_adventure {
+            (
+                space.image(width, height, debug_view),
+                space.host_id().and_then(|id| space.local_view(id)),
+                space.is_starting(),
+            )
+        } else if let Some(mirror) = &world.space_mirror {
+            (
+                mirror.image(width, height),
+                mirror.local_view().cloned(),
+                mirror.is_starting(),
+            )
         } else {
             return Ok(());
         };
 
-        match space_adventure.image(
-            split[0].width as u32,
-            split[0].height as u32 * 2,
-            debug_view,
-        ) {
+        match image {
             Ok(img) => {
                 let mut space_img_lines = img_to_lines(&img);
                 space_img_lines.truncate(split[0].height as usize);
@@ -97,14 +113,11 @@ impl Screen for SpaceScreen {
             }
         }
 
-        if let Some(view) = space_adventure
-            .host_id()
-            .and_then(|id| space_adventure.local_view(id))
-        {
+        if let Some(view) = view {
             render_hud(frame, &view, split[1]);
         }
 
-        if space_adventure.is_starting() || debug_view {
+        if is_starting || debug_view {
             let v_split =
                 Layout::vertical([Constraint::Min(0), Constraint::Length(5)]).split(split[0]);
             frame.render_widget(Clear, v_split[1]);

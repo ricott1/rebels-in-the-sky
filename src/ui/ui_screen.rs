@@ -353,7 +353,7 @@ impl UiScreen {
                     return Some(UiCallback::QuitGame);
                 }
 
-                let during_space_adventure = world.space_adventure.is_some();
+                let during_space_adventure = world.in_space();
 
                 Some(UiCallback::PushUiPopup {
                     popup_message: PopupMessage::PromptQuit {

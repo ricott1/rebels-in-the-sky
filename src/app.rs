@@ -53,6 +53,7 @@ pub struct App {
     #[cfg(feature = "audio")]
     pub audio_player: Option<MusicPlayer>,
     pub network_handler: NetworkHandler,
+    pub space_session: Option<crate::space_adventure::session::SpaceSession>,
     cancellation_token: CancellationToken,
 }
 
@@ -216,6 +217,7 @@ impl App {
             #[cfg(feature = "audio")]
             audio_player,
             network_handler,
+            space_session: None,
             cancellation_token: CancellationToken::new(),
         })
     }
@@ -304,7 +306,16 @@ impl App {
                         self.draw(&mut tui).await;
                     }
                     AppEvent::FastTick(tick) => {
-                        if self.should_draw_world_fast_tick_events(tick) {
+                        let should_draw = self.should_draw_world_fast_tick_events(tick);
+                        if let Err(e) = self.tick_space_session() {
+                            self.ui.push_log_event(
+                                Tick::now(),
+                                None,
+                                e.to_string(),
+                                log::Level::Error,
+                            );
+                        }
+                        if should_draw {
                             self.draw(&mut tui).await
                         }
                     }
@@ -334,7 +345,16 @@ impl App {
                         self.handle_network_events(swarm_event)?;
                     }
 
-                    AppEvent::SpaceLink(_) => {}
+                    AppEvent::SpaceLink(event) => {
+                        if let Err(e) = self.handle_space_link_event(event) {
+                            self.ui.push_log_event(
+                                Tick::now(),
+                                None,
+                                e.to_string(),
+                                log::Level::Error,
+                            );
+                        }
+                    }
 
                     #[cfg(feature = "audio")]
                     AppEvent::AudioEvent(audio_event) => match audio_event {
@@ -454,7 +474,7 @@ impl App {
         }
 
         // FIXME: should get this info from the world, not hardcoded
-        self.world.space_adventure.is_some()
+        self.world.in_space()
     }
 
     fn handle_world_slow_tick_events(&mut self, current_tick: Tick) {
@@ -629,7 +649,7 @@ impl App {
                     }
 
                     // Don't redraw during space adventure to keep consistent fps.
-                    if self.world.space_adventure.is_none() {
+                    if !self.world.in_space() {
                         should_draw = true;
                     }
                 }
