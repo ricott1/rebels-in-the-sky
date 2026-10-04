@@ -421,43 +421,18 @@ impl UiCallback {
 
     fn go_to_trade(trade_id: TradeId) -> AppCallback {
         Box::new(move |app: &mut App| {
-            app.ui.player_panel.reset_view();
-            app.ui.player_panel.update(&app.world)?;
-
-            let trade = app
-                .world
-                .get_own_team()?
-                .trade(&trade_id)
-                .ok_or_else(|| anyhow!("That offer is no longer open"))?
-                .clone();
-
-            let Some(proposer_player_id) = trade.proposer_player.as_ref().map(|p| p.id) else {
-                return Ok(None);
-            };
-
-            // Display trade differently depending on who is the proposer.
-            let (selected_player_id, locked_player_id) =
-                if trade.proposer_team_id == app.world.own_team_id {
-                    (proposer_player_id, trade.target_player.id)
-                } else {
-                    (trade.target_player.id, proposer_player_id)
-                };
-
-            if let Some(index) = app
-                .ui
-                .player_panel
-                .all_players
-                .iter()
-                .position(|&x| x == selected_player_id)
-            {
-                app.ui.player_panel.set_index(index);
-
-                app.ui.player_panel.locked_player_id = Some(locked_player_id);
-                app.ui.player_panel.selected_player_id = Some(selected_player_id);
-                app.ui.switch_to(super::ui_screen::UiTab::Pirates);
-            }
-
-            Ok(None)
+            let own_team = app.world.get_own_team()?;
+            let player_id = own_team
+                .offer(&trade_id)
+                .map(|offer| offer.target_player_id)
+                .or_else(|| {
+                    own_team
+                        .received_trades
+                        .get(&trade_id)
+                        .map(|trade| trade.target_player.id)
+                })
+                .ok_or_else(|| anyhow!("That offer is no longer open"))?;
+            Self::go_to_player(player_id)(app)
         })
     }
 

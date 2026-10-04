@@ -100,8 +100,6 @@ pub struct Team {
     #[serde(default)]
     pub in_game_drinking: InGameDrinking,
     #[serde(skip)]
-    pub sent_trades: HashMap<TradeId, Trade>,
-    #[serde(skip)]
     pub received_trades: HashMap<TradeId, Trade>,
     #[serde(skip)]
     pub sent_challenges: HashMap<TeamId, Challenge>,
@@ -212,27 +210,7 @@ impl Team {
         self.received_challenges.clear();
     }
 
-    pub fn add_sent_trade(&mut self, trade: Trade) {
-        self.sent_trades.insert(trade.id, trade);
-    }
-
-    pub fn add_received_trade(&mut self, trade: Trade) {
-        self.received_trades.insert(trade.id, trade);
-    }
-
-    pub fn remove_trade(&mut self, trade_id: &TradeId) {
-        self.sent_trades.remove(trade_id);
-        self.received_trades.remove(trade_id);
-    }
-
-    pub fn trade(&self, trade_id: &TradeId) -> Option<&Trade> {
-        self.sent_trades
-            .get(trade_id)
-            .or_else(|| self.received_trades.get(trade_id))
-    }
-
     pub fn clear_trades(&mut self) {
-        self.sent_trades.clear();
         self.received_trades.clear();
     }
 

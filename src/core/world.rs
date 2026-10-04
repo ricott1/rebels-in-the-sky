@@ -4309,12 +4309,6 @@ impl World {
             own_team
                 .received_challenges
                 .retain(|_, challenge| challenge.proposer_peer_id != peer_id);
-            own_team
-                .sent_trades
-                .retain(|_, trade| trade.target_peer_id != peer_id);
-            own_team
-                .received_trades
-                .retain(|_, trade| trade.proposer_peer_id != peer_id);
         } else {
             // Filter all data that has a peer_id (i.e. keep only local data)
             self.teams.retain(|_, team| team.peer_id.is_none());
@@ -6539,6 +6533,60 @@ mod test {
             app.world.trade_outbox[0].state,
             NetworkRequestState::Failed { .. }
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_a_disconnect_keeps_offers_both_ways_and_they_come_back() -> AppResult<()> {
+        use crate::core::OfferKind;
+        use crate::network::types::NetworkTeam;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = first_own_pirate(&app)?;
+        let (received, proposer_id) =
+            receive_offer_from_a_new_crew(&mut app, target_id, OfferKind::Direct, 1_000)?;
+        let proposer_peer_id = app
+            .world
+            .teams
+            .get_or_err(&proposer_id)?
+            .peer_id
+            .expect("a peer crew");
+
+        let target_team_id = network_crew_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_team = app.world.teams.get_or_err(&target_team_id)?.clone();
+        let target_players = World::get_team_players(&app.world.players, &target_team)?
+            .into_iter()
+            .map(|player| (player.id, player.clone()))
+            .collect::<crate::types::PlayerMap>();
+        let own_peer_id = libp2p::PeerId::random();
+        app.world
+            .make_offer(target_team.player_ids[0], None, 500, own_peer_id)?;
+
+        app.world.filter_peer_data(Some(proposer_peer_id))?;
+        app.world
+            .filter_peer_data(Some(target_team.peer_id.expect("a peer crew")))?;
+
+        let own_team = app.world.get_own_team()?;
+        assert!(own_team.received_trades.contains_key(&received.id));
+        assert_eq!(own_team.offers.len(), 1);
+        assert!(app
+            .world
+            .can_accept_offer(&received.id, Tick::now())
+            .unwrap_err()
+            .to_string()
+            .contains("offline"));
+
+        let offer = own_team.offers[0].clone();
+        assert!(app.world.trade_for_offer(&offer, own_peer_id).is_none());
+        app.world.add_network_team(
+            NetworkTeam::new(target_team, target_players, vec![]),
+            Tick::now(),
+        )?;
+        assert!(
+            app.world.trade_for_offer(&offer, own_peer_id).is_some(),
+            "resent as soon as the crew is back"
+        );
         Ok(())
     }
 }

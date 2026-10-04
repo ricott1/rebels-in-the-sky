@@ -1,8 +1,9 @@
 use super::traits::{HelpContent, HelpPanel, IndexBound, Screen, SplitPanel};
 use crate::core::constants::{MINUTES, MIN_PLAYERS_PER_GAME};
 use crate::core::{skill::Rated, world::World};
+use crate::network::trade::satoshi_suffix;
 use crate::network::types::{ChatHistoryEntry, PlayerRanking, TeamRanking};
-use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId, Tick};
+use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId, Tick, TradeId};
 use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::clickable_list::{ClickableList, ClickableListItem};
@@ -23,7 +24,7 @@ use itertools::Itertools;
 use libp2p::PeerId;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Margin;
-use ratatui::style::Stylize;
+use ratatui::style::{Styled, Stylize};
 use ratatui::{
     layout::{Constraint, Layout},
     prelude::Rect,
@@ -604,81 +605,106 @@ impl SwarmPanel {
         area: Rect,
     ) -> AppResult<()> {
         let title = if is_sent {
-            "Trade offers sent"
+            "Offers made"
         } else {
-            "Trade offers received"
+            "Offers received"
         };
-
         frame.render_widget(default_block().title(title), area);
+
         let own_team = world.get_own_team()?;
-        let trades = if is_sent {
-            &own_team.sent_trades
+        let now = Tick::now();
+        let rows: Vec<(TradeId, String, bool)> = if is_sent {
+            own_team
+                .offers
+                .iter()
+                .sorted_by_key(|offer| (offer.placed_on, offer.trade_id))
+                .map(|offer| {
+                    let wanted = world.players.get(&offer.target_player_id).map_or_else(
+                        || "a pirate".to_string(),
+                        |player| format!("{} {}", player.info.short_name(), player.stars()),
+                    );
+                    let crew = world
+                        .teams
+                        .get(&offer.target_team_id)
+                        .map_or("their crew", |team| team.name.as_str());
+                    (
+                        offer.trade_id,
+                        format!("{wanted} from {crew}{}", satoshi_suffix(offer.satoshis)),
+                        world.is_team_present(&offer.target_team_id, now),
+                    )
+                })
+                .collect()
         } else {
-            &own_team.received_trades
+            own_team
+                .received_trades
+                .values()
+                .sorted_by_key(|trade| (trade.created_at, trade.id))
+                .map(|trade| {
+                    (
+                        trade.id,
+                        format!(
+                            "{} {} for {}",
+                            trade.target_player.info.short_name(),
+                            trade.target_player.stars(),
+                            trade.offered()
+                        ),
+                        world.is_team_present(&trade.proposer_team_id, now),
+                    )
+                })
+                .collect()
         };
 
-        let mut constraints = [Constraint::Length(3)].repeat(trades.len());
+        let mut constraints = [Constraint::Length(3)].repeat(rows.len());
         constraints.push(Constraint::Fill(1));
         let split = Layout::vertical(constraints).split(area.inner(Margin {
             horizontal: 1,
             vertical: 1,
         }));
 
-        // `trades` is a HashMap, whose iteration order is arbitrary and reshuffles
-        // on insert. Sorting by (created_at, id) is what lets a hotkey mean the
-        // same offer twice running.
-        let trades = trades
-            .values()
-            .sorted_by_key(|trade| (trade.created_at, trade.id))
-            .collect_vec();
-
-        for (idx, trade) in trades.iter().enumerate() {
+        for (idx, (trade_id, text, is_present)) in rows.into_iter().enumerate() {
             let line_split = Layout::horizontal([
                 Constraint::Length(46),
-                Constraint::Length(6),
-                Constraint::Length(6),
+                Constraint::Length(10),
+                Constraint::Length(10),
                 Constraint::Fill(1),
             ])
             .split(split[idx]);
 
-            let wanted = trade.target_player.info.short_name();
-            let wanted_stars = trade.target_player.stars();
-            let offered = trade.offered();
-
+            let (label, style) = if is_present {
+                (text.clone(), UiStyle::DEFAULT)
+            } else {
+                (format!("{text} (offline)"), UiStyle::UNSELECTABLE)
+            };
             frame.render_interactive_widget(
-                Button::new(
-                    format!("{wanted} {wanted_stars} ⇄ {offered}"),
-                    UiCallback::GoToTrade { trade_id: trade.id },
-                ),
+                Button::new(label, UiCallback::GoToTrade { trade_id }).set_style(style),
                 line_split[0],
             );
 
-            if !is_sent {
-                let mut accept_button = Button::new(
-                    format!("{:6^}", UiText::YES),
-                    UiCallback::AcceptTrade { trade_id: trade.id },
-                )
-                .block(default_block().border_style(UiStyle::OK))
-                .hover_text(format!("Accept to trade {wanted} for {offered}."));
-                if let Err(err) = world.can_accept_offer(&trade.id, Tick::now()) {
-                    accept_button.disable(Some(err.to_string()));
-                }
-                if idx == 0 {
-                    accept_button = accept_button.hotkey(ui_key::YES_TO_DIALOG);
-                }
-                frame.render_interactive_widget(accept_button, line_split[1]);
-
-                let mut decline_button = Button::new(
-                    format!("{:6^}", UiText::NO),
-                    UiCallback::DeclineTrade { trade_id: trade.id },
-                )
-                .block(default_block().border_style(UiStyle::ERROR))
-                .hover_text(format!("Decline to trade {wanted} for {offered}."));
-                if idx == 0 {
-                    decline_button = decline_button.hotkey(ui_key::NO_TO_DIALOG);
-                }
-                frame.render_interactive_widget(decline_button, line_split[2]);
+            if is_sent {
+                let retire = Button::new("Retire", UiCallback::RetireOffer { trade_id })
+                    .block(default_block().border_style(UiStyle::ERROR))
+                    .hover_text(format!(
+                        "Retire your offer for {text} and get back what it holds"
+                    ));
+                frame.render_interactive_widget(retire, line_split[1]);
+                continue;
             }
+
+            let mut accept_button = Button::new(UiText::YES, UiCallback::AcceptTrade { trade_id })
+                .block(default_block().border_style(UiStyle::OK))
+                .hover_text(format!("Accept: {text}"));
+            if let Err(err) = world.can_accept_offer(&trade_id, now) {
+                accept_button.disable(Some(err.to_string()));
+            }
+            let mut decline_button = Button::new(UiText::NO, UiCallback::DeclineTrade { trade_id })
+                .block(default_block().border_style(UiStyle::ERROR))
+                .hover_text(format!("Decline: {text}"));
+            if idx == 0 {
+                accept_button = accept_button.hotkey(ui_key::YES_TO_DIALOG);
+                decline_button = decline_button.hotkey(ui_key::NO_TO_DIALOG);
+            }
+            frame.render_interactive_widget(accept_button, line_split[1]);
+            frame.render_interactive_widget(decline_button, line_split[2]);
         }
         Ok(())
     }
