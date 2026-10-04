@@ -12,6 +12,22 @@ use crate::{
 use anyhow::anyhow;
 use std::time::Instant;
 
+const CONTACTING_HOST_MESSAGE: &str = "Contacting the host...";
+
+pub(crate) fn contacting_host_popup() -> PopupMessage {
+    PopupMessage::Message {
+        message: CONTACTING_HOST_MESSAGE.to_string(),
+        links: vec![],
+        level: log::Level::Info,
+        is_skippable: true,
+        timestamp: Tick::now(),
+    }
+}
+
+fn is_contacting_host(popup: &PopupMessage) -> bool {
+    matches!(popup, PopupMessage::Message { message, .. } if message == CONTACTING_HOST_MESSAGE)
+}
+
 impl App {
     pub(crate) fn launch_space_adventure(&mut self, open: bool) -> AppResult<()> {
         if self.space_session.is_some() {
@@ -181,6 +197,9 @@ impl App {
 
     fn apply_guest_events(&mut self, events: Vec<GuestEvent>) -> AppResult<()> {
         for event in events {
+            if matches!(event, GuestEvent::Welcomed(_) | GuestEvent::Rejected(_)) {
+                self.ui.close_popup_where(is_contacting_host);
+            }
             match event {
                 GuestEvent::Welcomed(welcome) => {
                     let planet_id = self.world.get_own_team()?.is_on_planet();
@@ -199,12 +218,10 @@ impl App {
                         )));
                         continue;
                     }
-                    self.ui.close_popup();
                     self.ui.set_state(UiState::SpaceAdventure);
                 }
                 GuestEvent::Rejected(reason) => {
                     self.space_session = None;
-                    self.ui.close_popup();
                     self.ui.push_popup(PopupMessage::error(format!(
                         "Could not join the space adventure: {}",
                         reason.message()
@@ -247,4 +264,46 @@ fn reject_closed(handle: &SpaceLinkHandle) {
     handle.send_control(SessionMessage::Reject {
         reason: RejectReason::Closed,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::space_adventure::ShipLoadout;
+
+    fn guest_app(popups: Vec<PopupMessage>) -> AppResult<App> {
+        let mut app = App::test_default()?;
+        for popup in popups {
+            app.ui.push_popup(popup);
+        }
+        app.space_session = Some(SpaceSession::Guest(GuestSession::new(
+            1,
+            TeamId::new_v4(),
+            ShipLoadout::test_default(),
+            Instant::now(),
+        )));
+        Ok(app)
+    }
+
+    fn has_message(app: &App, text: &str) -> bool {
+        app.ui
+            .popup_messages()
+            .iter()
+            .any(|popup| matches!(popup, PopupMessage::Message { message, .. } if message == text))
+    }
+
+    #[test]
+    fn test_join_answer_closes_only_the_contacting_popup() -> AppResult<()> {
+        let game_result = PopupMessage::error("Game result".to_string());
+
+        let mut app = guest_app(vec![game_result.clone(), contacting_host_popup()])?;
+        app.apply_guest_events(vec![GuestEvent::Rejected(RejectReason::Full)])?;
+        assert!(has_message(&app, "Game result"));
+        assert!(!has_message(&app, CONTACTING_HOST_MESSAGE));
+
+        let mut dismissed = guest_app(vec![game_result])?;
+        dismissed.apply_guest_events(vec![GuestEvent::Rejected(RejectReason::Full)])?;
+        assert!(has_message(&dismissed, "Game result"));
+        Ok(())
+    }
 }

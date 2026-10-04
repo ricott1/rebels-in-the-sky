@@ -250,6 +250,15 @@ impl UiScreen {
         }
     }
 
+    pub fn close_popup_where(&mut self, matches: impl Fn(&PopupMessage) -> bool) {
+        self.popup_messages.retain(|popup| !matches(popup));
+    }
+
+    #[cfg(test)]
+    pub fn popup_messages(&self) -> &[PopupMessage] {
+        &self.popup_messages
+    }
+
     pub const fn close_help(&mut self) {
         self.show_help = false;
     }

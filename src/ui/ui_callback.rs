@@ -2260,13 +2260,8 @@ impl UiCallback {
             Self::JoinSpaceAdventure { host_team_id } => {
                 app.join_space_adventure(*host_team_id)?;
                 app.ui.close_popup();
-                app.ui.push_popup(PopupMessage::Message {
-                    message: "Contacting the host...".to_string(),
-                    links: vec![],
-                    level: log::Level::Info,
-                    is_skippable: true,
-                    timestamp: Tick::now(),
-                });
+                app.ui
+                    .push_popup(crate::space_coop::contacting_host_popup());
                 Ok(None)
             }
 
