@@ -173,8 +173,7 @@ mod tests {
     use std::collections::HashSet;
 
     fn space_with_guest() -> AppResult<(SpaceAdventure, usize)> {
-        let mut space =
-            SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
+        let mut space = SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
         space.force_running();
         let mut loadout = ShipLoadout::test_default();
         loadout.spaceship.shield = crate::core::Shield::Small;

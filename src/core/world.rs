@@ -24,8 +24,8 @@ use crate::game_engine::{
 use crate::image::color_map::ColorMap;
 use crate::network::network_store_data::NetworkStoreData;
 use crate::network::types::{NetworkGame, NetworkTeam};
-use crate::space_adventure::SpaceAdventure;
 use crate::space_adventure::wire::{JoinRequest, Welcome};
+use crate::space_adventure::SpaceAdventure;
 use crate::space_adventure::{PlayerOutcome, ShipLoadout, SpaceMirror};
 use crate::store::{save_game, save_tournament, ASSETS_DIR};
 use crate::ui::{PopupMessage, UiCallback};
@@ -1058,7 +1058,11 @@ impl World {
 
     pub fn set_space_adventure_joinable(&mut self, joinable: bool) -> AppResult<()> {
         let own_team = self.get_own_team_mut()?;
-        if let TeamLocation::OnSpaceAdventure { around, joinable: current } = own_team.current_location {
+        if let TeamLocation::OnSpaceAdventure {
+            around,
+            joinable: current,
+        } = own_team.current_location
+        {
             if current != joinable {
                 own_team.current_location = TeamLocation::OnSpaceAdventure { around, joinable };
                 self.dirty = true;
@@ -1094,7 +1098,11 @@ impl World {
         let planet_id = own_team
             .is_on_planet()
             .ok_or_else(|| anyhow!("Team should be on a planet to join a space adventure."))?;
-        if !self.joinable_adventures().iter().any(|(id, _)| *id == host_team_id) {
+        if !self
+            .joinable_adventures()
+            .iter()
+            .any(|(id, _)| *id == host_team_id)
+        {
             return Err(anyhow!("That space adventure cannot be joined"));
         }
         let peer_id = self
@@ -1114,7 +1122,11 @@ impl World {
         ))
     }
 
-    pub fn enter_guest_adventure(&mut self, welcome: &Welcome, planet_id: PlanetId) -> AppResult<()> {
+    pub fn enter_guest_adventure(
+        &mut self,
+        welcome: &Welcome,
+        planet_id: PlanetId,
+    ) -> AppResult<()> {
         let mut own_team = self.get_own_team()?.clone();
         own_team.can_start_space_adventure(own_team.average_tiredness(self))?;
         if own_team.is_on_planet() != Some(planet_id) {
@@ -3513,9 +3525,8 @@ impl World {
         let mut own_team = self.get_own_team()?.clone();
         let own_team_current_location = match own_team.current_location {
             TeamLocation::OnPlanet { planet_id } => Some(planet_id),
-            TeamLocation::Exploring { around, .. } | TeamLocation::OnSpaceAdventure { around, .. } => {
-                Some(around)
-            }
+            TeamLocation::Exploring { around, .. }
+            | TeamLocation::OnSpaceAdventure { around, .. } => Some(around),
             TeamLocation::Travelling { to, .. } => Some(to),
         };
 

@@ -220,9 +220,9 @@ pub trait LinkSender: Debug + Send {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::ResourceMap;
     use crate::core::spaceship::SpaceshipPrefab;
     use crate::space_adventure::ShipLoadout;
+    use crate::types::ResourceMap;
     use strum::IntoEnumIterator;
 
     fn round_trip(message: SessionMessage) -> AppResult<()> {

@@ -20,11 +20,11 @@ mod visual_effects;
 pub mod wire;
 
 use crate::core::{constants as core_constants, resources};
+pub use constants::HULL_BREACH_MESSAGE;
 pub use mirror::SpaceMirror;
+pub use player::{LocalPlayerView, PlayerOutcome, ShipLoadout};
 pub use space::SpaceAdventure;
 pub use space_callback::SpaceCallback;
-pub use constants::HULL_BREACH_MESSAGE;
-pub use player::{LocalPlayerView, PlayerOutcome, ShipLoadout};
 use spaceship::SpaceshipEntity;
 pub use spaceship::SpaceshipRole;
 pub use traits::*;

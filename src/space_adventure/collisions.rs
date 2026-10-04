@@ -508,16 +508,16 @@ pub fn resolve_collision_between(
 
 #[cfg(test)]
 mod test {
-    use crate::space_adventure::resources::Resource;
-    use crate::space_adventure::{
-        collector::CollectorEntity, collisions::are_colliding, fragment::FragmentEntity, traits::*,
-    };
     use super::get_collision_callbacks;
     use crate::core::spaceship::SpaceshipPrefab;
+    use crate::space_adventure::resources::Resource;
     use crate::space_adventure::{
         asteroid::AsteroidEntity, entity::Entity, projectile::ProjectileEntity,
         shield::ShieldEntity, space_callback::SpaceCallback, spaceship::SpaceshipEntity,
         SpaceshipRole,
+    };
+    use crate::space_adventure::{
+        collector::CollectorEntity, collisions::are_colliding, fragment::FragmentEntity, traits::*,
     };
     use crate::types::{AppResult, ResourceMap};
     use glam::{I16Vec2, Vec2};
@@ -595,9 +595,11 @@ mod test {
     fn test_only_the_host_lands_on_the_asteroid_planet() -> AppResult<()> {
         let planet = AsteroidEntity::planet();
         let lands = |entity: &Entity| -> AppResult<bool> {
-            Ok(get_collision_callbacks(&planet, entity, I16Vec2::ZERO, 0.025)?
-                .iter()
-                .any(|cb| matches!(cb, SpaceCallback::LandSpaceshipOnAsteroid)))
+            Ok(
+                get_collision_callbacks(&planet, entity, I16Vec2::ZERO, 0.025)?
+                    .iter()
+                    .any(|cb| matches!(cb, SpaceCallback::LandSpaceshipOnAsteroid)),
+            )
         };
         assert!(lands(&ship(SpaceshipRole::Host, 1)?)?);
         assert!(!lands(&ship(SpaceshipRole::Guest, 2)?)?);

@@ -44,7 +44,25 @@ impl LocalPlayerView {
     }
 }
 
+const MIN_BONUS: f32 = 1.0;
+const MAX_BONUS: f32 = 2.0;
+
+fn plausible_bonus(value: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(MIN_BONUS, MAX_BONUS)
+    } else {
+        MIN_BONUS
+    }
+}
+
 impl ShipLoadout {
+    pub fn sanitized(mut self) -> Self {
+        self.speed_bonus = plausible_bonus(self.speed_bonus);
+        self.weapons_bonus = plausible_bonus(self.weapons_bonus);
+        self.fuel = self.fuel.min(self.spaceship.fuel_capacity());
+        self
+    }
+
     pub fn outcome(&self) -> PlayerOutcome {
         let mut resources = self.resources.clone();
         resources.insert(Resource::FUEL, self.fuel);
@@ -81,5 +99,27 @@ impl ShipLoadout {
             weapons_bonus: 1.0,
             fuel: 100,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitized_loadout_keeps_bonuses_and_fuel_plausible() {
+        let mut loadout = ShipLoadout::test_default();
+        loadout.speed_bonus = f32::NAN;
+        loadout.weapons_bonus = 1e9;
+        loadout.fuel = u32::MAX;
+        let sanitized = loadout.clone().sanitized();
+        assert_eq!(sanitized.speed_bonus, 1.0);
+        assert_eq!(sanitized.weapons_bonus, 2.0);
+        assert_eq!(sanitized.fuel, loadout.spaceship.fuel_capacity());
+
+        let mut honest = ShipLoadout::test_default();
+        honest.speed_bonus = 1.4;
+        honest.fuel = honest.spaceship.fuel_capacity() / 2;
+        assert_eq!(honest.clone().sanitized(), honest);
     }
 }

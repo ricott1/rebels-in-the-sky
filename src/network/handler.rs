@@ -175,7 +175,10 @@ fn direct_state(
     connections: &HashMap<PeerId, Vec<(ConnectionId, bool)>>,
     peer_id: &PeerId,
 ) -> DirectState {
-    let list = connections.get(peer_id).map(Vec::as_slice).unwrap_or_default();
+    let list = connections
+        .get(peer_id)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
     if !list.iter().any(|(_, relayed)| !relayed) {
         return DirectState::Missing;
     }
@@ -473,9 +476,13 @@ impl NetworkHandler {
         }
 
         let handle = tokio::spawn(async move {
-            let mut swarm = if let Ok(swarm) =
-                Self::new_swarm(local_keypair, tcp_port, use_ipv4, use_ipv6, stream_behaviour)
-            {
+            let mut swarm = if let Ok(swarm) = Self::new_swarm(
+                local_keypair,
+                tcp_port,
+                use_ipv4,
+                use_ipv6,
+                stream_behaviour,
+            ) {
                 swarm
             } else {
                 return;

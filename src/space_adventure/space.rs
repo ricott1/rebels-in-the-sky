@@ -1,11 +1,11 @@
 use super::{
     asteroid::{AsteroidEntity, AsteroidSize},
     collector::CollectorEntity,
-    player::{LocalPlayerView, PlayerOutcome, ShipLoadout},
     collisions::resolve_collision_between,
     constants::*,
     fragment::FragmentEntity,
     particle::ParticleEntity,
+    player::{LocalPlayerView, PlayerOutcome, ShipLoadout},
     projectile::ProjectileEntity,
     space_callback::SpaceCallback,
     spaceship::{SpaceshipEntity, SpaceshipRole},
@@ -262,6 +262,7 @@ impl SpaceAdventure {
         entity_ids.push(ship_id);
         self.guest_entities = entity_ids;
         self.guest_id = Some(ship_id);
+        self.guest_destroyed = None;
         Ok(ship_id)
     }
 
@@ -655,14 +656,15 @@ impl SpaceAdventure {
                         player.resources_mut().insert(Resource::SCRAPS, 0);
                         self.stop_space_adventure();
 
-                        return Ok(vec![
-                            UiCallback::PushUiPopup { popup_message:
-                                PopupMessage::Message {
-                                    message: HULL_BREACH_MESSAGE.to_string(),
-                                    links: vec![], level: log::Level::Info,
-                                    is_skippable:true, timestamp:Tick::now()}
-                                }
-                        ]);
+                        return Ok(vec![UiCallback::PushUiPopup {
+                            popup_message: PopupMessage::Message {
+                                message: HULL_BREACH_MESSAGE.to_string(),
+                                links: vec![],
+                                level: log::Level::Info,
+                                is_skippable: true,
+                                timestamp: Tick::now(),
+                            },
+                        }]);
                     }
                 }
                 time
@@ -873,7 +875,10 @@ mod tests {
     fn test_guest_ignores_damage_while_invulnerable() -> AppResult<()> {
         let mut space = running_space()?;
         let guest_id = space.add_guest(&guest_loadout())?;
-        let full = space.get_ship(guest_id).expect("guest").current_durability();
+        let full = space
+            .get_ship(guest_id)
+            .expect("guest")
+            .current_durability();
 
         SpaceCallback::DamageEntity {
             id: guest_id,
@@ -881,7 +886,10 @@ mod tests {
         }
         .call(&mut space);
         assert_eq!(
-            space.get_ship(guest_id).expect("guest").current_durability(),
+            space
+                .get_ship(guest_id)
+                .expect("guest")
+                .current_durability(),
             full
         );
 
@@ -891,7 +899,13 @@ mod tests {
             damage: 5.0,
         }
         .call(&mut space);
-        assert!(space.get_ship(guest_id).expect("guest").current_durability() < full);
+        assert!(
+            space
+                .get_ship(guest_id)
+                .expect("guest")
+                .current_durability()
+                < full
+        );
         Ok(())
     }
 
@@ -962,6 +976,26 @@ mod tests {
         assert_eq!(view.durability, host.current_durability());
         assert_eq!(view.storage_capacity, host.storage_capacity());
         assert_eq!(view.outcome(), space.outcome(host.id()).expect("outcome"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_new_guest_does_not_inherit_a_pending_death() -> AppResult<()> {
+        let mut space = running_space()?;
+        let guest_id = space.add_guest(&guest_loadout())?;
+        space
+            .get_ship_mut(guest_id)
+            .expect("guest")
+            .set_invulnerable(0.0);
+        SpaceCallback::DamageEntity {
+            id: guest_id,
+            damage: 10_000.0,
+        }
+        .call(&mut space);
+        space.update(0.025)?;
+
+        space.add_guest(&guest_loadout())?;
+        assert!(space.take_guest_destroyed().is_none());
         Ok(())
     }
 }

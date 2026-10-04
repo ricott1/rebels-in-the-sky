@@ -2386,8 +2386,8 @@ mod test {
     use super::UiCallback;
     use crate::{
         app::App,
-        core::{constants::SECONDS, resources::Resource, INITIAL_RANDOM_TEAM_BALANCE},
         core::types::TeamLocation,
+        core::{constants::SECONDS, resources::Resource, INITIAL_RANDOM_TEAM_BALANCE},
         space_adventure::{
             snapshot::SnapshotTracker, ControllableSpaceship, GameEntity, PlayerOutcome,
             ShipLoadout, SpaceAdventure, SpaceCallback,
@@ -2481,7 +2481,9 @@ mod test {
     #[test]
     fn test_start_space_adventure_resets_fast_tick_clock() -> AppResult<()> {
         let mut app = App::test_default()?;
-        app.world.get_own_team_mut()?.add_resource(Resource::FUEL, 100)?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
         app.world.last_tick_min_interval = 0;
         app.world.start_space_adventure()?;
         assert!(Tick::now() - app.world.last_tick_min_interval < SECONDS);
@@ -2491,7 +2493,9 @@ mod test {
     #[test]
     fn test_fast_tick_queued_before_the_clock_reset_does_not_underflow() -> AppResult<()> {
         let mut app = App::test_default()?;
-        app.world.get_own_team_mut()?.add_resource(Resource::FUEL, 100)?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
         app.world.start_space_adventure()?;
         app.world.last_tick_min_interval = Tick::now() + 1000;
         app.world.handle_fast_tick_events(Tick::now())?;
@@ -2501,7 +2505,9 @@ mod test {
     #[test]
     fn test_settle_space_adventure_applies_the_outcome() -> AppResult<()> {
         let mut app = App::test_default()?;
-        app.world.get_own_team_mut()?.add_resource(Resource::FUEL, 100)?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
         app.world.start_space_adventure()?;
         app.world.space_adventure = None;
 
@@ -2543,10 +2549,20 @@ mod test {
         let planet_id = app.world.get_own_team()?.is_on_planet().expect("on planet");
         let open = add_peer_team(&mut app, planet_id, true)?;
         add_peer_team(&mut app, planet_id, false)?;
-        let elsewhere = *app.world.planets.keys().find(|id| **id != planet_id).expect("another planet");
+        let elsewhere = *app
+            .world
+            .planets
+            .keys()
+            .find(|id| **id != planet_id)
+            .expect("another planet");
         add_peer_team(&mut app, elsewhere, true)?;
 
-        let joinable: Vec<TeamId> = app.world.joinable_adventures().into_iter().map(|(id, _)| id).collect();
+        let joinable: Vec<TeamId> = app
+            .world
+            .joinable_adventures()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
         assert_eq!(joinable, vec![open]);
         Ok(())
     }
@@ -2554,7 +2570,9 @@ mod test {
     #[test]
     fn test_prepare_join_checks_the_host() -> AppResult<()> {
         let mut app = App::test_default()?;
-        app.world.get_own_team_mut()?.add_resource(Resource::FUEL, 100)?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
         let planet_id = app.world.get_own_team()?.is_on_planet().expect("on planet");
         let open = add_peer_team(&mut app, planet_id, true)?;
         let closed = add_peer_team(&mut app, planet_id, false)?;
@@ -2569,10 +2587,13 @@ mod test {
     #[test]
     fn test_guest_enters_and_settles_from_the_mirror() -> AppResult<()> {
         let mut app = App::test_default()?;
-        app.world.get_own_team_mut()?.add_resource(Resource::FUEL, 100)?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
         let planet_id = app.world.get_own_team()?.is_on_planet().expect("on planet");
 
-        let mut host_space = SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
+        let mut host_space =
+            SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
         host_space.force_running();
         let guest_id = host_space.add_guest(&app.world.own_ship_loadout()?)?;
         let welcome = SnapshotTracker::new().welcome(&host_space, guest_id);
@@ -2581,7 +2602,10 @@ mod test {
         assert!(app.world.in_space());
         assert!(matches!(
             app.world.get_own_team()?.current_location,
-            TeamLocation::OnSpaceAdventure { joinable: false, .. }
+            TeamLocation::OnSpaceAdventure {
+                joinable: false,
+                ..
+            }
         ));
 
         let mut resources = app.world.get_own_team()?.resources.clone();
@@ -2590,7 +2614,10 @@ mod test {
             .space_mirror
             .as_mut()
             .expect("mirror")
-            .start_ending(PlayerOutcome { resources, durability: 2 });
+            .start_ending(PlayerOutcome {
+                resources,
+                durability: 2,
+            });
         app.world.return_from_space_adventure()?;
 
         let team = app.world.get_own_team()?;
@@ -2603,7 +2630,9 @@ mod test {
     #[test]
     fn test_joinable_flag_is_broadcast() -> AppResult<()> {
         let mut app = App::test_default()?;
-        app.world.get_own_team_mut()?.add_resource(Resource::FUEL, 100)?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
         app.world.start_space_adventure()?;
         app.world.dirty_network = false;
 

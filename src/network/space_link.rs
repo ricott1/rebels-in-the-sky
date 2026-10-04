@@ -150,7 +150,10 @@ where
         };
         token.cancel();
         let _ = events
-            .send(AppEvent::SpaceLink(SpaceLinkEvent::Closed { link_id, reason }))
+            .send(AppEvent::SpaceLink(SpaceLinkEvent::Closed {
+                link_id,
+                reason,
+            }))
             .await;
     });
 
@@ -210,7 +213,10 @@ mod tests {
         drop(a_handle);
         assert!(matches!(
             b_rx.recv().await,
-            Some(AppEvent::SpaceLink(SpaceLinkEvent::Closed { link_id: 2, .. }))
+            Some(AppEvent::SpaceLink(SpaceLinkEvent::Closed {
+                link_id: 2,
+                ..
+            }))
         ));
         Ok(())
     }

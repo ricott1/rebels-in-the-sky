@@ -52,15 +52,9 @@ fn build_entity(spawn: &EntitySpawn) -> AppResult<Entity> {
         SpawnKind::Fragment { resource, amount } => {
             FragmentEntity::new_entity(Vec2::ZERO, Vec2::ZERO, *resource, *amount)
         }
-        SpawnKind::Projectile { color } => ProjectileEntity::new_entity(
-            0,
-            None,
-            Vec2::ZERO,
-            Vec2::ZERO,
-            Rgba(*color),
-            0.0,
-            false,
-        ),
+        SpawnKind::Projectile { color } => {
+            ProjectileEntity::new_entity(0, None, Vec2::ZERO, Vec2::ZERO, Rgba(*color), 0.0, false)
+        }
         SpawnKind::Shield => ShieldEntity::new_entity(1.0, 1.0, false),
     };
     entity.set_id(spawn.id as usize);
@@ -247,8 +241,7 @@ mod tests {
     use crate::types::ResourceMap;
 
     fn host_with_guest() -> AppResult<(SpaceAdventure, usize)> {
-        let mut space =
-            SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
+        let mut space = SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
         space.force_running();
         let guest_id = space.add_guest(&ShipLoadout::test_default())?;
         space.set_record_particles(true);

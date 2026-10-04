@@ -16,6 +16,7 @@ pub const LINK_TIMEOUT: Duration = Duration::from_secs(5);
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
 pub const JOIN_TIMEOUT: Duration = Duration::from_secs(10);
 pub const SNAPSHOT_EVERY_FAST_TICKS: u64 = 2;
+pub const MAX_GUEST_NAME_CHARS: usize = 32;
 
 #[derive(Debug)]
 pub enum SpaceSession {
@@ -111,18 +112,20 @@ impl HostSession {
                 link.send_control(SessionMessage::Reject { reason });
                 return vec![];
             }
-            let Ok(ship_id) = space.add_guest(&join.loadout) else {
-                link.send_control(SessionMessage::Reject { reason: RejectReason::Full });
+            let Ok(ship_id) = space.add_guest(&join.loadout.sanitized()) else {
+                link.send_control(SessionMessage::Reject {
+                    reason: RejectReason::Full,
+                });
                 return vec![];
             };
             space.set_record_particles(true);
             let mut tracker = SnapshotTracker::new();
             link.send_control(SessionMessage::Welcome(tracker.welcome(space, ship_id)));
-            let team_name = join.team_name.clone();
+            let team_name: String = join.team_name.chars().take(MAX_GUEST_NAME_CHARS).collect();
             self.guest = Some(HostGuest {
                 link_id,
                 link,
-                team_name: join.team_name,
+                team_name: team_name.clone(),
                 ship_id,
                 tracker,
                 last_input_seq: 0,
@@ -151,7 +154,11 @@ impl HostSession {
 
     pub fn link_closed(&mut self, link_id: u64, space: &mut SpaceAdventure) -> Vec<HostEvent> {
         self.pending.remove(&link_id);
-        if self.guest.as_ref().is_some_and(|guest| guest.link_id == link_id) {
+        if self
+            .guest
+            .as_ref()
+            .is_some_and(|guest| guest.link_id == link_id)
+        {
             if let Some(team_name) = self.drop_guest(space) {
                 return vec![HostEvent::GuestLeft { team_name }];
             }
@@ -201,7 +208,11 @@ impl HostSession {
         self.fast_ticks += 1;
         guest.tracker.collect_particles(space);
         if self.fast_ticks.is_multiple_of(SNAPSHOT_EVERY_FAST_TICKS) {
-            if let Some(snapshot) = guest.tracker.prepare(space, guest.ship_id, guest.last_input_seq) {
+            if let Some(snapshot) =
+                guest
+                    .tracker
+                    .prepare(space, guest.ship_id, guest.last_input_seq)
+            {
                 if guest
                     .link
                     .try_send_snapshot(SessionMessage::Snapshot(snapshot.clone()))
@@ -499,34 +510,66 @@ mod tests {
         assert!(host.has_guest());
         assert!(!host.is_joinable(&space));
         assert!(space.guest_id().is_some());
-        assert!(matches!(link.take().as_slice(), [SessionMessage::Welcome(_)]));
+        assert!(matches!(
+            link.take().as_slice(),
+            [SessionMessage::Welcome(_)]
+        ));
         Ok(())
     }
 
     #[test]
     fn test_host_rejects_invalid_joins() -> AppResult<()> {
         let now = Instant::now();
-        let reject = |space: &mut SpaceAdventure, host: &mut HostSession, message: SessionMessage, link_id: u64| {
+        let reject = |space: &mut SpaceAdventure,
+                      host: &mut HostSession,
+                      message: SessionMessage,
+                      link_id: u64| {
             let link = TestLink::default();
             host.link_opened(link_id, Box::new(link.clone()), now);
             host.handle_message(link_id, message, space, planet(), now);
             link.take()
         };
 
-        let mut starting = SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
+        let mut starting =
+            SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
         let mut host = HostSession::new();
-        assert_eq!(reject(&mut starting, &mut host, join(planet()), 1), vec![SessionMessage::Reject { reason: RejectReason::NotRunning }]);
+        assert_eq!(
+            reject(&mut starting, &mut host, join(planet()), 1),
+            vec![SessionMessage::Reject {
+                reason: RejectReason::NotRunning
+            }]
+        );
 
         let mut space = running_host()?;
         let mut host = HostSession::new();
-        assert_eq!(reject(&mut space, &mut host, join(PlanetId::from_u128(1)), 2), vec![SessionMessage::Reject { reason: RejectReason::NotOnPlanet }]);
+        assert_eq!(
+            reject(&mut space, &mut host, join(PlanetId::from_u128(1)), 2),
+            vec![SessionMessage::Reject {
+                reason: RejectReason::NotOnPlanet
+            }]
+        );
 
-        let SessionMessage::Join(mut old) = join(planet()) else { unreachable!() };
+        let SessionMessage::Join(mut old) = join(planet()) else {
+            unreachable!()
+        };
         old.version[1] += 1;
-        assert_eq!(reject(&mut space, &mut host, SessionMessage::Join(old), 3), vec![SessionMessage::Reject { reason: RejectReason::VersionMismatch }]);
+        assert_eq!(
+            reject(&mut space, &mut host, SessionMessage::Join(old), 3),
+            vec![SessionMessage::Reject {
+                reason: RejectReason::VersionMismatch
+            }]
+        );
 
-        assert!(matches!(reject(&mut space, &mut host, join(planet()), 4).as_slice(), [SessionMessage::Welcome(_)]));
-        assert_eq!(reject(&mut space, &mut host, join(planet()), 5), vec![SessionMessage::Reject { reason: RejectReason::Full }]);
+        assert!(matches!(
+            reject(&mut space, &mut host, join(planet()), 4).as_slice(),
+            [SessionMessage::Welcome(_)]
+        ));
+        assert_eq!(
+            reject(&mut space, &mut host, join(planet()), 5),
+            vec![SessionMessage::Reject {
+                reason: RejectReason::Full
+            }]
+        );
         Ok(())
     }
 
@@ -535,7 +578,16 @@ mod tests {
         let now = Instant::now();
         let (mut host, mut space, link) = joined_host(now)?;
         link.take();
-        host.handle_message(1, SessionMessage::Input { seq: 5, input: PlayerInput::MoveRight }, &mut space, planet(), now);
+        host.handle_message(
+            1,
+            SessionMessage::Input {
+                seq: 5,
+                input: PlayerInput::MoveRight,
+            },
+            &mut space,
+            planet(),
+            now,
+        );
         space.update(0.025)?;
         space.update(0.025)?;
         let guest_id = space.guest_id().expect("guest");
@@ -543,7 +595,14 @@ mod tests {
 
         host.tick(&mut space, now);
         host.tick(&mut space, now);
-        let snapshots: Vec<_> = link.take().into_iter().filter_map(|m| match m { SessionMessage::Snapshot(s) => Some(s), _ => None }).collect();
+        let snapshots: Vec<_> = link
+            .take()
+            .into_iter()
+            .filter_map(|m| match m {
+                SessionMessage::Snapshot(s) => Some(s),
+                _ => None,
+            })
+            .collect();
         assert_eq!(snapshots.len(), 1);
         assert_eq!(snapshots[0].last_input_seq, 5);
         Ok(())
@@ -555,7 +614,11 @@ mod tests {
         let (mut host, mut space, link) = joined_host(now)?;
         link.take();
         link.snapshots_full.store(true, Ordering::Relaxed);
-        let new_id = space.generate_asteroid(glam::Vec2::new(50.0, 50.0), glam::Vec2::ZERO, crate::space_adventure::asteroid::AsteroidSize::Small) as NetId;
+        let new_id = space.generate_asteroid(
+            glam::Vec2::new(50.0, 50.0),
+            glam::Vec2::ZERO,
+            crate::space_adventure::asteroid::AsteroidSize::Small,
+        ) as NetId;
         for _ in 0..4 {
             host.tick(&mut space, now);
         }
@@ -565,7 +628,14 @@ mod tests {
         for _ in 0..4 {
             host.tick(&mut space, now);
         }
-        let snapshots: Vec<_> = link.take().into_iter().filter_map(|m| match m { SessionMessage::Snapshot(s) => Some(s), _ => None }).collect();
+        let snapshots: Vec<_> = link
+            .take()
+            .into_iter()
+            .filter_map(|m| match m {
+                SessionMessage::Snapshot(s) => Some(s),
+                _ => None,
+            })
+            .collect();
         assert_eq!(snapshots.len(), 2);
         assert!(snapshots[0].spawned.iter().any(|s| s.id == new_id));
         assert!(!snapshots[1].spawned.iter().any(|s| s.id == new_id));
@@ -583,13 +653,28 @@ mod tests {
         assert!(host.is_joinable(&space));
 
         let (mut host, mut space, _) = joined_host(now)?;
-        assert!(matches!(host.link_closed(1, &mut space).as_slice(), [HostEvent::GuestLeft { .. }]));
+        assert!(matches!(
+            host.link_closed(1, &mut space).as_slice(),
+            [HostEvent::GuestLeft { .. }]
+        ));
         assert!(space.guest_id().is_none());
 
         let (mut host, mut space, _) = joined_host(now)?;
-        host.handle_message(1, SessionMessage::Heartbeat, &mut space, planet(), now + Duration::from_secs(3));
-        assert!(host.tick(&mut space, now + Duration::from_secs(7)).is_empty());
-        assert!(matches!(host.tick(&mut space, now + Duration::from_secs(9)).as_slice(), [HostEvent::GuestLeft { .. }]));
+        host.handle_message(
+            1,
+            SessionMessage::Heartbeat,
+            &mut space,
+            planet(),
+            now + Duration::from_secs(3),
+        );
+        assert!(host
+            .tick(&mut space, now + Duration::from_secs(7))
+            .is_empty());
+        assert!(matches!(
+            host.tick(&mut space, now + Duration::from_secs(9))
+                .as_slice(),
+            [HostEvent::GuestLeft { .. }]
+        ));
         Ok(())
     }
 
@@ -597,7 +682,15 @@ mod tests {
     fn test_host_drops_a_guest_that_breaks_the_protocol() -> AppResult<()> {
         let now = Instant::now();
         let (mut host, mut space, _) = joined_host(now)?;
-        let events = host.handle_message(1, SessionMessage::Reject { reason: RejectReason::Full }, &mut space, planet(), now);
+        let events = host.handle_message(
+            1,
+            SessionMessage::Reject {
+                reason: RejectReason::Full,
+            },
+            &mut space,
+            planet(),
+            now,
+        );
         assert!(matches!(events.as_slice(), [HostEvent::GuestLeft { .. }]));
         assert!(space.guest_id().is_none());
         Ok(())
@@ -624,14 +717,28 @@ mod tests {
         let (mut host, mut space, link) = joined_host(now)?;
         link.take();
         let guest_id = space.guest_id().expect("guest");
-        space.get_ship_mut(guest_id).expect("guest").set_invulnerable(0.0);
-        crate::space_adventure::SpaceCallback::DamageEntity { id: guest_id, damage: 10_000.0 }.call(&mut space);
+        space
+            .get_ship_mut(guest_id)
+            .expect("guest")
+            .set_invulnerable(0.0);
+        crate::space_adventure::SpaceCallback::DamageEntity {
+            id: guest_id,
+            damage: 10_000.0,
+        }
+        .call(&mut space);
         space.update(0.025)?;
 
         let events = host.tick(&mut space, now);
-        assert!(matches!(events.as_slice(), [HostEvent::GuestDestroyed { .. }]));
+        assert!(matches!(
+            events.as_slice(),
+            [HostEvent::GuestDestroyed { .. }]
+        ));
         let sent = link.take();
-        let [SessionMessage::Ended { reason: EndReason::Destroyed, outcome }] = sent.as_slice() else {
+        let [SessionMessage::Ended {
+            reason: EndReason::Destroyed,
+            outcome,
+        }] = sent.as_slice()
+        else {
             panic!("expected one Ended, got {sent:?}");
         };
         assert_eq!(outcome.durability, 0);
@@ -645,15 +752,32 @@ mod tests {
         let (mut host, mut space, link) = joined_host(now)?;
         link.take();
         let guest_id = space.guest_id().expect("guest");
-        space.get_ship_mut(guest_id).expect("guest").set_invulnerable(0.0);
-        crate::space_adventure::SpaceCallback::DamageEntity { id: guest_id, damage: 10_000.0 }.call(&mut space);
+        space
+            .get_ship_mut(guest_id)
+            .expect("guest")
+            .set_invulnerable(0.0);
+        crate::space_adventure::SpaceCallback::DamageEntity {
+            id: guest_id,
+            damage: 10_000.0,
+        }
+        .call(&mut space);
         space.update(0.025)?;
         space.stop_space_adventure();
 
         host.tick(&mut space, now);
         host.tick(&mut space, now);
-        let ended: Vec<_> = link.take().into_iter().filter(|m| matches!(m, SessionMessage::Ended { .. })).collect();
-        assert!(matches!(ended.as_slice(), [SessionMessage::Ended { reason: EndReason::Destroyed, .. }]));
+        let ended: Vec<_> = link
+            .take()
+            .into_iter()
+            .filter(|m| matches!(m, SessionMessage::Ended { .. }))
+            .collect();
+        assert!(matches!(
+            ended.as_slice(),
+            [SessionMessage::Ended {
+                reason: EndReason::Destroyed,
+                ..
+            }]
+        ));
         Ok(())
     }
 
@@ -666,7 +790,11 @@ mod tests {
         host.tick(&mut space, now);
         host.tick(&mut space, now);
         let sent = link.take();
-        let [SessionMessage::Ended { reason: EndReason::HostEnded, outcome }] = sent.as_slice() else {
+        let [SessionMessage::Ended {
+            reason: EndReason::HostEnded,
+            outcome,
+        }] = sent.as_slice()
+        else {
             panic!("expected one Ended, got {sent:?}");
         };
         assert_eq!(outcome.resources.value(&Resource::GOLD), 10);
@@ -680,14 +808,21 @@ mod tests {
         link.take();
         host.shutdown(&space);
         host.shutdown(&space);
-        assert!(matches!(link.take().as_slice(), [SessionMessage::Ended { reason: EndReason::HostEnded, .. }]));
+        assert!(matches!(
+            link.take().as_slice(),
+            [SessionMessage::Ended {
+                reason: EndReason::HostEnded,
+                ..
+            }]
+        ));
         Ok(())
     }
 
     fn welcome_and_mirror() -> AppResult<(Welcome, SpaceMirror)> {
         let mut space = running_host()?;
         let guest_id = space.add_guest(&ShipLoadout::test_default())?;
-        let welcome = crate::space_adventure::snapshot::SnapshotTracker::new().welcome(&space, guest_id);
+        let welcome =
+            crate::space_adventure::snapshot::SnapshotTracker::new().welcome(&space, guest_id);
         let mirror = SpaceMirror::new(&welcome)?;
         Ok((welcome, mirror))
     }
@@ -714,16 +849,33 @@ mod tests {
     fn test_guest_connect_failures_are_rejections() {
         let now = Instant::now();
         let mut guest = GuestSession::new(3, TeamId::from_u128(1), guest_loadout(), now);
-        assert!(matches!(guest.link_closed(None).as_slice(), [GuestEvent::Rejected(RejectReason::CantReachHost)]));
+        assert!(matches!(
+            guest.link_closed(None).as_slice(),
+            [GuestEvent::Rejected(RejectReason::CantReachHost)]
+        ));
 
         let mut guest = GuestSession::new(3, TeamId::from_u128(1), guest_loadout(), now);
         guest.link_opened(Box::new(TestLink::default()), now);
-        let events = guest.handle_message(SessionMessage::Reject { reason: RejectReason::Full }, None, now);
-        assert!(matches!(events.as_slice(), [GuestEvent::Rejected(RejectReason::Full)]));
+        let events = guest.handle_message(
+            SessionMessage::Reject {
+                reason: RejectReason::Full,
+            },
+            None,
+            now,
+        );
+        assert!(matches!(
+            events.as_slice(),
+            [GuestEvent::Rejected(RejectReason::Full)]
+        ));
 
         let mut guest = GuestSession::new(3, TeamId::from_u128(1), guest_loadout(), now);
         guest.link_opened(Box::new(TestLink::default()), now);
-        assert!(matches!(guest.tick(None, now + JOIN_TIMEOUT + Duration::from_secs(1)).as_slice(), [GuestEvent::Rejected(RejectReason::CantReachHost)]));
+        assert!(matches!(
+            guest
+                .tick(None, now + JOIN_TIMEOUT + Duration::from_secs(1))
+                .as_slice(),
+            [GuestEvent::Rejected(RejectReason::CantReachHost)]
+        ));
     }
 
     #[test]
@@ -735,17 +887,31 @@ mod tests {
         assert_eq!(
             link.take(),
             vec![
-                SessionMessage::Input { seq: 1, input: PlayerInput::Shoot },
-                SessionMessage::Input { seq: 2, input: PlayerInput::Shoot },
+                SessionMessage::Input {
+                    seq: 1,
+                    input: PlayerInput::Shoot
+                },
+                SessionMessage::Input {
+                    seq: 2,
+                    input: PlayerInput::Shoot
+                },
             ]
         );
-        assert!(guest.tick(Some(&mirror), now + Duration::from_millis(500)).is_empty());
+        assert!(guest
+            .tick(Some(&mirror), now + Duration::from_millis(500))
+            .is_empty());
         assert!(link.take().is_empty());
         guest.tick(Some(&mirror), now + Duration::from_millis(1100));
         assert_eq!(link.take(), vec![SessionMessage::Heartbeat]);
 
         let events = guest.tick(Some(&mirror), now + Duration::from_secs(6));
-        assert!(matches!(events.as_slice(), [GuestEvent::Ended { reason: EndReason::LinkLost, .. }]));
+        assert!(matches!(
+            events.as_slice(),
+            [GuestEvent::Ended {
+                reason: EndReason::LinkLost,
+                ..
+            }]
+        ));
         Ok(())
     }
 
@@ -769,10 +935,16 @@ mod tests {
         resources.insert(Resource::SATOSHI, 1_000_000);
         resources.insert(Resource::FUEL, 1_000);
         resources.insert(Resource::SCRAPS, loadout.spaceship.storage_capacity() * 10);
-        let reported = PlayerOutcome { resources, durability: 10_000 };
+        let reported = PlayerOutcome {
+            resources,
+            durability: 10_000,
+        };
 
         let events = guest.handle_message(
-            SessionMessage::Ended { reason: EndReason::HostEnded, outcome: reported },
+            SessionMessage::Ended {
+                reason: EndReason::HostEnded,
+                outcome: reported,
+            },
             Some(&mut mirror),
             now,
         );
@@ -791,17 +963,73 @@ mod tests {
         let now = Instant::now();
         let (mut guest, mut mirror, _) = flying_guest(now)?;
         let events = guest.handle_message(SessionMessage::Heartbeat, Some(&mut mirror), now);
-        assert!(matches!(events.as_slice(), [GuestEvent::Ended { reason: EndReason::LinkLost, .. }]));
+        assert!(matches!(
+            events.as_slice(),
+            [GuestEvent::Ended {
+                reason: EndReason::LinkLost,
+                ..
+            }]
+        ));
         Ok(())
     }
 
     #[test]
     fn test_guest_link_lost_settles_from_the_last_view() -> AppResult<()> {
         let now = Instant::now();
-        let (mut guest, mirror, _) = flying_guest(now)?;
+        let mut space = running_host()?;
+        let guest_id = space.add_guest(&guest_loadout())?;
+        let mut tracker = crate::space_adventure::snapshot::SnapshotTracker::new();
+        let welcome = tracker.welcome(&space, guest_id);
+        let mut mirror = SpaceMirror::new(&welcome)?;
+        let mut guest = GuestSession::new(3, TeamId::from_u128(1), guest_loadout(), now);
+        guest.link_opened(Box::new(TestLink::default()), now);
+        guest.handle_message(SessionMessage::Welcome(welcome), Some(&mut mirror), now);
+        let mut snapshot = tracker.prepare(&space, guest_id, 0).expect("snapshot");
+        snapshot.you.resources.insert(Resource::GOLD, 3);
+        guest.handle_message(SessionMessage::Snapshot(snapshot), Some(&mut mirror), now);
+
         let events = guest.link_closed(Some(&mirror));
-        assert!(matches!(events.as_slice(), [GuestEvent::Ended { reason: EndReason::LinkLost, .. }]));
+        let [GuestEvent::Ended {
+            reason: EndReason::LinkLost,
+            outcome,
+        }] = events.as_slice()
+        else {
+            panic!("expected LinkLost, got {events:?}");
+        };
+        assert_eq!(outcome.resources.value(&Resource::GOLD), 3);
         assert!(guest.link_closed(Some(&mirror)).is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_host_sanitizes_the_guest_loadout() -> AppResult<()> {
+        let now = Instant::now();
+        let mut space = running_host()?;
+        let mut host = HostSession::new();
+        host.link_opened(1, Box::new(TestLink::default()), now);
+        let SessionMessage::Join(mut request) = join(planet()) else {
+            unreachable!()
+        };
+        request.loadout.fuel = u32::MAX;
+        request.loadout.speed_bonus = f32::INFINITY;
+        request.team_name = "x".repeat(1000);
+        let events = host.handle_message(
+            1,
+            SessionMessage::Join(request.clone()),
+            &mut space,
+            planet(),
+            now,
+        );
+
+        let [HostEvent::GuestJoined { team_name }] = events.as_slice() else {
+            panic!("expected GuestJoined, got {events:?}");
+        };
+        assert_eq!(team_name.chars().count(), MAX_GUEST_NAME_CHARS);
+        let guest_id = space.guest_id().expect("guest");
+        assert_eq!(
+            space.local_view(guest_id).expect("view").fuel,
+            request.loadout.spaceship.fuel_capacity()
+        );
         Ok(())
     }
 }
