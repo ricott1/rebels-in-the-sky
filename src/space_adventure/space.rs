@@ -1,12 +1,13 @@
 use super::{
     asteroid::{AsteroidEntity, AsteroidSize},
     collector::CollectorEntity,
-    player::ShipLoadout,
+    player::{PlayerOutcome, ShipLoadout},
     collisions::resolve_collision_between,
     constants::*,
     fragment::FragmentEntity,
     particle::ParticleEntity,
     projectile::ProjectileEntity,
+    space_callback::SpaceCallback,
     spaceship::{SpaceshipEntity, SpaceshipRole},
     traits::*,
     utils::EntityState,
@@ -47,11 +48,6 @@ enum SpaceAdventureState {
     Ending { time: Instant },
 }
 
-impl SpaceAdventureState {
-    pub const STARTING_DURATION: Duration = Duration::from_millis(2500);
-    pub const ENDING_DURATION: Duration = Duration::from_millis(2500);
-}
-
 #[derive(Debug, Display, Clone, Copy, PartialEq)]
 enum AsteroidPlanetState {
     NotSpawned { should_spawn_asteroid: bool },
@@ -78,6 +74,8 @@ pub struct SpaceAdventure {
     id_to_layer: HashMap<usize, usize>,
     host_id: Option<usize>,
     guest_id: Option<usize>,
+    guest_entities: Vec<usize>,
+    guest_destroyed: Option<PlayerOutcome>,
     asteroid_planet_state: AsteroidPlanetState,
     enemy_ship_spawned: bool,
     gold_fragment_probability: f64,
@@ -167,10 +165,77 @@ impl SpaceAdventure {
     }
 
     pub fn entity_count(&self) -> usize {
+        let guest_entities = self
+            .guest_entities
+            .iter()
+            .filter(|id| self.get_entity(id).is_some())
+            .count();
         (0..MAX_LAYER)
             .map(|l| self.entities[l].len())
             .sum::<usize>()
             + usize::from(self.host_id.is_some())
+            - guest_entities
+    }
+
+    pub(crate) fn all_entities(&self) -> impl Iterator<Item = &Entity> {
+        self.entities.iter().flat_map(|layer| layer.values())
+    }
+
+    pub fn outcome(&self, ship_id: usize) -> Option<PlayerOutcome> {
+        let ship = self.get_ship(ship_id)?;
+        Some(PlayerOutcome {
+            resources: ship.resources().clone(),
+            durability: ship.current_durability(),
+        })
+    }
+
+    pub fn guest_outcome(&self) -> Option<PlayerOutcome> {
+        self.guest_id.and_then(|id| self.outcome(id))
+    }
+
+    pub fn add_guest(&mut self, loadout: &ShipLoadout) -> AppResult<usize> {
+        if self.guest_id.is_some() {
+            return Err(anyhow!("There is already a guest"));
+        }
+        let (ship_id, mut entity_ids) = self.insert_player_ship(loadout, SpaceshipRole::Guest)?;
+        if let Some(ship) = self.get_ship_mut(ship_id) {
+            ship.set_invulnerable(STARTING_DURATION.as_secs_f32());
+        }
+        entity_ids.push(ship_id);
+        self.guest_entities = entity_ids;
+        self.guest_id = Some(ship_id);
+        Ok(ship_id)
+    }
+
+    pub fn remove_guest(&mut self) -> Option<PlayerOutcome> {
+        let outcome = self.guest_outcome();
+        self.clear_guest();
+        outcome
+    }
+
+    pub fn take_guest_destroyed(&mut self) -> Option<PlayerOutcome> {
+        self.guest_destroyed.take()
+    }
+
+    fn clear_guest(&mut self) {
+        for id in std::mem::take(&mut self.guest_entities) {
+            self.remove_entity(&id);
+        }
+        self.guest_id = None;
+    }
+
+    fn destroy_guest(&mut self) {
+        let Some(guest_id) = self.guest_id else {
+            return;
+        };
+        if let Some(ship) = self.get_ship_mut(guest_id) {
+            ship.resources_mut().insert(Resource::GOLD, 0);
+            ship.resources_mut().insert(Resource::RUM, 0);
+            ship.resources_mut().insert(Resource::SCRAPS, 0);
+        }
+        self.guest_destroyed = self.outcome(guest_id);
+        SpaceCallback::DestroyEntity { id: guest_id }.call(self);
+        self.clear_guest();
     }
 
     pub const fn host_id(&self) -> Option<usize> {
@@ -371,6 +436,8 @@ impl SpaceAdventure {
             id_to_layer: HashMap::new(),
             host_id: None,
             guest_id: None,
+            guest_entities: Vec::new(),
+            guest_destroyed: None,
             asteroid_planet_state: AsteroidPlanetState::NotSpawned {
                 should_spawn_asteroid,
             },
@@ -472,7 +539,7 @@ impl SpaceAdventure {
     pub fn update(&mut self, deltatime: f32) -> AppResult<Vec<UiCallback>> {
         let time = match self.state {
             SpaceAdventureState::Starting { time } => {
-                if time.elapsed() >= SpaceAdventureState::STARTING_DURATION {
+                if time.elapsed() >= STARTING_DURATION {
                     self.state = SpaceAdventureState::Running {
                         time: Instant::now(),
                     };
@@ -482,6 +549,14 @@ impl SpaceAdventure {
             }
 
             SpaceAdventureState::Running { time } => {
+                if self
+                    .guest_id
+                    .and_then(|id| self.get_ship(id))
+                    .is_some_and(|ship| ship.current_durability() == 0)
+                {
+                    self.destroy_guest();
+                }
+
                 if let Some(player) = self.host_ship_mut() {
                     if player.current_durability() == 0 {
                         player.resources_mut().insert(Resource::GOLD, 0);
@@ -492,7 +567,7 @@ impl SpaceAdventure {
                         return Ok(vec![
                             UiCallback::PushUiPopup { popup_message:
                                 PopupMessage::Message {
-                                    message: "Danger! There's a breach in the hull.\nAll the resources in the cargo hold have been lost,\nyou need to go back to the base...".to_string(),
+                                    message: HULL_BREACH_MESSAGE.to_string(),
                                     links: vec![], level: log::Level::Info,
                                     is_skippable:true, timestamp:Tick::now()}
                                 }
@@ -503,7 +578,7 @@ impl SpaceAdventure {
             }
 
             SpaceAdventureState::Ending { time } => {
-                if time.elapsed() >= SpaceAdventureState::ENDING_DURATION {
+                if time.elapsed() >= ENDING_DURATION {
                     return Ok(vec![UiCallback::ReturnFromSpaceAdventure]);
                 }
                 time
@@ -631,6 +706,8 @@ mod tests {
     use super::*;
     use crate::space_adventure::player::ShipLoadout;
     use crate::space_adventure::spaceship::SpaceshipRole;
+    use crate::space_adventure::SpaceCallback;
+    use crate::types::StorableResourceMap;
 
     fn running_space() -> AppResult<SpaceAdventure> {
         let mut space = SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
@@ -668,6 +745,111 @@ mod tests {
         assert!(space
             .handle_player_input(enemy_id, PlayerInput::MoveRight)
             .is_err());
+        Ok(())
+    }
+
+    fn guest_loadout() -> ShipLoadout {
+        let mut loadout = ShipLoadout::test_default();
+        loadout.spaceship.shield = Shield::Small;
+        loadout.resources.insert(Resource::GOLD, 10);
+        loadout.resources.insert(Resource::SATOSHI, 500);
+        loadout
+    }
+
+    #[test]
+    fn test_add_guest_spawns_one_guest_ship() -> AppResult<()> {
+        let mut space = running_space()?;
+        let guest_id = space.add_guest(&guest_loadout())?;
+        assert_eq!(space.guest_id(), Some(guest_id));
+        assert_eq!(
+            space.get_ship(guest_id).expect("guest").role(),
+            SpaceshipRole::Guest
+        );
+        assert!(space.add_guest(&guest_loadout()).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_remove_guest_returns_outcome_and_clears_entities() -> AppResult<()> {
+        let mut space = running_space()?;
+        let guest_id = space.add_guest(&guest_loadout())?;
+        let guest = space.get_ship(guest_id).expect("guest");
+        let collector_id = guest.collector_id().expect("collector");
+        let shield_id = guest.shield_id().expect("shield");
+
+        let outcome = space.remove_guest().expect("outcome");
+
+        assert_eq!(outcome.resources.value(&Resource::GOLD), 10);
+        assert!(space.guest_id().is_none());
+        for id in [guest_id, collector_id, shield_id] {
+            assert!(space.get_entity(&id).is_none());
+        }
+        assert!(space.remove_guest().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_guest_ignores_damage_while_invulnerable() -> AppResult<()> {
+        let mut space = running_space()?;
+        let guest_id = space.add_guest(&guest_loadout())?;
+        let full = space.get_ship(guest_id).expect("guest").current_durability();
+
+        SpaceCallback::DamageEntity {
+            id: guest_id,
+            damage: 5.0,
+        }
+        .call(&mut space);
+        assert_eq!(
+            space.get_ship(guest_id).expect("guest").current_durability(),
+            full
+        );
+
+        space.update(STARTING_DURATION.as_secs_f32() + 0.1)?;
+        SpaceCallback::DamageEntity {
+            id: guest_id,
+            damage: 5.0,
+        }
+        .call(&mut space);
+        assert!(space.get_ship(guest_id).expect("guest").current_durability() < full);
+        Ok(())
+    }
+
+    #[test]
+    fn test_guest_death_wipes_hold_and_keeps_adventure_running() -> AppResult<()> {
+        let mut space = running_space()?;
+        let guest_id = space.add_guest(&guest_loadout())?;
+        space
+            .get_ship_mut(guest_id)
+            .expect("guest")
+            .set_invulnerable(0.0);
+
+        SpaceCallback::DamageEntity {
+            id: guest_id,
+            damage: 10_000.0,
+        }
+        .call(&mut space);
+        space.update(0.025)?;
+
+        let outcome = space.take_guest_destroyed().expect("guest destroyed");
+        assert_eq!(outcome.durability, 0);
+        assert_eq!(outcome.resources.value(&Resource::GOLD), 0);
+        assert_eq!(outcome.resources.value(&Resource::SATOSHI), 500);
+        assert!(space.guest_id().is_none());
+        assert!(space.get_entity(&guest_id).is_none());
+        assert!(space.is_running());
+        assert!(!space
+            .all_entities()
+            .any(|e| matches!(e, Entity::Fragment(_))));
+        assert!(space.take_guest_destroyed().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_guest_entities_do_not_count_for_difficulty() -> AppResult<()> {
+        let mut space = running_space()?;
+        let before = space.entity_count();
+        space.add_guest(&guest_loadout())?;
+        assert_eq!(space.entity_count(), before);
         Ok(())
     }
 }

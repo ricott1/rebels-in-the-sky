@@ -153,6 +153,7 @@ pub struct SpaceshipEntity {
     visual_effects: VisualEffectMap,
     releasing_scraps: bool,
     pending_input_callbacks: Vec<SpaceCallback>,
+    invulnerable_for: f32,
 }
 
 impl Body for SpaceshipEntity {
@@ -177,6 +178,7 @@ impl Body for SpaceshipEntity {
     }
 
     fn update_body(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
+        self.invulnerable_for = (self.invulnerable_for - deltatime).max(0.0);
         self.tick += 1;
         self.previous_position = self.position;
 
@@ -479,6 +481,10 @@ impl GameEntity for SpaceshipEntity {
                     callbacks.push(SpaceCallback::DestroyEntity { id });
                 }
 
+                if let Some(id) = self.shield_id {
+                    callbacks.push(SpaceCallback::DestroyEntity { id });
+                }
+
                 let color_map = self.spaceship.image.color_map;
                 let colors = [color_map.red, color_map.green, color_map.blue];
 
@@ -500,33 +506,38 @@ impl GameEntity for SpaceshipEntity {
                     });
                 }
 
-                for _ in 4..8 {
-                    callbacks.push(SpaceCallback::GenerateFragment {
-                        position,
-                        velocity: Vec2::new(
-                            rng.random_range(-3.5..3.5),
-                            rng.random_range(-3.5..3.5),
-                        ),
-                        resource: Resource::GOLD,
-                        amount: 1,
-                    });
-                }
-                for _ in 10..16 {
-                    callbacks.push(SpaceCallback::GenerateFragment {
-                        position,
-                        velocity: Vec2::new(
-                            rng.random_range(-3.5..3.5),
-                            rng.random_range(-3.5..3.5),
-                        ) * 2.0,
-                        resource: Resource::SCRAPS,
-                        amount: 2,
-                    });
+                if self.role == SpaceshipRole::Enemy {
+                    for _ in 4..8 {
+                        callbacks.push(SpaceCallback::GenerateFragment {
+                            position,
+                            velocity: Vec2::new(
+                                rng.random_range(-3.5..3.5),
+                                rng.random_range(-3.5..3.5),
+                            ),
+                            resource: Resource::GOLD,
+                            amount: 1,
+                        });
+                    }
+                    for _ in 10..16 {
+                        callbacks.push(SpaceCallback::GenerateFragment {
+                            position,
+                            velocity: Vec2::new(
+                                rng.random_range(-3.5..3.5),
+                                rng.random_range(-3.5..3.5),
+                            ) * 2.0,
+                            resource: Resource::SCRAPS,
+                            amount: 2,
+                        });
+                    }
                 }
 
                 return callbacks;
             }
 
             SpaceCallback::DamageEntity { damage, .. } => {
+                if self.invulnerable_for > 0.0 {
+                    return vec![];
+                }
                 self.add_damage(damage);
                 self.add_visual_effect(
                     VisualEffect::COLOR_MASK_LIFETIME,
@@ -670,6 +681,16 @@ impl SpaceshipEntity {
 
     pub fn collector_id(&self) -> Option<usize> {
         self.collector_id
+    }
+
+    pub fn set_invulnerable(&mut self, seconds: f32) {
+        self.invulnerable_for = seconds;
+    }
+
+    #[cfg(test)]
+    pub fn set_position(&mut self, position: Vec2) {
+        self.position = position;
+        self.previous_position = position;
     }
 
     pub fn toggle_autofire(&mut self) {
@@ -861,6 +882,7 @@ impl SpaceshipEntity {
             visual_effects: HashMap::new(),
             releasing_scraps: false,
             pending_input_callbacks: Vec::new(),
+            invulnerable_for: 0.0,
         }))
     }
 

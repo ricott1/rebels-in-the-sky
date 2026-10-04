@@ -9,6 +9,12 @@ pub struct ShipLoadout {
     pub fuel: u32,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlayerOutcome {
+    pub resources: ResourceMap,
+    pub durability: u32,
+}
+
 #[cfg(test)]
 impl ShipLoadout {
     pub fn test_default() -> Self {
