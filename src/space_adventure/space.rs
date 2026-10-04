@@ -64,6 +64,81 @@ enum SpaceAdventureObjective {
     _Raid { target_team_id: TeamId },
 }
 
+pub(crate) fn space_background() -> RgbaImage {
+    crop_imm(
+        &UNIVERSE_BACKGROUND.clone(),
+        0,
+        0,
+        BACKGROUND_IMAGE_SIZE.x,
+        BACKGROUND_IMAGE_SIZE.y,
+    )
+    .to_image()
+}
+
+pub(crate) fn draw_entity_at(
+    base: &mut RgbaImage,
+    entity: &Entity,
+    position: I16Vec2,
+    debug_view: bool,
+) {
+    let x = position.x as i32;
+    let y = position.y as i32;
+
+    let image = if entity.should_apply_visual_effects() {
+        &entity.apply_visual_effects(entity.image())
+    } else {
+        entity.image()
+    };
+
+    let img_w = image.width() as i32;
+    let img_h = image.height() as i32;
+    let base_w = base.width() as i32;
+    let base_h = base.height() as i32;
+
+    // Compute clipping
+    let src_x = 0.max(-x);
+    let src_y = 0.max(-y);
+    let dst_x = 0.max(x);
+    let dst_y = 0.max(y);
+
+    let draw_w = (img_w - src_x).min(base_w - dst_x);
+    let draw_h = (img_h - src_y).min(base_h - dst_y);
+
+    // Nothing visible
+    if draw_w <= 0 || draw_h <= 0 {
+        // still draw hitbox if desired
+        if debug_view {
+            draw_hitbox(base, entity);
+        }
+        return;
+    }
+
+    base.copy_non_transparent_from_clipped(
+        image,
+        src_x as u32,
+        src_y as u32,
+        draw_w as u32,
+        draw_h as u32,
+        dst_x as u32,
+        dst_y as u32,
+    );
+
+    if debug_view {
+        draw_hitbox(base, entity);
+    }
+}
+
+pub(crate) fn crop_to_screen(base: &RgbaImage, width: u32, height: u32) -> RgbaImage {
+    crop_imm(
+        base,
+        (MAX_ENTITY_POSITION.x - SCREEN_SIZE.x) / 2,
+        (MAX_ENTITY_POSITION.y - SCREEN_SIZE.y) / 2,
+        width,
+        height,
+    )
+    .to_image()
+}
+
 #[derive(Debug)]
 pub struct SpaceAdventure {
     id: usize,
@@ -102,52 +177,7 @@ impl SpaceAdventure {
     }
 
     fn draw_entity(base: &mut RgbaImage, entity: &Entity, debug_view: bool) {
-        let pos = entity.position();
-        let x = pos.x as i32;
-        let y = pos.y as i32;
-
-        let image = if entity.should_apply_visual_effects() {
-            &entity.apply_visual_effects(entity.image())
-        } else {
-            entity.image()
-        };
-
-        let img_w = image.width() as i32;
-        let img_h = image.height() as i32;
-        let base_w = base.width() as i32;
-        let base_h = base.height() as i32;
-
-        // Compute clipping
-        let src_x = 0.max(-x);
-        let src_y = 0.max(-y);
-        let dst_x = 0.max(x);
-        let dst_y = 0.max(y);
-
-        let draw_w = (img_w - src_x).min(base_w - dst_x);
-        let draw_h = (img_h - src_y).min(base_h - dst_y);
-
-        // Nothing visible
-        if draw_w <= 0 || draw_h <= 0 {
-            // still draw hitbox if desired
-            if debug_view {
-                draw_hitbox(base, entity);
-            }
-            return;
-        }
-
-        base.copy_non_transparent_from_clipped(
-            image,
-            src_x as u32,
-            src_y as u32,
-            draw_w as u32,
-            draw_h as u32,
-            dst_x as u32,
-            dst_y as u32,
-        );
-
-        if debug_view {
-            draw_hitbox(base, entity);
-        }
+        draw_entity_at(base, entity, entity.position(), debug_view);
     }
 
     fn insert_entity(&mut self, mut entity: Entity) -> usize {
@@ -474,15 +504,7 @@ impl SpaceAdventure {
     }
 
     pub fn new(should_spawn_asteroid: bool, gold_fragment_probability: f64) -> AppResult<Self> {
-        // Crop background
-        let background = crop_imm(
-            &UNIVERSE_BACKGROUND.clone(),
-            0,
-            0,
-            BACKGROUND_IMAGE_SIZE.x,
-            BACKGROUND_IMAGE_SIZE.y,
-        )
-        .to_image();
+        let background = space_background();
 
         let mut entities = vec![];
         for _ in 0..MAX_LAYER {
@@ -756,17 +778,7 @@ impl SpaceAdventure {
             SpaceAdventureState::Running { .. } => {}
         }
 
-        // Crop centered subimage of size SCREEN_SIZE
-        let image = crop_imm(
-            &base,
-            (MAX_ENTITY_POSITION.x - SCREEN_SIZE.x) / 2,
-            (MAX_ENTITY_POSITION.y - SCREEN_SIZE.y) / 2,
-            width,
-            height,
-        )
-        .to_image();
-
-        Ok(image)
+        Ok(crop_to_screen(&base, width, height))
     }
 }
 
