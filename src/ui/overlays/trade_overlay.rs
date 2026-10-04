@@ -1,7 +1,6 @@
 use super::{centered_rect, Overlay};
 use crate::core::world::World;
-use crate::core::{skill::Rated, MIN_PLAYERS_PER_GAME};
-use crate::network::trade::TradeRoute;
+use crate::core::{skill::Rated, OfferKind, MIN_PLAYERS_PER_GAME};
 use crate::types::{AppResult, HashMapWithResult, PlayerId, TeamId};
 use crate::ui::button::Button;
 use crate::ui::constants::{UiStyle, UiText, MAX_NAME_LENGTH};
@@ -91,13 +90,12 @@ impl TradeOverlay {
     }
 
     /// The offer as the network layer wants it.
-    pub fn offer(&self) -> (TradeRoute, Option<PlayerId>, Option<PlayerId>, u32, u32) {
+    pub fn offer(&self) -> (OfferKind, Option<PlayerId>, Option<PlayerId>, i64) {
         (
-            TradeRoute::CrewSwap,
+            OfferKind::Direct,
             self.own_offer,
             self.other_offer,
-            self.own_satoshis,
-            self.other_satoshis,
+            self.own_satoshis as i64 - self.other_satoshis as i64,
         )
     }
 
@@ -133,7 +131,7 @@ impl TradeOverlay {
             return;
         };
 
-        let (route, own_player_id, other_player_id, own_sat, other_sat) = self.offer();
+        let (route, own_player_id, other_player_id, satoshis) = self.offer();
 
         let Some(target_player_id) = other_player_id else {
             self.blocker = Some("Pick a pirate to trade for".to_string());
@@ -144,26 +142,21 @@ impl TradeOverlay {
             return;
         };
 
-        if route == TradeRoute::CrewSwap && own_player_id.is_none() {
+        if route == OfferKind::Direct && own_player_id.is_none() {
             self.blocker = Some("Pick one of your pirates".to_string());
             return;
         }
 
         let own_player = own_player_id.and_then(|id| world.players.get(&id));
-        if let Err(err) = own_team.can_trade_with_team(
-            other_team,
-            route,
-            own_player,
-            target_player,
-            own_sat,
-            other_sat,
-        ) {
+        if let Err(err) =
+            own_team.can_make_offer(other_team, route, own_player, target_player, satoshis)
+        {
             self.blocker = Some(err.to_string());
             return;
         }
 
         // Advisory only: a legal trade that leaves you unable to field a game.
-        if route == TradeRoute::CrewSwap
+        if route == OfferKind::Direct
             && own_team.active_players_count() <= MIN_PLAYERS_PER_GAME
             && own_player_id.is_some()
         {

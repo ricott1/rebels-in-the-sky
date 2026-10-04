@@ -810,13 +810,12 @@ impl NetworkCallback {
                     let validate = || -> AppResult<()> {
                         let own_team = app.world.get_own_team()?;
                         let proposer_team = app.world.teams.get_or_err(&trade.proposer_team_id)?;
-                        proposer_team.can_trade_with_team(
+                        proposer_team.can_make_offer(
                             own_team,
                             trade.route,
                             trade.proposer_player.as_ref(),
                             &trade.target_player,
-                            trade.proposer_satoshis,
-                            trade.target_satoshis,
+                            trade.satoshis,
                         )
                     };
 

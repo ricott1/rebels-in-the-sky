@@ -897,20 +897,19 @@ impl World {
         });
 
         // 2. VALIDATE against live state, not against the payload.
-        proposer_team.can_trade_with_team(
+        Self::validate_trade(
+            &proposer_team,
             &target_team,
-            trade.route,
             proposer_player.as_ref(),
             &target_player,
-            trade.proposer_satoshis,
-            trade.target_satoshis,
+            trade,
         )?;
 
         // 3. STAGE on the clones.
-        proposer_team.sub_resource(Resource::SATOSHI, trade.proposer_satoshis)?;
-        target_team.sub_resource(Resource::SATOSHI, trade.target_satoshis)?;
-        proposer_team.saturating_add_resource(Resource::SATOSHI, trade.target_satoshis);
-        target_team.saturating_add_resource(Resource::SATOSHI, trade.proposer_satoshis);
+        proposer_team.sub_resource(Resource::SATOSHI, trade.proposer_pays())?;
+        target_team.sub_resource(Resource::SATOSHI, trade.target_pays())?;
+        proposer_team.saturating_add_resource(Resource::SATOSHI, trade.target_pays());
+        target_team.saturating_add_resource(Resource::SATOSHI, trade.proposer_pays());
 
         Self::stage_traded_player(
             &mut target_player,
@@ -961,6 +960,41 @@ impl World {
         };
         player.team = Some(from_team_id);
         player
+    }
+
+    fn validate_trade(
+        proposer_team: &Team,
+        target_team: &Team,
+        proposer_player: Option<&Player>,
+        target_player: &Player,
+        trade: &Trade,
+    ) -> AppResult<()> {
+        if !target_team.player_ids.contains(&target_player.id) {
+            return Err(anyhow!(
+                "{} is no longer in {}",
+                target_player.info.short_name(),
+                target_team.name
+            ));
+        }
+        if let Some(player) = proposer_player {
+            if !proposer_team.player_ids.contains(&player.id) {
+                return Err(anyhow!(
+                    "{} is no longer in {}",
+                    player.info.short_name(),
+                    proposer_team.name
+                ));
+            }
+        }
+        if proposer_team.balance() < trade.proposer_pays() {
+            return Err(anyhow!("{} cannot afford that", proposer_team.name));
+        }
+        if target_team.balance() < trade.target_pays() {
+            return Err(anyhow!("{} cannot afford that", target_team.name));
+        }
+        if !proposer_team.has_seat_for(proposer_player.is_some()) {
+            return Err(anyhow!("{} is full", proposer_team.name));
+        }
+        Ok(())
     }
 
     /// Moves one pirate between two crews. Morale is carried over untouched: the

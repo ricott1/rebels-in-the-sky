@@ -4,7 +4,7 @@ use crate::{
     game_engine::{tactic::Tactic, types::*, Tournament, TournamentId, TournamentState},
     network::{
         challenge::Challenge,
-        trade::{Trade, TradeRoute},
+        trade::{satoshi_amount, Trade},
     },
     types::*,
 };
@@ -921,58 +921,77 @@ impl Team {
         self.can_play_game_with_team(team, None)
     }
 
-    /// Always evaluated from the proposer's point of view.
-    pub fn can_trade_with_team(
+    pub fn has_seat_for(&self, gives_a_pirate: bool) -> bool {
+        self.player_ids.len() - usize::from(gives_a_pirate)
+            < self.spaceship.crew_capacity() as usize
+    }
+
+    pub fn shares_planet_with(&self, other: &Team) -> bool {
+        self.is_on_planet().is_some() && self.is_on_planet() == other.is_on_planet()
+    }
+
+    pub fn can_make_offer(
         &self,
         target_team: &Team,
-        route: TradeRoute,
+        route: OfferKind,
         proposer_player: Option<&Player>,
         target_player: &Player,
-        proposer_satoshis: u32,
-        target_satoshis: u32,
+        satoshis: i64,
     ) -> AppResult<()> {
         if self.id == target_team.id {
             return Err(anyhow!("Cannot trade with oneself"));
         }
 
-        if target_player.team.is_none() || target_player.team.unwrap() != target_team.id {
-            return Err(anyhow!("Target player is not part of the team"));
+        let wanted = target_player.info.short_name();
+        if target_player.team != Some(target_team.id)
+            || !target_team.player_ids.contains(&target_player.id)
+        {
+            return Err(anyhow!("{wanted} is not in {}", target_team.name));
         }
 
-        if self.balance() < proposer_satoshis {
+        self.crew_is_ashore_and_idle()?;
+
+        match route {
+            OfferKind::Direct => {
+                if target_team.is_listed(&target_player.id) {
+                    return Err(anyhow!("{wanted} is not aboard"));
+                }
+                if !self.shares_planet_with(target_team) {
+                    return Err(anyhow!("Not on the same planet"));
+                }
+            }
+            OfferKind::Dock => {
+                if !target_team.is_listed(&target_player.id) {
+                    return Err(anyhow!("{wanted} is not at the dock"));
+                }
+                if !self.is_at_dock() {
+                    return Err(anyhow!("{} is not at the dock", self.name));
+                }
+            }
+        }
+
+        if let Some(player) = proposer_player {
+            let offered = player.info.short_name();
+            if player.team != Some(self.id) || !self.player_ids.contains(&player.id) {
+                return Err(anyhow!("{offered} is not in {}", self.name));
+            }
+            if self.is_parked(&player.id) {
+                return Err(anyhow!("{offered} is not aboard"));
+            }
+            if self.active_players_count() <= 1 {
+                return Err(anyhow!("Someone has to sail the ship"));
+            }
+        }
+
+        if self.balance() < satoshi_amount(satoshis) {
             return Err(anyhow!("Not enough satoshi"));
         }
-
-        if target_team.balance() < target_satoshis {
+        if target_team.balance() < satoshi_amount(satoshis.saturating_neg()) {
             return Err(anyhow!("{} cannot afford that", target_team.name));
         }
 
-        match route {
-            TradeRoute::CrewSwap => {
-                let proposer_player = proposer_player
-                    .ok_or_else(|| anyhow!("A crew swap needs a pirate on both sides"))?;
-
-                if proposer_player.team.is_none() || proposer_player.team.unwrap() != self.id {
-                    return Err(anyhow!("Proposed player is not part of the team"));
-                }
-
-                if self.is_on_planet() != target_team.is_on_planet() {
-                    return Err(anyhow!("Not on the same planet"));
-                }
-
-                if self.is_listed(&proposer_player.id) {
-                    return Err(anyhow!("Recall your pirate from the dock first"));
-                }
-                if target_team.is_listed(&target_player.id) {
-                    return Err(anyhow!(
-                        "{} is at the dock",
-                        target_player.info.short_name()
-                    ));
-                }
-
-                self.can_release_player(proposer_player)?;
-                target_team.can_release_player(target_player)?;
-            }
+        if !self.has_seat_for(proposer_player.is_some()) {
+            return Err(anyhow!("{} is full", self.name));
         }
 
         Ok(())
@@ -1705,5 +1724,144 @@ mod tests {
 
         // The headline: changing fluidity actually changed the starting five.
         assert_ne!(low, high);
+    }
+
+    fn crew_on(planet_id: PlanetId, n: usize) -> (Team, PlayerMap) {
+        let (mut team, players) = team_with_cove(n);
+        team.current_location = TeamLocation::OnPlanet { planet_id };
+        team.add_resource(Resource::SATOSHI, 10_000).unwrap();
+        (team, players)
+    }
+
+    #[test]
+    fn test_a_direct_offer_needs_the_same_planet() {
+        let planet_id = PlanetId::new_v4();
+        let (proposer, proposer_players) = crew_on(planet_id, 5);
+        let (mut target, target_players) = crew_on(planet_id, 5);
+        let wanted = target_players.get(&target.player_ids[0]).unwrap();
+        let offered = proposer_players.get(&proposer.player_ids[0]).unwrap();
+
+        assert!(proposer
+            .can_make_offer(&target, OfferKind::Direct, Some(offered), wanted, 0)
+            .is_ok());
+        assert!(
+            proposer
+                .can_make_offer(&target, OfferKind::Direct, None, wanted, 1_000)
+                .is_ok(),
+            "cash only is an offer too"
+        );
+
+        target.current_location = TeamLocation::OnPlanet {
+            planet_id: PlanetId::new_v4(),
+        };
+        assert!(proposer
+            .can_make_offer(&target, OfferKind::Direct, Some(offered), wanted, 0)
+            .unwrap_err()
+            .to_string()
+            .contains("Not on the same planet"));
+    }
+
+    #[test]
+    fn test_a_direct_offer_cannot_reach_a_pirate_at_the_dock() {
+        let planet_id = PlanetId::new_v4();
+        let (proposer, _) = crew_on(planet_id, 5);
+        let (mut target, target_players) = crew_on(planet_id, 5);
+        let wanted_id = target.player_ids[0];
+        list(&mut target, wanted_id);
+        let wanted = target_players.get(&wanted_id).unwrap();
+
+        assert!(proposer
+            .can_make_offer(&target, OfferKind::Direct, None, wanted, 1_000)
+            .unwrap_err()
+            .to_string()
+            .contains("not aboard"));
+    }
+
+    #[test]
+    fn test_a_dock_offer_needs_the_black_hole_and_a_listed_pirate() {
+        let (proposer, _) = crew_on(*GALAXY_ROOT_ID, 5);
+        let (mut target, target_players) = crew_on(PlanetId::new_v4(), 5);
+        let listed_id = target.player_ids[0];
+        list(&mut target, listed_id);
+        let listed = target_players.get(&listed_id).unwrap();
+        let aboard = target_players.get(&target.player_ids[1]).unwrap();
+
+        assert!(
+            proposer
+                .can_make_offer(&target, OfferKind::Dock, None, listed, 500)
+                .is_ok(),
+            "the crew that left them may be anywhere"
+        );
+        assert!(proposer
+            .can_make_offer(&target, OfferKind::Dock, None, aboard, 500)
+            .unwrap_err()
+            .to_string()
+            .contains("not at the dock"));
+
+        let mut away = proposer.clone();
+        away.current_location = TeamLocation::OnPlanet {
+            planet_id: PlanetId::new_v4(),
+        };
+        assert!(away
+            .can_make_offer(&target, OfferKind::Dock, None, listed, 500)
+            .unwrap_err()
+            .to_string()
+            .contains("not at the dock"));
+    }
+
+    #[test]
+    fn test_an_offer_checks_both_balances_and_the_seat() {
+        let planet_id = PlanetId::new_v4();
+        let (proposer, proposer_players) = crew_on(planet_id, 5);
+        let (target, target_players) = crew_on(planet_id, 5);
+        let wanted = target_players.get(&target.player_ids[0]).unwrap();
+
+        assert!(proposer
+            .can_make_offer(&target, OfferKind::Direct, None, wanted, 10_001)
+            .unwrap_err()
+            .to_string()
+            .contains("Not enough satoshi"));
+        assert!(proposer
+            .can_make_offer(&target, OfferKind::Direct, None, wanted, -10_001)
+            .unwrap_err()
+            .to_string()
+            .contains("cannot afford"));
+
+        let (mut full, mut full_players) = crew_on(planet_id, 1);
+        while full.player_ids.len() < full.spaceship.crew_capacity() as usize {
+            let mut player = Player::default().randomize(None);
+            player.team = Some(full.id);
+            full.player_ids.push(player.id);
+            full_players.insert(player.id, player);
+        }
+        assert!(full
+            .can_make_offer(&target, OfferKind::Direct, None, wanted, 0)
+            .unwrap_err()
+            .to_string()
+            .contains("is full"));
+        let offered = full_players.get(&full.player_ids[0]).unwrap();
+        assert!(
+            full.can_make_offer(&target, OfferKind::Direct, Some(offered), wanted, 0)
+                .is_ok(),
+            "a swap needs no free seat"
+        );
+        let _ = proposer_players;
+    }
+
+    #[test]
+    fn test_an_offered_pirate_must_be_aboard() {
+        let planet_id = PlanetId::new_v4();
+        let (mut proposer, proposer_players) = crew_on(planet_id, 5);
+        let (target, target_players) = crew_on(planet_id, 5);
+        let wanted = target_players.get(&target.player_ids[0]).unwrap();
+        let offered_id = proposer.player_ids[0];
+        list(&mut proposer, offered_id);
+        let offered = proposer_players.get(&offered_id).unwrap();
+
+        assert!(proposer
+            .can_make_offer(&target, OfferKind::Direct, Some(offered), wanted, 0)
+            .unwrap_err()
+            .to_string()
+            .contains("not aboard"));
     }
 }

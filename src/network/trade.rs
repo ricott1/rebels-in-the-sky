@@ -1,25 +1,17 @@
 use super::types::NetworkRequestState;
 use crate::app_version;
-use crate::core::{player::Player, skill::Rated};
+use crate::core::{player::Player, skill::Rated, OfferKind};
 use crate::types::{SystemTimeTick, TeamId, Tick, TradeId};
 use crate::ui::utils::format_satoshi;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
-
-/// Which set of rules an offer is judged by. Explicit rather than inferred from
-/// the shape of the offer, so a malformed crew swap cannot quietly be treated as
-/// a market purchase.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum TradeRoute {
-    /// One pirate for one pirate, plus satoshis. Both crews on the same planet.
-    CrewSwap,
-}
+use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Trade {
     pub id: TradeId,
     pub state: NetworkRequestState,
-    pub route: TradeRoute,
+    pub route: OfferKind,
     /// Mirrors `Challenge::app_version`: the wire shape has changed, so a peer on
     /// a different minor version gets a readable refusal instead of silence.
     pub app_version: [usize; 3],
@@ -32,36 +24,44 @@ pub struct Trade {
     pub target_team_id: TeamId,
     pub proposer_player: Option<Player>,
     pub target_player: Player,
-    pub proposer_satoshis: u32,
-    pub target_satoshis: u32,
+    /// Positive: the proposer pays. Negative: the proposer asks the target to pay.
+    pub satoshis: i64,
 }
 
 impl Trade {
-    pub fn crew_swap(
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        route: OfferKind,
         proposer_peer_id: PeerId,
         target_peer_id: PeerId,
         proposer_team_id: TeamId,
         target_team_id: TeamId,
-        proposer_player: Player,
+        proposer_player: Option<Player>,
         target_player: Player,
-        proposer_satoshis: u32,
-        target_satoshis: u32,
+        satoshis: i64,
     ) -> Self {
         Self {
             id: TradeId::new_v4(),
             state: NetworkRequestState::Syn,
-            route: TradeRoute::CrewSwap,
+            route,
             app_version: app_version(),
             created_at: Tick::now(),
             proposer_peer_id,
             target_peer_id,
             proposer_team_id,
             target_team_id,
-            proposer_player: Some(proposer_player),
+            proposer_player,
             target_player,
-            proposer_satoshis,
-            target_satoshis,
+            satoshis,
         }
+    }
+
+    pub fn proposer_pays(&self) -> u32 {
+        satoshi_amount(self.satoshis)
+    }
+
+    pub fn target_pays(&self) -> u32 {
+        satoshi_amount(self.satoshis.saturating_neg())
     }
 
     /// True when the peer is close enough to speak the same wire format.
@@ -71,32 +71,42 @@ impl Trade {
         major == their_major && minor == their_minor
     }
 
+    pub fn offered(&self) -> String {
+        offered_phrase(self.proposer_player.as_ref(), self.satoshis)
+    }
+
     pub fn format(&self) -> String {
-        match self.route {
-            TradeRoute::CrewSwap => {
-                let offered = match self.proposer_player.as_ref() {
-                    Some(player) => format!("{} {}", player.info.short_name(), player.stars()),
-                    None => "nobody".to_string(),
-                };
-                format!(
-                    "Trade ({}): {}{} ⇄ {} {}{}",
-                    self.state,
-                    offered,
-                    money_suffix(self.proposer_satoshis),
-                    self.target_player.info.short_name(),
-                    self.target_player.stars(),
-                    money_suffix(self.target_satoshis),
-                )
-            }
-        }
+        format!(
+            "Offer ({}): {} for {} {}",
+            self.state,
+            self.offered(),
+            self.target_player.info.short_name(),
+            self.target_player.stars(),
+        )
     }
 }
 
-fn money_suffix(amount: u32) -> String {
-    if amount == 0 {
-        String::new()
-    } else {
-        format!(" + {}", format_satoshi(amount))
+pub fn satoshi_amount(satoshis: i64) -> u32 {
+    u32::try_from(satoshis.max(0)).unwrap_or(u32::MAX)
+}
+
+pub fn satoshi_suffix(satoshis: i64) -> String {
+    match satoshis.cmp(&0) {
+        Ordering::Greater => format!(" + {}", format_satoshi(satoshi_amount(satoshis))),
+        Ordering::Less => format!(
+            ", asking {}",
+            format_satoshi(satoshi_amount(satoshis.saturating_neg()))
+        ),
+        Ordering::Equal => String::new(),
+    }
+}
+
+pub fn offered_phrase(pirate: Option<&Player>, satoshis: i64) -> String {
+    let pirate = pirate.map(|player| format!("{} {}", player.info.short_name(), player.stars()));
+    match (pirate, satoshis.cmp(&0)) {
+        (Some(pirate), _) => format!("{pirate}{}", satoshi_suffix(satoshis)),
+        (None, Ordering::Greater) => format_satoshi(satoshi_amount(satoshis)),
+        (None, _) => format!("nothing{}", satoshi_suffix(satoshis)),
     }
 }
 
@@ -106,7 +116,7 @@ mod tests {
     use crate::types::{PlayerId, SystemTimeTick, TeamId, Tick};
     use crate::{
         app::App,
-        core::skill::MAX_SKILL,
+        core::{skill::MAX_SKILL, OfferKind},
         types::{AppResult, HashMapWithResult},
         ui::UiCallback,
     };
@@ -273,14 +283,14 @@ mod tests {
         let target_player = app.world.players.get_or_err(&target_player_id)?.clone();
 
         let peer = PeerId::random();
-        let trade = Trade::crew_swap(
+        let trade = Trade::new(
+            OfferKind::Direct,
             peer,
             PeerId::random(),
             own_team.id,
             target_team_id,
-            proposer_player,
+            Some(proposer_player),
             target_player,
-            0,
             0,
         );
 
@@ -298,7 +308,7 @@ mod tests {
         let mut app = App::test_default()?;
         let (mut trade, proposer_id, target_id, own_id, target_team_id) =
             crew_swap_setup(&mut app)?;
-        trade.proposer_satoshis = 5_000;
+        trade.satoshis = 5_000;
 
         let own_before = app.world.teams.get_or_err(&own_id)?.balance();
         let target_before = app.world.teams.get_or_err(&target_team_id)?.balance();
@@ -330,7 +340,7 @@ mod tests {
             crew_swap_setup(&mut app)?;
 
         // More satoshi than the proposer has: refused at validation.
-        trade.proposer_satoshis = app.world.teams.get_or_err(&own_id)?.balance() + 1;
+        trade.satoshis = app.world.teams.get_or_err(&own_id)?.balance() as i64 + 1;
 
         let own_roster = app.world.teams.get_or_err(&own_id)?.player_ids.clone();
         let target_roster = app
@@ -369,7 +379,7 @@ mod tests {
     fn test_apply_trade_is_idempotent() -> AppResult<()> {
         let mut app = App::test_default()?;
         let (mut trade, _, _, own_id, target_team_id) = crew_swap_setup(&mut app)?;
-        trade.proposer_satoshis = 5_000;
+        trade.satoshis = 5_000;
 
         let own_before = app.world.teams.get_or_err(&own_id)?.balance();
         app.world.apply_trade(&trade, Tick::now())?;
@@ -422,6 +432,40 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_offered_phrase_reads_naturally() {
+        use super::offered_phrase;
+        use crate::ui::utils::format_satoshi;
+
+        assert_eq!(offered_phrase(None, 2_000), format_satoshi(2_000));
+        assert_eq!(
+            offered_phrase(None, -2_000),
+            format!("nothing, asking {}", format_satoshi(2_000))
+        );
+        assert_eq!(offered_phrase(None, 0), "nothing");
+    }
+
+    #[test]
+    fn test_a_negative_balance_makes_the_target_pay() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let (mut trade, _, _, own_id, target_team_id) = crew_swap_setup(&mut app)?;
+        trade.satoshis = -3_000;
+
+        let own_before = app.world.teams.get_or_err(&own_id)?.balance();
+        let target_before = app.world.teams.get_or_err(&target_team_id)?.balance();
+        app.world.apply_trade(&trade, Tick::now())?;
+
+        assert_eq!(
+            app.world.teams.get_or_err(&own_id)?.balance(),
+            own_before + 3_000
+        );
+        assert_eq!(
+            app.world.teams.get_or_err(&target_team_id)?.balance(),
+            target_before - 3_000
+        );
+        Ok(())
+    }
+
     #[ignore]
     #[test]
     fn test_network_trade() -> AppResult<()> {
@@ -455,14 +499,14 @@ mod tests {
 
         let target_player = world.players.get_or_err(&target_player_id)?.clone();
 
-        let _trade = Trade::crew_swap(
+        let _trade = Trade::new(
+            OfferKind::Direct,
             own_team_peer_id,
             target_team_peer_id,
             own_team_id,
             target_team_id,
-            proposer_player,
+            Some(proposer_player),
             target_player,
-            0,
             0,
         );
 

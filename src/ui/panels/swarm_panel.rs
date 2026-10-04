@@ -12,7 +12,6 @@ use crate::ui::renders::{
     render_player_description, render_spaceship_description, selectable_list, PlayerWidgetView,
 };
 use crate::ui::ui_callback::UiCallback;
-use crate::ui::utils::format_satoshi;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
 use crate::ui::ui_screen::{tab_link, UiTab};
@@ -644,10 +643,7 @@ impl SwarmPanel {
 
             let wanted = trade.target_player.info.short_name();
             let wanted_stars = trade.target_player.stars();
-            let offered = match trade.proposer_player.as_ref() {
-                Some(player) => format!("{} {}", player.info.short_name(), player.stars()),
-                None => format_satoshi(trade.proposer_satoshis),
-            };
+            let offered = trade.offered();
 
             frame.render_interactive_widget(
                 Button::new(

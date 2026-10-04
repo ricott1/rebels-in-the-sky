@@ -1,5 +1,4 @@
 use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
-use crate::network::trade::TradeRoute;
 use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::constants::*;
@@ -443,13 +442,12 @@ impl PlayerListPanel {
                 .block(default_block().border_style(UiStyle::OK))
                 .hotkey(ui_key::ACCEPT_TRADE);
 
-                if let Err(err) = proposer_team.can_trade_with_team(
+                if let Err(err) = proposer_team.can_make_offer(
                     own_team,
                     trade.route,
                     trade.proposer_player.as_ref(),
                     &trade.target_player,
-                    trade.proposer_satoshis,
-                    trade.target_satoshis,
+                    trade.satoshis,
                 ) {
                     button.disable(Some(err.to_string()));
                 }
@@ -479,12 +477,11 @@ impl PlayerListPanel {
                 if let Some(target_team_id) = target_player.team {
                     let target_team = world.teams.get_or_err(&target_team_id)?;
                     if own_team
-                        .can_trade_with_team(
+                        .can_make_offer(
                             target_team,
-                            TradeRoute::CrewSwap,
+                            OfferKind::Direct,
                             Some(proposer_player),
                             target_player,
-                            0,
                             0,
                         )
                         .is_ok()

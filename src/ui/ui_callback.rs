@@ -8,10 +8,7 @@ use crate::game_engine::game::Game;
 use crate::game_engine::types::{GamePositionFluidity, InGameDrinking, SubstitutionTendency};
 use crate::game_engine::{Tournament, TournamentId, TournamentType};
 use crate::network::types::TournamentRequestState;
-use crate::network::{
-    challenge::Challenge,
-    trade::{Trade, TradeRoute},
-};
+use crate::network::{challenge::Challenge, trade::Trade};
 use crate::types::{HashMapWithResult, PlayerMap, StorableResourceMap, TradeId};
 use crate::ui::ui_key;
 use crate::{
@@ -727,12 +724,11 @@ impl UiCallback {
             };
 
             let proposer_player = app.world.players.get_or_err(&proposer_player_id)?;
-            own_team.can_trade_with_team(
+            own_team.can_make_offer(
                 target_team,
-                TradeRoute::CrewSwap,
+                OfferKind::Direct,
                 Some(proposer_player),
                 target_player,
-                0,
                 0,
             )?;
 
@@ -746,7 +742,6 @@ impl UiCallback {
                     proposer_player_id,
                     target_player_id,
                     0,
-                    0,
                 )?;
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.add_sent_trade(trade);
@@ -755,14 +750,14 @@ impl UiCallback {
 
             // Local trade: the AI weighs the two bundles and says yes or no.
             if proposer_player.hire_cost() >= target_player.hire_cost() {
-                let trade = Trade::crew_swap(
+                let trade = Trade::new(
+                    OfferKind::Direct,
                     *app.network_handler.own_peer_id(),
                     *app.network_handler.own_peer_id(),
                     app.world.own_team_id,
                     target_team.id,
-                    proposer_player.clone(),
+                    Some(proposer_player.clone()),
                     target_player.clone(),
-                    0,
                     0,
                 );
                 app.world.apply_trade(&trade, Tick::now())?;
@@ -785,7 +780,7 @@ impl UiCallback {
             let Some(overlay) = app.ui.trade_overlay_mut() else {
                 return Err(anyhow!("No offer is open"));
             };
-            let (_, own_player_id, other_player_id, own_satoshis, other_satoshis) = overlay.offer();
+            let (_, own_player_id, other_player_id, satoshis) = overlay.offer();
             let other_team_id = overlay.other_team_id();
 
             let target_player_id =
@@ -797,8 +792,7 @@ impl UiCallback {
                 other_team_id,
                 proposer_player_id,
                 target_player_id,
-                own_satoshis,
-                other_satoshis,
+                satoshis,
             )(app);
 
             if result.is_ok() {
@@ -812,21 +806,19 @@ impl UiCallback {
         target_team_id: TeamId,
         proposer_player_id: PlayerId,
         target_player_id: PlayerId,
-        proposer_satoshis: u32,
-        target_satoshis: u32,
+        satoshis: i64,
     ) -> AppCallback {
         Box::new(move |app: &mut App| {
             let target_team = app.world.teams.get_or_err(&target_team_id)?;
             let target_player = app.world.players.get_or_err(&target_player_id)?;
             let proposer_player = app.world.players.get_or_err(&proposer_player_id)?;
 
-            app.world.get_own_team()?.can_trade_with_team(
+            app.world.get_own_team()?.can_make_offer(
                 target_team,
-                TradeRoute::CrewSwap,
+                OfferKind::Direct,
                 Some(proposer_player),
                 target_player,
-                proposer_satoshis,
-                target_satoshis,
+                satoshis,
             )?;
 
             let Some(peer_id) = target_team.peer_id else {
@@ -840,8 +832,7 @@ impl UiCallback {
                 target_team_id,
                 proposer_player_id,
                 target_player_id,
-                proposer_satoshis,
-                target_satoshis,
+                satoshis,
             )?;
             app.world.get_own_team_mut()?.add_sent_trade(trade);
             Ok(Some("Trade offer sent".to_string()))

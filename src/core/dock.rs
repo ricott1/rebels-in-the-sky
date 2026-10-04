@@ -1,6 +1,12 @@
 use crate::types::{PlayerId, Tick};
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum OfferKind {
+    Direct,
+    Dock,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub struct DockListing {
     pub player_id: PlayerId,

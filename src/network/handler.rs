@@ -6,7 +6,7 @@ use super::types::SeedInfo;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam};
 use crate::app::AppEvent;
 use crate::core::world::World;
-use crate::core::Team;
+use crate::core::{OfferKind, Team};
 use crate::game_engine::types::TeamInGame;
 use crate::game_engine::{Tournament, TournamentId};
 use crate::network::network_store_data::NetworkStoreData;
@@ -754,13 +754,12 @@ impl NetworkHandler {
             };
 
             if own_team
-                .can_trade_with_team(
+                .can_make_offer(
                     target_team,
                     trade.route,
                     trade.proposer_player.as_ref(),
                     &trade.target_player,
-                    trade.proposer_satoshis,
-                    trade.target_satoshis,
+                    trade.satoshis,
                 )
                 .is_err()
             {
@@ -884,23 +883,22 @@ impl NetworkHandler {
         target_team_id: TeamId,
         proposer_player_id: PlayerId,
         target_player_id: PlayerId,
-        proposer_satoshis: u32,
-        target_satoshis: u32,
+        satoshis: i64,
     ) -> AppResult<Trade> {
         self.send_own_team(world)?;
 
         let proposer_player = world.players.get_or_err(&proposer_player_id)?.clone();
         let target_player = world.players.get_or_err(&target_player_id)?.clone();
 
-        let trade = Trade::crew_swap(
+        let trade = Trade::new(
+            OfferKind::Direct,
             *self.own_peer_id(),
             target_peer_id,
             world.own_team_id,
             target_team_id,
-            proposer_player,
+            Some(proposer_player),
             target_player,
-            proposer_satoshis,
-            target_satoshis,
+            satoshis,
         );
 
         self.send_trade(trade.clone())?;
@@ -971,13 +969,12 @@ impl NetworkHandler {
             let mut trade = trade.clone();
             let target_player = world.players.get_or_err(&trade.target_player.id)?.clone();
             trade.target_player = target_player;
-            proposer_team.can_trade_with_team(
+            proposer_team.can_make_offer(
                 own_team,
                 trade.route,
                 trade.proposer_player.as_ref(),
                 &trade.target_player,
-                trade.proposer_satoshis,
-                trade.target_satoshis,
+                trade.satoshis,
             )?;
 
             trade.state = NetworkRequestState::SynAck;
