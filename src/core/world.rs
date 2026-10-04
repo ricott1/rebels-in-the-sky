@@ -82,6 +82,8 @@ pub struct World {
     #[serde(default)]
     pub applied_trades: HashSet<TradeId>,
     #[serde(skip)]
+    pub closed_trades: HashSet<TradeId>,
+    #[serde(skip)]
     pub trade_outbox: Vec<Trade>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
@@ -1360,9 +1362,11 @@ impl World {
     }
 
     pub fn is_team_present(&self, team_id: &TeamId, now: Tick) -> bool {
-        self.network_team_last_heard
-            .get(team_id)
-            .is_some_and(|&heard| now.saturating_sub(heard) <= DOCK_PRESENCE_WINDOW)
+        self.teams.contains_key(team_id)
+            && self
+                .network_team_last_heard
+                .get(team_id)
+                .is_some_and(|&heard| now.saturating_sub(heard) <= DOCK_PRESENCE_WINDOW)
     }
 
     pub fn receive_offer(&mut self, trade: Trade, now: Tick) -> AppResult<bool> {
@@ -1376,8 +1380,18 @@ impl World {
         {
             return Ok(false);
         }
+        if self.closed_trades.contains(&trade.id) {
+            self.push_reply(
+                &trade,
+                NetworkRequestState::Failed {
+                    error_message: "Offer closed".to_string(),
+                },
+            );
+            return Ok(false);
+        }
         if let Err(err) = self.check_incoming_offer(&trade) {
             self.get_own_team_mut()?.received_trades.remove(&trade.id);
+            self.closed_trades.insert(trade.id);
             self.dirty_ui = true;
             self.push_reply(
                 &trade,
@@ -1397,6 +1411,13 @@ impl World {
     }
 
     fn check_incoming_offer(&self, trade: &Trade) -> AppResult<()> {
+        if !trade.app_version_matches() {
+            let [major, minor, patch] = trade.app_version;
+            let [own_major, own_minor, own_patch] = app_version();
+            return Err(anyhow!(
+                "App versions do not match: {major}.{minor}.{patch} and {own_major}.{own_minor}.{own_patch}"
+            ));
+        }
         let own_team = self.get_own_team()?;
         let id = trade.target_player.id;
         let name = trade.target_player.info.short_name();
@@ -1513,6 +1534,7 @@ impl World {
             .remove(trade_id)
             .ok_or_else(|| anyhow!("That offer is no longer open"))?;
         let name = own_team.name.clone();
+        self.closed_trades.insert(trade.id);
         self.push_reply(
             &trade,
             NetworkRequestState::Failed {
@@ -1531,9 +1553,6 @@ impl World {
             .all(|pending| pending.id != trade.id)
         {
             return Ok(None);
-        }
-        if let Some(player) = trade.proposer_player.as_ref() {
-            self.players.insert(player.id, player.clone());
         }
         self.complete_accept(&trade.id, now).map(Some)
     }
@@ -1565,6 +1584,7 @@ impl World {
             own_team.received_trades.remove(&rival.id);
         }
         for rival in rivals {
+            self.closed_trades.insert(rival.id);
             self.push_reply(
                 &rival,
                 NetworkRequestState::Failed {
@@ -1590,6 +1610,7 @@ impl World {
             team.saturating_add_resource(Resource::SATOSHI, pending.target_pays());
         }
         team.received_trades.remove(trade_id);
+        self.closed_trades.insert(*trade_id);
         team.reassign_positions(&self.players);
         team.version += 1;
         self.teams.insert(team.id, team);
@@ -1656,7 +1677,9 @@ impl World {
                     error_message: err.to_string(),
                 },
             );
-            return Err(err);
+            return Ok(Some(format!(
+                "Your offer for {name} could not be completed: {err}. It was refunded."
+            )));
         }
         self.push_reply(&trade, NetworkRequestState::Ack);
         Ok(Some(format!("{name} signed with you.")))
@@ -1701,12 +1724,18 @@ impl World {
             }));
         }
         let own_team = self.get_own_team()?;
-        let is_known = own_team.received_trades.contains_key(&trade.id)
-            || own_team.pending_accepts.iter().any(|p| p.id == trade.id);
-        if trade.target_team_id == self.own_team_id && is_known {
-            self.abort_accept(&trade.id)?;
+        let was_accepting = own_team.pending_accepts.iter().any(|p| p.id == trade.id);
+        let is_known = own_team.received_trades.contains_key(&trade.id) || was_accepting;
+        if trade.target_team_id != self.own_team_id || !is_known {
+            return Ok(None);
         }
-        Ok(None)
+        self.abort_accept(&trade.id)?;
+        Ok(was_accepting.then(|| {
+            format!(
+                "The offer for {} was called off.",
+                trade.target_player.info.short_name()
+            )
+        }))
     }
 
     pub fn leave_player_at_dock(
@@ -1750,6 +1779,7 @@ impl World {
             .collect();
         for trade in &dropped {
             team.received_trades.remove(&trade.id);
+            self.closed_trades.insert(trade.id);
         }
 
         let mut player = self.players.get_or_err(&player_id)?.clone();
@@ -2220,13 +2250,7 @@ impl World {
         }
         self.network_team_last_heard.insert(team.id, Tick::now());
 
-        // Check if we are receiving a team with which we have an open challenge.
-        // Note: there could be a race condition where we receive a team over the network right after
-        //       accepting the challenge but before the challenge has been finalized on our side.
-        //       In this case, the received team would have current_game set to some (set to the challenge game
-        //       they just started) and the challenge would fail on our hand since the challenge team must have no game.
-
-        // Ignore updates not newer than the last one applied for this team; wire delivery is unordered.
+        // Ignore updates not newer than the last one.
         if self
             .network_team_timestamps
             .get(&team.id)
@@ -6450,8 +6474,9 @@ mod test {
                 error_message: "Offer retired".to_string(),
             },
         );
-        app.world.receive_failed(&failed, "Offer retired")?;
+        let message = app.world.receive_failed(&failed, "Offer retired")?;
 
+        assert!(message.expect("a message").contains("called off"));
         let own_team = app.world.get_own_team()?;
         assert!(own_team.player_ids.contains(&target_id));
         assert!(!own_team.is_leaving(&target_id));
@@ -6566,6 +6591,7 @@ mod test {
         app.world.filter_peer_data(Some(proposer_peer_id))?;
         app.world
             .filter_peer_data(Some(target_team.peer_id.expect("a peer crew")))?;
+        assert!(!app.world.is_team_present(&proposer_id, Tick::now()));
 
         let own_team = app.world.get_own_team()?;
         assert!(own_team.received_trades.contains_key(&received.id));
@@ -6587,6 +6613,174 @@ mod test {
             app.world.trade_for_offer(&offer, own_peer_id).is_some(),
             "resent as soon as the crew is back"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_a_syn_from_another_minor_version_drops_the_stored_offer() -> AppResult<()> {
+        use crate::core::OfferKind;
+        use crate::network::types::NetworkRequestState;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = first_own_pirate(&app)?;
+        let (mut trade, _) =
+            receive_offer_from_a_new_crew(&mut app, target_id, OfferKind::Direct, 1_000)?;
+        app.world.trade_outbox.clear();
+
+        trade.app_version[1] += 1;
+        assert!(!app.world.receive_offer(trade.clone(), Tick::now())?);
+
+        assert!(!app
+            .world
+            .get_own_team()?
+            .received_trades
+            .contains_key(&trade.id));
+        assert!(matches!(
+            &app.world.trade_outbox[0].state,
+            NetworkRequestState::Failed { error_message }
+                if error_message.contains("App versions do not match")
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_an_ack_completes_with_the_stored_trade_only() -> AppResult<()> {
+        use crate::core::OfferKind;
+        use crate::network::types::NetworkRequestState;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = first_own_pirate(&app)?;
+        let (trade, _) =
+            receive_offer_from_a_new_crew(&mut app, target_id, OfferKind::Direct, 1_000)?;
+        app.world.accept_offer(&trade.id, Tick::now())?;
+        let other_team_id = network_crew_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let other_id = app.world.teams.get_or_err(&other_team_id)?.player_ids[0];
+        let version = app.world.players.get_or_err(&other_id)?.version;
+
+        let mut ack = with_state(&trade, NetworkRequestState::Ack);
+        let mut stranger = app.world.players.get_or_err(&other_id)?.clone();
+        stranger.version += 1;
+        ack.proposer_player = Some(stranger);
+        assert!(app.world.receive_ack(&ack, Tick::now())?.is_some());
+
+        assert_eq!(
+            app.world.players.get_or_err(&other_id)?.version,
+            version,
+            "the pirate in the ack is ignored"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_a_declined_offer_that_comes_back_gets_failed_again() -> AppResult<()> {
+        use crate::core::OfferKind;
+        use crate::network::types::NetworkRequestState;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = first_own_pirate(&app)?;
+        let (trade, _) =
+            receive_offer_from_a_new_crew(&mut app, target_id, OfferKind::Direct, 1_000)?;
+        app.world.decline_offer(&trade.id)?;
+        app.world.trade_outbox.clear();
+
+        assert!(!app.world.receive_offer(trade.clone(), Tick::now())?);
+
+        assert!(app.world.get_own_team()?.received_trades.is_empty());
+        assert!(matches!(
+            app.world.trade_outbox.first().expect("a reply").state,
+            NetworkRequestState::Failed { .. }
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_a_syn_ack_that_cannot_be_applied_is_refunded() -> AppResult<()> {
+        use crate::network::types::NetworkRequestState;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_team_id = network_crew_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = app.world.teams.get_or_err(&target_team_id)?.player_ids[0];
+        let before = app.world.get_own_team()?.balance();
+        app.world
+            .make_offer(target_id, None, 2_000, libp2p::PeerId::random())?;
+        let syn_ack = with_state(&app.world.trade_outbox[0], NetworkRequestState::SynAck);
+        app.world.trade_outbox.clear();
+        app.world.teams.remove(&target_team_id);
+
+        let message = app.world.receive_syn_ack(&syn_ack, Tick::now())?;
+
+        assert!(message.expect("a message").contains("It was refunded"));
+        let own_team = app.world.get_own_team()?;
+        assert!(own_team.offers.is_empty());
+        assert_eq!(own_team.balance(), before);
+        assert!(matches!(
+            app.world.trade_outbox[0].state,
+            NetworkRequestState::Failed { .. }
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_a_duplicate_ack_changes_nothing() -> AppResult<()> {
+        use crate::core::OfferKind;
+        use crate::network::types::NetworkRequestState;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = first_own_pirate(&app)?;
+        let (trade, proposer_id) =
+            receive_offer_from_a_new_crew(&mut app, target_id, OfferKind::Direct, 1_000)?;
+        app.world.accept_offer(&trade.id, Tick::now())?;
+        let ack = with_state(&trade, NetworkRequestState::Ack);
+        assert!(app.world.receive_ack(&ack, Tick::now())?.is_some());
+        app.world.trade_outbox.clear();
+
+        let balance = app.world.get_own_team()?.balance();
+        let own_ids = app.world.get_own_team()?.player_ids.clone();
+        let proposer_ids = app.world.teams.get_or_err(&proposer_id)?.player_ids.clone();
+        assert!(app.world.receive_ack(&ack, Tick::now())?.is_none());
+
+        let own_team = app.world.get_own_team()?;
+        assert_eq!(own_team.balance(), balance);
+        assert_eq!(own_team.player_ids, own_ids);
+        assert_eq!(
+            app.world.teams.get_or_err(&proposer_id)?.player_ids,
+            proposer_ids
+        );
+        assert!(app.world.trade_outbox.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_a_syn_ack_while_in_a_game_gets_failed_and_refunds() -> AppResult<()> {
+        use crate::network::types::NetworkRequestState;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_team_id = network_crew_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = app.world.teams.get_or_err(&target_team_id)?.player_ids[0];
+        let before = app.world.get_own_team()?.balance();
+        app.world
+            .make_offer(target_id, None, 2_000, libp2p::PeerId::random())?;
+        let syn_ack = with_state(&app.world.trade_outbox[0], NetworkRequestState::SynAck);
+        app.world.trade_outbox.clear();
+        app.world.get_own_team_mut()?.current_game = Some(crate::types::GameId::new_v4());
+
+        let message = app.world.receive_syn_ack(&syn_ack, Tick::now())?;
+
+        assert!(message.expect("a message").contains("is playing"));
+        let own_team = app.world.get_own_team()?;
+        assert!(own_team.offers.is_empty());
+        assert_eq!(own_team.balance(), before);
+        assert!(!own_team.player_ids.contains(&target_id));
+        assert!(matches!(
+            app.world.trade_outbox[0].state,
+            NetworkRequestState::Failed { .. }
+        ));
         Ok(())
     }
 }

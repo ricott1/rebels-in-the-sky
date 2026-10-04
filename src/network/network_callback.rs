@@ -779,22 +779,6 @@ impl NetworkCallback {
                 return Ok(None);
             }
 
-            if !trade.app_version_matches() {
-                if is_target && trade.state == NetworkRequestState::Syn {
-                    let [major, minor, patch] = trade.app_version;
-                    let [own_major, own_minor, own_patch] = app_version();
-                    app.world.push_reply(
-                        &trade,
-                        NetworkRequestState::Failed {
-                            error_message: format!(
-                                "App versions do not match: {major}.{minor}.{patch} and {own_major}.{own_minor}.{own_patch}"
-                            ),
-                        },
-                    );
-                }
-                return Ok(None);
-            }
-
             let now = Tick::now();
             let message = match &trade.state {
                 NetworkRequestState::Syn if is_target => {
