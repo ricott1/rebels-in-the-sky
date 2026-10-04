@@ -1,6 +1,5 @@
 use super::button::Button;
 use super::constants::UiStyle;
-use super::dropdown::DropdownState;
 use super::overlays::{HelpOverlay, OfferOverlay, OverlayKind, MAX_OVERLAY_DEPTH, POPUP_LAYER};
 use super::panels::*;
 use super::panels::{HelpContent, Screen, SplitPanel};
@@ -293,15 +292,6 @@ impl UiScreen {
                 Some((title, self.get_active_screen().help_content()))
             }
         }
-    }
-
-    pub fn active_dropdown(&mut self, id: usize) -> Option<&mut DropdownState> {
-        if self.overlays.is_empty() {
-            return self.get_active_screen_mut().dropdown(id);
-        }
-        self.overlays
-            .last_mut()
-            .and_then(|overlay| overlay.as_dyn_mut().dropdown(id))
     }
 
     pub fn push_log_event(

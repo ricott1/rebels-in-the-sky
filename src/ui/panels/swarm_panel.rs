@@ -1,7 +1,7 @@
 use super::traits::{HelpContent, HelpPanel, IndexBound, Screen, SplitPanel};
 use crate::core::constants::{MINUTES, MIN_PLAYERS_PER_GAME};
 use crate::core::{skill::Rated, world::World};
-use crate::network::trade::satoshi_suffix;
+use crate::network::trade::offered_phrase;
 use crate::network::types::{ChatHistoryEntry, PlayerRanking, TeamRanking};
 use crate::types::{AppResult, HashMapWithResult, PlayerId, SystemTimeTick, TeamId, Tick, TradeId};
 use crate::ui::button::Button;
@@ -627,9 +627,13 @@ impl SwarmPanel {
                         .teams
                         .get(&offer.target_team_id)
                         .map_or("their crew", |team| team.name.as_str());
+                    let pirate = offer.pirate.and_then(|id| world.players.get(&id));
                     (
                         offer.trade_id,
-                        format!("{wanted} from {crew}{}", satoshi_suffix(offer.satoshis)),
+                        format!(
+                            "{wanted} from {crew} for {}",
+                            offered_phrase(pirate, offer.satoshis)
+                        ),
                         world.is_team_present(&offer.target_team_id, now),
                     )
                 })
@@ -1238,9 +1242,9 @@ impl HelpPanel for SwarmPanel {
                 Line::from("  Enter      Send a chat message in Chat view"),
                 Line::from("  Type       Compose your chat message at the input bar"),
                 Line::from(format!(
-                    "  {} / {}      Accept / decline highlighted trade",
-                    ui_key::ACCEPT_TRADE,
-                    ui_key::DECLINE_TRADE
+                    "  {} / {}  Accept / decline the first request",
+                    ui_key::YES_TO_DIALOG,
+                    ui_key::NO_TO_DIALOG
                 )),
             ],
         }

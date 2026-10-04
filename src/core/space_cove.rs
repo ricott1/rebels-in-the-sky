@@ -116,10 +116,6 @@ impl SpaceCove {
         self.upgrades.contains(&SpaceCoveUpgradeTarget::Stadium)
     }
 
-    pub fn has_market(&self) -> bool {
-        self.upgrades.contains(&SpaceCoveUpgradeTarget::Market)
-    }
-
     pub fn can_pay_tavern_upkeep(&self) -> bool {
         let rum_per_day = self
             .tavern

@@ -1836,7 +1836,7 @@ impl UiCallback {
                 app.ui.close_popup();
                 app.ui.my_team_panel.update(&app.world)?;
                 let name = app.world.players.get_or_err(player_id)?.info.short_name();
-                Ok(Some(format!("{name} is waiting at the dock")))
+                Ok(Some(format!("{name} is at the dock")))
             }
 
             Self::RecallPlayerFromDock { player_id } => {

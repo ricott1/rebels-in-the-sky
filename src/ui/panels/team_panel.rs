@@ -673,7 +673,7 @@ impl HelpPanel for TeamListPanel {
                     ui_key::game::CHALLENGE_TEAM
                 )),
                 Line::from(format!(
-                    "  {}          Propose a trade with the highlighted crew",
+                    "  {}          Make an offer for the highlighted pirate",
                     ui_key::CREATE_TRADE
                 )),
                 Line::from(format!(

@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn test_apply_trade_is_idempotent() -> AppResult<()> {
         let mut app = App::test_default()?;
-        let (mut trade, _, _, own_id, target_team_id) = direct_trade_setup(&mut app)?;
+        let (mut trade, _, _, own_id, _) = direct_trade_setup(&mut app)?;
         trade.satoshis = 5_000;
 
         let own_before = app.world.teams.get_or_err(&own_id)?.balance();
@@ -384,7 +384,6 @@ mod tests {
         app.world.apply_trade(&trade, Tick::now())?;
         assert_eq!(app.world.teams.get_or_err(&own_id)?.balance(), own_after);
         assert_eq!(own_after, own_before - 5_000);
-        let _ = target_team_id;
         Ok(())
     }
 

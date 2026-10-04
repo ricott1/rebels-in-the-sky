@@ -141,7 +141,7 @@ impl PlayerListPanel {
         .bold()
         .hover_text("View free pirates.");
 
-        let mut filter_tradable_button = Button::new(
+        let mut filter_at_dock_button = Button::new(
             PlayerView::AtDock.to_string(),
             UiCallback::SetPlayerPanelView {
                 view: PlayerView::AtDock,
@@ -161,13 +161,13 @@ impl PlayerListPanel {
         match self.view {
             PlayerView::All => filter_all_button.select(),
             PlayerView::FreePirates => filter_free_pirates_button.select(),
-            PlayerView::AtDock => filter_tradable_button.select(),
+            PlayerView::AtDock => filter_at_dock_button.select(),
             PlayerView::OwnTeam => filter_own_team_button.select(),
         }
 
         frame.render_interactive_widget(filter_all_button, split[0]);
         frame.render_interactive_widget(filter_free_pirates_button, split[1]);
-        frame.render_interactive_widget(filter_tradable_button, split[2]);
+        frame.render_interactive_widget(filter_at_dock_button, split[2]);
         frame.render_interactive_widget(filter_own_team_button, split[3]);
 
         if !self.players.is_empty() {

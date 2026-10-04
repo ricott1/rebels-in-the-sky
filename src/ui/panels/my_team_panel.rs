@@ -2083,10 +2083,13 @@ impl MyTeamPanel {
         );
 
         let can_release = own_team.can_release_player(player);
+        let active_after_release = own_team
+            .active_players_count()
+            .saturating_sub(usize::from(!own_team.is_parked(&player_id)));
         let popup_message = PopupMessage::ReleasePlayer {
             player_name: player.info.full_name(),
             player_id,
-            not_enough_players_for_game: own_team.player_ids.len() - 1 < MIN_PLAYERS_PER_GAME,
+            not_enough_players_for_game: active_after_release < MIN_PLAYERS_PER_GAME,
             timestamp: Tick::now(),
         };
         let mut release_button = Button::new(
