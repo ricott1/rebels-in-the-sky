@@ -37,6 +37,7 @@ pub enum AppEvent {
     FastTick(Tick),
     TerminalEvent(TerminalEvent),
     NetworkEvent(SwarmEvent<BehaviourEvent>),
+    SpaceLink(crate::network::space_link::SpaceLinkEvent),
     #[cfg(feature = "audio")]
     AudioEvent(MusicPlayerEvent),
 }
@@ -332,6 +333,8 @@ impl App {
                     AppEvent::NetworkEvent(swarm_event) => {
                         self.handle_network_events(swarm_event)?;
                     }
+
+                    AppEvent::SpaceLink(_) => {}
 
                     #[cfg(feature = "audio")]
                     AppEvent::AudioEvent(audio_event) => match audio_event {

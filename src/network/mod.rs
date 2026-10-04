@@ -3,5 +3,6 @@ pub mod constants;
 pub mod handler;
 pub mod network_callback;
 pub mod network_store_data;
+pub mod space_link;
 pub mod trade;
 pub mod types;
