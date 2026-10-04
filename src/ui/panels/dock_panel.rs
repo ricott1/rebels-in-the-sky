@@ -18,6 +18,7 @@ use itertools::Itertools;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Margin};
 use ratatui::prelude::Rect;
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use std::cmp::Reverse;
@@ -67,40 +68,6 @@ impl DockPanel {
         ])
     }
 
-    fn render_header(frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
-        let dock_name = world
-            .planets
-            .get(&*GALAXY_ROOT_ID)
-            .map_or("the black hole", |planet| planet.name.as_str());
-        let split = Layout::horizontal([Constraint::Fill(1), Constraint::Length(32)]).split(area);
-        frame.render_widget(
-            Paragraph::new(format!("The Dock, at {dock_name}"))
-                .style(UiStyle::HEADER)
-                .block(default_block()),
-            split[0],
-        );
-
-        let own_team = world.get_own_team()?;
-        if own_team.is_at_dock() {
-            frame.render_widget(
-                Paragraph::new("You are at the dock")
-                    .centered()
-                    .block(default_block().border_style(UiStyle::OK)),
-                split[1],
-            );
-        } else if own_team.is_on_planet().is_some() {
-            frame.render_interactive_widget(teleport_button(world, *GALAXY_ROOT_ID)?, split[1]);
-        } else {
-            frame.render_widget(
-                Paragraph::new("Not on a planet")
-                    .centered()
-                    .block(default_block()),
-                split[1],
-            );
-        }
-        Ok(())
-    }
-
     fn offers_on(world: &World, player_id: PlayerId) -> usize {
         world.get_own_team().map_or(0, |team| {
             team.received_trades
@@ -108,6 +75,28 @@ impl DockPanel {
                 .filter(|trade| trade.target_player.id == player_id)
                 .count()
         })
+    }
+
+    fn list_option(world: &World, row: &DockRow) -> Option<(String, Style)> {
+        let player = world.players.get(&row.player_id())?;
+        let (detail, style) = match row {
+            DockRow::FreePirate(_) => (format_satoshi(player.hire_cost()), UiStyle::DEFAULT),
+            DockRow::Listing(_) if player.team == Some(world.own_team_id) => {
+                let count = Self::offers_on(world, player.id);
+                let noun = if count == 1 { "offer" } else { "offers" };
+                (format!("yours, {count} {noun}"), UiStyle::OWN_TEAM)
+            }
+            DockRow::Listing(_) => (Self::team_name(world, player.team), UiStyle::DEFAULT),
+        };
+        Some((
+            format!(
+                "{:<MAX_NAME_LENGTH$.MAX_NAME_LENGTH$} {} {}",
+                player.info.short_name(),
+                player.stars(),
+                detail,
+            ),
+            style,
+        ))
     }
 
     fn render_list(&mut self, frame: &mut UiFrame, world: &World, area: Rect) {
@@ -124,29 +113,7 @@ impl DockPanel {
         let options = self
             .rows
             .iter()
-            .filter_map(|row| {
-                let player = world.players.get(&row.player_id())?;
-                let (detail, style) = match row {
-                    DockRow::FreePirate(_) => {
-                        (format_satoshi(player.hire_cost()), UiStyle::DEFAULT)
-                    }
-                    DockRow::Listing(_) if player.team == Some(world.own_team_id) => (
-                        format!("yours, {} offers", Self::offers_on(world, player.id)),
-                        UiStyle::OWN_TEAM,
-                    ),
-                    DockRow::Listing(_) => (Self::team_name(world, player.team), UiStyle::DEFAULT),
-                };
-                Some((
-                    format!(
-                        "{:<width$} {} {}",
-                        player.info.short_name(),
-                        player.stars(),
-                        detail,
-                        width = MAX_NAME_LENGTH
-                    ),
-                    style,
-                ))
-            })
+            .filter_map(|row| Self::list_option(world, row))
             .collect();
 
         self.list_state.select(self.index);
@@ -341,7 +308,7 @@ impl DockPanel {
             return Ok(());
         }
 
-        let mut constraints = [Constraint::Length(3)].repeat(offers.len());
+        let mut constraints = [Constraint::Length(4)].repeat(offers.len());
         constraints.push(Constraint::Fill(1));
         let rows = Layout::vertical(constraints).split(inner);
         for (idx, trade) in offers.iter().enumerate() {
@@ -358,10 +325,10 @@ impl DockPanel {
                 Span::styled("○ offline  ", UiStyle::UNSELECTABLE)
             };
             frame.render_widget(
-                Paragraph::new(Line::from(vec![
-                    presence,
-                    Span::raw(format!("{crew}: {}", trade.offered())),
-                ]))
+                Paragraph::new(vec![
+                    Line::from(vec![presence, Span::raw(crew.clone())]),
+                    Line::from(trade.offered()),
+                ])
                 .block(default_block()),
                 split[0],
             );
@@ -375,9 +342,17 @@ impl DockPanel {
             }
             frame.render_interactive_widget(accept, split[1]);
 
-            let decline = Button::new(UiText::NO, UiCallback::DeclineTrade { trade_id: trade.id })
-                .block(default_block().border_style(UiStyle::ERROR))
-                .hover_text(format!("Decline {crew}'s offer"));
+            let mut decline =
+                Button::new(UiText::NO, UiCallback::DeclineTrade { trade_id: trade.id })
+                    .block(default_block().border_style(UiStyle::ERROR))
+                    .hover_text(format!("Decline {crew}'s offer"));
+            if own_team
+                .pending_accepts
+                .iter()
+                .any(|pending| pending.id == trade.id)
+            {
+                decline.disable(Some("That offer is being accepted"));
+            }
             frame.render_interactive_widget(decline, split[2]);
         }
         Ok(())
@@ -419,12 +394,12 @@ impl Screen for DockPanel {
     ) -> AppResult<()> {
         let split = Layout::horizontal([Constraint::Length(LEFT_PANEL_WIDTH), Constraint::Fill(1)])
             .split(area);
-        self.render_list(frame, world, split[0]);
+        let left = Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).split(split[0]);
+        self.render_list(frame, world, left[0]);
+        frame.render_interactive_widget(teleport_button(world, *GALAXY_ROOT_ID)?, left[1]);
 
-        let right = Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(split[1]);
-        Self::render_header(frame, world, right[0])?;
-        frame.render_widget(default_block(), right[1]);
-        self.render_detail_pane(frame, world, right[1].inner(Margin::new(1, 1)))?;
+        frame.render_widget(default_block(), split[1]);
+        self.render_detail_pane(frame, world, split[1].inner(Margin::new(1, 1)))?;
         Ok(())
     }
 
@@ -521,6 +496,64 @@ mod tests {
 
         assert!(matches!(panel.rows.first(), Some(DockRow::FreePirate(_))));
         assert_eq!(panel.rows.last(), Some(&DockRow::Listing(listed)));
+        Ok(())
+    }
+
+    #[test]
+    fn test_rows_line_up_and_count_offers() -> AppResult<()> {
+        use crate::core::{skill::Rated, OfferKind};
+        use crate::network::trade::Trade;
+        use crate::types::HashMapWithResult;
+        use crate::ui::constants::MAX_NAME_LENGTH;
+
+        let mut app = App::test_default()?;
+        let own_team_id = app.world.own_team_id;
+        let crew_id = app
+            .world
+            .teams
+            .values()
+            .find(|team| team.id != own_team_id)
+            .expect("another crew")
+            .id;
+        let own_id = app.world.get_own_team()?.player_ids[0];
+        let their_id = app.world.teams.get_or_err(&crew_id)?.player_ids[0];
+        app.world.players.get_mut_or_err(&own_id)?.info.last_name = "Lunghissimonome".to_string();
+        app.world.players.get_mut_or_err(&their_id)?.info.last_name = "Bo".to_string();
+        app.world
+            .get_own_team_mut()?
+            .dock_listings
+            .push(DockListing::new(own_id, Tick::now()));
+        app.world
+            .teams
+            .get_mut_or_err(&crew_id)?
+            .dock_listings
+            .push(DockListing::new(their_id, Tick::now()));
+        let trade = Trade::new(
+            OfferKind::Dock,
+            libp2p::PeerId::random(),
+            libp2p::PeerId::random(),
+            crew_id,
+            own_team_id,
+            None,
+            app.world.players.get_or_err(&own_id)?.clone(),
+            1_000,
+        );
+        app.world
+            .get_own_team_mut()?
+            .received_trades
+            .insert(trade.id, trade);
+
+        for (player_id, detail) in [(own_id, "yours, 1 offer"), (their_id, "")] {
+            let (text, _) =
+                DockPanel::list_option(&app.world, &DockRow::Listing(player_id)).expect("a row");
+            let stars = app.world.players.get_or_err(&player_id)?.stars();
+            let after_name: String = text.chars().skip(MAX_NAME_LENGTH).collect();
+            assert!(
+                after_name.starts_with(&format!(" {stars} ")),
+                "the stars line up: {text}"
+            );
+            assert!(text.ends_with(detail), "{text}");
+        }
         Ok(())
     }
 }

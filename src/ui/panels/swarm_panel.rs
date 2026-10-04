@@ -699,6 +699,13 @@ impl SwarmPanel {
             let mut decline_button = Button::new(UiText::NO, UiCallback::DeclineTrade { trade_id })
                 .block(default_block().border_style(UiStyle::ERROR))
                 .hover_text(format!("Decline: {text}"));
+            if own_team
+                .pending_accepts
+                .iter()
+                .any(|pending| pending.id == trade_id)
+            {
+                decline_button.disable(Some("That offer is being accepted"));
+            }
             if idx == 0 {
                 accept_button = accept_button.hotkey(ui_key::YES_TO_DIALOG);
                 decline_button = decline_button.hotkey(ui_key::NO_TO_DIALOG);

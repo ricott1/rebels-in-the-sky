@@ -240,15 +240,7 @@ impl PlayerListPanel {
         let player = world.players.get_or_err(&selected_player_id)?;
         let own_team = world.get_own_team()?;
 
-        let open_trade = own_team.received_trades.values().find(|trade| {
-            let proposed = trade.proposer_player.as_ref().map(|p| p.id);
-            let target = trade.target_player.id;
-            target == player.id
-                || self.locked_player_id.is_some_and(|locked| {
-                    (proposed == Some(locked) && target == player.id)
-                        || (proposed == Some(player.id) && target == locked)
-                })
-        });
+        let open_trade = open_trade_for(own_team, player.id, self.locked_player_id);
 
         render_player_description(
             player,
@@ -315,7 +307,18 @@ impl PlayerListPanel {
         .split(area);
 
         let own_state = (player.team == Some(own_team.id)).then(|| {
-            if own_team.is_listed(&player.id) {
+            if let Some(trade) = own_team.pending_accept_for(&player.id) {
+                let crew = world
+                    .teams
+                    .get(&trade.proposer_team_id)
+                    .map_or("another crew", |team| team.name.as_str());
+                Some((
+                    format!("Leaving for {crew}"),
+                    UiCallback::GoToPlayerTeam {
+                        player_id: player.id,
+                    },
+                ))
+            } else if own_team.is_listed(&player.id) {
                 Some(("At the dock".to_string(), UiCallback::GoToDock))
             } else if own_team.is_waiting(&player.id) {
                 Some((
@@ -333,17 +336,6 @@ impl PlayerListPanel {
                     format!("Offered to {crew}"),
                     UiCallback::GoToTrade {
                         trade_id: offer.trade_id,
-                    },
-                ))
-            } else if let Some(trade) = own_team.pending_accept_for(&player.id) {
-                let crew = world
-                    .teams
-                    .get(&trade.proposer_team_id)
-                    .map_or("another crew", |team| team.name.as_str());
-                Some((
-                    format!("Leaving for {crew}"),
-                    UiCallback::GoToPlayerTeam {
-                        player_id: player.id,
                     },
                 ))
             } else {
@@ -486,9 +478,16 @@ impl PlayerListPanel {
             .filter(|team_id| *team_id != own_team.id)
             .and_then(|team_id| world.teams.get(&team_id))
         {
-            let own_offer = self
-                .locked_player_id
-                .filter(|id| own_team.player_ids.contains(id));
+            let is_selected = player.id == selected_player_id;
+            if !is_selected && !own_team.player_ids.contains(&selected_player_id) {
+                return Ok(());
+            }
+            let own_offer = if is_selected {
+                self.locked_player_id
+                    .filter(|id| own_team.player_ids.contains(id))
+            } else {
+                Some(selected_player_id)
+            };
             let mut button = Button::new(
                 "Make offer",
                 UiCallback::OpenOfferOverlay {
@@ -528,6 +527,25 @@ impl PlayerListPanel {
             PlayerWidgetView::Stats => self.player_widget_view = PlayerWidgetView::Skills,
         }
     }
+}
+
+fn open_trade_for(
+    team: &Team,
+    selected_player_id: PlayerId,
+    locked_player_id: Option<PlayerId>,
+) -> Option<&Trade> {
+    let pairs = |trade: &Trade| {
+        let proposed = trade.proposer_player.as_ref().map(|p| p.id);
+        let target = trade.target_player.id;
+        locked_player_id.is_some_and(|locked| {
+            (proposed == Some(locked) && target == selected_player_id)
+                || (proposed == Some(selected_player_id) && target == locked)
+        })
+    };
+    team.received_trades
+        .values()
+        .filter(|trade| trade.target_player.id == selected_player_id || pairs(trade))
+        .min_by_key(|trade| (!pairs(trade), trade.created_at, trade.id))
 }
 
 impl Screen for PlayerListPanel {
@@ -709,5 +727,78 @@ impl SplitPanel for PlayerListPanel {
 
     fn set_index(&mut self, index: usize) {
         self.index = Some(index);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::open_trade_for;
+    use crate::app::App;
+    use crate::core::OfferKind;
+    use crate::network::trade::Trade;
+    use crate::types::{AppResult, HashMapWithResult, PlayerId, Tick};
+
+    fn received_offer(
+        app: &App,
+        target_id: PlayerId,
+        pirate: Option<PlayerId>,
+        created_at: Tick,
+    ) -> AppResult<Trade> {
+        let proposer_team_id = app
+            .world
+            .teams
+            .values()
+            .find(|team| team.id != app.world.own_team_id)
+            .expect("another crew")
+            .id;
+        let proposer_player = match pirate {
+            Some(id) => Some(app.world.players.get_or_err(&id)?.clone()),
+            None => None,
+        };
+        let mut trade = Trade::new(
+            OfferKind::Direct,
+            libp2p::PeerId::random(),
+            libp2p::PeerId::random(),
+            proposer_team_id,
+            app.world.own_team_id,
+            proposer_player,
+            app.world.players.get_or_err(&target_id)?.clone(),
+            1_000,
+        );
+        trade.created_at = created_at;
+        Ok(trade)
+    }
+
+    #[test]
+    fn test_the_card_prefers_the_pairing_offer_then_the_oldest() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let own_id = app.world.get_own_team()?.player_ids[0];
+        let their_id = app
+            .world
+            .teams
+            .values()
+            .find(|team| team.id != app.world.own_team_id)
+            .expect("another crew")
+            .player_ids[0];
+
+        let mut trades = vec![];
+        for created_at in [500, 400, 100, 300, 200] {
+            trades.push(received_offer(&app, own_id, None, created_at)?);
+        }
+        let pairing = received_offer(&app, own_id, Some(their_id), 900)?;
+        trades.push(pairing.clone());
+        let own_team = app.world.get_own_team_mut()?;
+        for trade in trades {
+            own_team.received_trades.insert(trade.id, trade);
+        }
+        let own_team = app.world.get_own_team()?;
+
+        let oldest = open_trade_for(own_team, own_id, None).expect("an offer");
+        assert_eq!(oldest.created_at, 100);
+        let paired = open_trade_for(own_team, own_id, Some(their_id)).expect("an offer");
+        assert_eq!(paired.id, pairing.id);
+        let paired = open_trade_for(own_team, their_id, Some(own_id)).expect("an offer");
+        assert_eq!(paired.id, pairing.id);
+        Ok(())
     }
 }

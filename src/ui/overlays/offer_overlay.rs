@@ -42,6 +42,7 @@ pub struct OfferOverlay {
     other_offer: Option<PlayerId>,
     // Positive means we pay them, negative means we ask them to pay.
     satoshis: i64,
+    asking: bool,
     focus: OfferSide,
     own_index: usize,
     other_index: usize,
@@ -64,6 +65,7 @@ impl OfferOverlay {
             own_offer,
             other_offer: Some(target_player_id),
             satoshis: 0,
+            asking: false,
             focus: OfferSide::Own,
             own_index: 0,
             other_index: 0,
@@ -115,10 +117,13 @@ impl OfferOverlay {
             own_balance,
             their_balance,
         );
+        if self.satoshis != 0 {
+            self.asking = self.satoshis < 0;
+        }
     }
 
     fn type_digit(&mut self, digit: i64, own_balance: u32, their_balance: u32) {
-        let sign = if self.satoshis < 0 { -1 } else { 1 };
+        let sign = if self.asking { -1 } else { 1 };
         let magnitude = self
             .satoshis
             .saturating_abs()
@@ -132,6 +137,7 @@ impl OfferOverlay {
     }
 
     fn flip_direction(&mut self, own_balance: u32, their_balance: u32) {
+        self.asking = !self.asking;
         self.satoshis = Self::clamp(self.satoshis.saturating_neg(), own_balance, their_balance);
     }
 
@@ -150,10 +156,6 @@ impl OfferOverlay {
 
     pub fn offer(&self) -> (Option<PlayerId>, Option<PlayerId>, i64) {
         (self.own_offer, self.other_offer, self.satoshis)
-    }
-
-    pub const fn other_team_id(&self) -> TeamId {
-        self.other_team_id
     }
 
     fn roster(&self, side: OfferSide) -> &[PlayerId] {
@@ -556,6 +558,26 @@ mod tests {
         assert_eq!(overlay.offer().2, -150);
         overlay.delete_digit();
         assert_eq!(overlay.offer().2, -15);
+    }
+
+    #[test]
+    fn test_minus_at_zero_then_digits_asks() {
+        let mut overlay = overlay();
+        overlay.flip_direction(50_000, 50_000);
+        overlay.type_digit(5, 50_000, 50_000);
+        assert_eq!(overlay.offer().2, -5);
+
+        overlay.delete_digit();
+        overlay.type_digit(7, 50_000, 50_000);
+        assert_eq!(overlay.offer().2, -7, "asking survives zero");
+
+        overlay.shift_satoshis(1_000, 50_000, 50_000);
+        overlay.delete_digit();
+        overlay.delete_digit();
+        overlay.delete_digit();
+        overlay.delete_digit();
+        overlay.type_digit(2, 50_000, 50_000);
+        assert_eq!(overlay.offer().2, 2, "the step buttons set the direction");
     }
 
     #[test]

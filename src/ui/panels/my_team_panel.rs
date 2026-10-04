@@ -2180,14 +2180,14 @@ impl MyTeamPanel {
                 let is_parked = team.is_parked(&player.id);
                 let overall = player.average_skill().stars();
                 let salary = player.salary().to_string();
-                let position = if team.is_listed(&player.id) {
+                let position = if team.is_leaving(&player.id) {
+                    "Leaving".to_string()
+                } else if team.is_listed(&player.id) {
                     "Dock".to_string()
                 } else if team.is_waiting(&player.id) {
                     "Waiting".to_string()
                 } else if team.is_offered(&player.id) {
                     "Offered".to_string()
-                } else if team.is_leaving(&player.id) {
-                    "Leaving".to_string()
                 } else {
                     let (position_index, _) = team
                         .player_ids
