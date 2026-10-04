@@ -210,8 +210,7 @@ impl InteractiveWidget for Button<'_> {
         callback_registry: &mut CallbackRegistry,
         layer: usize,
     ) {
-        // Widgets only claim input on the layer that is currently active, so an
-        // overlay drawn on top does not share its hotkeys with the panel below.
+        // Only widgets on the active layer claim input.
         let is_active_layer = callback_registry.get_active_layer() == layer;
         self.is_hovered = callback_registry.is_hovering(area) && is_active_layer;
 

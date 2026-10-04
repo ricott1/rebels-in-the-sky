@@ -8,16 +8,14 @@ pub(crate) use traits::Overlay;
 
 use ratatui::layout::Rect;
 
-/// Layer the modal popup messages draw and claim input on. Kept well above the
-/// overlay layers, which start at 1 and grow with the overlay stack.
+/// Popup messages sit well above the overlay layers.
 pub const POPUP_LAYER: usize = 100;
 
-/// Help on top of another overlay is as deep as the stack ever needs to go.
+/// An overlay plus help on top of it.
 pub const MAX_OVERLAY_DEPTH: usize = 2;
 
-/// Centered rect covering `pct_w`/`pct_h` percent of `area`, never smaller than
-/// `min` and never larger than `area` itself. Clamping to `area` last matters:
-/// on a terminal narrower than `min` a plain `clamp(min, max)` would panic.
+/// Centered rect covering `pct_w` by `pct_h` percent of `area`,
+/// at least `min` in size but never larger than `area`.
 pub fn centered_rect(area: Rect, pct_w: u16, pct_h: u16, min: (u16, u16)) -> Rect {
     let width = (area.width * pct_w / 100).max(min.0).min(area.width);
     let height = (area.height * pct_h / 100).max(min.1).min(area.height);
@@ -26,7 +24,6 @@ pub fn centered_rect(area: Rect, pct_w: u16, pct_h: u16, min: (u16, u16)) -> Rec
     Rect::new(x, y, width, height)
 }
 
-/// The overlays stacked on the screen, innermost last.
 #[derive(Debug)]
 pub enum OverlayKind {
     Help(HelpOverlay),
@@ -74,7 +71,7 @@ mod tests {
     #[test]
     fn test_centered_rect_never_exceeds_the_area() {
         let (w, h, min) = HELP;
-        // Smaller than the preferred minimum in both axes: clamp, do not panic.
+        // The area is smaller than the minimum, so it is returned as is.
         let area = Rect::new(3, 7, 40, 10);
         let rect = centered_rect(area, w, h, min);
         assert_eq!(rect, area);

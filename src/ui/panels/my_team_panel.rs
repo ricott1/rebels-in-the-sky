@@ -2333,9 +2333,11 @@ impl MyTeamPanel {
         };
         let player = sorted_players[player_index];
 
-        let top_split =
-            Layout::horizontal([Constraint::Fill(1), Constraint::Length(PLAYER_DESCRIPTION_WIDTH)])
-                .split(area);
+        let top_split = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(PLAYER_DESCRIPTION_WIDTH),
+        ])
+        .split(area);
 
         let table_split = Layout::vertical([
             Constraint::Length(MAX_CREW_SIZE as u16 + 3),
@@ -2942,13 +2944,12 @@ impl Screen for MyTeamPanel {
                 .sort_by_rating();
 
             let table_width = UI_SCREEN_SIZE.0 - 60;
-            self.players_table =
-                Self::build_players_table(&sorted_players, own_team, table_width)?
-                    .block(default_block().title(format!(
-                        "{} {} ↓/↑",
-                        own_team.name,
-                        world.team_rating(&own_team.id).unwrap_or_default().stars()
-                    )));
+            self.players_table = Self::build_players_table(&sorted_players, own_team, table_width)?
+                .block(default_block().title(format!(
+                    "{} {} ↓/↑",
+                    own_team.name,
+                    world.team_rating(&own_team.id).unwrap_or_default().stars()
+                )));
         }
 
         self.game_index = if !self.past_game_ids.is_empty() {
@@ -2971,9 +2972,11 @@ impl Screen for MyTeamPanel {
         area: Rect,
         _debug_view: bool,
     ) -> AppResult<()> {
-        let split =
-            Layout::vertical([Constraint::Length(PLAYER_DESCRIPTION_HEIGHT), Constraint::Min(8)])
-                .split(area);
+        let split = Layout::vertical([
+            Constraint::Length(PLAYER_DESCRIPTION_HEIGHT),
+            Constraint::Min(8),
+        ])
+        .split(area);
 
         if frame.is_hovering(split[0]) {
             self.active_list = PanelList::Top;

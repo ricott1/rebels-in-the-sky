@@ -265,8 +265,6 @@ impl UiScreen {
         }
     }
 
-    /// Refreshes overlay state after a callback has edited it, so the blockers
-    /// and summary a frame shows are never stale.
     pub fn update_overlays(&mut self, world: &World) -> AppResult<()> {
         for overlay in self.overlays.iter_mut() {
             overlay.as_dyn_mut().update(world)?;
@@ -284,8 +282,6 @@ impl UiScreen {
             .is_some_and(|overlay| overlay.as_dyn().consumes_tab_keys())
     }
 
-    /// What '?' should show right now: the top overlay's own help if it has any,
-    /// otherwise the active screen's.
     fn current_help_content(&self) -> Option<(String, HelpContent)> {
         match self.overlays.last() {
             Some(overlay) => overlay.as_dyn().help_content(),
@@ -299,7 +295,6 @@ impl UiScreen {
         }
     }
 
-    /// Dropdowns belong to whatever currently owns input.
     pub fn active_dropdown(&mut self, id: usize) -> Option<&mut DropdownState> {
         if self.overlays.is_empty() {
             return self.get_active_screen_mut().dropdown(id);
@@ -340,9 +335,7 @@ impl UiScreen {
         }
     }
 
-    /// Whether the thing currently receiving input wants raw character keys.
-    /// Global shortcuts ('?', debug) defer to this so a text field can be typed
-    /// into. Overlays take precedence over the panel below them once they exist.
+    /// Global shortcuts like '?' do not fire while typing in a text field.
     fn is_capturing_text(&self) -> bool {
         match self.overlays.last() {
             Some(overlay) => overlay.as_dyn().is_capturing_text(),
@@ -485,8 +478,7 @@ impl UiScreen {
                 self.popup_input.move_cursor(CursorMove::End);
                 self.popup_input.delete_line_by_head();
 
-                // An overlay is modal: the panel beneath it never sees the key.
-                // Its own button hotkeys live in inner_registry on the active layer.
+                // An overlay takes the key before the panel beneath it.
                 if let Some(overlay) = self.overlays.last_mut() {
                     if let Some(callback) = overlay.as_dyn_mut().handle_key_events(key_event, world)
                     {
@@ -614,8 +606,7 @@ impl UiScreen {
         let mut ui_frame = UiFrame::new(frame);
         ui_frame.set_hovering(self.inner_registry.hovering());
 
-        // 0 is the panel, each overlay claims the next layer up, and an open
-        // dropdown floats one above whatever owns it.
+        // Layer 0 is the panel, then one per overlay, and an open dropdown goes one above.
         let overlay_layer = self.overlays.len();
         let dropdown_open = match self.overlays.last() {
             Some(overlay) => overlay.as_dyn().has_open_dropdown().is_some(),
@@ -684,8 +675,6 @@ impl UiScreen {
                 ui_frame.render_widget(default_block(), tab_main_split[0]);
                 let tab_split = Layout::horizontal(constraints).split(tab_main_split[0]);
 
-                // Tabs stay clickable over the help overlay, as they always have,
-                // but not over one that would lose work if you navigated away.
                 let tab_layer = if self.top_overlay_consumes_tab_keys() {
                     0
                 } else {
@@ -754,7 +743,6 @@ impl UiScreen {
         // which are rendered on higher layers.
         ui_frame.render_layered_widgets();
 
-        // Overlays draw innermost last, each on its own layer.
         let mut overlay_errors: Vec<String> = vec![];
         for (index, overlay) in self.overlays.iter_mut().enumerate() {
             let layer = index + 1;
@@ -783,13 +771,12 @@ impl UiScreen {
             }
         }
 
-        // A dropdown inside an overlay defers its draw, so flush again or it never
-        // reaches the screen. `render_layered_widgets` is a take, so this is free.
+        // Flush again for dropdowns opened inside an overlay.
         if !self.overlays.is_empty() {
             ui_frame.render_layered_widgets();
         }
 
-        // Buffered: push_log_event needs &mut self while self.overlays is borrowed.
+        // Logged after the loop because self.overlays is borrowed in it.
         for err in overlay_errors {
             self.push_log_event(Tick::now(), None, err, log::Level::Error);
         }

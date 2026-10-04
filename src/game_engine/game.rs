@@ -1122,8 +1122,6 @@ mod tests {
     use crate::types::AppResult;
     use crate::types::{SystemTimeTick, Tick};
 
-    /// A mutual knockout - every pirate on both sides at MAX tiredness - ends the
-    /// game with a winner drawn by reputation.
     #[test]
     fn test_a_mutual_knockout_still_has_a_winner() {
         use crate::core::skill::MAX_SKILL;

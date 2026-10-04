@@ -162,11 +162,8 @@ pub const SATISFACTION_THRESHOLD_FOR_LEAVING: f32 = 4.0;
 pub const SATISFACTION_MALUS_FOR_MORALE_DROP: f32 = -0.25;
 pub const SATISFACTION_MALUS_FOR_SITTING_OUT: f32 = -0.1;
 pub const SATISFACTION_DECREASE_PER_LONG_TICK: f32 = -0.1;
-/// Waiting at the dock stings more than sitting out a game: it is the
-/// pressure that stops a crew warehousing pirates there indefinitely.
 pub const SATISFACTION_MALUS_PER_LONG_TICK_AT_DOCK: f32 = -0.5;
 
-/// What every crew learns about a pirate left at the dock.
 pub const DOCK_LISTING_SCOUTING: Skill = 10.0;
 
 pub const SATISFACTION_PER_OPINION_EVENT: f32 = 0.275;

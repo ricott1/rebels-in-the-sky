@@ -111,8 +111,6 @@ pub trait HelpPanel {
     fn help_content(&self) -> HelpContent;
 }
 
-/// `layer` is the layer the help links claim input on: an overlay stacked on top
-/// of another draws above layer 1, and hardcoding 1 would make its links dead.
 pub fn render_help_content(frame: &mut UiFrame, area: Rect, content: &HelpContent, layer: usize) {
     let area = area.inner(Margin::new(1, 0));
     let desc_rows = content

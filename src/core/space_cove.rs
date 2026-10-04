@@ -129,7 +129,8 @@ impl SpaceCove {
         self.resources.value(&Resource::RUM) >= rum_per_day
     }
 
-    /// Draws the tavern's daily rum from the cove store, returning how much was actually available.
+    /// Draws the tavern's daily rum from the cove store, returning how much was
+    /// actually available (less than rum-per-day when the store runs short).
     pub fn consume_daily_rum(&mut self) -> u32 {
         let rum_per_day = self
             .tavern

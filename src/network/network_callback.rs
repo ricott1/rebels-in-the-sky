@@ -880,9 +880,7 @@ impl NetworkCallback {
                         && average_tiredness <= MAX_AVG_TIREDNESS_PER_AUTO_GAME
                     {
                         let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
-                        // Shuffle only the crew that can play: a blind shuffle of
-                        // `player_ids` would deal pirates waiting at the dock
-                        // straight into the starting five.
+                        // Pirates at the dock stay out of the shuffle.
                         let mut active = own_team.active_player_ids();
                         let parked = own_team.parked_player_ids();
                         active.shuffle(rng);

@@ -61,12 +61,10 @@ impl Overlay for HelpOverlay {
         Ok(())
     }
 
-    /// '?' on top of help closes it, matching the toggle it has always been.
     fn help_content(&self) -> Option<(String, HelpContent)> {
         None
     }
 
-    /// Tabs stay clickable and Left/Right still switch, as they did before.
     fn consumes_tab_keys(&self) -> bool {
         false
     }

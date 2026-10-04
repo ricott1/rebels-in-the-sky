@@ -12,11 +12,8 @@ pub struct Trade {
     pub id: TradeId,
     pub state: NetworkRequestState,
     pub route: OfferKind,
-    /// Mirrors `Challenge::app_version`: the wire shape has changed, so a peer on
-    /// a different minor version gets a readable refusal instead of silence.
     pub app_version: [usize; 3],
-    /// Gives offer lists a stable order. Without it the swarm panel sorts by
-    /// `HashMap` iteration order, which reshuffles on insert.
+    /// Orders the offer lists.
     pub created_at: Tick,
     pub proposer_peer_id: PeerId,
     pub target_peer_id: PeerId,
@@ -64,7 +61,6 @@ impl Trade {
         satoshi_amount(self.satoshis.saturating_neg())
     }
 
-    /// True when the peer is close enough to speak the same wire format.
     pub fn app_version_matches(&self) -> bool {
         let [major, minor, _] = app_version();
         let [their_major, their_minor, _] = self.app_version;
@@ -264,9 +260,7 @@ mod tests {
         Ok(())
     }
 
-    /// Builds a local crew swap between the own team and another team parked on
-    /// the same planet, without going near the network.
-    fn crew_swap_setup(app: &mut App) -> AppResult<(Trade, PlayerId, PlayerId, TeamId, TeamId)> {
+    fn direct_trade_setup(app: &mut App) -> AppResult<(Trade, PlayerId, PlayerId, TeamId, TeamId)> {
         let own_team = app.world.get_own_team()?.clone();
         let mut target_team = app
             .world
@@ -310,7 +304,7 @@ mod tests {
     fn test_apply_trade_moves_both_pirates_and_the_money() -> AppResult<()> {
         let mut app = App::test_default()?;
         let (mut trade, proposer_id, target_id, own_id, target_team_id) =
-            crew_swap_setup(&mut app)?;
+            direct_trade_setup(&mut app)?;
         trade.satoshis = 5_000;
 
         let own_before = app.world.teams.get_or_err(&own_id)?.balance();
@@ -334,13 +328,11 @@ mod tests {
         Ok(())
     }
 
-    /// The old release-then-add pair could half-apply, leaving both pirates as
-    /// free agents. Nothing may change when a trade is refused.
     #[test]
     fn test_a_refused_trade_changes_nothing() -> AppResult<()> {
         let mut app = App::test_default()?;
         let (mut trade, proposer_id, target_id, own_id, target_team_id) =
-            crew_swap_setup(&mut app)?;
+            direct_trade_setup(&mut app)?;
 
         // More satoshi than the proposer has: refused at validation.
         trade.satoshis = app.world.teams.get_or_err(&own_id)?.balance() as i64 + 1;
@@ -381,7 +373,7 @@ mod tests {
     #[test]
     fn test_apply_trade_is_idempotent() -> AppResult<()> {
         let mut app = App::test_default()?;
-        let (mut trade, _, _, own_id, target_team_id) = crew_swap_setup(&mut app)?;
+        let (mut trade, _, _, own_id, target_team_id) = direct_trade_setup(&mut app)?;
         trade.satoshis = 5_000;
 
         let own_before = app.world.teams.get_or_err(&own_id)?.balance();
@@ -396,12 +388,10 @@ mod tests {
         Ok(())
     }
 
-    /// Releasing applied a morale malus and hiring floored morale at the hire
-    /// bonus, so a trade used to leave a low-morale pirate happier than before.
     #[test]
     fn test_a_traded_pirate_keeps_their_morale() -> AppResult<()> {
         let mut app = App::test_default()?;
-        let (trade, proposer_id, _, own_id, _) = crew_swap_setup(&mut app)?;
+        let (trade, proposer_id, _, own_id, _) = direct_trade_setup(&mut app)?;
 
         let mut player = app.world.players.get_or_err(&proposer_id)?.clone();
         player.morale = 3.0;
@@ -411,7 +401,7 @@ mod tests {
 
         let moved = app.world.players.get_or_err(&proposer_id)?;
         assert_eq!(moved.morale, 3.0, "a trade is not a firing plus a hiring");
-        // They remember the old crew, and start fresh with the new one.
+        // They remember the old crew and start fresh with the new one.
         assert!(moved
             .opinions
             .contains_key(&crate::core::PlayerOpinion::Team { team_id: own_id }));
@@ -424,7 +414,7 @@ mod tests {
     #[test]
     fn test_app_version_mismatch_is_detected() -> AppResult<()> {
         let mut app = App::test_default()?;
-        let (mut trade, _, _, _, _) = crew_swap_setup(&mut app)?;
+        let (mut trade, _, _, _, _) = direct_trade_setup(&mut app)?;
         assert!(trade.app_version_matches());
 
         trade.app_version[1] += 1;
@@ -451,7 +441,7 @@ mod tests {
     #[test]
     fn test_a_negative_balance_makes_the_target_pay() -> AppResult<()> {
         let mut app = App::test_default()?;
-        let (mut trade, _, _, own_id, target_team_id) = crew_swap_setup(&mut app)?;
+        let (mut trade, _, _, own_id, target_team_id) = direct_trade_setup(&mut app)?;
         trade.satoshis = -3_000;
 
         let own_before = app.world.teams.get_or_err(&own_id)?.balance();

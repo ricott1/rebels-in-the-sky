@@ -370,7 +370,6 @@ impl Team {
         self.space_cove.as_ref().map(|cove| cove.planet_id)
     }
 
-    /// Empties whichever crew-role slot this pirate occupies.
     pub fn vacate_crew_role(&mut self, player_id: &PlayerId, role: CrewRole) {
         match role {
             CrewRole::Captain => self.crew_roles.captain = None,
@@ -453,8 +452,7 @@ impl Team {
             && self.pending_accepts.is_empty())
     }
 
-    /// Crew that sails, plays, holds roles and drinks rum. Keeps `player_ids`
-    /// order, so `.take(MAX_PLAYERS_PER_GAME)` still yields starters then bench.
+    /// Pirates not parked at the dock, in `player_ids` order.
     pub fn active_player_ids(&self) -> Vec<PlayerId> {
         if !self.has_parked_pirates() {
             return self.player_ids.clone();
@@ -466,7 +464,6 @@ impl Team {
             .collect()
     }
 
-    /// The counterpart to `active_player_ids`: together they cover `player_ids`.
     pub fn parked_player_ids(&self) -> Vec<PlayerId> {
         if !self.has_parked_pirates() {
             return vec![];
@@ -627,8 +624,6 @@ impl Team {
         self.crew_is_ashore_and_idle()
     }
 
-    /// The crew is docked somewhere and not committed to a game or a tournament -
-    /// the precondition for any change to who is aboard.
     pub fn crew_is_ashore_and_idle(&self) -> AppResult<()> {
         if self.is_on_planet().is_none() {
             return Err(anyhow!("{} is not on a planet", self.name));
@@ -667,9 +662,6 @@ impl Team {
 
         self.crew_is_ashore_and_idle()?;
 
-        // Deliberately 1, not MIN_PLAYERS_PER_GAME: a crew may list itself down to
-        // where it cannot field a game, and simply cannot play. An empty active
-        // roster is the real problem - it soft-locks travel and space adventures.
         if self.active_players_count() <= 1 {
             return Err(anyhow!("Someone has to sail the ship"));
         }
@@ -693,12 +685,6 @@ impl Team {
         self.crew_is_ashore_and_idle()
     }
 
-    /// Orders `player_ids` as `[active in best-position order.., parked..]`.
-    /// The tail is what keeps a parked pirate out of the game roster,
-    /// since `TeamInGame::from_team_id` just takes the first MAX_PLAYERS_PER_GAME.
-    ///
-    /// Ids whose player is missing from `players` are parked in the tail rather
-    /// than dropped: silently shrinking `player_ids` here would lose the pirate.
     pub fn reassign_positions(&mut self, players: &PlayerMap) {
         let mut active: Vec<&Player> = vec![];
         let mut tail: Vec<PlayerId> = vec![];
@@ -864,8 +850,6 @@ impl Team {
             return Err(anyhow!("Team is not at the tournament location."));
         }
 
-        // Checked last so it does not pre-empt the errors above: without it a crew
-        // that has listed itself short could register and then fail to field five.
         if self.active_players_count() < MIN_PLAYERS_PER_GAME {
             return Err(anyhow!("Team does not have enough pirates."));
         }
@@ -1409,8 +1393,6 @@ impl Team {
 mod tests {
     use super::*;
 
-    /// A crew of `n` pirates with a ready cove that has a market, so listings can
-    /// be pushed directly - list/recall does not exist yet at this layer.
     fn team_with_cove(n: usize) -> (Team, PlayerMap) {
         let planet_id = PlanetId::new_v4();
         let mut cove = SpaceCove::under_construction(planet_id);
@@ -1533,7 +1515,6 @@ mod tests {
         assert_eq!(team.active_player_ids().len(), 6);
         assert!(!team.active_player_ids().contains(&listed));
         assert_eq!(team.listed_player_ids(), vec![listed]);
-        // Still on the crew: they keep their seat and keep drawing pay.
         assert!(team.player_ids.contains(&listed));
         assert_eq!(team.player_ids.len(), 7);
     }
@@ -1552,7 +1533,6 @@ mod tests {
             Some(&listed),
             "a pirate at the dock must sort behind every active pirate"
         );
-        // The game roster cut can therefore never reach them.
         assert!(!team.player_ids[..MAX_PLAYERS_PER_GAME.min(6)].contains(&listed));
     }
 
@@ -1622,8 +1602,6 @@ mod tests {
             .contains("not at the dock"));
     }
 
-    // Being on a planet does not imply being idle: games are played on a planet,
-    // and a crew can organise a tournament at its own cove.
     #[test]
     fn test_can_list_player_is_blocked_by_a_game_or_a_tournament() {
         let (team, players) = team_with_cove(5);

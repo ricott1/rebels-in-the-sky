@@ -87,8 +87,7 @@ pub(crate) fn render_pirate_summaries(
             ))
             .centered(),
         ];
-        // Rounded up so the caption clears the feet of a pirate
-        // whose baseline falls mid-cell.
+        // Round up so the caption clears the pirate's feet.
         let rect = Rect::new(
             area.x + x as u16,
             area.y + baselines_y[index].div_ceil(2) as u16,

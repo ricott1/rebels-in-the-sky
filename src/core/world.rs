@@ -892,7 +892,7 @@ impl World {
         Ok(())
     }
 
-    /// Applies a settled trade. A failure leaves the world untouched.
+    /// A failure leaves the world untouched.
     pub fn apply_trade(&mut self, trade: &Trade, current_tick: Tick) -> AppResult<()> {
         if self.applied_trades.contains(&trade.id) {
             return Ok(());
@@ -991,8 +991,7 @@ impl World {
         }
     }
 
-    /// Our stored copy of a pirate wins when it is at least as fresh as the one on
-    /// the wire; the declared owner always wins over the payload's `team` field.
+    /// Keeps our copy of the pirate unless the payload is newer.
     fn resolve_traded_player(
         players: &PlayerMap,
         payload: &Player,
@@ -1070,16 +1069,13 @@ impl World {
         Self::welcome_traded_pirate(player, from.id, to, current_tick);
     }
 
-    /// Everything about a pirate that changes when they join a crew through a
-    /// deal rather than a hire: opinions carried over, no firing penalty.
     fn welcome_traded_pirate(
         player: &mut Player,
         old_team_id: TeamId,
         to: &Team,
         current_tick: Tick,
     ) {
-        // Remember how they felt about the old crew, then start fresh with the new
-        // one - but without the firing penalty, which a trade is not.
+        // Carry over their opinion of the old crew.
         let base = player
             .opinions
             .remove(&PlayerOpinion::OwnTeam)
@@ -1094,7 +1090,7 @@ impl World {
 
         player.team = Some(to.id);
         player.joined_team_on = Some(current_tick);
-        // Keeps add_network_team from letting the old crew reclaim this pirate.
+        // This stops add_network_team from giving the pirate back to the old crew.
         player.peer_id = to.peer_id;
         player.info.crew_role = CrewRole::Mozzo;
         player.current_location = PlayerLocation::WithTeam;
@@ -1119,8 +1115,7 @@ impl World {
         let mut team = self.teams.get_or_err(&team_id)?.clone();
         team.can_release_player(&player)?;
 
-        // Drop any listing before the pirate leaves, so the dock never names
-        // someone who is no longer on the crew.
+        // Clear their dock state before they leave.
         let at_dock = team.is_listed(&player.id) || team.is_waiting(&player.id);
         team.remove_listing(&player.id);
         team.waiting_at_dock.retain(|id| *id != player.id);
@@ -1765,7 +1760,6 @@ impl World {
         Ok(())
     }
 
-    /// The seat was never freed, so recalling cannot fail on crew capacity.
     pub fn recall_player_from_dock(&mut self, player_id: PlayerId) -> AppResult<()> {
         let mut team = self.get_own_team()?.clone();
         team.can_recall_player_from_dock(&player_id)?;
@@ -3500,8 +3494,6 @@ impl World {
             })
             .collect::<Vec<&Team>>();
         for team in teams {
-            // `weights` and the sampled index must index the same vec: bind the
-            // active crew once rather than deriving each from `player_ids`.
             let drinkers = team.active_player_ids();
             let weights: Vec<f64> = drinkers
                 .iter()
@@ -4612,8 +4604,6 @@ mod test {
     use rand_chacha::ChaCha8Rng;
     use uuid::uuid;
 
-    /// Gives the own team a finished cove with a market on a fresh asteroid and
-    /// parks the crew there, which is what listing requires.
     fn give_own_team_a_ready_market(app: &mut App) -> AppResult<crate::types::PlanetId> {
         use crate::core::{SpaceCove, SpaceCoveUpgradeTarget};
 
@@ -4650,7 +4640,7 @@ mod test {
         Ok(())
     }
 
-    /// A peer crew whose pirates are all but unknown, with its first pirate left at the dock.
+    /// A peer crew with its first pirate left at the dock.
     fn crew_listing_a_pirate(
         app: &App,
     ) -> AppResult<(
@@ -4723,8 +4713,6 @@ mod test {
         Ok(())
     }
 
-    /// The listing sets a floor, it does not pay out. A crew that lists the same
-    /// pirate over and over must not scout them to MAX_SKILL by repetition.
     #[test]
     fn test_relisting_a_pirate_does_not_stack_scouting() -> AppResult<()> {
         use crate::core::DOCK_LISTING_SCOUTING;
@@ -4738,7 +4726,7 @@ mod test {
         delisted.dock_listings.clear();
 
         let now = Tick::now();
-        // Listed, taken back off the market, then listed again.
+        // Listed, delisted, listed again.
         for (round, crew) in [&team, &delisted, &team].into_iter().enumerate() {
             app.world.add_network_team(
                 NetworkTeam::new(crew.clone(), players.clone(), vec![]),
@@ -4754,8 +4742,6 @@ mod test {
         Ok(())
     }
 
-    /// The lost-Ack split-brain, closed: a peer's stale roster cannot claw back
-    /// a pirate we have since made ours.
     #[test]
     fn test_a_peer_cannot_take_back_a_pirate_we_own() -> AppResult<()> {
         use crate::network::types::NetworkTeam;
@@ -4808,7 +4794,6 @@ mod test {
 
         let team = app.world.get_own_team()?;
         assert!(team.is_listed(&player_id));
-        // Still crew and still aboard: same seat count, one fewer able to play.
         assert_eq!(team.player_ids.len(), crew_size);
         assert_eq!(team.active_players_count(), crew_size - 1);
         assert!(matches!(
@@ -4879,8 +4864,6 @@ mod test {
         let player_id = app.world.get_own_team()?.player_ids[0];
         app.world.leave_player_at_dock(player_id, Tick::now())?;
 
-        // The dock is not on the rock: dropping the cove from far away is fine
-        // and changes nothing about the listing.
         app.world.abandon_asteroid(asteroid_id)?;
 
         let team = app.world.get_own_team()?;
@@ -5839,7 +5822,7 @@ mod test {
     }
 
     #[test]
-    fn test_held_target_satoshis_are_not_charged_again() -> AppResult<()> {
+    fn test_held_satoshis_are_not_charged_again() -> AppResult<()> {
         use crate::core::OfferKind;
 
         let mut app = App::test_default()?;
