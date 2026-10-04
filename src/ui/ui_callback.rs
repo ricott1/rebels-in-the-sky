@@ -1,5 +1,5 @@
 use super::{
-    overlays::{Overlay, OverlayKind, TradeOverlay, TradeSide},
+    overlays::{OfferOverlay, OfferSide, Overlay, OverlayKind},
     panels::*,
     ui_screen::{UiState, UiTab},
 };
@@ -232,19 +232,18 @@ pub enum UiCallback {
     RecallPlayerFromDock {
         player_id: PlayerId,
     },
-    OpenTradeOverlay {
-        other_team_id: TeamId,
-        seed_other: Option<PlayerId>,
+    OpenOfferOverlay {
+        target_player_id: PlayerId,
+        own_offer: Option<PlayerId>,
     },
-    SetTradeOfferPlayer {
-        side: TradeSide,
+    SetOfferPlayer {
+        side: OfferSide,
         player_id: PlayerId,
     },
-    AdjustTradeOfferSatoshis {
-        side: TradeSide,
+    AdjustOfferSatoshis {
         delta: i64,
     },
-    SendTradeOffer,
+    SendOffer,
     GoToDock,
     LockPlayerPanel {
         player_id: PlayerId,
@@ -691,12 +690,12 @@ impl UiCallback {
         })
     }
 
-    fn send_trade_offer() -> AppCallback {
+    fn send_offer() -> AppCallback {
         Box::new(move |app: &mut App| {
-            let Some(overlay) = app.ui.trade_overlay_mut() else {
+            let Some(overlay) = app.ui.offer_overlay_mut() else {
                 return Err(anyhow!("No offer is open"));
             };
-            let (_, pirate, target_player_id, satoshis) = overlay.offer();
+            let (pirate, target_player_id, satoshis) = overlay.offer();
             let target_player_id =
                 target_player_id.ok_or_else(|| anyhow!("Pick a pirate to make an offer for"))?;
 
@@ -1794,34 +1793,43 @@ impl UiCallback {
                 app.ui.player_panel.update(&app.world)?;
                 Ok(None)
             }
-            Self::OpenTradeOverlay {
-                other_team_id,
-                seed_other,
+            Self::OpenOfferOverlay {
+                target_player_id,
+                own_offer,
             } => {
-                let mut overlay = TradeOverlay::crew_swap(*other_team_id, *seed_other);
+                let player = app.world.players.get_or_err(target_player_id)?;
+                let other_team_id = player
+                    .team
+                    .ok_or_else(|| anyhow!("{} has no crew", player.info.short_name()))?;
+                let is_dock_offer = app
+                    .world
+                    .teams
+                    .get_or_err(&other_team_id)?
+                    .is_listed(target_player_id);
+                let mut overlay =
+                    OfferOverlay::new(other_team_id, *target_player_id, is_dock_offer, *own_offer);
                 overlay.update(&app.world)?;
-                app.ui.push_overlay(OverlayKind::Trade(overlay));
+                app.ui.push_overlay(OverlayKind::Offer(overlay));
                 Ok(None)
             }
 
-            Self::SetTradeOfferPlayer { side, player_id } => {
-                if let Some(overlay) = app.ui.trade_overlay_mut() {
+            Self::SetOfferPlayer { side, player_id } => {
+                if let Some(overlay) = app.ui.offer_overlay_mut() {
                     overlay.set_offer_player(*side, *player_id);
                 }
                 app.ui.update_overlays(&app.world)?;
                 Ok(None)
             }
 
-            Self::AdjustTradeOfferSatoshis { side, delta } => {
-                let balance = app.world.get_own_team()?.balance();
-                if let Some(overlay) = app.ui.trade_overlay_mut() {
-                    overlay.adjust_satoshis(*side, *delta, balance);
+            Self::AdjustOfferSatoshis { delta } => {
+                if let Some(overlay) = app.ui.offer_overlay_mut() {
+                    overlay.adjust_satoshis(*delta, &app.world);
                 }
                 app.ui.update_overlays(&app.world)?;
                 Ok(None)
             }
 
-            Self::SendTradeOffer => Self::send_trade_offer()(app),
+            Self::SendOffer => Self::send_offer()(app),
 
             Self::LeavePlayerAtDock { player_id } => {
                 app.world.leave_player_at_dock(*player_id, Tick::now())?;

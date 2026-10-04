@@ -435,24 +435,23 @@ impl TeamListPanel {
         if team.id != world.own_team_id {
             render_challenge_button(world, team, true, frame, button_split[1])?;
 
-            // Seeded with whichever pirate the [ / ] cursor is on.
-            let mut trade_button = Button::new(
-                "Propose trade",
-                UiCallback::OpenTradeOverlay {
-                    other_team_id: team.id,
-                    seed_other: Some(self.selected_player_id),
+            let mut offer_button = Button::new(
+                "Make offer",
+                UiCallback::OpenOfferOverlay {
+                    target_player_id: self.selected_player_id,
+                    own_offer: None,
                 },
             )
-            .hover_text(format!("Open a trade offer with {}", team.name))
+            .hover_text(format!("Make an offer for one of {}'s pirates", team.name))
             .hotkey(ui_key::CREATE_TRADE);
 
             let own_team = world.get_own_team()?;
             if team.active_players_count() == 0 {
-                trade_button.disable(Some("That crew has no pirate to trade"));
+                offer_button.disable(Some("That crew has no pirate aboard"));
             } else if own_team.is_on_planet() != team.is_on_planet() {
-                trade_button.disable(Some("Not on the same planet"));
+                offer_button.disable(Some("Not on the same planet"));
             }
-            frame.render_interactive_widget(trade_button, button_split[2]);
+            frame.render_interactive_widget(offer_button, button_split[2]);
         }
 
         render_spaceship_description(

@@ -1,9 +1,7 @@
 use super::button::Button;
 use super::constants::UiStyle;
 use super::dropdown::DropdownState;
-use super::overlays::{
-    HelpOverlay, OverlayKind, TradeOverlay, MAX_OVERLAY_DEPTH, POPUP_LAYER,
-};
+use super::overlays::{HelpOverlay, OfferOverlay, OverlayKind, MAX_OVERLAY_DEPTH, POPUP_LAYER};
 use super::panels::*;
 use super::panels::{HelpContent, Screen, SplitPanel};
 use super::renders::{default_block, thick_block};
@@ -260,11 +258,9 @@ impl UiScreen {
         self.overlays.clear();
     }
 
-    /// Concrete access for the callbacks that edit the offer being composed.
-    /// This is why the stack holds an enum rather than trait objects.
-    pub fn trade_overlay_mut(&mut self) -> Option<&mut TradeOverlay> {
+    pub fn offer_overlay_mut(&mut self) -> Option<&mut OfferOverlay> {
         match self.overlays.last_mut() {
-            Some(OverlayKind::Trade(overlay)) => Some(overlay),
+            Some(OverlayKind::Offer(overlay)) => Some(overlay),
             _ => None,
         }
     }

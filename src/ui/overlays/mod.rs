@@ -1,9 +1,9 @@
 mod help_overlay;
+mod offer_overlay;
 mod traits;
-mod trade_overlay;
 
 pub(crate) use help_overlay::HelpOverlay;
-pub(crate) use trade_overlay::{TradeOverlay, TradeSide};
+pub(crate) use offer_overlay::{OfferOverlay, OfferSide};
 pub(crate) use traits::Overlay;
 
 use ratatui::layout::Rect;
@@ -26,29 +26,25 @@ pub fn centered_rect(area: Rect, pct_w: u16, pct_h: u16, min: (u16, u16)) -> Rec
     Rect::new(x, y, width, height)
 }
 
-/// The overlays currently stacked on the screen, innermost last.
-///
-/// An enum rather than `Box<dyn Overlay>`: callbacks need `&mut` access to a
-/// concrete overlay to edit its state, which through a trait object would mean
-/// an `Any` supertrait and a downcast at every call site.
+/// The overlays stacked on the screen, innermost last.
 #[derive(Debug)]
 pub enum OverlayKind {
     Help(HelpOverlay),
-    Trade(TradeOverlay),
+    Offer(OfferOverlay),
 }
 
 impl OverlayKind {
     pub fn as_dyn(&self) -> &dyn Overlay {
         match self {
             Self::Help(overlay) => overlay,
-            Self::Trade(overlay) => overlay,
+            Self::Offer(overlay) => overlay,
         }
     }
 
     pub fn as_dyn_mut(&mut self) -> &mut dyn Overlay {
         match self {
             Self::Help(overlay) => overlay,
-            Self::Trade(overlay) => overlay,
+            Self::Offer(overlay) => overlay,
         }
     }
 }
