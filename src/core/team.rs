@@ -956,6 +956,7 @@ impl Team {
                 if target_team.is_listed(&target_player.id) {
                     return Err(anyhow!("{wanted} is not aboard"));
                 }
+                target_team.crew_is_ashore_and_idle()?;
                 if !self.shares_planet_with(target_team) {
                     return Err(anyhow!("Not on the same planet"));
                 }
@@ -1863,5 +1864,32 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("not aboard"));
+    }
+
+    #[test]
+    fn test_a_direct_offer_needs_the_target_crew_ashore_and_idle() {
+        let planet_id = PlanetId::new_v4();
+        let (proposer, _) = crew_on(planet_id, 5);
+        let (mut target, target_players) = crew_on(planet_id, 5);
+        target.current_game = Some(GameId::new_v4());
+        let wanted = target_players.get(&target.player_ids[0]).unwrap();
+
+        assert!(proposer
+            .can_make_offer(&target, OfferKind::Direct, None, wanted, 0)
+            .unwrap_err()
+            .to_string()
+            .contains("is playing"));
+
+        let (dock_proposer, _) = crew_on(*GALAXY_ROOT_ID, 5);
+        let listed_id = target.player_ids[1];
+        list(&mut target, listed_id);
+        let listed = target_players.get(&listed_id).unwrap();
+
+        assert!(
+            dock_proposer
+                .can_make_offer(&target, OfferKind::Dock, None, listed, 0)
+                .is_ok(),
+            "a crew mid-game may still have left a pirate at the dock"
+        );
     }
 }
