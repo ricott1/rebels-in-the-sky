@@ -5252,4 +5252,81 @@ mod test {
         assert!(restored.applied_trades.contains(&trade_id));
         Ok(())
     }
+
+    #[test]
+    fn test_held_target_satoshis_are_not_charged_again() -> AppResult<()> {
+        use crate::core::OfferKind;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let proposer_team_id = network_crew_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let own_team_id = app.world.own_team_id;
+        let own_player_id = app.world.get_own_team()?.player_ids[0];
+        let own_player = app.world.players.get_or_err(&own_player_id)?.clone();
+
+        let trade = Trade::new(
+            OfferKind::Direct,
+            libp2p::PeerId::random(),
+            libp2p::PeerId::random(),
+            proposer_team_id,
+            own_team_id,
+            None,
+            own_player,
+            -2_000,
+        );
+        let own_team = app.world.get_own_team_mut()?;
+        own_team.sub_resource(Resource::SATOSHI, 2_000)?;
+        own_team.pending_accepts.push(trade.clone());
+
+        let own_before = app.world.get_own_team()?.balance();
+        let proposer_before = app.world.teams.get_or_err(&proposer_team_id)?.balance();
+        app.world.apply_trade(&trade, Tick::now())?;
+
+        let own_team = app.world.get_own_team()?;
+        assert_eq!(own_team.balance(), own_before, "no second charge");
+        assert!(own_team.pending_accepts.is_empty());
+        assert!(!own_team.player_ids.contains(&own_player_id));
+        assert_eq!(
+            app.world.teams.get_or_err(&proposer_team_id)?.balance(),
+            proposer_before + 2_000
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_a_trade_is_recorded_only_once_it_commits() -> AppResult<()> {
+        use crate::core::OfferKind;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_team_id = network_crew_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = app.world.teams.get_or_err(&target_team_id)?.player_ids[0];
+        let own_team_id = app.world.own_team_id;
+
+        let trade = Trade::new(
+            OfferKind::Direct,
+            libp2p::PeerId::random(),
+            libp2p::PeerId::random(),
+            own_team_id,
+            target_team_id,
+            None,
+            app.world.players.get_or_err(&target_id)?.clone(),
+            1_000,
+        );
+        let own_team = app.world.get_own_team_mut()?;
+        let own_balance = own_team.balance();
+        own_team.saturating_sub_resource(Resource::SATOSHI, own_balance);
+
+        assert!(app.world.apply_trade(&trade, Tick::now()).is_err());
+        assert!(!app.world.applied_trades.contains(&trade.id));
+
+        app.world
+            .get_own_team_mut()?
+            .saturating_add_resource(Resource::SATOSHI, 1_000);
+        app.world.apply_trade(&trade, Tick::now())?;
+
+        assert!(app.world.applied_trades.contains(&trade.id));
+        assert!(app.world.get_own_team()?.player_ids.contains(&target_id));
+        Ok(())
+    }
 }
