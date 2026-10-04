@@ -24,6 +24,14 @@ pub struct FragmentEntity {
 }
 
 impl Body for FragmentEntity {
+    fn position_f32(&self) -> Vec2 {
+        self.position
+    }
+
+    fn velocity_f32(&self) -> Vec2 {
+        self.velocity
+    }
+
     fn previous_position(&self) -> I16Vec2 {
         self.previous_position.as_i16vec2()
     }

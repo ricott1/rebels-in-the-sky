@@ -1,6 +1,6 @@
 use super::{collisions::HitBox, space_callback::SpaceCallback, visual_effects::VisualEffect};
 use crate::{core::resources::Resource, types::ResourceMap};
-use glam::I16Vec2;
+use glam::{I16Vec2, Vec2};
 use image::{Rgba, RgbaImage};
 use std::{collections::HashMap, fmt::Debug};
 
@@ -37,6 +37,14 @@ pub trait Body: Collider {
 
     fn velocity(&self) -> I16Vec2 {
         I16Vec2::ZERO
+    }
+
+    fn position_f32(&self) -> Vec2 {
+        self.position().as_vec2()
+    }
+
+    fn velocity_f32(&self) -> Vec2 {
+        self.velocity().as_vec2()
     }
 
     fn update_body(&mut self, _deltatime: f32) -> Vec<SpaceCallback> {

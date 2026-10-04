@@ -214,7 +214,7 @@ impl SpaceCallback {
             }
 
             Self::TrackPlayer { id } => {
-                let target_position = if let Some(player) = space.get_player() {
+                let target_position = if let Some(player) = space.host_ship() {
                     player.center()
                 } else {
                     SCREEN_SIZE.as_i16vec2()

@@ -105,7 +105,7 @@ impl Screen for SpaceScreen {
         ])
         .split(split[1]);
 
-        if let Some(player) = space_adventure.get_player() {
+        if let Some(player) = space_adventure.host_ship() {
             let bars_length = (area.width as usize / 4 - 20).min(BARS_LENGTH);
 
             let mut shield_current_durability = 0;

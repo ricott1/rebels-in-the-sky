@@ -2271,7 +2271,9 @@ impl UiCallback {
                         _ => return Ok(None),
                     };
 
-                    space.handle_player_input(player_input)?;
+                    if let Some(host_id) = space.host_id() {
+                        space.handle_player_input(host_id, player_input)?;
+                    }
                 }
 
                 Ok(None)
@@ -2412,7 +2414,7 @@ mod test {
             .as_mut()
             .expect("There should be a space adventure");
 
-        let player_id = space.get_player().expect("There should be a player").id();
+        let player_id = space.host_ship().expect("There should be a player").id();
 
         let space_callbacks = vec![
             SpaceCallback::CollectFragment {
@@ -2430,7 +2432,7 @@ mod test {
             cb.call(space);
         }
 
-        let player = space.get_player().expect("There should be a player");
+        let player = space.host_ship().expect("There should be a player");
 
         assert!(player.current_durability() == 0);
         assert!(player.resources().value(&Resource::GOLD) == 10);

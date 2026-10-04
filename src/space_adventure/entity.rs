@@ -79,6 +79,14 @@ impl Body for Entity {
     fn velocity(&self) -> glam::I16Vec2 {
         delegate!(self, velocity())
     }
+
+    fn position_f32(&self) -> glam::Vec2 {
+        delegate!(self, position_f32())
+    }
+
+    fn velocity_f32(&self) -> glam::Vec2 {
+        delegate!(self, velocity_f32())
+    }
 }
 
 impl Sprite for Entity {

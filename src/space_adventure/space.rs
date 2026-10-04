@@ -1,19 +1,20 @@
 use super::{
     asteroid::{AsteroidEntity, AsteroidSize},
     collector::CollectorEntity,
+    player::ShipLoadout,
     collisions::resolve_collision_between,
     constants::*,
     fragment::FragmentEntity,
     particle::ParticleEntity,
     projectile::ProjectileEntity,
-    spaceship::SpaceshipEntity,
+    spaceship::{SpaceshipEntity, SpaceshipRole},
     traits::*,
     utils::EntityState,
     visual_effects::VisualEffect,
     ControllableSpaceship, PlayerInput,
 };
 use crate::{
-    core::{resources::Resource, spaceship::Spaceship, Shield, SpaceshipPrefab},
+    core::{resources::Resource, Shield, SpaceshipPrefab},
     image::{
         color_map::ColorMap,
         utils::{ExtraImageUtils, UNIVERSE_BACKGROUND},
@@ -23,7 +24,7 @@ use crate::{
         shield::ShieldEntity,
         utils::{draw_hitbox, EntityMap},
     },
-    types::{AppResult, ResourceMap, SystemTimeTick, TeamId, Tick},
+    types::{AppResult, SystemTimeTick, TeamId, Tick},
     ui::{PopupMessage, UiCallback},
 };
 use anyhow::anyhow;
@@ -75,7 +76,8 @@ pub struct SpaceAdventure {
     // Layered entities, to allow to draw/interact on separate layers.
     entities: Vec<EntityMap>,
     id_to_layer: HashMap<usize, usize>,
-    player_id: Option<usize>,
+    host_id: Option<usize>,
+    guest_id: Option<usize>,
     asteroid_planet_state: AsteroidPlanetState,
     enemy_ship_spawned: bool,
     gold_fragment_probability: f64,
@@ -168,29 +170,53 @@ impl SpaceAdventure {
         (0..MAX_LAYER)
             .map(|l| self.entities[l].len())
             .sum::<usize>()
-            + if self.player_id.is_some() { 1 } else { 0 }
+            + usize::from(self.host_id.is_some())
     }
 
-    pub fn get_player(&self) -> Option<&SpaceshipEntity> {
-        if let Some(player_id) = self.player_id {
-            match self.get_entity(&player_id) {
-                Some(Entity::Spaceship(entity)) => Some(entity),
-                _ => None,
-            }
-        } else {
-            None
+    pub const fn host_id(&self) -> Option<usize> {
+        self.host_id
+    }
+
+    pub const fn guest_id(&self) -> Option<usize> {
+        self.guest_id
+    }
+
+    pub fn player_ship_ids(&self) -> Vec<usize> {
+        self.host_id.into_iter().chain(self.guest_id).collect()
+    }
+
+    pub const fn is_running(&self) -> bool {
+        matches!(self.state, SpaceAdventureState::Running { .. })
+    }
+
+    pub fn get_ship(&self, id: usize) -> Option<&SpaceshipEntity> {
+        match self.get_entity(&id) {
+            Some(Entity::Spaceship(entity)) => Some(entity),
+            _ => None,
         }
     }
 
-    pub fn get_player_mut(&mut self) -> Option<&mut SpaceshipEntity> {
-        if let Some(player_id) = self.player_id {
-            match self.get_entity_mut(&player_id) {
-                Some(Entity::Spaceship(entity)) => Some(entity),
-                _ => None,
-            }
-        } else {
-            None
+    pub fn get_ship_mut(&mut self, id: usize) -> Option<&mut SpaceshipEntity> {
+        match self.get_entity_mut(&id) {
+            Some(Entity::Spaceship(entity)) => Some(entity),
+            _ => None,
         }
+    }
+
+    pub fn host_ship(&self) -> Option<&SpaceshipEntity> {
+        self.host_id.and_then(|id| self.get_ship(id))
+    }
+
+    pub fn host_ship_mut(&mut self) -> Option<&mut SpaceshipEntity> {
+        let id = self.host_id?;
+        self.get_ship_mut(id)
+    }
+
+    #[cfg(test)]
+    pub fn force_running(&mut self) {
+        self.state = SpaceAdventureState::Running {
+            time: Instant::now(),
+        };
     }
 
     pub fn remove_entity(&mut self, id: &usize) {
@@ -215,7 +241,7 @@ impl SpaceAdventure {
         None
     }
 
-    fn generate_enemy_spaceship(&mut self) -> AppResult<usize> {
+    pub(crate) fn generate_enemy_spaceship(&mut self) -> AppResult<usize> {
         let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
 
         let mut color_map = ColorMap::random(rng);
@@ -343,7 +369,8 @@ impl SpaceAdventure {
             background,
             entities,
             id_to_layer: HashMap::new(),
-            player_id: None,
+            host_id: None,
+            guest_id: None,
             asteroid_planet_state: AsteroidPlanetState::NotSpawned {
                 should_spawn_asteroid,
             },
@@ -352,33 +379,39 @@ impl SpaceAdventure {
         })
     }
 
-    pub fn with_player(
-        mut self,
-        spaceship: &Spaceship,
-        resources: ResourceMap,
-        speed_bonus: f32,
-        weapons_bonus: f32,
-        fuel: u32,
-    ) -> AppResult<Self> {
-        let collector_id = Some(self.insert_entity(CollectorEntity::new_entity()));
-        let shield_id = if spaceship.shield == Shield::None {
+    fn insert_player_ship(
+        &mut self,
+        loadout: &ShipLoadout,
+        role: SpaceshipRole,
+    ) -> AppResult<(usize, Vec<usize>)> {
+        let collector_id = self.insert_entity(CollectorEntity::new_entity());
+        let shield_id = if loadout.spaceship.shield == Shield::None {
             None
         } else {
             Some(self.insert_entity(ShieldEntity::new_entity(
-                spaceship.shield_max_durability(),
-                spaceship.shield_damage_reduction(),
+                loadout.spaceship.shield_max_durability(),
+                loadout.spaceship.shield_damage_reduction(),
             )))
         };
-        let id = self.insert_entity(SpaceshipEntity::player_spaceship_entity(
-            spaceship,
-            resources,
-            speed_bonus,
-            weapons_bonus,
-            fuel,
-            collector_id,
+        let ship_id = self.insert_entity(SpaceshipEntity::player_spaceship_entity(
+            &loadout.spaceship,
+            loadout.resources.clone(),
+            loadout.speed_bonus,
+            loadout.weapons_bonus,
+            loadout.fuel,
+            Some(collector_id),
             shield_id,
+            role,
         )?);
-        self.player_id = Some(id);
+        Ok((
+            ship_id,
+            std::iter::once(collector_id).chain(shield_id).collect(),
+        ))
+    }
+
+    pub fn with_host(mut self, loadout: &ShipLoadout) -> AppResult<Self> {
+        let (ship_id, _) = self.insert_player_ship(loadout, SpaceshipRole::Host)?;
+        self.host_id = Some(ship_id);
 
         for _ in 0..10 {
             let asteroid = AsteroidEntity::new_at_screen_edge(self.gold_fragment_probability);
@@ -388,16 +421,18 @@ impl SpaceAdventure {
         Ok(self)
     }
 
-    pub fn handle_player_input(&mut self, input: PlayerInput) -> AppResult<()> {
-        match self.state {
-            SpaceAdventureState::Running { .. } => {}
-            _ => return Ok(()),
+    pub fn handle_player_input(&mut self, ship_id: usize, input: PlayerInput) -> AppResult<()> {
+        if !self.is_running() {
+            return Ok(());
         }
 
-        let player = self
-            .get_player_mut()
-            .ok_or_else(|| anyhow!("No player set"))?;
-        player.handle_player_input(input);
+        let ship = self
+            .get_ship_mut(ship_id)
+            .ok_or_else(|| anyhow!("No spaceship {ship_id}"))?;
+        if !ship.is_player() {
+            return Err(anyhow!("Spaceship {ship_id} is not a player"));
+        }
+        ship.handle_player_input(input);
 
         Ok(())
     }
@@ -447,7 +482,7 @@ impl SpaceAdventure {
             }
 
             SpaceAdventureState::Running { time } => {
-                if let Some(player) = self.get_player_mut() {
+                if let Some(player) = self.host_ship_mut() {
                     if player.current_durability() == 0 {
                         player.resources_mut().insert(Resource::GOLD, 0);
                         player.resources_mut().insert(Resource::RUM, 0);
@@ -588,5 +623,51 @@ impl SpaceAdventure {
         .to_image();
 
         Ok(image)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::space_adventure::player::ShipLoadout;
+    use crate::space_adventure::spaceship::SpaceshipRole;
+
+    fn running_space() -> AppResult<SpaceAdventure> {
+        let mut space = SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
+        space.force_running();
+        Ok(space)
+    }
+
+    #[test]
+    fn test_host_ship_has_host_role() -> AppResult<()> {
+        let space = running_space()?;
+        let host = space.host_ship().expect("There should be a host ship");
+        assert_eq!(host.role(), SpaceshipRole::Host);
+        assert_eq!(space.player_ship_ids(), vec![host.id()]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_input_goes_to_the_given_ship() -> AppResult<()> {
+        let mut space = running_space()?;
+        let host_id = space.host_id().expect("There should be a host id");
+        space.handle_player_input(host_id, PlayerInput::MoveRight)?;
+        space.update(0.025)?;
+        space.update(0.025)?;
+        assert!(space.host_ship().expect("host").velocity_f32().x > 0.0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_input_to_unknown_or_enemy_ship_fails() -> AppResult<()> {
+        let mut space = running_space()?;
+        assert!(space
+            .handle_player_input(usize::MAX, PlayerInput::MoveRight)
+            .is_err());
+        let enemy_id = space.generate_enemy_spaceship()?;
+        assert!(space
+            .handle_player_input(enemy_id, PlayerInput::MoveRight)
+            .is_err());
+        Ok(())
     }
 }

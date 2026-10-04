@@ -18,6 +18,7 @@ use image::{Pixel, Rgba, RgbaImage};
 use rand::seq::IndexedRandom;
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -28,6 +29,19 @@ pub enum ShooterState {
 
 impl ShooterState {
     const SHOOTING_CHARGE_COST: f32 = 2.05;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SpaceshipRole {
+    Host,
+    Guest,
+    Enemy,
+}
+
+impl SpaceshipRole {
+    pub const fn is_player(&self) -> bool {
+        !matches!(self, Self::Enemy)
+    }
 }
 
 #[derive(Debug)]
@@ -107,7 +121,7 @@ impl ChargeUnitInSpaceAdventure {
 #[derive(Debug)]
 pub struct SpaceshipEntity {
     id: usize,
-    is_player: bool,
+    role: SpaceshipRole,
     spaceship: Spaceship,
     resources: ResourceMap,
     used_storage_capacity: u32, // Not necessary, we keep it to avoid recalculating them every time.
@@ -142,6 +156,14 @@ pub struct SpaceshipEntity {
 }
 
 impl Body for SpaceshipEntity {
+    fn position_f32(&self) -> Vec2 {
+        self.position
+    }
+
+    fn velocity_f32(&self) -> Vec2 {
+        self.velocity
+    }
+
     fn previous_position(&self) -> I16Vec2 {
         self.previous_position.as_i16vec2()
     }
@@ -387,7 +409,7 @@ impl GameEntity for SpaceshipEntity {
                                     position: self.position + shooter_position.as_vec2(),
                                     velocity: Vec2::X
                                         * 100.0
-                                        * if self.is_player { 1.0 } else { -1.0 },
+                                        * if self.role.is_player() { 1.0 } else { -1.0 },
                                     color: Rgba([
                                         25,
                                         125,
@@ -548,7 +570,7 @@ impl Collider for SpaceshipEntity {
 
 impl ControllableSpaceship for SpaceshipEntity {
     fn is_player(&self) -> bool {
-        self.is_player
+        self.role.is_player()
     }
 
     fn fuel(&self) -> u32 {
@@ -642,6 +664,14 @@ impl SpaceshipEntity {
         self.shield_id
     }
 
+    pub fn role(&self) -> SpaceshipRole {
+        self.role
+    }
+
+    pub fn collector_id(&self) -> Option<usize> {
+        self.collector_id
+    }
+
     pub fn toggle_autofire(&mut self) {
         if let Some(shooter) = self.shooter.as_mut() {
             shooter.autofire = !shooter.autofire
@@ -717,8 +747,9 @@ impl SpaceshipEntity {
         fuel: u32,
         collector_id: Option<usize>,
         shield_id: Option<usize>,
-        is_player: bool,
+        role: SpaceshipRole,
     ) -> AppResult<Entity> {
+        let is_player = role.is_player();
         let mut gif = vec![];
         let mut hit_boxes = vec![];
         let base_gif = spaceship.compose_image(Some(LightMaskStyle::radial()))?;
@@ -800,7 +831,7 @@ impl SpaceshipEntity {
 
         Ok(Entity::Spaceship(Self {
             id: 0,
-            is_player,
+            role,
             spaceship: spaceship.clone(),
             resources,
             used_storage_capacity,
@@ -833,6 +864,7 @@ impl SpaceshipEntity {
         }))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn player_spaceship_entity(
         spaceship: &Spaceship,
         resources: ResourceMap,
@@ -841,6 +873,7 @@ impl SpaceshipEntity {
         fuel: u32,
         collector_id: Option<usize>,
         shield_id: Option<usize>,
+        role: SpaceshipRole,
     ) -> AppResult<Entity> {
         Self::from_spaceship(
             spaceship,
@@ -850,7 +883,7 @@ impl SpaceshipEntity {
             fuel,
             collector_id,
             shield_id,
-            true,
+            role,
         )
     }
 
@@ -868,7 +901,7 @@ impl SpaceshipEntity {
             spaceship.fuel_capacity(),
             None,
             shield_id,
-            false,
+            SpaceshipRole::Enemy,
         )
     }
 }

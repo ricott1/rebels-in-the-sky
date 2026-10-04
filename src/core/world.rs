@@ -26,6 +26,7 @@ use crate::network::network_store_data::NetworkStoreData;
 use crate::network::types::{NetworkGame, NetworkTeam};
 use crate::space_adventure::ControllableSpaceship;
 use crate::space_adventure::SpaceAdventure;
+use crate::space_adventure::ShipLoadout;
 use crate::store::{save_game, save_tournament, ASSETS_DIR};
 use crate::ui::{PopupMessage, UiCallback};
 use crate::{app_version, types::*};
@@ -1047,14 +1048,15 @@ impl World {
         let weapons_bonus =
             TeamBonus::Weapons.current_team_bonus(&own_team.id, &self.teams, &self.players)?;
 
+        let loadout = ShipLoadout {
+            spaceship: own_team.spaceship.clone(),
+            resources: own_team.resources.clone(),
+            speed_bonus,
+            weapons_bonus,
+            fuel: own_team.fuel(),
+        };
         let space = SpaceAdventure::new(should_spawn_asteroid, gold_fragment_probability)?
-            .with_player(
-                &own_team.spaceship,
-                own_team.resources.clone(),
-                speed_bonus,
-                weapons_bonus,
-                own_team.fuel(),
-            )?;
+            .with_host(&loadout)?;
 
         own_team.current_location = TeamLocation::OnSpaceAdventure { around: planet_id };
 
@@ -1081,7 +1083,7 @@ impl World {
             .ok_or_else(|| anyhow!("World should have a space adventure"))?;
 
         let player = space_adventure
-            .get_player()
+            .host_ship()
             .ok_or_else(|| anyhow!("Space adventure should have a player entity."))?;
 
         own_team.number_of_space_adventures += 1;
