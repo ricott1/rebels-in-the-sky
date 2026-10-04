@@ -11,9 +11,10 @@ use super::team::Team;
 use super::types::{PlayerLocation, TeamBonus, TeamLocation};
 use super::utils::{is_default, PLANET_DATA};
 use crate::core::{
-    AutonomousStrategy, DockListing, GameResult, Honour, PlanetUpgradeTarget, PlayerOpinion,
-    PlayerOpinionMapDescription, Population, Rated, RatedPlayers, ScoutReport, Skill, SpaceCove,
-    SpaceCoveUpgradeTarget, Tavern, TournamentRegistrationState, Upgrade, MIN_SKILL,
+    AutonomousStrategy, DockListing, GameResult, Honour, OfferKind, PlanetUpgradeTarget,
+    PlayerOpinion, PlayerOpinionMapDescription, Population, Rated, RatedPlayers, ScoutReport,
+    Skill, SpaceCove, SpaceCoveUpgradeTarget, Tavern, TournamentRegistrationState, Upgrade,
+    MIN_SKILL,
 };
 use crate::game_engine::game::{Game, GameSummary};
 use crate::game_engine::tactic::Tactic;
@@ -75,8 +76,8 @@ pub struct World {
     pub teams: TeamMap,
     #[serde(skip)]
     pub network_team_timestamps: HashMap<TeamId, Tick>,
-    /// Trades already applied this session, so a redelivered Ack is a no-op.
-    #[serde(skip)]
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub applied_trades: HashSet<TradeId>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
@@ -878,13 +879,10 @@ impl World {
         Ok(())
     }
 
-    /// Applies a settled trade in one step. A failure leaves the world untouched.
+    /// Applies a settled trade. A failure leaves the world untouched.
     pub fn apply_trade(&mut self, trade: &Trade, current_tick: Tick) -> AppResult<()> {
-        // 1. RESOLVE. Each side is authoritative for its own pirates, so prefer a
-        //    local copy that is at least as fresh as the payload's, and never trust
-        //    the payload's `team` field - the trade declares the owner.
-        if !self.applied_trades.insert(trade.id) {
-            return Ok(()); // duplicate gossip delivery of the same Ack
+        if self.applied_trades.contains(&trade.id) {
+            return Ok(());
         }
 
         let mut proposer_team = self.teams.get_or_err(&trade.proposer_team_id)?.clone();
@@ -896,35 +894,58 @@ impl World {
             Self::resolve_traded_player(&self.players, player, trade.proposer_team_id)
         });
 
-        // 2. VALIDATE against live state, not against the payload.
+        let held_by_proposer = proposer_team.offer(&trade.id).is_some();
+        let held_by_target = target_team
+            .pending_accepts
+            .iter()
+            .any(|pending| pending.id == trade.id);
         Self::validate_trade(
             &proposer_team,
             &target_team,
             proposer_player.as_ref(),
             &target_player,
             trade,
+            held_by_proposer,
+            held_by_target,
         )?;
 
-        // 3. STAGE on the clones.
-        proposer_team.sub_resource(Resource::SATOSHI, trade.proposer_pays())?;
-        target_team.sub_resource(Resource::SATOSHI, trade.target_pays())?;
+        if held_by_proposer {
+            proposer_team
+                .offers
+                .retain(|offer| offer.trade_id != trade.id);
+        } else {
+            Self::pay(&mut proposer_team, trade.proposer_pays())?;
+        }
+        if !held_by_target {
+            Self::pay(&mut target_team, trade.target_pays())?;
+        }
         proposer_team.saturating_add_resource(Resource::SATOSHI, trade.target_pays());
         target_team.saturating_add_resource(Resource::SATOSHI, trade.proposer_pays());
+        target_team
+            .pending_accepts
+            .retain(|pending| pending.id != trade.id);
 
+        let to_dock = matches!(trade.route, OfferKind::Dock);
         Self::stage_traded_player(
             &mut target_player,
             &mut target_team,
             &mut proposer_team,
             current_tick,
+            to_dock,
         );
         if let Some(player) = proposer_player.as_mut() {
-            Self::stage_traded_player(player, &mut proposer_team, &mut target_team, current_tick);
+            Self::stage_traded_player(
+                player,
+                &mut proposer_team,
+                &mut target_team,
+                current_tick,
+                to_dock,
+            );
         }
 
         proposer_team.version += 1;
         target_team.version += 1;
 
-        // 4. COMMIT. Inserts only from here.
         self.players.insert(target_player.id, target_player);
         if let Some(player) = proposer_player {
             self.players.insert(player.id, player);
@@ -940,11 +961,21 @@ impl World {
             }
         }
 
+        self.applied_trades.insert(trade.id);
         self.dirty = true;
         self.dirty_network = true;
         self.dirty_ui = true;
 
         Ok(())
+    }
+
+    fn pay(team: &mut Team, amount: u32) -> AppResult<()> {
+        if team.peer_id.is_some() {
+            team.saturating_sub_resource(Resource::SATOSHI, amount);
+            Ok(())
+        } else {
+            team.sub_resource(Resource::SATOSHI, amount)
+        }
     }
 
     /// Our stored copy of a pirate wins when it is at least as fresh as the one on
@@ -968,50 +999,61 @@ impl World {
         proposer_player: Option<&Player>,
         target_player: &Player,
         trade: &Trade,
+        held_by_proposer: bool,
+        held_by_target: bool,
     ) -> AppResult<()> {
-        if !target_team.player_ids.contains(&target_player.id) {
-            return Err(anyhow!(
-                "{} is no longer in {}",
-                target_player.info.short_name(),
-                target_team.name
-            ));
-        }
-        if let Some(player) = proposer_player {
-            if !proposer_team.player_ids.contains(&player.id) {
+        if target_team.peer_id.is_none() {
+            if !target_team.player_ids.contains(&target_player.id) {
                 return Err(anyhow!(
                     "{} is no longer in {}",
-                    player.info.short_name(),
-                    proposer_team.name
+                    target_player.info.short_name(),
+                    target_team.name
                 ));
             }
+            if !held_by_target && target_team.balance() < trade.target_pays() {
+                return Err(anyhow!("{} cannot afford that", target_team.name));
+            }
         }
-        if proposer_team.balance() < trade.proposer_pays() {
-            return Err(anyhow!("{} cannot afford that", proposer_team.name));
+
+        if proposer_team.peer_id.is_none() {
+            if let Some(player) = proposer_player {
+                if !proposer_team.player_ids.contains(&player.id) {
+                    return Err(anyhow!(
+                        "{} is no longer in {}",
+                        player.info.short_name(),
+                        proposer_team.name
+                    ));
+                }
+            }
+            if !held_by_proposer && proposer_team.balance() < trade.proposer_pays() {
+                return Err(anyhow!("{} cannot afford that", proposer_team.name));
+            }
+            if !proposer_team.has_seat_for(proposer_player.is_some()) {
+                return Err(anyhow!("{} is full", proposer_team.name));
+            }
         }
-        if target_team.balance() < trade.target_pays() {
-            return Err(anyhow!("{} cannot afford that", target_team.name));
-        }
-        if !proposer_team.has_seat_for(proposer_player.is_some()) {
-            return Err(anyhow!("{} is full", proposer_team.name));
-        }
+
         Ok(())
     }
 
-    /// Moves one pirate between two crews. Morale is carried over untouched: the
-    /// old release-then-hire pair applied MORALE_RELEASE_MALUS and then floored
-    /// morale at MORALE_HIRE_BONUS, so any pirate below that floor came out of a
-    /// trade happier - the same exploit the comment on add_player_to_team warns of.
     fn stage_traded_player(
         player: &mut Player,
         from: &mut Team,
         to: &mut Team,
         current_tick: Tick,
+        to_dock: bool,
     ) {
         from.player_ids.retain(|&id| id != player.id);
         from.remove_listing(&player.id);
+        from.waiting_at_dock.retain(|&id| id != player.id);
         from.vacate_crew_role(&player.id, player.info.crew_role);
 
-        to.player_ids.push(player.id);
+        if !to.player_ids.contains(&player.id) {
+            to.player_ids.push(player.id);
+        }
+        if to_dock && !to.waiting_at_dock.contains(&player.id) {
+            to.waiting_at_dock.push(player.id);
+        }
         Self::welcome_traded_pirate(player, from.id, to, current_tick);
     }
 
@@ -3897,6 +3939,7 @@ impl World {
                 .map(|(id, t)| (*id, t.clone()))
                 .collect(),
             canceled_tournaments: self.canceled_tournaments.clone(),
+            applied_trades: self.applied_trades.clone(),
             serialized_size: self.serialized_size,
             network_store_data: self.network_store_data.to_store(),
             ..Default::default()
@@ -3975,6 +4018,7 @@ mod test {
             PORTAL_TRAVEL_DURATION, SPUGNA_DRUNKENNESS_ON_GETTING_DRUNK,
         },
         game_engine::{types::TeamInGame, Tournament, TournamentId},
+        network::trade::Trade,
         types::{HashMapWithResult, StorableResourceMap, SystemTimeTick, Tick},
         ui::UiCallback,
     };
@@ -5048,6 +5092,164 @@ mod test {
             .to_store()?
             .canceled_tournaments
             .contains(&tournament_id));
+        Ok(())
+    }
+
+    fn network_crew_on(
+        app: &mut App,
+        planet_id: crate::types::PlanetId,
+    ) -> AppResult<crate::types::TeamId> {
+        let peer_id = libp2p::PeerId::random();
+        let team_id = app
+            .world
+            .teams
+            .values()
+            .find(|team| team.id != app.world.own_team_id && team.peer_id.is_none())
+            .expect("another crew")
+            .id;
+        let team = app.world.teams.get_mut_or_err(&team_id)?;
+        team.peer_id = Some(peer_id);
+        team.current_location = TeamLocation::OnPlanet { planet_id };
+        for player_id in team.player_ids.clone() {
+            app.world.players.get_mut_or_err(&player_id)?.peer_id = Some(peer_id);
+        }
+        Ok(team_id)
+    }
+
+    fn park_own_team_on(app: &mut App, planet_id: crate::types::PlanetId) -> AppResult<()> {
+        let own_team_id = app.world.own_team_id;
+        app.world
+            .teams
+            .get_mut_or_err(&own_team_id)?
+            .current_location = TeamLocation::OnPlanet { planet_id };
+        Ok(())
+    }
+
+    #[test]
+    fn test_held_satoshis_pay_for_the_trade_exactly_once() -> AppResult<()> {
+        use crate::core::{Offer, OfferKind};
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_team_id = network_crew_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = app.world.teams.get_or_err(&target_team_id)?.player_ids[0];
+        let target_player = app.world.players.get_or_err(&target_id)?.clone();
+        let own_team_id = app.world.own_team_id;
+
+        let trade = Trade::new(
+            OfferKind::Direct,
+            libp2p::PeerId::random(),
+            libp2p::PeerId::random(),
+            own_team_id,
+            target_team_id,
+            None,
+            target_player,
+            5_000,
+        );
+        let own_team = app.world.get_own_team_mut()?;
+        own_team.sub_resource(Resource::SATOSHI, 5_000)?;
+        own_team.offers.push(Offer {
+            trade_id: trade.id,
+            kind: OfferKind::Direct,
+            target_team_id,
+            target_player_id: target_id,
+            satoshis: 5_000,
+            pirate: None,
+            placed_on: trade.created_at,
+        });
+
+        let own_before = app.world.get_own_team()?.balance();
+        let target_before = app.world.teams.get_or_err(&target_team_id)?.balance();
+        app.world.apply_trade(&trade, Tick::now())?;
+
+        let own_team = app.world.get_own_team()?;
+        assert_eq!(
+            own_team.balance(),
+            own_before,
+            "the held satoshis are the payment"
+        );
+        assert!(own_team.offers.is_empty());
+        assert!(own_team.player_ids.contains(&target_id));
+        assert_eq!(
+            app.world.teams.get_or_err(&target_team_id)?.balance(),
+            target_before + 5_000
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_a_dock_trade_leaves_both_pirates_waiting_at_the_dock() -> AppResult<()> {
+        use crate::core::{DockListing, OfferKind};
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_team_id = network_crew_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = app.world.teams.get_or_err(&target_team_id)?.player_ids[0];
+        app.world
+            .teams
+            .get_mut_or_err(&target_team_id)?
+            .dock_listings
+            .push(DockListing::new(target_id, 5));
+        let own_id = app.world.get_own_team()?.player_ids[0];
+
+        let trade = Trade::new(
+            OfferKind::Dock,
+            libp2p::PeerId::random(),
+            libp2p::PeerId::random(),
+            app.world.own_team_id,
+            target_team_id,
+            Some(app.world.players.get_or_err(&own_id)?.clone()),
+            app.world.players.get_or_err(&target_id)?.clone(),
+            0,
+        );
+        app.world.apply_trade(&trade, Tick::now())?;
+
+        let own_team = app.world.get_own_team()?;
+        let target_team = app.world.teams.get_or_err(&target_team_id)?;
+        assert!(own_team.is_waiting(&target_id));
+        assert!(target_team.is_waiting(&own_id));
+        assert!(!target_team.is_listed(&target_id));
+        Ok(())
+    }
+
+    #[test]
+    fn test_only_local_crews_are_checked_when_applying() -> AppResult<()> {
+        use crate::core::OfferKind;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_team_id = network_crew_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_team = app.world.teams.get_mut_or_err(&target_team_id)?;
+        let mirror_balance = target_team.balance();
+        target_team.saturating_sub_resource(Resource::SATOSHI, mirror_balance);
+        let target_id = target_team.player_ids[0];
+
+        let trade = Trade::new(
+            OfferKind::Direct,
+            libp2p::PeerId::random(),
+            libp2p::PeerId::random(),
+            app.world.own_team_id,
+            target_team_id,
+            None,
+            app.world.players.get_or_err(&target_id)?.clone(),
+            -1_000,
+        );
+        let own_before = app.world.get_own_team()?.balance();
+        app.world.apply_trade(&trade, Tick::now())?;
+
+        assert_eq!(app.world.get_own_team()?.balance(), own_before + 1_000);
+        Ok(())
+    }
+
+    #[test]
+    fn test_applied_trades_survive_a_save() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let trade_id = crate::types::TradeId::new_v4();
+        app.world.applied_trades.insert(trade_id);
+
+        let json = serde_json::to_string(&app.world.to_store()?)?;
+        let restored: World = serde_json::from_str(&json)?;
+        assert!(restored.applied_trades.contains(&trade_id));
         Ok(())
     }
 }
