@@ -15,6 +15,30 @@ pub struct PlayerOutcome {
     pub durability: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LocalPlayerView {
+    pub durability: u32,
+    pub max_durability: u32,
+    pub shield_durability: u32,
+    pub shield_max_durability: u32,
+    pub charge: u32,
+    pub max_charge: u32,
+    pub is_recharging: bool,
+    pub fuel: u32,
+    pub fuel_capacity: u32,
+    pub resources: ResourceMap,
+    pub storage_capacity: u32,
+}
+
+impl LocalPlayerView {
+    pub fn outcome(&self) -> PlayerOutcome {
+        PlayerOutcome {
+            resources: self.resources.clone(),
+            durability: self.durability,
+        }
+    }
+}
+
 #[cfg(test)]
 impl ShipLoadout {
     pub fn test_default() -> Self {

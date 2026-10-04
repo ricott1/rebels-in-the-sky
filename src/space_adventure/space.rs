@@ -1,7 +1,7 @@
 use super::{
     asteroid::{AsteroidEntity, AsteroidSize},
     collector::CollectorEntity,
-    player::{PlayerOutcome, ShipLoadout},
+    player::{LocalPlayerView, PlayerOutcome, ShipLoadout},
     collisions::resolve_collision_between,
     constants::*,
     fragment::FragmentEntity,
@@ -186,6 +186,29 @@ impl SpaceAdventure {
         Some(PlayerOutcome {
             resources: ship.resources().clone(),
             durability: ship.current_durability(),
+        })
+    }
+
+    pub fn local_view(&self, ship_id: usize) -> Option<LocalPlayerView> {
+        let ship = self.get_ship(ship_id)?;
+        let (shield_durability, shield_max_durability) = ship
+            .shield_id()
+            .and_then(|id| self.get_entity(&id))
+            .and_then(|entity| entity.as_shield().ok())
+            .map(|shield| (shield.current_durability(), shield.max_durability()))
+            .unwrap_or_default();
+        Some(LocalPlayerView {
+            durability: ship.current_durability(),
+            max_durability: ship.max_durability(),
+            shield_durability,
+            shield_max_durability,
+            charge: ship.current_charge(),
+            max_charge: ship.max_charge(),
+            is_recharging: ship.is_recharging(),
+            fuel: ship.fuel(),
+            fuel_capacity: ship.fuel_capacity(),
+            resources: ship.resources().clone(),
+            storage_capacity: ship.storage_capacity(),
         })
     }
 
@@ -885,6 +908,18 @@ mod tests {
             Some(guest_center)
         );
         assert_eq!(space.nearest_player_center(host_center), Some(host_center));
+        Ok(())
+    }
+
+    #[test]
+    fn test_local_view_reports_the_ship() -> AppResult<()> {
+        let space = running_space()?;
+        let host = space.host_ship().expect("host");
+        let view = space.local_view(host.id()).expect("view");
+        assert_eq!(view.fuel, host.fuel());
+        assert_eq!(view.durability, host.current_durability());
+        assert_eq!(view.storage_capacity, host.storage_capacity());
+        assert_eq!(view.outcome(), space.outcome(host.id()).expect("outcome"));
         Ok(())
     }
 }

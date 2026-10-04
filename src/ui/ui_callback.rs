@@ -2387,7 +2387,7 @@ mod test {
     use crate::{
         app::App,
         core::{constants::SECONDS, resources::Resource, INITIAL_RANDOM_TEAM_BALANCE},
-        space_adventure::{ControllableSpaceship, GameEntity, SpaceCallback},
+        space_adventure::{ControllableSpaceship, GameEntity, PlayerOutcome, SpaceCallback},
         types::{AppResult, ResourceMap, StorableResourceMap, SystemTimeTick, Tick},
     };
 
@@ -2486,6 +2486,32 @@ mod test {
         app.world.start_space_adventure()?;
         app.world.last_tick_min_interval = Tick::now() + 1000;
         app.world.handle_fast_tick_events(Tick::now())?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_settle_space_adventure_applies_the_outcome() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world.get_own_team_mut()?.add_resource(Resource::FUEL, 100)?;
+        app.world.start_space_adventure()?;
+        app.world.space_adventure = None;
+
+        let mut resources = app.world.get_own_team()?.resources.clone();
+        resources.insert(Resource::GOLD, 7);
+        let (message, asteroid) = app.world.settle_space_adventure(
+            PlayerOutcome {
+                resources,
+                durability: 3,
+            },
+            None,
+        )?;
+
+        let team = app.world.get_own_team()?;
+        assert_eq!(team.resources.value(&Resource::GOLD), 7);
+        assert_eq!(team.spaceship.current_durability(), 3);
+        assert!(team.is_on_planet().is_some());
+        assert!(message.contains("collected"));
+        assert!(asteroid.is_none());
         Ok(())
     }
 }

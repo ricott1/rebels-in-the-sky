@@ -24,9 +24,8 @@ use crate::game_engine::{
 use crate::image::color_map::ColorMap;
 use crate::network::network_store_data::NetworkStoreData;
 use crate::network::types::{NetworkGame, NetworkTeam};
-use crate::space_adventure::ControllableSpaceship;
 use crate::space_adventure::SpaceAdventure;
-use crate::space_adventure::ShipLoadout;
+use crate::space_adventure::{PlayerOutcome, ShipLoadout};
 use crate::store::{save_game, save_tournament, ASSETS_DIR};
 use crate::ui::{PopupMessage, UiCallback};
 use crate::{app_version, types::*};
@@ -1075,16 +1074,23 @@ impl World {
     }
 
     pub fn return_from_space_adventure(&mut self) -> AppResult<(String, Option<usize>)> {
-        let mut own_team = self.get_own_team()?.clone();
-
         let space_adventure = self
             .space_adventure
             .take()
             .ok_or_else(|| anyhow!("World should have a space adventure"))?;
+        let outcome = space_adventure
+            .host_id()
+            .and_then(|id| space_adventure.outcome(id))
+            .ok_or_else(|| anyhow!("Space adventure should have a host ship."))?;
+        self.settle_space_adventure(outcome, space_adventure.asteroid_planet_found())
+    }
 
-        let player = space_adventure
-            .host_ship()
-            .ok_or_else(|| anyhow!("Space adventure should have a player entity."))?;
+    pub fn settle_space_adventure(
+        &mut self,
+        outcome: PlayerOutcome,
+        asteroid_type: Option<usize>,
+    ) -> AppResult<(String, Option<usize>)> {
+        let mut own_team = self.get_own_team()?.clone();
 
         own_team.number_of_space_adventures += 1;
 
@@ -1092,7 +1098,7 @@ impl World {
         let mut resources_lost = vec![];
         for resource in Resource::iter() {
             let old_amount = own_team.resources.value(&resource);
-            let new_amount = player.resources().value(&resource);
+            let new_amount = outcome.resources.value(&resource);
             if old_amount < new_amount {
                 resources_gathered.push((resource, new_amount - old_amount));
             } else if old_amount > new_amount && resource != Resource::FUEL {
@@ -1126,10 +1132,10 @@ impl World {
             String::new()
         };
 
-        own_team.resources = player.resources().clone();
+        own_team.resources = outcome.resources;
         own_team
             .spaceship
-            .set_current_durability(player.current_durability());
+            .set_current_durability(outcome.durability);
 
         match own_team.current_location {
             TeamLocation::OnSpaceAdventure { around } => {
@@ -1140,7 +1146,6 @@ impl World {
             }
         }
 
-        let asteroid_type = space_adventure.asteroid_planet_found();
         for player_id in own_team.player_ids.iter() {
             let player = self.players.get_mut_or_err(&player_id)?;
             if asteroid_type.is_some() {

@@ -20,7 +20,7 @@ use crate::core::{constants as core_constants, resources};
 pub use space::SpaceAdventure;
 pub use space_callback::SpaceCallback;
 pub use constants::HULL_BREACH_MESSAGE;
-pub use player::{PlayerOutcome, ShipLoadout};
+pub use player::{LocalPlayerView, PlayerOutcome, ShipLoadout};
 use spaceship::SpaceshipEntity;
 pub use spaceship::SpaceshipRole;
 pub use traits::*;
