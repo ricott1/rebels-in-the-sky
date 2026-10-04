@@ -25,6 +25,7 @@ pub struct ShieldEntity {
     inactive_image: RgbaImage,
     recharging_image: RgbaImage,
     hit_box: HitBox,
+    owned_by_player: bool,
 }
 
 impl Body for ShieldEntity {
@@ -156,7 +157,7 @@ impl GameEntity for ShieldEntity {
 }
 
 impl ShieldEntity {
-    pub fn new_entity(max_durability: f32, damage_reduction: f32) -> Entity {
+    pub fn new_entity(max_durability: f32, damage_reduction: f32, owned_by_player: bool) -> Entity {
         // The fragment hitbox is larger than the sprite on purpose
         // so that when hitting something it interacts with it before the spaceship.
         let mut hit_box = HashMap::new();
@@ -219,7 +220,12 @@ impl ShieldEntity {
             inactive_image,
             recharging_image,
             hit_box: hit_box.into(),
+            owned_by_player,
         })
+    }
+
+    pub fn owned_by_player(&self) -> bool {
+        self.owned_by_player
     }
 
     pub fn is_active(&self) -> bool {

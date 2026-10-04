@@ -1,7 +1,8 @@
 use super::{
     constants::PROJECTILE_SPACESHIP_DAMAGE_MULTIPLIER, entity::Entity,
-    space_callback::SpaceCallback, traits::*, utils::EntityState, visual_effects::VisualEffect,
-    Body, Collider, ColliderType, ControllableSpaceship, ResourceFragment,
+    space_callback::SpaceCallback, spaceship::SpaceshipRole, traits::*, utils::EntityState,
+    visual_effects::VisualEffect, Body, Collider, ColliderType, ControllableSpaceship,
+    ResourceFragment,
 };
 use crate::types::AppResult;
 use glam::{I16Vec2, Vec2};
@@ -256,7 +257,7 @@ fn get_collision_callbacks(
         }
         (ColliderType::AsteroidPlanet, ColliderType::Spaceship) => {
             let spaceship_entity = other.as_spaceship()?;
-            if spaceship_entity.is_player() {
+            if spaceship_entity.role() == SpaceshipRole::Host {
                 vec![SpaceCallback::LandSpaceshipOnAsteroid]
             } else {
                 vec![]
@@ -294,8 +295,13 @@ fn get_collision_callbacks(
         (ColliderType::Asteroid, ColliderType::Projectile { .. }) => {
             get_collision_callbacks(other, one, collision_point, deltatime)?
         }
-        (ColliderType::Projectile { shot_by, .. }, ColliderType::Spaceship) => {
-            if shot_by != other.id() {
+        (
+            ColliderType::Projectile {
+                shot_by, by_player, ..
+            },
+            ColliderType::Spaceship,
+        ) => {
+            if shot_by != other.id() && !(by_player && other.as_spaceship()?.is_player()) {
                 let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
                 vec![
                     SpaceCallback::DestroyEntity { id: one.id() },
@@ -324,12 +330,17 @@ fn get_collision_callbacks(
 
         (
             ColliderType::Projectile {
-                filter_shield_id, ..
+                filter_shield_id,
+                by_player,
+                ..
             },
             ColliderType::Shield,
         ) => {
             let shield = other.as_shield()?;
-            if matches!(filter_shield_id, Some(id) if id == other.id()) || !shield.is_active() {
+            if matches!(filter_shield_id, Some(id) if id == other.id())
+                || !shield.is_active()
+                || (by_player && shield.owned_by_player())
+            {
                 vec![]
             } else {
                 let rng = &mut ChaCha8Rng::from_rng(&mut rand::rng());
@@ -453,6 +464,9 @@ fn get_collision_callbacks(
         }
 
         (ColliderType::Spaceship, ColliderType::Spaceship) => {
+            if one.as_spaceship()?.is_player() && other.as_spaceship()?.is_player() {
+                return Ok(vec![]);
+            }
             vec![
                 SpaceCallback::DamageEntity {
                     id: one.id(),
@@ -498,8 +512,97 @@ mod test {
     use crate::space_adventure::{
         collector::CollectorEntity, collisions::are_colliding, fragment::FragmentEntity, traits::*,
     };
-    use crate::types::AppResult;
-    use glam::Vec2;
+    use super::get_collision_callbacks;
+    use crate::core::spaceship::SpaceshipPrefab;
+    use crate::space_adventure::{
+        asteroid::AsteroidEntity, entity::Entity, projectile::ProjectileEntity,
+        shield::ShieldEntity, space_callback::SpaceCallback, spaceship::SpaceshipEntity,
+        SpaceshipRole,
+    };
+    use crate::types::{AppResult, ResourceMap};
+    use glam::{I16Vec2, Vec2};
+    use image::Rgba;
+
+    fn ship(role: SpaceshipRole, id: usize) -> AppResult<Entity> {
+        let mut entity = SpaceshipEntity::player_spaceship_entity(
+            &SpaceshipPrefab::Ibarruri.spaceship(),
+            ResourceMap::new(),
+            1.0,
+            1.0,
+            10,
+            None,
+            None,
+            role,
+        )?;
+        entity.set_id(id);
+        Ok(entity)
+    }
+
+    fn projectile(shot_by: usize, by_player: bool) -> Entity {
+        let mut entity = ProjectileEntity::new_entity(
+            shot_by,
+            None,
+            Vec2::ZERO,
+            Vec2::X,
+            Rgba([0, 0, 0, 255]),
+            1.0,
+            by_player,
+        );
+        entity.set_id(99);
+        entity
+    }
+
+    #[test]
+    fn test_player_shots_do_not_hit_the_other_player() -> AppResult<()> {
+        let guest = ship(SpaceshipRole::Guest, 2)?;
+        assert!(
+            get_collision_callbacks(&projectile(1, true), &guest, I16Vec2::ZERO, 0.025)?.is_empty()
+        );
+        assert!(
+            !get_collision_callbacks(&projectile(3, false), &guest, I16Vec2::ZERO, 0.025)?
+                .is_empty()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_player_ships_pass_through_each_other() -> AppResult<()> {
+        let host = ship(SpaceshipRole::Host, 1)?;
+        let guest = ship(SpaceshipRole::Guest, 2)?;
+        let enemy = ship(SpaceshipRole::Enemy, 3)?;
+        assert!(get_collision_callbacks(&host, &guest, I16Vec2::ZERO, 0.025)?.is_empty());
+        assert!(!get_collision_callbacks(&host, &enemy, I16Vec2::ZERO, 0.025)?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_player_shields_ignore_player_shots() -> AppResult<()> {
+        let mut shield = ShieldEntity::new_entity(10.0, 1.0, true);
+        shield.set_id(5);
+        shield.handle_space_callback(SpaceCallback::ActivateEntity { id: 5 });
+        assert!(
+            get_collision_callbacks(&projectile(1, true), &shield, I16Vec2::ZERO, 0.025)?
+                .is_empty()
+        );
+        assert!(
+            !get_collision_callbacks(&projectile(3, false), &shield, I16Vec2::ZERO, 0.025)?
+                .is_empty()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_only_the_host_lands_on_the_asteroid_planet() -> AppResult<()> {
+        let planet = AsteroidEntity::planet();
+        let lands = |entity: &Entity| -> AppResult<bool> {
+            Ok(get_collision_callbacks(&planet, entity, I16Vec2::ZERO, 0.025)?
+                .iter()
+                .any(|cb| matches!(cb, SpaceCallback::LandSpaceshipOnAsteroid)))
+        };
+        assert!(lands(&ship(SpaceshipRole::Host, 1)?)?);
+        assert!(!lands(&ship(SpaceshipRole::Guest, 2)?)?);
+        Ok(())
+    }
 
     #[test]
     fn test_spaceship_fragment_collisions() -> AppResult<()> {

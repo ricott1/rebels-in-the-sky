@@ -172,14 +172,12 @@ impl SpaceCallback {
                 color,
                 damage,
             } => {
-                let shooter_shield_id = if let Some(entity) = space.get_entity(&shot_by_id) {
-                    if let Ok(spaceship) = entity.as_spaceship() {
-                        spaceship.shield_id()
-                    } else {
-                        None
-                    }
-                } else {
-                    None
+                let (shooter_shield_id, by_player) = match space
+                    .get_entity(&shot_by_id)
+                    .and_then(|entity| entity.as_spaceship().ok())
+                {
+                    Some(spaceship) => (spaceship.shield_id(), spaceship.is_player()),
+                    None => (None, false),
                 };
 
                 space.generate_projectile(
@@ -189,6 +187,7 @@ impl SpaceCallback {
                     velocity,
                     color,
                     damage,
+                    by_player,
                 );
             }
 
@@ -214,11 +213,11 @@ impl SpaceCallback {
             }
 
             Self::TrackPlayer { id } => {
-                let target_position = if let Some(player) = space.host_ship() {
-                    player.center()
-                } else {
-                    SCREEN_SIZE.as_i16vec2()
-                };
+                let target_position = space
+                    .get_entity(&id)
+                    .map(|entity| entity.center())
+                    .and_then(|from| space.nearest_player_center(from))
+                    .unwrap_or(SCREEN_SIZE.as_i16vec2());
                 if let Some(entity) = space.get_entity_mut(&id) {
                     let entity_position = entity.center();
 

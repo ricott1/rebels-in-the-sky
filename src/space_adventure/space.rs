@@ -29,7 +29,7 @@ use crate::{
     ui::{PopupMessage, UiCallback},
 };
 use anyhow::anyhow;
-use glam::Vec2;
+use glam::{I16Vec2, Vec2};
 use image::{imageops::crop_imm, Rgb};
 use image::{Rgba, RgbaImage};
 use itertools::Itertools;
@@ -329,6 +329,7 @@ impl SpaceAdventure {
             Some(self.insert_entity(ShieldEntity::new_entity(
                 spaceship.shield_max_durability(),
                 spaceship.shield_damage_reduction(),
+                false,
             )))
         };
         let enemy_id = self.insert_entity(SpaceshipEntity::random_enemy_spaceship_entity(
@@ -389,6 +390,7 @@ impl SpaceAdventure {
         velocity: Vec2,
         color: Rgba<u8>,
         damage: f32,
+        by_player: bool,
     ) -> usize {
         self.insert_entity(ProjectileEntity::new_entity(
             shot_by_id,
@@ -397,7 +399,20 @@ impl SpaceAdventure {
             velocity,
             color,
             damage,
+            by_player,
         ))
+    }
+
+    pub fn nearest_player_center(&self, from: I16Vec2) -> Option<I16Vec2> {
+        self.player_ship_ids()
+            .into_iter()
+            .filter_map(|id| self.get_ship(id))
+            .map(|ship| ship.center())
+            .min_by(|a, b| {
+                a.as_vec2()
+                    .distance_squared(from.as_vec2())
+                    .total_cmp(&b.as_vec2().distance_squared(from.as_vec2()))
+            })
     }
 
     pub const fn asteroid_planet_found(&self) -> Option<usize> {
@@ -458,6 +473,7 @@ impl SpaceAdventure {
             Some(self.insert_entity(ShieldEntity::new_entity(
                 loadout.spaceship.shield_max_durability(),
                 loadout.spaceship.shield_damage_reduction(),
+                true,
             )))
         };
         let ship_id = self.insert_entity(SpaceshipEntity::player_spaceship_entity(
@@ -850,6 +866,25 @@ mod tests {
         let before = space.entity_count();
         space.add_guest(&guest_loadout())?;
         assert_eq!(space.entity_count(), before);
+        Ok(())
+    }
+
+    #[test]
+    fn test_enemies_track_the_nearer_player() -> AppResult<()> {
+        let mut space = running_space()?;
+        let guest_id = space.add_guest(&ShipLoadout::test_default())?;
+        space
+            .get_ship_mut(guest_id)
+            .expect("guest")
+            .set_position(Vec2::new(150.0, 100.0));
+        let guest_center = space.get_ship(guest_id).expect("guest").center();
+        let host_center = space.host_ship().expect("host").center();
+
+        assert_eq!(
+            space.nearest_player_center(guest_center + I16Vec2::new(5, 0)),
+            Some(guest_center)
+        );
+        assert_eq!(space.nearest_player_center(host_center), Some(host_center));
         Ok(())
     }
 }

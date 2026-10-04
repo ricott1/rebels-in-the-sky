@@ -82,6 +82,7 @@ pub enum ColliderType {
     Projectile {
         shot_by: usize,
         filter_shield_id: Option<usize>,
+        by_player: bool,
     },
     Shield,
     Spaceship,
