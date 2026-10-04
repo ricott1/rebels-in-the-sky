@@ -3,10 +3,7 @@ use super::{
     panels::*,
     ui_screen::{UiState, UiTab},
 };
-use crate::core::{
-    PlanetUpgradeTarget, Resource, SpaceCoveUpgradeTarget, UpgradeableElement,
-    DEFAULT_DOCK_LISTING_DURATION,
-};
+use crate::core::{PlanetUpgradeTarget, Resource, SpaceCoveUpgradeTarget, UpgradeableElement};
 use crate::game_engine::game::Game;
 use crate::game_engine::types::{GamePositionFluidity, InGameDrinking, SubstitutionTendency};
 use crate::game_engine::{Tournament, TournamentId, TournamentType};
@@ -230,22 +227,13 @@ pub enum UiCallback {
     },
     LeavePlayerAtDock {
         player_id: PlayerId,
-        release_fee: u32,
-        min_bid: u32,
     },
     RecallPlayerFromDock {
         player_id: PlayerId,
     },
-    BidOnListedPlayer {
-        player_id: PlayerId,
-        amount: u32,
-    },
     OpenTradeOverlay {
         other_team_id: TeamId,
         seed_other: Option<PlayerId>,
-    },
-    OpenDockBidOverlay {
-        player_id: PlayerId,
     },
     SetTradeOfferPlayer {
         side: TradeSide,
@@ -442,7 +430,6 @@ impl UiCallback {
                 .ok_or_else(|| anyhow!("That offer is no longer open"))?
                 .clone();
 
-            // A cash-only bid has no pirate on the proposer's side to show.
             let Some(proposer_player_id) = trade.proposer_player.as_ref().map(|p| p.id) else {
                 return Ok(None);
             };
@@ -793,37 +780,26 @@ impl UiCallback {
         })
     }
 
-    /// Places a bid on a pirate listed at another crew's cove. The satoshis are
-    /// committed immediately, so the bid cannot be made with money we do not have.
-    /// Sends whatever the trade overlay currently holds, then closes it.
     fn send_trade_offer() -> AppCallback {
         Box::new(move |app: &mut App| {
             let Some(overlay) = app.ui.trade_overlay_mut() else {
                 return Err(anyhow!("No offer is open"));
             };
-            let (route, own_player_id, other_player_id, own_satoshis, other_satoshis) =
-                overlay.offer();
+            let (_, own_player_id, other_player_id, own_satoshis, other_satoshis) = overlay.offer();
             let other_team_id = overlay.other_team_id();
 
             let target_player_id =
                 other_player_id.ok_or_else(|| anyhow!("Pick a pirate to trade for"))?;
+            let proposer_player_id =
+                own_player_id.ok_or_else(|| anyhow!("Pick one of your pirates"))?;
 
-            let result = match route {
-                TradeRoute::DockBid => {
-                    Self::bid_on_listed_player(target_player_id, own_satoshis)(app)
-                }
-                TradeRoute::CrewSwap => {
-                    let proposer_player_id =
-                        own_player_id.ok_or_else(|| anyhow!("Pick one of your pirates"))?;
-                    Self::propose_crew_swap(
-                        other_team_id,
-                        proposer_player_id,
-                        target_player_id,
-                        own_satoshis,
-                        other_satoshis,
-                    )(app)
-                }
-            };
+            let result = Self::propose_crew_swap(
+                other_team_id,
+                proposer_player_id,
+                target_player_id,
+                own_satoshis,
+                other_satoshis,
+            )(app);
 
             if result.is_ok() {
                 app.ui.pop_overlay();
@@ -869,37 +845,6 @@ impl UiCallback {
             )?;
             app.world.get_own_team_mut()?.add_sent_trade(trade);
             Ok(Some("Trade offer sent".to_string()))
-        })
-    }
-
-    fn bid_on_listed_player(player_id: PlayerId, amount: u32) -> AppCallback {
-        Box::new(move |app: &mut App| {
-            let target_player = app.world.players.get_or_err(&player_id)?.clone();
-            let target_team_id = target_player
-                .team
-                .ok_or_else(|| anyhow!("That pirate has no crew"))?;
-            let target_team = app.world.teams.get_or_err(&target_team_id)?;
-            let peer_id = target_team
-                .peer_id
-                .ok_or_else(|| anyhow!("{} is not on the network", target_team.name))?;
-
-            app.world.can_bid_on(&player_id, amount)?;
-
-            let trade = app.network_handler.send_new_dock_bid(
-                &app.world,
-                peer_id,
-                target_team_id,
-                player_id,
-                amount,
-            )?;
-
-            app.world.escrow_bid(&trade, Tick::now())?;
-            app.world.get_own_team_mut()?.add_sent_trade(trade);
-
-            Ok(Some(format!(
-                "Bid {amount} satoshi for {}",
-                target_player.info.short_name()
-            )))
         })
     }
 
@@ -1835,17 +1780,6 @@ impl UiCallback {
                     .ok_or_else(|| anyhow!("That offer is no longer open"))?
                     .clone();
 
-                // Taking the standing bid early closes the auction at that price.
-                if trade.route == crate::network::trade::TradeRoute::DockBid {
-                    for cb in app
-                        .world
-                        .settle_listing(&trade.target_player.id, Tick::now())?
-                    {
-                        cb.call(app)?;
-                    }
-                    return Ok(None);
-                }
-
                 let result = app.network_handler.accept_trade(&app.world, trade);
                 let own_team = app.world.get_own_team_mut()?;
                 own_team.remove_trade(trade_id);
@@ -1863,15 +1797,6 @@ impl UiCallback {
                     .trade(trade_id)
                     .ok_or_else(|| anyhow!("That offer is no longer open"))?
                     .clone();
-
-                // The same rule that stops a recall: once someone has committed
-                // satoshis, the auction runs its course. Declining the standing bid
-                // by hand would leave the listing pointing at a bidder we refunded.
-                if trade.route == crate::network::trade::TradeRoute::DockBid
-                    && reason.is_none()
-                {
-                    return Err(anyhow!("A standing bid cannot be declined - let the auction run"));
-                }
 
                 app.network_handler.decline_trade(trade, reason.clone())?;
                 let own_team = app.world.get_own_team_mut()?;
@@ -2015,25 +1940,6 @@ impl UiCallback {
                 Ok(None)
             }
 
-            Self::OpenDockBidOverlay { player_id } => {
-                let player = app.world.players.get_or_err(player_id)?;
-                let seller_team_id = player
-                    .team
-                    .ok_or_else(|| anyhow!("That pirate has no crew"))?;
-                let opening = app
-                    .world
-                    .teams
-                    .get_or_err(&seller_team_id)?
-                    .listing(player_id)
-                    .map(|listing| listing.next_valid_bid())
-                    .ok_or_else(|| anyhow!("That pirate is not at the dock"))?;
-
-                let mut overlay = TradeOverlay::dock_bid(*player_id, seller_team_id, opening);
-                overlay.update(&app.world)?;
-                app.ui.push_overlay(OverlayKind::Trade(overlay));
-                Ok(None)
-            }
-
             Self::SetTradeOfferPlayer { side, player_id } => {
                 if let Some(overlay) = app.ui.trade_overlay_mut() {
                     overlay.set_offer_player(*side, *player_id);
@@ -2053,22 +1959,8 @@ impl UiCallback {
 
             Self::SendTradeOffer => Self::send_trade_offer()(app),
 
-            Self::BidOnListedPlayer { player_id, amount } => {
-                Self::bid_on_listed_player(*player_id, *amount)(app)
-            }
-
-            Self::LeavePlayerAtDock {
-                player_id,
-                release_fee,
-                min_bid,
-            } => {
-                app.world.leave_player_at_dock(
-                    *player_id,
-                    *release_fee,
-                    *min_bid,
-                    DEFAULT_DOCK_LISTING_DURATION,
-                    Tick::now(),
-                )?;
+            Self::LeavePlayerAtDock { player_id } => {
+                app.world.leave_player_at_dock(*player_id, Tick::now())?;
                 app.ui.close_popup();
                 app.ui.my_team_panel.update(&app.world)?;
                 let name = app.world.players.get_or_err(player_id)?.info.short_name();
@@ -2354,7 +2246,11 @@ impl UiCallback {
                     team.peer_id = Some(own_peer_id);
 
                     let mut players = PlayerMap::new();
-                    for player_id in own_team.active_player_ids().into_iter().take(MAX_PLAYERS_PER_GAME) {
+                    for player_id in own_team
+                        .active_player_ids()
+                        .into_iter()
+                        .take(MAX_PLAYERS_PER_GAME)
+                    {
                         let player = if let Some(player) = app.world.players.get(&player_id) {
                             let mut p = player.clone();
                             p.peer_id = Some(own_peer_id);

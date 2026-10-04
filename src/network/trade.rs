@@ -13,8 +13,6 @@ use serde::{Deserialize, Serialize};
 pub enum TradeRoute {
     /// One pirate for one pirate, plus satoshis. Both crews on the same planet.
     CrewSwap,
-    /// Cash for a pirate the target left at the dock. No co-location.
-    DockBid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -32,16 +30,9 @@ pub struct Trade {
     pub target_peer_id: PeerId,
     pub proposer_team_id: TeamId,
     pub target_team_id: TeamId,
-    /// `Some` for a crew swap, `None` for a market bid, which is cash only.
-    ///
-    /// Whole `Player` values rather than ids: the receiver may hold no copy at
-    /// all, since `add_network_team` can reject a whole team update and
-    /// `filter_peer_data` prunes a peer's players on disconnect.
     pub proposer_player: Option<Player>,
     pub target_player: Player,
-    /// Satoshis the proposer adds - the bid amount on the market route.
     pub proposer_satoshis: u32,
-    /// Satoshis the target adds. Always 0 on the market route.
     pub target_satoshis: u32,
 }
 
@@ -73,31 +64,6 @@ impl Trade {
         }
     }
 
-    pub fn dock_bid(
-        proposer_peer_id: PeerId,
-        target_peer_id: PeerId,
-        proposer_team_id: TeamId,
-        target_team_id: TeamId,
-        target_player: Player,
-        amount: u32,
-    ) -> Self {
-        Self {
-            id: TradeId::new_v4(),
-            state: NetworkRequestState::Syn,
-            route: TradeRoute::DockBid,
-            app_version: app_version(),
-            created_at: Tick::now(),
-            proposer_peer_id,
-            target_peer_id,
-            proposer_team_id,
-            target_team_id,
-            proposer_player: None,
-            target_player,
-            proposer_satoshis: amount,
-            target_satoshis: 0,
-        }
-    }
-
     /// True when the peer is close enough to speak the same wire format.
     pub fn app_version_matches(&self) -> bool {
         let [major, minor, _] = app_version();
@@ -107,13 +73,6 @@ impl Trade {
 
     pub fn format(&self) -> String {
         match self.route {
-            TradeRoute::DockBid => format!(
-                "Bid ({}): {} for {} {}",
-                self.state,
-                format_satoshi(self.proposer_satoshis),
-                self.target_player.info.short_name(),
-                self.target_player.stars(),
-            ),
             TradeRoute::CrewSwap => {
                 let offered = match self.proposer_player.as_ref() {
                     Some(player) => format!("{} {}", player.info.short_name(), player.stars()),
@@ -144,13 +103,13 @@ fn money_suffix(amount: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::Trade;
+    use crate::types::{PlayerId, SystemTimeTick, TeamId, Tick};
     use crate::{
         app::App,
         core::skill::MAX_SKILL,
         types::{AppResult, HashMapWithResult},
         ui::UiCallback,
     };
-    use crate::types::{PlayerId, TeamId, SystemTimeTick, Tick};
     use libp2p::PeerId;
     use rand::{seq::IteratorRandom, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -395,7 +354,10 @@ mod tests {
             app.world.teams.get_or_err(&target_team_id)?.balance(),
             target_balance
         );
-        assert_eq!(app.world.players.get_or_err(&proposer_id)?.team, Some(own_id));
+        assert_eq!(
+            app.world.players.get_or_err(&proposer_id)?.team,
+            Some(own_id)
+        );
         assert_eq!(
             app.world.players.get_or_err(&target_id)?.team,
             Some(target_team_id)

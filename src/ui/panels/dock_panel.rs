@@ -1,16 +1,14 @@
 use crate::types::{PlayerId, SystemTimeTick, TeamId, Tick};
-use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
+use crate::ui::constants::*;
 use crate::ui::gif_map::GifMap;
 use crate::ui::panels::traits::{normalize_index, HelpContent, HelpPanel, IndexBound, Screen};
 use crate::ui::renders::{
-    default_block, render_player_description, selectable_list, sign_now_button, PlayerWidgetView,
+    default_block, render_player_description, selectable_list, PlayerWidgetView,
 };
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_screen::{tab_link, UiTab};
-use crate::ui::utils::format_satoshi;
-use crate::ui::{constants::*, ui_key};
 use crate::{core::*, types::AppResult};
 use itertools::Itertools;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
@@ -21,12 +19,10 @@ use ratatui::widgets::Paragraph;
 
 use super::traits::SplitPanel;
 
-/// Every pirate in the galaxy waiting for a new crew, on one board. The dock is
-/// not a place, so there is nothing to draw: just the list, the pirate, the auction.
 #[derive(Debug, Default)]
 pub struct DockPanel {
     tick: usize,
-    /// Closing soonest first.
+    /// Oldest listing first.
     listing_ids: Vec<PlayerId>,
     index: Option<usize>,
     list_state: ClickableListState,
@@ -42,17 +38,6 @@ impl DockPanel {
         self.index
             .and_then(|index| self.listing_ids.get(index))
             .copied()
-    }
-
-    fn time_left(listing: &DockListing, now: Tick) -> String {
-        if listing.has_expired(now) {
-            "ended".to_string()
-        } else {
-            format!(
-                "{} left",
-                listing.expires_at.saturating_sub(now).formatted()
-            )
-        }
     }
 
     fn team_name(world: &World, team_id: Option<TeamId>) -> &str {
@@ -77,21 +62,12 @@ impl DockPanel {
             .iter()
             .filter_map(|id| world.players.get(id))
             .map(|player| {
-                let asking = world
-                    .listing_for(&player.id)
-                    .map(|listing| {
-                        listing
-                            .highest_bid
-                            .as_ref()
-                            .map_or(listing.min_bid, |bid| bid.amount)
-                    })
-                    .unwrap_or_default();
                 (
                     format!(
-                        "{:<width$} {} {:>9}",
+                        "{:<width$} {} {}",
                         player.info.short_name(),
                         player.stars(),
-                        format_satoshi(asking),
+                        Self::team_name(world, player.team),
                         width = MAX_NAME_LENGTH
                     ),
                     UiStyle::DEFAULT,
@@ -128,7 +104,7 @@ impl DockPanel {
             .and_then(|id| world.players.get(&id))
         else {
             frame.render_widget(default_block().title("Pirate"), left[0]);
-            frame.render_widget(default_block().title("Auction"), split[1]);
+            frame.render_widget(default_block().title("At the dock"), split[1]);
             return;
         };
 
@@ -144,48 +120,15 @@ impl DockPanel {
         );
 
         let Some(listing) = world.listing_for(&player.id) else {
-            frame.render_widget(default_block().title("Auction"), split[1]);
+            frame.render_widget(default_block().title("At the dock"), split[1]);
             return;
         };
 
         let now = Tick::now();
-        Self::render_auction_buttons(frame, world, player, listing, now, left[1], left[2]);
-        Self::render_auction_detail(frame, world, player, listing, now, split[1]);
+        Self::render_listing_detail(frame, world, player, listing, now, split[1]);
     }
 
-    fn render_auction_buttons(
-        frame: &mut UiFrame,
-        world: &World,
-        player: &Player,
-        listing: &DockListing,
-        now: Tick,
-        bid_area: Rect,
-        sign_area: Rect,
-    ) {
-        // Our own listing: we watch it run, we do not bid on it.
-        if player.team == Some(world.own_team_id) {
-            return;
-        }
-
-        let player_id = player.id;
-        let mut bid_button = Button::new("Bid", UiCallback::OpenDockBidOverlay { player_id })
-            .hover_text(format!(
-                "Bid for {} - {}",
-                player.info.short_name(),
-                Self::time_left(listing, now)
-            ));
-        if let Err(err) = world.can_bid_on(&player_id, listing.next_valid_bid()) {
-            bid_button.disable(Some(err.to_string()));
-        }
-        frame.render_interactive_widget(bid_button, bid_area);
-
-        frame.render_interactive_widget(
-            sign_now_button(world, player_id, listing.release_fee),
-            sign_area,
-        );
-    }
-
-    fn render_auction_detail(
+    fn render_listing_detail(
         frame: &mut UiFrame,
         world: &World,
         player: &Player,
@@ -193,84 +136,18 @@ impl DockPanel {
         now: Tick,
         area: Rect,
     ) {
-        frame.render_widget(default_block().title("Auction"), area);
-
-        let standing = match listing.highest_bid.as_ref() {
-            Some(bid) => format!(
-                "{} by {}",
-                format_satoshi(bid.amount),
-                Self::team_name(world, Some(bid.team_id))
-            ),
-            None => "no bids yet".to_string(),
-        };
-
-        let mut lines = vec![
+        frame.render_widget(default_block().title("At the dock"), area);
+        let lines = vec![
             Line::from(vec![
-                Span::styled("Released by ", UiStyle::HEADER),
+                Span::styled("Left by  ", UiStyle::HEADER),
                 Span::raw(Self::team_name(world, player.team)),
             ]),
-            Line::default(),
             Line::from(vec![
-                Span::styled("Sign now    ", UiStyle::HEADER),
-                Span::raw(format_satoshi(listing.release_fee)),
-            ]),
-            Line::from(vec![
-                Span::styled("Highest bid ", UiStyle::HEADER),
-                Span::raw(standing),
-            ]),
-            Line::from(vec![
-                Span::styled("Next bid    ", UiStyle::HEADER),
-                Span::raw(format_satoshi(listing.next_valid_bid())),
-            ]),
-            Line::default(),
-            Line::from(vec![
-                Span::styled("Closes in   ", UiStyle::HEADER),
-                Span::raw(Self::time_left(listing, now)),
+                Span::styled("Waiting  ", UiStyle::HEADER),
+                Span::raw(now.saturating_sub(listing.listed_on).formatted()),
             ]),
         ];
-        if world.has_outstanding_bid_on(&player.id) {
-            lines.push(Line::default());
-            lines.push(Line::styled("Your bid stands.", UiStyle::OK));
-        }
-
-        let inner = area.inner(Margin::new(2, 1));
-        let split = Layout::vertical([Constraint::Length(lines.len() as u16), Constraint::Fill(1)])
-            .split(inner);
-
-        frame.render_widget(Paragraph::new(lines), split[0]);
-        Self::render_bid_log(frame, world, listing, now, split[1]);
-    }
-
-    fn render_bid_log(
-        frame: &mut UiFrame,
-        world: &World,
-        listing: &DockListing,
-        now: Tick,
-        area: Rect,
-    ) {
-        if listing.bid_log.is_empty() {
-            return;
-        }
-
-        let mut lines = vec![Line::default(), Line::styled("Outbid", UiStyle::HEADER)];
-        let rows = (area.height as usize).saturating_sub(lines.len());
-        for record in listing.bid_log.iter().take(rows) {
-            let age = format!(
-                "{} ago",
-                now.saturating_sub(record.placed_on).formatted_up_to_hours()
-            );
-            lines.push(Line::from(vec![
-                Span::raw(format!("{:>12}  ", format_satoshi(record.amount))),
-                Span::raw(format!(
-                    "{:<width$}",
-                    Self::team_name(world, Some(record.team_id)),
-                    width = MAX_NAME_LENGTH
-                )),
-                Span::styled(format!("{age:>12}"), UiStyle::UNSELECTABLE),
-            ]));
-        }
-
-        frame.render_widget(Paragraph::new(lines), area);
+        frame.render_widget(Paragraph::new(lines), area.inner(Margin::new(2, 1)));
     }
 }
 
@@ -285,7 +162,7 @@ impl Screen for DockPanel {
             .values()
             .flat_map(|team| team.dock_listings.iter())
             .filter(|listing| world.players.contains_key(&listing.player_id))
-            .sorted_by_key(|listing| (listing.expires_at, listing.player_id))
+            .sorted_by_key(|listing| (listing.listed_on, listing.player_id))
             .map(|listing| listing.player_id)
             .collect();
         self.index = normalize_index(
@@ -326,38 +203,18 @@ impl Screen for DockPanel {
         }
         None
     }
-
-    fn footer_spans(&self) -> Vec<String> {
-        vec![
-            format!(" {} ", ui_key::dock::SIGN_NOW),
-            " Sign now ".to_string(),
-        ]
-    }
 }
 
 impl HelpPanel for DockPanel {
     fn help_content(&self) -> HelpContent {
         HelpContent {
-            description: [
-                "Every pirate in the galaxy looking for a new crew, in one place.",
-                "Crews leave a pirate at the dock from My Team; other crews bid, and the pirate signs with the winner.",
-                "The releasing crew gets the fee.",
-            ]
-            .join("\n"),
+            description: "Every pirate in the galaxy left at the dock by their crew.\nCrews leave a pirate at the dock from My Team."
+                .to_string(),
             links: vec![
                 tab_link("My Team", UiTab::MyTeam),
                 tab_link("Pirates", UiTab::Pirates),
             ],
             controls: vec![
-                Line::from("  Bid...      Offer for a pirate another crew left at the dock"),
-                Line::from("  Sign now    Pay the release fee and they sign on the spot. Binding."),
-                Line::from("  Bids hold your satoshi until you win, are outbid, or the auction lapses."),
-                Line::from("  A bid in the last minute pushes the deadline out, so nothing is sniped."),
-                Line::from(format!(
-                    "  A raise must beat the standing bid by {DOCK_MIN_BID_RAISE_PERCENT}%."
-                )),
-                Line::from("  A pirate left at the dock is shown off: every crew sees more of their skills."),
-                Line::from("  A won pirate comes aboard the moment the auction closes, wherever you are."),
                 Line::default(),
                 Line::from("Controls:"),
                 Line::from("   ↑/↓        Move highlight in the list"),

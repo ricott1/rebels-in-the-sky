@@ -5,7 +5,6 @@ use crate::types::{AppResult, PlayerId};
 use crate::ui::constants::*;
 use crate::ui::renders::default_block;
 use crate::ui::ui_frame::UiFrame;
-use crate::ui::utils::format_satoshi;
 use image::RgbaImage;
 use itertools::Itertools;
 use ratatui::prelude::Rect;
@@ -19,7 +18,6 @@ const _: () = assert!(
     MAX_TAVERN_POPULATION as usize <= DRAWN_PIRATES,
     "the tavern picture would quietly drop a pirate"
 );
-pub(crate) const MARKET_PIRATE_BASELINES_Y: [u32; DRAWN_PIRATES] = [68; DRAWN_PIRATES];
 pub(crate) const TAVERN_PIRATE_BASELINES_Y: [u32; DRAWN_PIRATES] = [66, 70, 67];
 
 pub(crate) fn pirate_frames(player_ids: &[PlayerId], world: &World) -> Vec<RgbaImage> {
@@ -80,7 +78,7 @@ pub(crate) fn render_pirate_summaries(
     let mut x = pirate_group_origin_x(pirates.len());
     for (index, player) in pirates.iter().enumerate() {
         let best_position = player.best_position();
-        let mut lines = vec![
+        let lines = vec![
             Line::from(player.info.short_name()).centered(),
             Line::from(format!(
                 "{} {}",
@@ -89,16 +87,6 @@ pub(crate) fn render_pirate_summaries(
             ))
             .centered(),
         ];
-        if let Some(listing) = world.listing_for(&player.id) {
-            lines.push(
-                Line::from(match listing.highest_bid.as_ref() {
-                    Some(bid) => format!("bid {}", format_satoshi(bid.amount)),
-                    None => "no bids".to_string(),
-                })
-                .centered(),
-            );
-        }
-
         // Rounded up so the caption clears the feet of a pirate
         // whose baseline falls mid-cell.
         let rect = Rect::new(
@@ -122,10 +110,8 @@ pub(crate) fn render_pirate_summaries(
     }
 }
 
-/// The market, with whoever is waiting at the dock standing in it.
-pub(crate) fn get_market_image(pirate_frames: &[RgbaImage]) -> AppResult<RgbaImage> {
+pub(crate) fn get_market_image() -> AppResult<RgbaImage> {
     let mut base = open_image("cove/market.png")?;
-    blit_pirate_group(&mut base, pirate_frames, &MARKET_PIRATE_BASELINES_Y)?;
     let outer = open_image("cove/base_outer.png")?;
     base.copy_non_trasparent_from(&outer, 0, 0)?;
     Ok(base)

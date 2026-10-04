@@ -1,6 +1,6 @@
 use super::challenge::Challenge;
 use super::handler::{sanitize_addr, NetworkHandler};
-use super::trade::{Trade, TradeRoute};
+use super::trade::Trade;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, SeedInfo};
 use crate::app_version;
 use crate::core::constants::NETWORK_GAME_START_DELAY;
@@ -781,9 +781,7 @@ impl NetworkCallback {
                         return Err(anyhow!("Team is not trade receiver"));
                     }
 
-                    // The wire shape of a trade changed with the dock, so a
-                    // peer on another minor version gets a readable refusal rather
-                    // than a silently mangled deal.
+                    // A peer on another minor version gets a readable refusal, not a mangled deal.
                     if !trade.app_version_matches() {
                         let [major, minor, patch] = trade.app_version;
                         let [own_major, own_minor, own_patch] = app_version();
@@ -811,8 +809,7 @@ impl NetworkCallback {
                     // the proposer learns straight away that the offer is dead.
                     let validate = || -> AppResult<()> {
                         let own_team = app.world.get_own_team()?;
-                        let proposer_team =
-                            app.world.teams.get_or_err(&trade.proposer_team_id)?;
+                        let proposer_team = app.world.teams.get_or_err(&trade.proposer_team_id)?;
                         proposer_team.can_trade_with_team(
                             own_team,
                             trade.route,
@@ -832,64 +829,6 @@ impl NetworkCallback {
                         return Ok(None);
                     }
 
-                    if trade.route == TradeRoute::DockBid {
-                        // We are the sole authority over our own market, and we
-                        // process bids one at a time on our own event loop, so
-                        // there is no race to resolve between two buyers.
-                        let displaced = match app.world.accept_dock_bid(&trade, timestamp) {
-                            Ok(displaced) => displaced,
-                            Err(err) => {
-                                let mut trade = trade.clone();
-                                trade.state = NetworkRequestState::Failed {
-                                    error_message: err.to_string(),
-                                };
-                                app.network_handler.send_trade(trade)?;
-                                return Ok(None);
-                            }
-                        };
-
-                        // Tell whoever just lost the lead, so their satoshis come back.
-                        if let Some(previous) = displaced {
-                            if let Some(previous_trade) = app
-                                .world
-                                .get_own_team()?
-                                .received_trades
-                                .get(&previous.trade_id)
-                                .cloned()
-                            {
-                                app.network_handler
-                                    .decline_trade(previous_trade, Some("Outbid".to_string()))?;
-                                app.world
-                                    .get_own_team_mut()?
-                                    .remove_trade(&previous.trade_id);
-                            }
-                        }
-
-                        let own_team = app.world.get_own_team_mut()?;
-                        own_team.add_received_trade(trade.clone());
-
-                        // A bid at or above the binding buy-now price ends the
-                        // auction on the spot - no extension, no waiting.
-                        if app.world.bid_meets_release_fee(&trade) {
-                            for cb in app
-                                .world
-                                .settle_listing(&trade.target_player.id, Tick::now())?
-                            {
-                                cb.call(app)?;
-                            }
-                            return Ok(Some(format!(
-                                "{} was bought at the asking price",
-                                trade.target_player.info.short_name()
-                            )));
-                        }
-
-                        return Ok(Some(format!(
-                            "New bid of {} satoshi for {}",
-                            trade.proposer_satoshis,
-                            trade.target_player.info.short_name()
-                        )));
-                    }
-
                     let own_team = app.world.get_own_team_mut()?;
                     own_team.add_received_trade(trade.clone());
 
@@ -907,9 +846,6 @@ impl NetworkCallback {
                 }
 
                 NetworkRequestState::SynAck => {
-                    if trade.route == TradeRoute::DockBid {
-                        return Ok(None);
-                    }
                     if trade.target_peer_id == *self_peer_id {
                         return Err(anyhow!(
                             "Invalid trade: team is trade receiver (should be sender)"
@@ -927,9 +863,7 @@ impl NetworkCallback {
                             .players
                             .insert(trade.target_player.id, trade.target_player.clone());
 
-                        // The proposer applies first. add_network_team then refuses
-                        // any stale copy of the seller's team that still lists the
-                        // pirate we now own, which is what keeps the two in step.
+                        // Apply first, so add_network_team won't revive a stale copy of this pirate.
                         app.world.apply_trade(&trade, timestamp)?;
 
                         let own_team = app.world.get_own_team_mut()?;
@@ -964,7 +898,6 @@ impl NetworkCallback {
                         };
                         let own_team = app.world.get_own_team_mut()?;
                         own_team.remove_trade(&trade_id);
-                        app.world.refund_bid(&trade_id)?;
                         app.network_handler.send_trade(trade)?;
 
                         return Err(anyhow!(err.to_string()));
@@ -972,9 +905,6 @@ impl NetworkCallback {
                 }
 
                 NetworkRequestState::Ack => {
-                    if trade.route == TradeRoute::DockBid {
-                        return Ok(None);
-                    }
                     if trade.proposer_peer_id != *self_peer_id
                         && trade.target_peer_id != *self_peer_id
                     {
@@ -1041,18 +971,13 @@ impl NetworkCallback {
                 }
 
                 NetworkRequestState::Failed { error_message } => {
-                    // A Failed for an offer we never held is not an error: it is the
-                    // tail of a handshake that has already been cleaned up.
                     let own_team = app.world.get_own_team_mut()?;
                     let was_ours = own_team.trade(&trade.id).is_some();
                     own_team.remove_trade(&trade.id);
-
-                    // Losing the lead, or the offer dying, releases the escrow.
-                    let refunded = app.world.refund_bid(&trade.id)?;
-
-                    if was_ours || refunded {
-                        app.ui
-                            .push_popup(PopupMessage::error(format!("Trade failed: {error_message}")));
+                    if was_ours {
+                        app.ui.push_popup(PopupMessage::error(format!(
+                            "Trade failed: {error_message}"
+                        )));
                     }
                 }
             }

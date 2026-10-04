@@ -11,10 +11,9 @@ use super::team::Team;
 use super::types::{PlayerLocation, TeamBonus, TeamLocation};
 use super::utils::{is_default, PLANET_DATA};
 use crate::core::{
-    AutonomousStrategy, DockBid, DockListing, DockOutcome, DockReceipt, GameResult, Honour,
-    OutstandingBid, PlanetUpgradeTarget, PlayerOpinion, PlayerOpinionMapDescription, Population,
-    Rated, RatedPlayers, ScoutReport, Skill, SpaceCove, SpaceCoveUpgradeTarget, Tavern,
-    TournamentRegistrationState, Upgrade, MIN_SKILL,
+    AutonomousStrategy, DockListing, GameResult, Honour, PlanetUpgradeTarget, PlayerOpinion,
+    PlayerOpinionMapDescription, Population, Rated, RatedPlayers, ScoutReport, Skill, SpaceCove,
+    SpaceCoveUpgradeTarget, Tavern, TournamentRegistrationState, Upgrade, MIN_SKILL,
 };
 use crate::game_engine::game::{Game, GameSummary};
 use crate::game_engine::tactic::Tactic;
@@ -24,7 +23,7 @@ use crate::game_engine::{
 };
 use crate::image::color_map::ColorMap;
 use crate::network::network_store_data::NetworkStoreData;
-use crate::network::trade::{Trade, TradeRoute};
+use crate::network::trade::Trade;
 use crate::network::types::{NetworkGame, NetworkTeam};
 use crate::space_adventure::ControllableSpaceship;
 use crate::space_adventure::SpaceAdventure;
@@ -113,12 +112,6 @@ pub struct World {
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub network_store_data: NetworkStoreData,
-}
-
-enum BidVerdict {
-    Pending,
-    Won,
-    Lost(&'static str),
 }
 
 impl World {
@@ -885,509 +878,8 @@ impl World {
         Ok(())
     }
 
-    /// Commits satoshis to a bid. The money leaves the crew's balance now and
-    /// only comes back if they are outbid or the auction fails them.
-    pub fn escrow_bid(&mut self, trade: &Trade, current_tick: Tick) -> AppResult<()> {
-        let listing = self
-            .teams
-            .get(&trade.target_team_id)
-            .and_then(|team| team.listing(&trade.target_player.id))
-            .ok_or_else(|| anyhow!("That pirate is not at the dock"))?;
-        let (listed_on, expires_at) = (listing.listed_on, listing.expires_at);
-
-        let own_team = self.get_own_team_mut()?;
-        own_team.sub_resource(Resource::SATOSHI, trade.proposer_satoshis)?;
-        own_team.outstanding_bids.push(OutstandingBid {
-            trade_id: trade.id,
-            seller_team_id: trade.target_team_id,
-            player_id: trade.target_player.id,
-            listed_on,
-            amount: trade.proposer_satoshis,
-            placed_on: current_tick,
-            expires_at,
-            won_on: None,
-        });
-
-        self.dirty = true;
-        self.dirty_ui = true;
-        Ok(())
-    }
-
-    /// Gives back the satoshis committed to a bid, if we still hold them.
-    /// Returns whether anything was refunded, so callers can stay quiet otherwise.
-    pub fn refund_bid(&mut self, trade_id: &TradeId) -> AppResult<bool> {
-        let own_team = self.get_own_team_mut()?;
-        let Some(index) = own_team
-            .outstanding_bids
-            .iter()
-            .position(|bid| bid.trade_id == *trade_id)
-        else {
-            return Ok(false);
-        };
-
-        let bid = own_team.outstanding_bids.remove(index);
-        own_team.saturating_add_resource(Resource::SATOSHI, bid.amount);
-
-        self.dirty = true;
-        self.dirty_ui = true;
-        Ok(true)
-    }
-
-    /// Drops a bid without refunding, because it has just been spent winning.
-    fn settle_bid(&mut self, trade_id: &TradeId) -> AppResult<()> {
-        let own_team = self.get_own_team_mut()?;
-        own_team
-            .outstanding_bids
-            .retain(|bid| bid.trade_id != *trade_id);
-        Ok(())
-    }
-
-    /// Whether we already hold a live bid on this pirate.
-    pub fn has_outstanding_bid_on(&self, player_id: &PlayerId) -> bool {
-        self.get_own_team()
-            .map(|team| {
-                team.outstanding_bids
-                    .iter()
-                    .any(|bid| bid.player_id == *player_id)
-            })
-            .unwrap_or(false)
-    }
-
-    /// Bidder side. Reads each bid's fate off the seller's published state and
-    /// acts on it: collect the pirate we won, or take back the escrow we lost.
-    ///
-    /// Nothing here depends on having received any particular message. The
-    /// seller's receipt, or their listing, says everything, and both keep saying
-    /// it until we happen to look - so being away at the deadline costs nothing.
-    /// The grace and lifetime timeouts remain only for a seller who never says
-    /// anything at all.
-    fn tick_outstanding_bids(&mut self, current_tick: Tick) -> AppResult<Vec<UiCallback>> {
-        let own_team_id = self.own_team_id;
-        let bids = match self.teams.get(&own_team_id) {
-            Some(team) if !team.outstanding_bids.is_empty() => team.outstanding_bids.clone(),
-            _ => return Ok(vec![]),
-        };
-
-        let mut callbacks = vec![];
-        for bid in bids {
-            let seller = self.teams.get(&bid.seller_team_id);
-            let receipt = seller
-                .and_then(|team| team.receipt_for(&bid.player_id, bid.listed_on))
-                .map(|receipt| receipt.outcome.clone());
-            let listing = seller
-                .and_then(|team| team.listing(&bid.player_id))
-                .filter(|listing| listing.listed_on == bid.listed_on)
-                .cloned();
-
-            let verdict = if bid.won_on.is_some() {
-                BidVerdict::Won
-            } else if let Some(outcome) = receipt {
-                match outcome {
-                    DockOutcome::Signed { team_id, .. } if team_id == own_team_id => {
-                        BidVerdict::Won
-                    }
-                    DockOutcome::Signed { .. } => BidVerdict::Lost("You were outbid."),
-                    DockOutcome::Lapsed => BidVerdict::Lost("The auction closed."),
-                }
-            } else if let Some(listing) = listing {
-                self.refresh_bid_deadline(&bid.trade_id, listing.expires_at)?;
-                // Bids only ever go up, so a higher standing bid means we have
-                // lost for certain - whether or not the seller's decline reached us.
-                if listing
-                    .highest_bid
-                    .as_ref()
-                    .is_some_and(|standing| standing.amount > bid.amount)
-                {
-                    BidVerdict::Lost("You were outbid.")
-                } else if bid.should_be_refunded(current_tick) {
-                    // The listing is still up long after its deadline: a seller
-                    // who never settles must not hold our satoshis hostage.
-                    BidVerdict::Lost("An auction closed without you.")
-                } else {
-                    BidVerdict::Pending
-                }
-            } else if bid.should_be_refunded(current_tick) {
-                BidVerdict::Lost("An auction closed without you.")
-            } else {
-                BidVerdict::Pending
-            };
-
-            match verdict {
-                BidVerdict::Pending => {}
-                BidVerdict::Lost(reason) => {
-                    if self.refund_bid(&bid.trade_id)? {
-                        self.get_own_team_mut()?.remove_trade(&bid.trade_id);
-                        callbacks.push(UiCallback::PushUiPopup {
-                            popup_message: PopupMessage::Message {
-                                message: format!("{reason} Your bid was refunded."),
-                                links: vec![],
-                                level: log::Level::Info,
-                                is_skippable: true,
-                                timestamp: current_tick,
-                            },
-                        });
-                    }
-                }
-                BidVerdict::Won => {
-                    let won_on = self.mark_bid_won(&bid.trade_id, current_tick)?;
-                    if let Some(cb) = self.collect_won_pirate(&bid, current_tick)? {
-                        callbacks.push(cb);
-                    } else if current_tick > won_on + DOCK_RECEIPT_RETENTION {
-                        // Two weeks without making room. The satoshis were spent the
-                        // moment we won; all that is left to drop is the claim.
-                        self.settle_bid(&bid.trade_id)?;
-                    }
-                }
-            }
-        }
-
-        Ok(callbacks)
-    }
-
-    fn refresh_bid_deadline(&mut self, trade_id: &TradeId, expires_at: Tick) -> AppResult<()> {
-        let own_team = self.get_own_team_mut()?;
-        if let Some(bid) = own_team
-            .outstanding_bids
-            .iter_mut()
-            .find(|bid| bid.trade_id == *trade_id)
-        {
-            bid.expires_at = bid.expires_at.max(expires_at);
-        }
-        Ok(())
-    }
-
-    /// Records that the seller's receipt names us, once. Returns when it did.
-    fn mark_bid_won(&mut self, trade_id: &TradeId, current_tick: Tick) -> AppResult<Tick> {
-        let own_team = self.get_own_team_mut()?;
-        let bid = own_team
-            .outstanding_bids
-            .iter_mut()
-            .find(|bid| bid.trade_id == *trade_id)
-            .ok_or_else(|| anyhow!("No such bid"))?;
-        let won_on = *bid.won_on.get_or_insert(current_tick);
-        self.dirty = true;
-        Ok(won_on)
-    }
-
-    /// Bidder side. Takes on board a pirate we won, if there is a seat for them.
-    /// They join the crew directly, the way any traded pirate does. The escrow is
-    /// the payment and is consumed here, exactly once; there is no second charge.
-    /// Returns the popup to show, or `None` if we must wait for a seat.
-    fn collect_won_pirate(
-        &mut self,
-        bid: &OutstandingBid,
-        current_tick: Tick,
-    ) -> AppResult<Option<UiCallback>> {
-        let own_team_id = self.own_team_id;
-        let own_team = self.get_own_team()?;
-        if own_team.player_ids.len() >= own_team.spaceship.crew_capacity() as usize {
-            return Ok(None);
-        }
-        if !self.players.contains_key(&bid.player_id) {
-            return Ok(None);
-        }
-
-        // Our stale copy of the seller may still list them; let it go.
-        for team in self.teams.values_mut() {
-            if team.id != own_team_id {
-                team.player_ids.retain(|id| *id != bid.player_id);
-                team.remove_listing(&bid.player_id);
-            }
-        }
-
-        let mut own_team = self.get_own_team()?.clone();
-        let player = self.players.get_mut_or_err(&bid.player_id)?;
-        Self::welcome_traded_pirate(player, bid.seller_team_id, &own_team, current_tick);
-        let name = player.info.short_name();
-
-        own_team.player_ids.push(bid.player_id);
-        own_team.reassign_positions(&self.players);
-        own_team.version += 1;
-        self.teams.insert(own_team_id, own_team);
-
-        self.settle_bid(&bid.trade_id)?;
-
-        self.dirty = true;
-        self.dirty_network = true;
-        self.dirty_ui = true;
-        Ok(Some(UiCallback::PushUiPopup {
-            popup_message: PopupMessage::Message {
-                message: format!(
-                    "{name} signed with you for {} satoshi and came aboard.",
-                    bid.amount
-                ),
-                links: vec![],
-                level: log::Level::Info,
-                is_skippable: false,
-                timestamp: current_tick,
-            },
-        }))
-    }
-
-    /// Seller side. Closes one of our own auctions and publishes the outcome.
-    ///
-    /// We are the only authority over our market, so we simply decide: the
-    /// standing bid wins, or nobody does. The pirate changes hands here and now,
-    /// on the strength of the escrow the winner committed when they bid; the
-    /// receipt then travels with our team until the winner - however long they
-    /// are away - sees it and collects. No handshake, nothing to lose in flight.
-    pub fn settle_listing(
-        &mut self,
-        player_id: &PlayerId,
-        current_tick: Tick,
-    ) -> AppResult<Vec<UiCallback>> {
-        let own_team = self.get_own_team()?;
-        let Some(listing) = own_team.listing(player_id).cloned() else {
-            return Ok(vec![]);
-        };
-
-        let name = self
-            .players
-            .get(player_id)
-            .map(|player| player.info.short_name())
-            .unwrap_or_else(|| "A pirate".to_string());
-
-        let mut callbacks = vec![];
-
-        // Whatever bids are still on the books are moot now. The winner learns
-        // from the receipt; anyone else is told straight away so their escrow
-        // comes back without waiting out the grace.
-        let winner_trade_id = listing.highest_bid.as_ref().map(|bid| bid.trade_id);
-        let moot: Vec<TradeId> = own_team
-            .received_trades
-            .values()
-            .filter(|trade| {
-                trade.route == TradeRoute::DockBid && trade.target_player.id == *player_id
-            })
-            .map(|trade| trade.id)
-            .collect();
-        for trade_id in moot {
-            if Some(trade_id) == winner_trade_id {
-                self.get_own_team_mut()?.remove_trade(&trade_id);
-            } else {
-                callbacks.push(UiCallback::DeclineTrade {
-                    trade_id,
-                    reason: Some("Outbid".to_string()),
-                });
-            }
-        }
-
-        let outcome = match listing.highest_bid.as_ref() {
-            Some(bid) => {
-                let buyer_peer_id = self.teams.get(&bid.team_id).and_then(|team| team.peer_id);
-                let buyer_name = self
-                    .teams
-                    .get(&bid.team_id)
-                    .map_or_else(|| "another crew".to_string(), |team| team.name.clone());
-
-                // The pirate changes hands first, then the roster lets go of them.
-                let crew_role = self.players.get_mut(player_id).map(|player| {
-                    player.team = Some(bid.team_id);
-                    player.peer_id = buyer_peer_id;
-                    player.info.crew_role
-                });
-
-                let own_team_id = self.own_team_id;
-                let own_team = self.teams.get_mut_or_err(&own_team_id)?;
-                own_team.saturating_add_resource(Resource::SATOSHI, bid.amount);
-                own_team.player_ids.retain(|id| id != player_id);
-                own_team.remove_listing(player_id);
-                if let Some(role) = crew_role {
-                    own_team.vacate_crew_role(player_id, role);
-                }
-                own_team.reassign_positions(&self.players);
-
-                callbacks.push(UiCallback::PushUiPopup {
-                    popup_message: PopupMessage::Message {
-                        message: format!(
-                            "{name} signed with {buyer_name} for {} satoshi.",
-                            bid.amount
-                        ),
-                        links: vec![],
-                        level: log::Level::Info,
-                        is_skippable: true,
-                        timestamp: current_tick,
-                    },
-                });
-                DockOutcome::Signed {
-                    team_id: bid.team_id,
-                    fee: bid.amount,
-                }
-            }
-            None => {
-                // Nobody wanted them: the listing lapses and they are back on duty.
-                let own_team_id = self.own_team_id;
-                let own_team = self.teams.get_mut_or_err(&own_team_id)?;
-                own_team.remove_listing(player_id);
-                own_team.reassign_positions(&self.players);
-                callbacks.push(UiCallback::PushUiPopup {
-                    popup_message: PopupMessage::Message {
-                        message: format!("Nobody made an offer for {name}."),
-                        links: vec![],
-                        level: log::Level::Info,
-                        is_skippable: true,
-                        timestamp: current_tick,
-                    },
-                });
-                DockOutcome::Lapsed
-            }
-        };
-
-        let own_team = self.get_own_team_mut()?;
-        own_team.dock_receipts.push(DockReceipt {
-            player_id: *player_id,
-            listed_on: listing.listed_on,
-            outcome,
-            settled_on: current_tick,
-        });
-        own_team.version += 1;
-
-        self.dirty = true;
-        self.dirty_network = true;
-        self.dirty_ui = true;
-        Ok(callbacks)
-    }
-
-    /// Seller side. Closes every one of our listings whose deadline has passed.
-    fn settle_expired_auctions(&mut self, current_tick: Tick) -> AppResult<Vec<UiCallback>> {
-        let expired: Vec<PlayerId> = self
-            .get_own_team()?
-            .dock_listings
-            .iter()
-            .filter(|listing| listing.has_expired(current_tick))
-            .map(|listing| listing.player_id)
-            .collect();
-
-        let mut callbacks = vec![];
-        for player_id in expired {
-            callbacks.extend(self.settle_listing(&player_id, current_tick)?);
-        }
-        Ok(callbacks)
-    }
-
-    /// Seller side. A receipt only has to outlive the winner's longest plausible
-    /// absence; after that it is just weight on the wire.
-    fn prune_dock_receipts(&mut self, current_tick: Tick) -> AppResult<()> {
-        let own_team = self.get_own_team_mut()?;
-        let before = own_team.dock_receipts.len();
-        own_team
-            .dock_receipts
-            .retain(|receipt| current_tick < receipt.settled_on + DOCK_RECEIPT_RETENTION);
-        if own_team.dock_receipts.len() != before {
-            own_team.version += 1;
-            self.dirty = true;
-            self.dirty_network = true;
-        }
-        Ok(())
-    }
-
-    /// Runs an incoming offer past the same rules the proposer should have.
-    pub fn validate_incoming_trade(&self, trade: &Trade) -> AppResult<()> {
-        let own_team = self.get_own_team()?;
-        let proposer_team = self.teams.get_or_err(&trade.proposer_team_id)?;
-        proposer_team.can_trade_with_team(
-            own_team,
-            trade.route,
-            trade.proposer_player.as_ref(),
-            &trade.target_player,
-            trade.proposer_satoshis,
-            trade.target_satoshis,
-        )
-    }
-
-    /// Seller side. Records a new leading bid, pushing the deadline out when it
-    /// lands inside the anti-snipe window. Returns the bid it displaced.
-    pub fn accept_dock_bid(
-        &mut self,
-        trade: &Trade,
-        current_tick: Tick,
-    ) -> AppResult<Option<DockBid>> {
-        let own_team = self.get_own_team_mut()?;
-        let listing = own_team
-            .listing_mut(&trade.target_player.id)
-            .ok_or_else(|| anyhow!("That pirate is not at the dock"))?;
-
-        // Otherwise a bid landing between the deadline and our settle tick would
-        // displace the winner and, through the anti-snipe rule, reopen the auction.
-        if listing.has_expired(current_tick) {
-            return Err(anyhow!("The auction is over"));
-        }
-
-        if trade.proposer_satoshis < listing.next_valid_bid() {
-            return Err(anyhow!("Outbid"));
-        }
-
-        let displaced = listing.record_bid(DockBid {
-            team_id: trade.proposer_team_id,
-            peer_id: trade.proposer_peer_id,
-            trade_id: trade.id,
-            amount: trade.proposer_satoshis,
-            placed_on: current_tick,
-        });
-
-        // Anti-snipe. Only an accepted new leader extends, and a buy-now never
-        // reaches here, so the deadline can only move by displacing someone.
-        if listing.expires_at.saturating_sub(current_tick) < AUCTION_EXTENSION_WINDOW {
-            listing.expires_at = current_tick + AUCTION_EXTENSION_WINDOW;
-        }
-
-        own_team.version += 1;
-        self.dirty = true;
-        self.dirty_network = true;
-        self.dirty_ui = true;
-
-        Ok(displaced)
-    }
-
-    /// Whether this crew may bid `amount` for a pirate someone left at the dock.
-    ///
-    /// One place for the whole rule, so a disabled button and a refused click can
-    /// never disagree about why.
-    pub fn can_bid_on(&self, player_id: &PlayerId, amount: u32) -> AppResult<()> {
-        if self.has_outstanding_bid_on(player_id) {
-            return Err(anyhow!("You already have a bid on this pirate"));
-        }
-
-        let target_player = self.players.get_or_err(player_id)?;
-        let seller_team_id = target_player
-            .team
-            .ok_or_else(|| anyhow!("That pirate has no crew"))?;
-        let seller_team = self.teams.get_or_err(&seller_team_id)?;
-
-        self.get_own_team()?.can_trade_with_team(
-            seller_team,
-            TradeRoute::DockBid,
-            None,
-            target_player,
-            amount,
-            0,
-        )
-    }
-
-    /// Whether a bid meets the listing's binding buy-now price, judged against
-    /// our own market rather than anything the payload claims.
-    pub fn bid_meets_release_fee(&self, trade: &Trade) -> bool {
-        if trade.route != TradeRoute::DockBid {
-            return false;
-        }
-        self.get_own_team()
-            .ok()
-            .and_then(|team| team.listing(&trade.target_player.id))
-            .is_some_and(|listing| trade.proposer_satoshis >= listing.release_fee)
-    }
-
-    /// Applies a settled trade in one step.
-    ///
-    /// Replaces the old release-then-add pair, which was not atomic: an add that
-    /// failed after two releases left both pirates as free agents. Everything
-    /// fallible happens against clones in phases 1-3; phase 4 is inserts only, so
-    /// a failure leaves the world untouched.
+    /// Applies a settled trade in one step. A failure leaves the world untouched.
     pub fn apply_trade(&mut self, trade: &Trade, current_tick: Tick) -> AppResult<()> {
-        if trade.route == TradeRoute::DockBid {
-            return Err(anyhow!(
-                "A dock bid settles through the releasing crew's receipt"
-            ));
-        }
         // 1. RESOLVE. Each side is authoritative for its own pirates, so prefer a
         //    local copy that is at least as fresh as the payload's, and never trust
         //    the payload's `team` field - the trade declares the owner.
@@ -1513,8 +1005,7 @@ impl World {
 
         player.team = Some(to.id);
         player.joined_team_on = Some(current_tick);
-        // Without this the seller's next broadcast would reap the pirate we just
-        // bought: add_network_team only spares players whose peer_id is None.
+        // Keeps add_network_team from letting the old crew reclaim this pirate.
         player.peer_id = to.peer_id;
         player.info.crew_role = CrewRole::Mozzo;
         player.current_location = PlayerLocation::WithTeam;
@@ -1587,31 +1078,18 @@ impl World {
         Ok(())
     }
 
-    /// Leaves a pirate for sale at the own crew's cove. They stay on the crew and
-    /// keep their seat, jersey and salary, but stop sailing, playing and holding a
-    /// crew role until they are recalled or sold.
     pub fn leave_player_at_dock(
         &mut self,
         player_id: PlayerId,
-        release_fee: u32,
-        min_bid: u32,
-        duration: Tick,
         current_tick: Tick,
     ) -> AppResult<()> {
         let mut player = self.players.get_or_err(&player_id)?.clone();
         let mut team = self.get_own_team()?.clone();
         team.can_leave_player_at_dock(&player)?;
 
-        team.dock_listings.push(DockListing::new(
-            player_id,
-            release_fee,
-            min_bid,
-            duration,
-            current_tick,
-        ));
+        team.dock_listings
+            .push(DockListing::new(player_id, current_tick));
 
-        // Vacate the crew role so a pirate sitting out stops feeding the ship's
-        // TeamBonus, exactly as releasing them would. They stay aboard otherwise.
         team.vacate_crew_role(&player_id, player.info.crew_role);
         player.info.crew_role = CrewRole::Mozzo;
 
@@ -2173,10 +1651,7 @@ impl World {
                     "Cannot receive player with wrong peer_id over the network."
                 ));
             }
-            // Our own state takes precedence over anything a peer says about our
-            // crew. This used to refuse their whole team, which after a lost trade
-            // ack left us deaf to that peer for good - their listings and receipts
-            // included. Skipping just the pirate keeps us converging instead.
+            // Our own state takes precedence over anything a peer says about our crew.
             if self
                 .players
                 .get(&player.id)
@@ -2434,13 +1909,6 @@ impl World {
             for cb in self.tick_pirates_drinking()? {
                 callbacks.push(cb);
             }
-
-            for cb in self.tick_outstanding_bids(current_tick)? {
-                callbacks.push(cb);
-            }
-
-            callbacks.extend(self.settle_expired_auctions(current_tick)?);
-            self.prune_dock_receipts(current_tick)?;
 
             // Once every MEDIUM interval, set dirty_network flag,
             // so that we send our team to the network.
@@ -4413,7 +3881,6 @@ mod test {
     use std::{thread, time::Duration};
 
     use super::{AppResult, World};
-    use crate::network::trade::Trade;
     use crate::{
         app::App,
         core::{
@@ -4463,73 +3930,7 @@ mod test {
         Ok(asteroid_id)
     }
 
-    /// Puts the own crew's first pirate up for sale at their own ready cove.
-    fn listed_player(app: &mut App) -> AppResult<crate::types::PlayerId> {
-        give_own_team_a_ready_market(app)?;
-        let player_id = app.world.get_own_team()?.player_ids[0];
-        app.world
-            .leave_player_at_dock(player_id, 100_000, 1_000, super::DAYS, Tick::now())?;
-        Ok(player_id)
-    }
-
-    /// Builds a bid from `bidder_team_id` for a pirate listed at the own cove.
-    fn bid_for(app: &App, player_id: crate::types::PlayerId, amount: u32) -> Trade {
-        use libp2p::PeerId;
-        Trade::dock_bid(
-            PeerId::random(),
-            PeerId::random(),
-            crate::types::TeamId::new_v4(),
-            app.world.own_team_id,
-            app.world.players.get(&player_id).expect("player").clone(),
-            amount,
-        )
-    }
-
-    #[test]
-    fn test_a_new_leading_bid_displaces_the_old_one() -> AppResult<()> {
-        let mut app = App::test_default()?;
-        let player_id = listed_player(&mut app)?;
-
-        let low = bid_for(&app, player_id, 2_000);
-        assert!(app.world.accept_dock_bid(&low, Tick::now())?.is_none());
-
-        // Anything that does not beat the lead is refused.
-        let same = bid_for(&app, player_id, 2_000);
-        assert!(app
-            .world
-            .accept_dock_bid(&same, Tick::now())
-            .unwrap_err()
-            .to_string()
-            .contains("Outbid"));
-
-        // Nor does a raise that falls short of the minimum increment.
-        let shy = bid_for(&app, player_id, 2_050);
-        assert!(app
-            .world
-            .accept_dock_bid(&shy, Tick::now())
-            .unwrap_err()
-            .to_string()
-            .contains("Outbid"));
-
-        let high = bid_for(&app, player_id, 3_000);
-        let displaced = app.world.accept_dock_bid(&high, Tick::now())?;
-        assert_eq!(displaced.expect("the old leader").trade_id, low.id);
-
-        let team = app.world.get_own_team()?;
-        assert_eq!(
-            team.listing(&player_id)
-                .expect("listing")
-                .highest_bid
-                .as_ref()
-                .unwrap()
-                .amount,
-            3_000
-        );
-        Ok(())
-    }
-
-    /// Builds a remote crew whose pirates are all but unknown, with `listed` up
-    /// for sale at its cove. Returns the crew, its roster and the two pirate ids.
+    /// A peer crew whose pirates are all but unknown, with its first pirate left at the dock.
     fn crew_listing_a_pirate(
         app: &App,
     ) -> AppResult<(
@@ -4562,13 +3963,8 @@ mod test {
 
         let listed = team.player_ids[0];
         let unlisted = team.player_ids[1];
-        team.dock_listings.push(DockListing::new(
-            listed,
-            1_000,
-            100,
-            super::DAYS,
-            Tick::now(),
-        ));
+        team.dock_listings
+            .push(DockListing::new(listed, Tick::now()));
 
         Ok((team, players, listed, unlisted))
     }
@@ -4597,7 +3993,7 @@ mod test {
         assert_eq!(
             scouting_of(&app, &listed),
             DOCK_LISTING_SCOUTING,
-            "a pirate put up for sale is shown off"
+            "a pirate left at the dock is shown off"
         );
         assert_eq!(
             scouting_of(&app, &unlisted),
@@ -4638,344 +4034,6 @@ mod test {
         Ok(())
     }
 
-    /// We are the buyer: a peer crew has a pirate up for sale and we have a bid
-    /// escrowed on it. Returns the seller, the pirate, and our trade.
-    fn bid_on_a_peer_listing(
-        app: &mut App,
-        amount: u32,
-    ) -> AppResult<(crate::types::TeamId, crate::types::PlayerId, Trade)> {
-        use crate::core::DockListing;
-        let seller = app
-            .world
-            .teams
-            .values()
-            .find(|team| team.id != app.world.own_team_id)
-            .expect("another crew")
-            .id;
-        let target = app.world.teams.get_or_err(&seller)?.player_ids[0];
-        app.world
-            .teams
-            .get_mut_or_err(&seller)?
-            .dock_listings
-            .push(DockListing::new(
-                target,
-                100_000,
-                1_000,
-                super::DAYS,
-                Tick::now(),
-            ));
-        let trade = Trade::dock_bid(
-            libp2p::PeerId::random(),
-            libp2p::PeerId::random(),
-            app.world.own_team_id,
-            seller,
-            app.world.players.get_or_err(&target)?.clone(),
-            amount,
-        );
-        app.world.escrow_bid(&trade, Tick::now())?;
-        app.world.get_own_team_mut()?.add_sent_trade(trade.clone());
-        Ok((seller, target, trade))
-    }
-
-    /// Simulates the seller's next gossip round carrying their verdict.
-    fn seller_publishes(
-        app: &mut App,
-        seller: crate::types::TeamId,
-        player_id: crate::types::PlayerId,
-        outcome: crate::core::DockOutcome,
-    ) -> AppResult<()> {
-        use crate::core::DockReceipt;
-        let team = app.world.teams.get_mut_or_err(&seller)?;
-        let listing = team
-            .remove_listing(&player_id)
-            .expect("the listing we bid on");
-        team.dock_receipts.push(DockReceipt {
-            player_id,
-            listed_on: listing.listed_on,
-            outcome,
-            settled_on: Tick::now(),
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn test_a_won_auction_hands_the_pirate_over_and_publishes_a_receipt() -> AppResult<()> {
-        use crate::core::DockOutcome;
-        let mut app = App::test_default()?;
-        let player_id = listed_player(&mut app)?;
-        let bid = bid_for(&app, player_id, 2_000);
-        app.world.accept_dock_bid(&bid, Tick::now())?;
-
-        let before = app.world.get_own_team()?.balance();
-        let ended = app
-            .world
-            .get_own_team()?
-            .listing(&player_id)
-            .unwrap()
-            .expires_at;
-        let callbacks = app.world.settle_listing(&player_id, ended)?;
-
-        let team = app.world.get_own_team()?;
-        assert_eq!(
-            team.balance(),
-            before + 2_000,
-            "paid from the escrow we trust"
-        );
-        assert!(
-            !team.player_ids.contains(&player_id),
-            "the pirate has left the crew"
-        );
-        assert!(team.listing(&player_id).is_none(), "the listing is closed");
-        assert_eq!(
-            app.world.players.get_or_err(&player_id)?.team,
-            Some(bid.proposer_team_id),
-            "and belongs to the winner"
-        );
-        let receipt = team
-            .receipt_for(&player_id, team.dock_receipts[0].listed_on)
-            .expect("a receipt");
-        assert_eq!(
-            receipt.outcome,
-            DockOutcome::Signed {
-                team_id: bid.proposer_team_id,
-                fee: 2_000
-            }
-        );
-        assert!(
-            callbacks
-                .iter()
-                .any(|cb| matches!(cb, UiCallback::PushUiPopup { .. })),
-            "and the captain is told"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_a_bid_after_the_deadline_is_refused() -> AppResult<()> {
-        let mut app = App::test_default()?;
-        let player_id = listed_player(&mut app)?;
-        let ended = app
-            .world
-            .get_own_team()?
-            .listing(&player_id)
-            .unwrap()
-            .expires_at;
-
-        let late = bid_for(&app, player_id, 5_000);
-        let err = app.world.accept_dock_bid(&late, ended + 1).unwrap_err();
-        assert!(err.to_string().contains("over"), "{err}");
-        assert!(
-            app.world
-                .get_own_team()?
-                .listing(&player_id)
-                .unwrap()
-                .highest_bid
-                .is_none(),
-            "a closed auction takes no bids, so it cannot be reopened"
-        );
-        Ok(())
-    }
-
-    /// The bug that started all this: the winner used to pay at bid time and
-    /// again at settlement. The escrow is the payment.
-    #[test]
-    fn test_the_winner_collects_and_pays_exactly_once() -> AppResult<()> {
-        use crate::core::DockOutcome;
-        let mut app = App::test_default()?;
-        let before = app.world.get_own_team()?.balance();
-        let (seller, player_id, _) = bid_on_a_peer_listing(&mut app, 1_500)?;
-        assert_eq!(app.world.get_own_team()?.balance(), before - 1_500);
-
-        let me = app.world.own_team_id;
-        seller_publishes(
-            &mut app,
-            seller,
-            player_id,
-            DockOutcome::Signed {
-                team_id: me,
-                fee: 1_500,
-            },
-        )?;
-        let callbacks = app.world.tick_outstanding_bids(Tick::now())?;
-
-        let team = app.world.get_own_team()?;
-        assert_eq!(team.balance(), before - 1_500, "charged once, at bid time");
-        assert!(team.outstanding_bids.is_empty(), "the escrow is spent");
-        assert!(team.player_ids.contains(&player_id), "the pirate is ours");
-        assert!(
-            team.active_player_ids().contains(&player_id),
-            "and straight on duty"
-        );
-        assert_eq!(
-            app.world.players.get_or_err(&player_id)?.team,
-            Some(app.world.own_team_id)
-        );
-        assert!(
-            !app.world
-                .teams
-                .get_or_err(&seller)?
-                .player_ids
-                .contains(&player_id),
-            "our copy of the seller has let them go"
-        );
-        assert_eq!(callbacks.len(), 1, "one popup: you won");
-        Ok(())
-    }
-
-    #[test]
-    fn test_a_losing_bidder_is_refunded_on_seeing_the_receipt() -> AppResult<()> {
-        use crate::core::DockOutcome;
-        let mut app = App::test_default()?;
-        let before = app.world.get_own_team()?.balance();
-        let (seller, player_id, _) = bid_on_a_peer_listing(&mut app, 1_500)?;
-
-        seller_publishes(
-            &mut app,
-            seller,
-            player_id,
-            DockOutcome::Signed {
-                team_id: crate::types::TeamId::new_v4(),
-                fee: 9_000,
-            },
-        )?;
-        app.world.tick_outstanding_bids(Tick::now())?;
-
-        let team = app.world.get_own_team()?;
-        assert_eq!(team.balance(), before, "money back");
-        assert!(team.outstanding_bids.is_empty());
-        assert!(!team.player_ids.contains(&player_id));
-        Ok(())
-    }
-
-    #[test]
-    fn test_a_lapsed_auction_refunds_its_bidders() -> AppResult<()> {
-        use crate::core::DockOutcome;
-        let mut app = App::test_default()?;
-        let before = app.world.get_own_team()?.balance();
-        let (seller, player_id, _) = bid_on_a_peer_listing(&mut app, 1_500)?;
-
-        seller_publishes(&mut app, seller, player_id, DockOutcome::Lapsed)?;
-        app.world.tick_outstanding_bids(Tick::now())?;
-
-        assert_eq!(app.world.get_own_team()?.balance(), before);
-        Ok(())
-    }
-
-    /// We need not wait for the seller's decline to reach us: a standing bid
-    /// above ours on the listing itself is proof enough that we lost.
-    #[test]
-    fn test_a_higher_standing_bid_means_we_have_lost() -> AppResult<()> {
-        let mut app = App::test_default()?;
-        let before = app.world.get_own_team()?.balance();
-        let (seller, player_id, _) = bid_on_a_peer_listing(&mut app, 1_500)?;
-
-        let rival = crate::core::DockBid {
-            team_id: crate::types::TeamId::new_v4(),
-            peer_id: libp2p::PeerId::random(),
-            trade_id: crate::types::TradeId::new_v4(),
-            amount: 2_000,
-            placed_on: Tick::now(),
-        };
-        app.world
-            .teams
-            .get_mut_or_err(&seller)?
-            .listing_mut(&player_id)
-            .unwrap()
-            .record_bid(rival);
-        app.world.tick_outstanding_bids(Tick::now())?;
-
-        assert_eq!(
-            app.world.get_own_team()?.balance(),
-            before,
-            "refunded on sight"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_a_winner_with_a_full_crew_waits_and_keeps_the_escrow_spent() -> AppResult<()> {
-        use crate::core::DockOutcome;
-        let mut app = App::test_default()?;
-        let before = app.world.get_own_team()?.balance();
-        let (seller, player_id, trade) = bid_on_a_peer_listing(&mut app, 1_500)?;
-
-        // Fill every seat before the receipt arrives.
-        let capacity = app.world.get_own_team()?.spaceship.crew_capacity() as usize;
-        let filler: Vec<crate::types::PlayerId> = (app.world.get_own_team()?.player_ids.len()
-            ..capacity)
-            .map(|_| crate::types::PlayerId::new_v4())
-            .collect();
-        app.world
-            .get_own_team_mut()?
-            .player_ids
-            .extend(filler.iter().copied());
-
-        let me = app.world.own_team_id;
-        seller_publishes(
-            &mut app,
-            seller,
-            player_id,
-            DockOutcome::Signed {
-                team_id: me,
-                fee: 1_500,
-            },
-        )?;
-        let now = Tick::now();
-        app.world.tick_outstanding_bids(now)?;
-
-        let team = app.world.get_own_team()?;
-        assert!(!team.player_ids.contains(&player_id), "no seat yet");
-        let bid = team
-            .outstanding_bids
-            .iter()
-            .find(|bid| bid.trade_id == trade.id)
-            .expect("the claim is kept");
-        assert!(bid.won_on.is_some(), "but we know we won");
-        assert_eq!(team.balance(), before - 1_500, "and the money stays spent");
-
-        // Long past every timeout, still not refunded.
-        app.world
-            .tick_outstanding_bids(now + super::MAX_BID_LIFETIME + 1)?;
-        assert_eq!(app.world.get_own_team()?.balance(), before - 1_500);
-
-        // Make room and they come aboard.
-        app.world
-            .get_own_team_mut()?
-            .player_ids
-            .retain(|id| !filler.contains(id));
-        app.world.tick_outstanding_bids(now + 1)?;
-        let team = app.world.get_own_team()?;
-        assert!(team.player_ids.contains(&player_id), "collected");
-        assert!(team.outstanding_bids.is_empty());
-        Ok(())
-    }
-
-    #[test]
-    fn test_receipts_are_pruned_after_the_retention() -> AppResult<()> {
-        use crate::core::{DockOutcome, DockReceipt, DOCK_RECEIPT_RETENTION};
-        let mut app = App::test_default()?;
-        let now = Tick::now();
-        let receipt = |settled_on: Tick| DockReceipt {
-            player_id: crate::types::PlayerId::new_v4(),
-            listed_on: 0,
-            outcome: DockOutcome::Lapsed,
-            settled_on,
-        };
-        let team = app.world.get_own_team_mut()?;
-        team.dock_receipts
-            .push(receipt(now - DOCK_RECEIPT_RETENTION - 1));
-        team.dock_receipts.push(receipt(now - 1));
-
-        app.world.prune_dock_receipts(now)?;
-
-        assert_eq!(app.world.get_own_team()?.dock_receipts.len(), 1);
-        assert_eq!(
-            app.world.get_own_team()?.dock_receipts[0].settled_on,
-            now - 1
-        );
-        Ok(())
-    }
-
     /// The lost-Ack split-brain, closed: a peer's stale roster cannot claw back
     /// a pirate we have since made ours.
     #[test]
@@ -5006,329 +4064,6 @@ mod test {
     }
 
     #[test]
-    fn test_an_outbid_bid_joins_the_log() -> AppResult<()> {
-        let mut app = App::test_default()?;
-        let player_id = listed_player(&mut app)?;
-
-        let low = bid_for(&app, player_id, 2_000);
-        app.world.accept_dock_bid(&low, Tick::now())?;
-
-        let team = app.world.get_own_team()?;
-        let listing = team.listing(&player_id).expect("listing");
-        assert!(
-            listing.bid_log.is_empty(),
-            "a bid nobody has beaten is the standing bid, not history"
-        );
-
-        let high = bid_for(&app, player_id, 3_000);
-        app.world.accept_dock_bid(&high, Tick::now())?;
-
-        let team = app.world.get_own_team()?;
-        let listing = team.listing(&player_id).expect("listing");
-        assert_eq!(
-            listing.highest_bid.as_ref().expect("the lead").amount,
-            3_000
-        );
-        assert_eq!(
-            listing.bid_log.len(),
-            1,
-            "a refused bid never reaches the log"
-        );
-        assert_eq!(listing.bid_log[0].amount, 2_000);
-        assert_eq!(listing.bid_log[0].team_id, low.proposer_team_id);
-        Ok(())
-    }
-
-    /// A bid inside the last minute pushes the deadline out. Crucially it can only
-    /// be triggered by a bid that displaces the leader, which is what keeps the
-    /// offline refund safe - see AUCTION_SETTLEMENT_GRACE.
-    #[test]
-    fn test_a_late_bid_extends_the_deadline() -> AppResult<()> {
-        let mut app = App::test_default()?;
-        give_own_team_a_ready_market(&mut app)?;
-        let player_id = app.world.get_own_team()?.player_ids[0];
-
-        let now = Tick::now();
-        // Deadline 10 seconds out: inside the anti-snipe window.
-        app.world
-            .leave_player_at_dock(player_id, 100_000, 1_000, 10 * super::SECONDS, now)?;
-        let before = app
-            .world
-            .get_own_team()?
-            .listing(&player_id)
-            .unwrap()
-            .expires_at;
-
-        let bid = bid_for(&app, player_id, 2_000);
-        app.world.accept_dock_bid(&bid, now)?;
-
-        let after = app
-            .world
-            .get_own_team()?
-            .listing(&player_id)
-            .unwrap()
-            .expires_at;
-        assert!(after > before, "a late bid must push the deadline out");
-        assert_eq!(after, now + super::AUCTION_EXTENSION_WINDOW);
-
-        // A bidder's snapshot can lag the truth by at most one extension window,
-        // and the grace window outlasts that (asserted as a const in constants.rs),
-        // so a leader who goes offline right after bidding never refunds early.
-        assert!(before + super::AUCTION_SETTLEMENT_GRACE > after);
-        Ok(())
-    }
-
-    #[test]
-    fn test_an_early_bid_does_not_extend_the_deadline() -> AppResult<()> {
-        let mut app = App::test_default()?;
-        give_own_team_a_ready_market(&mut app)?;
-        let player_id = app.world.get_own_team()?.player_ids[0];
-
-        let now = Tick::now();
-        app.world
-            .leave_player_at_dock(player_id, 100_000, 1_000, super::DAYS, now)?;
-        let before = app
-            .world
-            .get_own_team()?
-            .listing(&player_id)
-            .unwrap()
-            .expires_at;
-
-        app.world
-            .accept_dock_bid(&bid_for(&app, player_id, 2_000), now)?;
-
-        let after = app
-            .world
-            .get_own_team()?
-            .listing(&player_id)
-            .unwrap()
-            .expires_at;
-        assert_eq!(
-            before, after,
-            "a bid well before the deadline changes nothing"
-        );
-        Ok(())
-    }
-
-    fn seller_with_a_listed_pirate(
-        app: &mut App,
-        price: u32,
-    ) -> AppResult<(
-        crate::types::TeamId,
-        crate::types::PlayerId,
-        crate::types::PlanetId,
-    )> {
-        use crate::core::{DockListing, Player, SpaceCove, SpaceCoveUpgradeTarget, Team};
-
-        let home_planet_id = app.world.get_own_team()?.home_planet_id;
-        let asteroid_id = app.world.generate_team_asteroid(
-            "Sellersteroid".into(),
-            "asteroid1".into(),
-            home_planet_id,
-        )?;
-
-        let mut cove = SpaceCove::under_construction(asteroid_id);
-        cove.finish_contruction();
-        cove.upgrades.insert(SpaceCoveUpgradeTarget::Market);
-
-        let mut seller = Team::random(None);
-        seller.current_location = TeamLocation::OnPlanet {
-            planet_id: asteroid_id,
-        };
-
-        let mut player = Player::default().randomize(None);
-        player.team = Some(seller.id);
-        let player_id = player.id;
-        seller.player_ids.push(player_id);
-
-        seller.dock_listings.push(DockListing::new(
-            player_id,
-            price,
-            price / 2,
-            super::DAYS,
-            Tick::now(),
-        ));
-        seller.space_cove = Some(cove);
-
-        let seller_id = seller.id;
-        app.world.players.insert(player_id, player);
-        app.world.teams.insert(seller_id, seller);
-        Ok((seller_id, player_id, asteroid_id))
-    }
-
-    #[test]
-    fn test_a_signed_pirate_joins_the_crew_directly() -> AppResult<()> {
-        use crate::core::DockOutcome;
-        let mut app = App::test_default()?;
-        let (seller_id, player_id, _) = seller_with_a_listed_pirate(&mut app, 2_000)?;
-
-        let own_team_id = app.world.own_team_id;
-        app.world
-            .teams
-            .get_mut_or_err(&own_team_id)?
-            .saturating_add_resource(Resource::SATOSHI, 100_000);
-
-        let trade = Trade::dock_bid(
-            libp2p::PeerId::random(),
-            libp2p::PeerId::random(),
-            own_team_id,
-            seller_id,
-            app.world.players.get(&player_id).expect("player").clone(),
-            2_000,
-        );
-        app.world.escrow_bid(&trade, Tick::now())?;
-        seller_publishes(
-            &mut app,
-            seller_id,
-            player_id,
-            DockOutcome::Signed {
-                team_id: own_team_id,
-                fee: 2_000,
-            },
-        )?;
-        app.world.tick_outstanding_bids(Tick::now())?;
-
-        let own_team = app.world.get_own_team()?;
-        assert!(
-            own_team.player_ids.contains(&player_id),
-            "they are crew now"
-        );
-        assert!(
-            own_team.active_player_ids().contains(&player_id),
-            "no dock to wait at: they sail with the next departure"
-        );
-        assert!(matches!(
-            app.world.players.get_or_err(&player_id)?.current_location,
-            crate::core::PlayerLocation::WithTeam
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_release_fee_is_judged_against_our_own_listing() -> AppResult<()> {
-        let mut app = App::test_default()?;
-        give_own_team_a_ready_market(&mut app)?;
-        let player_id = app.world.get_own_team()?.player_ids[0];
-        app.world
-            .leave_player_at_dock(player_id, 50_000, 1_000, super::DAYS, Tick::now())?;
-
-        assert!(!app
-            .world
-            .bid_meets_release_fee(&bid_for(&app, player_id, 49_999)));
-        assert!(app
-            .world
-            .bid_meets_release_fee(&bid_for(&app, player_id, 50_000)));
-        assert!(app
-            .world
-            .bid_meets_release_fee(&bid_for(&app, player_id, 60_000)));
-        Ok(())
-    }
-
-    #[test]
-    fn test_an_auction_with_no_bidder_lapses_without_moving_the_pirate() -> AppResult<()> {
-        let mut app = App::test_default()?;
-        give_own_team_a_ready_market(&mut app)?;
-        let player_id = app.world.get_own_team()?.player_ids[0];
-        let now = Tick::now();
-        app.world
-            .leave_player_at_dock(player_id, 50_000, 1_000, 1, now)?;
-
-        let callbacks = app.world.settle_expired_auctions(now + 10)?;
-
-        assert_eq!(
-            callbacks.len(),
-            1,
-            "nothing is sold and the captain is told the auction lapsed"
-        );
-        assert!(matches!(callbacks[0], UiCallback::PushUiPopup { .. }));
-        let team = app.world.get_own_team()?;
-        assert!(!team.is_listed(&player_id), "the listing lapses");
-        assert!(
-            team.player_ids.contains(&player_id),
-            "an unsold pirate stays on the crew"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_escrow_takes_the_money_and_a_refund_gives_it_back() -> AppResult<()> {
-        let mut app = App::test_default()?;
-        give_own_team_a_ready_market(&mut app)?;
-        let player_id = app.world.get_own_team()?.player_ids[0];
-        app.world
-            .leave_player_at_dock(player_id, 50_000, 1_000, super::DAYS, Tick::now())?;
-
-        // Bid against our own listing: enough to exercise the escrow bookkeeping.
-        let trade = bid_for(&app, player_id, 4_000);
-        let before = app.world.get_own_team()?.balance();
-
-        app.world.escrow_bid(&trade, Tick::now())?;
-        assert_eq!(app.world.get_own_team()?.balance(), before - 4_000);
-        assert!(app.world.has_outstanding_bid_on(&player_id));
-
-        assert!(app.world.refund_bid(&trade.id)?);
-        assert_eq!(app.world.get_own_team()?.balance(), before);
-        assert!(!app.world.has_outstanding_bid_on(&player_id));
-
-        // Refunding twice must not mint satoshis.
-        assert!(!app.world.refund_bid(&trade.id)?);
-        assert_eq!(app.world.get_own_team()?.balance(), before);
-        Ok(())
-    }
-
-    #[test]
-    fn test_a_bid_the_seller_never_settles_is_refunded_after_the_grace() -> AppResult<()> {
-        let mut app = App::test_default()?;
-        give_own_team_a_ready_market(&mut app)?;
-        let player_id = app.world.get_own_team()?.player_ids[0];
-        let now = Tick::now();
-        app.world
-            .leave_player_at_dock(player_id, 50_000, 1_000, 1, now)?;
-
-        let trade = bid_for(&app, player_id, 4_000);
-        let before = app.world.get_own_team()?.balance();
-        app.world.escrow_bid(&trade, now)?;
-
-        // Still inside the grace window: the seller may yet settle.
-        app.world.tick_outstanding_bids(now + 10)?;
-        assert_eq!(app.world.get_own_team()?.balance(), before - 4_000);
-
-        // Past it, the money comes home.
-        let callbacks = app
-            .world
-            .tick_outstanding_bids(now + 1 + super::AUCTION_SETTLEMENT_GRACE + 1)?;
-        assert_eq!(app.world.get_own_team()?.balance(), before);
-        assert_eq!(
-            callbacks.len(),
-            1,
-            "the captain is told their bid came back"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_outstanding_bids_survive_a_save() -> AppResult<()> {
-        let mut app = App::test_default()?;
-        give_own_team_a_ready_market(&mut app)?;
-        let player_id = app.world.get_own_team()?.player_ids[0];
-        app.world
-            .leave_player_at_dock(player_id, 50_000, 1_000, super::DAYS, Tick::now())?;
-        let trade = bid_for(&app, player_id, 4_000);
-        app.world.escrow_bid(&trade, Tick::now())?;
-
-        // The satoshis have already left the balance, so losing this record on a
-        // restart would lose the money with it.
-        let stored = app.world.to_store()?;
-        let json = serde_json::to_string(&stored)?;
-        let restored: World = serde_json::from_str(&json)?;
-
-        let team = restored.teams.get_or_err(&restored.own_team_id)?;
-        assert_eq!(team.outstanding_bids.len(), 1);
-        assert_eq!(team.outstanding_bids[0].amount, 4_000);
-        Ok(())
-    }
-
-    #[test]
     fn test_list_and_recall_round_trip() -> AppResult<()> {
         let mut app = App::test_default()?;
         give_own_team_a_ready_market(&mut app)?;
@@ -5336,8 +4071,7 @@ mod test {
         let player_id = app.world.get_own_team()?.player_ids[0];
         let crew_size = app.world.get_own_team()?.player_ids.len();
 
-        app.world
-            .leave_player_at_dock(player_id, 10_000, 1_000, super::DAYS, Tick::now())?;
+        app.world.leave_player_at_dock(player_id, Tick::now())?;
 
         let team = app.world.get_own_team()?;
         assert!(team.is_listed(&player_id));
@@ -5378,8 +4112,7 @@ mod test {
             Some(player_id)
         );
 
-        app.world
-            .leave_player_at_dock(player_id, 10_000, 1_000, super::DAYS, Tick::now())?;
+        app.world.leave_player_at_dock(player_id, Tick::now())?;
 
         assert_eq!(app.world.get_own_team()?.crew_roles.captain, None);
         Ok(())
@@ -5392,15 +4125,14 @@ mod test {
 
         let own_team_id = app.world.own_team_id;
         let player_id = app.world.get_own_team()?.player_ids[0];
-        app.world
-            .leave_player_at_dock(player_id, 10_000, 1_000, super::DAYS, Tick::now())?;
+        app.world.leave_player_at_dock(player_id, Tick::now())?;
 
         let team_in_game =
             TeamInGame::from_team_id(&own_team_id, &app.world.teams, &app.world.players)
                 .expect("should build a roster");
         assert!(
             !team_in_game.players.contains_key(&player_id),
-            "a pirate for sale must never be picked for a game"
+            "a pirate at the dock must never be picked for a game"
         );
 
         Ok(())
@@ -5411,8 +4143,7 @@ mod test {
         let mut app = App::test_default()?;
         let asteroid_id = give_own_team_a_ready_market(&mut app)?;
         let player_id = app.world.get_own_team()?.player_ids[0];
-        app.world
-            .leave_player_at_dock(player_id, 10_000, 1_000, super::DAYS, Tick::now())?;
+        app.world.leave_player_at_dock(player_id, Tick::now())?;
 
         // The dock is not on the rock: dropping the cove from far away is fine
         // and changes nothing about the listing.
@@ -5427,7 +4158,7 @@ mod test {
 
         let team = app.world.get_own_team()?;
         assert!(team.space_cove.is_none());
-        assert!(team.is_listed(&player_id), "the auction keeps running");
+        assert!(team.is_listed(&player_id), "the listing stays");
         assert!(team.player_ids.contains(&player_id));
 
         Ok(())
@@ -5438,8 +4169,7 @@ mod test {
         let mut app = App::test_default()?;
         let asteroid_id = give_own_team_a_ready_market(&mut app)?;
         let player_id = app.world.get_own_team()?.player_ids[0];
-        app.world
-            .leave_player_at_dock(player_id, 10_000, 1_000, super::DAYS, Tick::now())?;
+        app.world.leave_player_at_dock(player_id, Tick::now())?;
 
         app.world.release_player_from_team(player_id, true)?;
 

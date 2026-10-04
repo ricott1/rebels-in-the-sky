@@ -1,11 +1,10 @@
 use super::traits::{HelpContent, HelpPanel, Screen, SplitPanel};
+use crate::network::trade::TradeRoute;
 use crate::ui::button::Button;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::constants::*;
 use crate::ui::gif_map::GifMap;
 use crate::ui::renders::PlayerWidgetView;
-use anyhow::anyhow;
-use crate::network::trade::TradeRoute;
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_screen::{tab_link, UiTab};
@@ -14,6 +13,7 @@ use crate::ui::{
     constants::{IMG_FRAME_WIDTH, LEFT_PANEL_WIDTH},
     renders::{default_block, render_player_description, selectable_list},
 };
+use anyhow::anyhow;
 use ratatui::text::Line;
 
 use crate::network::trade::Trade;
@@ -215,9 +215,11 @@ impl PlayerListPanel {
         world: &World,
         area: Rect,
     ) -> AppResult<()> {
-        let v_split =
-            Layout::vertical([Constraint::Length(PLAYER_DESCRIPTION_HEIGHT), Constraint::Min(1)])
-                .split(area);
+        let v_split = Layout::vertical([
+            Constraint::Length(PLAYER_DESCRIPTION_HEIGHT),
+            Constraint::Min(1),
+        ])
+        .split(area);
 
         let h_split = Layout::horizontal([
             Constraint::Length(PLAYER_DESCRIPTION_WIDTH),
@@ -422,29 +424,6 @@ impl PlayerListPanel {
 
             frame.render_interactive_widget(button, buttons_split[3]);
         }
-        // or the market equivalent of hiring, for a pirate another crew has listed
-        else if let Some(listing) = player
-            .team
-            .filter(|team_id| *team_id != own_team.id)
-            .and_then(|_| world.listing_for(&player.id))
-        {
-            let mut button = Button::new(
-                "Make an offer",
-                UiCallback::OpenDockBidOverlay {
-                    player_id: player.id,
-                },
-            )
-            .hover_text(format!(
-                "Bid for {}, at least {}",
-                player.info.short_name(),
-                format_satoshi(listing.next_valid_bid())
-            ))
-            .hotkey(ui_key::player::MARKET_LISTING);
-            if let Err(err) = world.can_bid_on(&player.id, listing.next_valid_bid()) {
-                button.disable(Some(err.to_string()));
-            }
-            frame.render_interactive_widget(button, buttons_split[3]);
-        }
         // or if a trade exists and player is part of it, add trade buttons
         else if let Some(trade) = open_trade {
             let offered = trade
@@ -456,11 +435,13 @@ impl PlayerListPanel {
 
             if player.id == selected_player_id {
                 let proposer_team = world.teams.get_or_err(&trade.proposer_team_id)?;
-                let mut button =
-                    Button::new("Accept trade", UiCallback::AcceptTrade { trade_id: trade.id })
-                        .hover_text(format!("Accept to trade {wanted} for {offered}"))
-                        .block(default_block().border_style(UiStyle::OK))
-                        .hotkey(ui_key::ACCEPT_TRADE);
+                let mut button = Button::new(
+                    "Accept trade",
+                    UiCallback::AcceptTrade { trade_id: trade.id },
+                )
+                .hover_text(format!("Accept to trade {wanted} for {offered}"))
+                .block(default_block().border_style(UiStyle::OK))
+                .hotkey(ui_key::ACCEPT_TRADE);
 
                 if let Err(err) = proposer_team.can_trade_with_team(
                     own_team,
@@ -474,11 +455,16 @@ impl PlayerListPanel {
                 }
                 frame.render_interactive_widget(button, buttons_split[3]);
             } else if player.id == self.locked_player_id.expect("One player should be locked") {
-                let button =
-                    Button::new("Decline trade", UiCallback::DeclineTrade { trade_id: trade.id, reason: None })
-                        .hover_text(format!("Decline to trade {wanted} for {offered}"))
-                        .block(default_block().border_style(UiStyle::ERROR))
-                        .hotkey(ui_key::DECLINE_TRADE);
+                let button = Button::new(
+                    "Decline trade",
+                    UiCallback::DeclineTrade {
+                        trade_id: trade.id,
+                        reason: None,
+                    },
+                )
+                .hover_text(format!("Decline to trade {wanted} for {offered}"))
+                .block(default_block().border_style(UiStyle::ERROR))
+                .hotkey(ui_key::DECLINE_TRADE);
 
                 frame.render_interactive_widget(button, buttons_split[3]);
             };

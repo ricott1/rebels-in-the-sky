@@ -1,6 +1,5 @@
 use super::button::Button;
 use crate::core::planet::PlanetType;
-use crate::core::DOCK_MIN_BID_DIVISOR;
 use crate::core::MAX_SKILL;
 use crate::core::{player::Player, resources::Resource, skill::Rated};
 use crate::image::utils::open_gif;
@@ -15,8 +14,6 @@ use crate::ui::traits::PrintableGif;
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
-use crate::ui::utils::format_satoshi;
-use crate::ui::utils::parse_satoshi_input;
 use crate::ui::utils::{
     img_to_lines, input_from_key_event, sanitized_name, validate_textarea_input,
 };
@@ -57,7 +54,6 @@ pub enum PopupMessage {
     ConfirmLeaveAtDock {
         player_name: String,
         player_id: PlayerId,
-        release_fee: u32,
         timestamp: Tick,
     },
     ConfirmSpaceAdventure {
@@ -211,31 +207,13 @@ impl PopupMessage {
                 }
             }
 
-            Self::ConfirmLeaveAtDock {
-                player_id,
-                release_fee,
-                ..
-            } => {
+            Self::ConfirmLeaveAtDock { player_id, .. } => {
                 if key_event.code == ui_key::YES_TO_DIALOG {
-                    if let Some(release_fee) =
-                        parse_satoshi_input(popup_input, "Release fee (sat)", *release_fee)
-                    {
-                        return Some(UiCallback::LeavePlayerAtDock {
-                            player_id: *player_id,
-                            release_fee,
-                            min_bid: release_fee / DOCK_MIN_BID_DIVISOR,
-                        });
-                    }
+                    return Some(UiCallback::LeavePlayerAtDock {
+                        player_id: *player_id,
+                    });
                 } else if key_event.code == ui_key::NO_TO_DIALOG {
-                    if popup_input.lines()[0].is_empty() {
-                        return Some(UiCallback::CloseUiPopup);
-                    }
-                    popup_input.input(input_from_key_event(key_event));
-                } else if matches!(
-                    key_event.code,
-                    crossterm::event::KeyCode::Char(c) if c.is_ascii_digit()
-                ) {
-                    popup_input.input(input_from_key_event(key_event));
+                    return Some(UiCallback::CloseUiPopup);
                 }
             }
 
@@ -393,7 +371,6 @@ impl PopupMessage {
             Self::ConfirmLeaveAtDock {
                 player_name,
                 player_id,
-                release_fee,
                 ..
             } => {
                 frame.render_widget(
@@ -404,41 +381,17 @@ impl PopupMessage {
                     split[0],
                 );
 
-                let m_split =
-                    Layout::vertical([Constraint::Min(3), Constraint::Length(3)]).split(split[1]);
-
-                let release_fee = popup_input.lines()[0]
-                    .trim()
-                    .parse::<u32>()
-                    .ok()
-                    .filter(|amount| *amount > 0)
-                    .unwrap_or(*release_fee);
-
-                let min_bid = release_fee / DOCK_MIN_BID_DIVISOR;
-                popup_input.set_cursor_style(UiStyle::SELECTED);
-                popup_input.set_placeholder_text(release_fee.to_string());
-                popup_input.set_block(default_block().title("Release fee (sat)"));
-
                 frame.render_widget(
                     Paragraph::new(format!(
                         "Leave {player_name} at the dock?\n\n\
-                         Release fee {}  ·  bids from {}\n\n\
-                         Still paid, sits out until a crew signs them.",
-                        format_satoshi(release_fee),
-                        format_satoshi(min_bid),
+                         They keep their seat and sit out games\n\
+                         until you recall them or accept an offer."
                     ))
                     .centered()
                     .wrap(Wrap { trim: true }),
-                    m_split[0].inner(Margin {
+                    split[1].inner(Margin {
                         horizontal: 1,
                         vertical: 1,
-                    }),
-                );
-                frame.render_widget(
-                    &popup_input.clone(),
-                    m_split[1].inner(Margin {
-                        horizontal: 1,
-                        vertical: 0,
                     }),
                 );
 
@@ -450,11 +403,9 @@ impl PopupMessage {
                     UiText::YES,
                     UiCallback::LeavePlayerAtDock {
                         player_id: *player_id,
-                        release_fee,
-                        min_bid,
                     },
                 )
-                .hover_text(format!("Leave {player_name} at the dock for another crew to sign"))
+                .hover_text(format!("Leave {player_name} at the dock"))
                 .hotkey(ui_key::YES_TO_DIALOG)
                 .block(default_block().border_style(UiStyle::OK));
                 frame.render_interactive_widget_on_layer(

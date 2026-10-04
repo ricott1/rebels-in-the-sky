@@ -1,19 +1,20 @@
 use super::cove_images::{
-    blit_pirate_group, get_market_image, pirate_frames, render_pirate_summaries,
-    strongest_pirates, TAVERN_PIRATE_BASELINES_Y,
+    blit_pirate_group, get_market_image, pirate_frames, render_pirate_summaries, strongest_pirates,
+    TAVERN_PIRATE_BASELINES_Y,
 };
 use super::traits::SplitPanel;
 use crate::game_engine::{TournamentId, TournamentType};
 use crate::image::utils::{open_image, LightMaskStyle};
 use crate::image::utils::{ExtraImageUtils, UNIVERSE_BACKGROUND};
-use crate::types::{HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, SystemTimeTick, TeamId};
+use crate::types::{
+    HashMapWithResult, PlanetId, PlayerId, StorableResourceMap, SystemTimeTick, TeamId,
+};
 use crate::ui::button::Button;
 use crate::ui::checkbox::Checkbox;
 use crate::ui::clickable_list::ClickableListState;
 use crate::ui::panels::traits::{normalize_index, HelpContent, HelpPanel, IndexBound, Screen};
 use crate::ui::renders::{
-    default_block, go_to_planet_button, render_available_upgrades, selectable_list,
-    teleport_button,
+    default_block, go_to_planet_button, render_available_upgrades, selectable_list, teleport_button,
 };
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
@@ -135,7 +136,7 @@ impl SpaceCovePanel {
             Paragraph::new(img_to_lines(&img))
         };
         let market_widget = {
-            let img = get_market_image(&[]).expect("Should be able to create market image");
+            let img = get_market_image().expect("Should be able to create market image");
             Paragraph::new(img_to_lines(&img))
         };
         let stadium_widget = {
@@ -524,9 +525,7 @@ impl SpaceCovePanel {
                     return self.render_stadium_detail(frame, world, asteroid, own_team, area);
                 }
 
-                SpaceCoveUpgradeTarget::Market => {
-                    return self.render_market_detail(frame, area)
-                }
+                SpaceCoveUpgradeTarget::Market => return self.render_market_detail(frame, area),
             }
         }
 
@@ -542,17 +541,12 @@ impl SpaceCovePanel {
         self.cove_index = Some(index);
     }
 
-    /// The market building itself. Pirates changing crews go through The Dock,
-    /// which is not tied to any cove; here there are only goods.
     fn render_market_detail(&mut self, frame: &mut UiFrame, area: Rect) -> AppResult<()> {
         let layout = Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(area);
 
         frame.render_interactive_widget(
-            Button::new(
-                "Trade goods",
-                UiCallback::GoToMarket { from_popup: false },
-            )
-            .hover_text("Buy and sell goods at your cove's market"),
+            Button::new("Trade goods", UiCallback::GoToMarket { from_popup: false })
+                .hover_text("Buy and sell goods at your cove's market"),
             layout[0],
         );
         frame.render_widget(
@@ -857,7 +851,6 @@ impl Screen for SpaceCovePanel {
             self.tavern_lamps_on = lamps_on;
             self.tavern_drawn_ids = tavern_drawn_ids;
         }
-
 
         // Rebuild the cove entries only when the team set or contents may have shifted.
         let mut entries_changed = false;
@@ -1240,7 +1233,7 @@ impl HelpPanel for SpaceCovePanel {
                 "Manage the asteroid that hosts your cove from My Team.",
                 "Inspect visiting crews directly, or browse all in Crews.",
                 "To find another asteroid candidate, explore the Galaxy.",
-                "Pirates looking for a new crew are at The Dock, wherever you are.",
+                "Pirates looking for a new crew wait at The Dock, on the black hole.",
             ]
             .join("\n"),
             links: vec![

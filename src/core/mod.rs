@@ -1,4 +1,5 @@
 pub mod constants;
+pub mod dock;
 pub mod game_rating;
 pub mod honours;
 pub mod jersey;
@@ -22,6 +23,7 @@ pub mod utils;
 pub mod world;
 
 pub use constants::*;
+pub use dock::*;
 pub use game_rating::*;
 pub use honours::*;
 pub use jersey::*;

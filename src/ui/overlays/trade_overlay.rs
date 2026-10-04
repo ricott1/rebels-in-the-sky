@@ -6,16 +6,15 @@ use crate::types::{AppResult, HashMapWithResult, PlayerId, TeamId};
 use crate::ui::button::Button;
 use crate::ui::constants::{UiStyle, UiText, MAX_NAME_LENGTH};
 use crate::ui::panels::{HelpContent, IndexBound, SplitPanel};
-use crate::ui::renders::{sign_now_button, default_block};
+use crate::ui::renders::default_block;
 use crate::ui::ui_callback::UiCallback;
 use crate::ui::ui_frame::UiFrame;
 use crate::ui::ui_key;
-use crate::ui::utils::{format_satoshi, input_from_key_event};
+use crate::ui::utils::format_satoshi;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::Styled;
 use ratatui::text::Line;
-use ratatui_textarea::{CursorMove, TextArea};
 use ratatui::widgets::Paragraph;
 
 /// Quick-adjust steps for the satoshi fields, mirroring the resource market.
@@ -33,27 +32,15 @@ pub enum TradeSide {
     Other,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TradeOverlayMode {
-    /// One pirate each, plus satoshis. Both crews on the same planet.
-    CrewSwap { other_team_id: TeamId },
-    /// Cash for a pirate another crew left at the dock.
-    DockBid {
-        player_id: PlayerId,
-        seller_team_id: TeamId,
-    },
-}
-
 #[derive(Debug)]
 pub struct TradeOverlay {
-    mode: TradeOverlayMode,
+    other_team_id: TeamId,
     own_roster: Vec<PlayerId>,
     other_roster: Vec<PlayerId>,
     own_offer: Option<PlayerId>,
     other_offer: Option<PlayerId>,
     own_satoshis: u32,
     other_satoshis: u32,
-    amount_input: TextArea<'static>,
     focus: TradeSide,
     own_index: usize,
     other_index: usize,
@@ -61,63 +48,21 @@ pub struct TradeOverlay {
     blocker: Option<String>,
 }
 
-fn amount_field(amount: u32) -> TextArea<'static> {
-    let mut field = TextArea::from([amount.to_string()]);
-    field.set_cursor_style(UiStyle::SELECTED);
-    field.set_alignment(Alignment::Center);
-    field.move_cursor(CursorMove::End);
-    field
-}
-
 impl TradeOverlay {
     pub fn crew_swap(other_team_id: TeamId, seed_other: Option<PlayerId>) -> Self {
         Self {
-            mode: TradeOverlayMode::CrewSwap { other_team_id },
+            other_team_id,
             own_roster: vec![],
             other_roster: vec![],
             own_offer: None,
             other_offer: seed_other,
             own_satoshis: 0,
             other_satoshis: 0,
-            amount_input: amount_field(0),
             focus: TradeSide::Own,
             own_index: 0,
             other_index: 0,
             blocker: None,
         }
-    }
-
-    pub fn dock_bid(player_id: PlayerId, seller_team_id: TeamId, opening: u32) -> Self {
-        Self {
-            mode: TradeOverlayMode::DockBid {
-                player_id,
-                seller_team_id,
-            },
-            own_roster: vec![],
-            other_roster: vec![],
-            own_offer: None,
-            other_offer: Some(player_id),
-            own_satoshis: opening,
-            other_satoshis: 0,
-            amount_input: amount_field(opening),
-            focus: TradeSide::Other,
-            own_index: 0,
-            other_index: 0,
-            blocker: None,
-        }
-    }
-
-    fn sign_now(&self, world: &World) -> Option<(PlayerId, u32)> {
-        match self.mode {
-            TradeOverlayMode::DockBid { player_id, .. } => world
-                .listing_for(&player_id)
-                .map(|listing| (player_id, listing.release_fee)),
-            TradeOverlayMode::CrewSwap { .. } => None,
-        }
-    }
-
-    pub const fn is_dock_bid(&self) -> bool {
-        matches!(self.mode, TradeOverlayMode::DockBid { .. })
     }
 
     pub fn set_offer_player(&mut self, side: TradeSide, player_id: PlayerId) {
@@ -140,47 +85,24 @@ impl TradeOverlay {
         };
         let next = (current as i64 + delta).clamp(0, balance as i64) as u32;
         match side {
-            TradeSide::Own => {
-                self.own_satoshis = next;
-                self.amount_input = amount_field(next);
-            }
+            TradeSide::Own => self.own_satoshis = next,
             TradeSide::Other => self.other_satoshis = next,
         }
     }
 
-    fn type_amount(&mut self, key_event: KeyEvent, balance: u32) {
-        self.amount_input.input(input_from_key_event(key_event));
-        self.own_satoshis = self.amount_input.lines()[0]
-            .parse::<u32>()
-            .unwrap_or(0)
-            .min(balance);
-    }
-
     /// The offer as the network layer wants it.
     pub fn offer(&self) -> (TradeRoute, Option<PlayerId>, Option<PlayerId>, u32, u32) {
-        match self.mode {
-            TradeOverlayMode::CrewSwap { .. } => (
-                TradeRoute::CrewSwap,
-                self.own_offer,
-                self.other_offer,
-                self.own_satoshis,
-                self.other_satoshis,
-            ),
-            TradeOverlayMode::DockBid { player_id, .. } => (
-                TradeRoute::DockBid,
-                None,
-                Some(player_id),
-                self.own_satoshis,
-                0,
-            ),
-        }
+        (
+            TradeRoute::CrewSwap,
+            self.own_offer,
+            self.other_offer,
+            self.own_satoshis,
+            self.other_satoshis,
+        )
     }
 
     pub const fn other_team_id(&self) -> TeamId {
-        match self.mode {
-            TradeOverlayMode::CrewSwap { other_team_id } => other_team_id,
-            TradeOverlayMode::DockBid { seller_team_id, .. } => seller_team_id,
-        }
+        self.other_team_id
     }
 
     pub fn blocker(&self) -> Option<&String> {
@@ -281,7 +203,11 @@ impl TradeOverlay {
             let Some(player) = world.players.get(player_id) else {
                 continue;
             };
-            let mark = if chosen == Some(*player_id) { "✔" } else { " " };
+            let mark = if chosen == Some(*player_id) {
+                "✔"
+            } else {
+                " "
+            };
             let line = Line::from(format!(
                 "{mark} {:<width$} {}",
                 player.info.short_name(),
@@ -339,14 +265,7 @@ impl TradeOverlay {
             frame.render_interactive_widget_on_layer(button, split[target], layer);
         }
 
-        if self.is_dock_bid() && side == TradeSide::Own {
-            frame.render_widget(&self.amount_input, split[2]);
-        } else {
-            frame.render_widget(
-                Paragraph::new(format_satoshi(amount)).centered(),
-                split[2],
-            );
-        }
+        frame.render_widget(Paragraph::new(format_satoshi(amount)).centered(), split[2]);
     }
 }
 
@@ -378,11 +297,7 @@ impl Overlay for TradeOverlay {
             .get(&self.other_team_id())
             .map(|team| team.name.clone())
             .unwrap_or_else(|| "unknown crew".to_string());
-        if self.is_dock_bid() {
-            format!("Bid for {other}'s pirate at the dock")
-        } else {
-            format!("Trade with {other}")
-        }
+        format!("Trade with {other}")
     }
 
     fn rect(&self, screen_area: Rect) -> Rect {
@@ -391,18 +306,13 @@ impl Overlay for TradeOverlay {
 
     fn update(&mut self, world: &World) -> AppResult<()> {
         let own_team = world.get_own_team()?;
-        // Only pirates who can actually leave: a listed pirate is sold through
-        // the market, not swapped.
         self.own_roster = own_team.active_player_ids();
 
-        self.other_roster = match self.mode {
-            TradeOverlayMode::DockBid { player_id, .. } => vec![player_id],
-            TradeOverlayMode::CrewSwap { other_team_id } => world
-                .teams
-                .get(&other_team_id)
-                .map(|team| team.active_player_ids())
-                .unwrap_or_default(),
-        };
+        self.other_roster = world
+            .teams
+            .get(&self.other_team_id)
+            .map(|team| team.active_player_ids())
+            .unwrap_or_default();
 
         self.own_index = self.own_index.min(self.own_roster.len().saturating_sub(1));
         self.other_index = self
@@ -432,16 +342,7 @@ impl Overlay for TradeOverlay {
         let columns =
             Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(body[0]);
 
-        if self.is_dock_bid() {
-            frame.render_widget(
-                Paragraph::new("A cove sale is cash only.")
-                    .centered()
-                    .block(default_block().title("You give")),
-                columns[0],
-            );
-        } else {
-            self.render_roster(frame, world, TradeSide::Own, "You give", columns[0], layer);
-        }
+        self.render_roster(frame, world, TradeSide::Own, "You give", columns[0], layer);
         self.render_roster(frame, world, TradeSide::Other, "You get", columns[1], layer);
 
         let money =
@@ -454,25 +355,14 @@ impl Overlay for TradeOverlay {
             money[0],
             layer,
         );
-        if self.is_dock_bid() {
-            frame.render_widget(
-                Paragraph::new(format!("Balance after: {}", {
-                    format_satoshi(own_team.balance().saturating_sub(self.own_satoshis))
-                }))
-                .centered()
-                .block(default_block()),
-                money[1],
-            );
-        } else {
-            self.render_satoshi_row(
-                frame,
-                TradeSide::Other,
-                self.other_satoshis,
-                "Satoshi they add",
-                money[1],
-                layer,
-            );
-        }
+        self.render_satoshi_row(
+            frame,
+            TradeSide::Other,
+            self.other_satoshis,
+            "Satoshi they add",
+            money[1],
+            layer,
+        );
 
         let summary = match self.blocker() {
             Some(blocker) => Paragraph::new(blocker.clone())
@@ -480,8 +370,8 @@ impl Overlay for TradeOverlay {
                 .block(default_block().border_style(UiStyle::WARNING)),
             None => {
                 let crew_now = own_team.active_players_count();
-                let crew_after =
-                    crew_now - self.own_offer.is_some() as usize + self.other_offer.is_some() as usize;
+                let crew_after = crew_now - self.own_offer.is_some() as usize
+                    + self.other_offer.is_some() as usize;
                 Paragraph::new(format!(
                     "Crew {crew_now} → {crew_after}    Balance {} → {}",
                     format_satoshi(own_team.balance()),
@@ -493,57 +383,33 @@ impl Overlay for TradeOverlay {
         };
         frame.render_widget(summary, body[2]);
 
-        let sign_now = self.sign_now(world);
-        let mut constraints = vec![Constraint::Fill(1)];
-        if sign_now.is_some() {
-            constraints.push(Constraint::Length(24));
-        }
-        constraints.push(Constraint::Length(24));
-        constraints.push(Constraint::Length(12));
-        constraints.push(Constraint::Fill(1));
-        let actions = Layout::horizontal(constraints).split(body[3]);
+        let actions = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(24),
+            Constraint::Length(12),
+            Constraint::Fill(1),
+        ])
+        .split(body[3]);
 
-        let mut slot = 1;
-        if let Some((player_id, amount)) = sign_now {
-            let buy = sign_now_button(world, player_id, amount)
-                .block(default_block().border_style(UiStyle::OK));
-            frame.render_interactive_widget_on_layer(buy, actions[slot], layer);
-            slot += 1;
-        }
-
-        let label = if self.is_dock_bid() {
-            "Place bid"
-        } else {
-            "Send offer"
-        };
-        let mut send = Button::new(label, UiCallback::SendTradeOffer)
+        let mut send = Button::new("Send offer", UiCallback::SendTradeOffer)
             .hover_text("Send this offer. It cannot be taken back once accepted.")
             .hotkey(ui_key::CREATE_TRADE)
             .block(default_block().border_style(UiStyle::OK));
         if let Some(blocker) = self.blocker() {
             send.disable(Some(blocker.clone()));
         }
-        frame.render_interactive_widget_on_layer(send, actions[slot], layer);
-        slot += 1;
+        frame.render_interactive_widget_on_layer(send, actions[1], layer);
 
         let cancel = Button::new(UiText::NO, UiCallback::CloseOverlay)
             .hover_text("Close without sending")
             .block(default_block().border_style(UiStyle::ERROR));
-        frame.render_interactive_widget_on_layer(cancel, actions[slot], layer);
+        frame.render_interactive_widget_on_layer(cancel, actions[2], layer);
 
         Ok(())
     }
 
-    fn handle_key_events(&mut self, key_event: KeyEvent, world: &World) -> Option<UiCallback> {
+    fn handle_key_events(&mut self, key_event: KeyEvent, _world: &World) -> Option<UiCallback> {
         match key_event.code {
-            KeyCode::Char(c) if self.is_dock_bid() && c.is_ascii_digit() => {
-                self.type_amount(key_event, world.get_own_team().ok()?.balance());
-                Some(UiCallback::None)
-            }
-            KeyCode::Backspace if self.is_dock_bid() => {
-                self.type_amount(key_event, world.get_own_team().ok()?.balance());
-                Some(UiCallback::None)
-            }
             // Left/Right hop columns rather than switching tab.
             KeyCode::Left | KeyCode::Right | ui_key::CYCLE_VIEW => {
                 self.focus = match self.focus {
@@ -581,20 +447,15 @@ impl Overlay for TradeOverlay {
         Some((
             "Trade".to_string(),
             HelpContent {
-                description: "Pick a pirate from each crew and add satoshi to either side. \
-                    A pirate at the dock is signed for cash instead, from wherever \
-                    you are, and waits at the cove until you come for them."
+                description: "Pick a pirate from each crew and add satoshi to either side."
                     .to_string(),
-                // Deliberately no links: following one would switch tab, which
-                // closes the overlay and loses the offer being composed.
+                // A link would switch tab and lose the offer being composed.
                 links: vec![],
                 controls: vec![
                     Line::from("  ←/→ or Tab  Switch between the two crews"),
                     Line::from("  ↑/↓         Move the highlight"),
                     Line::from("  Enter       Put the highlighted pirate on the table"),
-                    Line::from("  0-9         Type the amount you are offering"),
                     Line::from("  P           Send the offer"),
-                    Line::from("  B           Buy a listed pirate outright"),
                     Line::from("  Esc         Close without sending"),
                 ],
             },

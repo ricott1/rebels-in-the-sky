@@ -151,11 +151,6 @@ pub mod team {
 }
 
 /// Trading & economy
-pub mod dock {
-    use super::KeyCode;
-    pub const SIGN_NOW: KeyCode = KeyCode::Char('B');
-}
-
 pub mod market {
     use super::KeyCode;
     pub const BUY_SCRAPS: KeyCode = KeyCode::Char('s');

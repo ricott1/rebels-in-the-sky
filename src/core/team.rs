@@ -44,42 +44,6 @@ pub enum TournamentRegistrationState {
     },
 }
 
-/// Satoshis a crew has committed to a bid and no longer has.
-///
-/// Serialized, unlike the trade books, because the money has already left
-/// `resources`: losing this record on restart would lose the money with it.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct OutstandingBid {
-    pub trade_id: TradeId,
-    pub seller_team_id: TeamId,
-    pub player_id: PlayerId,
-    /// Which of the pirate's listings this bid was for, matched against the
-    /// seller's receipt when the auction closes.
-    #[serde(default)]
-    pub listed_on: Tick,
-    pub amount: u32,
-    pub placed_on: Tick,
-    /// The deadline as published when the bid was placed. Refreshed whenever we
-    /// can see the listing, so the countdown shown is honest.
-    pub expires_at: Tick,
-    /// Set the moment we see the seller's receipt naming us. From then on the
-    /// escrow is spent whatever else happens: we are only waiting for room on
-    /// board to collect the pirate.
-    #[serde(skip_serializing_if = "is_default")]
-    #[serde(default)]
-    pub won_on: Option<Tick>,
-}
-
-impl OutstandingBid {
-    /// True once the seller has had their whole grace window to settle and has
-    /// said nothing - no receipt, no listing. A won bid is never refunded.
-    pub fn should_be_refunded(&self, now: Tick) -> bool {
-        self.won_on.is_none()
-            && (now > self.expires_at + AUCTION_SETTLEMENT_GRACE
-                || now > self.placed_on + MAX_BID_LIFETIME)
-    }
-}
-
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Team {
     pub id: TeamId,
@@ -160,13 +124,7 @@ pub struct Team {
     pub space_cove: Option<SpaceCove>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
-    pub outstanding_bids: Vec<OutstandingBid>,
-    #[serde(skip_serializing_if = "is_default")]
-    #[serde(default, alias = "market_listings")]
     pub dock_listings: Vec<DockListing>,
-    #[serde(skip_serializing_if = "is_default")]
-    #[serde(default, alias = "auction_receipts")]
-    pub dock_receipts: Vec<DockReceipt>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub tournaments_won: Vec<TournamentId>,
@@ -448,19 +406,6 @@ impl Team {
             .find(|listing| listing.player_id == *player_id)
     }
 
-    pub fn receipt_for(&self, player_id: &PlayerId, listed_on: Tick) -> Option<&DockReceipt> {
-        self.dock_receipts
-            .iter()
-            .find(|receipt| receipt.player_id == *player_id && receipt.listed_on == listed_on)
-    }
-
-    pub fn listing_mut(&mut self, player_id: &PlayerId) -> Option<&mut DockListing> {
-        self.dock_listings
-            .iter_mut()
-            .find(|listing| listing.player_id == *player_id)
-    }
-
-    /// Returns the removed listing, so a caller can refund any standing bid.
     pub fn remove_listing(&mut self, player_id: &PlayerId) -> Option<DockListing> {
         let index = self
             .dock_listings
@@ -517,7 +462,10 @@ impl Team {
         if !self.has_parked_pirates() {
             return self.player_ids.len();
         }
-        self.player_ids.iter().filter(|id| !self.is_parked(id)).count()
+        self.player_ids
+            .iter()
+            .filter(|id| !self.is_parked(id))
+            .count()
     }
 
     pub fn can_teleport_to(&self, to: &Planet) -> AppResult<()> {
@@ -633,18 +581,11 @@ impl Team {
             return Err(anyhow!("Player is not in a team"));
         }
 
-        match self.listing(&player.id) {
-            // Selling a pirate out from under a bidder would leave their escrowed
-            // satoshi stranded until the backstop sweep. Let the auction finish.
-            Some(listing) if listing.highest_bid.is_some() => {
-                Err(anyhow!("There is a standing bid"))
-            }
-            // Already ashore, and never on a game or tournament roster - those hold
-            // clones taken from the active crew. Without this the retirement and
-            // low-satisfaction ticks would skip them forever while the crew is away.
-            Some(_) => Ok(()),
-            None => self.crew_is_ashore_and_idle(),
+        if self.is_listed(&player.id) {
+            return Ok(());
         }
+
+        self.crew_is_ashore_and_idle()
     }
 
     /// The crew is docked somewhere and not committed to a game or a tournament -
@@ -701,25 +642,16 @@ impl Team {
         Ok(())
     }
 
-    /// Taking a pirate back from the dock. No crew-capacity check is needed or
-    /// wanted: a listed pirate never left `player_ids`, so their seat was never
-    /// freed and can never have been given away.
     pub fn can_recall_player_from_dock(&self, player_id: &PlayerId) -> AppResult<()> {
-        let listing = self
-            .listing(player_id)
-            .ok_or_else(|| anyhow!("Pirate is not at the dock"))?;
-
-        // Pulling a lot with money already escrowed against it would either renege
-        // on the bidder or leak their satoshis. Let the auction run out instead.
-        if listing.highest_bid.is_some() {
-            return Err(anyhow!("There is a standing bid"));
+        if !self.is_listed(player_id) {
+            return Err(anyhow!("Pirate is not at the dock"));
         }
 
         self.crew_is_ashore_and_idle()
     }
 
     /// Orders `player_ids` as `[active in best-position order.., parked..]`.
-    /// The tail is what keeps a pirate who is for sale out of the game roster,
+    /// The tail is what keeps a parked pirate out of the game roster,
     /// since `TeamInGame::from_team_id` just takes the first MAX_PLAYERS_PER_GAME.
     ///
     /// Ids whose player is missing from `players` are parked in the tail rather
@@ -989,11 +921,6 @@ impl Team {
     }
 
     /// Always evaluated from the proposer's point of view.
-    ///
-    /// `CrewSwap` is the classic co-located pirate-for-pirate deal. `DockBid`
-    /// is cash for a pirate listed on the target's cove: no co-location between
-    /// the crews, but the buyer must be standing at that cove, because the pirate
-    /// comes aboard the moment the deal settles.
     pub fn can_trade_with_team(
         &self,
         target_team: &Team,
@@ -1032,47 +959,18 @@ impl Team {
                     return Err(anyhow!("Not on the same planet"));
                 }
 
-                // A pirate at the dock is always signed through a bid, even when
-                // you happen to be standing at the cove. One code path, not two.
                 if self.is_listed(&proposer_player.id) {
-                    return Err(anyhow!("Recall your pirate from the market first"));
+                    return Err(anyhow!("Recall your pirate from the dock first"));
                 }
                 if target_team.is_listed(&target_player.id) {
                     return Err(anyhow!(
-                        "{} is at the dock - bid for them instead",
+                        "{} is at the dock",
                         target_player.info.short_name()
                     ));
                 }
 
                 self.can_release_player(proposer_player)?;
                 target_team.can_release_player(target_player)?;
-            }
-
-            TradeRoute::DockBid => {
-                if proposer_player.is_some() {
-                    return Err(anyhow!("A dock bid is cash only"));
-                }
-                if target_satoshis != 0 {
-                    return Err(anyhow!("A dock bid is cash only"));
-                }
-
-                let listing = target_team.listing(&target_player.id).ok_or_else(|| {
-                    anyhow!(
-                        "{} is not at the dock",
-                        target_player.info.short_name()
-                    )
-                })?;
-
-                if proposer_satoshis < listing.next_valid_bid() {
-                    return Err(anyhow!(
-                        "Bid at least {} satoshi",
-                        listing.next_valid_bid()
-                    ));
-                }
-
-                if self.player_ids.len() >= self.spaceship.crew_capacity() as usize {
-                    return Err(anyhow!("{} is full", self.name));
-                }
             }
         }
 
@@ -1472,12 +1370,8 @@ mod tests {
     }
 
     fn list(team: &mut Team, player_id: PlayerId) {
-        team.dock_listings.push(DockListing::new(player_id,
-            1_000,
-            100,
-            DAYS,
-            Tick::now(),
-        ));
+        team.dock_listings
+            .push(DockListing::new(player_id, Tick::now()));
     }
 
     #[test]
@@ -1658,28 +1552,6 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("already at the dock"));
-    }
-
-    #[test]
-    fn test_recall_is_blocked_once_a_bid_stands() {
-        let (mut team, _) = team_with_cove(5);
-        let first = team.player_ids[0];
-        list(&mut team, first);
-        assert!(team.can_recall_player_from_dock(&first).is_ok());
-
-        team.listing_mut(&first).expect("listing").highest_bid = Some(DockBid {
-            team_id: TeamId::new_v4(),
-            peer_id: PeerId::random(),
-            trade_id: TradeId::new_v4(),
-            amount: 500,
-            placed_on: Tick::now(),
-        });
-
-        assert!(team
-            .can_recall_player_from_dock(&first)
-            .unwrap_err()
-            .to_string()
-            .contains("standing bid"));
     }
 
     #[test]

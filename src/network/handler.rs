@@ -1,7 +1,7 @@
 use super::challenge::Challenge;
 use super::constants::*;
 use super::network_callback::NetworkCallback;
-use super::trade::{Trade, TradeRoute};
+use super::trade::Trade;
 use super::types::SeedInfo;
 use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam};
 use crate::app::AppEvent;
@@ -746,8 +746,6 @@ impl NetworkHandler {
                 continue;
             }
 
-            // The target team is carried on the trade rather than derived from the
-            // target player, which a cash-only bid does not pin down on its own.
             let target_team = if let Some(t) = world.teams.get(&trade.target_team_id) {
                 t
             } else {
@@ -909,30 +907,6 @@ impl NetworkHandler {
         Ok(trade)
     }
 
-    pub fn send_new_dock_bid(
-        &self,
-        world: &World,
-        target_peer_id: PeerId,
-        target_team_id: TeamId,
-        target_player_id: PlayerId,
-        amount: u32,
-    ) -> AppResult<Trade> {
-        self.send_own_team(world)?;
-
-        let target_player = world.players.get_or_err(&target_player_id)?.clone();
-        let trade = Trade::dock_bid(
-            *self.own_peer_id(),
-            target_peer_id,
-            world.own_team_id,
-            target_team_id,
-            target_player,
-            amount,
-        );
-
-        self.send_trade(trade.clone())?;
-        Ok(trade)
-    }
-
     pub fn accept_challenge(&self, world: &World, challenge: Challenge) -> AppResult<()> {
         self.send_own_team(world)?;
         let handle_syn = || -> AppResult<()> {
@@ -986,9 +960,6 @@ impl NetworkHandler {
     }
 
     pub fn accept_trade(&self, world: &World, trade: Trade) -> AppResult<()> {
-        if trade.route == TradeRoute::DockBid {
-            return Err(anyhow!("A dock bid settles through the releasing crew's receipt"));
-        }
         let handle_syn = || -> AppResult<()> {
             let own_team = world.get_own_team()?;
             let proposer_team = world.teams.get_or_err(&trade.proposer_team_id)?;
