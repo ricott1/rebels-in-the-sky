@@ -509,27 +509,22 @@ pub fn resolve_collision_between(
 #[cfg(test)]
 mod test {
     use super::get_collision_callbacks;
-    use crate::core::spaceship::SpaceshipPrefab;
     use crate::space_adventure::resources::Resource;
     use crate::space_adventure::{
         asteroid::AsteroidEntity, entity::Entity, projectile::ProjectileEntity,
         shield::ShieldEntity, space_callback::SpaceCallback, spaceship::SpaceshipEntity,
-        SpaceshipRole,
+        ShipLoadout, SpaceshipRole,
     };
     use crate::space_adventure::{
         collector::CollectorEntity, collisions::are_colliding, fragment::FragmentEntity, traits::*,
     };
-    use crate::types::{AppResult, ResourceMap};
+    use crate::types::AppResult;
     use glam::{I16Vec2, Vec2};
     use image::Rgba;
 
     fn ship(role: SpaceshipRole, id: usize) -> AppResult<Entity> {
         let mut entity = SpaceshipEntity::player_spaceship_entity(
-            &SpaceshipPrefab::Ibarruri.spaceship(),
-            ResourceMap::new(),
-            1.0,
-            1.0,
-            10,
+            &ShipLoadout::test_default(),
             None,
             None,
             role,

@@ -1,6 +1,6 @@
 use crate::{
     app::AppEvent,
-    space_adventure::wire::{decode, encode, LinkSender, SessionMessage, MAX_FRAME_BYTES},
+    space_adventure::wire::{decode, LinkSender, SessionMessage, MAX_FRAME_BYTES},
     types::AppResult,
 };
 use anyhow::anyhow;
@@ -80,14 +80,13 @@ pub async fn write_frame<W: AsyncWrite + Unpin>(
     writer: &mut W,
     message: &SessionMessage,
 ) -> AppResult<()> {
-    let payload = encode(message)?;
-    if payload.len() > MAX_FRAME_BYTES {
-        return Err(anyhow!("Frame too large: {} bytes", payload.len()));
+    let mut frame = postcard::to_extend(message, vec![0u8; 4])?;
+    let length = frame.len() - 4;
+    if length > MAX_FRAME_BYTES {
+        return Err(anyhow!("Frame too large: {length} bytes"));
     }
-    writer
-        .write_all(&(payload.len() as u32).to_le_bytes())
-        .await?;
-    writer.write_all(&payload).await?;
+    frame[..4].copy_from_slice(&(length as u32).to_le_bytes());
+    writer.write_all(&frame).await?;
     writer.flush().await?;
     Ok(())
 }

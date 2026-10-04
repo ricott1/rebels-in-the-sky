@@ -89,11 +89,14 @@ impl HostSession {
         self.pending.insert(link_id, (link, now));
     }
 
-    fn drop_guest(&mut self, space: &mut SpaceAdventure) -> Option<String> {
-        let guest = self.guest.take()?;
+    fn guest_left(&mut self, space: &mut SpaceAdventure) -> Vec<HostEvent> {
+        let Some(guest) = self.guest.take() else {
+            return vec![];
+        };
         space.remove_guest();
-        space.set_record_particles(false);
-        Some(guest.team_name)
+        vec![HostEvent::GuestLeft {
+            team_name: guest.team_name,
+        }]
     }
 
     pub fn handle_message(
@@ -118,7 +121,6 @@ impl HostSession {
                 });
                 return vec![];
             };
-            space.set_record_particles(true);
             let mut tracker = SnapshotTracker::new();
             link.send_control(SessionMessage::Welcome(tracker.welcome(space, ship_id)));
             let team_name: String = join.team_name.chars().take(MAX_GUEST_NAME_CHARS).collect();
@@ -145,10 +147,7 @@ impl HostSession {
                 vec![]
             }
             SessionMessage::Heartbeat => vec![],
-            _ => self
-                .drop_guest(space)
-                .map(|team_name| vec![HostEvent::GuestLeft { team_name }])
-                .unwrap_or_default(),
+            _ => self.guest_left(space),
         }
     }
 
@@ -159,9 +158,7 @@ impl HostSession {
             .as_ref()
             .is_some_and(|guest| guest.link_id == link_id)
         {
-            if let Some(team_name) = self.drop_guest(space) {
-                return vec![HostEvent::GuestLeft { team_name }];
-            }
+            return self.guest_left(space);
         }
         vec![]
     }
@@ -170,39 +167,33 @@ impl HostSession {
         self.pending
             .retain(|_, (_, opened)| now.saturating_duration_since(*opened) <= JOIN_TIMEOUT);
 
-        let Some(guest) = self.guest.as_mut() else {
+        if self.guest.is_none() {
             return vec![];
-        };
+        }
 
         if let Some(outcome) = space.take_guest_destroyed() {
+            let Some(guest) = self.guest.take() else {
+                return vec![];
+            };
             guest.link.send_control(SessionMessage::Ended {
                 reason: EndReason::Destroyed,
                 outcome,
             });
-            let team_name = guest.team_name.clone();
-            self.guest = None;
-            space.set_record_particles(false);
-            return vec![HostEvent::GuestDestroyed { team_name }];
+            return vec![HostEvent::GuestDestroyed {
+                team_name: guest.team_name,
+            }];
         }
 
         if space.is_ending() {
-            if !self.ended_sent {
-                if let Some(outcome) = space.guest_outcome() {
-                    guest.link.send_control(SessionMessage::Ended {
-                        reason: EndReason::HostEnded,
-                        outcome,
-                    });
-                }
-                self.ended_sent = true;
-            }
+            self.shutdown(space);
             return vec![];
         }
 
+        let Some(guest) = self.guest.as_mut() else {
+            return vec![];
+        };
         if now.saturating_duration_since(guest.last_heard) > LINK_TIMEOUT {
-            return self
-                .drop_guest(space)
-                .map(|team_name| vec![HostEvent::GuestLeft { team_name }])
-                .unwrap_or_default();
+            return self.guest_left(space);
         }
 
         self.fast_ticks += 1;
@@ -475,12 +466,6 @@ mod tests {
         PlanetId::from_u128(42)
     }
 
-    fn running_host() -> AppResult<SpaceAdventure> {
-        let mut space = SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
-        space.force_running();
-        Ok(space)
-    }
-
     fn join(planet_id: PlanetId) -> SessionMessage {
         let mut loadout = ShipLoadout::test_default();
         loadout.resources.insert(Resource::GOLD, 10);
@@ -495,7 +480,7 @@ mod tests {
     }
 
     fn joined_host(now: Instant) -> AppResult<(HostSession, SpaceAdventure, TestLink)> {
-        let mut space = running_host()?;
+        let mut space = SpaceAdventure::test_running()?;
         let mut host = HostSession::new();
         let link = TestLink::default();
         host.link_opened(1, Box::new(link.clone()), now);
@@ -540,7 +525,7 @@ mod tests {
             }]
         );
 
-        let mut space = running_host()?;
+        let mut space = SpaceAdventure::test_running()?;
         let mut host = HostSession::new();
         assert_eq!(
             reject(&mut space, &mut host, join(PlanetId::from_u128(1)), 2),
@@ -699,7 +684,7 @@ mod tests {
     #[test]
     fn test_host_forgets_links_that_never_join() -> AppResult<()> {
         let now = Instant::now();
-        let mut space = running_host()?;
+        let mut space = SpaceAdventure::test_running()?;
         let mut host = HostSession::new();
         let link = TestLink::default();
         host.link_opened(1, Box::new(link.clone()), now);
@@ -716,17 +701,7 @@ mod tests {
         let now = Instant::now();
         let (mut host, mut space, link) = joined_host(now)?;
         link.take();
-        let guest_id = space.guest_id().expect("guest");
-        space
-            .get_ship_mut(guest_id)
-            .expect("guest")
-            .set_invulnerable(0.0);
-        crate::space_adventure::SpaceCallback::DamageEntity {
-            id: guest_id,
-            damage: 10_000.0,
-        }
-        .call(&mut space);
-        space.update(0.025)?;
+        space.test_kill_guest()?;
 
         let events = host.tick(&mut space, now);
         assert!(matches!(
@@ -751,17 +726,7 @@ mod tests {
         let now = Instant::now();
         let (mut host, mut space, link) = joined_host(now)?;
         link.take();
-        let guest_id = space.guest_id().expect("guest");
-        space
-            .get_ship_mut(guest_id)
-            .expect("guest")
-            .set_invulnerable(0.0);
-        crate::space_adventure::SpaceCallback::DamageEntity {
-            id: guest_id,
-            damage: 10_000.0,
-        }
-        .call(&mut space);
-        space.update(0.025)?;
+        space.test_kill_guest()?;
         space.stop_space_adventure();
 
         host.tick(&mut space, now);
@@ -819,7 +784,7 @@ mod tests {
     }
 
     fn welcome_and_mirror() -> AppResult<(Welcome, SpaceMirror)> {
-        let mut space = running_host()?;
+        let mut space = SpaceAdventure::test_running()?;
         let guest_id = space.add_guest(&ShipLoadout::test_default())?;
         let welcome =
             crate::space_adventure::snapshot::SnapshotTracker::new().welcome(&space, guest_id);
@@ -976,7 +941,7 @@ mod tests {
     #[test]
     fn test_guest_link_lost_settles_from_the_last_view() -> AppResult<()> {
         let now = Instant::now();
-        let mut space = running_host()?;
+        let mut space = SpaceAdventure::test_running()?;
         let guest_id = space.add_guest(&guest_loadout())?;
         let mut tracker = crate::space_adventure::snapshot::SnapshotTracker::new();
         let welcome = tracker.welcome(&space, guest_id);
@@ -1004,7 +969,7 @@ mod tests {
     #[test]
     fn test_host_sanitizes_the_guest_loadout() -> AppResult<()> {
         let now = Instant::now();
-        let mut space = running_host()?;
+        let mut space = SpaceAdventure::test_running()?;
         let mut host = HostSession::new();
         host.link_opened(1, Box::new(TestLink::default()), now);
         let SessionMessage::Join(mut request) = join(planet()) else {

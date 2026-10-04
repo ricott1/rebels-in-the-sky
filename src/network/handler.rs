@@ -158,7 +158,7 @@ enum SwarmCommand {
     },
     EnsureDirect {
         peer_id: PeerId,
-        reply: oneshot::Sender<bool>,
+        reply: oneshot::Sender<()>,
     },
 }
 
@@ -194,10 +194,25 @@ fn direct_state(
     }
 }
 
+fn find_peer(swarm: &mut Swarm<Behaviour>, relay_circuit: Option<&Multiaddr>, peer_id: PeerId) {
+    swarm.behaviour_mut().kademlia.get_closest_peers(peer_id);
+    // Also reach the peer through the relay circuit; DCUtR then upgrades the relayed connection to a direct one.
+    if let Some(base) = relay_circuit {
+        let via_relay = base.clone().with(Protocol::P2p(peer_id));
+        let opts = DialOpts::unknown_peer_id()
+            .address(via_relay.clone())
+            .allocate_new_port()
+            .build();
+        if let Err(e) = swarm.dial(opts) {
+            log::debug!("Could not dial {peer_id} via relay {via_relay}: {e}");
+        }
+    }
+}
+
 fn resolve_direct_waiters(
     swarm: &mut Swarm<Behaviour>,
     connections: &HashMap<PeerId, Vec<(ConnectionId, bool)>>,
-    direct_waiters: &mut HashMap<PeerId, Vec<oneshot::Sender<bool>>>,
+    direct_waiters: &mut HashMap<PeerId, Vec<oneshot::Sender<()>>>,
     peer_id: &PeerId,
 ) {
     if !direct_waiters.contains_key(peer_id) {
@@ -212,7 +227,7 @@ fn resolve_direct_waiters(
         }
         DirectState::Ready => {
             for waiter in direct_waiters.remove(peer_id).into_iter().flatten() {
-                let _ = waiter.send(true);
+                let _ = waiter.send(());
             }
         }
     }
@@ -498,7 +513,7 @@ impl NetworkHandler {
             // reaches any peer through the relay, which DCUtR then upgrades.
             let mut relay_circuit: Option<Multiaddr> = None;
             let mut connections: HashMap<PeerId, Vec<(ConnectionId, bool)>> = HashMap::new();
-            let mut direct_waiters: HashMap<PeerId, Vec<oneshot::Sender<bool>>> = HashMap::new();
+            let mut direct_waiters: HashMap<PeerId, Vec<oneshot::Sender<()>>> = HashMap::new();
 
             loop {
                 tokio::select! {
@@ -677,35 +692,14 @@ impl NetworkHandler {
                             }
                             SwarmCommand::FindPeer { peer_id } => {
                                 log::debug!("Looking up peer {peer_id} in the DHT");
-                                swarm.behaviour_mut().kademlia.get_closest_peers(peer_id);
-                                // Also reach the peer through the relay circuit; DCUtR then upgrades the relayed connection to a direct one.
-                                if let Some(base) = &relay_circuit {
-                                    let via_relay = base.clone().with(Protocol::P2p(peer_id));
-                                    let opts = DialOpts::unknown_peer_id()
-                                        .address(via_relay.clone())
-                                        .allocate_new_port()
-                                        .build();
-                                    if let Err(e) = swarm.dial(opts) {
-                                        log::debug!("Could not dial {peer_id} via relay {via_relay}: {e}");
-                                    }
-                                }
+                                find_peer(&mut swarm, relay_circuit.as_ref(), peer_id);
                             }
                             SwarmCommand::EnsureDirect { peer_id, reply } => {
                                 let waiters = direct_waiters.entry(peer_id).or_default();
                                 waiters.retain(|waiter| !waiter.is_closed());
                                 waiters.push(reply);
                                 if direct_state(&connections, &peer_id) == DirectState::Missing {
-                                    swarm.behaviour_mut().kademlia.get_closest_peers(peer_id);
-                                    if let Some(base) = &relay_circuit {
-                                        let via_relay = base.clone().with(Protocol::P2p(peer_id));
-                                        let opts = DialOpts::unknown_peer_id()
-                                            .address(via_relay)
-                                            .allocate_new_port()
-                                            .build();
-                                        if let Err(e) = swarm.dial(opts) {
-                                            log::debug!("Could not dial {peer_id} via relay: {e}");
-                                        }
-                                    }
+                                    find_peer(&mut swarm, relay_circuit.as_ref(), peer_id);
                                 } else {
                                     resolve_direct_waiters(&mut swarm, &connections, &mut direct_waiters, &peer_id);
                                 }
@@ -1288,31 +1282,23 @@ async fn connect_space_link_task(
             .send(SwarmCommand::EnsureDirect { peer_id, reply })
             .await
             .map_err(|_| "network stopped")?;
-        if !matches!(direct.await, Ok(true)) {
-            return Err("no direct connection");
-        }
+        direct.await.map_err(|_| "no direct connection")?;
         control
             .open_stream(peer_id, SPACE_ADVENTURE_PROTOCOL)
             .await
             .map_err(|_| "could not open stream")
     };
 
-    let stream = match tokio::time::timeout(CONNECT_TIMEOUT, connect).await {
-        Ok(Ok(stream)) => stream,
-        Ok(Err(reason)) => {
+    let stream = match tokio::time::timeout(CONNECT_TIMEOUT, connect)
+        .await
+        .unwrap_or(Err("no direct connection in time"))
+    {
+        Ok(stream) => stream,
+        Err(reason) => {
             let _ = events
                 .send(AppEvent::SpaceLink(SpaceLinkEvent::Closed {
                     link_id,
                     reason: reason.to_string(),
-                }))
-                .await;
-            return;
-        }
-        Err(_) => {
-            let _ = events
-                .send(AppEvent::SpaceLink(SpaceLinkEvent::Closed {
-                    link_id,
-                    reason: "no direct connection in time".to_string(),
                 }))
                 .await;
             return;

@@ -1,6 +1,7 @@
 use super::collisions::HitBox;
 use super::core_constants::{FUEL_CONSUMPTION_PER_UNIT_STORAGE, SPEED_PENALTY_PER_UNIT_STORAGE};
 use super::entity::Entity;
+use super::player::ShipLoadout;
 use super::resources::Resource;
 use super::space_callback::SpaceCallback;
 use super::utils::{body_data_from_image, EntityState};
@@ -363,15 +364,6 @@ impl GameEntity for SpaceshipEntity {
         if !self.is_player() {
             if self.current_durability() == 0 {
                 callbacks.push(SpaceCallback::DestroyEntity { id: self.id });
-
-                if let Some(id) = self.collector_id {
-                    callbacks.push(SpaceCallback::DestroyEntity { id });
-                }
-
-                if let Some(id) = self.shield_id {
-                    callbacks.push(SpaceCallback::DestroyEntity { id });
-                }
-
                 return callbacks;
             }
 
@@ -691,6 +683,12 @@ impl SpaceshipEntity {
         self.collector_id
     }
 
+    pub fn empty_hold(&mut self) {
+        for resource in [Resource::GOLD, Resource::RUM, Resource::SCRAPS] {
+            self.resources.insert(resource, 0);
+        }
+    }
+
     pub fn set_invulnerable(&mut self, seconds: f32) {
         self.invulnerable_for = seconds;
     }
@@ -902,23 +900,18 @@ impl SpaceshipEntity {
         }))
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn player_spaceship_entity(
-        spaceship: &Spaceship,
-        resources: ResourceMap,
-        speed_bonus: f32,
-        weapons_bonus: f32,
-        fuel: u32,
+        loadout: &ShipLoadout,
         collector_id: Option<usize>,
         shield_id: Option<usize>,
         role: SpaceshipRole,
     ) -> AppResult<Entity> {
         Self::from_spaceship(
-            spaceship,
-            resources,
-            speed_bonus,
-            weapons_bonus,
-            fuel,
+            &loadout.spaceship,
+            loadout.resources.clone(),
+            loadout.speed_bonus,
+            loadout.weapons_bonus,
+            loadout.fuel,
             collector_id,
             shield_id,
             role,

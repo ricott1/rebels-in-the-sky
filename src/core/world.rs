@@ -1127,13 +1127,18 @@ impl World {
         welcome: &Welcome,
         planet_id: PlanetId,
     ) -> AppResult<()> {
-        let mut own_team = self.get_own_team()?.clone();
+        let own_team = self.get_own_team()?.clone();
         own_team.can_start_space_adventure(own_team.average_tiredness(self))?;
         if own_team.is_on_planet() != Some(planet_id) {
             return Err(anyhow!("Team left the planet"));
         }
         let mirror = SpaceMirror::new(welcome)?;
+        self.begin_space_adventure(own_team, planet_id)?;
+        self.space_mirror = Some(mirror);
+        Ok(())
+    }
 
+    fn begin_space_adventure(&mut self, mut own_team: Team, planet_id: PlanetId) -> AppResult<()> {
         own_team.current_location = TeamLocation::OnSpaceAdventure {
             around: planet_id,
             joinable: false,
@@ -1143,7 +1148,6 @@ impl World {
             player.add_tiredness(SPACE_ADVENTURE_TIREDNESS_COST);
         }
         self.teams.insert(own_team.id, own_team);
-        self.space_mirror = Some(mirror);
         self.last_tick_min_interval = Tick::now();
         self.dirty = true;
         self.dirty_network = true;
@@ -1152,7 +1156,7 @@ impl World {
     }
 
     pub fn start_space_adventure(&mut self) -> AppResult<()> {
-        let mut own_team = self.get_own_team()?.clone();
+        let own_team = self.get_own_team()?.clone();
         let average_tiredness = own_team.average_tiredness(self);
         own_team.can_start_space_adventure(average_tiredness)?;
 
@@ -1170,22 +1174,8 @@ impl World {
         let space = SpaceAdventure::new(should_spawn_asteroid, gold_fragment_probability)?
             .with_host(&loadout)?;
 
-        own_team.current_location = TeamLocation::OnSpaceAdventure {
-            around: planet_id,
-            joinable: false,
-        };
-
-        for player_id in own_team.player_ids.iter() {
-            let player = self.players.get_mut_or_err(player_id)?;
-            player.add_tiredness(SPACE_ADVENTURE_TIREDNESS_COST);
-        }
-
-        self.teams.insert(own_team.id, own_team);
-        self.last_tick_min_interval = Tick::now();
+        self.begin_space_adventure(own_team, planet_id)?;
         self.space_adventure = Some(space);
-        self.dirty = true;
-        self.dirty_network = true;
-        self.dirty_ui = true;
         Ok(())
     }
 

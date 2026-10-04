@@ -1,6 +1,7 @@
 use super::{
     asteroid::AsteroidSize,
     player::{LocalPlayerView, PlayerOutcome, ShipLoadout},
+    utils::EntityState,
     visual_effects::VisualEffect,
     PlayerInput, SpaceshipRole,
 };
@@ -8,7 +9,7 @@ use crate::{
     core::{resources::Resource, spaceship::Spaceship},
     types::{AppResult, PlanetId, TeamId},
 };
-use glam::Vec2;
+use glam::{I16Vec2, Vec2};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
@@ -41,18 +42,13 @@ pub struct NetVec(pub i16, pub i16);
 impl NetVec {
     const SCALE: f32 = 16.0;
 
-    fn quantize(value: f32) -> i16 {
-        (value * Self::SCALE)
-            .round()
-            .clamp(i16::MIN as f32, i16::MAX as f32) as i16
-    }
-
     pub fn from_vec2(value: Vec2) -> Self {
-        Self(Self::quantize(value.x), Self::quantize(value.y))
+        let quantized = (value * Self::SCALE).round().as_i16vec2();
+        Self(quantized.x, quantized.y)
     }
 
     pub fn to_vec2(self) -> Vec2 {
-        Vec2::new(self.0 as f32, self.1 as f32) / Self::SCALE
+        I16Vec2::new(self.0, self.1).as_vec2() / Self::SCALE
     }
 }
 
@@ -109,7 +105,7 @@ pub struct ParticleSpawn {
     pub pos: NetVec,
     pub vel: NetVec,
     pub color: [u8; 4],
-    pub lifetime: Option<f32>,
+    pub state: EntityState,
     pub layer: u8,
 }
 
@@ -306,7 +302,7 @@ mod tests {
                 pos: NetVec(16, 32),
                 vel: NetVec(-16, 0),
                 color: [9, 9, 9, 255],
-                lifetime: Some(1.5),
+                state: EntityState::Decaying { lifetime: 1.5 },
                 layer: 2,
             }],
             you: view,

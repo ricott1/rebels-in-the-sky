@@ -56,12 +56,10 @@ impl Body for ShieldEntity {
 
 impl Sprite for ShieldEntity {
     fn image(&self) -> &RgbaImage {
-        if self.is_active() {
-            &self.image
-        } else if self.current_durability() < self.max_durability() {
-            &self.recharging_image
-        } else {
-            &self.inactive_image
+        match self.look() {
+            ShieldLook::Active => &self.image,
+            ShieldLook::Recharging => &self.recharging_image,
+            ShieldLook::Inactive => &self.inactive_image,
         }
     }
 }

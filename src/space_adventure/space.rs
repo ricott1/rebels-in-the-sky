@@ -152,7 +152,6 @@ pub struct SpaceAdventure {
     id_to_layer: HashMap<usize, usize>,
     host_id: Option<usize>,
     guest_id: Option<usize>,
-    guest_entities: Vec<usize>,
     guest_destroyed: Option<PlayerOutcome>,
     record_particles: bool,
     particle_outbox: Vec<ParticleSpawn>,
@@ -201,7 +200,7 @@ impl SpaceAdventure {
 
     pub fn entity_count(&self) -> usize {
         let guest_entities = self
-            .guest_entities
+            .guest_entity_ids()
             .iter()
             .filter(|id| self.get_entity(id).is_some())
             .count();
@@ -255,14 +254,13 @@ impl SpaceAdventure {
         if self.guest_id.is_some() {
             return Err(anyhow!("There is already a guest"));
         }
-        let (ship_id, mut entity_ids) = self.insert_player_ship(loadout, SpaceshipRole::Guest)?;
+        let ship_id = self.insert_player_ship(loadout, SpaceshipRole::Guest)?;
         if let Some(ship) = self.get_ship_mut(ship_id) {
             ship.set_invulnerable(STARTING_DURATION.as_secs_f32());
         }
-        entity_ids.push(ship_id);
-        self.guest_entities = entity_ids;
         self.guest_id = Some(ship_id);
         self.guest_destroyed = None;
+        self.record_particles = true;
         Ok(ship_id)
     }
 
@@ -272,26 +270,31 @@ impl SpaceAdventure {
         outcome
     }
 
-    pub fn set_record_particles(&mut self, record: bool) {
-        self.record_particles = record;
-        if !record {
-            self.particle_outbox.clear();
-        }
-    }
-
-    pub fn take_particle_outbox(&mut self) -> Vec<ParticleSpawn> {
-        std::mem::take(&mut self.particle_outbox)
+    pub fn drain_particle_outbox(&mut self, into: &mut Vec<ParticleSpawn>) {
+        into.append(&mut self.particle_outbox);
     }
 
     pub fn take_guest_destroyed(&mut self) -> Option<PlayerOutcome> {
         self.guest_destroyed.take()
     }
 
+    fn guest_entity_ids(&self) -> Vec<usize> {
+        let Some(ship) = self.guest_id.and_then(|id| self.get_ship(id)) else {
+            return vec![];
+        };
+        std::iter::once(ship.id())
+            .chain(ship.collector_id())
+            .chain(ship.shield_id())
+            .collect()
+    }
+
     fn clear_guest(&mut self) {
-        for id in std::mem::take(&mut self.guest_entities) {
+        for id in self.guest_entity_ids() {
             self.remove_entity(&id);
         }
         self.guest_id = None;
+        self.record_particles = false;
+        self.particle_outbox.clear();
     }
 
     fn destroy_guest(&mut self) {
@@ -299,9 +302,7 @@ impl SpaceAdventure {
             return;
         };
         if let Some(ship) = self.get_ship_mut(guest_id) {
-            ship.resources_mut().insert(Resource::GOLD, 0);
-            ship.resources_mut().insert(Resource::RUM, 0);
-            ship.resources_mut().insert(Resource::SCRAPS, 0);
+            ship.empty_hold();
         }
         self.guest_destroyed = self.outcome(guest_id);
         SpaceCallback::DestroyEntity { id: guest_id }.call(self);
@@ -352,6 +353,28 @@ impl SpaceAdventure {
         self.state = SpaceAdventureState::Running {
             time: Instant::now(),
         };
+    }
+
+    #[cfg(test)]
+    pub fn test_running() -> AppResult<Self> {
+        let mut space = Self::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
+        space.force_running();
+        Ok(space)
+    }
+
+    #[cfg(test)]
+    pub fn test_kill_guest(&mut self) -> AppResult<()> {
+        let guest_id = self.guest_id.ok_or_else(|| anyhow!("No guest"))?;
+        if let Some(ship) = self.get_ship_mut(guest_id) {
+            ship.set_invulnerable(0.0);
+        }
+        SpaceCallback::DamageEntity {
+            id: guest_id,
+            damage: 10_000.0,
+        }
+        .call(self);
+        self.update(0.025)?;
+        Ok(())
     }
 
     pub fn remove_entity(&mut self, id: &usize) {
@@ -436,10 +459,7 @@ impl SpaceAdventure {
                 pos: NetVec::from_vec2(position),
                 vel: NetVec::from_vec2(velocity),
                 color: color.0,
-                lifetime: match particle_state {
-                    EntityState::Immortal => None,
-                    EntityState::Decaying { lifetime } => Some(lifetime),
-                },
+                state: particle_state,
                 layer: layer as u8,
             });
         }
@@ -486,14 +506,16 @@ impl SpaceAdventure {
     }
 
     pub fn nearest_player_center(&self, from: I16Vec2) -> Option<I16Vec2> {
-        self.player_ship_ids()
+        let from = from.as_vec2();
+        self.host_id
             .into_iter()
+            .chain(self.guest_id)
             .filter_map(|id| self.get_ship(id))
             .map(|ship| ship.center())
             .min_by(|a, b| {
                 a.as_vec2()
-                    .distance_squared(from.as_vec2())
-                    .total_cmp(&b.as_vec2().distance_squared(from.as_vec2()))
+                    .distance_squared(from)
+                    .total_cmp(&b.as_vec2().distance_squared(from))
             })
     }
 
@@ -525,7 +547,6 @@ impl SpaceAdventure {
             id_to_layer: HashMap::new(),
             host_id: None,
             guest_id: None,
-            guest_entities: Vec::new(),
             guest_destroyed: None,
             record_particles: false,
             particle_outbox: Vec::new(),
@@ -541,7 +562,7 @@ impl SpaceAdventure {
         &mut self,
         loadout: &ShipLoadout,
         role: SpaceshipRole,
-    ) -> AppResult<(usize, Vec<usize>)> {
+    ) -> AppResult<usize> {
         let collector_id = self.insert_entity(CollectorEntity::new_entity());
         let shield_id = if loadout.spaceship.shield == Shield::None {
             None
@@ -552,24 +573,16 @@ impl SpaceAdventure {
                 true,
             )))
         };
-        let ship_id = self.insert_entity(SpaceshipEntity::player_spaceship_entity(
-            &loadout.spaceship,
-            loadout.resources.clone(),
-            loadout.speed_bonus,
-            loadout.weapons_bonus,
-            loadout.fuel,
+        Ok(self.insert_entity(SpaceshipEntity::player_spaceship_entity(
+            loadout,
             Some(collector_id),
             shield_id,
             role,
-        )?);
-        Ok((
-            ship_id,
-            std::iter::once(collector_id).chain(shield_id).collect(),
-        ))
+        )?))
     }
 
     pub fn with_host(mut self, loadout: &ShipLoadout) -> AppResult<Self> {
-        let (ship_id, _) = self.insert_player_ship(loadout, SpaceshipRole::Host)?;
+        let ship_id = self.insert_player_ship(loadout, SpaceshipRole::Host)?;
         self.host_id = Some(ship_id);
 
         for _ in 0..10 {
@@ -651,9 +664,7 @@ impl SpaceAdventure {
 
                 if let Some(player) = self.host_ship_mut() {
                     if player.current_durability() == 0 {
-                        player.resources_mut().insert(Resource::GOLD, 0);
-                        player.resources_mut().insert(Resource::RUM, 0);
-                        player.resources_mut().insert(Resource::SCRAPS, 0);
+                        player.empty_hold();
                         self.stop_space_adventure();
 
                         return Ok(vec![UiCallback::PushUiPopup {
@@ -792,15 +803,9 @@ mod tests {
     use crate::space_adventure::SpaceCallback;
     use crate::types::StorableResourceMap;
 
-    fn running_space() -> AppResult<SpaceAdventure> {
-        let mut space = SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
-        space.force_running();
-        Ok(space)
-    }
-
     #[test]
     fn test_host_ship_has_host_role() -> AppResult<()> {
-        let space = running_space()?;
+        let space = SpaceAdventure::test_running()?;
         let host = space.host_ship().expect("There should be a host ship");
         assert_eq!(host.role(), SpaceshipRole::Host);
         assert_eq!(space.player_ship_ids(), vec![host.id()]);
@@ -809,7 +814,7 @@ mod tests {
 
     #[test]
     fn test_input_goes_to_the_given_ship() -> AppResult<()> {
-        let mut space = running_space()?;
+        let mut space = SpaceAdventure::test_running()?;
         let host_id = space.host_id().expect("There should be a host id");
         space.handle_player_input(host_id, PlayerInput::MoveRight)?;
         space.update(0.025)?;
@@ -820,7 +825,7 @@ mod tests {
 
     #[test]
     fn test_input_to_unknown_or_enemy_ship_fails() -> AppResult<()> {
-        let mut space = running_space()?;
+        let mut space = SpaceAdventure::test_running()?;
         assert!(space
             .handle_player_input(usize::MAX, PlayerInput::MoveRight)
             .is_err());
@@ -841,7 +846,7 @@ mod tests {
 
     #[test]
     fn test_add_guest_spawns_one_guest_ship() -> AppResult<()> {
-        let mut space = running_space()?;
+        let mut space = SpaceAdventure::test_running()?;
         let guest_id = space.add_guest(&guest_loadout())?;
         assert_eq!(space.guest_id(), Some(guest_id));
         assert_eq!(
@@ -854,7 +859,7 @@ mod tests {
 
     #[test]
     fn test_remove_guest_returns_outcome_and_clears_entities() -> AppResult<()> {
-        let mut space = running_space()?;
+        let mut space = SpaceAdventure::test_running()?;
         let guest_id = space.add_guest(&guest_loadout())?;
         let guest = space.get_ship(guest_id).expect("guest");
         let collector_id = guest.collector_id().expect("collector");
@@ -873,7 +878,7 @@ mod tests {
 
     #[test]
     fn test_guest_ignores_damage_while_invulnerable() -> AppResult<()> {
-        let mut space = running_space()?;
+        let mut space = SpaceAdventure::test_running()?;
         let guest_id = space.add_guest(&guest_loadout())?;
         let full = space
             .get_ship(guest_id)
@@ -911,19 +916,9 @@ mod tests {
 
     #[test]
     fn test_guest_death_wipes_hold_and_keeps_adventure_running() -> AppResult<()> {
-        let mut space = running_space()?;
+        let mut space = SpaceAdventure::test_running()?;
         let guest_id = space.add_guest(&guest_loadout())?;
-        space
-            .get_ship_mut(guest_id)
-            .expect("guest")
-            .set_invulnerable(0.0);
-
-        SpaceCallback::DamageEntity {
-            id: guest_id,
-            damage: 10_000.0,
-        }
-        .call(&mut space);
-        space.update(0.025)?;
+        space.test_kill_guest()?;
 
         let outcome = space.take_guest_destroyed().expect("guest destroyed");
         assert_eq!(outcome.durability, 0);
@@ -941,7 +936,7 @@ mod tests {
 
     #[test]
     fn test_guest_entities_do_not_count_for_difficulty() -> AppResult<()> {
-        let mut space = running_space()?;
+        let mut space = SpaceAdventure::test_running()?;
         let before = space.entity_count();
         space.add_guest(&guest_loadout())?;
         assert_eq!(space.entity_count(), before);
@@ -950,7 +945,7 @@ mod tests {
 
     #[test]
     fn test_enemies_track_the_nearer_player() -> AppResult<()> {
-        let mut space = running_space()?;
+        let mut space = SpaceAdventure::test_running()?;
         let guest_id = space.add_guest(&ShipLoadout::test_default())?;
         space
             .get_ship_mut(guest_id)
@@ -969,7 +964,7 @@ mod tests {
 
     #[test]
     fn test_local_view_reports_the_ship() -> AppResult<()> {
-        let space = running_space()?;
+        let space = SpaceAdventure::test_running()?;
         let host = space.host_ship().expect("host");
         let view = space.local_view(host.id()).expect("view");
         assert_eq!(view.fuel, host.fuel());
@@ -981,18 +976,9 @@ mod tests {
 
     #[test]
     fn test_new_guest_does_not_inherit_a_pending_death() -> AppResult<()> {
-        let mut space = running_space()?;
-        let guest_id = space.add_guest(&guest_loadout())?;
-        space
-            .get_ship_mut(guest_id)
-            .expect("guest")
-            .set_invulnerable(0.0);
-        SpaceCallback::DamageEntity {
-            id: guest_id,
-            damage: 10_000.0,
-        }
-        .call(&mut space);
-        space.update(0.025)?;
+        let mut space = SpaceAdventure::test_running()?;
+        space.add_guest(&guest_loadout())?;
+        space.test_kill_guest()?;
 
         space.add_guest(&guest_loadout())?;
         assert!(space.take_guest_destroyed().is_none());

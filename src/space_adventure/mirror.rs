@@ -11,7 +11,6 @@ use super::{
     space_callback::SpaceCallback,
     spaceship::SpaceshipEntity,
     traits::*,
-    utils::EntityState,
     visual_effects::VisualEffect,
     wire::{EntityLook, EntitySpawn, NetEntityState, NetId, Snapshot, SpawnKind, Welcome},
 };
@@ -133,11 +132,7 @@ impl SpaceMirror {
                 particle.pos.to_vec2(),
                 particle.vel.to_vec2(),
                 Rgba(particle.color),
-                particle
-                    .lifetime
-                    .map_or(EntityState::Immortal, |lifetime| EntityState::Decaying {
-                        lifetime,
-                    }),
+                particle.state,
                 particle.layer as usize,
             ));
         }
@@ -241,10 +236,8 @@ mod tests {
     use crate::types::ResourceMap;
 
     fn host_with_guest() -> AppResult<(SpaceAdventure, usize)> {
-        let mut space = SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
-        space.force_running();
+        let mut space = SpaceAdventure::test_running()?;
         let guest_id = space.add_guest(&ShipLoadout::test_default())?;
-        space.set_record_particles(true);
         Ok((space, guest_id))
     }
 

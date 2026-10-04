@@ -42,29 +42,23 @@ pub fn spawn_of(entity: &Entity) -> Option<EntitySpawn> {
 }
 
 pub fn state_of(entity: &Entity) -> Option<NetEntityState> {
-    let look = match entity {
-        Entity::Asteroid(asteroid) => EntityLook {
-            frame: asteroid.frame() as u16,
-            shield: None,
-            effects: asteroid.visual_effects(),
-        },
-        Entity::Spaceship(ship) => EntityLook {
-            frame: ship.frame() as u16,
-            shield: None,
-            effects: ship.visual_effects(),
-        },
-        Entity::Shield(shield) => EntityLook {
-            shield: Some(shield.look()),
-            ..Default::default()
-        },
-        Entity::Fragment(_) | Entity::Projectile(_) => EntityLook::default(),
-        Entity::Collector(_) | Entity::Particle(_) => return None,
-    };
+    if !is_synced(entity) {
+        return None;
+    }
+    let frame = match entity {
+        Entity::Asteroid(asteroid) => asteroid.frame(),
+        Entity::Spaceship(ship) => ship.frame(),
+        _ => 0,
+    } as u16;
     Some(NetEntityState {
         id: entity.id() as NetId,
         pos: NetVec::from_vec2(entity.position_f32()),
         vel: NetVec::from_vec2(entity.velocity_f32()),
-        look,
+        look: EntityLook {
+            frame,
+            shield: entity.as_shield().ok().map(|shield| shield.look()),
+            effects: entity.visual_effects(),
+        },
     })
 }
 
@@ -100,7 +94,7 @@ impl SnapshotTracker {
     }
 
     pub fn collect_particles(&mut self, space: &mut SpaceAdventure) {
-        self.pending_particles.extend(space.take_particle_outbox());
+        space.drain_particle_outbox(&mut self.pending_particles);
         let overflow = self
             .pending_particles
             .len()
@@ -125,20 +119,15 @@ impl SnapshotTracker {
         last_input_seq: u64,
     ) -> Option<Snapshot> {
         let you = space.local_view(guest_ship_id)?;
-        let current: HashMap<NetId, &Entity> = space
+        let spawned = space
             .all_entities()
-            .filter(|entity| is_synced(entity))
-            .map(|entity| (entity.id() as NetId, entity))
-            .collect();
-        let spawned = current
-            .iter()
-            .filter(|(id, _)| !self.sent_ids.contains(*id))
-            .filter_map(|(_, entity)| spawn_of(entity))
+            .filter(|entity| !self.sent_ids.contains(&(entity.id() as NetId)))
+            .filter_map(spawn_of)
             .collect();
         let removed = self
             .sent_ids
             .iter()
-            .filter(|id| !current.contains_key(*id))
+            .filter(|id| space.get_entity(&(**id as usize)).is_none())
             .copied()
             .collect();
         self.tick += 1;
@@ -173,8 +162,7 @@ mod tests {
     use std::collections::HashSet;
 
     fn space_with_guest() -> AppResult<(SpaceAdventure, usize)> {
-        let mut space = SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
-        space.force_running();
+        let mut space = SpaceAdventure::test_running()?;
         let mut loadout = ShipLoadout::test_default();
         loadout.spaceship.shield = crate::core::Shield::Small;
         let guest_id = space.add_guest(&loadout)?;
@@ -250,7 +238,6 @@ mod tests {
     #[test]
     fn test_particles_are_kept_until_committed() -> AppResult<()> {
         let (mut space, guest_id) = space_with_guest()?;
-        space.set_record_particles(true);
         let mut tracker = SnapshotTracker::new();
         tracker.welcome(&space, guest_id);
         space.generate_particle(

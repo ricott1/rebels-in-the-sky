@@ -2390,7 +2390,7 @@ mod test {
         core::{constants::SECONDS, resources::Resource, INITIAL_RANDOM_TEAM_BALANCE},
         space_adventure::{
             snapshot::SnapshotTracker, ControllableSpaceship, GameEntity, PlayerOutcome,
-            ShipLoadout, SpaceAdventure, SpaceCallback,
+            SpaceAdventure, SpaceCallback,
         },
         types::{
             AppResult, PlanetId, ResourceMap, StorableResourceMap, SystemTimeTick, TeamId, Tick,
@@ -2592,9 +2592,7 @@ mod test {
             .add_resource(Resource::FUEL, 100)?;
         let planet_id = app.world.get_own_team()?.is_on_planet().expect("on planet");
 
-        let mut host_space =
-            SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
-        host_space.force_running();
+        let mut host_space = SpaceAdventure::test_running()?;
         let guest_id = host_space.add_guest(&app.world.own_ship_loadout()?)?;
         let welcome = SnapshotTracker::new().welcome(&host_space, guest_id);
 
