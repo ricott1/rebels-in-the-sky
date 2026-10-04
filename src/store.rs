@@ -2,7 +2,7 @@
 use crate::network::network_store_data::NetworkStoreData;
 use crate::{
     app_version,
-    core::{world::World, ScoutReport, MAX_SKILL},
+    core::{utils::PLANET_DATA, world::World, ScoutReport, GALAXY_ROOT_ID, MAX_SKILL},
     game_engine::{game::Game, Tournament, TournamentId},
     types::*,
     ui::{PopupMessage, UiCallback},
@@ -220,6 +220,18 @@ pub fn load_world(store_prefix: &str) -> AppResult<(World, Vec<UiCallback>)> {
                     }
                 }
                 own_team.creation_time = creation_time;
+            }
+        }
+    }
+
+    if let Some(dock) = PLANET_DATA
+        .iter()
+        .find(|planet| planet.id == *GALAXY_ROOT_ID)
+    {
+        if let Some(planet) = w.planets.get_mut(&dock.id) {
+            if planet.populations.is_empty() {
+                planet.populations = dock.populations.clone();
+                planet.resources = dock.resources.clone();
             }
         }
     }

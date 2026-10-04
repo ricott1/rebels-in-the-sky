@@ -332,6 +332,10 @@ impl Team {
         }
     }
 
+    pub fn is_at_dock(&self) -> bool {
+        self.is_on_planet() == Some(*GALAXY_ROOT_ID)
+    }
+
     pub fn playing_in_tournament(&self) -> Option<TournamentId> {
         match self.tournament_registration_state {
             TournamentRegistrationState::None
@@ -469,16 +473,17 @@ impl Team {
     }
 
     pub fn can_teleport_to(&self, to: &Planet) -> AppResult<()> {
-        let has_teleportation_pad = self.home_planet_id == to.id
+        let is_dock = to.id == *GALAXY_ROOT_ID;
+        let has_teleportation_pad = is_dock
+            || self.home_planet_id == to.id
             || to.upgrades.contains(&PlanetUpgradeTarget::TeleportationPad);
 
         if !has_teleportation_pad {
             return Err(anyhow!("{} has no teleportation pad", to.name));
         }
 
-        // If it has a pad but it's not your own asteroid, cannot teleport
-        // unless the asteroid opened its pad to external crews.
-        if self.home_planet_id != to.id
+        if !is_dock
+            && self.home_planet_id != to.id
             && !self.asteroid_ids.contains(&to.id)
             && !to.allow_external_teleport
         {
@@ -606,17 +611,9 @@ impl Team {
         Ok(())
     }
 
-    /// Conditions to leave a pirate at the dock. The dock is not a place, so this
-    /// to another crew.
-    ///
-    /// The game and tournament checks are not implied by the location check:
-    /// games are played on a planet, and a crew can organise a tournament at its
-    /// own cove, so being docked there is compatible with both.
     pub fn can_leave_player_at_dock(&self, player: &Player) -> AppResult<()> {
-        // Being on a planet is load-bearing, not flavour: it guarantees the crew
-        // is never Travelling while a crew role is vacated.
-        if self.is_on_planet().is_none() {
-            return Err(anyhow!("{} is not on a planet", self.name));
+        if !self.is_at_dock() {
+            return Err(anyhow!("{} is not at the dock", self.name));
         }
 
         if !self.player_ids.contains(&player.id) || player.team != Some(self.id) {
@@ -645,6 +642,10 @@ impl Team {
     pub fn can_recall_player_from_dock(&self, player_id: &PlayerId) -> AppResult<()> {
         if !self.is_listed(player_id) {
             return Err(anyhow!("Pirate is not at the dock"));
+        }
+
+        if !self.is_at_dock() {
+            return Err(anyhow!("{} is not at the dock", self.name));
         }
 
         self.crew_is_ashore_and_idle()
@@ -1357,7 +1358,9 @@ mod tests {
 
         let mut team = Team::random(None);
         team.space_cove = Some(cove);
-        team.current_location = TeamLocation::OnPlanet { planet_id };
+        team.current_location = TeamLocation::OnPlanet {
+            planet_id: *GALAXY_ROOT_ID,
+        };
 
         let mut players = PlayerMap::new();
         for _ in 0..n {
@@ -1372,6 +1375,61 @@ mod tests {
     fn list(team: &mut Team, player_id: PlayerId) {
         team.dock_listings
             .push(DockListing::new(player_id, Tick::now()));
+    }
+
+    fn dock_planet() -> Planet {
+        PLANET_DATA
+            .iter()
+            .find(|planet| planet.id == *GALAXY_ROOT_ID)
+            .expect("the black hole")
+            .clone()
+    }
+
+    #[test]
+    fn test_every_crew_can_teleport_to_the_dock_for_rum() {
+        let (mut team, _) = team_with_cove(5);
+        team.current_location = TeamLocation::OnPlanet {
+            planet_id: PlanetId::new_v4(),
+        };
+        let mut dock = dock_planet();
+        dock.upgrades.clear();
+        dock.allow_external_teleport = false;
+
+        assert!(team
+            .can_teleport_to(&dock)
+            .unwrap_err()
+            .to_string()
+            .contains("Not enough Rum"));
+
+        team.add_resource(Resource::RUM, 5).unwrap();
+        assert!(team.can_teleport_to(&dock).is_ok());
+    }
+
+    #[test]
+    fn test_leaving_and_recalling_need_the_dock() {
+        let (mut team, players) = team_with_cove(5);
+        let player = players.get(&team.player_ids[0]).expect("player").clone();
+        team.current_location = TeamLocation::OnPlanet {
+            planet_id: *GALAXY_ROOT_ID,
+        };
+        assert!(team.can_leave_player_at_dock(&player).is_ok());
+        list(&mut team, player.id);
+        assert!(team.can_recall_player_from_dock(&player.id).is_ok());
+
+        team.current_location = TeamLocation::OnPlanet {
+            planet_id: PlanetId::new_v4(),
+        };
+        let other = players.get(&team.player_ids[1]).expect("player").clone();
+        assert!(team
+            .can_leave_player_at_dock(&other)
+            .unwrap_err()
+            .to_string()
+            .contains("not at the dock"));
+        assert!(team
+            .can_recall_player_from_dock(&player.id)
+            .unwrap_err()
+            .to_string()
+            .contains("not at the dock"));
     }
 
     #[test]
@@ -1458,15 +1516,9 @@ mod tests {
     }
 
     #[test]
-    fn test_can_leave_player_requires_being_on_a_planet() {
+    fn test_can_leave_player_requires_the_dock_and_being_ashore() {
         let (mut team, players) = team_with_cove(5);
         let player = players.get(&team.player_ids[0]).expect("player").clone();
-        assert!(team.can_leave_player_at_dock(&player).is_ok());
-
-        // Any planet will do - the dock is not a place - but in flight is not.
-        team.current_location = TeamLocation::OnPlanet {
-            planet_id: PlanetId::new_v4(),
-        };
         assert!(team.can_leave_player_at_dock(&player).is_ok());
 
         team.current_location = TeamLocation::Travelling {
@@ -1480,7 +1532,7 @@ mod tests {
             .can_leave_player_at_dock(&player)
             .unwrap_err()
             .to_string()
-            .contains("not on a planet"));
+            .contains("not at the dock"));
     }
 
     // Being on a planet does not imply being idle: games are played on a planet,

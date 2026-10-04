@@ -1032,6 +1032,7 @@ impl World {
 
         // Drop any listing before the pirate leaves, so the dock never names
         // someone who is no longer on the crew.
+        let at_dock = team.is_listed(&player.id);
         team.remove_listing(&player.id);
 
         team.player_ids.retain(|&p| p != player.id);
@@ -1045,12 +1046,16 @@ impl World {
         player.add_morale(MORALE_RELEASE_MALUS);
         player.image.remove_jersey();
         player.compose_image()?;
-        match team.current_location {
-            TeamLocation::OnPlanet { planet_id } => {
-                player.current_location = PlayerLocation::OnPlanet { planet_id };
+        player.current_location = if at_dock {
+            PlayerLocation::OnPlanet {
+                planet_id: *GALAXY_ROOT_ID,
             }
-            _ => return Err(anyhow!("Cannot release player while travelling")),
-        }
+        } else {
+            match team.current_location {
+                TeamLocation::OnPlanet { planet_id } => PlayerLocation::OnPlanet { planet_id },
+                _ => return Err(anyhow!("Cannot release player while travelling")),
+            }
+        };
 
         let satisfaction = player.opinions.remove(&PlayerOpinion::OwnTeam);
         let base = satisfaction
@@ -3930,6 +3935,17 @@ mod test {
         Ok(asteroid_id)
     }
 
+    fn park_own_team_at_the_dock(app: &mut App) -> AppResult<()> {
+        let own_team_id = app.world.own_team_id;
+        app.world
+            .teams
+            .get_mut_or_err(&own_team_id)?
+            .current_location = TeamLocation::OnPlanet {
+            planet_id: *crate::core::GALAXY_ROOT_ID,
+        };
+        Ok(())
+    }
+
     /// A peer crew whose pirates are all but unknown, with its first pirate left at the dock.
     fn crew_listing_a_pirate(
         app: &App,
@@ -4064,9 +4080,22 @@ mod test {
     }
 
     #[test]
+    fn test_free_pirates_gather_at_the_dock() -> AppResult<()> {
+        use crate::core::GALAXY_ROOT_ID;
+
+        let mut world = World::new(Some(1));
+        world.initialize(false)?;
+        assert!(world
+            .players
+            .values()
+            .any(|player| player.team.is_none() && player.is_on_planet() == Some(*GALAXY_ROOT_ID)));
+        Ok(())
+    }
+
+    #[test]
     fn test_list_and_recall_round_trip() -> AppResult<()> {
         let mut app = App::test_default()?;
-        give_own_team_a_ready_market(&mut app)?;
+        park_own_team_at_the_dock(&mut app)?;
 
         let player_id = app.world.get_own_team()?.player_ids[0];
         let crew_size = app.world.get_own_team()?.player_ids.len();
@@ -4103,7 +4132,7 @@ mod test {
     #[test]
     fn test_listing_vacates_the_crew_role() -> AppResult<()> {
         let mut app = App::test_default()?;
-        give_own_team_a_ready_market(&mut app)?;
+        park_own_team_at_the_dock(&mut app)?;
 
         let player_id = app.world.get_own_team()?.player_ids[0];
         app.world.set_team_crew_role(CrewRole::Captain, player_id)?;
@@ -4121,7 +4150,7 @@ mod test {
     #[test]
     fn test_listed_pirate_is_left_out_of_the_game_roster() -> AppResult<()> {
         let mut app = App::test_default()?;
-        give_own_team_a_ready_market(&mut app)?;
+        park_own_team_at_the_dock(&mut app)?;
 
         let own_team_id = app.world.own_team_id;
         let player_id = app.world.get_own_team()?.player_ids[0];
@@ -4142,18 +4171,12 @@ mod test {
     fn test_abandoning_the_cove_leaves_the_dock_alone() -> AppResult<()> {
         let mut app = App::test_default()?;
         let asteroid_id = give_own_team_a_ready_market(&mut app)?;
+        park_own_team_at_the_dock(&mut app)?;
         let player_id = app.world.get_own_team()?.player_ids[0];
         app.world.leave_player_at_dock(player_id, Tick::now())?;
 
         // The dock is not on the rock: dropping the cove from far away is fine
         // and changes nothing about the listing.
-        let own_team_id = app.world.own_team_id;
-        app.world
-            .teams
-            .get_mut_or_err(&own_team_id)?
-            .current_location = TeamLocation::OnPlanet {
-            planet_id: *DEFAULT_PLANET_ID,
-        };
         app.world.abandon_asteroid(asteroid_id)?;
 
         let team = app.world.get_own_team()?;
@@ -4167,7 +4190,7 @@ mod test {
     #[test]
     fn test_a_listed_pirate_can_still_be_released() -> AppResult<()> {
         let mut app = App::test_default()?;
-        let asteroid_id = give_own_team_a_ready_market(&mut app)?;
+        park_own_team_at_the_dock(&mut app)?;
         let player_id = app.world.get_own_team()?.player_ids[0];
         app.world.leave_player_at_dock(player_id, Tick::now())?;
 
@@ -4180,7 +4203,7 @@ mod test {
         assert_eq!(
             app.world.players.get_or_err(&player_id)?.current_location,
             crate::core::types::PlayerLocation::OnPlanet {
-                planet_id: asteroid_id
+                planet_id: *crate::core::GALAXY_ROOT_ID
             }
         );
         assert!(app.world.players.get_or_err(&player_id)?.team.is_none());
