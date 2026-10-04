@@ -2384,9 +2384,9 @@ mod test {
     use super::UiCallback;
     use crate::{
         app::App,
-        core::{resources::Resource, INITIAL_RANDOM_TEAM_BALANCE},
+        core::{constants::SECONDS, resources::Resource, INITIAL_RANDOM_TEAM_BALANCE},
         space_adventure::{ControllableSpaceship, GameEntity, SpaceCallback},
-        types::{AppResult, ResourceMap, StorableResourceMap},
+        types::{AppResult, ResourceMap, StorableResourceMap, SystemTimeTick, Tick},
     };
 
     #[test]
@@ -2464,6 +2464,26 @@ mod test {
         assert!(new_resources.value(&Resource::SATOSHI) == INITIAL_RANDOM_TEAM_BALANCE);
         assert!(new_resources.value(&Resource::FUEL) == 0);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_start_space_adventure_resets_fast_tick_clock() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world.get_own_team_mut()?.add_resource(Resource::FUEL, 100)?;
+        app.world.last_tick_min_interval = 0;
+        app.world.start_space_adventure()?;
+        assert!(Tick::now() - app.world.last_tick_min_interval < SECONDS);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fast_tick_queued_before_the_clock_reset_does_not_underflow() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world.get_own_team_mut()?.add_resource(Resource::FUEL, 100)?;
+        app.world.start_space_adventure()?;
+        app.world.last_tick_min_interval = Tick::now() + 1000;
+        app.world.handle_fast_tick_events(Tick::now())?;
         Ok(())
     }
 }

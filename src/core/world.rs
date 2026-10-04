@@ -1064,6 +1064,7 @@ impl World {
         }
 
         self.teams.insert(own_team.id, own_team);
+        self.last_tick_min_interval = Tick::now();
         self.space_adventure = Some(space);
         self.dirty = true;
         self.dirty_network = true;
@@ -1664,7 +1665,8 @@ impl World {
     pub fn handle_fast_tick_events(&mut self, current_tick: Tick) -> AppResult<Vec<UiCallback>> {
         if let Some(adventure) = self.space_adventure.as_mut() {
             // deltatime is in seconds.
-            let deltatime = (current_tick - self.last_tick_min_interval) as f32 / SECONDS as f32;
+            let deltatime =
+                current_tick.saturating_sub(self.last_tick_min_interval) as f32 / SECONDS as f32;
             self.last_tick_min_interval = current_tick;
             return adventure.update(deltatime);
         }
