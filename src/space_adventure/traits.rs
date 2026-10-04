@@ -68,6 +68,12 @@ pub trait Sprite {
 
     fn remove_visual_effect(&mut self, _effect: &VisualEffect) {}
 
+    fn visual_effects(&self) -> Vec<(VisualEffect, f32)> {
+        vec![]
+    }
+
+    fn set_visual_effects(&mut self, _effects: &[(VisualEffect, f32)]) {}
+
     fn update_sprite(&mut self, _deltatime: f32) -> Vec<SpaceCallback> {
         vec![]
     }

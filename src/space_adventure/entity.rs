@@ -110,6 +110,14 @@ impl Sprite for Entity {
         delegate_mut!(self, remove_visual_effect(effect))
     }
 
+    fn visual_effects(&self) -> Vec<(VisualEffect, f32)> {
+        delegate!(self, visual_effects())
+    }
+
+    fn set_visual_effects(&mut self, effects: &[(VisualEffect, f32)]) {
+        delegate_mut!(self, set_visual_effects(effects))
+    }
+
     fn update_sprite(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
         delegate_mut!(self, update_sprite(deltatime))
     }

@@ -323,6 +323,14 @@ impl Sprite for SpaceshipEntity {
         self.visual_effects.remove(effect);
     }
 
+    fn visual_effects(&self) -> Vec<(VisualEffect, f32)> {
+        self.visual_effects.iter().map(|(e, t)| (*e, *t)).collect()
+    }
+
+    fn set_visual_effects(&mut self, effects: &[(VisualEffect, f32)]) {
+        self.visual_effects = effects.iter().copied().collect();
+    }
+
     fn update_sprite(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
         for (_, lifetime) in self.visual_effects.iter_mut() {
             *lifetime -= deltatime;
@@ -731,8 +739,16 @@ impl SpaceshipEntity {
         self.resources.insert(Resource::FUEL, self.fuel());
     }
 
-    const fn frame(&self) -> usize {
+    pub(crate) const fn frame(&self) -> usize {
         self.tick % self.gif.len()
+    }
+
+    pub(crate) fn set_frame(&mut self, frame: u16) {
+        self.tick = frame as usize;
+    }
+
+    pub fn display_entity(spaceship: &Spaceship, role: SpaceshipRole) -> AppResult<Entity> {
+        Self::from_spaceship(spaceship, ResourceMap::new(), 1.0, 1.0, 0, None, None, role)
     }
 
     pub fn acceleration(&self) -> I16Vec2 {

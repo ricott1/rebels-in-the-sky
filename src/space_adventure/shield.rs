@@ -1,5 +1,5 @@
 use super::{collisions::HitBox, space_callback::SpaceCallback, traits::*};
-use super::{entity::Entity, visual_effects::VisualEffect};
+use super::{entity::Entity, visual_effects::VisualEffect, wire::ShieldLook};
 use glam::{I16Vec2, Vec2};
 use image::{Rgba, RgbaImage};
 use std::collections::HashMap;
@@ -226,6 +226,24 @@ impl ShieldEntity {
 
     pub fn owned_by_player(&self) -> bool {
         self.owned_by_player
+    }
+
+    pub(crate) fn look(&self) -> ShieldLook {
+        if self.is_active() {
+            ShieldLook::Active
+        } else if self.current_durability() < self.max_durability() {
+            ShieldLook::Recharging
+        } else {
+            ShieldLook::Inactive
+        }
+    }
+
+    pub(crate) fn set_look(&mut self, look: ShieldLook) {
+        self.is_active = look == ShieldLook::Active;
+        self.current_durability = match look {
+            ShieldLook::Recharging => 0.0,
+            ShieldLook::Active | ShieldLook::Inactive => self.max_durability,
+        };
     }
 
     pub fn is_active(&self) -> bool {

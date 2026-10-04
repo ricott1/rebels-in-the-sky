@@ -201,6 +201,14 @@ impl Sprite for AsteroidEntity {
         self.visual_effects.remove(effect);
     }
 
+    fn visual_effects(&self) -> Vec<(VisualEffect, f32)> {
+        self.visual_effects.iter().map(|(e, t)| (*e, *t)).collect()
+    }
+
+    fn set_visual_effects(&mut self, effects: &[(VisualEffect, f32)]) {
+        self.visual_effects = effects.iter().copied().collect();
+    }
+
     fn update_sprite(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
         for (_, lifetime) in self.visual_effects.iter_mut() {
             *lifetime -= deltatime;
@@ -443,8 +451,16 @@ impl AsteroidEntity {
     fn image_type(&self) -> usize {
         self.id % self.size.max_image_type()
     }
-    fn frame(&self) -> usize {
+    pub(crate) fn frame(&self) -> usize {
         self.orientation as usize % MAX_ROTATION
+    }
+
+    pub(crate) fn asteroid_size(&self) -> AsteroidSize {
+        self.size
+    }
+
+    pub(crate) fn set_frame(&mut self, frame: u16) {
+        self.orientation = frame as f32;
     }
 
     pub fn new_entity(

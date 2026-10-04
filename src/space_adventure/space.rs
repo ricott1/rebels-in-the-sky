@@ -12,6 +12,7 @@ use super::{
     traits::*,
     utils::EntityState,
     visual_effects::VisualEffect,
+    wire::{NetVec, ParticleSpawn},
     ControllableSpaceship, PlayerInput,
 };
 use crate::{
@@ -48,6 +49,8 @@ enum SpaceAdventureState {
     Ending { time: Instant },
 }
 
+const MAX_PARTICLE_OUTBOX: usize = 1024;
+
 #[derive(Debug, Display, Clone, Copy, PartialEq)]
 enum AsteroidPlanetState {
     NotSpawned { should_spawn_asteroid: bool },
@@ -76,6 +79,8 @@ pub struct SpaceAdventure {
     guest_id: Option<usize>,
     guest_entities: Vec<usize>,
     guest_destroyed: Option<PlayerOutcome>,
+    record_particles: bool,
+    particle_outbox: Vec<ParticleSpawn>,
     asteroid_planet_state: AsteroidPlanetState,
     enemy_ship_spawned: bool,
     gold_fragment_probability: f64,
@@ -236,6 +241,17 @@ impl SpaceAdventure {
         outcome
     }
 
+    pub fn set_record_particles(&mut self, record: bool) {
+        self.record_particles = record;
+        if !record {
+            self.particle_outbox.clear();
+        }
+    }
+
+    pub fn take_particle_outbox(&mut self) -> Vec<ParticleSpawn> {
+        std::mem::take(&mut self.particle_outbox)
+    }
+
     pub fn take_guest_destroyed(&mut self) -> Option<PlayerOutcome> {
         self.guest_destroyed.take()
     }
@@ -384,6 +400,18 @@ impl SpaceAdventure {
         particle_state: EntityState,
         layer: usize,
     ) -> usize {
+        if self.record_particles && self.particle_outbox.len() < MAX_PARTICLE_OUTBOX {
+            self.particle_outbox.push(ParticleSpawn {
+                pos: NetVec::from_vec2(position),
+                vel: NetVec::from_vec2(velocity),
+                color: color.0,
+                lifetime: match particle_state {
+                    EntityState::Immortal => None,
+                    EntityState::Decaying { lifetime } => Some(lifetime),
+                },
+                layer: layer as u8,
+            });
+        }
         self.insert_entity(ParticleEntity::new_entity(
             position,
             velocity,
@@ -476,6 +504,8 @@ impl SpaceAdventure {
             guest_id: None,
             guest_entities: Vec::new(),
             guest_destroyed: None,
+            record_particles: false,
+            particle_outbox: Vec::new(),
             asteroid_planet_state: AsteroidPlanetState::NotSpawned {
                 should_spawn_asteroid,
             },
