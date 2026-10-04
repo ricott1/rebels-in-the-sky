@@ -200,7 +200,7 @@ impl HostSession {
 
         self.fast_ticks += 1;
         guest.tracker.collect_particles(space);
-        if self.fast_ticks % SNAPSHOT_EVERY_FAST_TICKS == 0 {
+        if self.fast_ticks.is_multiple_of(SNAPSHOT_EVERY_FAST_TICKS) {
             if let Some(snapshot) = guest.tracker.prepare(space, guest.ship_id, guest.last_input_seq) {
                 if guest
                     .link
