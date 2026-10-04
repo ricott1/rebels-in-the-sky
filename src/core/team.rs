@@ -948,7 +948,9 @@ impl Team {
     }
 
     pub fn has_seat_for(&self, gives_a_pirate: bool) -> bool {
-        self.player_ids.len() - usize::from(gives_a_pirate)
+        self.player_ids
+            .len()
+            .saturating_sub(usize::from(gives_a_pirate))
             < self.spaceship.crew_capacity() as usize
     }
 
@@ -1932,7 +1934,7 @@ mod tests {
     #[test]
     fn test_an_offer_checks_both_balances_and_the_seat() {
         let planet_id = PlanetId::new_v4();
-        let (proposer, proposer_players) = crew_on(planet_id, 5);
+        let (proposer, _) = crew_on(planet_id, 5);
         let (target, target_players) = crew_on(planet_id, 5);
         let wanted = target_players.get(&target.player_ids[0]).unwrap();
 
@@ -1965,7 +1967,6 @@ mod tests {
                 .is_ok(),
             "a swap needs no free seat"
         );
-        let _ = proposer_players;
     }
 
     #[test]
@@ -1983,6 +1984,36 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("not aboard"));
+    }
+
+    #[test]
+    fn test_the_last_active_pirate_cannot_be_offered() {
+        let planet_id = PlanetId::new_v4();
+        let (mut proposer, proposer_players) = crew_on(planet_id, 2);
+        let (target, target_players) = crew_on(planet_id, 5);
+        let wanted = target_players.get(&target.player_ids[0]).unwrap();
+        let offered = proposer_players.get(&proposer.player_ids[1]).unwrap();
+
+        assert!(proposer
+            .can_make_offer(&target, OfferKind::Direct, Some(offered), wanted, 0)
+            .is_ok());
+
+        let listed_id = proposer.player_ids[0];
+        list(&mut proposer, listed_id);
+        assert!(proposer
+            .can_make_offer(&target, OfferKind::Direct, Some(offered), wanted, 0)
+            .unwrap_err()
+            .to_string()
+            .contains("Someone has to sail the ship"));
+    }
+
+    #[test]
+    fn test_an_empty_crew_copy_still_has_a_seat() {
+        let (team, _) = crew_on(PlanetId::new_v4(), 0);
+
+        assert!(team.player_ids.is_empty());
+        assert!(team.has_seat_for(true));
+        assert!(team.has_seat_for(false));
     }
 
     #[test]

@@ -1156,6 +1156,11 @@ impl World {
             .insert(PlayerOpinion::Team { team_id }, (Tick::now(), value));
         player.version += 1;
 
+        if team.id == self.own_team_id {
+            let reason = format!("{} left the crew", player.info.short_name());
+            self.decline_offers_on(&mut team, &player.id, &reason);
+        }
+
         self.dirty = true;
         if team.id == self.own_team_id {
             self.dirty_network = true;
@@ -1342,6 +1347,25 @@ impl World {
         let mut reply = trade.clone();
         reply.state = state;
         self.trade_outbox.push(reply);
+    }
+
+    fn decline_offers_on(&mut self, team: &mut Team, player_id: &PlayerId, reason: &str) {
+        let dropped: Vec<Trade> = team
+            .received_trades
+            .values()
+            .filter(|trade| trade.target_player.id == *player_id)
+            .cloned()
+            .collect();
+        for trade in dropped {
+            team.received_trades.remove(&trade.id);
+            self.closed_trades.insert(trade.id);
+            self.push_reply(
+                &trade,
+                NetworkRequestState::Failed {
+                    error_message: reason.to_string(),
+                },
+            );
+        }
     }
 
     pub fn open_trades(&self, own_peer_id: PeerId) -> Vec<Trade> {
@@ -1662,8 +1686,6 @@ impl World {
             satoshis: offer.satoshis,
             ..trade.clone()
         };
-        self.players
-            .insert(trade.target_player.id, trade.target_player.clone());
         if let Err(err) = self.apply_trade(&trade, now) {
             self.end_offer(&trade.id)?;
             self.push_reply(
@@ -1765,18 +1787,10 @@ impl World {
         team.can_recall_player_from_dock(&player_id)?;
 
         team.remove_listing(&player_id);
-        let dropped: Vec<Trade> = team
-            .received_trades
-            .values()
-            .filter(|trade| trade.target_player.id == player_id)
-            .cloned()
-            .collect();
-        for trade in &dropped {
-            team.received_trades.remove(&trade.id);
-            self.closed_trades.insert(trade.id);
-        }
 
         let mut player = self.players.get_or_err(&player_id)?.clone();
+        let reason = format!("{} was recalled", player.info.short_name());
+        self.decline_offers_on(&mut team, &player_id, &reason);
         player.current_location = PlayerLocation::WithTeam;
         player.set_jersey(&team.jersey);
         player.version += 1;
@@ -1784,17 +1798,8 @@ impl World {
         team.reassign_positions(&self.players);
         team.version += 1;
 
-        let name = player.info.short_name();
         self.players.insert(player.id, player);
         self.teams.insert(team.id, team);
-        for trade in dropped {
-            self.push_reply(
-                &trade,
-                NetworkRequestState::Failed {
-                    error_message: format!("{name} was recalled"),
-                },
-            );
-        }
         self.dirty = true;
         self.dirty_network = true;
         self.dirty_ui = true;
@@ -6545,6 +6550,31 @@ mod test {
     }
 
     #[test]
+    fn test_releasing_declines_the_offers_on_that_pirate() -> AppResult<()> {
+        use crate::core::OfferKind;
+        use crate::network::types::NetworkRequestState;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = first_own_pirate(&app)?;
+        let (trade, _) =
+            receive_offer_from_a_new_crew(&mut app, target_id, OfferKind::Direct, 1_000)?;
+        app.world.trade_outbox.clear();
+
+        app.world.release_player_from_team(target_id, true)?;
+
+        assert!(app.world.get_own_team()?.received_trades.is_empty());
+        assert!(app.world.closed_trades.contains(&trade.id));
+        assert!(app
+            .world
+            .trade_outbox
+            .iter()
+            .any(|reply| reply.id == trade.id
+                && matches!(reply.state, NetworkRequestState::Failed { .. })));
+        Ok(())
+    }
+
+    #[test]
     fn test_a_disconnect_keeps_offers_both_ways_and_they_come_back() -> AppResult<()> {
         use crate::core::OfferKind;
         use crate::network::types::NetworkTeam;
@@ -6704,6 +6734,34 @@ mod test {
             app.world.trade_outbox[0].state,
             NetworkRequestState::Failed { .. }
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_a_failed_syn_ack_leaves_no_stray_pirate() -> AppResult<()> {
+        use crate::network::types::NetworkRequestState;
+
+        let mut app = App::test_default()?;
+        park_own_team_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_team_id = network_crew_on(&mut app, *DEFAULT_PLANET_ID)?;
+        let target_id = app.world.teams.get_or_err(&target_team_id)?.player_ids[0];
+        let before = app.world.get_own_team()?.balance();
+        app.world
+            .make_offer(target_id, None, 2_000, libp2p::PeerId::random())?;
+        let mut syn_ack = with_state(&app.world.trade_outbox[0], NetworkRequestState::SynAck);
+        syn_ack.target_player.peer_id = None;
+        app.world.trade_outbox.clear();
+        app.world.teams.remove(&target_team_id);
+        app.world.players.remove(&target_id);
+
+        let message = app.world.receive_syn_ack(&syn_ack, Tick::now())?;
+
+        assert!(message.expect("a message").contains("It was refunded"));
+        assert_eq!(app.world.get_own_team()?.balance(), before);
+        assert!(
+            !app.world.players.contains_key(&target_id),
+            "the pirate in the syn ack is not kept"
+        );
         Ok(())
     }
 
