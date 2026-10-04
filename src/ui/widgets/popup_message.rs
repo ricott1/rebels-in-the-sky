@@ -105,7 +105,7 @@ pub enum PopupMessage {
 }
 
 impl PopupMessage {
-    const MAX_TUTORIAL_PAGE: usize = 8;
+    const MAX_TUTORIAL_PAGE: usize = 9;
 
     pub fn error(message: String) -> Self {
         Self::Message {
@@ -1137,6 +1137,10 @@ impl PopupMessage {
                     (
                         "You can hire free pirates from the Pirates panel in exchange for satoshi.",
                         vec![("Pirates", UiCallback::GoToFreePirates{from_popup:false})],
+                    ),
+                    (
+                        "Pirates looking for a crew wait at the Dock. Teleport there to hire them, to leave your own pirates or to make offers for other crews' pirates.",
+                        vec![("Dock", UiCallback::GoToDock)],
                     ),
                     (
                         "After you add shooters to your spaceship, you can embark on a Space Adventure and try to find Asteroids.",

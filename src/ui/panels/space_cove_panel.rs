@@ -1233,7 +1233,7 @@ impl HelpPanel for SpaceCovePanel {
                 "Manage the asteroid that hosts your cove from My Team.",
                 "Inspect visiting crews directly, or browse all in Crews.",
                 "To find another asteroid candidate, explore the Galaxy.",
-                "Pirates looking for a new crew wait at The Dock, on the black hole.",
+                "Pirates looking for a new crew wait at The Dock.",
             ]
             .join("\n"),
             links: vec![
