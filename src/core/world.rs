@@ -25,7 +25,8 @@ use crate::image::color_map::ColorMap;
 use crate::network::network_store_data::NetworkStoreData;
 use crate::network::types::{NetworkGame, NetworkTeam};
 use crate::space_adventure::SpaceAdventure;
-use crate::space_adventure::{PlayerOutcome, ShipLoadout};
+use crate::space_adventure::wire::{JoinRequest, Welcome};
+use crate::space_adventure::{PlayerOutcome, ShipLoadout, SpaceMirror};
 use crate::store::{save_game, save_tournament, ASSETS_DIR};
 use crate::ui::{PopupMessage, UiCallback};
 use crate::{app_version, types::*};
@@ -96,6 +97,8 @@ pub struct World {
     pub kartoffeln: KartoffelMap,
     #[serde(skip)]
     pub space_adventure: Option<SpaceAdventure>,
+    #[serde(skip)]
+    pub space_mirror: Option<SpaceMirror>,
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
     pub tournaments: TournamentMap,
@@ -1024,6 +1027,118 @@ impl World {
         Ok(message)
     }
 
+    pub fn own_ship_loadout(&self) -> AppResult<ShipLoadout> {
+        let own_team = self.get_own_team()?;
+        let speed_bonus = TeamBonus::SpaceshipSpeed.current_team_bonus(
+            &own_team.id,
+            &self.teams,
+            &self.players,
+        )?;
+        let weapons_bonus =
+            TeamBonus::Weapons.current_team_bonus(&own_team.id, &self.teams, &self.players)?;
+        Ok(ShipLoadout {
+            spaceship: own_team.spaceship.clone(),
+            resources: own_team.resources.clone(),
+            speed_bonus,
+            weapons_bonus,
+            fuel: own_team.fuel(),
+        })
+    }
+
+    pub fn in_space(&self) -> bool {
+        self.space_adventure.is_some() || self.space_mirror.is_some()
+    }
+
+    pub fn space_adventure_planet(&self) -> AppResult<PlanetId> {
+        match self.get_own_team()?.current_location {
+            TeamLocation::OnSpaceAdventure { around, .. } => Ok(around),
+            _ => Err(anyhow!("Team is not on a space adventure")),
+        }
+    }
+
+    pub fn set_space_adventure_joinable(&mut self, joinable: bool) -> AppResult<()> {
+        let own_team = self.get_own_team_mut()?;
+        if let TeamLocation::OnSpaceAdventure { around, joinable: current } = own_team.current_location {
+            if current != joinable {
+                own_team.current_location = TeamLocation::OnSpaceAdventure { around, joinable };
+                self.dirty = true;
+                self.dirty_network = true;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn joinable_adventures(&self) -> Vec<(TeamId, String)> {
+        let Ok(own_team) = self.get_own_team() else {
+            return vec![];
+        };
+        let Some(planet_id) = own_team.is_on_planet() else {
+            return vec![];
+        };
+        self.teams
+            .values()
+            .filter(|team| team.id != own_team.id && team.peer_id.is_some())
+            .filter(|team| {
+                matches!(
+                    team.current_location,
+                    TeamLocation::OnSpaceAdventure { around, joinable: true } if around == planet_id
+                )
+            })
+            .map(|team| (team.id, team.name.clone()))
+            .collect()
+    }
+
+    pub fn prepare_join(&self, host_team_id: TeamId) -> AppResult<(PeerId, JoinRequest)> {
+        let own_team = self.get_own_team()?;
+        own_team.can_start_space_adventure(own_team.average_tiredness(self))?;
+        let planet_id = own_team
+            .is_on_planet()
+            .ok_or_else(|| anyhow!("Team should be on a planet to join a space adventure."))?;
+        if !self.joinable_adventures().iter().any(|(id, _)| *id == host_team_id) {
+            return Err(anyhow!("That space adventure cannot be joined"));
+        }
+        let peer_id = self
+            .teams
+            .get_or_err(&host_team_id)?
+            .peer_id
+            .ok_or_else(|| anyhow!("Host team has no peer"))?;
+        Ok((
+            peer_id,
+            JoinRequest {
+                version: crate::app_version(),
+                team_id: own_team.id,
+                team_name: own_team.name.clone(),
+                planet_id,
+                loadout: self.own_ship_loadout()?,
+            },
+        ))
+    }
+
+    pub fn enter_guest_adventure(&mut self, welcome: &Welcome, planet_id: PlanetId) -> AppResult<()> {
+        let mut own_team = self.get_own_team()?.clone();
+        own_team.can_start_space_adventure(own_team.average_tiredness(self))?;
+        if own_team.is_on_planet() != Some(planet_id) {
+            return Err(anyhow!("Team left the planet"));
+        }
+        let mirror = SpaceMirror::new(welcome)?;
+
+        own_team.current_location = TeamLocation::OnSpaceAdventure {
+            around: planet_id,
+            joinable: false,
+        };
+        for player_id in own_team.player_ids.iter() {
+            let player = self.players.get_mut_or_err(player_id)?;
+            player.add_tiredness(SPACE_ADVENTURE_TIREDNESS_COST);
+        }
+        self.teams.insert(own_team.id, own_team);
+        self.space_mirror = Some(mirror);
+        self.last_tick_min_interval = Tick::now();
+        self.dirty = true;
+        self.dirty_network = true;
+        self.dirty_ui = true;
+        Ok(())
+    }
+
     pub fn start_space_adventure(&mut self) -> AppResult<()> {
         let mut own_team = self.get_own_team()?.clone();
         let average_tiredness = own_team.average_tiredness(self);
@@ -1039,25 +1154,14 @@ impl World {
         let gold_fragment_probability = 0.001
             + 0.075 * (current_planet.resources.value(&Resource::GOLD) as f64) / MAX_SKILL as f64;
 
-        let speed_bonus = TeamBonus::SpaceshipSpeed.current_team_bonus(
-            &own_team.id,
-            &self.teams,
-            &self.players,
-        )?;
-        let weapons_bonus =
-            TeamBonus::Weapons.current_team_bonus(&own_team.id, &self.teams, &self.players)?;
-
-        let loadout = ShipLoadout {
-            spaceship: own_team.spaceship.clone(),
-            resources: own_team.resources.clone(),
-            speed_bonus,
-            weapons_bonus,
-            fuel: own_team.fuel(),
-        };
+        let loadout = self.own_ship_loadout()?;
         let space = SpaceAdventure::new(should_spawn_asteroid, gold_fragment_probability)?
             .with_host(&loadout)?;
 
-        own_team.current_location = TeamLocation::OnSpaceAdventure { around: planet_id };
+        own_team.current_location = TeamLocation::OnSpaceAdventure {
+            around: planet_id,
+            joinable: false,
+        };
 
         for player_id in own_team.player_ids.iter() {
             let player = self.players.get_mut_or_err(player_id)?;
@@ -1074,6 +1178,14 @@ impl World {
     }
 
     pub fn return_from_space_adventure(&mut self) -> AppResult<(String, Option<usize>)> {
+        if let Some(mirror) = self.space_mirror.take() {
+            let outcome = mirror
+                .ending_outcome()
+                .cloned()
+                .ok_or_else(|| anyhow!("Guest adventure has no outcome yet"))?;
+            return self.settle_space_adventure(outcome, None);
+        }
+
         let space_adventure = self
             .space_adventure
             .take()
@@ -1138,7 +1250,7 @@ impl World {
             .set_current_durability(outcome.durability);
 
         match own_team.current_location {
-            TeamLocation::OnSpaceAdventure { around } => {
+            TeamLocation::OnSpaceAdventure { around, .. } => {
                 own_team.current_location = TeamLocation::OnPlanet { planet_id: around }
             }
             _ => {
@@ -1670,14 +1782,19 @@ impl World {
     }
 
     pub fn handle_fast_tick_events(&mut self, current_tick: Tick) -> AppResult<Vec<UiCallback>> {
+        let deltatime =
+            current_tick.saturating_sub(self.last_tick_min_interval) as f32 / SECONDS as f32;
         if let Some(adventure) = self.space_adventure.as_mut() {
-            // deltatime is in seconds.
-            let deltatime =
-                current_tick.saturating_sub(self.last_tick_min_interval) as f32 / SECONDS as f32;
             self.last_tick_min_interval = current_tick;
             return adventure.update(deltatime);
         }
-
+        if let Some(mirror) = self.space_mirror.as_mut() {
+            self.last_tick_min_interval = current_tick;
+            mirror.advance(deltatime);
+            if mirror.should_return() {
+                return Ok(vec![UiCallback::ReturnFromSpaceAdventure]);
+            }
+        }
         Ok(vec![])
     }
 
@@ -3396,7 +3513,7 @@ impl World {
         let mut own_team = self.get_own_team()?.clone();
         let own_team_current_location = match own_team.current_location {
             TeamLocation::OnPlanet { planet_id } => Some(planet_id),
-            TeamLocation::Exploring { around, .. } | TeamLocation::OnSpaceAdventure { around } => {
+            TeamLocation::Exploring { around, .. } | TeamLocation::OnSpaceAdventure { around, .. } => {
                 Some(around)
             }
             TeamLocation::Travelling { to, .. } => Some(to),
@@ -3657,7 +3774,7 @@ impl World {
             .map(|team| match team.current_location {
                 TeamLocation::OnPlanet { planet_id } => planet_id,
                 TeamLocation::Exploring { around, .. }
-                | TeamLocation::OnSpaceAdventure { around } => around,
+                | TeamLocation::OnSpaceAdventure { around, .. } => around,
                 TeamLocation::Travelling { to, .. } => to,
             })
             .collect();

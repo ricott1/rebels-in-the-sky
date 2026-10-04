@@ -77,7 +77,7 @@ impl App {
             .get_own_team()
             .expect("There should be an own team when simulating.");
 
-        if let TeamLocation::OnSpaceAdventure { around } = own_team.current_location {
+        if let TeamLocation::OnSpaceAdventure { around, .. } = own_team.current_location {
             // If team is on a space adventure, bring it back to base planet.
             // This is an ad-hoc fix to avoid problems when the game is closed during a space adventure,
             // since the space property of the world is not serialized and stored.

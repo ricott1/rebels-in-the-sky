@@ -370,6 +370,8 @@ pub enum TeamLocation {
     },
     OnSpaceAdventure {
         around: PlanetId,
+        #[serde(default)]
+        joinable: bool,
     },
 }
 

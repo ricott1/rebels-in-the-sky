@@ -2387,9 +2387,18 @@ mod test {
     use crate::{
         app::App,
         core::{constants::SECONDS, resources::Resource, INITIAL_RANDOM_TEAM_BALANCE},
-        space_adventure::{ControllableSpaceship, GameEntity, PlayerOutcome, SpaceCallback},
-        types::{AppResult, ResourceMap, StorableResourceMap, SystemTimeTick, Tick},
+        core::types::TeamLocation,
+        space_adventure::{
+            snapshot::SnapshotTracker, ControllableSpaceship, GameEntity, PlayerOutcome,
+            ShipLoadout, SpaceAdventure, SpaceCallback,
+        },
+        types::{
+            AppResult, PlanetId, ResourceMap, StorableResourceMap, SystemTimeTick, TeamId, Tick,
+        },
     };
+    use libp2p::PeerId;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
 
     #[test]
     fn test_resource_gathered_in_space_adventure() -> AppResult<()> {
@@ -2512,6 +2521,102 @@ mod test {
         assert!(team.is_on_planet().is_some());
         assert!(message.contains("collected"));
         assert!(asteroid.is_none());
+        Ok(())
+    }
+
+    fn add_peer_team(app: &mut App, around: PlanetId, joinable: bool) -> AppResult<TeamId> {
+        let team_id = app.world.generate_random_team(
+            &mut ChaCha8Rng::seed_from_u64(3),
+            around,
+            "Amarezza".into(),
+            "Ship".into(),
+        )?;
+        let team = app.world.teams.get_mut(&team_id).expect("team");
+        team.peer_id = Some(PeerId::random());
+        team.current_location = TeamLocation::OnSpaceAdventure { around, joinable };
+        Ok(team_id)
+    }
+
+    #[test]
+    fn test_joinable_adventures_are_open_ones_around_our_planet() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let planet_id = app.world.get_own_team()?.is_on_planet().expect("on planet");
+        let open = add_peer_team(&mut app, planet_id, true)?;
+        add_peer_team(&mut app, planet_id, false)?;
+        let elsewhere = *app.world.planets.keys().find(|id| **id != planet_id).expect("another planet");
+        add_peer_team(&mut app, elsewhere, true)?;
+
+        let joinable: Vec<TeamId> = app.world.joinable_adventures().into_iter().map(|(id, _)| id).collect();
+        assert_eq!(joinable, vec![open]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_prepare_join_checks_the_host() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world.get_own_team_mut()?.add_resource(Resource::FUEL, 100)?;
+        let planet_id = app.world.get_own_team()?.is_on_planet().expect("on planet");
+        let open = add_peer_team(&mut app, planet_id, true)?;
+        let closed = add_peer_team(&mut app, planet_id, false)?;
+
+        let (_, join) = app.world.prepare_join(open)?;
+        assert_eq!(join.planet_id, planet_id);
+        assert_eq!(join.loadout.fuel, app.world.get_own_team()?.fuel());
+        assert!(app.world.prepare_join(closed).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_guest_enters_and_settles_from_the_mirror() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world.get_own_team_mut()?.add_resource(Resource::FUEL, 100)?;
+        let planet_id = app.world.get_own_team()?.is_on_planet().expect("on planet");
+
+        let mut host_space = SpaceAdventure::new(false, 0.0)?.with_host(&ShipLoadout::test_default())?;
+        host_space.force_running();
+        let guest_id = host_space.add_guest(&app.world.own_ship_loadout()?)?;
+        let welcome = SnapshotTracker::new().welcome(&host_space, guest_id);
+
+        app.world.enter_guest_adventure(&welcome, planet_id)?;
+        assert!(app.world.in_space());
+        assert!(matches!(
+            app.world.get_own_team()?.current_location,
+            TeamLocation::OnSpaceAdventure { joinable: false, .. }
+        ));
+
+        let mut resources = app.world.get_own_team()?.resources.clone();
+        resources.insert(Resource::GOLD, 4);
+        app.world
+            .space_mirror
+            .as_mut()
+            .expect("mirror")
+            .start_ending(PlayerOutcome { resources, durability: 2 });
+        app.world.return_from_space_adventure()?;
+
+        let team = app.world.get_own_team()?;
+        assert_eq!(team.resources.value(&Resource::GOLD), 4);
+        assert!(team.is_on_planet().is_some());
+        assert!(!app.world.in_space());
+        Ok(())
+    }
+
+    #[test]
+    fn test_joinable_flag_is_broadcast() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world.get_own_team_mut()?.add_resource(Resource::FUEL, 100)?;
+        app.world.start_space_adventure()?;
+        app.world.dirty_network = false;
+
+        app.world.set_space_adventure_joinable(true)?;
+        assert!(app.world.dirty_network);
+        assert!(matches!(
+            app.world.get_own_team()?.current_location,
+            TeamLocation::OnSpaceAdventure { joinable: true, .. }
+        ));
+
+        app.world.dirty_network = false;
+        app.world.set_space_adventure_joinable(true)?;
+        assert!(!app.world.dirty_network);
         Ok(())
     }
 }
