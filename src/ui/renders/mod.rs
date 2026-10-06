@@ -541,17 +541,12 @@ pub fn explore_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
 }
 
 pub fn space_adventure_button<'a>(world: &World, team: &Team) -> AppResult<Button<'a>> {
-    let average_tiredness = team.average_tiredness(world);
-
-    let popup_message = PopupMessage::ConfirmSpaceAdventure {
-        has_shooter: team.spaceship.has_shooters(),
-        average_tiredness,
-        joinable: world.joinable_adventures().into_iter().take(3).collect(),
-        timestamp: Tick::now(),
-    };
-    let mut button = Button::new("Space Adventure", UiCallback::PushUiPopup { popup_message })
-        .hotkey(ui_key::SPACE_ADVENTURE)
-        .block(default_block().border_style(UiStyle::WARNING));
+    let mut button = Button::new(
+        "Space Adventure",
+        UiCallback::PushSpaceAdventurePopup { selected: 0 },
+    )
+    .hotkey(ui_key::SPACE_ADVENTURE)
+    .block(default_block().border_style(UiStyle::WARNING));
 
     match team.current_location {
         TeamLocation::OnPlanet { planet_id } => {
@@ -561,7 +556,7 @@ pub fn space_adventure_button<'a>(world: &World, team: &Team) -> AppResult<Butto
                 planet.name,
             ));
 
-            if let Err(msg) = team.can_start_space_adventure(average_tiredness) {
+            if let Err(msg) = team.can_start_space_adventure(team.average_tiredness(world)) {
                 button.disable(Some(msg.to_string()));
             }
         }

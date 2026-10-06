@@ -336,6 +336,9 @@ pub enum UiCallback {
     JoinSpaceAdventure {
         host_team_id: TeamId,
     },
+    PushSpaceAdventurePopup {
+        selected: usize,
+    },
     ReturnFromSpaceAdventure,
     SpaceAdventurePlayerInput {
         key_code: KeyCode,
@@ -2265,6 +2268,23 @@ impl UiCallback {
                 Ok(None)
             }
 
+            Self::PushSpaceAdventurePopup { selected } => {
+                let own_team = app.world.get_own_team()?;
+                let joinable = app.world.joinable_adventures();
+                let popup_message = PopupMessage::ConfirmSpaceAdventure {
+                    has_shooter: own_team.spaceship.has_shooters(),
+                    average_tiredness: own_team.average_tiredness(&app.world),
+                    selected: selected.checked_rem(joinable.len()).unwrap_or_default(),
+                    joinable,
+                    timestamp: Tick::now(),
+                };
+                app.ui.close_popup_where(|popup| {
+                    matches!(popup, PopupMessage::ConfirmSpaceAdventure { .. })
+                });
+                app.ui.push_popup_to_top(popup_message);
+                Ok(None)
+            }
+
             Self::ReturnFromSpaceAdventure => Self::return_from_space_adventure()(app),
 
             Self::SpaceAdventurePlayerInput { key_code } => {
@@ -2407,10 +2427,12 @@ mod test {
         types::{
             AppResult, PlanetId, ResourceMap, StorableResourceMap, SystemTimeTick, TeamId, Tick,
         },
+        ui::{ui_key, PopupMessage},
     };
     use libp2p::PeerId;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+    use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
     #[test]
     fn test_resource_gathered_in_space_adventure() -> AppResult<()> {
@@ -2576,6 +2598,48 @@ mod test {
             .map(|(id, _)| id)
             .collect();
         assert_eq!(joinable, vec![open]);
+        Ok(())
+    }
+
+    fn selected_adventure(app: &App) -> (usize, usize) {
+        match app.ui.popup_messages() {
+            [PopupMessage::ConfirmSpaceAdventure {
+                joinable, selected, ..
+            }] => (*selected, joinable.len()),
+            popups => panic!("unexpected popups {popups:?}"),
+        }
+    }
+
+    #[test]
+    fn test_selecting_a_joinable_adventure_wraps_and_refreshes() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let planet_id = app.world.get_own_team()?.is_on_planet().expect("on planet");
+        let host = add_peer_team(&mut app, planet_id, true)?;
+        add_peer_team(&mut app, planet_id, true)?;
+        add_peer_team(&mut app, planet_id, true)?;
+        UiCallback::PushSpaceAdventurePopup { selected: 0 }.call(&mut app)?;
+
+        let press = |app: &mut App, key: KeyCode| {
+            app.ui
+                .handle_key_events(KeyEvent::from(key), &app.world)
+                .expect("callback")
+                .call(app)
+        };
+        press(&mut app, ui_key::PREVIOUS_JOINABLE_ADVENTURE)?;
+        assert_eq!(selected_adventure(&app), (2, 3));
+        press(&mut app, ui_key::NEXT_JOINABLE_ADVENTURE)?;
+        assert_eq!(selected_adventure(&app), (0, 3));
+
+        app.world
+            .teams
+            .get_mut(&host)
+            .expect("host")
+            .current_location = TeamLocation::OnSpaceAdventure {
+            around: planet_id,
+            joinable: false,
+        };
+        UiCallback::PushSpaceAdventurePopup { selected: 2 }.call(&mut app)?;
+        assert_eq!(selected_adventure(&app), (0, 2));
         Ok(())
     }
 
