@@ -1135,7 +1135,7 @@ impl Screen for SwarmPanel {
                     .map(|x| x.to_string())
                     .collect();
 
-                let mut message = lines.iter().join("/n");
+                let mut message = join_chat_lines(&lines);
 
                 if message.is_empty() {
                     // If no message, go to last message
@@ -1173,6 +1173,23 @@ impl Screen for SwarmPanel {
 
     fn is_capturing_text(&self) -> bool {
         self.view == SwarmView::Chat
+    }
+}
+
+fn join_chat_lines(lines: &[String]) -> String {
+    lines.iter().join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::join_chat_lines;
+
+    #[test]
+    fn chat_lines_are_joined_with_newlines() {
+        assert_eq!(
+            join_chat_lines(&["first".into(), "second".into()]),
+            "first\nsecond"
+        );
     }
 }
 

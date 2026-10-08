@@ -196,8 +196,20 @@ pub struct TeamInGame {
 impl TeamInGame {
     pub fn new(team: &Team, players: PlayerMap) -> Self {
         let mut stats = HashMap::new();
+        let mut player_order = team
+            .player_ids
+            .iter()
+            .filter(|id| players.contains_key(id))
+            .copied()
+            .collect::<Vec<_>>();
+        let remaining_player_ids = players
+            .keys()
+            .filter(|id| !player_order.contains(id))
+            .copied()
+            .collect::<Vec<_>>();
+        player_order.extend(remaining_player_ids);
 
-        for (idx, &player_id) in players.keys().enumerate() {
+        for (idx, &player_id) in player_order.iter().enumerate() {
             let mut player_stats = GameStats::default();
             if (idx as GamePosition) < NUM_GAME_POSITIONS {
                 player_stats.position = Some(idx as GamePosition);
@@ -205,9 +217,15 @@ impl TeamInGame {
             stats.insert(player_id, player_stats.clone());
         }
 
-        let initial_tiredness = players.values().map(|p| p.tiredness).collect();
-        let initial_morale = players.values().map(|p| p.morale).collect();
-        let initial_drunkenness = players.values().map(|p| p.drunkenness).collect();
+        let initial_tiredness = player_order
+            .iter()
+            .map(|id| players[id].tiredness)
+            .collect();
+        let initial_morale = player_order.iter().map(|id| players[id].morale).collect();
+        let initial_drunkenness = player_order
+            .iter()
+            .map(|id| players[id].drunkenness)
+            .collect();
 
         // Rum brought to the game, depending on the team in-game drinking setting.
         let initial_rum = team
@@ -221,7 +239,7 @@ impl TeamInGame {
             peer_id: team.peer_id,
             reputation: team.reputation,
             name: team.name.clone(),
-            initial_positions: players.keys().copied().collect_vec(),
+            initial_positions: player_order,
             initial_tiredness,
             initial_morale,
             initial_drunkenness,
@@ -292,6 +310,35 @@ impl TeamInGame {
             .count();
 
         self.tactic.pick_action(rng, num_active_players)
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn test_team_in_game_preserves_team_player_order() {
+    let player_ids = (0..6).map(|_| PlayerId::new_v4()).collect::<Vec<_>>();
+    let team = Team {
+        id: TeamId::new_v4(),
+        player_ids: player_ids.clone(),
+        ..Default::default()
+    };
+    let mut players = PlayerMap::new();
+    for &player_id in player_ids.iter().rev() {
+        let mut player = Player::default();
+        player.id = player_id;
+        players.insert(player_id, player);
+    }
+
+    let team_in_game = TeamInGame::new(&team, players);
+
+    assert_eq!(team_in_game.initial_positions, player_ids);
+    for (index, player_id) in team_in_game.initial_positions.iter().enumerate() {
+        let expected_position = if index < NUM_GAME_POSITIONS as usize {
+            Some(index as GamePosition)
+        } else {
+            None
+        };
+        assert_eq!(team_in_game.stats[player_id].position, expected_position);
     }
 }
 
