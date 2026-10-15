@@ -5,7 +5,6 @@ use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, S
 use crate::app_version;
 use crate::core::constants::NETWORK_GAME_START_DELAY;
 use crate::core::{Team, TournamentRegistrationState, World, MAX_AVG_TIREDNESS_PER_AUTO_GAME};
-use crate::game_engine::game::GameSummary;
 use crate::game_engine::types::TeamInGame;
 use crate::game_engine::{Tournament, TournamentId, TournamentState};
 use crate::network::types::{ChatHistoryEntry, TournamentRequestState};
@@ -624,7 +623,10 @@ impl NetworkCallback {
                 ));
             }
 
-            if app.world.canceled_tournaments.contains(&tournament.id) {
+            // Every client simulates the games itself, so only the same version gets the same results.
+            if app.world.canceled_tournaments.contains(&tournament.id)
+                || tournament.app_version() != app_version()
+            {
                 return Ok(None);
             }
 
@@ -669,7 +671,7 @@ impl NetworkCallback {
                 } else {
                     tournament.is_initialized()
                         || tournament.is_canceled()
-                        || tournament.registered_teams.len() > previous_t.registered_teams.len()
+                        || tournament.registered_team_count() > previous_t.registered_team_count()
                 }
             } else {
                 true
@@ -677,15 +679,15 @@ impl NetworkCallback {
 
             if received_tournament_is_latest {
                 if !tournament.is_canceled() {
-                    // We move tournament games to world to be able to simulate them.
-                    // FIXME: the games in the tournament are not updated to be ended or anything...
-                    for game in tournament.games.iter() {
-                        if game.has_ended() && !app.world.past_games.contains_key(&game.id) {
+                    // Rebuild the games we don't have yet: the world simulates them up to now,
+                    // so a tournament received after it started is followed like any other.
+                    for record in tournament.games.iter() {
+                        if !app.world.past_games.contains_key(&record.id)
+                            && !app.world.games.contains_key(&record.id)
+                        {
                             app.world
-                                .past_games
-                                .insert(game.id, GameSummary::from_game(game));
-                        } else if !game.has_ended() && !app.world.games.contains_key(&game.id) {
-                            app.world.games.insert(game.id, game.clone());
+                                .games
+                                .insert(record.id, tournament.build_game(record)?);
                         }
                     }
                 }

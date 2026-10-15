@@ -1104,14 +1104,18 @@ mod tests {
     use super::TOPIC;
     use crate::{
         app::App,
-        core::{constants::NETWORK_GAME_START_DELAY, types::TeamLocation, world::World},
+        core::{
+            constants::NETWORK_GAME_START_DELAY, types::TeamLocation, world::World, TickInterval,
+            HOURS,
+        },
+        game_engine::{Tournament, TournamentType},
         network::{
             challenge::Challenge,
             network_callback::NetworkCallback,
             types::{NetworkData, NetworkRequestState, NetworkTeam},
         },
         store::{deserialize, serialize},
-        types::{AppResult, HashMapWithResult, SystemTimeTick, Tick},
+        types::{AppResult, GameMap, GameSummaryMap, HashMapWithResult, SystemTimeTick, Tick},
         ui::UiCallback,
     };
     use anyhow::anyhow;
@@ -1121,6 +1125,102 @@ mod tests {
     };
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+
+    fn deliver_tournament(app: &mut App, tournament: &Tournament) -> AppResult<Option<String>> {
+        deliver(
+            app,
+            &NetworkData::Tournament {
+                timestamp: Tick::now(),
+                tournament: tournament.clone(),
+            },
+        )
+    }
+
+    fn started_cup(organizer: &App, started_hours_ago: u64) -> AppResult<Tournament> {
+        let organizer_team = organizer.world.get_own_team()?;
+        let planet = organizer
+            .world
+            .planets
+            .get_or_err(&organizer_team.home_planet_id)?;
+        let mut tournament =
+            Tournament::new(organizer_team, TournamentType::Cup)?.on_planet(planet);
+        tournament.participants = Tournament::test(4, 4).participants;
+        for team in tournament.participants.values_mut() {
+            team.peer_id = Some(PeerId::random());
+        }
+        tournament.registrations_closing_at = Tick::now() - started_hours_ago * HOURS;
+        Ok(tournament)
+    }
+
+    #[test]
+    fn test_late_spectator_replays_the_tournament_games() -> AppResult<()> {
+        let (organizer, mut spectator) = paired_apps()?;
+        let mut tournament = started_cup(&organizer, 24)?;
+
+        let mut games = GameMap::new();
+        for mut game in tournament.initialize() {
+            game.catch_up(Tick::now());
+            games.insert(game.id, game);
+        }
+        for mut game in
+            tournament.generate_next_games(Tick::now(), &games, &GameSummaryMap::new())?
+        {
+            game.catch_up(Tick::now());
+            games.insert(game.id, game);
+        }
+        assert_eq!(games.len(), 3);
+        assert!(games.values().all(|game| game.has_ended()));
+
+        deliver_tournament(&mut spectator, &tournament)?;
+        for step in 1..=5 {
+            spectator
+                .world
+                .handle_slow_tick_events(Tick::now() + step * TickInterval::SHORT)?;
+        }
+
+        for (game_id, game) in games.iter() {
+            let spectator_winner = match spectator.world.past_games.get(game_id) {
+                Some(summary) => summary.winner,
+                None => spectator.world.games.get_or_err(game_id)?.winner,
+            };
+            assert_eq!(spectator_winner, game.winner);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_tournament_from_another_version_is_ignored() -> AppResult<()> {
+        let (organizer, mut spectator) = paired_apps()?;
+        let tournament = started_cup(&organizer, 1)?;
+
+        let mut other_version = serde_json::to_value(&tournament)?;
+        other_version["app_version"] = serde_json::json!([0, 0, 1]);
+        let other_version: Tournament = serde_json::from_value(other_version)?;
+        deliver_tournament(&mut spectator, &other_version)?;
+        assert!(!spectator.world.tournaments.contains_key(&tournament.id));
+
+        deliver_tournament(&mut spectator, &tournament)?;
+        assert!(spectator.world.tournaments.contains_key(&tournament.id));
+        Ok(())
+    }
+
+    #[test]
+    fn test_initialized_supercup_fits_in_one_message() -> AppResult<()> {
+        let mut tournament = Tournament::test(8, 8);
+        tournament.registrations_closing_at = 0;
+        tournament.initialize();
+
+        let size = serialize(&NetworkData::Tournament {
+            timestamp: Tick::now(),
+            tournament,
+        })?
+        .len();
+        assert!(
+            size < 60 * 1024,
+            "initialized Supercup message is {size} bytes"
+        );
+        Ok(())
+    }
 
     // Two apps that know each other's team and sit on the same planet,
     // so app1 can challenge app2.
@@ -1153,18 +1253,24 @@ mod tests {
         Ok((app1, app2))
     }
 
-    fn deliver_challenge(app: &mut App, challenge: Challenge) -> AppResult<Option<String>> {
-        let data = serialize::<NetworkData>(&NetworkData::Challenge {
-            timestamp: Tick::now(),
-            challenge,
-        })?;
+    fn deliver(app: &mut App, data: &NetworkData) -> AppResult<Option<String>> {
         let message = Message {
             source: None,
-            data,
+            data: serialize(data)?,
             sequence_number: None,
             topic: IdentTopic::new(TOPIC).into(),
         };
         NetworkCallback::HandleMessage { message }.call(app)
+    }
+
+    fn deliver_challenge(app: &mut App, challenge: Challenge) -> AppResult<Option<String>> {
+        deliver(
+            app,
+            &NetworkData::Challenge {
+                timestamp: Tick::now(),
+                challenge,
+            },
+        )
     }
 
     #[test]
