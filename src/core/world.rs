@@ -1980,22 +1980,6 @@ impl World {
                 });
             }
 
-            // Update tournament's copy of the game with the ended version,
-            // so that network sync and generate_next_games see the correct state.
-            if let Some(tournament_id) = game.part_of_tournament {
-                if let Some(tournament) = self.tournaments.get_mut(&tournament_id) {
-                    if let Some(t_game) = tournament.games.iter_mut().find(|g| g.id == game.id) {
-                        *t_game = game.clone();
-                    } else {
-                        log::error!(
-                            "Game {} should be in tournament {} games",
-                            game.id,
-                            tournament_id
-                        );
-                    }
-                }
-            }
-
             // Teams get money depending on game attendance.
             // If a team is knocked out, money goes to the other team.
             // If both are knocked out, they get no money.
@@ -2197,10 +2181,10 @@ impl World {
                     // Append callback to send Confirmation.
                     // If we are simulating, abort tournament.
                     if tournament.organizer_id == self.own_team_id {
-                        if tournament.registered_teams.len() < 2 {
+                        if tournament.registered_team_count() < 2 {
                             let error_message = format!(
                                 "Insufficient registered teams ({}).",
-                                tournament.registered_teams.len()
+                                tournament.registered_team_count()
                             );
                             log::warn!("Canceling tournament {tournament_id}: {error_message}");
                             callbacks.push(UiCallback::CancelTournament {
@@ -2249,47 +2233,21 @@ impl World {
 
                     // FIXME: this is not very robust. For instance, it relies on retaining all
                     // tournament games when storing, otherwise the hashmap would be incorrect.
-                    if tournament.is_team_participating(&self.own_team_id) {
-                        // If team is participating, it should have all the necessary games stored.
-
-                        match tournament.generate_next_games(
-                            current_tick,
-                            &self.games,
-                            &self.past_games,
-                        ) {
-                            Ok(mut t_games) => new_games.append(&mut t_games),
-                            Err(err) => {
-                                let error_message =
-                                    format!("Error while simulating tournament: {err}.");
-                                log::warn!("{error_message}");
-                                callbacks.push(UiCallback::CancelTournament {
-                                    tournament_id,
-                                    error_message,
-                                });
-                                continue;
-                            }
-                        }
-                    }
-                    // If we receive a valid initialized tournament from the network where the team is not participating,
-                    // the next games cannot be generated correctly as the world does not contain the games.
-                    // In this case, we just accept the error.
-                    else {
-                        match tournament.generate_next_games(
-                            current_tick,
-                            &self.games,
-                            &self.past_games,
-                        ) {
-                            Ok(mut t_games) => new_games.append(&mut t_games),
-                            Err(err) => {
-                                let error_message =
-                                    format!("Error while simulating network tournament: {err}.");
-                                log::warn!("{error_message}");
-                                callbacks.push(UiCallback::CancelTournament {
-                                    tournament_id,
-                                    error_message,
-                                });
-                                continue;
-                            }
+                    match tournament.generate_next_games(
+                        current_tick,
+                        &self.games,
+                        &self.past_games,
+                    ) {
+                        Ok(mut t_games) => new_games.append(&mut t_games),
+                        Err(err) => {
+                            let error_message =
+                                format!("Error while simulating tournament: {err}.");
+                            log::warn!("{error_message}");
+                            callbacks.push(UiCallback::CancelTournament {
+                                tournament_id,
+                                error_message,
+                            });
+                            continue;
                         }
                     }
 

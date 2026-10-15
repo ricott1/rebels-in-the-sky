@@ -15,7 +15,7 @@ use anyhow::anyhow;
 use itertools::Itertools;
 use rand::{seq::SliceRandom, RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::HashMap;
 use strum::Display;
@@ -139,6 +139,47 @@ pub enum TournamentState {
     Ended,
 }
 
+/// What a tournament keeps of each game.
+/// Every client builds the full game from it and the participants, so messages stay small.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TournamentGame {
+    pub id: GameId,
+    pub home_team_id: TeamId,
+    pub away_team_id: TeamId,
+    pub starting_at: Tick,
+}
+
+impl From<Game> for TournamentGame {
+    fn from(game: Game) -> Self {
+        Self {
+            id: game.id,
+            home_team_id: game.home_team_in_game.team_id,
+            away_team_id: game.away_team_in_game.team_id,
+            starting_at: game.starting_at,
+        }
+    }
+}
+
+// Saves from before 1.9.0 keep the full game in the tournament.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum StoredGame {
+    Record(TournamentGame),
+    Full(Box<Game>),
+}
+
+fn deserialize_games<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<TournamentGame>, D::Error> {
+    Ok(Vec::<StoredGame>::deserialize(deserializer)?
+        .into_iter()
+        .map(|game| match game {
+            StoredGame::Record(record) => record,
+            StoredGame::Full(game) => (*game).into(),
+        })
+        .collect())
+}
+
 // Note: all clients will run the same tournament deterministically, but teams can be registered
 // only with a network message sent to the organizer which will respond with the updated tournament state.
 // This means that clients are responsible for updating their team state to reflect the fact that they will be playing in the tournament.
@@ -151,9 +192,11 @@ pub struct Tournament {
     pub organizer_id: TeamId,
     pub max_participants: usize,
     canceled: bool,
+    // Teams move from registered_teams to participants when they confirm.
     pub registered_teams: HashMap<TeamId, TeamInGame>,
     pub participants: HashMap<TeamId, TeamInGame>,
-    pub games: Vec<Game>,
+    #[serde(deserialize_with = "deserialize_games")]
+    pub games: Vec<TournamentGame>,
     pending_team_for_next_game: Option<TeamId>,
     pub planet_id: PlanetId,
     pub planet_name: String,
@@ -180,23 +223,47 @@ impl Tournament {
         ChaCha8Rng::from_seed(self.get_rng_seed(value))
     }
 
-    fn new_game(
-        &self,
+    fn schedule_game(
+        &mut self,
         rng: &mut ChaCha8Rng,
-        home_team_in_game: TeamInGame,
-        away_team_in_game: TeamInGame,
+        home_team_id: TeamId,
+        away_team_id: TeamId,
         starting_at: Tick,
     ) -> Game {
-        Game::new(
-            GameId::from_u128(rng.random()),
-            home_team_in_game,
-            away_team_in_game,
+        let record = TournamentGame {
+            id: GameId::from_u128(rng.random()),
+            home_team_id,
+            away_team_id,
             starting_at,
+        };
+        let game = self
+            .build_game(&record)
+            .expect("Team should be a participant");
+        self.games.push(record);
+        game
+    }
+
+    pub fn build_game(&self, record: &TournamentGame) -> AppResult<Game> {
+        let participant = |team_id: &TeamId| {
+            self.participants
+                .get(team_id)
+                .cloned()
+                .ok_or_else(|| anyhow!("Team {team_id} is not a tournament participant."))
+        };
+        Ok(Game::new(
+            record.id,
+            participant(&record.home_team_id)?,
+            participant(&record.away_team_id)?,
+            record.starting_at,
             self.planet_id,
             self.planet_total_population,
             self.planet_name.as_str(),
             Some(self.id),
-        )
+        ))
+    }
+
+    pub fn app_version(&self) -> [usize; 3] {
+        self.app_version
     }
 
     pub fn state(&self, timestamp: Tick) -> TournamentState {
@@ -266,6 +333,7 @@ impl Tournament {
             max_participants,
             registrations_closing_at: Tick::now() + SECONDS,
             game_time_interval: 30 * MINUTES,
+            app_version: app_version(),
             ..Default::default()
         };
 
@@ -273,8 +341,6 @@ impl Tournament {
             let mut team_in_game = TeamInGame::test();
             team_in_game.team_id = TeamId::from_u128(idx as u128);
             team_in_game.name = format!("Team {idx}");
-            t.registered_teams
-                .insert(team_in_game.team_id, team_in_game.clone());
             t.participants.insert(team_in_game.team_id, team_in_game);
         }
 
@@ -306,7 +372,20 @@ impl Tournament {
     }
 
     pub fn is_team_registered(&self, team_id: &TeamId) -> bool {
-        self.registered_teams.contains_key(team_id)
+        self.registered_teams.contains_key(team_id) || self.participants.contains_key(team_id)
+    }
+
+    /// Registered teams, confirmed or not. Older saves may hold a team in both maps.
+    pub fn all_registered_teams(&self) -> impl Iterator<Item = &TeamInGame> {
+        self.participants.values().chain(
+            self.registered_teams
+                .values()
+                .filter(|team| !self.participants.contains_key(&team.team_id)),
+        )
+    }
+
+    pub fn registered_team_count(&self) -> usize {
+        self.all_registered_teams().count()
     }
 
     pub fn is_team_participating(&self, team_id: &TeamId) -> bool {
@@ -321,6 +400,7 @@ impl Tournament {
     ) -> AppResult<()> {
         team.can_confirm_tournament_registration(self, timestamp)?;
         let team_in_game = TeamInGame::new(team, players);
+        self.registered_teams.remove(&team.id);
         self.participants.insert(team.id, team_in_game);
 
         Ok(())
@@ -370,26 +450,9 @@ impl Tournament {
 
         for (idx, &team_id) in pairings.iter().enumerate() {
             if let Some(pending_team_id) = self.pending_team_for_next_game.take() {
-                let pending_team = self
-                    .participants
-                    .get(&pending_team_id)
-                    .expect("Team should be a participant")
-                    .clone();
-                let team_in_game = self
-                    .participants
-                    .get(&team_id)
-                    .expect("Team should be a participant")
-                    .clone();
-
-                let game = self.new_game(
-                    rng,
-                    pending_team,
-                    team_in_game,
-                    self.starting_at()
-                        + self.game_time_interval * (idx + 1) as u64 / pairings.len() as u64,
-                );
-                self.games.push(game.clone());
-                new_games.push(game);
+                let starting_at = self.starting_at()
+                    + self.game_time_interval * (idx + 1) as u64 / pairings.len() as u64;
+                new_games.push(self.schedule_game(rng, pending_team_id, team_id, starting_at));
             } else {
                 self.pending_team_for_next_game = Some(team_id);
             }
@@ -438,12 +501,10 @@ impl Tournament {
             )
         }
 
-        // Winner of every finished game, taken from `games` or `past_games` alike:
-        // advancement must not depend on which one holds it, since a spectator receives finished games straight into past_games.
+        // Winner of every finished game, from `games` (just ended) or `past_games` (archived) alike.
         let mut completed: Vec<(TeamId, Tick, GameId)> = vec![];
         for game in self.games.iter() {
-            // A result may sit in `games` (just ended, not yet archived) or `past_games`;
-            // a game with no result yet is skipped (we wait, we don't cancel).
+            // A game with no result yet is skipped: we wait, we don't cancel.
             let result = match games.get(&game.id) {
                 Some(active) => {
                     active
@@ -488,34 +549,18 @@ impl Tournament {
         let mut new_games = vec![];
         for (home_id, away_id, after_starting_at) in required {
             let exists = self.games.iter().any(|g| {
-                let pair = [g.home_team_in_game.team_id, g.away_team_in_game.team_id];
+                let pair = [g.home_team_id, g.away_team_id];
                 pair.contains(&home_id) && pair.contains(&away_id)
             });
             if exists {
                 continue;
             }
 
-            let home = self
-                .participants
-                .get(&home_id)
-                .expect("Team should be a participant")
-                .clone();
-            let away = self
-                .participants
-                .get(&away_id)
-                .expect("Team should be a participant")
-                .clone();
             let rng = &mut self.get_rng(self.games.len() as u64 + 1);
-            let new_game = self.new_game(
-                rng,
-                home,
-                away,
-                after_starting_at
-                    + timer::MAX_TIME_IN_SECONDS as Tick * SECONDS
-                    + self.game_time_interval,
-            );
-            self.games.push(new_game.clone());
-            new_games.push(new_game);
+            let starting_at = after_starting_at
+                + timer::MAX_TIME_IN_SECONDS as Tick * SECONDS
+                + self.game_time_interval;
+            new_games.push(self.schedule_game(rng, home_id, away_id, starting_at));
         }
 
         Ok(new_games)
@@ -563,6 +608,7 @@ mod tests {
 
     use crate::core::{Player, Team, TeamLocation, TickInterval, MAX_PLAYERS_PER_GAME, SECONDS};
     use crate::game_engine::game::{Game, GameSummary};
+    use crate::game_engine::types::TeamInGame;
     use crate::game_engine::{Tournament, TournamentState, TournamentType};
     use crate::types::{
         AppResult, GameMap, GameSummaryMap, PlanetId, PlayerMap, SystemTimeTick, TeamId, Tick,
@@ -1052,8 +1098,7 @@ mod tests {
             "participant path should schedule the final (2 semis + 1 final)"
         );
 
-        // Spectator path: sf0 seen via `games`, sf1 arrives already-ended via `past_games`
-        // (network_callback routes ended games straight to past_games, bypassing pairing).
+        // Spectator path: sf0 seen via `games`, sf1 already archived in `past_games`.
         let mut spec = base.clone();
         spec.registrations_closing_at = 0;
         spec.initialize();
@@ -1191,6 +1236,59 @@ mod tests {
         play_tournament_on_schedule(&mut tournament)?;
         assert!(tournament.winner.is_some());
         assert_eq!(tournament.games.len(), max - 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_game_records_rebuild_the_scheduled_games() -> AppResult<()> {
+        let mut tournament = Tournament::test(8, 8);
+        tournament.registrations_closing_at = 0;
+        let games = tournament.initialize();
+        assert_eq!(tournament.games.len(), games.len());
+        for game in &games {
+            let record = tournament
+                .games
+                .iter()
+                .find(|record| record.id == game.id)
+                .expect("Every scheduled game should have a record");
+            assert_eq!(&tournament.build_game(record)?, game);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_tournament_saved_with_full_games_still_loads() -> AppResult<()> {
+        let mut tournament = Tournament::test(4, 4);
+        tournament.registrations_closing_at = 0;
+        let games = tournament.initialize();
+
+        let mut saved = serde_json::to_value(&tournament)?;
+        saved["games"] = serde_json::to_value(&games)?;
+        let loaded: Tournament = serde_json::from_value(saved)?;
+
+        assert_eq!(loaded, tournament);
+        Ok(())
+    }
+
+    #[test]
+    fn test_confirmed_team_is_stored_once() -> AppResult<()> {
+        let planet_id = PlanetId::default();
+        let mut organizer = Team::random(None);
+        organizer.current_location = TeamLocation::OnPlanet { planet_id };
+        let mut tournament = Tournament::new(&organizer, TournamentType::Cup)?;
+        let players = TeamInGame::test().players;
+
+        tournament.register_team(&organizer, players.clone(), Tick::now())?;
+        tournament.confirm_team_registration(
+            &organizer,
+            players,
+            tournament.registrations_closing_at,
+        )?;
+
+        assert!(!tournament.registered_teams.contains_key(&organizer.id));
+        assert!(tournament.participants.contains_key(&organizer.id));
+        assert!(tournament.is_team_registered(&organizer.id));
+        assert_eq!(tournament.registered_team_count(), 1);
         Ok(())
     }
 

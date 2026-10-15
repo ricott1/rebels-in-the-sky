@@ -2003,7 +2003,7 @@ impl UiCallback {
                     tournament.cancel();
 
                     if app.world.own_team_id == tournament.organizer_id {
-                        for &team_id in tournament.registered_teams.keys() {
+                        for team_id in tournament.all_registered_teams().map(|team| team.team_id) {
                             if team_id == tournament.organizer_id {
                                 continue;
                             }
@@ -2095,7 +2095,7 @@ impl UiCallback {
                             };
                     }
 
-                    for &team_id in tournament.registered_teams.keys() {
+                    for team_id in tournament.all_registered_teams().map(|team| team.team_id) {
                         if team_id == app.world.own_team_id {
                             continue;
                         }
