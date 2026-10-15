@@ -1,7 +1,7 @@
 use clap::Parser;
 use log::LevelFilter;
 use log4rs::append::file::FileAppender;
-use log4rs::config::{Appender, Config, Root};
+use log4rs::config::{Appender, Config, Logger, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use rebels::app::App;
 use rebels::args::AppArgs;
@@ -23,11 +23,15 @@ async fn main() -> AppResult<()> {
     let logfile_path = store_path("rebels.log")?;
     let logfile = FileAppender::builder()
         .append(false)
-        .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
+        .encoder(Box::new(PatternEncoder::new(
+            "{d(%H:%M:%S%.3f)} {l} - {m}\n",
+        )))
         .build(logfile_path)?;
 
     let config = Config::builder()
         .appender(Appender::builder().build("logfile", Box::new(logfile)))
+        .logger(Logger::builder().build("libp2p_dcutr", LevelFilter::Debug))
+        .logger(Logger::builder().build("libp2p_relay", LevelFilter::Debug))
         .build(Root::builder().appender("logfile").build(LevelFilter::Info))?;
     log4rs::init_config(config)?;
 

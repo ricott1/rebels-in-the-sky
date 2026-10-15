@@ -146,6 +146,7 @@ enum SwarmStatus {
 enum SwarmCommand {
     Dial {
         address: Multiaddr,
+        reuse_port: bool,
     },
     Send {
         topic: IdentTopic,
@@ -387,16 +388,26 @@ impl NetworkHandler {
             format!("/dns4/{DEFAULT_SEED_URL}/tcp/{DEFAULT_SEED_PORT}")
                 .parse()
                 .expect("Invalid default seed address."),
+            format!("/dns4/{DEFAULT_SEED_URL}/udp/{DEFAULT_SEED_PORT}/quic-v1")
+                .parse()
+                .expect("Invalid default seed address."),
             format!("/ip6/{DEFAULT_SEED_IPV6}/tcp/{DEFAULT_SEED_PORT}")
+                .parse()
+                .expect("Invalid provided seed ip."),
+            format!("/ip6/{DEFAULT_SEED_IPV6}/udp/{DEFAULT_SEED_PORT}/quic-v1")
                 .parse()
                 .expect("Invalid provided seed ip."),
         ];
 
         if let Some(ip) = seed_node_ip {
-            if let Ok(address) = format!("/ip4/{ip}/tcp/{DEFAULT_SEED_PORT}").parse() {
-                seed_addresses.push(address);
-            } else if let Ok(address) = format!("/ip6/{ip}/tcp/{DEFAULT_SEED_PORT}").parse() {
-                seed_addresses.push(address);
+            for family in ["ip4", "ip6"] {
+                let tcp = format!("/{family}/{ip}/tcp/{DEFAULT_SEED_PORT}").parse::<Multiaddr>();
+                let quic =
+                    format!("/{family}/{ip}/udp/{DEFAULT_SEED_PORT}/quic-v1").parse::<Multiaddr>();
+                if let (Ok(tcp), Ok(quic)) = (tcp, quic) {
+                    seed_addresses.extend([tcp, quic]);
+                    break;
+                }
             }
         }
 
@@ -621,7 +632,7 @@ impl NetworkHandler {
                                     if target != own_peer_id {
                                         // New port, not the reused listen port: avoids
                                         // EADDRINUSE on redundant dials (reuse is only for
-                                        // DCUtR, which sets its own DialOpts).
+                                        // seeds and DCUtR).
                                         let _ = swarm.dial(
                                             DialOpts::peer_id(target).allocate_new_port().build(),
                                         );
@@ -636,7 +647,7 @@ impl NetworkHandler {
                                 }
                             }
                             SwarmEvent::ConnectionEstablished { peer_id, connection_id, endpoint, .. } => {
-                                let relayed = is_relay_circuit(endpoint.get_remote_address());
+                                let relayed = endpoint.is_relayed();
                                 let kind = if relayed { "relayed" } else { "direct" };
                                 log::info!(
                                     "Connection established with {peer_id} ({kind}): {}",
@@ -651,7 +662,9 @@ impl NetworkHandler {
                                     log::info!("Kademlia bootstrap initiated");
                                 }
                             }
-                            SwarmEvent::ConnectionClosed { peer_id, connection_id, .. } => {
+                            SwarmEvent::ConnectionClosed { peer_id, connection_id, endpoint, cause, .. } => {
+                                let kind = if endpoint.is_relayed() { "relayed" } else { "direct" };
+                                log::info!("Connection closed with {peer_id} ({kind}): {cause:?}");
                                 if let Some(list) = connections.get_mut(peer_id) {
                                     list.retain(|(id, _)| id != connection_id);
                                     if list.is_empty() {
@@ -659,6 +672,13 @@ impl NetworkHandler {
                                     }
                                 }
                                 resolve_direct_waiters(&mut swarm, &connections, &mut direct_waiters, peer_id);
+                            }
+                            SwarmEvent::OutgoingConnectionError { peer_id: Some(peer_id), error, .. }
+                                if direct_waiters
+                                    .get(peer_id)
+                                    .is_some_and(|waiters| waiters.iter().any(|waiter| !waiter.is_closed())) =>
+                            {
+                                log::info!("Dial to {peer_id} failed while waiting for a direct connection: {error}");
                             }
                             _ => {}
                         }
@@ -679,13 +699,16 @@ impl NetworkHandler {
                                         log::error!("Swarm send error: {e}");
                                     }
                             }
-                            SwarmCommand::Dial { address } => {
+                            SwarmCommand::Dial { address, reuse_port } => {
                                 log::debug!("Dialing address: {address}");
-                                // New port (see FindPeer dial): avoids EADDRINUSE.
-                                let opts = DialOpts::unknown_peer_id()
-                                    .address(address.clone())
-                                    .allocate_new_port()
-                                    .build();
+                                // Seeds keep the listen port so identify reports the NAT mapping DCUtR needs;
+                                // other dials take a new port to avoid EADDRINUSE on duplicate 4-tuples.
+                                let opts = DialOpts::unknown_peer_id().address(address.clone());
+                                let opts = if reuse_port {
+                                    opts.build()
+                                } else {
+                                    opts.allocate_new_port().build()
+                                };
                                 if let Err(e) = swarm.dial(opts) {
                                     log::error!("Swarm dial error for {address}: {e}");
                                 }
@@ -698,6 +721,10 @@ impl NetworkHandler {
                                 let waiters = direct_waiters.entry(peer_id).or_default();
                                 waiters.retain(|waiter| !waiter.is_closed());
                                 waiters.push(reply);
+                                log::info!(
+                                    "Waiting for a direct connection to {peer_id}: {:?}",
+                                    direct_state(&connections, &peer_id)
+                                );
                                 if direct_state(&connections, &peer_id) == DirectState::Missing {
                                     find_peer(&mut swarm, relay_circuit.as_ref(), peer_id);
                                 } else {
@@ -759,6 +786,7 @@ impl NetworkHandler {
                 for address in self.seed_addresses.iter() {
                     sender.try_send(SwarmCommand::Dial {
                         address: address.clone(),
+                        reuse_port: true,
                     })?;
                 }
             }
@@ -771,7 +799,10 @@ impl NetworkHandler {
         match &self.swarm_status {
             SwarmStatus::Uninitialized => {}
             SwarmStatus::Ready { sender } => {
-                sender.try_send(SwarmCommand::Dial { address })?;
+                sender.try_send(SwarmCommand::Dial {
+                    address,
+                    reuse_port: false,
+                })?;
             }
         }
 
@@ -1556,5 +1587,22 @@ mod tests {
 
         connections.insert(peer, vec![(direct, false)]);
         assert_eq!(direct_state(&connections, &peer), DirectState::Ready);
+    }
+
+    #[test]
+    fn test_custom_seed_gets_tcp_and_quic_addresses() -> AppResult<()> {
+        use super::NetworkHandler;
+
+        for (ip, family) in [("10.0.0.2", "ip4"), ("fd00::2", "ip6")] {
+            let handler = NetworkHandler::new(Some(&ip.to_string()))?;
+            let addresses = handler
+                .seed_addresses
+                .iter()
+                .map(|address| address.to_string())
+                .collect::<Vec<_>>();
+            assert!(addresses.contains(&format!("/{family}/{ip}/tcp/37201")));
+            assert!(addresses.contains(&format!("/{family}/{ip}/udp/37201/quic-v1")));
+        }
+        Ok(())
     }
 }
