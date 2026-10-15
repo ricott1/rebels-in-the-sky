@@ -33,7 +33,7 @@ static ASTEROID_IMAGE_DATA: LazyLock<HashMap<AsteroidData, ZippedImageHitbox>> =
                 let mut hit_boxes = vec![];
 
                 let path = if size == AsteroidSize::Planet {
-                    format!("asteroids/asteroid{}.png", rand::rng().random_range(0..30))
+                    format!("asteroids/asteroid{n_idx}.png")
                 } else {
                     format!(
                         "space_adventure/asteroid_{}{}.png",
@@ -130,6 +130,14 @@ pub struct AsteroidEntity {
 }
 
 impl Body for AsteroidEntity {
+    fn position_f32(&self) -> Vec2 {
+        self.position
+    }
+
+    fn velocity_f32(&self) -> Vec2 {
+        self.velocity
+    }
+
     fn previous_position(&self) -> I16Vec2 {
         self.previous_position.as_i16vec2()
     }
@@ -191,6 +199,14 @@ impl Sprite for AsteroidEntity {
 
     fn remove_visual_effect(&mut self, effect: &VisualEffect) {
         self.visual_effects.remove(effect);
+    }
+
+    fn visual_effects(&self) -> Vec<(VisualEffect, f32)> {
+        self.visual_effects.iter().map(|(e, t)| (*e, *t)).collect()
+    }
+
+    fn set_visual_effects(&mut self, effects: &[(VisualEffect, f32)]) {
+        self.visual_effects = effects.iter().copied().collect();
     }
 
     fn update_sprite(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
@@ -435,8 +451,16 @@ impl AsteroidEntity {
     fn image_type(&self) -> usize {
         self.id % self.size.max_image_type()
     }
-    fn frame(&self) -> usize {
+    pub(crate) fn frame(&self) -> usize {
         self.orientation as usize % MAX_ROTATION
+    }
+
+    pub(crate) fn asteroid_size(&self) -> AsteroidSize {
+        self.size
+    }
+
+    pub(crate) fn set_frame(&mut self, frame: u16) {
+        self.orientation = frame as f32;
     }
 
     pub fn new_entity(
@@ -569,6 +593,23 @@ mod tests {
             80,
             image::ColorType::Rgba8,
         )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_asteroid_planet_image_matches_index() -> AppResult<()> {
+        use crate::image::{color_map::AsteroidColorMap, utils::open_image};
+        use crate::space_adventure::utils::body_data_from_image;
+
+        for n_idx in 0..AsteroidSize::Planet.max_image_type() {
+            let mut base_img = open_image(&format!("asteroids/asteroid{n_idx}.png"))?;
+            base_img.apply_color_map(AsteroidColorMap::Base.color_map());
+            let (expected, _) = body_data_from_image(&base_img, true);
+            let (gif, _) = ASTEROID_IMAGE_DATA
+                .get(&(AsteroidSize::Planet, n_idx))
+                .expect("Planet image should exist");
+            assert_eq!(gif[0], expected);
+        }
         Ok(())
     }
 }
