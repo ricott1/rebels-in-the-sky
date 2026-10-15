@@ -22,6 +22,8 @@ use crate::types::{SystemTimeTick, Tick};
 use anyhow::anyhow;
 use futures::StreamExt;
 use itertools::Itertools;
+use libp2p::core::transport::ListenerId;
+use libp2p::core::ConnectedPoint;
 use libp2p::gossipsub::{self, IdentTopic};
 use libp2p::identity::Keypair;
 use libp2p::multiaddr::Protocol;
@@ -36,7 +38,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
-use std::time::Duration;
+use std::net::IpAddr;
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -65,30 +68,28 @@ pub(crate) fn is_relay_circuit(addr: &Multiaddr) -> bool {
     addr.iter().any(|p| matches!(p, Protocol::P2pCircuit))
 }
 
-/// Extract the IP from an observed address and combine it with our actual listen port.
-/// The observed_addr from identify contains the correct public IP but the wrong
-/// (ephemeral) port from the outbound connection.
-fn build_external_addr_from_observed(
-    observed_addr: &Multiaddr,
-    listen_port: u16,
-) -> Option<Multiaddr> {
+/// Our observed IP with the listen port, but only if the peer saw us on the listen port itself.
+/// Behind a NAT that remaps ports nothing answers there, so we must not advertise it.
+fn reachable_external_addr(observed_addr: &Multiaddr, listen_port: u16) -> Option<Multiaddr> {
     let mut ip_proto = None;
+    let mut observed_port = None;
     for proto in observed_addr.iter() {
         match proto {
             Protocol::Ip4(ip) if !ip.is_unspecified() && !ip.is_loopback() => {
                 ip_proto = Some(Protocol::Ip4(ip));
-                break;
             }
             Protocol::Ip6(ip) if !ip.is_unspecified() && !ip.is_loopback() => {
                 ip_proto = Some(Protocol::Ip6(ip));
-                break;
             }
+            Protocol::Tcp(port) => observed_port = Some(port),
             _ => {}
         }
     }
-    let ip = ip_proto?;
+    if listen_port == 0 || observed_port != Some(listen_port) {
+        return None;
+    }
     let mut addr = Multiaddr::empty();
-    addr.push(ip);
+    addr.push(ip_proto?);
     addr.push(Protocol::Tcp(listen_port));
     Some(addr)
 }
@@ -144,10 +145,7 @@ enum SwarmStatus {
 
 #[derive(Debug)]
 enum SwarmCommand {
-    Dial {
-        address: Multiaddr,
-        reuse_port: bool,
-    },
+    Dial(DialOpts),
     Send {
         topic: IdentTopic,
         data: Vec<u8>,
@@ -165,6 +163,9 @@ enum SwarmCommand {
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const STREAM_RETRY_DELAY: Duration = Duration::from_millis(100);
+const MAX_STREAM_RETRY_DELAY: Duration = Duration::from_secs(1);
+const RELAY_RESERVATION_CHECK: Duration = Duration::from_secs(30);
+const KNOWN_PEER_REDIAL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Debug, PartialEq)]
 enum DirectState {
@@ -211,15 +212,35 @@ fn find_peer(swarm: &mut Swarm<Behaviour>, relay_circuit: Option<&Multiaddr>, pe
     }
 }
 
-fn resolve_direct_waiters(
+fn reserve_relay(swarm: &mut Swarm<Behaviour>, circuit: &Multiaddr) -> Option<ListenerId> {
+    match swarm.listen_on(circuit.clone()) {
+        Ok(listener_id) => {
+            log::info!("Requesting relay reservation via {circuit}");
+            Some(listener_id)
+        }
+        Err(e) => {
+            log::debug!("Could not listen on relay circuit {circuit}: {e}");
+            None
+        }
+    }
+}
+
+fn tcp_and_quic(host: Multiaddr) -> [Multiaddr; 2] {
+    [
+        host.clone().with(Protocol::Tcp(DEFAULT_SEED_PORT)),
+        host.with(Protocol::Udp(DEFAULT_SEED_PORT))
+            .with(Protocol::QuicV1),
+    ]
+}
+
+/// Once a peer is reachable directly, drop its relayed connections to free relay circuits,
+/// then wake whoever is waiting for the direct connection.
+fn settle_connections(
     swarm: &mut Swarm<Behaviour>,
     connections: &HashMap<PeerId, Vec<(ConnectionId, bool)>>,
     direct_waiters: &mut HashMap<PeerId, Vec<oneshot::Sender<()>>>,
     peer_id: &PeerId,
 ) {
-    if !direct_waiters.contains_key(peer_id) {
-        return;
-    }
     match direct_state(connections, peer_id) {
         DirectState::Missing => {}
         DirectState::Closing(relayed) => {
@@ -247,6 +268,7 @@ pub struct NetworkHandler {
     /// times over and collide on the reused TCP source port.
     initial_dial_done: bool,
     stream_control: Option<libp2p_stream::Control>,
+    known_peers_dialed_at: HashMap<PeerId, Instant>,
 }
 
 impl Debug for NetworkHandler {
@@ -323,7 +345,16 @@ impl NetworkHandler {
                 autonat_client: autonat::v2::client::Behaviour::default(),
                 stream,
                 #[cfg(feature = "relayer")]
-                relay_server: relay::Behaviour::new(peer_id, relay::Config::default()),
+                relay_server: relay::Behaviour::new(
+                    peer_id,
+                    relay::Config {
+                        max_circuits: 64,
+                        max_circuits_per_peer: 8,
+                        max_circuit_duration: Duration::from_secs(5 * 60),
+                        max_circuit_bytes: 1 << 19,
+                        ..Default::default()
+                    },
+                ),
                 #[cfg(feature = "relayer")]
                 autonat_server: autonat::v2::server::Behaviour::default(),
             })?
@@ -380,37 +411,25 @@ impl NetworkHandler {
             swarm_status: SwarmStatus::Uninitialized,
             initial_dial_done: false,
             stream_control: None,
+            known_peers_dialed_at: HashMap::new(),
         }
     }
 
     pub fn new(seed_node_ip: Option<&String>) -> AppResult<Self> {
         let local_keypair = identity::Keypair::generate_ed25519();
-        let mut seed_addresses = vec![
-            format!("/dns4/{DEFAULT_SEED_URL}/tcp/{DEFAULT_SEED_PORT}")
-                .parse()
-                .expect("Invalid default seed address."),
-            format!("/dns4/{DEFAULT_SEED_URL}/udp/{DEFAULT_SEED_PORT}/quic-v1")
-                .parse()
-                .expect("Invalid default seed address."),
-            format!("/ip6/{DEFAULT_SEED_IPV6}/tcp/{DEFAULT_SEED_PORT}")
-                .parse()
-                .expect("Invalid provided seed ip."),
-            format!("/ip6/{DEFAULT_SEED_IPV6}/udp/{DEFAULT_SEED_PORT}/quic-v1")
-                .parse()
-                .expect("Invalid provided seed ip."),
+        let mut seed_hosts = vec![
+            Multiaddr::empty().with(Protocol::Dns4(DEFAULT_SEED_URL.into())),
+            Multiaddr::from(
+                DEFAULT_SEED_IPV6
+                    .parse::<IpAddr>()
+                    .expect("Invalid default seed ip."),
+            ),
         ];
-
-        if let Some(ip) = seed_node_ip {
-            for family in ["ip4", "ip6"] {
-                let tcp = format!("/{family}/{ip}/tcp/{DEFAULT_SEED_PORT}").parse::<Multiaddr>();
-                let quic =
-                    format!("/{family}/{ip}/udp/{DEFAULT_SEED_PORT}/quic-v1").parse::<Multiaddr>();
-                if let (Ok(tcp), Ok(quic)) = (tcp, quic) {
-                    seed_addresses.extend([tcp, quic]);
-                    break;
-                }
-            }
+        if let Some(ip) = seed_node_ip.and_then(|ip| ip.parse::<IpAddr>().ok()) {
+            seed_hosts.push(Multiaddr::from(ip));
         }
+        let seed_addresses: Vec<Multiaddr> =
+            seed_hosts.into_iter().flat_map(tcp_and_quic).collect();
 
         log::info!(
             "Network handler created with {} seed addresses.",
@@ -427,6 +446,7 @@ impl NetworkHandler {
             swarm_status: SwarmStatus::Uninitialized,
             initial_dial_done: false,
             stream_control: None,
+            known_peers_dialed_at: HashMap::new(),
         })
     }
 
@@ -461,7 +481,6 @@ impl NetworkHandler {
     ) -> JoinHandle<()> {
         let local_keypair = self.local_keypair.clone();
         let own_peer_id = *self.own_peer_id();
-        let seed_addresses = self.seed_addresses.clone();
 
         // Sized to absorb a reconnect burst: dial_known_peers can enqueue a Dial
         // and a FindPeer per known peer at once.
@@ -517,13 +536,15 @@ impl NetworkHandler {
 
             assert_eq!(own_peer_id, *swarm.local_peer_id());
             let mut kad_bootstrapped = false;
-            // Whether we have already requested a relay reservation. Done once,
-            // on the first relay we see, so NATed peers get a reachable address.
-            let mut relay_reserved = false;
-            // The relay circuit base (`/<relay>/p2p/<relay-id>/p2p-circuit`) we
-            // reserved on. Appending `/p2p/<target>` gives a dialable address that
-            // reaches any peer through the relay, which DCUtR then upgrades.
+            // The relay circuit base (`/<relay>/p2p/<relay-id>/p2p-circuit`) we reserved on.
+            // Appending `/p2p/<target>` gives a dialable address that reaches any peer through the relay,
+            // which DCUtR then upgrades.
             let mut relay_circuit: Option<Multiaddr> = None;
+            // Our relay reservation. libp2p closes it when the relay connection drops,
+            // and then we have to reserve again to stay reachable.
+            let mut relay_listener: Option<ListenerId> = None;
+            let mut relay_check = tokio::time::interval(RELAY_RESERVATION_CHECK);
+            let mut dialed_addresses: HashMap<ConnectionId, Multiaddr> = HashMap::new();
             let mut connections: HashMap<PeerId, Vec<(ConnectionId, bool)>> = HashMap::new();
             let mut direct_waiters: HashMap<PeerId, Vec<oneshot::Sender<()>>> = HashMap::new();
 
@@ -545,12 +566,18 @@ impl NetworkHandler {
                         break;
                     }
 
+                    _ = relay_check.tick(), if relay_listener.is_none() && relay_circuit.is_some() => {
+                        relay_listener = relay_circuit
+                            .as_ref()
+                            .and_then(|circuit| reserve_relay(&mut swarm, circuit));
+                    }
+
                     event = swarm.select_next_some() => {
                         // Handle identify/kad events inside the swarm task
                         // where we have direct access to the swarm.
                         match &event {
                             SwarmEvent::Behaviour(BehaviourEvent::Identify(
-                                identify::Event::Received { peer_id, info, .. }
+                                identify::Event::Received { connection_id, peer_id, info, .. }
                             )) => {
                                 // Add only direct (non-circuit) routable addresses to the DHT;
                                 // circuit addresses are relay-dependent.
@@ -567,43 +594,24 @@ impl NetworkHandler {
                                     info.listen_addrs.len()
                                 );
 
-                                // If this peer is a relay and we have not reserved a slot yet,
-                                // listen on a circuit address through it so we become reachable from behind a NAT.
-                                // DCUtR then upgrades the relayed connection to a direct one.
-                                if !relay_reserved
+                                // A relay we dialed: reserve one slot through that same address,
+                                // so we become reachable from behind a NAT.
+                                if relay_listener.is_none()
                                     && info.protocols.contains(&relay::HOP_PROTOCOL_NAME)
                                 {
-                                    for seed in &seed_addresses {
-                                        let circuit = seed
-                                            .clone()
-                                            .with(Protocol::P2p(*peer_id))
-                                            .with(Protocol::P2pCircuit);
-                                        match swarm.listen_on(circuit.clone()) {
-                                            Ok(_) => {
-                                                relay_reserved = true;
-                                                if relay_circuit.is_none() {
-                                                    relay_circuit = Some(circuit.clone());
-                                                }
-                                                log::info!("Requesting relay reservation via {circuit}");
-                                            }
-                                            Err(e) => log::debug!(
-                                                "Could not listen on relay circuit {circuit}: {e}"
-                                            ),
-                                        }
+                                    if let Some(address) = dialed_addresses
+                                        .get(connection_id)
+                                        .and_then(|address| address.clone().with_p2p(*peer_id).ok())
+                                    {
+                                        let circuit = address.with(Protocol::P2pCircuit);
+                                        relay_listener = reserve_relay(&mut swarm, &circuit);
+                                        relay_circuit = Some(circuit);
                                     }
                                 }
 
-                                // Build a proper external address from the observed IP and our actual listen port.
-                                // The observed_addr contains our public IP as seen by the remote peer,
-                                // but with an ephemeral source port, not our listen port.
-                                // Using it as-is would advertise unreachable addresses.
-                                // Skip when listening on an OS-assigned ephemeral port (0):
-                                // the configured port is not our real listen port, so we must not advertise a bogus /tcp/0 external address.
-                                if tcp_port != 0 {
-                                    if let Some(ext_addr) = build_external_addr_from_observed(&info.observed_addr, tcp_port) {
-                                        log::debug!("Adding external address from observed: {ext_addr}");
-                                        swarm.add_external_address(ext_addr);
-                                    }
+                                if let Some(ext_addr) = reachable_external_addr(&info.observed_addr, tcp_port) {
+                                    log::debug!("Adding external address from observed: {ext_addr}");
+                                    swarm.add_external_address(ext_addr);
                                 }
                             }
                             SwarmEvent::Behaviour(BehaviourEvent::AutonatClient(
@@ -653,8 +661,13 @@ impl NetworkHandler {
                                     "Connection established with {peer_id} ({kind}): {}",
                                     endpoint.get_remote_address()
                                 );
+                                if let ConnectedPoint::Dialer { address, .. } = endpoint {
+                                    if !relayed {
+                                        dialed_addresses.insert(*connection_id, address.clone());
+                                    }
+                                }
                                 connections.entry(*peer_id).or_default().push((*connection_id, relayed));
-                                resolve_direct_waiters(&mut swarm, &connections, &mut direct_waiters, peer_id);
+                                settle_connections(&mut swarm, &connections, &mut direct_waiters, peer_id);
                                 if !kad_bootstrapped
                                     && swarm.behaviour_mut().kademlia.bootstrap().is_ok()
                                 {
@@ -665,18 +678,23 @@ impl NetworkHandler {
                             SwarmEvent::ConnectionClosed { peer_id, connection_id, endpoint, cause, .. } => {
                                 let kind = if endpoint.is_relayed() { "relayed" } else { "direct" };
                                 log::info!("Connection closed with {peer_id} ({kind}): {cause:?}");
+                                dialed_addresses.remove(connection_id);
                                 if let Some(list) = connections.get_mut(peer_id) {
                                     list.retain(|(id, _)| id != connection_id);
                                     if list.is_empty() {
                                         connections.remove(peer_id);
                                     }
                                 }
-                                resolve_direct_waiters(&mut swarm, &connections, &mut direct_waiters, peer_id);
+                                settle_connections(&mut swarm, &connections, &mut direct_waiters, peer_id);
+                            }
+                            SwarmEvent::ListenerClosed { listener_id, reason, .. }
+                                if relay_listener == Some(*listener_id) =>
+                            {
+                                relay_listener = None;
+                                log::info!("Relay reservation closed: {reason:?}");
                             }
                             SwarmEvent::OutgoingConnectionError { peer_id: Some(peer_id), error, .. }
-                                if direct_waiters
-                                    .get(peer_id)
-                                    .is_some_and(|waiters| waiters.iter().any(|waiter| !waiter.is_closed())) =>
+                                if direct_waiters.contains_key(peer_id) =>
                             {
                                 log::info!("Dial to {peer_id} failed while waiting for a direct connection: {error}");
                             }
@@ -699,36 +717,29 @@ impl NetworkHandler {
                                         log::error!("Swarm send error: {e}");
                                     }
                             }
-                            SwarmCommand::Dial { address, reuse_port } => {
-                                log::debug!("Dialing address: {address}");
-                                // Seeds keep the listen port so identify reports the NAT mapping DCUtR needs;
-                                // other dials take a new port to avoid EADDRINUSE on duplicate 4-tuples.
-                                let opts = DialOpts::unknown_peer_id().address(address.clone());
-                                let opts = if reuse_port {
-                                    opts.build()
-                                } else {
-                                    opts.allocate_new_port().build()
-                                };
-                                if let Err(e) = swarm.dial(opts) {
-                                    log::error!("Swarm dial error for {address}: {e}");
+                            SwarmCommand::Dial(opts) => match swarm.dial(opts) {
+                                Err(e @ DialError::DialPeerConditionFalse(_)) => {
+                                    log::debug!("Not dialing: {e}")
                                 }
-                            }
+                                Err(e) => log::error!("Swarm dial error: {e}"),
+                                Ok(()) => {}
+                            },
                             SwarmCommand::FindPeer { peer_id } => {
-                                log::debug!("Looking up peer {peer_id} in the DHT");
-                                find_peer(&mut swarm, relay_circuit.as_ref(), peer_id);
+                                if !swarm.is_connected(&peer_id) {
+                                    log::debug!("Looking up peer {peer_id} in the DHT");
+                                    find_peer(&mut swarm, relay_circuit.as_ref(), peer_id);
+                                }
                             }
                             SwarmCommand::EnsureDirect { peer_id, reply } => {
                                 let waiters = direct_waiters.entry(peer_id).or_default();
                                 waiters.retain(|waiter| !waiter.is_closed());
                                 waiters.push(reply);
-                                log::info!(
-                                    "Waiting for a direct connection to {peer_id}: {:?}",
-                                    direct_state(&connections, &peer_id)
-                                );
-                                if direct_state(&connections, &peer_id) == DirectState::Missing {
+                                let state = direct_state(&connections, &peer_id);
+                                log::info!("Waiting for a direct connection to {peer_id}: {state:?}");
+                                if state == DirectState::Missing {
                                     find_peer(&mut swarm, relay_circuit.as_ref(), peer_id);
                                 } else {
-                                    resolve_direct_waiters(&mut swarm, &connections, &mut direct_waiters, &peer_id);
+                                    settle_connections(&mut swarm, &connections, &mut direct_waiters, &peer_id);
                                 }
                             }
                         }
@@ -779,39 +790,34 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub fn dial_seed(&mut self) -> AppResult<()> {
-        match &self.swarm_status {
-            SwarmStatus::Uninitialized => {}
-            SwarmStatus::Ready { sender } => {
-                for address in self.seed_addresses.iter() {
-                    sender.try_send(SwarmCommand::Dial {
-                        address: address.clone(),
-                        reuse_port: true,
-                    })?;
-                }
-            }
+    fn send_command(&self, command: SwarmCommand) -> AppResult<()> {
+        if let SwarmStatus::Ready { sender } = &self.swarm_status {
+            sender.try_send(command)?;
         }
+        Ok(())
+    }
 
+    pub fn dial_seed(&mut self) -> AppResult<()> {
+        // Seeds keep the listen port so identify reports the NAT mapping DCUtR needs;
+        // other dials take a new port to avoid EADDRINUSE on duplicate 4-tuples.
+        for address in self.seed_addresses.iter() {
+            let opts = DialOpts::unknown_peer_id().address(address.clone()).build();
+            self.send_command(SwarmCommand::Dial(opts))?;
+        }
         Ok(())
     }
 
     pub fn dial_address(&mut self, address: Multiaddr) -> AppResult<()> {
-        match &self.swarm_status {
-            SwarmStatus::Uninitialized => {}
-            SwarmStatus::Ready { sender } => {
-                sender.try_send(SwarmCommand::Dial {
-                    address,
-                    reuse_port: false,
-                })?;
-            }
-        }
-
-        Ok(())
+        let opts = DialOpts::unknown_peer_id()
+            .address(address)
+            .allocate_new_port()
+            .build();
+        self.send_command(SwarmCommand::Dial(opts))
     }
 
-    /// Dial every known peer address (skipping our own). Used at startup and when
-    /// reconnecting after losing all connections, so that the relayer is not the
-    /// only way back into the network.
+    /// Dial every known peer address (skipping our own).
+    /// Used at startup and when reconnecting after losing all connections,
+    /// so that the relayer is not the only way back into the network.
     pub fn dial_known_peers(
         &mut self,
         peer_addresses: &HashMap<PeerId, Multiaddr>,
@@ -821,14 +827,17 @@ impl NetworkHandler {
             if *peer_id == own_peer_id {
                 continue;
             }
+            self.known_peers_dialed_at.insert(*peer_id, Instant::now());
             // Try the last known direct address. Skip relay-circuit addresses:
             // sanitize_addr strips the relay PeerId they need, so they are not
             // dialable; NATed peers are reached via the derived circuit in find_peer.
-            if let Some(clean) = sanitize_addr(address) {
-                if !is_relay_circuit(&clean) {
-                    if let Err(e) = self.dial_address(clean.clone()) {
-                        log::warn!("dial_known_peers: failed to dial {peer_id} at {clean}: {e}");
-                    }
+            if let Some(clean) = sanitize_addr(address).filter(|addr| !is_relay_circuit(addr)) {
+                let opts = DialOpts::peer_id(*peer_id)
+                    .addresses(vec![clean.clone()])
+                    .allocate_new_port()
+                    .build();
+                if let Err(e) = self.send_command(SwarmCommand::Dial(opts)) {
+                    log::warn!("dial_known_peers: failed to dial {peer_id} at {clean}: {e}");
                 }
             }
             // Also resolve the peer through the DHT: this recovers a current address
@@ -853,15 +862,26 @@ impl NetworkHandler {
         Ok(())
     }
 
+    /// Seed info arrives whenever anyone joins: dial its peers again, each at most once per interval.
+    pub fn redial_known_peers(
+        &mut self,
+        peer_addresses: &HashMap<PeerId, Multiaddr>,
+    ) -> AppResult<()> {
+        let due = peer_addresses
+            .iter()
+            .filter(|(peer_id, _)| {
+                self.known_peers_dialed_at
+                    .get(*peer_id)
+                    .is_none_or(|at| at.elapsed() >= KNOWN_PEER_REDIAL_INTERVAL)
+            })
+            .map(|(peer_id, address)| (*peer_id, address.clone()))
+            .collect();
+        self.dial_known_peers(&due)
+    }
+
     /// Ask the swarm to resolve a peer through the Kademlia DHT and dial it.
     pub fn find_peer(&mut self, peer_id: PeerId) -> AppResult<()> {
-        match &self.swarm_status {
-            SwarmStatus::Uninitialized => {}
-            SwarmStatus::Ready { sender } => {
-                sender.try_send(SwarmCommand::FindPeer { peer_id })?;
-            }
-        }
-        Ok(())
+        self.send_command(SwarmCommand::FindPeer { peer_id })
     }
 
     pub fn send_message(
@@ -1308,6 +1328,7 @@ async fn connect_space_link_task(
     link_id: LinkId,
 ) {
     let connect = async {
+        let mut retry_delay = STREAM_RETRY_DELAY;
         loop {
             let (reply, direct) = oneshot::channel();
             commands
@@ -1322,7 +1343,8 @@ async fn connect_space_link_task(
                 }
                 Err(err) => {
                     log::info!("Space link {link_id}: could not open stream, retrying: {err}");
-                    tokio::time::sleep(STREAM_RETRY_DELAY).await;
+                    tokio::time::sleep(retry_delay).await;
+                    retry_delay = (retry_delay * 2).min(MAX_STREAM_RETRY_DELAY);
                 }
             }
         }
@@ -1611,6 +1633,20 @@ mod tests {
             assert!(addresses.contains(&format!("/{family}/{ip}/tcp/37201")));
             assert!(addresses.contains(&format!("/{family}/{ip}/udp/37201/quic-v1")));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_external_addr_needs_the_listen_port_observed() -> AppResult<()> {
+        use super::reachable_external_addr;
+        use libp2p::Multiaddr;
+
+        let kept: Multiaddr = "/ip4/92.211.0.101/tcp/37202".parse()?;
+        assert_eq!(reachable_external_addr(&kept, 37202), Some(kept.clone()));
+
+        let remapped: Multiaddr = "/ip4/92.211.0.101/tcp/4930".parse()?;
+        assert_eq!(reachable_external_addr(&remapped, 37202), None);
+        assert_eq!(reachable_external_addr(&kept, 0), None);
         Ok(())
     }
 }

@@ -79,9 +79,8 @@ impl Relayer {
         );
         loop {
             if let Some(AppEvent::NetworkEvent(swarm_event)) = event_receiver.recv().await {
-                let result = self.handle_network_events(swarm_event);
-                if result.is_err() {
-                    println!("Error handling network event: {result:?}");
+                if let Err(e) = self.handle_network_events(swarm_event) {
+                    log::error!("Error handling network event: {e}");
                 }
             }
         }
@@ -91,14 +90,13 @@ impl Relayer {
         &mut self,
         network_event: SwarmEvent<BehaviourEvent>,
     ) -> AppResult<()> {
-        println!("Received network event: {network_event:?}");
         match network_event {
             SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(gossipsub::Event::Subscribed {
                 peer_id,
                 topic,
             })) => {
                 if topic == IdentTopic::new(TOPIC).hash() {
-                    println!("Sending info to {peer_id}");
+                    log::info!("Sending seed info after {peer_id} subscribed");
                     self.network_handler
                         .send_seed_info(self.network_store_data.to_broadcast_snapshot())?;
                 }
@@ -175,7 +173,6 @@ impl Relayer {
                         author,
                         message,
                     };
-                    println!("Chat message stored: {entry:#?}");
                     self.network_store_data.chat_history.insert(entry);
                 } else if let NetworkData::SyncRequest = network_data {
                     self.network_handler

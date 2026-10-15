@@ -752,7 +752,7 @@ impl NetworkCallback {
             // Dial the peers advertised by the seed.
             //  We only dial here; addresses are persisted once a connection actually succeeds.
             app.network_handler
-                .dial_known_peers(&seed_info.network_store_data.peer_addresses)?;
+                .redial_known_peers(&seed_info.network_store_data.peer_addresses)?;
             Ok(None)
         })
     }
