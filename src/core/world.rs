@@ -104,6 +104,9 @@ pub struct World {
     pub past_tournaments: TournamentSummaryMap, // Holds summary of finished tournaments, persisted.
     #[serde(skip_serializing_if = "is_default")]
     #[serde(default)]
+    pub canceled_tournaments: HashSet<TournamentId>, // Cancelled here, so a peer's rebroadcast is ignored.
+    #[serde(skip_serializing_if = "is_default")]
+    #[serde(default)]
     pub network_store_data: NetworkStoreData,
 }
 
@@ -1526,12 +1529,9 @@ impl World {
     }
 
     pub fn player_is_in_space_cove_on(&self, player: &Player) -> Option<PlanetId> {
-        player.is_on_planet().and_then(|id| {
-            self.planets
-                .get(&id)
-                .filter(|planet| planet.planet_type == PlanetType::Asteroid)
-                .map(|planet| planet.id)
-        })
+        player
+            .is_on_planet()
+            .filter(|&id| self.space_cove_on(id).is_some())
     }
 
     pub fn upgrade_space_cove(&mut self, target: SpaceCoveUpgradeTarget) -> AppResult<()> {
@@ -1980,22 +1980,6 @@ impl World {
                 });
             }
 
-            // Update tournament's copy of the game with the ended version,
-            // so that network sync and generate_next_games see the correct state.
-            if let Some(tournament_id) = game.part_of_tournament {
-                if let Some(tournament) = self.tournaments.get_mut(&tournament_id) {
-                    if let Some(t_game) = tournament.games.iter_mut().find(|g| g.id == game.id) {
-                        *t_game = game.clone();
-                    } else {
-                        log::error!(
-                            "Game {} should be in tournament {} games",
-                            game.id,
-                            tournament_id
-                        );
-                    }
-                }
-            }
-
             // Teams get money depending on game attendance.
             // If a team is knocked out, money goes to the other team.
             // If both are knocked out, they get no money.
@@ -2181,10 +2165,6 @@ impl World {
         for game in self.games.values_mut() {
             if game.has_started(current_tick) {
                 game.catch_up(Tick::now());
-                log::info!(
-                    "current_tick - now {}",
-                    (Tick::now() - current_tick) / SECONDS
-                );
             }
         }
         Ok(())
@@ -2201,10 +2181,10 @@ impl World {
                     // Append callback to send Confirmation.
                     // If we are simulating, abort tournament.
                     if tournament.organizer_id == self.own_team_id {
-                        if tournament.registered_teams.len() < 2 {
+                        if tournament.registered_team_count() < 2 {
                             let error_message = format!(
                                 "Insufficient registered teams ({}).",
-                                tournament.registered_teams.len()
+                                tournament.registered_team_count()
                             );
                             log::warn!("Canceling tournament {tournament_id}: {error_message}");
                             callbacks.push(UiCallback::CancelTournament {
@@ -2253,47 +2233,21 @@ impl World {
 
                     // FIXME: this is not very robust. For instance, it relies on retaining all
                     // tournament games when storing, otherwise the hashmap would be incorrect.
-                    if tournament.is_team_participating(&self.own_team_id) {
-                        // If team is participating, it should have all the necessary games stored.
-
-                        match tournament.generate_next_games(
-                            current_tick,
-                            &self.games,
-                            &self.past_games,
-                        ) {
-                            Ok(mut t_games) => new_games.append(&mut t_games),
-                            Err(err) => {
-                                let error_message =
-                                    format!("Error while simulating tournament: {err}.");
-                                log::warn!("{error_message}");
-                                callbacks.push(UiCallback::CancelTournament {
-                                    tournament_id,
-                                    error_message,
-                                });
-                                continue;
-                            }
-                        }
-                    }
-                    // If we receive a valid initialized tournament from the network where the team is not participating,
-                    // the next games cannot be generated correctly as the world does not contain the games.
-                    // In this case, we just accept the error.
-                    else {
-                        match tournament.generate_next_games(
-                            current_tick,
-                            &self.games,
-                            &self.past_games,
-                        ) {
-                            Ok(mut t_games) => new_games.append(&mut t_games),
-                            Err(err) => {
-                                let error_message =
-                                    format!("Error while simulating network tournament: {err}.");
-                                log::warn!("{error_message}");
-                                callbacks.push(UiCallback::CancelTournament {
-                                    tournament_id,
-                                    error_message,
-                                });
-                                continue;
-                            }
+                    match tournament.generate_next_games(
+                        current_tick,
+                        &self.games,
+                        &self.past_games,
+                    ) {
+                        Ok(mut t_games) => new_games.append(&mut t_games),
+                        Err(err) => {
+                            let error_message =
+                                format!("Error while simulating tournament: {err}.");
+                            log::warn!("{error_message}");
+                            callbacks.push(UiCallback::CancelTournament {
+                                tournament_id,
+                                error_message,
+                            });
+                            continue;
                         }
                     }
 
@@ -2395,6 +2349,12 @@ impl World {
             }
         }
 
+        self.canceled_tournaments.extend(
+            self.tournaments
+                .values()
+                .filter(|t| t.is_canceled())
+                .map(|t| t.id),
+        );
         self.tournaments
             .retain(|_, t| !t.has_ended() && !t.is_canceled());
 
@@ -3626,6 +3586,7 @@ impl World {
                 .filter(|(_, t)| t.participant_ids.contains(&self.own_team_id))
                 .map(|(id, t)| (*id, t.clone()))
                 .collect(),
+            canceled_tournaments: self.canceled_tournaments.clone(),
             serialized_size: self.serialized_size,
             network_store_data: self.network_store_data.to_store(),
             ..Default::default()
@@ -3703,7 +3664,7 @@ mod test {
             RatedPlayers, DEFAULT_PLANET_ID, MAX_SKILL, MIN_PLAYERS_PER_GAME,
             PORTAL_TRAVEL_DURATION, SPUGNA_DRUNKENNESS_ON_GETTING_DRUNK,
         },
-        game_engine::types::TeamInGame,
+        game_engine::{types::TeamInGame, Tournament, TournamentId},
         types::{HashMapWithResult, StorableResourceMap, SystemTimeTick, Tick},
         ui::UiCallback,
     };
@@ -4383,6 +4344,36 @@ mod test {
             );
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_canceled_tournament_is_remembered_once_dropped() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let mut tournament = Tournament::test(2, 4);
+        tournament.cancel();
+        app.world
+            .tournaments
+            .insert(tournament.id, tournament.clone());
+
+        app.world.tick_tournaments(Tick::now())?;
+
+        assert!(!app.world.tournaments.contains_key(&tournament.id));
+        assert!(app.world.canceled_tournaments.contains(&tournament.id));
+        Ok(())
+    }
+
+    #[test]
+    fn test_to_store_keeps_canceled_tournaments() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let tournament_id = TournamentId::from_u128(7);
+        app.world.canceled_tournaments.insert(tournament_id);
+
+        assert!(app
+            .world
+            .to_store()?
+            .canceled_tournaments
+            .contains(&tournament_id));
         Ok(())
     }
 }

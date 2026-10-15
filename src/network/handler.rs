@@ -1104,13 +1104,18 @@ mod tests {
     use super::TOPIC;
     use crate::{
         app::App,
-        core::{constants::NETWORK_GAME_START_DELAY, types::TeamLocation, world::World},
+        core::{
+            constants::NETWORK_GAME_START_DELAY, types::TeamLocation, world::World, TickInterval,
+            HOURS,
+        },
+        game_engine::{Tournament, TournamentType},
         network::{
+            challenge::Challenge,
             network_callback::NetworkCallback,
             types::{NetworkData, NetworkRequestState, NetworkTeam},
         },
         store::{deserialize, serialize},
-        types::{AppResult, HashMapWithResult, SystemTimeTick, Tick},
+        types::{AppResult, GameMap, GameSummaryMap, HashMapWithResult, SystemTimeTick, Tick},
         ui::UiCallback,
     };
     use anyhow::anyhow;
@@ -1121,37 +1126,158 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    #[test]
-    fn test_network_challenge_success() -> AppResult<()> {
-        let topic = IdentTopic::new(TOPIC);
+    fn deliver_tournament(app: &mut App, tournament: &Tournament) -> AppResult<Option<String>> {
+        deliver(
+            app,
+            &NetworkData::Tournament {
+                timestamp: Tick::now(),
+                tournament: tournament.clone(),
+            },
+        )
+    }
 
+    fn started_cup(organizer: &App, started_hours_ago: u64) -> AppResult<Tournament> {
+        let organizer_team = organizer.world.get_own_team()?;
+        let planet = organizer
+            .world
+            .planets
+            .get_or_err(&organizer_team.home_planet_id)?;
+        let mut tournament =
+            Tournament::new(organizer_team, TournamentType::Cup)?.on_planet(planet);
+        tournament.participants = Tournament::test(4, 4).participants;
+        for team in tournament.participants.values_mut() {
+            team.peer_id = Some(PeerId::random());
+        }
+        tournament.registrations_closing_at = Tick::now() - started_hours_ago * HOURS;
+        Ok(tournament)
+    }
+
+    #[test]
+    fn test_late_spectator_replays_the_tournament_games() -> AppResult<()> {
+        let (organizer, mut spectator) = paired_apps()?;
+        let mut tournament = started_cup(&organizer, 24)?;
+
+        let mut games = GameMap::new();
+        for mut game in tournament.initialize() {
+            game.catch_up(Tick::now());
+            games.insert(game.id, game);
+        }
+        for mut game in
+            tournament.generate_next_games(Tick::now(), &games, &GameSummaryMap::new())?
+        {
+            game.catch_up(Tick::now());
+            games.insert(game.id, game);
+        }
+        assert_eq!(games.len(), 3);
+        assert!(games.values().all(|game| game.has_ended()));
+
+        deliver_tournament(&mut spectator, &tournament)?;
+        for step in 1..=5 {
+            spectator
+                .world
+                .handle_slow_tick_events(Tick::now() + step * TickInterval::SHORT)?;
+        }
+
+        for (game_id, game) in games.iter() {
+            let spectator_winner = match spectator.world.past_games.get(game_id) {
+                Some(summary) => summary.winner,
+                None => spectator.world.games.get_or_err(game_id)?.winner,
+            };
+            assert_eq!(spectator_winner, game.winner);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_tournament_from_another_version_is_ignored() -> AppResult<()> {
+        let (organizer, mut spectator) = paired_apps()?;
+        let tournament = started_cup(&organizer, 1)?;
+
+        let mut other_version = serde_json::to_value(&tournament)?;
+        other_version["app_version"] = serde_json::json!([0, 0, 1]);
+        let other_version: Tournament = serde_json::from_value(other_version)?;
+        deliver_tournament(&mut spectator, &other_version)?;
+        assert!(!spectator.world.tournaments.contains_key(&tournament.id));
+
+        deliver_tournament(&mut spectator, &tournament)?;
+        assert!(spectator.world.tournaments.contains_key(&tournament.id));
+        Ok(())
+    }
+
+    #[test]
+    fn test_initialized_supercup_fits_in_one_message() -> AppResult<()> {
+        let mut tournament = Tournament::test(8, 8);
+        tournament.registrations_closing_at = 0;
+        tournament.initialize();
+
+        let size = serialize(&NetworkData::Tournament {
+            timestamp: Tick::now(),
+            tournament,
+        })?
+        .len();
+        assert!(
+            size < 60 * 1024,
+            "initialized Supercup message is {size} bytes"
+        );
+        Ok(())
+    }
+
+    // Two apps that know each other's team and sit on the same planet,
+    // so app1 can challenge app2.
+    fn paired_apps() -> AppResult<(App, App)> {
         let mut app1 = App::test_with_network_handler()?;
         let mut app2 = App::test_with_network_handler()?;
 
-        let proposer_peer_id = app1.network_handler.own_peer_id().clone();
-        let target_peer_id = app2.network_handler.own_peer_id().clone();
+        let proposer_peer_id = *app1.network_handler.own_peer_id();
+        let target_peer_id = *app2.network_handler.own_peer_id();
 
-        // Add other team by hand
         let mut own_team1 = app1.world.get_own_team()?.clone();
         own_team1.peer_id = Some(proposer_peer_id);
         let planet_id = own_team1.home_planet_id;
         for player_id in own_team1.player_ids.iter() {
-            let player = app1.world.players.get(&player_id).unwrap();
-            app2.world.players.insert(player_id.clone(), player.clone());
+            let player = app1.world.players.get(player_id).unwrap();
+            app2.world.players.insert(*player_id, player.clone());
         }
         app2.world.teams.insert(own_team1.id, own_team1);
 
         let mut own_team2 = app2.world.get_own_team()?.clone();
         own_team2.peer_id = Some(target_peer_id);
-        // Override current location to ensure challenge is possible
         own_team2.current_location = TeamLocation::OnPlanet { planet_id };
-
         for player_id in own_team2.player_ids.iter() {
-            let player = app2.world.players.get(&player_id).unwrap();
-            app1.world.players.insert(player_id.clone(), player.clone());
+            let player = app2.world.players.get(player_id).unwrap();
+            app1.world.players.insert(*player_id, player.clone());
         }
         app1.world.teams.insert(own_team2.id, own_team2.clone());
         app2.world.teams.insert(own_team2.id, own_team2);
+
+        Ok((app1, app2))
+    }
+
+    fn deliver(app: &mut App, data: &NetworkData) -> AppResult<Option<String>> {
+        let message = Message {
+            source: None,
+            data: serialize(data)?,
+            sequence_number: None,
+            topic: IdentTopic::new(TOPIC).into(),
+        };
+        NetworkCallback::HandleMessage { message }.call(app)
+    }
+
+    fn deliver_challenge(app: &mut App, challenge: Challenge) -> AppResult<Option<String>> {
+        deliver(
+            app,
+            &NetworkData::Challenge {
+                timestamp: Tick::now(),
+                challenge,
+            },
+        )
+    }
+
+    #[test]
+    fn test_network_challenge_success() -> AppResult<()> {
+        let topic = IdentTopic::new(TOPIC);
+
+        let (mut app1, mut app2) = paired_apps()?;
 
         let cb = UiCallback::ChallengeTeam {
             team_id: app2.world.own_team_id,
@@ -1271,6 +1397,55 @@ mod tests {
         println!("{:?}, starting_at {}", game_id, game.starting_at);
         assert!(own_team2.current_game == Some(game_id));
 
+        Ok(())
+    }
+
+    // Once the game an accept produced is over, a repeat of that accept must not start another one.
+    #[test]
+    fn test_syn_ack_without_outstanding_challenge_creates_no_game() -> AppResult<()> {
+        let (mut app1, mut app2) = paired_apps()?;
+
+        UiCallback::ChallengeTeam {
+            team_id: app2.world.own_team_id,
+        }
+        .call(&mut app1)?;
+        let syn = app1
+            .world
+            .get_own_team()?
+            .sent_challenges
+            .get(&app2.world.own_team_id)
+            .unwrap()
+            .clone();
+        deliver_challenge(&mut app2, syn)?;
+        let received = app2
+            .world
+            .get_own_team()?
+            .received_challenges
+            .get(&app1.world.own_team_id)
+            .unwrap()
+            .clone();
+        UiCallback::AcceptChallenge {
+            challenge: received.clone(),
+        }
+        .call(&mut app2)?;
+
+        let mut syn_ack = received;
+        syn_ack.state = NetworkRequestState::SynAck;
+        deliver_challenge(&mut app1, syn_ack.clone())?;
+        let first_game = app1
+            .world
+            .get_own_team()?
+            .current_game
+            .expect("Accepted challenge should start a game");
+
+        app1.world.games.remove(&first_game);
+        app1.world.get_own_team_mut()?.current_game = None;
+        let games_before = app1.world.games.len();
+
+        let _ = deliver_challenge(&mut app1, syn_ack);
+
+        assert!(app1.world.get_own_team()?.current_game.is_none());
+        assert_eq!(app1.world.games.len(), games_before);
         Ok(())
     }
 

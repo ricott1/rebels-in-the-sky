@@ -1242,11 +1242,8 @@ impl HelpPanel for SpaceCovePanel {
                     ui_key::TRAVEL
                 )),
                 Line::from(format!(
-                    "  {}          Organize a quick tournament (own cove only)",
-                    ui_key::ORGANIZE_QUICK_TOURNAMENT
-                )),
-                Line::from(format!(
-                    "  {}          Organize a big tournament (own cove only)",
+                    "  {} / {}      Organize a quick / big tournament",
+                    ui_key::ORGANIZE_QUICK_TOURNAMENT,
                     ui_key::ORGANIZE_BIG_TOURNAMENT
                 )),
             ],

@@ -1012,14 +1012,35 @@ impl Game {
         match (home_knocked_out, away_knocked_out) {
             (true, true) => {
                 self.end();
-                self.winner = None;
 
-                let description = self.game_end_description(None);
+                // win decided by reputation.
+                const REPUTATION_FLOOR: f32 = 1.0;
+                let home_weight = self.home_team_in_game.reputation + REPUTATION_FLOOR;
+                let away_weight = self.away_team_in_game.reputation + REPUTATION_FLOOR;
+                let home_wins =
+                    action_rng.random_range(0.0..home_weight + away_weight) < home_weight;
+
+                let possession = if home_wins {
+                    self.winner = Some(self.home_team_in_game.team_id);
+                    Possession::Home
+                } else {
+                    self.winner = Some(self.away_team_in_game.team_id);
+                    Possession::Away
+                };
+
+                let winner_name = if home_wins {
+                    &self.home_team_in_game.name
+                } else {
+                    &self.away_team_in_game.name
+                };
+                let description = format!(
+                    "Both crews are completely done! {winner_name} are chosen as winners \
+                    in the pirate way: by pure chance. {}",
+                    self.game_end_description(Some(possession))
+                );
 
                 self.action_results.push(ActionOutput {
-                    description: format!(
-                    "Both team are completely done! {description} They should get some rest now..."
-                ),
+                    description,
                     start_at: self.timer,
                     end_at: self.timer,
                     home_score: self.get_score().0,
