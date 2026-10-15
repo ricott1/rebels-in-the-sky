@@ -164,6 +164,7 @@ enum SwarmCommand {
 }
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const STREAM_RETRY_DELAY: Duration = Duration::from_millis(100);
 
 #[derive(Debug, PartialEq)]
 enum DirectState {
@@ -630,9 +631,8 @@ impl NetworkHandler {
                                 // has supplied addresses for it (self-healing reconnection).
                                 if let Ok(target) = PeerId::from_bytes(&ok.key) {
                                     if target != own_peer_id {
-                                        // New port, not the reused listen port: avoids
-                                        // EADDRINUSE on redundant dials (reuse is only for
-                                        // seeds and DCUtR).
+                                        // New port, not the reused listen port: avoids EADDRINUSE on redundant dials.
+                                        // Reuse is only for seeds and DCUtR.
                                         let _ = swarm.dial(
                                             DialOpts::peer_id(target).allocate_new_port().build(),
                                         );
@@ -1308,16 +1308,24 @@ async fn connect_space_link_task(
     link_id: LinkId,
 ) {
     let connect = async {
-        let (reply, direct) = oneshot::channel();
-        commands
-            .send(SwarmCommand::EnsureDirect { peer_id, reply })
-            .await
-            .map_err(|_| "network stopped")?;
-        direct.await.map_err(|_| "no direct connection")?;
-        control
-            .open_stream(peer_id, SPACE_ADVENTURE_PROTOCOL)
-            .await
-            .map_err(|_| "could not open stream")
+        loop {
+            let (reply, direct) = oneshot::channel();
+            commands
+                .send(SwarmCommand::EnsureDirect { peer_id, reply })
+                .await
+                .map_err(|_| "network stopped")?;
+            direct.await.map_err(|_| "no direct connection")?;
+            match control.open_stream(peer_id, SPACE_ADVENTURE_PROTOCOL).await {
+                Ok(stream) => return Ok(stream),
+                Err(libp2p_stream::OpenStreamError::UnsupportedProtocol(_)) => {
+                    return Err("host does not support co-op")
+                }
+                Err(err) => {
+                    log::info!("Space link {link_id}: could not open stream, retrying: {err}");
+                    tokio::time::sleep(STREAM_RETRY_DELAY).await;
+                }
+            }
+        }
     };
 
     let stream = match tokio::time::timeout(CONNECT_TIMEOUT, connect)
