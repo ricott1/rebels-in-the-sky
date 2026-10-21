@@ -460,7 +460,7 @@ impl PopupMessage {
                     }
                 );
                 if !has_shooter {
-                    text.push_str("Your spaceship has no shooters, it will be very dangerous!");
+                    text.push_str(" Your spaceship has no shooters, it will be very dangerous!");
                 };
                 frame.render_widget(
                     Paragraph::new(text).centered().wrap(Wrap { trim: true }),
