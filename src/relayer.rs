@@ -7,7 +7,7 @@ use crate::store::*;
 use crate::types::{AppResult, TeamId};
 use libp2p::gossipsub::IdentTopic;
 use libp2p::identity::Keypair;
-use libp2p::{gossipsub, identify, swarm::SwarmEvent};
+use libp2p::{gossipsub, identify, relay, swarm::SwarmEvent};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -199,6 +199,20 @@ impl Relayer {
                     save_relayer_network_store_data(&self.network_store_data, false)?;
                 }
             }
+
+            SwarmEvent::Behaviour(BehaviourEvent::RelayServer(
+                relay::Event::CircuitReqDenied {
+                    src_peer_id,
+                    dst_peer_id,
+                    status,
+                },
+            )) => log::warn!("Circuit {src_peer_id} -> {dst_peer_id} denied: {status:?}"),
+
+            SwarmEvent::Behaviour(BehaviourEvent::RelayServer(relay::Event::CircuitClosed {
+                src_peer_id,
+                dst_peer_id,
+                error,
+            })) => log::info!("Circuit {src_peer_id} -> {dst_peer_id} closed: {error:?}"),
 
             _ => {}
         }

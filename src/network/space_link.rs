@@ -103,9 +103,16 @@ pub async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R) -> AppResult<Sessi
     decode(&payload)
 }
 
-pub fn spawn_link<S>(stream: S, link_id: LinkId, events: mpsc::Sender<AppEvent>) -> SpaceLinkHandle
+/// `guard` is dropped when the link closes.
+pub fn spawn_link<S, G>(
+    stream: S,
+    link_id: LinkId,
+    events: mpsc::Sender<AppEvent>,
+    guard: G,
+) -> SpaceLinkHandle
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    G: Send + 'static,
 {
     let (mut reader, mut writer) = stream.split();
     let (control_tx, mut control_rx) = mpsc::unbounded_channel();
@@ -148,6 +155,7 @@ where
             }
         };
         token.cancel();
+        drop(guard);
         let _ = events
             .send(AppEvent::SpaceLink(SpaceLinkEvent::Closed {
                 link_id,
@@ -191,8 +199,8 @@ mod tests {
         let (a, b) = tokio::io::duplex(1 << 16);
         let (a_events, _a_rx) = mpsc::channel(16);
         let (b_events, mut b_rx) = mpsc::channel(16);
-        let a_handle = spawn_link(a.compat(), 1, a_events);
-        let _b_handle = spawn_link(b.compat(), 2, b_events);
+        let a_handle = spawn_link(a.compat(), 1, a_events, ());
+        let _b_handle = spawn_link(b.compat(), 2, b_events, ());
 
         assert!(a_handle.send_control(SessionMessage::Heartbeat));
         assert!(a_handle.try_send_snapshot(SessionMessage::Leave));
