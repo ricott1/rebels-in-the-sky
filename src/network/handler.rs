@@ -155,45 +155,67 @@ enum SwarmCommand {
     FindPeer {
         peer_id: PeerId,
     },
-    EnsureDirect {
+    EnsureLink {
         peer_id: PeerId,
         reply: oneshot::Sender<()>,
     },
+    /// While a co-op link with the peer is alive, its relayed connections stay open:
+    /// the link may run over one of them.
+    PinRelay {
+        peer_id: PeerId,
+    },
+    UnpinRelay {
+        peer_id: PeerId,
+    },
 }
 
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 const STREAM_RETRY_DELAY: Duration = Duration::from_millis(100);
 const MAX_STREAM_RETRY_DELAY: Duration = Duration::from_secs(1);
 const RELAY_RESERVATION_CHECK: Duration = Duration::from_secs(30);
 const KNOWN_PEER_REDIAL_INTERVAL: Duration = Duration::from_secs(5 * 60);
+/// How long a relayed connection gets to be upgraded by hole punching before co-op uses it as is.
+const HOLE_PUNCH_GRACE: Duration = Duration::from_secs(5);
+const LINK_WAITER_CHECK: Duration = Duration::from_millis(250);
+
+/// Connections to a peer, each with the time it was established if it is relayed.
+type PeerConnections = HashMap<PeerId, Vec<(ConnectionId, Option<Instant>)>>;
 
 #[derive(Debug, PartialEq)]
-enum DirectState {
+enum LinkState {
     Missing,
+    Punching,
     Closing(Vec<ConnectionId>),
-    Ready,
+    Direct,
+    Relayed,
 }
 
-fn direct_state(
-    connections: &HashMap<PeerId, Vec<(ConnectionId, bool)>>,
+fn link_state(
+    connections: &PeerConnections,
     peer_id: &PeerId,
-) -> DirectState {
+    pinned: bool,
+    now: Instant,
+) -> LinkState {
     let list = connections
         .get(peer_id)
         .map(Vec::as_slice)
         .unwrap_or_default();
-    if !list.iter().any(|(_, relayed)| !relayed) {
-        return DirectState::Missing;
+    if list.iter().any(|(_, relayed_at)| relayed_at.is_none()) {
+        let relayed: Vec<ConnectionId> = list
+            .iter()
+            .filter(|(_, relayed_at)| relayed_at.is_some())
+            .map(|(id, _)| *id)
+            .collect();
+        return if relayed.is_empty() || pinned {
+            LinkState::Direct
+        } else {
+            LinkState::Closing(relayed)
+        };
     }
-    let relayed: Vec<ConnectionId> = list
-        .iter()
-        .filter(|(_, relayed)| *relayed)
-        .map(|(id, _)| *id)
-        .collect();
-    if relayed.is_empty() {
-        DirectState::Ready
-    } else {
-        DirectState::Closing(relayed)
+    match list.iter().filter_map(|(_, relayed_at)| *relayed_at).min() {
+        None => LinkState::Missing,
+        Some(at) if now.saturating_duration_since(at) >= HOLE_PUNCH_GRACE => LinkState::Relayed,
+        Some(_) => LinkState::Punching,
     }
 }
 
@@ -234,25 +256,52 @@ fn tcp_and_quic(host: Multiaddr) -> [Multiaddr; 2] {
 }
 
 /// Once a peer is reachable directly, drop its relayed connections to free relay circuits,
-/// then wake whoever is waiting for the direct connection.
+/// then wake whoever is waiting for a link.
+/// If hole punching does not deliver a direct connection in time, waiters get the relayed one.
 fn settle_connections(
     swarm: &mut Swarm<Behaviour>,
-    connections: &HashMap<PeerId, Vec<(ConnectionId, bool)>>,
-    direct_waiters: &mut HashMap<PeerId, Vec<oneshot::Sender<()>>>,
+    connections: &PeerConnections,
+    link_waiters: &mut HashMap<PeerId, Vec<oneshot::Sender<()>>>,
+    relay_pins: &HashMap<PeerId, usize>,
     peer_id: &PeerId,
 ) {
-    match direct_state(connections, peer_id) {
-        DirectState::Missing => {}
-        DirectState::Closing(relayed) => {
+    let pinned = relay_pins.contains_key(peer_id);
+    match link_state(connections, peer_id, pinned, Instant::now()) {
+        LinkState::Missing | LinkState::Punching => {}
+        LinkState::Closing(relayed) => {
             for connection_id in relayed {
                 swarm.close_connection(connection_id);
             }
         }
-        DirectState::Ready => {
-            for waiter in direct_waiters.remove(peer_id).into_iter().flatten() {
-                let _ = waiter.send(());
+        state @ (LinkState::Direct | LinkState::Relayed) => {
+            if let Some(waiters) = link_waiters.remove(peer_id) {
+                log::info!("Co-op link to {peer_id} ready: {state:?}");
+                for waiter in waiters {
+                    let _ = waiter.send(());
+                }
             }
         }
+    }
+}
+
+/// Pins the peer's relayed connections for as long as it lives.
+struct RelayPin {
+    peer_id: PeerId,
+    commands: mpsc::Sender<SwarmCommand>,
+}
+
+impl RelayPin {
+    fn new(peer_id: PeerId, commands: mpsc::Sender<SwarmCommand>) -> Self {
+        let _ = commands.try_send(SwarmCommand::PinRelay { peer_id });
+        Self { peer_id, commands }
+    }
+}
+
+impl Drop for RelayPin {
+    fn drop(&mut self) {
+        let _ = self.commands.try_send(SwarmCommand::UnpinRelay {
+            peer_id: self.peer_id,
+        });
     }
 }
 
@@ -348,12 +397,21 @@ impl NetworkHandler {
                 relay_server: relay::Behaviour::new(
                     peer_id,
                     relay::Config {
-                        max_circuits: 64,
-                        max_circuits_per_peer: 8,
-                        max_circuit_duration: Duration::from_secs(5 * 60),
-                        max_circuit_bytes: 1 << 19,
+                        max_circuits: 256,
+                        max_circuits_per_peer: 32,
+                        max_circuit_duration: Duration::from_secs(2 * 60 * 60),
+                        max_circuit_bytes: 1 << 30,
+                        circuit_src_rate_limiters: vec![],
                         ..Default::default()
-                    },
+                    }
+                    .circuit_src_per_peer(
+                        std::num::NonZeroU32::new(120).expect("120 > 0"),
+                        Duration::from_secs(5),
+                    )
+                    .circuit_src_per_ip(
+                        std::num::NonZeroU32::new(600).expect("600 > 0"),
+                        Duration::from_secs(1),
+                    ),
                 ),
                 #[cfg(feature = "relayer")]
                 autonat_server: autonat::v2::server::Behaviour::default(),
@@ -486,6 +544,7 @@ impl NetworkHandler {
         // and a FindPeer per known peer at once.
         let (sender, mut receiver) = mpsc::channel(256);
 
+        let accept_commands = sender.clone();
         self.swarm_status = SwarmStatus::Ready { sender };
 
         let stream_behaviour = libp2p_stream::Behaviour::new();
@@ -504,8 +563,9 @@ impl NetworkHandler {
                         let Some((peer_id, stream)) = next else {
                             break;
                         };
+                        let pin = RelayPin::new(peer_id, accept_commands.clone());
                         let link_id = next_link_id();
-                        let handle = spawn_link(stream, link_id, accept_events.clone());
+                        let handle = spawn_link(stream, link_id, accept_events.clone(), pin);
                         let event = AppEvent::SpaceLink(SpaceLinkEvent::Opened {
                             link_id,
                             peer_id,
@@ -545,8 +605,11 @@ impl NetworkHandler {
             let mut relay_listener: Option<ListenerId> = None;
             let mut relay_check = tokio::time::interval(RELAY_RESERVATION_CHECK);
             let mut dialed_addresses: HashMap<ConnectionId, Multiaddr> = HashMap::new();
-            let mut connections: HashMap<PeerId, Vec<(ConnectionId, bool)>> = HashMap::new();
-            let mut direct_waiters: HashMap<PeerId, Vec<oneshot::Sender<()>>> = HashMap::new();
+            let mut connections: PeerConnections = HashMap::new();
+            let mut link_waiters: HashMap<PeerId, Vec<oneshot::Sender<()>>> = HashMap::new();
+            let mut relay_pins: HashMap<PeerId, usize> = HashMap::new();
+            let mut link_check = tokio::time::interval(LINK_WAITER_CHECK);
+            link_check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
             loop {
                 tokio::select! {
@@ -570,6 +633,17 @@ impl NetworkHandler {
                         relay_listener = relay_circuit
                             .as_ref()
                             .and_then(|circuit| reserve_relay(&mut swarm, circuit));
+                    }
+
+                    _ = link_check.tick(), if !link_waiters.is_empty() => {
+                        link_waiters.retain(|_, waiters| {
+                            waiters.retain(|waiter| !waiter.is_closed());
+                            !waiters.is_empty()
+                        });
+                        let peers = link_waiters.keys().copied().collect_vec();
+                        for peer_id in peers {
+                            settle_connections(&mut swarm, &connections, &mut link_waiters, &relay_pins, &peer_id);
+                        }
                     }
 
                     event = swarm.select_next_some() => {
@@ -666,8 +740,11 @@ impl NetworkHandler {
                                         dialed_addresses.insert(*connection_id, address.clone());
                                     }
                                 }
-                                connections.entry(*peer_id).or_default().push((*connection_id, relayed));
-                                settle_connections(&mut swarm, &connections, &mut direct_waiters, peer_id);
+                                connections
+                                    .entry(*peer_id)
+                                    .or_default()
+                                    .push((*connection_id, relayed.then(Instant::now)));
+                                settle_connections(&mut swarm, &connections, &mut link_waiters, &relay_pins, peer_id);
                                 if !kad_bootstrapped
                                     && swarm.behaviour_mut().kademlia.bootstrap().is_ok()
                                 {
@@ -685,7 +762,7 @@ impl NetworkHandler {
                                         connections.remove(peer_id);
                                     }
                                 }
-                                settle_connections(&mut swarm, &connections, &mut direct_waiters, peer_id);
+                                settle_connections(&mut swarm, &connections, &mut link_waiters, &relay_pins, peer_id);
                             }
                             SwarmEvent::ListenerClosed { listener_id, reason, .. }
                                 if relay_listener == Some(*listener_id) =>
@@ -694,9 +771,9 @@ impl NetworkHandler {
                                 log::info!("Relay reservation closed: {reason:?}");
                             }
                             SwarmEvent::OutgoingConnectionError { peer_id: Some(peer_id), error, .. }
-                                if direct_waiters.contains_key(peer_id) =>
+                                if link_waiters.contains_key(peer_id) =>
                             {
-                                log::info!("Dial to {peer_id} failed while waiting for a direct connection: {error}");
+                                log::info!("Dial to {peer_id} failed while waiting for a co-op link: {error}");
                             }
                             _ => {}
                         }
@@ -730,16 +807,27 @@ impl NetworkHandler {
                                     find_peer(&mut swarm, relay_circuit.as_ref(), peer_id);
                                 }
                             }
-                            SwarmCommand::EnsureDirect { peer_id, reply } => {
-                                let waiters = direct_waiters.entry(peer_id).or_default();
-                                waiters.retain(|waiter| !waiter.is_closed());
-                                waiters.push(reply);
-                                let state = direct_state(&connections, &peer_id);
-                                log::info!("Waiting for a direct connection to {peer_id}: {state:?}");
-                                if state == DirectState::Missing {
+                            SwarmCommand::EnsureLink { peer_id, reply } => {
+                                link_waiters.entry(peer_id).or_default().push(reply);
+                                let pinned = relay_pins.contains_key(&peer_id);
+                                let state = link_state(&connections, &peer_id, pinned, Instant::now());
+                                log::info!("Waiting for a co-op link to {peer_id}: {state:?}");
+                                if state == LinkState::Missing {
                                     find_peer(&mut swarm, relay_circuit.as_ref(), peer_id);
                                 } else {
-                                    settle_connections(&mut swarm, &connections, &mut direct_waiters, &peer_id);
+                                    settle_connections(&mut swarm, &connections, &mut link_waiters, &relay_pins, &peer_id);
+                                }
+                            }
+                            SwarmCommand::PinRelay { peer_id } => {
+                                *relay_pins.entry(peer_id).or_default() += 1;
+                            }
+                            SwarmCommand::UnpinRelay { peer_id } => {
+                                if let Some(pins) = relay_pins.get_mut(&peer_id) {
+                                    *pins -= 1;
+                                    if *pins == 0 {
+                                        relay_pins.remove(&peer_id);
+                                        settle_connections(&mut swarm, &connections, &mut link_waiters, &relay_pins, &peer_id);
+                                    }
                                 }
                             }
                         }
@@ -1330,12 +1418,12 @@ async fn connect_space_link_task(
     let connect = async {
         let mut retry_delay = STREAM_RETRY_DELAY;
         loop {
-            let (reply, direct) = oneshot::channel();
+            let (reply, ready) = oneshot::channel();
             commands
-                .send(SwarmCommand::EnsureDirect { peer_id, reply })
+                .send(SwarmCommand::EnsureLink { peer_id, reply })
                 .await
                 .map_err(|_| "network stopped")?;
-            direct.await.map_err(|_| "no direct connection")?;
+            ready.await.map_err(|_| "no connection")?;
             match control.open_stream(peer_id, SPACE_ADVENTURE_PROTOCOL).await {
                 Ok(stream) => return Ok(stream),
                 Err(libp2p_stream::OpenStreamError::UnsupportedProtocol(_)) => {
@@ -1352,7 +1440,7 @@ async fn connect_space_link_task(
 
     let stream = match tokio::time::timeout(CONNECT_TIMEOUT, connect)
         .await
-        .unwrap_or(Err("no direct connection in time"))
+        .unwrap_or(Err("no connection in time"))
     {
         Ok(stream) => stream,
         Err(reason) => {
@@ -1366,7 +1454,8 @@ async fn connect_space_link_task(
         }
     };
 
-    let handle = spawn_link(stream, link_id, events.clone());
+    let pin = RelayPin::new(peer_id, commands);
+    let handle = spawn_link(stream, link_id, events.clone(), pin);
     let opened = AppEvent::SpaceLink(SpaceLinkEvent::Opened {
         link_id,
         peer_id,
@@ -1595,28 +1684,47 @@ mod tests {
     }
 
     #[test]
-    fn test_direct_state_waits_for_relayed_connections_to_close() {
-        use super::{direct_state, DirectState};
+    fn test_link_state_prefers_direct_and_falls_back_to_relay() {
+        use super::{link_state, LinkState, HOLE_PUNCH_GRACE};
         use libp2p::{swarm::ConnectionId, PeerId};
         use std::collections::HashMap;
+        use std::time::Instant;
 
         let peer = PeerId::random();
         let direct = ConnectionId::new_unchecked(1);
         let relayed = ConnectionId::new_unchecked(2);
+        let now = Instant::now();
         let mut connections = HashMap::new();
-        assert_eq!(direct_state(&connections, &peer), DirectState::Missing);
-
-        connections.insert(peer, vec![(relayed, true)]);
-        assert_eq!(direct_state(&connections, &peer), DirectState::Missing);
-
-        connections.insert(peer, vec![(relayed, true), (direct, false)]);
         assert_eq!(
-            direct_state(&connections, &peer),
-            DirectState::Closing(vec![relayed])
+            link_state(&connections, &peer, false, now),
+            LinkState::Missing
         );
 
-        connections.insert(peer, vec![(direct, false)]);
-        assert_eq!(direct_state(&connections, &peer), DirectState::Ready);
+        connections.insert(peer, vec![(relayed, Some(now))]);
+        assert_eq!(
+            link_state(&connections, &peer, false, now),
+            LinkState::Punching
+        );
+        assert_eq!(
+            link_state(&connections, &peer, false, now + HOLE_PUNCH_GRACE),
+            LinkState::Relayed
+        );
+
+        connections.insert(peer, vec![(relayed, Some(now)), (direct, None)]);
+        assert_eq!(
+            link_state(&connections, &peer, false, now),
+            LinkState::Closing(vec![relayed])
+        );
+        assert_eq!(
+            link_state(&connections, &peer, true, now),
+            LinkState::Direct
+        );
+
+        connections.insert(peer, vec![(direct, None)]);
+        assert_eq!(
+            link_state(&connections, &peer, false, now),
+            LinkState::Direct
+        );
     }
 
     #[test]
