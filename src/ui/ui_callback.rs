@@ -330,7 +330,15 @@ pub enum UiCallback {
     ToggleAsteroidExternalTeleport {
         asteroid_id: PlanetId,
     },
-    StartSpaceAdventure,
+    StartSpaceAdventure {
+        open: bool,
+    },
+    JoinSpaceAdventure {
+        host_team_id: TeamId,
+    },
+    PushSpaceAdventurePopup {
+        selected: usize,
+    },
     ReturnFromSpaceAdventure,
     SpaceAdventurePlayerInput {
         key_code: KeyCode,
@@ -1364,6 +1372,7 @@ impl UiCallback {
 
     fn return_from_space_adventure() -> AppCallback {
         Box::new(move |app: &mut App| {
+            app.space_session = None;
             app.ui.set_state(UiState::Main);
             let (message, asteroid_type) = app.world.return_from_space_adventure()?;
 
@@ -1701,7 +1710,8 @@ impl UiCallback {
                 Ok(None)
             }
             Self::QuitGame => {
-                if app.world.space_adventure.is_some() {
+                app.shutdown_space_session();
+                if app.world.in_space() {
                     let _ = Self::return_from_space_adventure()(app);
                 }
                 app.quit()?;
@@ -2243,37 +2253,57 @@ impl UiCallback {
                 Ok(None)
             }
 
-            Self::StartSpaceAdventure => {
-                app.world.start_space_adventure()?;
+            Self::StartSpaceAdventure { open } => {
+                app.launch_space_adventure(*open)?;
                 app.ui.set_state(UiState::SpaceAdventure);
                 app.ui.close_popup();
+                Ok(None)
+            }
+
+            Self::JoinSpaceAdventure { host_team_id } => {
+                app.join_space_adventure(*host_team_id)?;
+                app.ui.close_popup();
+                app.ui
+                    .push_popup(crate::space_coop::contacting_host_popup());
+                Ok(None)
+            }
+
+            Self::PushSpaceAdventurePopup { selected } => {
+                let own_team = app.world.get_own_team()?;
+                let joinable = app.world.joinable_adventures();
+                let popup_message = PopupMessage::ConfirmSpaceAdventure {
+                    has_shooter: own_team.spaceship.has_shooters(),
+                    average_tiredness: own_team.average_tiredness(&app.world),
+                    selected: selected.checked_rem(joinable.len()).unwrap_or_default(),
+                    joinable,
+                    timestamp: Tick::now(),
+                };
+                app.ui.close_popup_where(|popup| {
+                    matches!(popup, PopupMessage::ConfirmSpaceAdventure { .. })
+                });
+                app.ui.push_popup_to_top(popup_message);
                 Ok(None)
             }
 
             Self::ReturnFromSpaceAdventure => Self::return_from_space_adventure()(app),
 
             Self::SpaceAdventurePlayerInput { key_code } => {
-                if let Some(space) = app.world.space_adventure.as_mut() {
-                    if *key_code == ui_key::space::BACK_TO_BASE {
-                        space.stop_space_adventure();
-                        return Ok(None);
-                    }
-
-                    let player_input = match *key_code {
-                        ui_key::space::MOVE_LEFT => PlayerInput::MoveLeft,
-                        ui_key::space::MOVE_RIGHT => PlayerInput::MoveRight,
-                        ui_key::space::MOVE_UP => PlayerInput::MoveUp,
-                        ui_key::space::MOVE_DOWN => PlayerInput::MoveDown,
-                        ui_key::space::AUTOFIRE => PlayerInput::ToggleAutofire,
-                        ui_key::space::TOGGLE_SHIELD => PlayerInput::ToggleShield,
-                        ui_key::space::RELEASE_SCRAPS => PlayerInput::ReleaseScraps,
-                        ui_key::space::SHOOT => PlayerInput::Shoot,
-                        _ => return Ok(None),
-                    };
-
-                    space.handle_player_input(player_input)?;
+                if *key_code == ui_key::space::BACK_TO_BASE {
+                    app.leave_space_adventure();
+                    return Ok(None);
                 }
-
+                let player_input = match *key_code {
+                    ui_key::space::MOVE_LEFT => PlayerInput::MoveLeft,
+                    ui_key::space::MOVE_RIGHT => PlayerInput::MoveRight,
+                    ui_key::space::MOVE_UP => PlayerInput::MoveUp,
+                    ui_key::space::MOVE_DOWN => PlayerInput::MoveDown,
+                    ui_key::space::AUTOFIRE => PlayerInput::ToggleAutofire,
+                    ui_key::space::TOGGLE_SHIELD => PlayerInput::ToggleShield,
+                    ui_key::space::RELEASE_SCRAPS => PlayerInput::ReleaseScraps,
+                    ui_key::space::SHOOT => PlayerInput::Shoot,
+                    _ => return Ok(None),
+                };
+                app.space_player_input(player_input)?;
                 Ok(None)
             }
 
@@ -2384,10 +2414,25 @@ mod test {
     use super::UiCallback;
     use crate::{
         app::App,
-        core::{resources::Resource, INITIAL_RANDOM_TEAM_BALANCE},
-        space_adventure::{ControllableSpaceship, GameEntity, SpaceCallback},
-        types::{AppResult, ResourceMap, StorableResourceMap},
+        core::types::TeamLocation,
+        core::{constants::SECONDS, resources::Resource, INITIAL_RANDOM_TEAM_BALANCE},
+        network::space_link::{SpaceLinkEvent, SpaceLinkHandle},
+        space_adventure::{
+            session::SpaceSession,
+            snapshot::SnapshotTracker,
+            wire::{EndReason, JoinRequest, RejectReason, SessionMessage},
+            ControllableSpaceship, GameEntity, PlayerOutcome, ShipLoadout, SpaceAdventure,
+            SpaceCallback,
+        },
+        types::{
+            AppResult, PlanetId, ResourceMap, StorableResourceMap, SystemTimeTick, TeamId, Tick,
+        },
+        ui::{ui_key, PopupMessage},
     };
+    use libp2p::PeerId;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+    use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
     #[test]
     fn test_resource_gathered_in_space_adventure() -> AppResult<()> {
@@ -2404,7 +2449,7 @@ mod test {
 
         let own_team_resources = own_team.resources.clone();
 
-        UiCallback::StartSpaceAdventure.call(&mut app)?;
+        UiCallback::StartSpaceAdventure { open: false }.call(&mut app)?;
 
         let space = app
             .world
@@ -2412,7 +2457,7 @@ mod test {
             .as_mut()
             .expect("There should be a space adventure");
 
-        let player_id = space.get_player().expect("There should be a player").id();
+        let player_id = space.host_ship().expect("There should be a player").id();
 
         let space_callbacks = vec![
             SpaceCallback::CollectFragment {
@@ -2430,7 +2475,7 @@ mod test {
             cb.call(space);
         }
 
-        let player = space.get_player().expect("There should be a player");
+        let player = space.host_ship().expect("There should be a player");
 
         assert!(player.current_durability() == 0);
         assert!(player.resources().value(&Resource::GOLD) == 10);
@@ -2464,6 +2509,325 @@ mod test {
         assert!(new_resources.value(&Resource::SATOSHI) == INITIAL_RANDOM_TEAM_BALANCE);
         assert!(new_resources.value(&Resource::FUEL) == 0);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_start_space_adventure_resets_fast_tick_clock() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
+        app.world.last_tick_min_interval = 0;
+        app.world.start_space_adventure()?;
+        assert!(Tick::now() - app.world.last_tick_min_interval < SECONDS);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fast_tick_queued_before_the_clock_reset_does_not_underflow() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
+        app.world.start_space_adventure()?;
+        app.world.last_tick_min_interval = Tick::now() + 1000;
+        app.world.handle_fast_tick_events(Tick::now())?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_settle_space_adventure_applies_the_outcome() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
+        app.world.start_space_adventure()?;
+        app.world.space_adventure = None;
+
+        let mut resources = app.world.get_own_team()?.resources.clone();
+        resources.insert(Resource::GOLD, 7);
+        let (message, asteroid) = app.world.settle_space_adventure(
+            PlayerOutcome {
+                resources,
+                durability: 3,
+            },
+            None,
+        )?;
+
+        let team = app.world.get_own_team()?;
+        assert_eq!(team.resources.value(&Resource::GOLD), 7);
+        assert_eq!(team.spaceship.current_durability(), 3);
+        assert!(team.is_on_planet().is_some());
+        assert!(message.contains("collected"));
+        assert!(asteroid.is_none());
+        Ok(())
+    }
+
+    fn add_peer_team(app: &mut App, around: PlanetId, joinable: bool) -> AppResult<TeamId> {
+        let team_id = app.world.generate_random_team(
+            &mut ChaCha8Rng::seed_from_u64(3),
+            around,
+            "Amarezza".into(),
+            "Ship".into(),
+        )?;
+        let team = app.world.teams.get_mut(&team_id).expect("team");
+        team.peer_id = Some(PeerId::random());
+        team.current_location = TeamLocation::OnSpaceAdventure { around, joinable };
+        Ok(team_id)
+    }
+
+    #[test]
+    fn test_joinable_adventures_are_open_ones_around_our_planet() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let planet_id = app.world.get_own_team()?.is_on_planet().expect("on planet");
+        let open = add_peer_team(&mut app, planet_id, true)?;
+        add_peer_team(&mut app, planet_id, false)?;
+        let elsewhere = *app
+            .world
+            .planets
+            .keys()
+            .find(|id| **id != planet_id)
+            .expect("another planet");
+        add_peer_team(&mut app, elsewhere, true)?;
+
+        let joinable: Vec<TeamId> = app
+            .world
+            .joinable_adventures()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        assert_eq!(joinable, vec![open]);
+        Ok(())
+    }
+
+    fn selected_adventure(app: &App) -> (usize, usize) {
+        match app.ui.popup_messages() {
+            [PopupMessage::ConfirmSpaceAdventure {
+                joinable, selected, ..
+            }] => (*selected, joinable.len()),
+            popups => panic!("unexpected popups {popups:?}"),
+        }
+    }
+
+    #[test]
+    fn test_selecting_a_joinable_adventure_wraps_and_refreshes() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let planet_id = app.world.get_own_team()?.is_on_planet().expect("on planet");
+        let host = add_peer_team(&mut app, planet_id, true)?;
+        add_peer_team(&mut app, planet_id, true)?;
+        add_peer_team(&mut app, planet_id, true)?;
+        UiCallback::PushSpaceAdventurePopup { selected: 0 }.call(&mut app)?;
+
+        let press = |app: &mut App, key: KeyCode| {
+            app.ui
+                .handle_key_events(KeyEvent::from(key), &app.world)
+                .expect("callback")
+                .call(app)
+        };
+        press(&mut app, ui_key::PREVIOUS_JOINABLE_ADVENTURE)?;
+        assert_eq!(selected_adventure(&app), (2, 3));
+        press(&mut app, ui_key::NEXT_JOINABLE_ADVENTURE)?;
+        assert_eq!(selected_adventure(&app), (0, 3));
+
+        app.world
+            .teams
+            .get_mut(&host)
+            .expect("host")
+            .current_location = TeamLocation::OnSpaceAdventure {
+            around: planet_id,
+            joinable: false,
+        };
+        UiCallback::PushSpaceAdventurePopup { selected: 2 }.call(&mut app)?;
+        assert_eq!(selected_adventure(&app), (0, 2));
+        Ok(())
+    }
+
+    #[test]
+    fn test_prepare_join_checks_the_host() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
+        let planet_id = app.world.get_own_team()?.is_on_planet().expect("on planet");
+        let open = add_peer_team(&mut app, planet_id, true)?;
+        let closed = add_peer_team(&mut app, planet_id, false)?;
+
+        let (_, join) = app.world.prepare_join(open)?;
+        assert_eq!(join.planet_id, planet_id);
+        assert_eq!(join.loadout.fuel, app.world.get_own_team()?.fuel());
+        assert!(app.world.prepare_join(closed).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_guest_enters_and_settles_from_the_mirror() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
+        let planet_id = app.world.get_own_team()?.is_on_planet().expect("on planet");
+
+        let mut host_space = SpaceAdventure::test_running()?;
+        let guest_id = host_space.add_guest(&app.world.own_ship_loadout()?)?;
+        let welcome = SnapshotTracker::new().welcome(&host_space, guest_id);
+
+        app.world.enter_guest_adventure(&welcome, planet_id)?;
+        assert!(app.world.in_space());
+        assert!(matches!(
+            app.world.get_own_team()?.current_location,
+            TeamLocation::OnSpaceAdventure {
+                joinable: false,
+                ..
+            }
+        ));
+
+        let mut resources = app.world.get_own_team()?.resources.clone();
+        resources.insert(Resource::GOLD, 4);
+        app.world
+            .space_mirror
+            .as_mut()
+            .expect("mirror")
+            .start_ending(PlayerOutcome {
+                resources,
+                durability: 2,
+            });
+        app.world.return_from_space_adventure()?;
+
+        let team = app.world.get_own_team()?;
+        assert_eq!(team.resources.value(&Resource::GOLD), 4);
+        assert!(team.is_on_planet().is_some());
+        assert!(!app.world.in_space());
+        Ok(())
+    }
+
+    #[test]
+    fn test_joinable_flag_is_broadcast() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
+        app.world.start_space_adventure()?;
+        app.world.dirty_network = false;
+
+        app.world.set_space_adventure_joinable(true)?;
+        assert!(app.world.dirty_network);
+        assert!(matches!(
+            app.world.get_own_team()?.current_location,
+            TeamLocation::OnSpaceAdventure { joinable: true, .. }
+        ));
+
+        app.world.dirty_network = false;
+        app.world.set_space_adventure_joinable(true)?;
+        assert!(!app.world.dirty_network);
+        Ok(())
+    }
+
+    #[test]
+    fn test_open_adventure_becomes_joinable_once_running() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
+        UiCallback::StartSpaceAdventure { open: true }.call(&mut app)?;
+        assert!(matches!(app.space_session, Some(SpaceSession::Host(_))));
+
+        app.tick_space_session()?;
+        assert!(matches!(
+            app.world.get_own_team()?.current_location,
+            TeamLocation::OnSpaceAdventure {
+                joinable: false,
+                ..
+            }
+        ));
+
+        app.world
+            .space_adventure
+            .as_mut()
+            .expect("space")
+            .force_running();
+        app.tick_space_session()?;
+        assert!(matches!(
+            app.world.get_own_team()?.current_location,
+            TeamLocation::OnSpaceAdventure { joinable: true, .. }
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_solo_adventure_rejects_incoming_links() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
+        UiCallback::StartSpaceAdventure { open: false }.call(&mut app)?;
+        assert!(app.space_session.is_none());
+
+        let (handle, mut control_rx, _) = SpaceLinkHandle::test_pair();
+        app.handle_space_link_event(SpaceLinkEvent::Opened {
+            link_id: 1,
+            peer_id: PeerId::random(),
+            handle,
+            inbound: true,
+        })?;
+        assert_eq!(
+            control_rx.try_recv().ok(),
+            Some(SessionMessage::Reject {
+                reason: RejectReason::Closed
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_host_x_ends_for_the_guest_too() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        app.world
+            .get_own_team_mut()?
+            .add_resource(Resource::FUEL, 100)?;
+        UiCallback::StartSpaceAdventure { open: true }.call(&mut app)?;
+        app.world
+            .space_adventure
+            .as_mut()
+            .expect("space")
+            .force_running();
+        let around = app.world.space_adventure_planet()?;
+
+        let (handle, mut control_rx, _) = SpaceLinkHandle::test_pair();
+        app.handle_space_link_event(SpaceLinkEvent::Opened {
+            link_id: 9,
+            peer_id: PeerId::random(),
+            handle,
+            inbound: true,
+        })?;
+        let mut loadout = ShipLoadout::test_default();
+        loadout.resources.insert(Resource::GOLD, 3);
+        app.handle_space_link_event(SpaceLinkEvent::Message {
+            link_id: 9,
+            message: SessionMessage::Join(JoinRequest {
+                version: crate::app_version(),
+                team_id: TeamId::new_v4(),
+                team_name: "Fregatto".into(),
+                planet_id: around,
+                loadout,
+            }),
+        })?;
+        assert!(matches!(
+            control_rx.try_recv(),
+            Ok(SessionMessage::Welcome(_))
+        ));
+
+        app.leave_space_adventure();
+        app.tick_space_session()?;
+        match control_rx.try_recv() {
+            Ok(SessionMessage::Ended {
+                reason: EndReason::HostEnded,
+                outcome,
+            }) => {
+                assert_eq!(outcome.resources.value(&Resource::GOLD), 3)
+            }
+            other => panic!("expected Ended, got {other:?}"),
+        }
         Ok(())
     }
 }

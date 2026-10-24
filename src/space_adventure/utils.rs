@@ -6,11 +6,12 @@ use image::imageops::crop_imm;
 use image::Rgba;
 use image::{buffer::ConvertBuffer, GrayImage, RgbaImage};
 use imageproc::contours::{find_contours, BorderType};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 pub type EntityMap = HashMap<usize, Entity>;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum EntityState {
     Immortal,
     Decaying { lifetime: f32 },
