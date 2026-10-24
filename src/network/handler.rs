@@ -10,7 +10,11 @@ use crate::core::Team;
 use crate::game_engine::types::TeamInGame;
 use crate::game_engine::{Tournament, TournamentId};
 use crate::network::network_store_data::NetworkStoreData;
+use crate::network::space_link::{
+    next_link_id, spawn_link, LinkId, SpaceLinkEvent, SPACE_ADVENTURE_PROTOCOL,
+};
 use crate::network::types::TournamentRequestState;
+use crate::space_adventure::wire::{LinkSender, SessionMessage};
 use crate::store::serialize;
 use crate::types::{AppResult, GameId, HashMapWithResult, PlayerMap};
 use crate::types::{PlayerId, TeamId};
@@ -18,11 +22,13 @@ use crate::types::{SystemTimeTick, Tick};
 use anyhow::anyhow;
 use futures::StreamExt;
 use itertools::Itertools;
+use libp2p::core::transport::ListenerId;
+use libp2p::core::ConnectedPoint;
 use libp2p::gossipsub::{self, IdentTopic};
 use libp2p::identity::Keypair;
 use libp2p::multiaddr::Protocol;
 use libp2p::swarm::dial_opts::DialOpts;
-use libp2p::swarm::{DialError, NetworkBehaviour, SwarmEvent};
+use libp2p::swarm::{ConnectionId, DialError, NetworkBehaviour, SwarmEvent};
 use libp2p::{
     autonat, dcutr, identify, identity, kad, noise, relay, tcp, yamux, PeerId, StreamProtocol,
     TransportError,
@@ -32,8 +38,9 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
-use std::time::Duration;
-use tokio::sync::mpsc;
+use std::net::IpAddr;
+use std::time::{Duration, Instant};
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -61,30 +68,28 @@ pub(crate) fn is_relay_circuit(addr: &Multiaddr) -> bool {
     addr.iter().any(|p| matches!(p, Protocol::P2pCircuit))
 }
 
-/// Extract the IP from an observed address and combine it with our actual listen port.
-/// The observed_addr from identify contains the correct public IP but the wrong
-/// (ephemeral) port from the outbound connection.
-fn build_external_addr_from_observed(
-    observed_addr: &Multiaddr,
-    listen_port: u16,
-) -> Option<Multiaddr> {
+/// Our observed IP with the listen port, but only if the peer saw us on the listen port itself.
+/// Behind a NAT that remaps ports nothing answers there, so we must not advertise it.
+fn reachable_external_addr(observed_addr: &Multiaddr, listen_port: u16) -> Option<Multiaddr> {
     let mut ip_proto = None;
+    let mut observed_port = None;
     for proto in observed_addr.iter() {
         match proto {
             Protocol::Ip4(ip) if !ip.is_unspecified() && !ip.is_loopback() => {
                 ip_proto = Some(Protocol::Ip4(ip));
-                break;
             }
             Protocol::Ip6(ip) if !ip.is_unspecified() && !ip.is_loopback() => {
                 ip_proto = Some(Protocol::Ip6(ip));
-                break;
             }
+            Protocol::Tcp(port) => observed_port = Some(port),
             _ => {}
         }
     }
-    let ip = ip_proto?;
+    if listen_port == 0 || observed_port != Some(listen_port) {
+        return None;
+    }
     let mut addr = Multiaddr::empty();
-    addr.push(ip);
+    addr.push(ip_proto?);
     addr.push(Protocol::Tcp(listen_port));
     Some(addr)
 }
@@ -121,6 +126,7 @@ pub struct Behaviour {
     pub relay_client: relay::client::Behaviour,
     pub dcutr: dcutr::Behaviour,
     pub autonat_client: autonat::v2::client::Behaviour,
+    pub stream: libp2p_stream::Behaviour,
     // Server roles only exist in the relayer build (`--features relayer`).
     #[cfg(feature = "relayer")]
     pub relay_server: relay::Behaviour,
@@ -137,11 +143,9 @@ enum SwarmStatus {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum SwarmCommand {
-    Dial {
-        address: Multiaddr,
-    },
+    Dial(DialOpts),
     Send {
         topic: IdentTopic,
         data: Vec<u8>,
@@ -151,9 +155,156 @@ enum SwarmCommand {
     FindPeer {
         peer_id: PeerId,
     },
+    EnsureLink {
+        peer_id: PeerId,
+        reply: oneshot::Sender<()>,
+    },
+    /// While a co-op link with the peer is alive, its relayed connections stay open:
+    /// the link may run over one of them.
+    PinRelay {
+        peer_id: PeerId,
+    },
+    UnpinRelay {
+        peer_id: PeerId,
+    },
 }
 
-#[derive(Debug)]
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+const STREAM_RETRY_DELAY: Duration = Duration::from_millis(100);
+const MAX_STREAM_RETRY_DELAY: Duration = Duration::from_secs(1);
+const RELAY_RESERVATION_CHECK: Duration = Duration::from_secs(30);
+const KNOWN_PEER_REDIAL_INTERVAL: Duration = Duration::from_secs(5 * 60);
+/// How long a relayed connection gets to be upgraded by hole punching before co-op uses it as is.
+const HOLE_PUNCH_GRACE: Duration = Duration::from_secs(5);
+const LINK_WAITER_CHECK: Duration = Duration::from_millis(250);
+
+/// Connections to a peer, each with the time it was established if it is relayed.
+type PeerConnections = HashMap<PeerId, Vec<(ConnectionId, Option<Instant>)>>;
+
+#[derive(Debug, PartialEq)]
+enum LinkState {
+    Missing,
+    Punching,
+    Closing(Vec<ConnectionId>),
+    Direct,
+    Relayed,
+}
+
+fn link_state(
+    connections: &PeerConnections,
+    peer_id: &PeerId,
+    pinned: bool,
+    now: Instant,
+) -> LinkState {
+    let list = connections
+        .get(peer_id)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    if list.iter().any(|(_, relayed_at)| relayed_at.is_none()) {
+        let relayed: Vec<ConnectionId> = list
+            .iter()
+            .filter(|(_, relayed_at)| relayed_at.is_some())
+            .map(|(id, _)| *id)
+            .collect();
+        return if relayed.is_empty() || pinned {
+            LinkState::Direct
+        } else {
+            LinkState::Closing(relayed)
+        };
+    }
+    match list.iter().filter_map(|(_, relayed_at)| *relayed_at).min() {
+        None => LinkState::Missing,
+        Some(at) if now.saturating_duration_since(at) >= HOLE_PUNCH_GRACE => LinkState::Relayed,
+        Some(_) => LinkState::Punching,
+    }
+}
+
+fn find_peer(swarm: &mut Swarm<Behaviour>, relay_circuit: Option<&Multiaddr>, peer_id: PeerId) {
+    swarm.behaviour_mut().kademlia.get_closest_peers(peer_id);
+    // Also reach the peer through the relay circuit; DCUtR then upgrades the relayed connection to a direct one.
+    if let Some(base) = relay_circuit {
+        let via_relay = base.clone().with(Protocol::P2p(peer_id));
+        let opts = DialOpts::unknown_peer_id()
+            .address(via_relay.clone())
+            .allocate_new_port()
+            .build();
+        if let Err(e) = swarm.dial(opts) {
+            log::debug!("Could not dial {peer_id} via relay {via_relay}: {e}");
+        }
+    }
+}
+
+fn reserve_relay(swarm: &mut Swarm<Behaviour>, circuit: &Multiaddr) -> Option<ListenerId> {
+    match swarm.listen_on(circuit.clone()) {
+        Ok(listener_id) => {
+            log::info!("Requesting relay reservation via {circuit}");
+            Some(listener_id)
+        }
+        Err(e) => {
+            log::debug!("Could not listen on relay circuit {circuit}: {e}");
+            None
+        }
+    }
+}
+
+fn tcp_and_quic(host: Multiaddr) -> [Multiaddr; 2] {
+    [
+        host.clone().with(Protocol::Tcp(DEFAULT_SEED_PORT)),
+        host.with(Protocol::Udp(DEFAULT_SEED_PORT))
+            .with(Protocol::QuicV1),
+    ]
+}
+
+/// Once a peer is reachable directly, drop its relayed connections to free relay circuits,
+/// then wake whoever is waiting for a link.
+/// If hole punching does not deliver a direct connection in time, waiters get the relayed one.
+fn settle_connections(
+    swarm: &mut Swarm<Behaviour>,
+    connections: &PeerConnections,
+    link_waiters: &mut HashMap<PeerId, Vec<oneshot::Sender<()>>>,
+    relay_pins: &HashMap<PeerId, usize>,
+    peer_id: &PeerId,
+) {
+    let pinned = relay_pins.contains_key(peer_id);
+    match link_state(connections, peer_id, pinned, Instant::now()) {
+        LinkState::Missing | LinkState::Punching => {}
+        LinkState::Closing(relayed) => {
+            for connection_id in relayed {
+                swarm.close_connection(connection_id);
+            }
+        }
+        state @ (LinkState::Direct | LinkState::Relayed) => {
+            if let Some(waiters) = link_waiters.remove(peer_id) {
+                log::info!("Co-op link to {peer_id} ready: {state:?}");
+                for waiter in waiters {
+                    let _ = waiter.send(());
+                }
+            }
+        }
+    }
+}
+
+/// Pins the peer's relayed connections for as long as it lives.
+struct RelayPin {
+    peer_id: PeerId,
+    commands: mpsc::Sender<SwarmCommand>,
+}
+
+impl RelayPin {
+    fn new(peer_id: PeerId, commands: mpsc::Sender<SwarmCommand>) -> Self {
+        let _ = commands.try_send(SwarmCommand::PinRelay { peer_id });
+        Self { peer_id, commands }
+    }
+}
+
+impl Drop for RelayPin {
+    fn drop(&mut self) {
+        let _ = self.commands.try_send(SwarmCommand::UnpinRelay {
+            peer_id: self.peer_id,
+        });
+    }
+}
+
 pub struct NetworkHandler {
     local_keypair: Keypair,
     pub connected_peers_count: usize,
@@ -165,6 +316,20 @@ pub struct NetworkHandler {
     /// relay reservations), so without this guard we would re-dial everyone many
     /// times over and collide on the reused TCP source port.
     initial_dial_done: bool,
+    stream_control: Option<libp2p_stream::Control>,
+    known_peers_dialed_at: HashMap<PeerId, Instant>,
+}
+
+impl Debug for NetworkHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NetworkHandler")
+            .field("own_peer_id", &self.own_peer_id)
+            .field("connected_peers_count", &self.connected_peers_count)
+            .field("seed_addresses", &self.seed_addresses)
+            .field("swarm_status", &self.swarm_status)
+            .field("initial_dial_done", &self.initial_dial_done)
+            .finish_non_exhaustive()
+    }
 }
 
 impl NetworkHandler {
@@ -173,6 +338,7 @@ impl NetworkHandler {
         tcp_port: u16,
         use_ipv4: bool,
         use_ipv6: bool,
+        stream: libp2p_stream::Behaviour,
     ) -> AppResult<Swarm<Behaviour>> {
         // To content-address message, we can take the hash of message and use it as an ID.
         let message_id_fn = |message: &gossipsub::Message| {
@@ -226,8 +392,27 @@ impl NetworkHandler {
                 relay_client,
                 dcutr: dcutr::Behaviour::new(peer_id),
                 autonat_client: autonat::v2::client::Behaviour::default(),
+                stream,
                 #[cfg(feature = "relayer")]
-                relay_server: relay::Behaviour::new(peer_id, relay::Config::default()),
+                relay_server: relay::Behaviour::new(
+                    peer_id,
+                    relay::Config {
+                        max_circuits: 256,
+                        max_circuits_per_peer: 32,
+                        max_circuit_duration: Duration::from_secs(2 * 60 * 60),
+                        max_circuit_bytes: 1 << 30,
+                        circuit_src_rate_limiters: vec![],
+                        ..Default::default()
+                    }
+                    .circuit_src_per_peer(
+                        std::num::NonZeroU32::new(120).expect("120 > 0"),
+                        Duration::from_secs(5),
+                    )
+                    .circuit_src_per_ip(
+                        std::num::NonZeroU32::new(600).expect("600 > 0"),
+                        Duration::from_secs(1),
+                    ),
+                ),
                 #[cfg(feature = "relayer")]
                 autonat_server: autonat::v2::server::Behaviour::default(),
             })?
@@ -283,27 +468,26 @@ impl NetworkHandler {
             seed_addresses: vec![],
             swarm_status: SwarmStatus::Uninitialized,
             initial_dial_done: false,
+            stream_control: None,
+            known_peers_dialed_at: HashMap::new(),
         }
     }
 
     pub fn new(seed_node_ip: Option<&String>) -> AppResult<Self> {
         let local_keypair = identity::Keypair::generate_ed25519();
-        let mut seed_addresses = vec![
-            format!("/dns4/{DEFAULT_SEED_URL}/tcp/{DEFAULT_SEED_PORT}")
-                .parse()
-                .expect("Invalid default seed address."),
-            format!("/ip6/{DEFAULT_SEED_IPV6}/tcp/{DEFAULT_SEED_PORT}")
-                .parse()
-                .expect("Invalid provided seed ip."),
+        let mut seed_hosts = vec![
+            Multiaddr::empty().with(Protocol::Dns4(DEFAULT_SEED_URL.into())),
+            Multiaddr::from(
+                DEFAULT_SEED_IPV6
+                    .parse::<IpAddr>()
+                    .expect("Invalid default seed ip."),
+            ),
         ];
-
-        if let Some(ip) = seed_node_ip {
-            if let Ok(address) = format!("/ip4/{ip}/tcp/{DEFAULT_SEED_PORT}").parse() {
-                seed_addresses.push(address);
-            } else if let Ok(address) = format!("/ip6/{ip}/tcp/{DEFAULT_SEED_PORT}").parse() {
-                seed_addresses.push(address);
-            }
+        if let Some(ip) = seed_node_ip.and_then(|ip| ip.parse::<IpAddr>().ok()) {
+            seed_hosts.push(Multiaddr::from(ip));
         }
+        let seed_addresses: Vec<Multiaddr> =
+            seed_hosts.into_iter().flat_map(tcp_and_quic).collect();
 
         log::info!(
             "Network handler created with {} seed addresses.",
@@ -319,6 +503,8 @@ impl NetworkHandler {
             seed_addresses,
             swarm_status: SwarmStatus::Uninitialized,
             initial_dial_done: false,
+            stream_control: None,
+            known_peers_dialed_at: HashMap::new(),
         })
     }
 
@@ -353,30 +539,77 @@ impl NetworkHandler {
     ) -> JoinHandle<()> {
         let local_keypair = self.local_keypair.clone();
         let own_peer_id = *self.own_peer_id();
-        let seed_addresses = self.seed_addresses.clone();
 
         // Sized to absorb a reconnect burst: dial_known_peers can enqueue a Dial
         // and a FindPeer per known peer at once.
         let (sender, mut receiver) = mpsc::channel(256);
 
+        let accept_commands = sender.clone();
         self.swarm_status = SwarmStatus::Ready { sender };
+
+        let stream_behaviour = libp2p_stream::Behaviour::new();
+        let mut control = stream_behaviour.new_control();
+        self.stream_control = Some(control.clone());
+        match control.accept(SPACE_ADVENTURE_PROTOCOL) {
+            Ok(mut incoming) => {
+                let accept_events = event_sender.clone();
+                let accept_token = cancellation_token.clone();
+                tokio::spawn(async move {
+                    loop {
+                        let next = tokio::select! {
+                            _ = accept_token.cancelled() => break,
+                            next = incoming.next() => next,
+                        };
+                        let Some((peer_id, stream)) = next else {
+                            break;
+                        };
+                        let pin = RelayPin::new(peer_id, accept_commands.clone());
+                        let link_id = next_link_id();
+                        let handle = spawn_link(stream, link_id, accept_events.clone(), pin);
+                        let event = AppEvent::SpaceLink(SpaceLinkEvent::Opened {
+                            link_id,
+                            peer_id,
+                            handle,
+                            inbound: true,
+                        });
+                        if accept_events.send(event).await.is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+            Err(err) => log::error!("Cannot accept space adventure streams: {err}"),
+        }
+
         let handle = tokio::spawn(async move {
-            let mut swarm =
-                if let Ok(swarm) = Self::new_swarm(local_keypair, tcp_port, use_ipv4, use_ipv6) {
-                    swarm
-                } else {
-                    return;
-                };
+            let mut swarm = if let Ok(swarm) = Self::new_swarm(
+                local_keypair,
+                tcp_port,
+                use_ipv4,
+                use_ipv6,
+                stream_behaviour,
+            ) {
+                swarm
+            } else {
+                return;
+            };
 
             assert_eq!(own_peer_id, *swarm.local_peer_id());
             let mut kad_bootstrapped = false;
-            // Whether we have already requested a relay reservation. Done once,
-            // on the first relay we see, so NATed peers get a reachable address.
-            let mut relay_reserved = false;
-            // The relay circuit base (`/<relay>/p2p/<relay-id>/p2p-circuit`) we
-            // reserved on. Appending `/p2p/<target>` gives a dialable address that
-            // reaches any peer through the relay, which DCUtR then upgrades.
+            // The relay circuit base (`/<relay>/p2p/<relay-id>/p2p-circuit`) we reserved on.
+            // Appending `/p2p/<target>` gives a dialable address that reaches any peer through the relay,
+            // which DCUtR then upgrades.
             let mut relay_circuit: Option<Multiaddr> = None;
+            // Our relay reservation. libp2p closes it when the relay connection drops,
+            // and then we have to reserve again to stay reachable.
+            let mut relay_listener: Option<ListenerId> = None;
+            let mut relay_check = tokio::time::interval(RELAY_RESERVATION_CHECK);
+            let mut dialed_addresses: HashMap<ConnectionId, Multiaddr> = HashMap::new();
+            let mut connections: PeerConnections = HashMap::new();
+            let mut link_waiters: HashMap<PeerId, Vec<oneshot::Sender<()>>> = HashMap::new();
+            let mut relay_pins: HashMap<PeerId, usize> = HashMap::new();
+            let mut link_check = tokio::time::interval(LINK_WAITER_CHECK);
+            link_check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
             loop {
                 tokio::select! {
@@ -396,12 +629,29 @@ impl NetworkHandler {
                         break;
                     }
 
+                    _ = relay_check.tick(), if relay_listener.is_none() && relay_circuit.is_some() => {
+                        relay_listener = relay_circuit
+                            .as_ref()
+                            .and_then(|circuit| reserve_relay(&mut swarm, circuit));
+                    }
+
+                    _ = link_check.tick(), if !link_waiters.is_empty() => {
+                        link_waiters.retain(|_, waiters| {
+                            waiters.retain(|waiter| !waiter.is_closed());
+                            !waiters.is_empty()
+                        });
+                        let peers = link_waiters.keys().copied().collect_vec();
+                        for peer_id in peers {
+                            settle_connections(&mut swarm, &connections, &mut link_waiters, &relay_pins, &peer_id);
+                        }
+                    }
+
                     event = swarm.select_next_some() => {
                         // Handle identify/kad events inside the swarm task
                         // where we have direct access to the swarm.
                         match &event {
                             SwarmEvent::Behaviour(BehaviourEvent::Identify(
-                                identify::Event::Received { peer_id, info, .. }
+                                identify::Event::Received { connection_id, peer_id, info, .. }
                             )) => {
                                 // Add only direct (non-circuit) routable addresses to the DHT;
                                 // circuit addresses are relay-dependent.
@@ -418,43 +668,24 @@ impl NetworkHandler {
                                     info.listen_addrs.len()
                                 );
 
-                                // If this peer is a relay and we have not reserved a slot yet,
-                                // listen on a circuit address through it so we become reachable from behind a NAT.
-                                // DCUtR then upgrades the relayed connection to a direct one.
-                                if !relay_reserved
+                                // A relay we dialed: reserve one slot through that same address,
+                                // so we become reachable from behind a NAT.
+                                if relay_listener.is_none()
                                     && info.protocols.contains(&relay::HOP_PROTOCOL_NAME)
                                 {
-                                    for seed in &seed_addresses {
-                                        let circuit = seed
-                                            .clone()
-                                            .with(Protocol::P2p(*peer_id))
-                                            .with(Protocol::P2pCircuit);
-                                        match swarm.listen_on(circuit.clone()) {
-                                            Ok(_) => {
-                                                relay_reserved = true;
-                                                if relay_circuit.is_none() {
-                                                    relay_circuit = Some(circuit.clone());
-                                                }
-                                                log::info!("Requesting relay reservation via {circuit}");
-                                            }
-                                            Err(e) => log::debug!(
-                                                "Could not listen on relay circuit {circuit}: {e}"
-                                            ),
-                                        }
+                                    if let Some(address) = dialed_addresses
+                                        .get(connection_id)
+                                        .and_then(|address| address.clone().with_p2p(*peer_id).ok())
+                                    {
+                                        let circuit = address.with(Protocol::P2pCircuit);
+                                        relay_listener = reserve_relay(&mut swarm, &circuit);
+                                        relay_circuit = Some(circuit);
                                     }
                                 }
 
-                                // Build a proper external address from the observed IP and our actual listen port.
-                                // The observed_addr contains our public IP as seen by the remote peer,
-                                // but with an ephemeral source port, not our listen port.
-                                // Using it as-is would advertise unreachable addresses.
-                                // Skip when listening on an OS-assigned ephemeral port (0):
-                                // the configured port is not our real listen port, so we must not advertise a bogus /tcp/0 external address.
-                                if tcp_port != 0 {
-                                    if let Some(ext_addr) = build_external_addr_from_observed(&info.observed_addr, tcp_port) {
-                                        log::debug!("Adding external address from observed: {ext_addr}");
-                                        swarm.add_external_address(ext_addr);
-                                    }
+                                if let Some(ext_addr) = reachable_external_addr(&info.observed_addr, tcp_port) {
+                                    log::debug!("Adding external address from observed: {ext_addr}");
+                                    swarm.add_external_address(ext_addr);
                                 }
                             }
                             SwarmEvent::Behaviour(BehaviourEvent::AutonatClient(
@@ -482,9 +713,8 @@ impl NetworkHandler {
                                 // has supplied addresses for it (self-healing reconnection).
                                 if let Ok(target) = PeerId::from_bytes(&ok.key) {
                                     if target != own_peer_id {
-                                        // New port, not the reused listen port: avoids
-                                        // EADDRINUSE on redundant dials (reuse is only for
-                                        // DCUtR, which sets its own DialOpts).
+                                        // New port, not the reused listen port: avoids EADDRINUSE on redundant dials.
+                                        // Reuse is only for seeds and DCUtR.
                                         let _ = swarm.dial(
                                             DialOpts::peer_id(target).allocate_new_port().build(),
                                         );
@@ -498,22 +728,52 @@ impl NetworkHandler {
                                     }
                                 }
                             }
-                            SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
-                                let kind = if is_relay_circuit(endpoint.get_remote_address()) {
-                                    "relayed"
-                                } else {
-                                    "direct"
-                                };
+                            SwarmEvent::ConnectionEstablished { peer_id, connection_id, endpoint, .. } => {
+                                let relayed = endpoint.is_relayed();
+                                let kind = if relayed { "relayed" } else { "direct" };
                                 log::info!(
                                     "Connection established with {peer_id} ({kind}): {}",
                                     endpoint.get_remote_address()
                                 );
+                                if let ConnectedPoint::Dialer { address, .. } = endpoint {
+                                    if !relayed {
+                                        dialed_addresses.insert(*connection_id, address.clone());
+                                    }
+                                }
+                                connections
+                                    .entry(*peer_id)
+                                    .or_default()
+                                    .push((*connection_id, relayed.then(Instant::now)));
+                                settle_connections(&mut swarm, &connections, &mut link_waiters, &relay_pins, peer_id);
                                 if !kad_bootstrapped
                                     && swarm.behaviour_mut().kademlia.bootstrap().is_ok()
                                 {
                                     kad_bootstrapped = true;
                                     log::info!("Kademlia bootstrap initiated");
                                 }
+                            }
+                            SwarmEvent::ConnectionClosed { peer_id, connection_id, endpoint, cause, .. } => {
+                                let kind = if endpoint.is_relayed() { "relayed" } else { "direct" };
+                                log::info!("Connection closed with {peer_id} ({kind}): {cause:?}");
+                                dialed_addresses.remove(connection_id);
+                                if let Some(list) = connections.get_mut(peer_id) {
+                                    list.retain(|(id, _)| id != connection_id);
+                                    if list.is_empty() {
+                                        connections.remove(peer_id);
+                                    }
+                                }
+                                settle_connections(&mut swarm, &connections, &mut link_waiters, &relay_pins, peer_id);
+                            }
+                            SwarmEvent::ListenerClosed { listener_id, reason, .. }
+                                if relay_listener == Some(*listener_id) =>
+                            {
+                                relay_listener = None;
+                                log::info!("Relay reservation closed: {reason:?}");
+                            }
+                            SwarmEvent::OutgoingConnectionError { peer_id: Some(peer_id), error, .. }
+                                if link_waiters.contains_key(peer_id) =>
+                            {
+                                log::info!("Dial to {peer_id} failed while waiting for a co-op link: {error}");
                             }
                             _ => {}
                         }
@@ -534,29 +794,39 @@ impl NetworkHandler {
                                         log::error!("Swarm send error: {e}");
                                     }
                             }
-                            SwarmCommand::Dial { address } => {
-                                log::debug!("Dialing address: {address}");
-                                // New port (see FindPeer dial): avoids EADDRINUSE.
-                                let opts = DialOpts::unknown_peer_id()
-                                    .address(address.clone())
-                                    .allocate_new_port()
-                                    .build();
-                                if let Err(e) = swarm.dial(opts) {
-                                    log::error!("Swarm dial error for {address}: {e}");
+                            SwarmCommand::Dial(opts) => match swarm.dial(opts) {
+                                Err(e @ DialError::DialPeerConditionFalse(_)) => {
+                                    log::debug!("Not dialing: {e}")
+                                }
+                                Err(e) => log::error!("Swarm dial error: {e}"),
+                                Ok(()) => {}
+                            },
+                            SwarmCommand::FindPeer { peer_id } => {
+                                if !swarm.is_connected(&peer_id) {
+                                    log::debug!("Looking up peer {peer_id} in the DHT");
+                                    find_peer(&mut swarm, relay_circuit.as_ref(), peer_id);
                                 }
                             }
-                            SwarmCommand::FindPeer { peer_id } => {
-                                log::debug!("Looking up peer {peer_id} in the DHT");
-                                swarm.behaviour_mut().kademlia.get_closest_peers(peer_id);
-                                // Also reach the peer through the relay circuit; DCUtR then upgrades the relayed connection to a direct one.
-                                if let Some(base) = &relay_circuit {
-                                    let via_relay = base.clone().with(Protocol::P2p(peer_id));
-                                    let opts = DialOpts::unknown_peer_id()
-                                        .address(via_relay.clone())
-                                        .allocate_new_port()
-                                        .build();
-                                    if let Err(e) = swarm.dial(opts) {
-                                        log::debug!("Could not dial {peer_id} via relay {via_relay}: {e}");
+                            SwarmCommand::EnsureLink { peer_id, reply } => {
+                                link_waiters.entry(peer_id).or_default().push(reply);
+                                let pinned = relay_pins.contains_key(&peer_id);
+                                let state = link_state(&connections, &peer_id, pinned, Instant::now());
+                                log::info!("Waiting for a co-op link to {peer_id}: {state:?}");
+                                if state == LinkState::Missing {
+                                    find_peer(&mut swarm, relay_circuit.as_ref(), peer_id);
+                                } else {
+                                    settle_connections(&mut swarm, &connections, &mut link_waiters, &relay_pins, &peer_id);
+                                }
+                            }
+                            SwarmCommand::PinRelay { peer_id } => {
+                                *relay_pins.entry(peer_id).or_default() += 1;
+                            }
+                            SwarmCommand::UnpinRelay { peer_id } => {
+                                if let Some(pins) = relay_pins.get_mut(&peer_id) {
+                                    *pins -= 1;
+                                    if *pins == 0 {
+                                        relay_pins.remove(&peer_id);
+                                        settle_connections(&mut swarm, &connections, &mut link_waiters, &relay_pins, &peer_id);
                                     }
                                 }
                             }
@@ -567,6 +837,31 @@ impl NetworkHandler {
         });
 
         handle
+    }
+
+    pub fn connect_space_link(
+        &self,
+        peer_id: PeerId,
+        join: SessionMessage,
+        events: mpsc::Sender<AppEvent>,
+    ) -> AppResult<LinkId> {
+        let SwarmStatus::Ready { sender } = &self.swarm_status else {
+            return Err(anyhow!("Network is not running"));
+        };
+        let control = self
+            .stream_control
+            .clone()
+            .ok_or_else(|| anyhow!("Network is not running"))?;
+        let link_id = next_link_id();
+        tokio::spawn(connect_space_link_task(
+            control,
+            sender.clone(),
+            peer_id,
+            join,
+            events,
+            link_id,
+        ));
+        Ok(link_id)
     }
 
     fn _send(&self, data: &NetworkData) -> AppResult<()> {
@@ -583,35 +878,34 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub fn dial_seed(&mut self) -> AppResult<()> {
-        match &self.swarm_status {
-            SwarmStatus::Uninitialized => {}
-            SwarmStatus::Ready { sender } => {
-                for address in self.seed_addresses.iter() {
-                    sender.try_send(SwarmCommand::Dial {
-                        address: address.clone(),
-                    })?;
-                }
-            }
+    fn send_command(&self, command: SwarmCommand) -> AppResult<()> {
+        if let SwarmStatus::Ready { sender } = &self.swarm_status {
+            sender.try_send(command)?;
         }
+        Ok(())
+    }
 
+    pub fn dial_seed(&mut self) -> AppResult<()> {
+        // Seeds keep the listen port so identify reports the NAT mapping DCUtR needs;
+        // other dials take a new port to avoid EADDRINUSE on duplicate 4-tuples.
+        for address in self.seed_addresses.iter() {
+            let opts = DialOpts::unknown_peer_id().address(address.clone()).build();
+            self.send_command(SwarmCommand::Dial(opts))?;
+        }
         Ok(())
     }
 
     pub fn dial_address(&mut self, address: Multiaddr) -> AppResult<()> {
-        match &self.swarm_status {
-            SwarmStatus::Uninitialized => {}
-            SwarmStatus::Ready { sender } => {
-                sender.try_send(SwarmCommand::Dial { address })?;
-            }
-        }
-
-        Ok(())
+        let opts = DialOpts::unknown_peer_id()
+            .address(address)
+            .allocate_new_port()
+            .build();
+        self.send_command(SwarmCommand::Dial(opts))
     }
 
-    /// Dial every known peer address (skipping our own). Used at startup and when
-    /// reconnecting after losing all connections, so that the relayer is not the
-    /// only way back into the network.
+    /// Dial every known peer address (skipping our own).
+    /// Used at startup and when reconnecting after losing all connections,
+    /// so that the relayer is not the only way back into the network.
     pub fn dial_known_peers(
         &mut self,
         peer_addresses: &HashMap<PeerId, Multiaddr>,
@@ -621,14 +915,17 @@ impl NetworkHandler {
             if *peer_id == own_peer_id {
                 continue;
             }
+            self.known_peers_dialed_at.insert(*peer_id, Instant::now());
             // Try the last known direct address. Skip relay-circuit addresses:
             // sanitize_addr strips the relay PeerId they need, so they are not
             // dialable; NATed peers are reached via the derived circuit in find_peer.
-            if let Some(clean) = sanitize_addr(address) {
-                if !is_relay_circuit(&clean) {
-                    if let Err(e) = self.dial_address(clean.clone()) {
-                        log::warn!("dial_known_peers: failed to dial {peer_id} at {clean}: {e}");
-                    }
+            if let Some(clean) = sanitize_addr(address).filter(|addr| !is_relay_circuit(addr)) {
+                let opts = DialOpts::peer_id(*peer_id)
+                    .addresses(vec![clean.clone()])
+                    .allocate_new_port()
+                    .build();
+                if let Err(e) = self.send_command(SwarmCommand::Dial(opts)) {
+                    log::warn!("dial_known_peers: failed to dial {peer_id} at {clean}: {e}");
                 }
             }
             // Also resolve the peer through the DHT: this recovers a current address
@@ -653,15 +950,26 @@ impl NetworkHandler {
         Ok(())
     }
 
+    /// Seed info arrives whenever anyone joins: dial its peers again, each at most once per interval.
+    pub fn redial_known_peers(
+        &mut self,
+        peer_addresses: &HashMap<PeerId, Multiaddr>,
+    ) -> AppResult<()> {
+        let due = peer_addresses
+            .iter()
+            .filter(|(peer_id, _)| {
+                self.known_peers_dialed_at
+                    .get(*peer_id)
+                    .is_none_or(|at| at.elapsed() >= KNOWN_PEER_REDIAL_INTERVAL)
+            })
+            .map(|(peer_id, address)| (*peer_id, address.clone()))
+            .collect();
+        self.dial_known_peers(&due)
+    }
+
     /// Ask the swarm to resolve a peer through the Kademlia DHT and dial it.
     pub fn find_peer(&mut self, peer_id: PeerId) -> AppResult<()> {
-        match &self.swarm_status {
-            SwarmStatus::Uninitialized => {}
-            SwarmStatus::Ready { sender } => {
-                sender.try_send(SwarmCommand::FindPeer { peer_id })?;
-            }
-        }
-        Ok(())
+        self.send_command(SwarmCommand::FindPeer { peer_id })
     }
 
     pub fn send_message(
@@ -1099,18 +1407,83 @@ impl NetworkHandler {
     }
 }
 
+async fn connect_space_link_task(
+    mut control: libp2p_stream::Control,
+    commands: mpsc::Sender<SwarmCommand>,
+    peer_id: PeerId,
+    join: SessionMessage,
+    events: mpsc::Sender<AppEvent>,
+    link_id: LinkId,
+) {
+    let connect = async {
+        let mut retry_delay = STREAM_RETRY_DELAY;
+        loop {
+            let (reply, ready) = oneshot::channel();
+            commands
+                .send(SwarmCommand::EnsureLink { peer_id, reply })
+                .await
+                .map_err(|_| "network stopped")?;
+            ready.await.map_err(|_| "no connection")?;
+            match control.open_stream(peer_id, SPACE_ADVENTURE_PROTOCOL).await {
+                Ok(stream) => return Ok(stream),
+                Err(libp2p_stream::OpenStreamError::UnsupportedProtocol(_)) => {
+                    return Err("host does not support co-op")
+                }
+                Err(err) => {
+                    log::info!("Space link {link_id}: could not open stream, retrying: {err}");
+                    tokio::time::sleep(retry_delay).await;
+                    retry_delay = (retry_delay * 2).min(MAX_STREAM_RETRY_DELAY);
+                }
+            }
+        }
+    };
+
+    let stream = match tokio::time::timeout(CONNECT_TIMEOUT, connect)
+        .await
+        .unwrap_or(Err("no connection in time"))
+    {
+        Ok(stream) => stream,
+        Err(reason) => {
+            let _ = events
+                .send(AppEvent::SpaceLink(SpaceLinkEvent::Closed {
+                    link_id,
+                    reason: reason.to_string(),
+                }))
+                .await;
+            return;
+        }
+    };
+
+    let pin = RelayPin::new(peer_id, commands);
+    let handle = spawn_link(stream, link_id, events.clone(), pin);
+    let opened = AppEvent::SpaceLink(SpaceLinkEvent::Opened {
+        link_id,
+        peer_id,
+        handle: handle.clone(),
+        inbound: false,
+    });
+    if events.send(opened).await.is_ok() {
+        handle.send_control(join);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::TOPIC;
     use crate::{
         app::App,
-        core::{constants::NETWORK_GAME_START_DELAY, types::TeamLocation, world::World},
+        core::{
+            constants::NETWORK_GAME_START_DELAY, types::TeamLocation, world::World, TickInterval,
+            HOURS,
+        },
+        game_engine::{Tournament, TournamentType},
         network::{
+            challenge::Challenge,
             network_callback::NetworkCallback,
             types::{NetworkData, NetworkRequestState, NetworkTeam},
         },
         store::{deserialize, serialize},
-        types::{AppResult, HashMapWithResult, SystemTimeTick, Tick},
+        types::{AppResult, GameMap, GameSummaryMap, HashMapWithResult, SystemTimeTick, Tick},
         ui::UiCallback,
     };
     use anyhow::anyhow;
@@ -1121,37 +1494,158 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    #[test]
-    fn test_network_challenge_success() -> AppResult<()> {
-        let topic = IdentTopic::new(TOPIC);
+    fn deliver_tournament(app: &mut App, tournament: &Tournament) -> AppResult<Option<String>> {
+        deliver(
+            app,
+            &NetworkData::Tournament {
+                timestamp: Tick::now(),
+                tournament: tournament.clone(),
+            },
+        )
+    }
 
+    fn started_cup(organizer: &App, started_hours_ago: u64) -> AppResult<Tournament> {
+        let organizer_team = organizer.world.get_own_team()?;
+        let planet = organizer
+            .world
+            .planets
+            .get_or_err(&organizer_team.home_planet_id)?;
+        let mut tournament =
+            Tournament::new(organizer_team, TournamentType::Cup)?.on_planet(planet);
+        tournament.participants = Tournament::test(4, 4).participants;
+        for team in tournament.participants.values_mut() {
+            team.peer_id = Some(PeerId::random());
+        }
+        tournament.registrations_closing_at = Tick::now() - started_hours_ago * HOURS;
+        Ok(tournament)
+    }
+
+    #[test]
+    fn test_late_spectator_replays_the_tournament_games() -> AppResult<()> {
+        let (organizer, mut spectator) = paired_apps()?;
+        let mut tournament = started_cup(&organizer, 24)?;
+
+        let mut games = GameMap::new();
+        for mut game in tournament.initialize() {
+            game.catch_up(Tick::now());
+            games.insert(game.id, game);
+        }
+        for mut game in
+            tournament.generate_next_games(Tick::now(), &games, &GameSummaryMap::new())?
+        {
+            game.catch_up(Tick::now());
+            games.insert(game.id, game);
+        }
+        assert_eq!(games.len(), 3);
+        assert!(games.values().all(|game| game.has_ended()));
+
+        deliver_tournament(&mut spectator, &tournament)?;
+        for step in 1..=5 {
+            spectator
+                .world
+                .handle_slow_tick_events(Tick::now() + step * TickInterval::SHORT)?;
+        }
+
+        for (game_id, game) in games.iter() {
+            let spectator_winner = match spectator.world.past_games.get(game_id) {
+                Some(summary) => summary.winner,
+                None => spectator.world.games.get_or_err(game_id)?.winner,
+            };
+            assert_eq!(spectator_winner, game.winner);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_tournament_from_another_version_is_ignored() -> AppResult<()> {
+        let (organizer, mut spectator) = paired_apps()?;
+        let tournament = started_cup(&organizer, 1)?;
+
+        let mut other_version = serde_json::to_value(&tournament)?;
+        other_version["app_version"] = serde_json::json!([0, 0, 1]);
+        let other_version: Tournament = serde_json::from_value(other_version)?;
+        deliver_tournament(&mut spectator, &other_version)?;
+        assert!(!spectator.world.tournaments.contains_key(&tournament.id));
+
+        deliver_tournament(&mut spectator, &tournament)?;
+        assert!(spectator.world.tournaments.contains_key(&tournament.id));
+        Ok(())
+    }
+
+    #[test]
+    fn test_initialized_supercup_fits_in_one_message() -> AppResult<()> {
+        let mut tournament = Tournament::test(8, 8);
+        tournament.registrations_closing_at = 0;
+        tournament.initialize();
+
+        let size = serialize(&NetworkData::Tournament {
+            timestamp: Tick::now(),
+            tournament,
+        })?
+        .len();
+        assert!(
+            size < 60 * 1024,
+            "initialized Supercup message is {size} bytes"
+        );
+        Ok(())
+    }
+
+    // Two apps that know each other's team and sit on the same planet,
+    // so app1 can challenge app2.
+    fn paired_apps() -> AppResult<(App, App)> {
         let mut app1 = App::test_with_network_handler()?;
         let mut app2 = App::test_with_network_handler()?;
 
-        let proposer_peer_id = app1.network_handler.own_peer_id().clone();
-        let target_peer_id = app2.network_handler.own_peer_id().clone();
+        let proposer_peer_id = *app1.network_handler.own_peer_id();
+        let target_peer_id = *app2.network_handler.own_peer_id();
 
-        // Add other team by hand
         let mut own_team1 = app1.world.get_own_team()?.clone();
         own_team1.peer_id = Some(proposer_peer_id);
         let planet_id = own_team1.home_planet_id;
         for player_id in own_team1.player_ids.iter() {
-            let player = app1.world.players.get(&player_id).unwrap();
-            app2.world.players.insert(player_id.clone(), player.clone());
+            let player = app1.world.players.get(player_id).unwrap();
+            app2.world.players.insert(*player_id, player.clone());
         }
         app2.world.teams.insert(own_team1.id, own_team1);
 
         let mut own_team2 = app2.world.get_own_team()?.clone();
         own_team2.peer_id = Some(target_peer_id);
-        // Override current location to ensure challenge is possible
         own_team2.current_location = TeamLocation::OnPlanet { planet_id };
-
         for player_id in own_team2.player_ids.iter() {
-            let player = app2.world.players.get(&player_id).unwrap();
-            app1.world.players.insert(player_id.clone(), player.clone());
+            let player = app2.world.players.get(player_id).unwrap();
+            app1.world.players.insert(*player_id, player.clone());
         }
         app1.world.teams.insert(own_team2.id, own_team2.clone());
         app2.world.teams.insert(own_team2.id, own_team2);
+
+        Ok((app1, app2))
+    }
+
+    fn deliver(app: &mut App, data: &NetworkData) -> AppResult<Option<String>> {
+        let message = Message {
+            source: None,
+            data: serialize(data)?,
+            sequence_number: None,
+            topic: IdentTopic::new(TOPIC).into(),
+        };
+        NetworkCallback::HandleMessage { message }.call(app)
+    }
+
+    fn deliver_challenge(app: &mut App, challenge: Challenge) -> AppResult<Option<String>> {
+        deliver(
+            app,
+            &NetworkData::Challenge {
+                timestamp: Tick::now(),
+                challenge,
+            },
+        )
+    }
+
+    #[test]
+    fn test_network_challenge_success() -> AppResult<()> {
+        let topic = IdentTopic::new(TOPIC);
+
+        let (mut app1, mut app2) = paired_apps()?;
 
         let cb = UiCallback::ChallengeTeam {
             team_id: app2.world.own_team_id,
@@ -1274,6 +1768,55 @@ mod tests {
         Ok(())
     }
 
+    // Once the game an accept produced is over, a repeat of that accept must not start another one.
+    #[test]
+    fn test_syn_ack_without_outstanding_challenge_creates_no_game() -> AppResult<()> {
+        let (mut app1, mut app2) = paired_apps()?;
+
+        UiCallback::ChallengeTeam {
+            team_id: app2.world.own_team_id,
+        }
+        .call(&mut app1)?;
+        let syn = app1
+            .world
+            .get_own_team()?
+            .sent_challenges
+            .get(&app2.world.own_team_id)
+            .unwrap()
+            .clone();
+        deliver_challenge(&mut app2, syn)?;
+        let received = app2
+            .world
+            .get_own_team()?
+            .received_challenges
+            .get(&app1.world.own_team_id)
+            .unwrap()
+            .clone();
+        UiCallback::AcceptChallenge {
+            challenge: received.clone(),
+        }
+        .call(&mut app2)?;
+
+        let mut syn_ack = received;
+        syn_ack.state = NetworkRequestState::SynAck;
+        deliver_challenge(&mut app1, syn_ack.clone())?;
+        let first_game = app1
+            .world
+            .get_own_team()?
+            .current_game
+            .expect("Accepted challenge should start a game");
+
+        app1.world.games.remove(&first_game);
+        app1.world.get_own_team_mut()?.current_game = None;
+        let games_before = app1.world.games.len();
+
+        let _ = deliver_challenge(&mut app1, syn_ack);
+
+        assert!(app1.world.get_own_team()?.current_game.is_none());
+        assert_eq!(app1.world.games.len(), games_before);
+        Ok(())
+    }
+
     #[test]
     fn test_send_own_team() -> AppResult<()> {
         let mut world = World::new(None);
@@ -1312,6 +1855,81 @@ mod tests {
             _ => return Err(anyhow!("Invalid NetworkData deserialization")),
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_link_state_prefers_direct_and_falls_back_to_relay() {
+        use super::{link_state, LinkState, HOLE_PUNCH_GRACE};
+        use libp2p::{swarm::ConnectionId, PeerId};
+        use std::collections::HashMap;
+        use std::time::Instant;
+
+        let peer = PeerId::random();
+        let direct = ConnectionId::new_unchecked(1);
+        let relayed = ConnectionId::new_unchecked(2);
+        let now = Instant::now();
+        let mut connections = HashMap::new();
+        assert_eq!(
+            link_state(&connections, &peer, false, now),
+            LinkState::Missing
+        );
+
+        connections.insert(peer, vec![(relayed, Some(now))]);
+        assert_eq!(
+            link_state(&connections, &peer, false, now),
+            LinkState::Punching
+        );
+        assert_eq!(
+            link_state(&connections, &peer, false, now + HOLE_PUNCH_GRACE),
+            LinkState::Relayed
+        );
+
+        connections.insert(peer, vec![(relayed, Some(now)), (direct, None)]);
+        assert_eq!(
+            link_state(&connections, &peer, false, now),
+            LinkState::Closing(vec![relayed])
+        );
+        assert_eq!(
+            link_state(&connections, &peer, true, now),
+            LinkState::Direct
+        );
+
+        connections.insert(peer, vec![(direct, None)]);
+        assert_eq!(
+            link_state(&connections, &peer, false, now),
+            LinkState::Direct
+        );
+    }
+
+    #[test]
+    fn test_custom_seed_gets_tcp_and_quic_addresses() -> AppResult<()> {
+        use super::NetworkHandler;
+
+        for (ip, family) in [("10.0.0.2", "ip4"), ("fd00::2", "ip6")] {
+            let handler = NetworkHandler::new(Some(&ip.to_string()))?;
+            let addresses = handler
+                .seed_addresses
+                .iter()
+                .map(|address| address.to_string())
+                .collect::<Vec<_>>();
+            assert!(addresses.contains(&format!("/{family}/{ip}/tcp/37201")));
+            assert!(addresses.contains(&format!("/{family}/{ip}/udp/37201/quic-v1")));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_external_addr_needs_the_listen_port_observed() -> AppResult<()> {
+        use super::reachable_external_addr;
+        use libp2p::Multiaddr;
+
+        let kept: Multiaddr = "/ip4/92.211.0.101/tcp/37202".parse()?;
+        assert_eq!(reachable_external_addr(&kept, 37202), Some(kept.clone()));
+
+        let remapped: Multiaddr = "/ip4/92.211.0.101/tcp/4930".parse()?;
+        assert_eq!(reachable_external_addr(&remapped, 37202), None);
+        assert_eq!(reachable_external_addr(&kept, 0), None);
         Ok(())
     }
 }

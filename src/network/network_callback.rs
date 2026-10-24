@@ -5,7 +5,6 @@ use super::types::{NetworkData, NetworkGame, NetworkRequestState, NetworkTeam, S
 use crate::app_version;
 use crate::core::constants::NETWORK_GAME_START_DELAY;
 use crate::core::{Team, TournamentRegistrationState, World, MAX_AVG_TIREDNESS_PER_AUTO_GAME};
-use crate::game_engine::game::GameSummary;
 use crate::game_engine::types::TeamInGame;
 use crate::game_engine::{Tournament, TournamentId, TournamentState};
 use crate::network::types::{ChatHistoryEntry, TournamentRequestState};
@@ -624,6 +623,13 @@ impl NetworkCallback {
                 ));
             }
 
+            // Every client simulates the games itself, so only the same version gets the same results.
+            if app.world.canceled_tournaments.contains(&tournament.id)
+                || tournament.app_version() != app_version()
+            {
+                return Ok(None);
+            }
+
             if tournament.state(Tick::now()) == TournamentState::Registration
                 && !app.world.tournaments.contains_key(&tournament.id)
             {
@@ -665,7 +671,7 @@ impl NetworkCallback {
                 } else {
                     tournament.is_initialized()
                         || tournament.is_canceled()
-                        || tournament.registered_teams.len() > previous_t.registered_teams.len()
+                        || tournament.registered_team_count() > previous_t.registered_team_count()
                 }
             } else {
                 true
@@ -673,15 +679,15 @@ impl NetworkCallback {
 
             if received_tournament_is_latest {
                 if !tournament.is_canceled() {
-                    // We move tournament games to world to be able to simulate them.
-                    // FIXME: the games in the tournament are not updated to be ended or anything...
-                    for game in tournament.games.iter() {
-                        if game.has_ended() && !app.world.past_games.contains_key(&game.id) {
+                    // Rebuild the games we don't have yet: the world simulates them up to now,
+                    // so a tournament received after it started is followed like any other.
+                    for record in tournament.games.iter() {
+                        if !app.world.past_games.contains_key(&record.id)
+                            && !app.world.games.contains_key(&record.id)
+                        {
                             app.world
-                                .past_games
-                                .insert(game.id, GameSummary::from_game(game));
-                        } else if !game.has_ended() && !app.world.games.contains_key(&game.id) {
-                            app.world.games.insert(game.id, game.clone());
+                                .games
+                                .insert(record.id, tournament.build_game(record)?);
                         }
                     }
                 }
@@ -752,7 +758,7 @@ impl NetworkCallback {
             // Dial the peers advertised by the seed.
             //  We only dial here; addresses are persisted once a connection actually succeeds.
             app.network_handler
-                .dial_known_peers(&seed_info.network_store_data.peer_addresses)?;
+                .redial_known_peers(&seed_info.network_store_data.peer_addresses)?;
             Ok(None)
         })
     }
@@ -1081,6 +1087,18 @@ impl NetworkCallback {
                         ));
                     }
 
+                    if !app
+                        .world
+                        .get_own_team()?
+                        .sent_challenges
+                        .contains_key(&challenge.away_team_in_game.team_id)
+                    {
+                        return Err(anyhow!(
+                            "No outstanding challenge to {}",
+                            challenge.away_team_in_game.name
+                        ));
+                    }
+
                     let mut handle_syn_ack = || -> AppResult<()> {
                         let mut home_team_in_game = TeamInGame::from_team_id(
                             &app.world.own_team_id,
@@ -1375,5 +1393,33 @@ impl NetworkCallback {
                 Ok(None)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NetworkCallback;
+    use crate::app::App;
+    use crate::core::constants::HOURS;
+    use crate::game_engine::Tournament;
+    use crate::types::{AppResult, SystemTimeTick, Tick};
+
+    // A tournament this client has already cancelled and dropped keeps being
+    // rebroadcast by peers; it must not come back.
+    #[test]
+    fn test_rebroadcast_of_canceled_tournament_is_ignored() -> AppResult<()> {
+        let mut app = App::test_default()?;
+        let mut tournament = Tournament::test(2, 4);
+        tournament.registrations_closing_at = Tick::now() - HOURS;
+
+        NetworkCallback::handle_tournament_topic(tournament.clone())(&mut app)?;
+        assert!(app.world.tournaments.contains_key(&tournament.id));
+
+        app.world.tournaments.remove(&tournament.id);
+        app.world.canceled_tournaments.insert(tournament.id);
+
+        NetworkCallback::handle_tournament_topic(tournament.clone())(&mut app)?;
+        assert!(!app.world.tournaments.contains_key(&tournament.id));
+        Ok(())
     }
 }

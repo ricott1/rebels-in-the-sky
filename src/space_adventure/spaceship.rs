@@ -1,6 +1,7 @@
 use super::collisions::HitBox;
 use super::core_constants::{FUEL_CONSUMPTION_PER_UNIT_STORAGE, SPEED_PENALTY_PER_UNIT_STORAGE};
 use super::entity::Entity;
+use super::player::ShipLoadout;
 use super::resources::Resource;
 use super::space_callback::SpaceCallback;
 use super::utils::{body_data_from_image, EntityState};
@@ -18,6 +19,7 @@ use image::{Pixel, Rgba, RgbaImage};
 use rand::seq::IndexedRandom;
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -28,6 +30,19 @@ pub enum ShooterState {
 
 impl ShooterState {
     const SHOOTING_CHARGE_COST: f32 = 2.05;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SpaceshipRole {
+    Host,
+    Guest,
+    Enemy,
+}
+
+impl SpaceshipRole {
+    pub const fn is_player(&self) -> bool {
+        !matches!(self, Self::Enemy)
+    }
 }
 
 #[derive(Debug)]
@@ -107,7 +122,7 @@ impl ChargeUnitInSpaceAdventure {
 #[derive(Debug)]
 pub struct SpaceshipEntity {
     id: usize,
-    is_player: bool,
+    role: SpaceshipRole,
     spaceship: Spaceship,
     resources: ResourceMap,
     used_storage_capacity: u32, // Not necessary, we keep it to avoid recalculating them every time.
@@ -139,9 +154,18 @@ pub struct SpaceshipEntity {
     visual_effects: VisualEffectMap,
     releasing_scraps: bool,
     pending_input_callbacks: Vec<SpaceCallback>,
+    invulnerable_for: f32,
 }
 
 impl Body for SpaceshipEntity {
+    fn position_f32(&self) -> Vec2 {
+        self.position
+    }
+
+    fn velocity_f32(&self) -> Vec2 {
+        self.velocity
+    }
+
     fn previous_position(&self) -> I16Vec2 {
         self.previous_position.as_i16vec2()
     }
@@ -155,6 +179,7 @@ impl Body for SpaceshipEntity {
     }
 
     fn update_body(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
+        self.invulnerable_for = (self.invulnerable_for - deltatime).max(0.0);
         self.tick += 1;
         self.previous_position = self.position;
 
@@ -299,6 +324,14 @@ impl Sprite for SpaceshipEntity {
         self.visual_effects.remove(effect);
     }
 
+    fn visual_effects(&self) -> Vec<(VisualEffect, f32)> {
+        self.visual_effects.iter().map(|(e, t)| (*e, *t)).collect()
+    }
+
+    fn set_visual_effects(&mut self, effects: &[(VisualEffect, f32)]) {
+        self.visual_effects = effects.iter().copied().collect();
+    }
+
     fn update_sprite(&mut self, deltatime: f32) -> Vec<SpaceCallback> {
         for (_, lifetime) in self.visual_effects.iter_mut() {
             *lifetime -= deltatime;
@@ -331,15 +364,6 @@ impl GameEntity for SpaceshipEntity {
         if !self.is_player() {
             if self.current_durability() == 0 {
                 callbacks.push(SpaceCallback::DestroyEntity { id: self.id });
-
-                if let Some(id) = self.collector_id {
-                    callbacks.push(SpaceCallback::DestroyEntity { id });
-                }
-
-                if let Some(id) = self.shield_id {
-                    callbacks.push(SpaceCallback::DestroyEntity { id });
-                }
-
                 return callbacks;
             }
 
@@ -387,7 +411,7 @@ impl GameEntity for SpaceshipEntity {
                                     position: self.position + shooter_position.as_vec2(),
                                     velocity: Vec2::X
                                         * 100.0
-                                        * if self.is_player { 1.0 } else { -1.0 },
+                                        * if self.role.is_player() { 1.0 } else { -1.0 },
                                     color: Rgba([
                                         25,
                                         125,
@@ -457,6 +481,10 @@ impl GameEntity for SpaceshipEntity {
                     callbacks.push(SpaceCallback::DestroyEntity { id });
                 }
 
+                if let Some(id) = self.shield_id {
+                    callbacks.push(SpaceCallback::DestroyEntity { id });
+                }
+
                 let color_map = self.spaceship.image.color_map;
                 let colors = [color_map.red, color_map.green, color_map.blue];
 
@@ -478,33 +506,38 @@ impl GameEntity for SpaceshipEntity {
                     });
                 }
 
-                for _ in 4..8 {
-                    callbacks.push(SpaceCallback::GenerateFragment {
-                        position,
-                        velocity: Vec2::new(
-                            rng.random_range(-3.5..3.5),
-                            rng.random_range(-3.5..3.5),
-                        ),
-                        resource: Resource::GOLD,
-                        amount: 1,
-                    });
-                }
-                for _ in 10..16 {
-                    callbacks.push(SpaceCallback::GenerateFragment {
-                        position,
-                        velocity: Vec2::new(
-                            rng.random_range(-3.5..3.5),
-                            rng.random_range(-3.5..3.5),
-                        ) * 2.0,
-                        resource: Resource::SCRAPS,
-                        amount: 2,
-                    });
+                if self.role == SpaceshipRole::Enemy {
+                    for _ in 4..8 {
+                        callbacks.push(SpaceCallback::GenerateFragment {
+                            position,
+                            velocity: Vec2::new(
+                                rng.random_range(-3.5..3.5),
+                                rng.random_range(-3.5..3.5),
+                            ),
+                            resource: Resource::GOLD,
+                            amount: 1,
+                        });
+                    }
+                    for _ in 10..16 {
+                        callbacks.push(SpaceCallback::GenerateFragment {
+                            position,
+                            velocity: Vec2::new(
+                                rng.random_range(-3.5..3.5),
+                                rng.random_range(-3.5..3.5),
+                            ) * 2.0,
+                            resource: Resource::SCRAPS,
+                            amount: 2,
+                        });
+                    }
                 }
 
                 return callbacks;
             }
 
             SpaceCallback::DamageEntity { damage, .. } => {
+                if self.invulnerable_for > 0.0 {
+                    return vec![];
+                }
                 self.add_damage(damage);
                 self.add_visual_effect(
                     VisualEffect::COLOR_MASK_LIFETIME,
@@ -548,7 +581,7 @@ impl Collider for SpaceshipEntity {
 
 impl ControllableSpaceship for SpaceshipEntity {
     fn is_player(&self) -> bool {
-        self.is_player
+        self.role.is_player()
     }
 
     fn fuel(&self) -> u32 {
@@ -642,6 +675,30 @@ impl SpaceshipEntity {
         self.shield_id
     }
 
+    pub fn role(&self) -> SpaceshipRole {
+        self.role
+    }
+
+    pub fn collector_id(&self) -> Option<usize> {
+        self.collector_id
+    }
+
+    pub fn empty_hold(&mut self) {
+        for resource in [Resource::GOLD, Resource::RUM, Resource::SCRAPS] {
+            self.resources.insert(resource, 0);
+        }
+    }
+
+    pub fn set_invulnerable(&mut self, seconds: f32) {
+        self.invulnerable_for = seconds;
+    }
+
+    #[cfg(test)]
+    pub fn set_position(&mut self, position: Vec2) {
+        self.position = position;
+        self.previous_position = position;
+    }
+
     pub fn toggle_autofire(&mut self) {
         if let Some(shooter) = self.shooter.as_mut() {
             shooter.autofire = !shooter.autofire
@@ -680,8 +737,16 @@ impl SpaceshipEntity {
         self.resources.insert(Resource::FUEL, self.fuel());
     }
 
-    const fn frame(&self) -> usize {
+    pub(crate) const fn frame(&self) -> usize {
         self.tick % self.gif.len()
+    }
+
+    pub(crate) fn set_frame(&mut self, frame: u16) {
+        self.tick = frame as usize;
+    }
+
+    pub fn display_entity(spaceship: &Spaceship, role: SpaceshipRole) -> AppResult<Entity> {
+        Self::from_spaceship(spaceship, ResourceMap::new(), 1.0, 1.0, 0, None, None, role)
     }
 
     pub fn acceleration(&self) -> I16Vec2 {
@@ -717,8 +782,9 @@ impl SpaceshipEntity {
         fuel: u32,
         collector_id: Option<usize>,
         shield_id: Option<usize>,
-        is_player: bool,
+        role: SpaceshipRole,
     ) -> AppResult<Entity> {
+        let is_player = role.is_player();
         let mut gif = vec![];
         let mut hit_boxes = vec![];
         let base_gif = spaceship.compose_image(Some(LightMaskStyle::radial()))?;
@@ -800,7 +866,7 @@ impl SpaceshipEntity {
 
         Ok(Entity::Spaceship(Self {
             id: 0,
-            is_player,
+            role,
             spaceship: spaceship.clone(),
             resources,
             used_storage_capacity,
@@ -830,27 +896,25 @@ impl SpaceshipEntity {
             visual_effects: HashMap::new(),
             releasing_scraps: false,
             pending_input_callbacks: Vec::new(),
+            invulnerable_for: 0.0,
         }))
     }
 
     pub fn player_spaceship_entity(
-        spaceship: &Spaceship,
-        resources: ResourceMap,
-        speed_bonus: f32,
-        weapons_bonus: f32,
-        fuel: u32,
+        loadout: &ShipLoadout,
         collector_id: Option<usize>,
         shield_id: Option<usize>,
+        role: SpaceshipRole,
     ) -> AppResult<Entity> {
         Self::from_spaceship(
-            spaceship,
-            resources,
-            speed_bonus,
-            weapons_bonus,
-            fuel,
+            &loadout.spaceship,
+            loadout.resources.clone(),
+            loadout.speed_bonus,
+            loadout.weapons_bonus,
+            loadout.fuel,
             collector_id,
             shield_id,
-            true,
+            role,
         )
     }
 
@@ -868,7 +932,7 @@ impl SpaceshipEntity {
             spaceship.fuel_capacity(),
             None,
             shield_id,
-            false,
+            SpaceshipRole::Enemy,
         )
     }
 }

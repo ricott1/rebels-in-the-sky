@@ -53,6 +53,8 @@ pub enum PopupMessage {
     ConfirmSpaceAdventure {
         has_shooter: bool,
         average_tiredness: f32,
+        joinable: Vec<(TeamId, String)>,
+        selected: usize,
         timestamp: Tick,
     },
     AbandonAsteroid {
@@ -124,6 +126,9 @@ impl PopupMessage {
                 }
             }
             Self::TeamLanded { .. } => (54, 26),
+            Self::ConfirmSpaceAdventure { joinable, .. } => {
+                (54, if joinable.is_empty() { 16 } else { 19 })
+            }
             _ => (48, 16),
         };
 
@@ -211,13 +216,35 @@ impl PopupMessage {
                 }
             }
 
-            Self::ConfirmSpaceAdventure { .. } => {
-                if key_event.code == ui_key::YES_TO_DIALOG {
-                    return Some(UiCallback::StartSpaceAdventure);
-                } else if key_event.code == ui_key::NO_TO_DIALOG {
-                    return Some(UiCallback::CloseUiPopup);
+            Self::ConfirmSpaceAdventure {
+                joinable, selected, ..
+            } => match key_event.code {
+                ui_key::SOLO_SPACE_ADVENTURE => {
+                    return Some(UiCallback::StartSpaceAdventure { open: false })
                 }
-            }
+                ui_key::OPEN_SPACE_ADVENTURE => {
+                    return Some(UiCallback::StartSpaceAdventure { open: true })
+                }
+                ui_key::NO_TO_DIALOG => return Some(UiCallback::CloseUiPopup),
+                ui_key::YES_TO_DIALOG => {
+                    if let Some((host_team_id, _)) = joinable.get(*selected) {
+                        return Some(UiCallback::JoinSpaceAdventure {
+                            host_team_id: *host_team_id,
+                        });
+                    }
+                }
+                ui_key::NEXT_JOINABLE_ADVENTURE if joinable.len() > 1 => {
+                    return Some(UiCallback::PushSpaceAdventurePopup {
+                        selected: selected + 1,
+                    })
+                }
+                ui_key::PREVIOUS_JOINABLE_ADVENTURE if joinable.len() > 1 => {
+                    return Some(UiCallback::PushSpaceAdventurePopup {
+                        selected: selected + joinable.len() - 1,
+                    })
+                }
+                _ => {}
+            },
 
             Self::AbandonAsteroid { asteroid_id, .. } => {
                 if key_event.code == ui_key::YES_TO_DIALOG {
@@ -406,6 +433,8 @@ impl PopupMessage {
             Self::ConfirmSpaceAdventure {
                 has_shooter,
                 average_tiredness,
+                joinable,
+                selected,
                 ..
             } => {
                 frame.render_widget(
@@ -416,6 +445,12 @@ impl PopupMessage {
                     split[0],
                 );
 
+                let message_split = Layout::vertical([
+                    Constraint::Min(2),
+                    Constraint::Length(if joinable.is_empty() { 0 } else { 3 }),
+                ])
+                .split(split[1]);
+
                 let mut text = format!(
                     "Go on a Space Adventure? It will spend 25% of your pirates' energy{}.",
                     if *average_tiredness > MAX_SKILL / 2.0 {
@@ -425,33 +460,93 @@ impl PopupMessage {
                     }
                 );
                 if !has_shooter {
-                    text.push_str("Your spaceship has no shooters, it will be very dangerous!");
+                    text.push_str(" Your spaceship has no shooters, it will be very dangerous!");
                 };
                 frame.render_widget(
                     Paragraph::new(text).centered().wrap(Wrap { trim: true }),
-                    split[1].inner(Margin {
+                    message_split[0].inner(Margin {
                         horizontal: 1,
                         vertical: 1,
                     }),
                 );
 
-                let buttons_split =
-                    Layout::horizontal([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-                        .split(split[2]);
+                if let Some((host_team_id, team_name)) = joinable.get(*selected) {
+                    let join_split = Layout::horizontal([
+                        Constraint::Length(5),
+                        Constraint::Min(0),
+                        Constraint::Length(5),
+                    ])
+                    .split(message_split[1]);
 
-                let confirm_button = Button::new(UiText::YES, UiCallback::StartSpaceAdventure)
-                    .hover_text("Start space adventure")
+                    let label = if joinable.len() > 1 {
+                        format!("Join {team_name} {}/{}", selected + 1, joinable.len())
+                    } else {
+                        format!("Join {team_name}")
+                    };
+                    let join_button = Button::new(
+                        label,
+                        UiCallback::JoinSpaceAdventure {
+                            host_team_id: *host_team_id,
+                        },
+                    )
+                    .hover_text(format!("Fly together with {team_name}"))
                     .hotkey(ui_key::YES_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::OK));
+                    frame.render_interactive_widget_on_layer(join_button, join_split[1], 2);
 
-                frame.render_interactive_widget_on_layer(confirm_button, buttons_split[0], 2);
+                    if joinable.len() > 1 {
+                        let previous_button = Button::new(
+                            "<",
+                            UiCallback::PushSpaceAdventurePopup {
+                                selected: selected + joinable.len() - 1,
+                            },
+                        )
+                        .hover_text("Previous crew flying around here")
+                        .hotkey(ui_key::PREVIOUS_JOINABLE_ADVENTURE)
+                        .block(default_block());
+                        frame.render_interactive_widget_on_layer(previous_button, join_split[0], 2);
+
+                        let next_button = Button::new(
+                            ">",
+                            UiCallback::PushSpaceAdventurePopup {
+                                selected: selected + 1,
+                            },
+                        )
+                        .hover_text("Next crew flying around here")
+                        .hotkey(ui_key::NEXT_JOINABLE_ADVENTURE)
+                        .block(default_block());
+                        frame.render_interactive_widget_on_layer(next_button, join_split[2], 2);
+                    }
+                }
+
+                let buttons_split = Layout::horizontal([
+                    Constraint::Ratio(1, 3),
+                    Constraint::Ratio(1, 3),
+                    Constraint::Ratio(1, 3),
+                ])
+                .split(split[2]);
+
+                let solo_button =
+                    Button::new("Fly solo", UiCallback::StartSpaceAdventure { open: false })
+                        .hover_text("Start a space adventure on your own")
+                        .hotkey(ui_key::SOLO_SPACE_ADVENTURE)
+                        .block(default_block().border_style(UiStyle::OK));
+                frame.render_interactive_widget_on_layer(solo_button, buttons_split[0], 2);
+
+                let open_button =
+                    Button::new("Fly open", UiCallback::StartSpaceAdventure { open: true })
+                        .hover_text(
+                            "Start a space adventure other crews around this planet can join",
+                        )
+                        .hotkey(ui_key::OPEN_SPACE_ADVENTURE)
+                        .block(default_block().border_style(UiStyle::OK));
+                frame.render_interactive_widget_on_layer(open_button, buttons_split[1], 2);
 
                 let no_button = Button::new(UiText::NO, UiCallback::CloseUiPopup)
                     .hover_text("Don't start space adventure")
                     .hotkey(ui_key::NO_TO_DIALOG)
                     .block(default_block().border_style(UiStyle::ERROR));
-
-                frame.render_interactive_widget_on_layer(no_button, buttons_split[1], 2);
+                frame.render_interactive_widget_on_layer(no_button, buttons_split[2], 2);
             }
 
             Self::AbandonAsteroid {

@@ -250,6 +250,15 @@ impl UiScreen {
         }
     }
 
+    pub fn close_popup_where(&mut self, matches: impl Fn(&PopupMessage) -> bool) {
+        self.popup_messages.retain(|popup| !matches(popup));
+    }
+
+    #[cfg(test)]
+    pub fn popup_messages(&self) -> &[PopupMessage] {
+        &self.popup_messages
+    }
+
     pub const fn close_help(&mut self) {
         self.show_help = false;
     }
@@ -353,7 +362,7 @@ impl UiScreen {
                     return Some(UiCallback::QuitGame);
                 }
 
-                let during_space_adventure = world.space_adventure.is_some();
+                let during_space_adventure = world.in_space();
 
                 Some(UiCallback::PushUiPopup {
                     popup_message: PopupMessage::PromptQuit {

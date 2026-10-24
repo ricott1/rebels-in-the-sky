@@ -1,5 +1,5 @@
 use super::{collisions::HitBox, space_callback::SpaceCallback, traits::*};
-use super::{entity::Entity, visual_effects::VisualEffect};
+use super::{entity::Entity, visual_effects::VisualEffect, wire::ShieldLook};
 use glam::{I16Vec2, Vec2};
 use image::{Rgba, RgbaImage};
 use std::collections::HashMap;
@@ -25,9 +25,18 @@ pub struct ShieldEntity {
     inactive_image: RgbaImage,
     recharging_image: RgbaImage,
     hit_box: HitBox,
+    owned_by_player: bool,
 }
 
 impl Body for ShieldEntity {
+    fn position_f32(&self) -> Vec2 {
+        self.position
+    }
+
+    fn velocity_f32(&self) -> Vec2 {
+        self.velocity
+    }
+
     fn previous_position(&self) -> I16Vec2 {
         self.previous_position.as_i16vec2()
     }
@@ -47,12 +56,10 @@ impl Body for ShieldEntity {
 
 impl Sprite for ShieldEntity {
     fn image(&self) -> &RgbaImage {
-        if self.is_active() {
-            &self.image
-        } else if self.current_durability() < self.max_durability() {
-            &self.recharging_image
-        } else {
-            &self.inactive_image
+        match self.look() {
+            ShieldLook::Active => &self.image,
+            ShieldLook::Recharging => &self.recharging_image,
+            ShieldLook::Inactive => &self.inactive_image,
         }
     }
 }
@@ -148,7 +155,7 @@ impl GameEntity for ShieldEntity {
 }
 
 impl ShieldEntity {
-    pub fn new_entity(max_durability: f32, damage_reduction: f32) -> Entity {
+    pub fn new_entity(max_durability: f32, damage_reduction: f32, owned_by_player: bool) -> Entity {
         // The fragment hitbox is larger than the sprite on purpose
         // so that when hitting something it interacts with it before the spaceship.
         let mut hit_box = HashMap::new();
@@ -211,7 +218,30 @@ impl ShieldEntity {
             inactive_image,
             recharging_image,
             hit_box: hit_box.into(),
+            owned_by_player,
         })
+    }
+
+    pub fn owned_by_player(&self) -> bool {
+        self.owned_by_player
+    }
+
+    pub(crate) fn look(&self) -> ShieldLook {
+        if self.is_active() {
+            ShieldLook::Active
+        } else if self.current_durability() < self.max_durability() {
+            ShieldLook::Recharging
+        } else {
+            ShieldLook::Inactive
+        }
+    }
+
+    pub(crate) fn set_look(&mut self, look: ShieldLook) {
+        self.is_active = look == ShieldLook::Active;
+        self.current_durability = match look {
+            ShieldLook::Recharging => 0.0,
+            ShieldLook::Active | ShieldLook::Inactive => self.max_durability,
+        };
     }
 
     pub fn is_active(&self) -> bool {
