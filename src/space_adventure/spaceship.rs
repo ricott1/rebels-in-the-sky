@@ -20,10 +20,6 @@ use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
-fn damage_flame_velocity(acceleration: Vec2, jitter: Vec2) -> Vec2 {
-    -1.5 * acceleration.normalize_or_zero() + jitter
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ShooterState {
     Ready,
@@ -174,10 +170,8 @@ impl Body for SpaceshipEntity {
                 let smoke_color_rng = rng.random_range(0..=80);
                 callbacks.push(SpaceCallback::GenerateParticle {
                     position,
-                    velocity: damage_flame_velocity(
-                        self.acceleration,
-                        Vec2::new(rng.random_range(-1.5..1.5), rng.random_range(-2.5..2.5)),
-                    ),
+                    velocity: -1.5 * self.acceleration.normalize_or_zero()
+                        + Vec2::new(rng.random_range(-1.5..1.5), rng.random_range(-2.5..2.5)),
                     color: Rgba([
                         105 + smoke_color_rng,
                         75 + smoke_color_rng,
@@ -277,19 +271,6 @@ impl Body for SpaceshipEntity {
         }
 
         callbacks
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::damage_flame_velocity;
-    use glam::Vec2;
-
-    #[test]
-    fn damage_flame_velocity_is_finite_when_ship_is_stationary() {
-        let velocity = damage_flame_velocity(Vec2::ZERO, Vec2::new(1.0, -1.0));
-
-        assert!(velocity.is_finite());
     }
 }
 
@@ -467,6 +448,9 @@ impl GameEntity for SpaceshipEntity {
         match callback {
             SpaceCallback::SetAcceleration { acceleration, .. } => {
                 self.thrust_towards(acceleration);
+            }
+            SpaceCallback::Recoil { acceleration, .. } => {
+                self.acceleration = acceleration * self.thrust();
             }
             SpaceCallback::DestroyEntity { .. } => {
                 let rng = &mut rand::rng();

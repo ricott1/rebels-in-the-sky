@@ -196,18 +196,13 @@ pub struct TeamInGame {
 impl TeamInGame {
     pub fn new(team: &Team, players: PlayerMap) -> Self {
         let mut stats = HashMap::new();
-        let mut player_order = team
+        let player_order = team
             .player_ids
             .iter()
             .filter(|id| players.contains_key(id))
+            .chain(players.keys().filter(|id| !team.player_ids.contains(id)))
             .copied()
-            .collect::<Vec<_>>();
-        let remaining_player_ids = players
-            .keys()
-            .filter(|id| !player_order.contains(id))
-            .copied()
-            .collect::<Vec<_>>();
-        player_order.extend(remaining_player_ids);
+            .collect_vec();
 
         for (idx, &player_id) in player_order.iter().enumerate() {
             let mut player_stats = GameStats::default();
@@ -217,15 +212,13 @@ impl TeamInGame {
             stats.insert(player_id, player_stats.clone());
         }
 
-        let initial_tiredness = player_order
+        let (initial_tiredness, initial_morale, initial_drunkenness) = player_order
             .iter()
-            .map(|id| players[id].tiredness)
-            .collect();
-        let initial_morale = player_order.iter().map(|id| players[id].morale).collect();
-        let initial_drunkenness = player_order
-            .iter()
-            .map(|id| players[id].drunkenness)
-            .collect();
+            .map(|id| {
+                let player = &players[id];
+                (player.tiredness, player.morale, player.drunkenness)
+            })
+            .multiunzip();
 
         // Rum brought to the game, depending on the team in-game drinking setting.
         let initial_rum = team

@@ -75,6 +75,11 @@ pub enum SpaceCallback {
 
     LandSpaceshipOnAsteroid,
 
+    Recoil {
+        id: usize,
+        acceleration: Vec2,
+    },
+
     ReleaseScraps {
         id: usize,
     },
@@ -200,6 +205,7 @@ impl SpaceCallback {
             | Self::CollectFragment { id, .. }
             | Self::DamageEntity { id, .. }
             | Self::DeactivateEntity { id }
+            | Self::Recoil { id, .. }
             | Self::SetAcceleration { id, .. }
             | Self::SetPosition { id, .. }
             | Self::SetCenterPosition { id, .. }
