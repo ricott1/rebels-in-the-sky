@@ -37,6 +37,7 @@ pub enum AppEvent {
     FastTick(Tick),
     TerminalEvent(TerminalEvent),
     NetworkEvent(SwarmEvent<BehaviourEvent>),
+    SpaceLink(crate::network::space_link::SpaceLinkEvent),
     #[cfg(feature = "audio")]
     AudioEvent(MusicPlayerEvent),
 }
@@ -52,6 +53,7 @@ pub struct App {
     #[cfg(feature = "audio")]
     pub audio_player: Option<MusicPlayer>,
     pub network_handler: NetworkHandler,
+    pub space_session: Option<crate::space_adventure::session::SpaceSession>,
     cancellation_token: CancellationToken,
 }
 
@@ -76,7 +78,7 @@ impl App {
             .get_own_team()
             .expect("There should be an own team when simulating.");
 
-        if let TeamLocation::OnSpaceAdventure { around } = own_team.current_location {
+        if let TeamLocation::OnSpaceAdventure { around, .. } = own_team.current_location {
             // If team is on a space adventure, bring it back to base planet.
             // This is an ad-hoc fix to avoid problems when the game is closed during a space adventure,
             // since the space property of the world is not serialized and stored.
@@ -215,6 +217,7 @@ impl App {
             #[cfg(feature = "audio")]
             audio_player,
             network_handler,
+            space_session: None,
             cancellation_token: CancellationToken::new(),
         })
     }
@@ -303,7 +306,16 @@ impl App {
                         self.draw(&mut tui).await;
                     }
                     AppEvent::FastTick(tick) => {
-                        if self.should_draw_world_fast_tick_events(tick) {
+                        let should_draw = self.should_draw_world_fast_tick_events(tick);
+                        if let Err(e) = self.tick_space_session() {
+                            self.ui.push_log_event(
+                                Tick::now(),
+                                None,
+                                e.to_string(),
+                                log::Level::Error,
+                            );
+                        }
+                        if should_draw {
                             self.draw(&mut tui).await
                         }
                     }
@@ -331,6 +343,17 @@ impl App {
 
                     AppEvent::NetworkEvent(swarm_event) => {
                         self.handle_network_events(swarm_event)?;
+                    }
+
+                    AppEvent::SpaceLink(event) => {
+                        if let Err(e) = self.handle_space_link_event(event) {
+                            self.ui.push_log_event(
+                                Tick::now(),
+                                None,
+                                e.to_string(),
+                                log::Level::Error,
+                            );
+                        }
                     }
 
                     #[cfg(feature = "audio")]
@@ -451,7 +474,7 @@ impl App {
         }
 
         // FIXME: should get this info from the world, not hardcoded
-        self.world.space_adventure.is_some()
+        self.world.in_space()
     }
 
     fn handle_world_slow_tick_events(&mut self, current_tick: Tick) {
@@ -626,7 +649,7 @@ impl App {
                     }
 
                     // Don't redraw during space adventure to keep consistent fps.
-                    if self.world.space_adventure.is_none() {
+                    if !self.world.in_space() {
                         should_draw = true;
                     }
                 }
@@ -687,5 +710,326 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         self.cancellation_token.cancel();
+    }
+}
+
+#[cfg(test)]
+mod coop_tests {
+    use super::{App, AppEvent};
+    use crate::{
+        core::{resources::Resource, types::TeamLocation},
+        space_adventure::{Body, PlayerInput},
+        types::{AppResult, SystemTimeTick, TeamId, Tick},
+        ui::UiCallback,
+    };
+    use anyhow::anyhow;
+    use libp2p::{multiaddr::Protocol, swarm::SwarmEvent, Multiaddr};
+    use std::time::{Duration, Instant};
+
+    struct Peers {
+        host: App,
+        guest: App,
+        ticker: tokio::time::Interval,
+        host_address: Option<Multiaddr>,
+        connected: bool,
+    }
+
+    fn is_loopback_tcp(address: &Multiaddr) -> bool {
+        let mut protocols = address.iter();
+        matches!(protocols.next(), Some(Protocol::Ip4(ip)) if ip.is_loopback())
+            && matches!(protocols.next(), Some(Protocol::Tcp(_)))
+    }
+
+    fn fast_tick(app: &mut App) -> AppResult<()> {
+        for callback in app.world.handle_fast_tick_events(Tick::now())? {
+            callback.call(app)?;
+        }
+        app.tick_space_session()
+    }
+
+    impl Peers {
+        async fn connected() -> AppResult<(Self, TeamId)> {
+            let mut host = App::test_with_network_handler()?;
+            let mut guest = App::test_with_network_handler()?;
+            host.world
+                .get_own_team_mut()?
+                .add_resource(Resource::FUEL, 100)?;
+            guest
+                .world
+                .get_own_team_mut()?
+                .add_resource(Resource::FUEL, 100)?;
+            let planet_id = host
+                .world
+                .get_own_team()?
+                .is_on_planet()
+                .ok_or_else(|| anyhow!("host should be on a planet"))?;
+            guest.world.get_own_team_mut()?.current_location = TeamLocation::OnPlanet { planet_id };
+
+            for app in [&mut host, &mut guest] {
+                app.network_handler.start_polling_events(
+                    app.get_event_sender(),
+                    app.get_cancellation_token(),
+                    0,
+                    true,
+                    false,
+                );
+            }
+
+            UiCallback::StartSpaceAdventure { open: true }.call(&mut host)?;
+            host.world
+                .space_adventure
+                .as_mut()
+                .ok_or_else(|| anyhow!("host should be in space"))?
+                .force_running();
+            host.tick_space_session()?;
+            let mut host_team = host.world.get_own_team()?.clone();
+            host_team.peer_id = Some(*host.network_handler.own_peer_id());
+            let host_team_id = host_team.id;
+            guest.world.teams.insert(host_team_id, host_team);
+
+            let mut peers = Self {
+                host,
+                guest,
+                ticker: tokio::time::interval(Duration::from_millis(25)),
+                host_address: None,
+                connected: false,
+            };
+            peers
+                .run_until(Duration::from_secs(10), |p| p.host_address.is_some())
+                .await?;
+            let address = peers.host_address.clone().expect("host address");
+            peers.guest.network_handler.dial_address(address)?;
+            peers
+                .run_until(Duration::from_secs(10), |p| p.connected)
+                .await?;
+            Ok((peers, host_team_id))
+        }
+
+        async fn step(&mut self) -> AppResult<()> {
+            let next = tokio::select! {
+                Some(event) = self.host.event_receiver.recv() => Some((true, event)),
+                Some(event) = self.guest.event_receiver.recv() => Some((false, event)),
+                _ = self.ticker.tick() => None,
+            };
+            let host_peer_id = *self.host.network_handler.own_peer_id();
+            match next {
+                Some((true, AppEvent::SpaceLink(event))) => {
+                    self.host.handle_space_link_event(event)?
+                }
+                Some((false, AppEvent::SpaceLink(event))) => {
+                    self.guest.handle_space_link_event(event)?
+                }
+                Some((true, AppEvent::NetworkEvent(SwarmEvent::NewListenAddr { address, .. }))) => {
+                    if self.host_address.is_none() && is_loopback_tcp(&address) {
+                        self.host_address = Some(address);
+                    }
+                }
+                Some((
+                    false,
+                    AppEvent::NetworkEvent(SwarmEvent::ConnectionEstablished { peer_id, .. }),
+                )) => {
+                    if peer_id == host_peer_id {
+                        self.connected = true;
+                    }
+                }
+                Some(_) => {}
+                None => {
+                    fast_tick(&mut self.host)?;
+                    fast_tick(&mut self.guest)?;
+                }
+            }
+            Ok(())
+        }
+
+        async fn run_until(
+            &mut self,
+            timeout: Duration,
+            done: impl Fn(&Self) -> bool,
+        ) -> AppResult<()> {
+            let deadline = Instant::now() + timeout;
+            while !done(self) {
+                if Instant::now() > deadline {
+                    return Err(anyhow!("timed out"));
+                }
+                self.step().await?;
+            }
+            Ok(())
+        }
+
+        async fn join(&mut self, host_team_id: TeamId) -> AppResult<()> {
+            UiCallback::JoinSpaceAdventure { host_team_id }.call(&mut self.guest)?;
+            self.run_until(Duration::from_secs(15), |p| {
+                p.guest
+                    .world
+                    .space_mirror
+                    .as_ref()
+                    .is_some_and(|mirror| mirror.local_view().is_some())
+            })
+            .await
+        }
+
+        fn host_joinable(&self) -> bool {
+            self.host.world.get_own_team().is_ok_and(|team| {
+                matches!(
+                    team.current_location,
+                    TeamLocation::OnSpaceAdventure { joinable: true, .. }
+                )
+            })
+        }
+    }
+
+    async fn pump_alone(
+        app: &mut App,
+        ticker: &mut tokio::time::Interval,
+        timeout: Duration,
+        done: impl Fn(&App) -> bool,
+    ) -> AppResult<()> {
+        let deadline = Instant::now() + timeout;
+        while !done(app) {
+            if Instant::now() > deadline {
+                return Err(anyhow!("timed out"));
+            }
+            let next = tokio::select! {
+                Some(event) = app.event_receiver.recv() => Some(event),
+                _ = ticker.tick() => None,
+            };
+            match next {
+                Some(AppEvent::SpaceLink(event)) => app.handle_space_link_event(event)?,
+                Some(_) => {}
+                None => fast_tick(app)?,
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_host_drops_a_guest_whose_game_dies() -> AppResult<()> {
+        let (mut peers, host_team_id) = Peers::connected().await?;
+        peers.join(host_team_id).await?;
+        let Peers {
+            mut host,
+            guest,
+            mut ticker,
+            ..
+        } = peers;
+        drop(guest);
+
+        pump_alone(&mut host, &mut ticker, Duration::from_secs(10), |app| {
+            app.world
+                .space_adventure
+                .as_ref()
+                .is_some_and(|space| space.guest_id().is_none())
+        })
+        .await?;
+        assert!(matches!(
+            host.world.get_own_team()?.current_location,
+            TeamLocation::OnSpaceAdventure { joinable: true, .. }
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_guest_goes_home_when_the_host_game_dies() -> AppResult<()> {
+        let (mut peers, host_team_id) = Peers::connected().await?;
+        peers.join(host_team_id).await?;
+        let Peers {
+            host,
+            mut guest,
+            mut ticker,
+            ..
+        } = peers;
+        drop(host);
+
+        pump_alone(&mut guest, &mut ticker, Duration::from_secs(15), |app| {
+            app.world.space_mirror.is_none() && app.space_session.is_none()
+        })
+        .await?;
+        assert!(guest.world.get_own_team()?.is_on_planet().is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_guest_joins_flies_and_leaves_over_a_real_link() -> AppResult<()> {
+        let (mut peers, host_team_id) = Peers::connected().await?;
+        assert!(peers.host_joinable());
+
+        peers.join(host_team_id).await?;
+        let space = peers
+            .host
+            .world
+            .space_adventure
+            .as_ref()
+            .expect("host space");
+        let guest_ship_id = space.guest_id().expect("guest ship on the host");
+        assert!(!peers.host_joinable());
+        assert!(matches!(
+            peers.guest.world.get_own_team()?.current_location,
+            TeamLocation::OnSpaceAdventure {
+                joinable: false,
+                ..
+            }
+        ));
+
+        peers.guest.space_player_input(PlayerInput::MoveDown)?;
+        peers
+            .run_until(Duration::from_secs(5), |p| {
+                p.host
+                    .world
+                    .space_adventure
+                    .as_ref()
+                    .and_then(|space| space.get_ship(guest_ship_id))
+                    .is_some_and(|ship| ship.velocity_f32().y > 0.0)
+            })
+            .await?;
+
+        peers.guest.leave_space_adventure();
+        peers
+            .run_until(Duration::from_secs(10), |p| {
+                p.guest.world.space_mirror.is_none() && p.host_joinable()
+            })
+            .await?;
+        assert!(peers.guest.space_session.is_none());
+        assert!(peers.guest.world.get_own_team()?.is_on_planet().is_some());
+        assert!(peers
+            .host
+            .world
+            .space_adventure
+            .as_ref()
+            .is_some_and(|space| space.guest_id().is_none()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_host_going_home_sends_the_guest_home_with_its_hold() -> AppResult<()> {
+        let (mut peers, host_team_id) = Peers::connected().await?;
+        peers.join(host_team_id).await?;
+        let gold_before = peers
+            .guest
+            .world
+            .get_own_team()?
+            .resources
+            .get(&Resource::GOLD)
+            .copied()
+            .unwrap_or_default();
+
+        peers.host.leave_space_adventure();
+        peers
+            .run_until(Duration::from_secs(10), |p| {
+                p.guest.world.space_mirror.is_none() && p.host.world.space_adventure.is_none()
+            })
+            .await?;
+        assert!(peers.guest.space_session.is_none());
+        assert!(peers.host.space_session.is_none());
+        let guest_team = peers.guest.world.get_own_team()?;
+        assert!(guest_team.is_on_planet().is_some());
+        assert_eq!(
+            guest_team
+                .resources
+                .get(&Resource::GOLD)
+                .copied()
+                .unwrap_or_default(),
+            gold_before
+        );
+        Ok(())
     }
 }

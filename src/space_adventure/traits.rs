@@ -1,7 +1,8 @@
 use super::{collisions::HitBox, space_callback::SpaceCallback, visual_effects::VisualEffect};
 use crate::{core::resources::Resource, types::ResourceMap};
-use glam::I16Vec2;
+use glam::{I16Vec2, Vec2};
 use image::{Rgba, RgbaImage};
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Debug};
 
 pub type VisualEffectMap = HashMap<VisualEffect, f32>;
@@ -39,6 +40,14 @@ pub trait Body: Collider {
         I16Vec2::ZERO
     }
 
+    fn position_f32(&self) -> Vec2 {
+        self.position().as_vec2()
+    }
+
+    fn velocity_f32(&self) -> Vec2 {
+        self.velocity().as_vec2()
+    }
+
     fn update_body(&mut self, _deltatime: f32) -> Vec<SpaceCallback> {
         vec![]
     }
@@ -59,6 +68,12 @@ pub trait Sprite {
 
     fn remove_visual_effect(&mut self, _effect: &VisualEffect) {}
 
+    fn visual_effects(&self) -> Vec<(VisualEffect, f32)> {
+        vec![]
+    }
+
+    fn set_visual_effects(&mut self, _effects: &[(VisualEffect, f32)]) {}
+
     fn update_sprite(&mut self, _deltatime: f32) -> Vec<SpaceCallback> {
         vec![]
     }
@@ -74,6 +89,7 @@ pub enum ColliderType {
     Projectile {
         shot_by: usize,
         filter_shield_id: Option<usize>,
+        by_player: bool,
     },
     Shield,
     Spaceship,
@@ -113,7 +129,7 @@ pub trait GameEntity: Sprite + Body + Collider {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum PlayerInput {
     MoveLeft,
     MoveRight,

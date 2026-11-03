@@ -296,8 +296,7 @@ impl TournamentPanel {
             .split(t_split[1]);
 
         let options = tournament
-            .registered_teams
-            .values()
+            .all_registered_teams()
             .sorted_by(|a, b| a.team_id.cmp(&b.team_id))
             .map(|team| {
                 let mut style = UiStyle::DEFAULT;
@@ -387,8 +386,7 @@ impl TournamentPanel {
             .split(t_split[1]);
 
         let options = tournament
-            .registered_teams
-            .values()
+            .all_registered_teams()
             .sorted_by(|a, b| a.team_id.cmp(&b.team_id))
             .map(|team| {
                 let style = if tournament.participants.contains_key(&team.team_id) {
@@ -429,8 +427,7 @@ impl TournamentPanel {
             .split(t_split[1]);
 
         let options = tournament
-            .registered_teams
-            .values()
+            .all_registered_teams()
             .sorted_by(|a, b| a.team_id.cmp(&b.team_id))
             .map(|team| {
                 let style = if tournament.participants.contains_key(&team.team_id) {
@@ -744,11 +741,6 @@ impl HelpPanel for TournamentPanel {
                 Line::from(format!(
                     "  {}          Register your team for the highlighted tournament",
                     ui_key::REGISTER_TO_TOURNAMENT
-                )),
-                Line::from(format!(
-                    "  {} / {}      Organize a quick / big tournament",
-                    ui_key::ORGANIZE_QUICK_TOURNAMENT,
-                    ui_key::ORGANIZE_BIG_TOURNAMENT
                 )),
             ],
         }

@@ -16,6 +16,10 @@ pub const CYCLE_VIEW_BACK: KeyCode = KeyCode::BackTab;
 
 pub const YES_TO_DIALOG: KeyCode = KeyCode::Enter;
 pub const NO_TO_DIALOG: KeyCode = KeyCode::Backspace;
+pub const SOLO_SPACE_ADVENTURE: KeyCode = KeyCode::Char('s');
+pub const OPEN_SPACE_ADVENTURE: KeyCode = KeyCode::Char('o');
+pub const NEXT_JOINABLE_ADVENTURE: KeyCode = KeyCode::Right;
+pub const PREVIOUS_JOINABLE_ADVENTURE: KeyCode = KeyCode::Left;
 
 pub const GO_TO_CHAT: KeyCode = KeyCode::Char('C');
 pub const GO_TO_CHALLENGES: KeyCode = KeyCode::Char('C');

@@ -1,7 +1,7 @@
 use super::resources::Resource;
 use super::utils::is_default;
 use crate::core::{Population, Upgrade, UpgradeableElement, DAYS, MAX_TAVERN_POPULATION, WEEKS};
-use crate::types::{PlanetId, PlayerId, ResourceMap, StorableResourceMap, Tick};
+use crate::types::{PlanetId, ResourceMap, StorableResourceMap, Tick};
 use rand::prelude::Distribution;
 use rand::RngExt;
 use rand_chacha::ChaCha8Rng;
@@ -14,15 +14,10 @@ use strum::Display;
 use strum_macros::EnumIter;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
-pub struct DrinkingCompetition {
-    participants: [PlayerId; 2],
-}
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
 pub struct Tavern {
     // The tavern increases the cove asteroid population,
     // which in turns means that tick_free_pirates populate the asteroid with free pirates.
     pub upkeep_cost: ResourceMap,
-    pub drinking_competition: Option<DrinkingCompetition>,
 }
 
 impl Tavern {
