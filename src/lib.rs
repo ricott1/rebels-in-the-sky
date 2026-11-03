@@ -12,6 +12,7 @@ pub mod relayer;
 #[cfg(feature = "ssh")]
 pub mod session_auth;
 pub mod space_adventure;
+mod space_coop;
 #[cfg(feature = "ssh")]
 pub mod ssh_game;
 pub mod store;

@@ -7,7 +7,7 @@ use crate::store::*;
 use crate::types::{AppResult, TeamId};
 use libp2p::gossipsub::IdentTopic;
 use libp2p::identity::Keypair;
-use libp2p::{gossipsub, identify, swarm::SwarmEvent};
+use libp2p::{gossipsub, identify, relay, swarm::SwarmEvent};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -79,9 +79,8 @@ impl Relayer {
         );
         loop {
             if let Some(AppEvent::NetworkEvent(swarm_event)) = event_receiver.recv().await {
-                let result = self.handle_network_events(swarm_event);
-                if result.is_err() {
-                    println!("Error handling network event: {result:?}");
+                if let Err(e) = self.handle_network_events(swarm_event) {
+                    log::error!("Error handling network event: {e}");
                 }
             }
         }
@@ -91,14 +90,13 @@ impl Relayer {
         &mut self,
         network_event: SwarmEvent<BehaviourEvent>,
     ) -> AppResult<()> {
-        println!("Received network event: {network_event:?}");
         match network_event {
             SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(gossipsub::Event::Subscribed {
                 peer_id,
                 topic,
             })) => {
                 if topic == IdentTopic::new(TOPIC).hash() {
-                    println!("Sending info to {peer_id}");
+                    log::info!("Sending seed info after {peer_id} subscribed");
                     self.network_handler
                         .send_seed_info(self.network_store_data.to_broadcast_snapshot())?;
                 }
@@ -175,7 +173,6 @@ impl Relayer {
                         author,
                         message,
                     };
-                    println!("Chat message stored: {entry:#?}");
                     self.network_store_data.chat_history.insert(entry);
                 } else if let NetworkData::SyncRequest = network_data {
                     self.network_handler
@@ -202,6 +199,20 @@ impl Relayer {
                     save_relayer_network_store_data(&self.network_store_data, false)?;
                 }
             }
+
+            SwarmEvent::Behaviour(BehaviourEvent::RelayServer(
+                relay::Event::CircuitReqDenied {
+                    src_peer_id,
+                    dst_peer_id,
+                    status,
+                },
+            )) => log::warn!("Circuit {src_peer_id} -> {dst_peer_id} denied: {status:?}"),
+
+            SwarmEvent::Behaviour(BehaviourEvent::RelayServer(relay::Event::CircuitClosed {
+                src_peer_id,
+                dst_peer_id,
+                error,
+            })) => log::info!("Circuit {src_peer_id} -> {dst_peer_id} closed: {error:?}"),
 
             _ => {}
         }

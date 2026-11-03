@@ -26,9 +26,18 @@ pub struct ProjectileEntity {
     image: RgbaImage,
     layer: usize,
     hit_box: HitBox,
+    by_player: bool,
 }
 
 impl Body for ProjectileEntity {
+    fn position_f32(&self) -> Vec2 {
+        self.position
+    }
+
+    fn velocity_f32(&self) -> Vec2 {
+        self.velocity
+    }
+
     fn previous_position(&self) -> I16Vec2 {
         self.previous_position.as_i16vec2()
     }
@@ -82,6 +91,7 @@ impl Collider for ProjectileEntity {
         ColliderType::Projectile {
             shot_by: self.shot_by_id,
             filter_shield_id: self.own_shield_id,
+            by_player: self.by_player,
         }
     }
 
@@ -112,6 +122,7 @@ impl ProjectileEntity {
         velocity: Vec2,
         color: Rgba<u8>,
         damage: f32,
+        by_player: bool,
     ) -> Entity {
         let image = RgbaImage::from_pixel(1, 1, color);
         let mut hit_box = HashMap::new();
@@ -129,6 +140,11 @@ impl ProjectileEntity {
             image,
             layer: 1,
             hit_box: hit_box.into(),
+            by_player,
         })
+    }
+
+    pub fn color(&self) -> Rgba<u8> {
+        self.color
     }
 }

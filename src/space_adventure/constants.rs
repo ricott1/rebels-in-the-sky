@@ -27,3 +27,7 @@ pub(crate) const BACKGROUND_IMAGE_SIZE: UVec2 = UVec2::new(240, 168);
 pub(crate) const MAX_LAYER: usize = 5;
 
 pub(crate) const MAX_ASTEROID_PLANET_IMAGE_NUMBER: usize = 30;
+
+pub(crate) const STARTING_DURATION: std::time::Duration = std::time::Duration::from_millis(2500);
+pub(crate) const ENDING_DURATION: std::time::Duration = std::time::Duration::from_millis(2500);
+pub const HULL_BREACH_MESSAGE: &str = "Danger! There's a breach in the hull.\nAll the resources in the cargo hold have been lost,\nyou need to go back to the base...";
