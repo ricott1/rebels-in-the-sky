@@ -1819,8 +1819,8 @@ fn format_player_skills<'a>(player: &'a Player, report: &ScoutReport) -> Vec<Lin
     spans.push(skill_summary_span("Athletics"));
     text.push(Line::from(spans));
 
-    for i in 1..sorted_roles.len() {
-        let mut spans = scouted_player_role_spans(player, report, sorted_roles[i]);
+    for (i, &role) in sorted_roles.iter().skip(1).enumerate() {
+        let mut spans = scouted_player_role_spans(player, report, role);
         spans.extend(scouted_player_skill_spans(player, report, i));
         text.push(Line::from(spans));
     }

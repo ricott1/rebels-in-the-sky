@@ -195,7 +195,7 @@ impl Body for SpaceshipEntity {
                 let smoke_color_rng = rng.random_range(0..=80);
                 callbacks.push(SpaceCallback::GenerateParticle {
                     position,
-                    velocity: -1.5 * self.acceleration.normalize()
+                    velocity: -1.5 * self.acceleration.normalize_or_zero()
                         + Vec2::new(rng.random_range(-1.5..1.5), rng.random_range(-2.5..2.5)),
                     color: Rgba([
                         105 + smoke_color_rng,
@@ -472,6 +472,9 @@ impl GameEntity for SpaceshipEntity {
         match callback {
             SpaceCallback::SetAcceleration { acceleration, .. } => {
                 self.thrust_towards(acceleration);
+            }
+            SpaceCallback::Recoil { acceleration, .. } => {
+                self.acceleration = acceleration * self.thrust();
             }
             SpaceCallback::DestroyEntity { .. } => {
                 let rng = &mut rand::rng();

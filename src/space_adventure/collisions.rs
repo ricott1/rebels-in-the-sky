@@ -467,22 +467,23 @@ fn get_collision_callbacks(
             if one.as_spaceship()?.is_player() && other.as_spaceship()?.is_player() {
                 return Ok(vec![]);
             }
+            let relative_velocity = one.velocity().as_vec2() - other.velocity().as_vec2();
             vec![
                 SpaceCallback::DamageEntity {
                     id: one.id(),
                     damage: SPACESHIP_COLLISION_DAMAGE,
                 },
-                SpaceCallback::SetAcceleration {
+                SpaceCallback::Recoil {
                     id: one.id(),
-                    acceleration: -one.velocity().as_vec2(),
+                    acceleration: -relative_velocity,
                 },
                 SpaceCallback::DamageEntity {
                     id: other.id(),
                     damage: SPACESHIP_COLLISION_DAMAGE,
                 },
-                SpaceCallback::SetAcceleration {
+                SpaceCallback::Recoil {
                     id: other.id(),
-                    acceleration: -one.velocity().as_vec2(),
+                    acceleration: relative_velocity,
                 },
             ]
         }

@@ -1135,7 +1135,7 @@ impl Screen for SwarmPanel {
                     .map(|x| x.to_string())
                     .collect();
 
-                let mut message = lines.iter().join("/n");
+                let mut message = lines.iter().join("\n");
 
                 if message.is_empty() {
                     // If no message, go to last message
