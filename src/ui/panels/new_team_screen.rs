@@ -207,7 +207,7 @@ impl NewTeamScreen {
         Create your crew and start wandering the galaxy in search of worthy basketball opponents.
         
         Choose your team name, customize your ship, and select a worthy crew.
-        You won't keep any leftover money, so spend wisely!
+        Leftover setup sat expires. Any nonnegative balance is fine to proceed.
 
         [Press enter to confirm selections.]"
             .to_string();
@@ -601,16 +601,62 @@ impl NewTeamScreen {
         INITIAL_OWN_TEAM_BALANCE as i32 - hiring_costs - ship_cost as i32
     }
 
+    fn can_afford_player(&self, hire_cost: u32) -> bool {
+        i64::from(self.get_remaining_balance()) >= i64::from(hire_cost)
+    }
+
+    fn player_budget_hint(&self) -> Option<String> {
+        if self.state != CreationState::Players {
+            return None;
+        }
+
+        let open_slots = self
+            .max_players_selected()
+            .saturating_sub(self.selected_players.len());
+        let planet_players = &self.planet_players[&self.planet_ids[self.planet_index]];
+        let cheapest_cost: i64 = planet_players
+            .iter()
+            .filter(|(id, _)| !self.selected_players.contains(id))
+            .map(|(_, cost)| i64::from(*cost))
+            .sorted()
+            .take(open_slots)
+            .sum();
+        if open_slots > 0 && i64::from(self.get_remaining_balance()) < cheapest_cost {
+            return Some(format!(
+                "Not enough budget for {open_slots} more players. Deselect a player to free up funds."
+            ));
+        }
+
+        let (id, cost) = planet_players.get(self.player_index)?;
+        if !self.selected_players.contains(id) && !self.can_afford_player(*cost) {
+            return Some("Cannot afford this player. Select a cheaper player or deselect one to free up funds.".to_string());
+        }
+        None
+    }
+
     fn render_remaining_balance(&self, frame: &mut UiFrame, area: Rect) {
         let remaining_balance = self.get_remaining_balance();
-        let text = format!(" Remaining balance: {remaining_balance:>} sat");
+        let mut lines = vec![Line::from(format!(
+            " Remaining balance: {remaining_balance:>} sat"
+        ))];
+        if let Some(hint) = self.player_budget_hint() {
+            lines.push(Line::styled(hint, UiStyle::ERROR));
+        }
 
         let block = if remaining_balance >= 0 {
             thick_block().border_style(UiStyle::OK)
         } else {
             thick_block().border_style(UiStyle::ERROR)
         };
-        frame.render_widget(Paragraph::new(text).block(block), area);
+        let block = if self.state == CreationState::Players {
+            block.title_bottom("Enter: Select / Deselect")
+        } else {
+            block
+        };
+        frame.render_widget(
+            Paragraph::new(lines).wrap(Wrap { trim: true }).block(block),
+            area,
+        );
     }
 
     fn render_player_list(
@@ -623,8 +669,9 @@ impl NewTeamScreen {
             frame.render_widget(
                 default_block()
                     .title(format!(
-                        "Select {} players",
-                        self.max_players_selected() - self.selected_players.len(),
+                        "{}/{} players selected",
+                        self.selected_players.len(),
+                        self.max_players_selected(),
                     ))
                     .style(UiStyle::UNSELECTABLE),
                 area,
@@ -638,10 +685,10 @@ impl NewTeamScreen {
             .iter()
             .map(|&player_data| {
                 let player_id = player_data.0;
-                let style = if self.selected_players.contains(&player_id)
-                    && self.state <= CreationState::Players
-                {
+                let style = if self.selected_players.contains(&player_id) {
                     UiStyle::OK
+                } else if !self.can_afford_player(player_data.1) {
+                    UiStyle::ERROR
                 } else {
                     UiStyle::DEFAULT
                 };
@@ -679,8 +726,9 @@ impl NewTeamScreen {
         };
 
         let title = format!(
-            "Select {} players",
-            self.max_players_selected() - self.selected_players.len(),
+            "{}/{} players selected",
+            self.selected_players.len(),
+            self.max_players_selected(),
         );
 
         let mut none_state = ClickableListState::default().with_selected(None);
@@ -717,7 +765,7 @@ impl NewTeamScreen {
     fn render_confirm_box(&self, frame: &mut UiFrame, world: &World, area: Rect) -> AppResult<()> {
         let split = Layout::vertical([
             Constraint::Min(1),
-            Constraint::Length(4),
+            Constraint::Length(7),
             Constraint::Length(3),
             Constraint::Min(1),
         ])
@@ -729,7 +777,10 @@ impl NewTeamScreen {
         let text = Paragraph::new(vec![
             Line::from(Span::raw(format!("{} from {}", name, planet.name))),
             Line::from(Span::raw("Ready to sail the cosmic waves?")),
+            Line::from("Leftover setup sat expires."),
+            Line::from("Any nonnegative balance is fine to proceed."),
         ])
+        .wrap(Wrap { trim: true })
         .centered();
         frame.render_widget(
             text,
@@ -874,7 +925,11 @@ impl Screen for NewTeamScreen {
         };
 
         let h_split = Layout::vertical([
-            Constraint::Length(3),                   // remaining balance
+            Constraint::Length(if self.player_budget_hint().is_some() {
+                6
+            } else {
+                3
+            }), // remaining balance
             Constraint::Length(3),                   // team name
             Constraint::Length(3),                   // spaceship name
             Constraint::Length(planet_split_height), // planet
@@ -1141,10 +1196,12 @@ impl Screen for NewTeamScreen {
                         KeyCode::Enter => {
                             let planet_id = self.planet_ids[self.planet_index];
                             let planet_players = self.planet_players.get(&planet_id).unwrap();
-                            let (player_id, _) = planet_players[self.player_index];
+                            let (player_id, hire_cost) = planet_players[self.player_index];
                             if self.selected_players.contains(&player_id) {
                                 self.selected_players.retain(|&x| x != player_id);
-                            } else if self.selected_players.len() < self.max_players_selected() {
+                            } else if self.selected_players.len() < self.max_players_selected()
+                                && self.can_afford_player(hire_cost)
+                            {
                                 self.selected_players.push(player_id);
                             }
                             if self.get_remaining_balance() >= 0 && self.enough_players_selected() {
@@ -1192,14 +1249,14 @@ impl HelpPanel for NewTeamScreen {
     fn help_content(&self) -> HelpContent {
         HelpContent {
             description: format!(
-                "Walk through team creation step by step:\n  - Pick a team name and a spaceship name.\n  - Choose your home planet.\n  - Select jersey colors and style.\n  - Pick your starting spaceship model.\n  - Hire your starting players.\n\nBudget: you start with {} sat. The 'Remaining balance' bar at the top tracks your spending:\neach spaceship and each hired player costs satoshi.",
+                "Walk through team creation step by step:\n  - Pick a team name and a spaceship name.\n  - Choose your home planet.\n  - Select jersey colors and style.\n  - Pick your starting spaceship model.\n  - Hire your starting players.\n\nBudget: you start with {} sat. The 'Remaining balance' bar at the top tracks your spending:\neach spaceship and each hired player costs satoshi. Red players are unaffordable; deselect players to free up funds. Leftover setup sat expires; any nonnegative balance is fine to proceed.",
                 INITIAL_OWN_TEAM_BALANCE
             ),
             links: vec![],
             controls: vec![
                 Line::from("Controls:"),
                 Line::from("  ↑/↓        Move highlight in lists."),
-                Line::from("  Enter      Confirm step / select."),
+                Line::from("  Enter      Confirm step / select or deselect player."),
                 Line::from("  Backspace  Go back to the previous step."),
                 Line::from("  r/g/b      Cycle red/green/blue jersey color."),
                 Line::from("  R/G/B      Cycle backwards."),
